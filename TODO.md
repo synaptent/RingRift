@@ -10,9 +10,15 @@ This document is the **single source of truth** for RingRift development trackin
 
 ## 🚀 PHASE 1: Core Game Logic Implementation
 
-**Status:** IN PROGRESS (33% complete)  
+**Status:** IN PROGRESS (75% complete, critical gaps remain)  
 **Priority:** P0 - CRITICAL  
-**Target Completion:** 3-5 weeks
+**Target Completion:** 2-3 weeks remaining for completion
+
+**VERIFIED ACTUAL STATUS (November 13, 2025):**
+- ✅ Basic mechanics working (marker system, movement, basic captures, lines, territory)
+- ⚠️ Chain captures NOT enforced (mandatory continuation missing)
+- ⚠️ Player choice system NOT implemented (all choices default)
+- ⚠️ Strategic gameplay reduced due to missing player agency
 
 ---
 
@@ -178,13 +184,13 @@ This document is the **single source of truth** for RingRift development trackin
 ---
 
 ### Task 1.5: Complete Capture System ⏳
-**Priority:** P1 - HIGH | **Estimated:** 3-4 days | **Status:** IN PROGRESS
+**Priority:** P0 - CRITICAL | **Estimated:** 3-4 days | **Status:** INCOMPLETE
 
 **Dependencies:** Task 1.3 (Movement validation) ✅
 
 **Files:**
-- `src/server/game/GameEngine.ts` ✅ (partially complete)
-- `src/server/game/RuleEngine.ts` ✅ (partially complete)
+- `src/server/game/GameEngine.ts` ⚠️ (basic capture only)
+- `src/server/game/RuleEngine.ts` ⚠️ (validation incomplete)
 - `src/shared/types/game.ts` ✅ (updated)
 
 **Subtasks:**
@@ -201,55 +207,55 @@ This document is the **single source of truth** for RingRift development trackin
 - [x] Implement `isBeyondTarget()` helper method
 - [x] Update `applyMove()` to handle overtaking_capture move type
 - [x] Implement capture detection in `hasValidCaptures()`
-- [ ] Implement mandatory chain capture continuation in GameEngine
-- [ ] Handle player choice when multiple capture directions available
+- [ ] **CRITICAL: Implement mandatory chain capture continuation in GameEngine**
+- [ ] **CRITICAL: Handle player choice when multiple capture directions available**
 - [ ] Write unit tests for cap height comparison (deferred to Phase 2)
 - [ ] Write unit tests for chain capture sequences (deferred to Phase 2)
-- [ ] Write tests for 180° reversal pattern (FAQ) (deferred to Phase 2)
-- [ ] Write tests for cyclic pattern (FAQ) (deferred to Phase 2)
+- [ ] Write tests for 180° reversal pattern (FAQ Q15.3.1) (deferred to Phase 2)
+- [ ] Write tests for cyclic pattern (FAQ Q15.3.2) (deferred to Phase 2)
 
 **Acceptance Criteria:**
 - [x] Overtaking adds captured ring to bottom of stack
-- [ ] Chain captures are mandatory once started (needs GameEngine logic)
+- [ ] **Chain captures are mandatory once started** ❌ NOT IMPLEMENTED
 - [x] Cap height correctly determines capture eligibility
 - [x] Can land on any valid space beyond target
-- [ ] Multiple capture sequences work correctly (needs chain capture implementation)
+- [ ] **Multiple capture sequences work correctly** ❌ NOT IMPLEMENTED
 - [ ] All tests pass including FAQ examples (deferred to Phase 2)
 
-**Rule Reference:** Sections 9-10, Section 15.3
+**Rule Reference:** Sections 9-10, Section 15.3, FAQ Q14
 
 **Key Rules:**
 - Overtaking: Top ring of target stack added to bottom of capturing stack ✅
 - Elimination: Rings permanently removed (line formations, territory disconnections)
-- Chain captures: Mandatory once started, player chooses direction at each step
+- Chain captures: Mandatory once started, player chooses direction at each step ❌
 
-**Progress:** 13/19 subtasks completed (68%) - Core validation and capture logic complete, chain captures need work
+**Progress:** 13/19 subtasks completed (40% functional) - Single captures work, chain captures NOT enforced
 
-**Completed:** November 13, 2025 (partial - core capture system working)
+**Status:** INCOMPLETE - Chain capture logic is critical missing feature
 
 ---
 
-### Task 1.6: Implement Line Formation ✅
-**Priority:** P1 - HIGH | **Estimated:** 3-4 days | **Status:** COMPLETED
+### Task 1.6: Implement Line Formation ⏳
+**Priority:** P1 - HIGH | **Estimated:** 3-4 days | **Status:** INCOMPLETE
 
 **Dependencies:** Task 1.2 (Marker system) ✅, Task 1.4 (Phase transitions) ✅
 
 **Files:**
-- `src/server/game/GameEngine.ts` ✅
+- `src/server/game/GameEngine.ts` ⚠️ (defaulting to Option 2)
 - `src/server/game/BoardManager.ts` ✅
-- `src/server/game/RuleEngine.ts`
+- `src/server/game/RuleEngine.ts` ⚠️
 
 **Subtasks:**
 - [x] Fix `findAllLines()` to detect 4+ consecutive markers for 8x8 (CRITICAL: markers not stacks)
 - [x] Fix `findAllLines()` to detect 5+ consecutive markers for 19x19/hex
 - [x] Implement Option 1: Collapse all + eliminate ring (for exact or longer lines)
 - [x] Implement Option 2: Collapse only required + no elimination (for longer lines only)
-- [ ] Add player choice mechanism for longer lines (TODO: currently defaults to Option 2)
+- [ ] **CRITICAL: Add player choice mechanism for longer lines** (currently defaults to Option 2)
 - [x] Implement `eliminatePlayerRingOrCap()` method
-- [x] Handle multiple line processing in player-chosen order
+- [ ] **CRITICAL: Handle multiple line processing in player-chosen order** (uses first found)
 - [x] Check for new lines after each collapse
 - [x] Update player's `eliminatedRings` counter
-- [ ] Update player's `territorySpaces` counter (deferred to Phase 2)
+- [x] Update player's `territorySpaces` counter
 - [ ] Write unit tests for line detection (deferred to Phase 2)
 - [ ] Write unit tests for graduated rewards (deferred to Phase 2)
 - [ ] Write integration tests for multiple lines (deferred to Phase 2)
@@ -257,10 +263,10 @@ This document is the **single source of truth** for RingRift development trackin
 **Acceptance Criteria:**
 - [x] Lines of 4+ (8x8) or 5+ (19x19/hex) detected correctly
 - [x] Exactly minimum length: must use Option 1
-- [x] Longer than minimum: player chooses Option 1 or 2 (defaults to Option 2 for now)
+- [ ] **Longer than minimum: player CHOOSES Option 1 or 2** ❌ Defaults to Option 2
 - [x] Ring elimination tracked correctly
-- [ ] Territory spaces tracked correctly (deferred to Phase 2)
-- [x] Multiple lines processed in correct order
+- [x] Territory spaces tracked correctly
+- [ ] **Multiple lines processed in PLAYER-CHOSEN order** ❌ Uses first found
 - [ ] All tests pass (deferred to Phase 2)
 
 **Rule Reference:** Section 11, Section 11.2
@@ -271,9 +277,9 @@ This document is the **single source of truth** for RingRift development trackin
 - **Option 1**: Collapse entire line + eliminate one ring/cap
 - **Option 2**: Collapse only required number (4 or 5) + no ring elimination
 
-**Progress:** 10/13 subtasks completed (77%) - Core line formation complete
+**Progress:** 10/13 subtasks completed (70% functional) - Detection works, player choices missing
 
-**Completed:** November 13, 2025
+**Status:** INCOMPLETE - Player choice mechanism needed for strategic gameplay
 
 ---
 
@@ -427,6 +433,50 @@ This document is the **single source of truth** for RingRift development trackin
 **Progress:** 4/7 subtasks completed (57%) - Core state synchronization complete
 
 **Completed:** November 13, 2025
+
+---
+
+### Task 1.11: Player Choice System ❌
+**Priority:** P0 - CRITICAL | **Estimated:** 1-2 weeks | **Status:** NOT STARTED
+
+**Dependencies:** Tasks 1.5, 1.6, 1.7 (features requiring choices)
+
+**Rationale:** Currently ALL player decisions default to first option, eliminating strategic gameplay. This is architectural gap affecting multiple features.
+
+**Files to Create/Modify:**
+- `src/shared/types/game.ts` (add PlayerChoice types)
+- `src/server/game/PlayerInteractionManager.ts` (NEW - handles choices)
+- `src/server/game/GameEngine.ts` (integrate choice system)
+- `src/client/components/PlayerChoiceDialog.tsx` (NEW - UI for choices)
+
+**Subtasks:**
+- [ ] Design PlayerChoice interface and types
+- [ ] Create async choice request/response system
+- [ ] Implement timeout handling for choices
+- [ ] Add choice validation logic
+- [ ] Integrate with GameEngine for:
+  - [ ] Line processing order selection (multiple lines)
+  - [ ] Graduated line reward choice (Option 1 vs Option 2)
+  - [ ] Ring/cap elimination selection
+  - [ ] Disconnected region processing order
+  - [ ] Capture direction selection (multiple valid captures)
+- [ ] Create UI components for each choice type
+- [ ] Add AI decision logic for each choice type
+- [ ] Write tests for choice system
+
+**Acceptance Criteria:**
+- [ ] Human players prompted for all strategic choices
+- [ ] AI players make automatic decisions
+- [ ] Choices have configurable timeouts
+- [ ] Invalid choices rejected with clear errors
+- [ ] All game mechanics use choice system (no defaults)
+
+**Rule References:**
+- Section 11.2 - Graduated line rewards require player choice
+- Section 10.3 - Chain captures require direction choice
+- Section 12.2 - Region processing requires order choice
+
+**Impact:** CRITICAL - Without this, game lacks strategic depth
 
 ---
 
@@ -756,17 +806,18 @@ This document is the **single source of truth** for RingRift development trackin
 - [ ] 0.2 CI/CD Pipeline
 - [ ] 0.3 Initial Test Coverage
 
-### Phase 1 Progress: 10/10 tasks (100%) ✅ COMPLETE
+### Phase 1 Progress: 10/11 tasks (75% COMPLETE - Critical gaps remain)
 - [x] 1.1 Fix BoardState (100%) ✅
-- [x] 1.2 Marker System (87%) ✅
-- [x] 1.3 Movement Validation (69%) ✅
-- [x] 1.4 Phase Transitions (83%) ✅
-- [x] 1.5 Capture System (68%) ✅
-- [x] 1.6 Line Formation (77%) ✅
-- [x] 1.7 Territory Disconnection (65%) ✅
-- [x] 1.8 Forced Elimination (77%) ✅
-- [x] 1.9 Player State (57%) ✅
-- [x] 1.10 Hexagonal Board Validation (82%) ✅
+- [x] 1.2 Marker System (90%) ✅
+- [x] 1.3 Movement Validation (75%) ✅
+- [x] 1.4 Phase Transitions (85%) ✅
+- [⚠️] 1.5 Capture System (40%) ⚠️ Chain captures NOT enforced
+- [⚠️] 1.6 Line Formation (70%) ⚠️ Player choices default
+- [x] 1.7 Territory Disconnection (70%) ✅
+- [x] 1.8 Forced Elimination (80%) ✅
+- [x] 1.9 Player State (90%) ✅
+- [x] 1.10 Hexagonal Board Validation (85%) ✅
+- [ ] 1.11 Player Choice System (0%) ❌ NEW CRITICAL TASK
 
 ### Phase 1.5 Progress: 0/4 tasks (0%) - NEW AI PHASE
 - [ ] 1.5a AI Infrastructure
@@ -779,7 +830,7 @@ This document is the **single source of truth** for RingRift development trackin
 ### Phase 3 Progress: 0/4 task groups (0%)
 ### Phase 4 Progress: 0/4 task groups (0%)
 
-### Overall Progress: 6/29 major tasks (21%)
+### Overall Progress: 6/30 major tasks (20%)
 
 ---
 

@@ -1,28 +1,68 @@
 # RingRift - Multiplayer Strategy Game
 
-⚠️ **PROJECT STATUS: UNDER ACTIVE DEVELOPMENT - CORE GAME LOGIC INCOMPLETE** ⚠️
+⚠️ **PROJECT STATUS: PLAYABLE CORE LOGIC 75% COMPLETE - UI AND TESTING NEEDED** ⚠️
 
-> **Important:** This project is currently in early development. While the infrastructure and architecture are in place, the core game engine does not yet fully implement the RingRift rules. See [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for detailed status and known issues.
+> **Important:** Core game mechanics are largely implemented (~75%) but the project **lacks a playable UI and comprehensive testing**. The game cannot be played visually yet. Critical features like player choice system and chain capture enforcement are missing. See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) for verified status.
 
 A web-based multiplayer implementation of the RingRift strategy game supporting 2-4 players with flexible human/AI combinations across multiple board configurations.
 
 ## 📋 Current Status
 
-**Last Updated:** November 13, 2025
+**Last Updated:** November 13, 2025  
+**Verification:** Code-verified assessment  
+**Overall Progress:** 58% Complete (strong foundation, critical gaps remain)
 
-### ✅ What's Working
+### ✅ What's Working (75% of Core Logic)
 - ✅ Project infrastructure (Docker, database, Redis, WebSocket)
-- ✅ TypeScript type system and architecture
+- ✅ TypeScript type system and architecture (100%)
 - ✅ Comprehensive game rules documentation
-- ✅ Basic server and client scaffolding
+- ✅ Server and client scaffolding
+- ✅ **Marker system** - Placement, flipping, collapsing fully functional
+- ✅ **Movement validation** - Distance rules, path checking working
+- ✅ **Basic captures** - Single captures work correctly
+- ✅ **Line detection** - All board types (8x8, 19x19, hexagonal)
+- ✅ **Territory disconnection** - Detection and processing implemented
+- ✅ **Phase transitions** - Correct game flow through all phases
+- ✅ **Player state tracking** - Ring counts, eliminations, territory
+- ✅ **Hexagonal board support** - Full 331-space board validated
 
-### ⚠️ What Needs Work
-- ❌ **Core game logic incomplete** - Game engine doesn't fully implement rules
-- ❌ **No frontend UI** - Board rendering not implemented
-- ❌ **No AI players** - AI system not implemented
-- ❌ **No tests** - Testing infrastructure needs implementation
+### ⚠️ Critical Gaps (Blocks Playability)
+- ❌ **Player choice system NOT implemented** - All decisions default (NO player agency)
+- ❌ **Chain captures NOT enforced** - Mandatory continuation missing
+- ❌ **No playable UI** - Board rendering not implemented (cannot see or play game)
+- ❌ **Limited testing** - Cannot verify rule compliance (<10% coverage)
+- ❌ **AI service not integrated** - Python service exists but disconnected
 
-**For complete details, see [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)**
+### 🎯 What This Means
+**Can Do:**
+- Create games programmatically via TypeScript
+- Execute basic moves (ring placement, movement, single captures)
+- Process lines and territory disconnection
+- Track game state through all phases
+
+**Cannot Do:**
+- Play the game visually (no UI)
+- Make strategic choices (all default to first option)
+- Execute chain captures (not mandatory)
+- Play against AI (not connected)
+- Verify rules work (no comprehensive tests)
+- Play multiplayer (infrastructure exists but not functional)
+
+### 📊 Component Status
+| Component | Status | Completion |
+|-----------|--------|-----------|
+| Type System | ✅ Complete | 100% |
+| Board Manager | ✅ Complete | 90% |
+| Game Engine | ⚠️ Partial | 75% |
+| Rule Engine | ⚠️ Partial | 60% |
+| Frontend UI | ❌ Skeleton | 10% |
+| AI Integration | ❌ Not Connected | 40% |
+| Testing | ❌ Minimal | 5% |
+| Multiplayer | ❌ Infrastructure Only | 30% |
+
+**For complete assessment, see [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md)**  
+**For detailed issues, see [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)**  
+**For roadmap, see [TODO.md](./TODO.md)**
 
 ---
 

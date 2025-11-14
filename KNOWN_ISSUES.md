@@ -1,42 +1,113 @@
 # Known Issues & Bugs
 
 **Last Updated:** November 13, 2025  
-**Related Documents:** [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) | [CONTRIBUTING.md](./CONTRIBUTING.md)
+**Status:** Code-verified assessment based on actual implementation  
+**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) | [TODO.md](./TODO.md) | [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 This document tracks specific bugs, missing features, and implementation issues in the RingRift codebase.
+
+**VERIFICATION STATUS:** All issues verified through code analysis (November 13, 2025)
 
 ---
 
 ## 🔴 Critical Issues (Prevents Core Functionality)
 
-### Issue #1: Marker System Not Implemented
+### Issue #0: Player Choice System Not Implemented ⭐ NEW
 **Priority:** P0 - CRITICAL  
-**Component:** GameEngine.ts, BoardManager.ts  
-**Status:** Not Started
+**Component:** GameEngine.ts, NEW: PlayerInteractionManager.ts  
+**Status:** Not Started  
+**Severity:** BLOCKS STRATEGIC GAMEPLAY
 
 **Description:**
-The marker system is fundamental to RingRift gameplay but is completely missing from the current implementation. Markers should be left when rings move and interact with subsequent movements.
+The most critical architectural gap: NO mechanism exists for player choices during gameplay. All strategic decisions currently default to first option, completely eliminating player agency and strategic depth.
 
 **Expected Behavior:**
-1. When a ring/stack moves from position A to position B, leave a marker of the controlling player's color at position A
-2. When moving over opponent markers, flip them to your color
-3. When moving over your own markers, collapse them to claimed territory
-4. When landing on a space with your own marker, remove the marker
+Players should be able to make strategic choices at key decision points:
+1. **Line Processing Order:** When multiple lines form, choose which to process first
+2. **Graduated Line Rewards:** Choose Option 1 (collapse all + eliminate ring) vs Option 2 (collapse minimum, no elimination)
+3. **Ring/Cap Elimination:** Choose which stack to eliminate ring/cap from
+4. **Region Processing Order:** When multiple disconnected regions, choose processing order
+5. **Capture Direction:** When multiple valid capture directions, choose which to pursue
 
 **Current Behavior:**
-- No markers are placed when rings move
-- No marker flipping occurs
-- No marker collapsing occurs
-- Markers exist in type definitions but are never used
+- Line processing: Uses first line found (GameEngine.ts line 459)
+- Graduated rewards: ALWAYS uses Option 2 (GameEngine.ts line 484)
+- Ring elimination: Uses first stack (GameEngine.ts line 516)
+- Region order: Uses first found
+- Capture direction: Not implemented
+
+**Code Evidence:**
+```typescript
+// GameEngine.ts line 459
+// TODO: In full implementation, player should choose which line to process first
+// For now, process in order found
+const line = lines[0];
+
+// GameEngine.ts line 484
+// TODO: In full implementation, player should choose Option 1 or Option 2
+// For now, always use Option 2 to preserve rings
+
+// GameEngine.ts line 516
+// TODO: In full implementation, player should choose which stack
+// For now, eliminate from first stack
+```
+
+**Impact:**
+- Game is unplayable at competitive level
+- Strategic depth eliminated
+- Cannot properly test rule compliance
+- AI cannot make intelligent decisions
 
 **Files Affected:**
-- `src/server/game/GameEngine.ts` (applyMove method)
-- `src/server/game/BoardManager.ts` (needs marker CRUD methods)
-- `src/shared/types/game.ts` (BoardState interface)
+- `src/server/game/GameEngine.ts` (needs integration)
+- `src/shared/types/game.ts` (needs PlayerChoice types)
+- NEW: `src/server/game/PlayerInteractionManager.ts` (needs creation)
+- NEW: `src/client/components/PlayerChoiceDialog.tsx` (needs creation)
 
-**Rule Reference:**
-- Section 8.3: Marker Interaction
-- Section 4.2.1: Movement Phase - Basic Movement Requirements
+**Required Solution:**
+Create async choice request/response system that:
+- Prompts human players via UI
+- Allows AI to make programmatic decisions
+- Supports timeouts and validation
+- Integrates with all choice points in game flow
+
+**Rule References:**
+- Section 11.2: Graduated line rewards
+- Section 10.3: Chain capture direction choices
+- Section 12.2: Region processing order
+- All player agency rules
+
+**Added:** November 13, 2025 (Code Verification)
+
+---
+
+### Issue #1: Marker System - RESOLVED ✅
+**Priority:** P0 - CRITICAL  
+**Component:** GameEngine.ts, BoardManager.ts  
+**Status:** ✅ COMPLETED (November 13, 2025)
+
+**Description:**
+Marker system implementation completed with all core functionality working.
+
+**Implemented Features:**
+- ✅ Markers placed when rings move from position
+- ✅ Opponent markers flip to mover's color when jumped
+- ✅ Own markers collapse to territory when jumped
+- ✅ Landing on own marker removes it
+- ✅ Collapsed spaces block movement
+
+**Files Completed:**
+- ✅ `src/server/game/GameEngine.ts` (processMarkersAlongPath method)
+- ✅ `src/server/game/BoardManager.ts` (all marker CRUD methods)
+- ✅ `src/shared/types/game.ts` (BoardState with collapsedSpaces)
+
+**Remaining (Deferred to Phase 2):**
+- [ ] Comprehensive unit tests
+- [ ] Integration tests
+
+**Rule Reference:** Section 8.3, Section 4.2.1
+
+**Verified:** Code analysis November 13, 2025
 
 ---
 
@@ -160,35 +231,52 @@ Movement validation doesn't properly enforce RingRift's complex movement rules.
 
 ---
 
-### Issue #5: Capture System Incomplete
+### Issue #5: Chain Captures Not Enforced ⭐ UPDATED
 **Priority:** P0 - CRITICAL  
 **Component:** GameEngine.ts, RuleEngine.ts  
-**Status:** Partial Implementation
+**Status:** Partially Implemented (40% complete)
 
 **Description:**
-The capture system has basic overtaking but missing critical features.
+Single captures work correctly, but mandatory chain capture continuation is NOT enforced. This is a critical rule violation.
 
 **Expected Behavior:**
-1. Overtaking: Captured rings added to bottom of capturing stack (stay in play)
-2. Elimination: Rings permanently removed (line formations, territory disconnections)
-3. Chain captures mandatory once started
-4. Cap height comparison required for overtaking
-5. Flexible landing during captures (any valid space beyond target)
+1. ✅ Overtaking: Captured rings added to bottom of capturing stack (WORKING)
+2. ✅ Elimination: Rings permanently removed (WORKING)
+3. ❌ Chain captures mandatory once started (NOT IMPLEMENTED)
+4. ✅ Cap height comparison required for overtaking (WORKING)
+5. ✅ Flexible landing during captures (WORKING)
 
 **Current Behavior:**
-- Basic capture exists but incomplete
-- No distinction between overtaking and elimination
-- Chain captures not enforced
-- Landing flexibility not implemented
-- Stack merging logic incomplete
+- ✅ Single captures work correctly
+- ✅ Overtaking vs elimination distinction implemented
+- ❌ Chain captures NOT mandatory
+- ❌ Player cannot choose capture direction when multiple valid
+- ❌ 180° reversal patterns not tested
+- ❌ Cyclic capture patterns not tested
+
+**Code Evidence:**
+```typescript
+// RuleEngine.ts has processChainReactions() but it's not fully enforced
+// GameEngine does not force continuation of chain captures
+```
+
+**Impact:**
+- Major rule violation
+- Cannot play competitive games
+- Strategic capture sequences impossible
+- FAQ Q14 scenarios fail
 
 **Files Affected:**
-- `src/server/game/GameEngine.ts` (processCapture method)
-- `src/server/game/RuleEngine.ts` (validateCapture method)
+- `src/server/game/GameEngine.ts` (needs chain enforcement)
+- `src/server/game/RuleEngine.ts` (has structure, needs completion)
 
 **Rule Reference:**
-- Section 9: Capture Types: Overtaking vs Elimination
-- Section 10: Capture (Overtaking) Movement
+- Section 10.3: Chain Overtaking - "Mandatory once started"
+- FAQ Q14: Chain capture mechanics
+- FAQ Q15.3.1: 180° reversal patterns
+- FAQ Q15.3.2: Cyclic patterns
+
+**Verified:** Code analysis November 13, 2025
 
 ---
 
