@@ -68,13 +68,15 @@ const ringPlacement: Move = {
   moveNumber: 1
 };
 
-const placementResult = gameEngine.makeMove(ringPlacement);
-console.log(`✅ Ring placement result: ${placementResult.success ? 'SUCCESS' : 'FAILED'}`);
-if (placementResult.success) {
-  console.log(`📍 Ring placed at (${ringPlacement.to.x}, ${ringPlacement.to.y})`);
-  console.log(`🎲 New phase: ${gameEngine.getGameState().currentPhase}`);
-  console.log(`⏰ Current player: ${gameEngine.getGameState().currentPlayer}`);
-}
+(async () => {
+  const placementResult = await gameEngine.makeMove(ringPlacement);
+  console.log(`✅ Ring placement result: ${placementResult.success ? 'SUCCESS' : 'FAILED'}`);
+  if (placementResult.success) {
+    console.log(`📍 Ring placed at (${ringPlacement.to.x}, ${ringPlacement.to.y})`);
+    console.log(`🎲 New phase: ${gameEngine.getGameState().currentPhase}`);
+    console.log(`⏰ Current player: ${gameEngine.getGameState().currentPlayer}`);
+  }
+})();
 
 // Test 5: Turn Progression
 console.log('\n=== Test 5: Turn Progression ===');

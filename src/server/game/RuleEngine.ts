@@ -224,14 +224,36 @@ export class RuleEngine {
       return false;
     }
 
-    const fromKey = positionToString(move.from);
-    const attackerStack = gameState.board.stacks.get(fromKey);
-    if (!attackerStack || attackerStack.controllingPlayer !== move.player) {
+    return this.validateCaptureSegment(
+      move.from,
+      move.captureTarget,
+      move.to,
+      move.player,
+      gameState.board
+    );
+  }
+
+  /**
+   * Core validation for a single overtaking capture segment from `from`
+   * over `target` to `landing`. This mirrors the Rust engine's
+   * `validate_capture_segment` at a high level and is used both by
+   * `validateCapture` and by capture move generation.
+   */
+  private validateCaptureSegment(
+    from: Position,
+    target: Position,
+    landing: Position,
+    player: number,
+    board: BoardState
+  ): boolean {
+    const fromKey = positionToString(from);
+    const attackerStack = board.stacks.get(fromKey);
+    if (!attackerStack || attackerStack.controllingPlayer !== player) {
       return false;
     }
 
-    const targetKey = positionToString(move.captureTarget);
-    const targetStack = gameState.board.stacks.get(targetKey);
+    const targetKey = positionToString(target);
+    const targetStack = board.stacks.get(targetKey);
     if (!targetStack) {
       return false;
     }
@@ -241,20 +263,20 @@ export class RuleEngine {
       return false;
     }
 
-    // Cannot capture own stacks (though can jump over them)
+    // Cannot capture own stacks (though can jump over them in non-capture moves)
     if (attackerStack.controllingPlayer === targetStack.controllingPlayer) {
       return false;
     }
 
     // Check if movement from attacker position to target is valid
     // Must be in straight line and path must be clear up to target
-    if (!this.isValidCaptureDirection(move.from, move.captureTarget, gameState.board)) {
+    if (!this.isValidCaptureDirection(from, target, board)) {
       return false;
     }
 
     // Rule Reference: Section 10.2 - Must have valid landing space beyond target
     // Check if path from attacker through target to landing is valid
-    if (!this.isValidCaptureLanding(move.from, move.captureTarget, move.to, attackerStack.stackHeight, gameState.board)) {
+    if (!this.isValidCaptureLanding(from, target, landing, attackerStack.stackHeight, board)) {
       return false;
     }
 
@@ -694,59 +716,152 @@ export class RuleEngine {
   }
 
   /**
-   * Gets valid capture moves
-   * Rule Reference: Section 10.1 - Checking for available captures
+   * Gets valid capture moves using a directional enumeration similar to the
+   * Rust CaptureProcessor: from each stack, walk along rays in all movement
+   * directions, find the first capturable target on each ray, then enumerate
+   * valid landing positions beyond that target.
+   *
+   * Rule Reference: Section 10.1, 10.2 - Overtaking capture requirements
    */
   private getValidCaptures(player: number, gameState: GameState): Move[] {
     const moves: Move[] = [];
-    const playerStacks = this.getPlayerStacks(player, gameState.board);
-    
+    const board = gameState.board;
+    const playerStacks = this.getPlayerStacks(player, board);
+
+    const directions = this.getCaptureDirections();
+
     for (const stackPos of playerStacks) {
-      const stackKey = positionToString(stackPos);
-      const stack = gameState.board.stacks.get(stackKey);
-      if (!stack) continue;
+      const fromKey = positionToString(stackPos);
+      const attackerStack = board.stacks.get(fromKey);
+      if (!attackerStack) continue;
 
-      const adjacentPositions = this.getAdjacentPositions(stackPos);
+      for (const dir of directions) {
+        // Step outward from the attacker to find the first potential target
+        let step = 1;
+        let targetPos: Position | undefined;
 
-      for (const adjPos of adjacentPositions) {
-        const adjKey = positionToString(adjPos);
-        const adjStack = gameState.board.stacks.get(adjKey);
-        
-        // Check if this is a valid capture target
-        if (adjStack && 
-            adjStack.controllingPlayer !== player &&
-            stack.capHeight >= adjStack.capHeight) {
-          
-          // For each valid target, find valid landing positions
-          // This is simplified - in a full implementation, would check all valid landings
-          const allPositions = this.boardManager.getAllPositions();
-          
-          for (const landingPos of allPositions) {
-            const testMove: Move = {
-              id: '',
-              type: 'overtaking_capture',
-              player,
-              from: stackPos,
-              captureTarget: adjPos,
-              to: landingPos,
-              timestamp: new Date(),
-              thinkTime: 0,
-              moveNumber: 0
-            };
+        while (true) {
+          const pos: Position = {
+            x: stackPos.x + dir.x * step,
+            y: stackPos.y + dir.y * step,
+            ...(dir.z !== undefined && { z: (stackPos.z || 0) + dir.z * step })
+          };
 
-            if (this.validateCapture(testMove, gameState)) {
-              moves.push({
-                ...testMove,
-                id: `capture-${positionToString(stackPos)}-${positionToString(adjPos)}-${positionToString(landingPos)}`,
-                moveNumber: gameState.moveHistory.length + 1
-              });
-            }
+          if (!this.boardManager.isValidPosition(pos)) {
+            break; // Off-board
           }
+
+          // Collapsed spaces block both target search and landing beyond
+          if (this.boardManager.isCollapsedSpace(pos, board)) {
+            break;
+          }
+
+          const posKey = positionToString(pos);
+          const stackAtPos = board.stacks.get(posKey);
+
+          if (stackAtPos && stackAtPos.rings.length > 0) {
+            // First stack encountered along this ray is the only possible
+            // capture target in this direction.
+            if (
+              stackAtPos.controllingPlayer !== player &&
+              attackerStack.capHeight >= stackAtPos.capHeight
+            ) {
+              targetPos = pos;
+            }
+            break;
+          }
+
+          step++;
+        }
+
+        if (!targetPos) continue;
+
+        // From the target, walk further along the same ray to find candidate
+        // landing positions. Each candidate is validated via
+        // validateCaptureSegment to ensure consistency with validateMove.
+        let landingStep = 1;
+        while (true) {
+          const landingPos: Position = {
+            x: targetPos.x + dir.x * landingStep,
+            y: targetPos.y + dir.y * landingStep,
+            ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep })
+          };
+
+          if (!this.boardManager.isValidPosition(landingPos)) {
+            break;
+          }
+
+          // Collapsed spaces and stacks at the landing position block further
+          // landings along this ray (Section 10.2).
+          if (this.boardManager.isCollapsedSpace(landingPos, board)) {
+            break;
+          }
+
+          const landingKey = positionToString(landingPos);
+          const landingStack = board.stacks.get(landingKey);
+          if (landingStack && landingStack.rings.length > 0) {
+            break;
+          }
+
+          const testMove: Move = {
+            id: '',
+            type: 'overtaking_capture',
+            player,
+            from: stackPos,
+            captureTarget: targetPos,
+            to: landingPos,
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber: 0
+          };
+
+          if (this.validateCaptureSegment(stackPos, targetPos, landingPos, player, board)) {
+            moves.push({
+              ...testMove,
+              id: `capture-${positionToString(stackPos)}-${positionToString(targetPos)}-${positionToString(landingPos)}`,
+              moveNumber: gameState.moveHistory.length + 1
+            });
+          }
+
+          // Continue stepping to allow landing further along the ray, as the
+          // rules permit landing on any valid space beyond the target
+          // provided distance and path constraints are satisfied.
+          landingStep++;
         }
       }
     }
 
     return moves;
+  }
+
+  /**
+   * Directions along which captures may occur, based on board type.
+   * For square boards we use the 8 Moore directions; for hex we use
+   * the 6 standard cube-coordinate directions.
+   */
+  private getCaptureDirections(): { x: number; y: number; z?: number }[] {
+    if (this.boardConfig.type === 'hexagonal') {
+      return [
+        { x: 1, y: 0, z: -1 },   // East
+        { x: 0, y: 1, z: -1 },   // Southeast
+        { x: -1, y: 1, z: 0 },   // Southwest
+        { x: -1, y: 0, z: 1 },   // West
+        { x: 0, y: -1, z: 1 },   // Northwest
+        { x: 1, y: -1, z: 0 }    // Northeast
+      ];
+    }
+
+    // Square boards: 8-directional Moore adjacency
+    return [
+      { x: 1, y: 0 },   // E
+      { x: 1, y: 1 },   // SE
+      { x: 0, y: 1 },   // S
+      { x: -1, y: 1 },  // SW
+      { x: -1, y: 0 },  // W
+      { x: -1, y: -1 }, // NW
+      { x: 0, y: -1 },  // N
+      { x: 1, y: -1 }   // NE
+    ];
   }
 
   /**

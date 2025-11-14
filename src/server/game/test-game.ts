@@ -2,7 +2,7 @@ import { GameEngine } from './GameEngine';
 import { Player, TimeControl } from '../../shared/types/game';
 
 // Simple test to verify the game engine works
-function testRingRiftGame() {
+async function testRingRiftGame() {
   console.log('🎮 Testing RingRift Game Engine...\n');
 
   // Create test players
@@ -60,7 +60,7 @@ function testRingRiftGame() {
   // Test ring placement
   console.log('🔄 Testing ring placement...');
   try {
-    const placementResult = gameEngine.makeMove({
+    const placementResult = await gameEngine.makeMove({
       type: 'place_ring',
       player: 1,
       to: { x: 3, y: 3 },
@@ -107,6 +107,7 @@ function testRingRiftGame() {
 
 // Run the test
 if (require.main === module) {
+  // eslint-disable-next-line @typescript-eslint/no-floating-promises
   testRingRiftGame();
 }
 

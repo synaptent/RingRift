@@ -8,7 +8,7 @@ The rule documentation is structured to facilitate different learning approaches
 - **Visual Learners**: Focus on the diagrams and flowcharts throughout the document
 - **Tactical Players**: Dive into the [Strategy Guide](#14-strategy-guide-all-versions) and [FAQ](#154-frequently-asked-questions)
 - **Rules Enthusiasts**: Explore the full [19×19 Version](#3-core-game-elements-19x19-full-version) details
-- **Looking for Specific Answers**: Check the [FAQ](#154-frequently-asked-questions) or use the [Quick Reference Guide](#19-quick-reference-guide)
+- **Looking for Specific Answers**: Check the [FAQ](#154-frequently-asked-questions) or use the [Quick Reference Guide](#162-core-mechanics-reference-all-versions)
 
 ### Learning and Playing RingRift
 
@@ -97,6 +97,7 @@ Above all, embrace the dynamic and emergent nature of the game - the richest str
     - [11.1 Line Formation Rules](#111-line-formation-rules)
     - [11.2 Collapse Process](#112-collapse-process)
     - [11.3 Multiple Lines](#113-multiple-lines)
+  - [12. Area Disconnection \& Collapse (Square \& Hexagonal Versions)](#12-area-disconnection--collapse-square--hexagonal-versions)
     - [12.1 Territory Rules](#121-territory-rules)
       - [Core Territory Concepts](#core-territory-concepts)
     - [12.2 Disconnection Process](#122-disconnection-process)
@@ -144,22 +145,22 @@ Above all, embrace the dynamic and emergent nature of the game - the richest str
       - [Q24: What happens if I control stacks but have no valid placement, movement, or capture options on my turn?](#q24-what-happens-if-i-control-stacks-but-have-no-valid-placement-movement-or-capture-options-on-my-turn)
   - [16. Simplified 8×8 Version and Comparison with Full Version](#16-simplified-88-version-and-comparison-with-full-version)
     - [16.1 Visual Summary of Territory Disconnection Rules](#161-visual-summary-of-territory-disconnection-rules)
-    - [16.8 Full 19×19 Version](#168-full-1919-version)
-      - [16.8.1 Major Differences from 8×8](#1681-major-differences-from-88)
-      - [16.8.2 Components \& Setup (19×19)](#1682-components--setup-1919)
-      - [16.8.3 Turn Sequence Summary (Full)](#1683-turn-sequence-summary-full)
-      - [16.8.4 Detailed Rules](#1684-detailed-rules)
-        - [16.8.4.1 Movement \& Adjacency](#16841-movement--adjacency)
-        - [16.8.4.2 Overtaking vs. Elimination](#16842-overtaking-vs-elimination)
-        - [16.8.4.3 Lines \& Collapses (19x19 / Hexagonal Focus)](#16843-lines--collapses-19x19--hexagonal-focus)
-        - [16.8.4.4 Territory Disconnection](#16844-territory-disconnection)
-        - [16.8.4.5 Victory Conditions \& Tiebreakers](#16845-victory-conditions--tiebreakers)
-      - [16.8.5 Quick Start Examples (19×19)](#1685-quick-start-examples-1919)
-      - [16.8.6 Territory Disconnection Example (19×19 Using Von Neumann/4-Direction Adjacency)](#1686-territory-disconnection-example-1919-using-von-neumann4-direction-adjacency)
-      - [16.8.7 Victory Through Territory Control](#1687-victory-through-territory-control)
-      - [16.8.8 Chain Reaction Example](#1688-chain-reaction-example)
-    - [16.9 Comparing the Three Editions](#169-comparing-the-three-editions)
-    - [16.10 Closing Note](#1610-closing-note)
+    - [16.9 Full 19×19 Version](#169-full-1919-version)
+      - [16.9.1 Major Differences from 8×8](#1691-major-differences-from-88)
+      - [16.9.2 Components \& Setup (19×19)](#1692-components--setup-1919)
+      - [16.9.3 Turn Sequence Summary (Full)](#1693-turn-sequence-summary-full)
+      - [16.9.4 Detailed Rules](#1694-detailed-rules)
+        - [16.9.4.1 Movement \& Adjacency](#16941-movement--adjacency)
+        - [16.9.4.2 Overtaking vs. Elimination](#16942-overtaking-vs-elimination)
+        - [16.9.4.3 Lines \& Collapses (19x19 / Hexagonal Focus)](#16943-lines--collapses-19x19--hexagonal-focus)
+        - [16.9.4.4 Territory Disconnection](#16944-territory-disconnection)
+        - [16.9.4.5 Victory Conditions \& Tiebreakers](#16945-victory-conditions--tiebreakers)
+      - [16.9.5 Quick Start Examples (19×19)](#1695-quick-start-examples-1919)
+      - [16.9.6 Territory Disconnection Example (19×19 Using Von Neumann/4-Direction Adjacency)](#1696-territory-disconnection-example-1919-using-von-neumann4-direction-adjacency)
+      - [16.9.7 Victory Through Territory Control](#1697-victory-through-territory-control)
+      - [16.9.8 Chain Reaction Example](#1698-chain-reaction-example)
+    - [16.10 Comparing the Three Editions](#1610-comparing-the-three-editions)
+    - [16.11 Closing Note](#1611-closing-note)
   - [17. Conclusion](#17-conclusion)
     - [Summary of RingRift](#summary-of-ringrift)
 
@@ -200,7 +201,7 @@ The game's rich strategic depth, tension and drama emerge from the interplay bet
 > - Sections marked "19×19 / Hexagonal Versions" apply to those two large-format versions.
 > - Sections marked "8×8 Version", "19×19 Version", or "Hexagonal Version" are specific.
 > - For player count variations, see [Section 13](#13-victory-conditions-all-versions).
-> - For a detailed comparison, see [Section 16.8](#168-comparing-the-three-editions).
+> - For a detailed comparison, see [Section 16.10](#1610-comparing-the-three-editions).
 
 #### 1.2.1 Version Comparison Summary
 
@@ -364,7 +365,7 @@ Each player's turn consists of distinct phases that must be executed in order:
 - 
  • **Placement Restrictions**:
 - Ring placement must only occur before the movement phase
-- **Subsequent Move Prerequisite:** Before a placement is considered valid, it must be confirmed that the resulting stack (at its new position and with its potentially new height) would have at least one legal move available according to the standard movement rules (Section 8 / Section 16.7.4.1). This check is performed on the hypothetical state *after* placement. If no legal move would be possible, the placement itself is illegal and cannot be chosen. For example, placing a ring to create a stack of height 9 on an 8x8 board is illegal anywhere, as no subsequent move is possible. This check applies to both placing on empty spaces and placing on top of existing stacks.
+- **Subsequent Move Prerequisite:** Before a placement is considered valid, it must be confirmed that the resulting stack (at its new position and with its potentially new height) would have at least one legal move available according to the standard movement rules (Section 8 and Sections 16.5.1 / 16.9.4.1). This check is performed on the hypothetical state *after* placement. If no legal move would be possible, the placement itself is illegal and cannot be chosen. For example, placing a ring to create a stack of height 9 on an 8x8 board is illegal anywhere, as no subsequent move is possible. This check applies to both placing on empty spaces and placing on top of existing stacks.
  • **Edge Cases**:
 - If a player must place a ring but no legal placement locations exist, the player forfeits their turn
 - Play continues normally, and if the situation changes to allow legal placements, the player may place rings on future turns
@@ -393,10 +394,11 @@ Each player's turn consists of distinct phases that must be executed in order:
 - Cannot pass through collapsed spaces or other rings (except during Overtaking)
   
  • **When Moving Over Markers**:
-- Must land on first empty space after markers (non-capture moves only)
-- Opponent markers flip to your color
-- Your markers become collapsed territory
-- Empty spaces remain unchanged
+- Follow the unified movement landing rule (Section 8.2): you may land on **any valid space beyond the markers** along the line of travel, provided it is either **(a) empty** or **(b) occupied by a single marker of the moving stack's color**, and the total distance from start to landing is at least your stack's height.
+- You are **not required to stop at the first valid space** after the markers.
+- Opponent markers flip to your color.
+- Your markers become collapsed territory.
+- Empty spaces remain unchanged.
 
 ### 4.3 Capture Phase
 
@@ -735,7 +737,7 @@ graph LR
  - Remain unchanged when jumped over.
  - Count toward minimum distance requirement.
  • **Landing on Same-Color Markers**:
- - If a move or overtaking capture segment concludes by landing on a space occupied by a single marker of the moving stack's color (and all other movement conditions like distance and path legality are met), first the marker occupyng that space is removed from the board, and then next the stack lands on that space. This marker removal occurs immediately and *before* the Post-Movement Processing phase (checking for lines and disconnections).
+ - If a move or overtaking capture segment concludes by landing on a space occupied by a single marker of the moving stack's color (and all other movement conditions like distance and path legality are met), first the marker occupying that space is removed from the board, and then next the stack lands on that space. This marker removal occurs immediately and *before* the Post-Movement Processing phase (checking for lines and disconnections).
 ## 9. Capture Types: Overtaking vs Elimination (All Versions)
 
 There are two fundamentally different ways to capture rings in RingRift - Overtaking vs Elimination. Understanding this distinction is crucial for play:
@@ -796,20 +798,19 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
  • If no valid landing space exists beyond the target that meets the minimum distance requirement, capture in that direction is disallowed.
 ### 10.3 Chain Overtaking
 
- • Once an Overtaking capture begins, continued chain Overtaking (capturing) is mandatory
- • **Mandatory Continuation Rule**: At each landing position after a capture, IF any legal capture segment exists from that position, you MUST perform one of them (mandatory). However, you get to choose WHICH one to perform (strategic choice).
- • **Strategic Chain-Ending**: You can strategically choose a capture that leads to a position with NO further legal captures, thus ending the mandatory chain - even if other capture choices from your current position would have led to positions with more captures available.
-    - This is an intentional tactical element that allows players to avoid unfavorable forced sequences
+ • **Mandatory Chain Rule:** Once an Overtaking capture begins, chain Overtaking becomes mandatory: at each landing position, if any legal capture segment exists, you MUST perform one of them. You may choose which legal capture segment to take when multiple options are available (strategic choice).
+ • **Strategic Chain-Ending:** You can deliberately choose a capture that leads to a position with NO further legal captures, thus ending the mandatory chain—even if other available capture choices from your current position would have allowed it to continue longer.
+    - This is an intentional tactical element that lets players avoid unfavorable forced sequences.
     - Example: From position X, you can capture in direction A (leading to 4 more forced captures), direction B (leading to 2 more), or direction C (leading to no more captures). You may choose C to end the chain.
- • Can change direction between captures within the grid's movement axes
- • Can capture from same stack multiple times (through reversal or cyclic patterns)
+ • You may change direction between capture segments within the grid's movement axes (8 directions on square boards, 6 on hex).
+ • You may capture from the same stack multiple times (through reversal or cyclic patterns).
  • Chain captures must continue even if they would:
-    - Result in the capturing player having no rings/stacks left
-    - Create lines of required length (4+ or 5+) markers
-    - Create disconnected regions
-    - Result in reaching the victory threshold (>50% of total rings)
-    - Reverse any of the temporarily achieved events above by continuing
- • Victory conditions are only checked after all turn phases are complete
+    - Result in the capturing player having no rings/stacks left.
+    - Create lines of required length (4+ or 5+) markers.
+    - Create disconnected regions.
+    - Cause you to reach the victory threshold (>50% of total rings).
+    - Reverse any of the temporarily achieved events above by continuing.
+ • Victory conditions are only checked after all turn phases are complete.
 
 ### 10.4 Capture Patterns
 
@@ -984,13 +985,13 @@ graph TD
 
 *In this example (assuming 19x19/Hex), Blue forms three lines of 5 markers (horizontal, diagonal up and diagonal down), all sharing intersections. When the player chooses to process the horizontal line first, it collapses to Blue's color. The other two potential lines no longer meet the 5+ consecutive marker requirement because their intersections are now collapsed spaces. This demonstrates why the order of processing lines can be strategically important.*
 
-. Area Disconnection & Collapse (Square & Hexagonal Versions)
+## 12. Area Disconnection & Collapse (Square & Hexagonal Versions)
 
 ### 12.1 Territory Rules
 
 #### Core Territory Concepts
 
- • **Conne## 12ctivity Definition**: Territory connectivity uses the appropriate adjacency rule for the game version:
+ • **Connectivity Definition**: Territory connectivity uses the appropriate adjacency rule for the game version:
     - **Square Boards (19x19 and 8x8 Versions)**: Von Neumann (4-direction orthogonal adjacency - up, down, left, right).
     - **Hexagonal Version**: Hexagonal (6-direction adjacency).
  • **Region Definition**: A region is any set of unoccupied or marker-occupied spaces connected via the relevant territory adjacency rule, bounded by rings/stacks, collapsed spaces, board edges, or markers forming a border.
@@ -998,10 +999,10 @@ graph TD
     - Collapsed spaces (of any color).
     - A continuous border formed *only* by markers of **one single player's color**.
     - Board edges.
-    - Any combination of the above. (Clarification: *All non-collapsed marker portions* of a disconnecting border must belong to the *same single player*. A border consisting of a player's markers combined with collapsed spaces of any color - including somer or all of other colors - still qualifies as a disconnecting border).
+    - Any combination of the above. (Clarification: *All non-collapsed marker portions* of a disconnecting border must belong to the *same single player*. A border consisting of a player's markers combined with collapsed spaces of any color - including some or all of other colors - still qualifies as a disconnecting border).
  • **Key Strategic Element**: Territory disconnection is one of the most powerful mechanics, potentially allowing massive ring elimination and dramatic shifts in control.
 
-> **Cross-Reference**: See [FAQ Q15](#q15-how-is-a-region-determined-to-be-surrounded-or-disconnected-version-specific) for detailed criteria and [Section 16.7.6](#1676-territory-disconnection-example-19x19-using-von-neumann4-direction-adjacency) for examples.
+> **Cross-Reference**: See [FAQ Q15](#q15-how-is-a-region-determined-to-be-surrounded-or-disconnected-version-specific) for detailed criteria and [Section 16.9.6](#1696-territory-disconnection-example-19x19-using-von-neumann4-direction-adjacency) for examples.
 
 ```mermaid
 graph TD
@@ -1120,27 +1121,23 @@ graph TD
  • Also collapse ALL non-collapsed marker spaces of the single color that form the border, even if they appear in separate sections around the border
  • All these markers become collapsed spaces of the moving player's (your) color, regardless of the color of the original markers
  • Note: If the border is around markers of different colors, only the spaces occupied by markers of the single color that actually forms the disconnecting border are collapsed
- • Eliminate all rings within the region (all rings in all stacks, regardless of color), they are claimed by the player moving (you)
- • **Self-Elimination Prerequisite Check:** Before processing each disconnected region, check whether you have at least one ring or stack cap under your control *outside that specific region*. 
-    - Each ring or stack cap (regardless of cap height) allows you to process exactly ONE region.
-    - A cap of any height (1, 2, 5, etc.) counts as "one cap" for this check.
-    - "Outside that specific region" means outside the particular region you are about to process, NOT outside all potentially disconnected regions.
-    - **Sequential Processing**: If multiple regions disconnect, check and process them one at a time. After processing each region and performing the mandatory self-elimination, recheck before processing the next region.
- • If this check fails (you have no ring/cap outside the region):
-    - Processing this disconnection is **illegal**
-    - The region remains disconnected but unprocessed
-    - No rings are eliminated from that region
- • If the check passes:
-    - You collapse the region and its single-color marker border (if applicable) to your color
-    - Then, you eliminate all rings within the now-collapsed region (all colors)
-    - Finally, you *must* eliminate one of your remaining controlled rings OR the entire cap of one of your remaining controlled stacks that is outside the just-processed region
- • All eliminated rings (those inside the region + your self-eliminated one) count toward your victory total.
+ • Eliminate all rings within the region (all rings in all stacks, regardless of color), they are claimed by the player moving (you).
+ • **Self-Elimination Prerequisite Check (Per Region):** Before you process a specific disconnected region, you must already have at least one ring or stack cap under your control that is located *outside that particular region*.
+    - Each such ring or cap can be used to process **exactly one** disconnected region.
+    - Disconnected regions are processed one at a time. Before processing each region, you re-check that you still have at least one ring or cap outside that region available for the mandatory self-elimination.
+    - **Equivalent Hypothetical View:** If you *hypothetically* eliminated all rings currently inside that region, you must still have at least one ring or cap somewhere else on the board afterward in order to pay the self-elimination cost. Because eliminating rings inside the region does not affect rings or caps outside it, these two formulations are logically equivalent.
+ • If you do **not** have any ring or cap outside that specific region that could be self-eliminated, processing that region is **illegal**: the region remains unchanged and no rings are eliminated.
+ • If the prerequisite **is** satisfied:
+    - You collapse the region and its single-color marker border (if applicable) to your color.
+    - Then, you eliminate all rings within the now-collapsed region.
+    - Finally, you *must* eliminate one of your remaining controlled rings or the entire cap of one of your remaining controlled stacks located outside the just-processed region.
+ • All eliminated rings (those inside the region plus your self-eliminated ring or cap) count toward your victory total.
  • Important Notes:
-    - Process each disconnected region in its full extent and include uncollapsed markers that are in the border as part of the disconnected region
-    - Moving player (you) chooses which of their (your) remaining rings or which stack's entire cap to Eliminate for each region. If you only have one remaining ring or ring stack cap under your control, you must eliminate it. If you have none to eliminate, then you are not allowed to process the disconnected region (meaning to collapse it and claim it as your territory).
+    - Process each disconnected region in its full extent and include uncollapsed markers that are in the border as part of the disconnected region.
+    - The moving player (you) chooses which of their (your) remaining rings or which stack's entire cap to eliminate for **each** processed region. If you only have one remaining ring or ring stack cap under your control outside that region, you must eliminate it. If you have none to eliminate, then you are **not** allowed to process that region (meaning to collapse it and claim it as your territory).
     - Next, all rings and ring stacks (comprising all rings within them) in the region are Eliminated, regardless of their color or stack position.
     • The player moving who caused the disconnection (you), claims (claim) all Eliminated rings toward their (your) victory total.
-    • After each region's spaces are marked as collapsed, and ring removals (Elimination) have been carried out, check again for disconnected regions (new ones are possible, due to Eliminations)
+    • After each region's spaces are marked as collapsed, and ring removals (Elimination) have been carried out, check again for disconnected regions (new ones are possible, due to Eliminations).
 
    ```mermaid
    graph TD
@@ -1256,15 +1253,14 @@ Note: With more than 50% of territory required for victory, simultaneous victory
 
 ### 13.3 Last Player Standing
 
- • Victory Condition:
- • Win by being the only player able to make legal moves - if the other two players lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, but you can move on your turn, and then if they still cannot move on their subsequent turns, then you win
- • This occurs for example when all opponents have no rings/stacks on board AND no rings in hand, or when their rings/stacks are completely blocked from movement, e.g. due to stack height movement requirements
- • Player Status Details:
- • A player is only considered eliminated when they have:
-    - No rings or stacks on the board, or when their rings/stacks are blocked from movement, AND
-    - No rings remaining in hand
- • Important: A player with rings in hand but no board presence is still active if legal placements exist
- • Recovery Possibility: An eliminated player can return to play if they gain control of a multicolored stack through its top ring becoming their color
+ • **Victory Condition:** A player wins by Last Player Standing if, after completing all phases of a turn and its post‑movement processing, they are the only player who has any legal action available on their next turn (a legal ring placement, non‑capture move, or overtaking capture), while all other players have no legal placements, movements, or captures.
+    - *Example Scenario:* Win by being the only player able to make legal moves—for instance, if all other players lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, while you still have at least one legal placement, movement, or capture available on yours.
+ • **Player Status Details:**
+    - A player is effectively eliminated when they have:
+      - No rings or stacks on the board, or when their rings/stacks are blocked from movement or capture, AND
+      - No rings remaining in hand.
+    - A player with rings in hand but no board presence is still active if any legal placements exist.
+ • **Recovery Possibility:** A previously eliminated player can return to play if they gain control of a multicolored stack through its top ring becoming their color, thereby regaining a controlled stack.
 
 ### 13.4 End of Game "Stalemate" Resolution
 
@@ -1368,7 +1364,7 @@ This victory system ensures every game reaches a definitive conclusion while rew
 > - **36 rings per player** (108 total rings)
 > - **Victory threshold** of >54 eliminated rings (>50% of total)
 >
-> Where rules differ between versions (8×8 vs. 19×19) or player counts (2, 3, or 4), this is explicitly indicated in headings or explained in the text. For comprehensive differences between game versions, refer to Section 16.8 which provides detailed comparisons.
+> Where rules differ between versions (8×8 vs. 19×19) or player counts (2, 3, or 4), this is explicitly indicated in headings or explained in the text. For comprehensive differences between game versions, refer to Section 16.10 which provides detailed comparisons.
 
 > **Note on Intentional Redundancy**: This FAQ section deliberately restates and expands upon rules presented elsewhere in the document, often using different phrasing to help clarify concepts. This deliberate redundancy ensures players can understand key concepts regardless of which section they read first and helps reinforce important rules through varied explanations.
 
@@ -1575,7 +1571,7 @@ A5: Yes and no. In a single jump segment, you can only Overtake (capture) the to
 
 #### Q6: What's the difference between Overtaking and Elimination captures?
 
-A6: Overtaking captures occur during movement when you jump over a ring or stack - the captured ring stays in play, placed at the bottom of your Overtaking (capturing) ring stack. Elimination captures happen when rings are permanently Eliminated from the board due to line formations, surrounded territory, or being in disconnected regions. Only Eliminated rings count toward the victory threshold (which is Elimating >50% of total starting rings).
+A6: Overtaking captures occur during movement when you jump over a ring or stack - the captured ring stays in play, placed at the bottom of your Overtaking (capturing) ring stack. Elimination captures happen when rings are permanently Eliminated from the board due to line formations, surrounded territory, or being in disconnected regions. Only Eliminated rings count toward the victory threshold (which is Eliminating >50% of total starting rings).
 
 #### Q7: What happens if I form multiple lines of markers? (Version Specific Length)
 
@@ -1601,7 +1597,7 @@ A8: Your turn ends immediately. If you have rings in hand but none on board, you
 
 #### Q9: What happens if a chain Overtaking capture would block all further moves?
 
-A9: The chain Overtaking capture sequence must still be completed, even if it creates a situation where no further legal moves would be possible (e.g., by creating collapsed spaces that block all paths). Chain captures cannot be ended voluntarily if any legal capture segments remain available from the current position.
+A9: The chain Overtaking capture sequence must still be completed, even if it creates a situation where no further legal moves would be possible (e.g., by creating collapsed spaces that block all paths). This is a direct consequence of the mandatory chain rule in Section 10.3: you cannot voluntarily end the sequence while any legal capture segment remains available from the current landing position.
 
 #### Q10: How are disconnected regions evaluated with multicolored stacks?
 
@@ -1622,16 +1618,14 @@ A13: These terms describe different ways of considering adjacent spaces:
 
 - Movement (19×19 and 8×8 versions)
 - Line Formation (19×19 and 8×8 versions)
-• Von Neumann neighborhood: Only includes the 4 orthogonally adjacent spaces. Used for:
-- Territory Connectivity checks (19×19 version only)
-- Territory Connectivity checks (**both 8x8 and 19x19** square versions use Von Neumann).
+• Von Neumann neighborhood: Only includes the 4 orthogonally adjacent spaces. Used for territory connectivity checks in **both 8x8 and 19x19** square versions.
 For example, from a space at (x,y):
 • Moore neighbors: (x+1,y), (x+1,y+1), (x,y+1), (x-1,y+1), (x-1,y), (x-1,y-1), (x,y-1), (x+1,y-1)
 • Von Neumann neighbors: (x+1,y), (x,y+1), (x-1,y), (x,y-1)
 
 #### Q14: When is Overtaking capture optional and when is it mandatory?
 
-A14: After an initial non-capturing move, if a legal Overtaking capture is available, you may choose whether or not to initiate the capture phase. However, once you begin an Overtaking sequence, making subsequent chain Overtaking capture jump segments are mandatory as long as legal additional Overtaking capture jump segments exist for the capturing ring stack from the landing space. While you can choose which Overtaking capture jump segment to make when multiple options exist, you cannot voluntarily end the sequence if any legal Overtaking capture jump segments remain (see Section 10.3 for details on Chain Overtaking).
+A14: After an initial non-capturing move, if a legal Overtaking capture is available, you may choose whether or not to initiate the capture phase. Once you choose to start an Overtaking sequence, the **Mandatory Chain Rule** from Section 10.3 applies: at each landing position, if any legal capture segment exists, you must perform one of them. You may choose which legal capture segment to take when multiple options exist (including one that leads to no further captures), but you cannot simply stop while at least one legal Overtaking capture remains available from your current landing space.
 
 #### Q15: How is a region determined to be "surrounded" or disconnected? (Version-specific)
 
@@ -1656,11 +1650,9 @@ A region is considered disconnected when it meets two criteria:
     • 1 player with rings on board: Only regions with *no* rings/stacks are disconnected.
     • **IMPORTANT EXCEPTION:** A region containing representation from **ALL** player colors currently on the board is **NEVER** disconnected, regardless of physical surrounding.
 
-When a region becomes disconnected:
-• All rings within the region are Eliminated from play. For example, if rings controlled by three different players are present on the board, any region that is orthogonally disconnected from the rest of the board and contains only rings/stacks controlled by only one color or only two colors, is considered surrounded/disconnected, and all rings in all stacks of all colors within that region are Eliminated by the player who is moving and who caused the region to become disconnected.
-• **Self-Elimination Prerequisite Check:** *Before* processing, perform a *hypothetical* check: If all rings within the region were eliminated, would the moving player still have at least one ring/cap left elsewhere on the board? If not, the region cannot be processed.
-• If the check passes, the player collapses the region (and any single-color border markers) to their color, eliminates all internal rings (regardless of color), and *then* performs the mandatory self-elimination of one of their remaining rings/caps.
-• All eliminated rings (internal + self-eliminated) count towards the moving player's victory total.
+When a region satisfies these two criteria, it is processed exactly as described in **Section 12.2 (Disconnection Process)**:
+• **Self-Elimination Prerequisite Check (see also Q23):** *Before* processing a region, perform the hypothetical check from Section 12.2: if all rings within the region were eliminated, would the moving player still have at least one ring or stack cap elsewhere on the board? If not, the region **cannot** be processed at all.
+• If the prerequisite is satisfied, the moving player may choose to process that region (and any other qualifying regions one at a time): collapse the region and any single-color border markers to their color, eliminate all rings inside (regardless of color), and *then* perform the mandatory self-elimination of one of their remaining rings or an entire cap outside that region. All eliminated rings (internal + self-eliminated) count toward the moving player's victory total.
 
 #### Q16: How does control transfer in a multicolored ring stack?
 
@@ -1731,7 +1723,7 @@ A22: When you form a line of 6+ markers, your strategic decision between the two
 
 #### Q23: What happens if I cannot eliminate any rings when processing a disconnected region?
 
-A23: The ability to perform the mandatory self-elimination is a **prerequisite** checked *hypothetically* *before* processing a disconnected region. You must determine: "If I were to eliminate all rings currently inside this region, would I still have at least one ring or stack cap under my control somewhere else on the board *after* that hypothetical elimination?" If the answer is no (meaning eliminating the internal rings would leave you with nothing to perform the mandatory self-elimination with), then you cannot fulfill the prerequisite. Therefore, you are **disallowed** from processing that region. It remains unchanged, and no rings (internal or self-eliminated) are removed.
+A23: The ability to perform the mandatory self-elimination is a **prerequisite** checked *hypothetically* *before* processing a disconnected region (the same Self-Elimination Prerequisite defined in Section 12.2 and referenced in Q15). You must determine: "If I were to eliminate all rings currently inside this region, would I still have at least one ring or stack cap under my control somewhere else on the board *after* that hypothetical elimination?" If the answer is no (meaning eliminating the internal rings would leave you with nothing to perform the mandatory self-elimination with), then you cannot fulfill the prerequisite. Therefore, you are **disallowed** from processing that region. It remains unchanged, and no rings (internal or self-eliminated) are removed.
 
 This creates an interesting strategic consideration: if you're running low on rings, you might want to avoid creating disconnected regions that you cannot claim. Also, if you have only one ring/cap left *outside* a potential disconnected region, you must choose carefully if multiple regions become disconnected simultaneously, as you can only process one before potentially losing your last piece for self-elimination.
 
@@ -1799,10 +1791,10 @@ A24: In this specific situation, you cannot simply skip your turn. You *must* ch
 **Victory Conditions:**
 
 - Eliminate >50% of total rings (>54 for 3 players in 19×19, >27 for 3 players in 8×8)
-- Control >50% of board as collapsed territory (>181 spaces in 19×19, >33 in 8×8)
+- Control >50% of board as collapsed territory (>180 spaces in 19×19, >32 in 8×8)
 - Be the last player able to make legal moves
 
-### 16.2 Overview of Simplifications
+### 16.3 Overview of Simplifications
 
  1. Board & Adjacency
  • Uses an 8×8 grid of 64 spaces.
@@ -1823,7 +1815,7 @@ Despite these changes, we preserve:
  • Overtaking vs. Elimination captures, though slightly simplified.
  • Line-of-**4** collapses, territory disconnection, chain Overtaking captures, etc.
 
-### 16.3 Components & Setup (8×8)
+### 16.4 Components & Setup (8×8)
 
  • Board: 8×8 intersections, each "space" can be empty, occupied, or collapsed.
  • Rings: Each player (A, B, optionally C) has 18 rings.
@@ -1833,7 +1825,7 @@ Despite these changes, we preserve:
  1. No rings on the board initially; each player has 18 in hand.
  2. Decide turn order (A → B → C → A → … for 3 players).
 
-### 16.4 Key Rules & Turn Flow (Simplified)
+### 16.5 Key Rules & Turn Flow (Simplified)
 
 Turn Flow Summary:
 
@@ -1845,7 +1837,7 @@ Turn Flow Summary:
  6. Check Territory (using Von Neumann neighborhood). Collapse disconnected regions, Eliminate one ring or cap of one controlled ring stack for each.
  7. Check for Win or pass to next player.
 
-#### 16.4.1 Movement (8×8 Version's Simplified Rules)
+#### 16.5.1 Movement (8×8 Version's Simplified Rules)
 
  • Select a ring or ring stack you control.
  • Leave a marker of your color on its starting space.
@@ -1853,14 +1845,14 @@ Turn Flow Summary:
  • Markers jumped over: Opponent markers flip to your color, your own markers become collapsed territory of your color.
  • Landing on your own marker: If the move concludes by landing on a space occupied by a single marker of your color (and meets distance/path rules), the stack lands there, and the marker is removed from the board. This removal happens *before* checking for lines/disconnections.
 
-#### 16.4.2 Overtaking (Stack Capture)
+#### 16.5.2 Overtaking (Stack Capture)
 
  • If, after or during your move, you can jump over an opposing ring stack in a straight line, do so.
  • Add that stack's top ring under your stack. (Your stack's height increases by 1).
  • You may chain multiple overtakes, changing direction as needed.
  • Overtaking never removes rings from the board (so it does not count toward Eliminated rings).
 
-#### 16.4.3 Elimination Captures
+#### 16.5.3 Elimination Captures
 
  • Occurs only from:
 
@@ -1874,13 +1866,13 @@ Turn Flow Summary:
  3. Any rings in the newly collapsed region are also Eliminated.
  • These Eliminated rings count toward the victory threshold (>18 for 2 players, >27 for 3 players).
 
-### 16.5 Winning Conditions (8×8)
+### 16.6 Winning Conditions (8×8)
 
  1. Ring Elimination Victory: Once a player achieves more than 50% of total rings as Eliminated rings (>18 for 2 players, >27 for 3 players), they instantly win.
  2. Last Player Standing: If the other two lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, but you can move on your turn, and they still cannot move on their subsequent turns, then you win.
  3. Stalemate: If no moves are possible, compare collapsed spaces (then ring Elimination totals, then markers if needed) to pick a winner.
 
-### 16.6 Quick Start Example (8×8)
+### 16.7 Quick Start Example (8×8)
 
 ```
     0 1 2 3 4 5 6 7
@@ -1904,7 +1896,7 @@ Step 5: On a future turn, if a B ring is in line, A could capture it with a cap 
 
 *This example illustrates basic movement. The ring only needs to satisfy the minimum distance requirement (stack height 1 = move at least 1 space). Landing after markers follows the unified rule (can land on any valid space beyond markers meeting the distance requirement).*
 
-### 16.7 Territory Disconnection Example (8×8)
+### 16.8 Territory Disconnection Example (8×8)
 
 ```
 BEFORE PLAYER A'S TURN:                      AFTER PLAYER A'S TURN:
@@ -1947,7 +1939,7 @@ This powerful mechanic can shift the balance dramatically, often leading to vict
 
 (This simpler 8×8 version is easier to pick up while still offering multi-player depth!)
 
-### 16.8 Full 19×19 Version
+### 16.9 Full 19×19 Version
 
 Below are the 19x19 full rules in comparison with the simplified 8x8 version. Key differences:
  • Board: 19×19 intersections, with Moore adjacency for movement & line-of-5, but Von Neumann adjacency for territory disconnection.
@@ -1955,7 +1947,7 @@ Below are the 19x19 full rules in comparison with the simplified 8x8 version. Ke
  • Captures: "Overtaking" vs. "Elimination," as introduced, with partial ring capture.
  • Victory: Reach or surpass 72 Eliminated rings (≥72), or last standing, or stalemate tiebreak.
 
-#### 16.8.1 Major Differences from 8×8
+#### 16.9.1 Major Differences from 8×8
 
  1. **Dual Adjacency Systems (Same as 8x8):**
     • Movement + Lines: 8-direction (Moore).
@@ -1964,7 +1956,7 @@ Below are the 19x19 full rules in comparison with the simplified 8x8 version. Ke
  2. Minimum-Distance Movement: Must move at least as many spaces as your stack's height. When moving over markers, can land on any valid space beyond them meeting the distance requirement.
  3. Bigger Board = 361 spaces, and 36 rings per player (108 total).
  • The ring Elimination victory threshold is >54 for 3 players (>50% of 108 total rings), or >72 for 4 players (>50% of 144 total rings). (Or >36 for 2 players).
-#### 16.8.2 Components & Setup (19×19)
+#### 16.9.2 Components & Setup (19×19)
 
  • Board: 19×19 = 361 intersection spaces.
  • Rings: Each player has 36 rings (regardless of player count: 2, 3, or 4 players).
@@ -1975,7 +1967,7 @@ Below are the 19x19 full rules in comparison with the simplified 8x8 version. Ke
    * For 2 players: A → B → A → B → …
    * For 4 players: A → B → C → D → A → …
 
-#### 16.8.3 Turn Sequence Summary (Full)
+#### 16.9.3 Turn Sequence Summary (Full)
 
 Every Turn:
 
@@ -1987,9 +1979,9 @@ Every Turn:
  6. Territory Disconnection Check (Von Neumann). Collapse regions → Eliminate rings.
  7. Check for Victory: If ring Elimination total exceeds 50% of total rings, or only you remain, you win. Otherwise, next player.
 
-#### 16.8.4 Detailed Rules
+#### 16.9.4 Detailed Rules
 
-##### 16.8.4.1 Movement & Adjacency
+##### 16.9.4.1 Movement & Adjacency
 
  • Movement uses 8 directions (Moore adjacency).
  • Line-of-**5** also uses 8 directions (Moore).
@@ -2017,7 +2009,7 @@ Every Turn:
      - Stack height 3: Must move at least 3 spaces to a valid landing spot.
      - Stack height 5 with markers: Must move at least 5 spaces, can land on any valid space (empty or own marker) beyond markers satisfying this distance.
 
-##### 16.8.4.2 Overtaking vs. Elimination
+##### 16.9.4.2 Overtaking vs. Elimination
 
 Overtaking (Stack Capture)
  • Occurs during ring movement if you jump over an opponent ring stack
@@ -2047,7 +2039,7 @@ Capture Type Trigger     Rings' Fate        Counts Toward 72+?
 Overtaking  Jump over ring   Top ring added to your stack bottom   No (still on board)
 Elimination  Lines/Disconnection  Rings physically removed from board   Yes
 
-##### 16.8.4.3 Lines & Collapses (19x19 / Hexagonal Focus)
+##### 16.9.4.3 Lines & Collapses (19x19 / Hexagonal Focus)
 
  *Note: The general rules for line formation and collapse, including the graduated rewards (Option 1 vs Option 2 for lines longer than required), are covered in Section 11. This section focuses specifically on the **5+ marker length requirement** for the 19x19 and Hexagonal versions.*
 
@@ -2062,7 +2054,7 @@ Elimination  Lines/Disconnection  Rings physically removed from board   Yes
     - Lines that intersected a collapsed line may no longer be valid if less than **5** markers in a row remain on the board.
     - All Eliminated rings count toward victory total.
     - Process all lines before checking for disconnected regions.
-##### 16.8.4.4 Territory Disconnection
+##### 16.9.4.4 Territory Disconnection
 • Uses 4-direction (Von Neumann) adjacency to check for physical disconnection.
 • Checks if the physically disconnected region lacks representation (ring stacks) from at least one player active on the board.
 • If both conditions are met, that region collapses to your color, removing any rings inside (Elimination) plus forcing you to remove one ring or the cap of one of your controlled ring stacks for each region collapsed (after passing the self-elimination prerequisite check).
@@ -2073,7 +2065,7 @@ Elimination  Lines/Disconnection  Rings physically removed from board   Yes
     - The player who caused the disconnection claims all Eliminated rings toward their victory total
     - Process all disconnected regions before checking victory conditions
 
-##### 16.8.4.5 Victory Conditions & Tiebreakers
+##### 16.9.4.5 Victory Conditions & Tiebreakers
 
  1. Ring Elimination Victory: Once you have more than 50% of total rings as Eliminated rings, you win immediately
  2. Last Player Standing: If the other two lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, but you can move on your turn, and they still cannot move on their subsequent turns, then you win.
@@ -2087,7 +2079,7 @@ Elimination  Lines/Disconnection  Rings physically removed from board   Yes
     - Rings in hand that cannot be placed count as Eliminated rings in stalemate situations
     - A player with rings in hand but no board presence is still active if legal placements exist
 
-#### 16.8.5 Quick Start Examples (19×19)
+#### 16.9.5 Quick Start Examples (19×19)
 
 Scenario 1 - Basic Movement:
  • Initial State:
@@ -2142,9 +2134,9 @@ Scenario 3 - Chain Capture with Territory Impact:
     - This creates a continuous border of A's collapsed spaces
     - If this border helps surround a region containing only B's rings, that region would become disconnected
 
-#### 16.8.6 Territory Disconnection Example (19×19 Using Von Neumann/4-Direction Adjacency)
+#### 16.9.6 Territory Disconnection Example (19×19 Using Von Neumann/4-Direction Adjacency)
 
-#### 16.8.7 Victory Through Territory Control
+#### 16.9.7 Victory Through Territory Control
 
  1. Initial Board State:
     • Player A has 65 Eliminated rings
@@ -2177,7 +2169,7 @@ Scenario 3 - Chain Capture with Territory Impact:
     • The mandatory self-ring Elimination was worth the victory
     • This illustrates how territory control can create victory opportunities
 
-#### 16.8.8 Chain Reaction Example
+#### 16.9.8 Chain Reaction Example
 
  1. Initial Board State:
     • Player A has 58 Eliminated rings
@@ -2215,7 +2207,7 @@ Scenario 3 - Chain Capture with Territory Impact:
     • Planning for chain reactions adds strategic depth
     • Victory can come from unexpected combinations of events
 
-### 16.9 Comparing the Three Editions
+### 16.10 Comparing the Three Editions
 
 8×8 Simplified:
  • Dual adjacency: Moore (movement/lines), Von Neumann (territory).
@@ -2242,7 +2234,7 @@ Hexagonal Version:
  • Unique spatial dynamics due to 6-directional movement and 3 line axes.
 
 
-### 16.10 Closing Note
+### 16.11 Closing Note
 
 These three versions of RingRift offer different on-ramps to the same fundamental experience: a three-player game with stack-building, marker flipping, line formation, and territory disconnection — all fueling dynamic alliances and strategic depth. The 8×8 edition provides a more accessible introduction, the 19×19 edition presents the original ambition and complexity, and the Hexagonal version offers unique geometric properties with its six-directional movement and elegant board structure. Enjoy exploring RingRift in whichever form suits your group's appetite for depth and challenge!
 

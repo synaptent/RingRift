@@ -14,7 +14,7 @@ RingRift follows a **TypeScript-first architecture** with Node.js backend and Re
 - ✅ Good: Technology stack choices and type safety
 - ⚠️ Needs Work: Implementation completeness
 - ⚠️ Needs Work: Testing infrastructure
-- ❌ Missing: AI engine, monitoring, CI/CD
+- ❌ Missing: Advanced AI engine and production monitoring (CI/CD and basic tests now exist but need expansion)
 
 ---
 
@@ -25,10 +25,10 @@ RingRift follows a **TypeScript-first architecture** with Node.js backend and Re
 #### ✅ **Backend Core (Node.js + TypeScript)**
 
 **Game Logic Layer** (`src/server/game/`)
-- `GameEngine.ts` - Core game orchestration (partial implementation)
-- `RuleEngine.ts` - Move validation and rule enforcement (partial implementation)
-- `BoardManager.ts` - Board state management (partial implementation)
-- **Status**: ~40% complete, needs significant work on core rules
+- `GameEngine.ts` - Core game orchestration (captures, lines, territory, phases; chain enforcement still incomplete)
+- `RuleEngine.ts` - Move validation and rule enforcement (movement/capture rules implemented, edge cases pending)
+- `BoardManager.ts` - Board state management (positions, markers, stacks, lines, territories)
+- **Status**: ~70% complete – core rules implemented, player choice integration and chain captures still missing
 
 **API Layer** (`src/server/routes/`)
 - `auth.ts` - Authentication endpoints
@@ -48,10 +48,11 @@ RingRift follows a **TypeScript-first architecture** with Node.js backend and Re
 
 **Client Layer** (`src/client/`)
 - `App.tsx` - Main application component
-- `components/` - Reusable UI components (minimal)
-- `contexts/` - React context providers
+- `components/` - Reusable UI components (including `BoardView` and `ChoiceDialog`)
+- `pages/GamePage.tsx` - Local sandbox and backend game views with board rendering and setup UI
+- `contexts/` - React context providers (`AuthContext`, `GameContext` for WebSocket game state)
 - `services/api.ts` - API client
-- **Status**: Minimal implementation, needs major UI work
+- **Status**: Basic shell plus minimal game UI (board for 8×8, 19×19, hex and pre-game setup); move wiring, HUD, and choice wiring still needed
 
 #### ✅ **Shared Types** (`src/shared/`)
 
@@ -83,21 +84,21 @@ RingRift follows a **TypeScript-first architecture** with Node.js backend and Re
 
 #### ❌ **Missing Components** (Not Yet Implemented)
 
-1. **AI Engine** - CRITICAL GAP
-   - No code exists anywhere
-   - Should be: Separate microservice (Python/Rust) OR TypeScript module
-   - Recommendation: Start with TypeScript for MVP, migrate to Python for ML
+1. **AI Integration** - CRITICAL GAP
+   - Python FastAPI AI microservice exists in `ai-service/` with Random/Heuristic AIs.
+   - TypeScript `AIServiceClient` exists, but is not yet wired into the GameEngine turn loop.
+   - Recommendation: Integrate AIServiceClient into a turn orchestrator so AI players can make moves and eventually answer PlayerChoices.
 
-2. **Frontend UI** - MAJOR GAP
-   - Game board rendering not implemented
-   - No interactive components
-   - Recommendation: Priority after core game logic
+2. **Frontend UI** - MAJOR GAP (PARTIALLY ADDRESSED)
+   - Game board rendering now implemented via `BoardView` for 8×8, 19×19, and hex boards.
+   - `GamePage` provides a local sandbox setup (players, human/AI flags, board type) and a read-only backend game view.
+   - Missing: move input wiring, valid-move highlighting, full HUD, and real-time PlayerChoice dialogs.
+   - Recommendation: Treat the current UI as a scaffold and focus on wiring it to backend moves and the PlayerInteractionManager.
 
-3. **Testing Infrastructure** - CRITICAL GAP
-   - No unit tests
-   - No integration tests
-   - No E2E tests
-   - Recommendation: Add immediately as core logic is fixed
+3. **Testing Infrastructure** - PARTIAL
+   - Jest configuration and basic tests exist (e.g., BoardManager, PlayerInteractionManager).
+   - No comprehensive integration or scenario tests yet; coverage remains low (<10%).
+   - Recommendation: Expand tests alongside new engine/interaction work and enforce coverage via CI.
 
 ---
 

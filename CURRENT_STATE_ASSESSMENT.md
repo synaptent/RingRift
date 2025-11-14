@@ -9,9 +9,9 @@
 ## 📊 Executive Summary
 
 **Overall Status:** STRONG FOUNDATION, INCOMPLETE IMPLEMENTATION  
-**Core Logic:** 70% Complete (Phase 1)  
-**Testing:** 5% Complete (minimal tests exist)  
-**Frontend:** 10% Complete (skeleton only)  
+**Core Logic:** 72% Complete (Phase 1)  
+**Testing:** 8% Complete (minimal tests exist, plus new interaction tests)  
+**Frontend:** 20% Complete (minimal board UI and local sandbox)  
 **AI Implementation:** 40% Complete (Python service exists, not integrated)  
 **Multiplayer:** 60% Complete (infrastructure only, not functional)
 
@@ -91,12 +91,15 @@
 - [x] Game pause/resume
 
 #### ⚠️ Partially Implemented:
-- [~] Player choice mechanisms (defaults to first option)
-  - Line processing order: Uses first found
-  - Graduated line rewards: Always uses Option 2
-  - Ring/cap elimination selection: Uses first stack
-  - Region processing order: Uses first found
-  - Capture direction: No choice when multiple available
+- [~] Player choice mechanisms (engine-level only)
+  - Shared PlayerChoice types defined in `src/shared/types/game.ts`.
+  - `PlayerInteractionManager` implemented in `src/server/game/PlayerInteractionManager.ts`.
+  - GameEngine now uses the interaction manager for:
+    - Line processing order (when multiple lines form)
+    - Graduated line rewards (Option 1 vs Option 2 for overlong lines)
+    - Ring/cap elimination selection (when multiple stacks are eligible)
+    - Region processing order (when multiple disconnected regions exist)
+  - Capture direction: No choice when multiple capture directions are available (not yet wired).
 - [~] Chain captures (basic structure, mandatory continuation NOT enforced)
 
 #### ❌ Not Implemented:
@@ -175,7 +178,7 @@
 
 **Critical Gap:** Cannot verify rule compliance or prevent regressions
 
-### 2. Frontend Implementation (10% Complete)
+### 2. Frontend Implementation (20% Complete)
 **Location:** `src/client/`
 
 #### Exists:
@@ -184,52 +187,69 @@
 - [x] Tailwind CSS setup
 - [x] LoadingSpinner component
 - [x] AuthContext (basic)
+- [x] GameContext with WebSocket-driven `game_state` hydration
 - [x] API service client
+- [x] `BoardView` component rendering 8x8, 19x19, and hex boards from `BoardState`
+- [x] `GamePage` with:
+  - Local sandbox mode: pre-game setup for number of players, human vs AI flags, and board type (8x8, 19x19, hex), followed by board rendering.
+  - Read-only backend game mode that displays server-provided board state.
+- [x] `ChoiceDialog` scaffold for all PlayerChoice variants (line order, line reward, ring elimination, region order, capture direction)
 - [x] index.html template
 
-#### Missing (99% of UI):
-- [ ] Board rendering component
-- [ ] Cell/space components
-- [ ] Ring stack visualization
-- [ ] Marker display
-- [ ] Collapsed space visualization
-- [ ] Move input/selection
-- [ ] Valid move highlighting
-- [ ] Player choice dialogs
-- [ ] Game state display
-- [ ] Move history
+#### Missing (most interactive UI):
+- [ ] Wiring of BoardView clicks to real moves via backend APIs/WebSocket
+- [ ] Ring stack visualization (distinct ring graphics per player)
+- [ ] Marker display and collapsed space styling
+- [ ] Valid move highlighting driven by RuleEngine/GameEngine
+- [ ] Actual use of ChoiceDialog based on server-driven PlayerChoice events
+- [ ] Full game state panel (phase, timers, ring/territory counts, move history)
 - [ ] Timer display
 - [ ] Victory screen
-- [ ] Game setup screen
-- [ ] Lobby system
+- [ ] Game setup & lobby system backed by server routes
 
 **Critical Gap:** Cannot play or test the game visually
 
-### 3. Player Interaction System (0% Complete)
+### 3. Player Interaction System (40% Complete)
 
-No mechanism exists for:
-- [ ] Async player choices during game
-- [ ] UI prompts for decisions
-- [ ] AI decision integration
-- [ ] Timeout handling for choices
-- [ ] Choice validation
+**Engine-level interaction implemented; UI/AI integration still missing.**
 
-**Impact:** All player decisions default to first option, reducing strategic gameplay
+**Exists:**
+- [x] Shared `PlayerChoice` and `PlayerChoiceResponse` types in `src/shared/types/game.ts`.
+- [x] `PlayerInteractionManager` abstraction in `src/server/game/PlayerInteractionManager.ts` with a typed `requestChoice` API.
+- [x] GameEngine integration for:
+  - [x] Line processing order (when multiple lines form for the current player).
+  - [x] Graduated line rewards (Option 1 vs Option 2 on overlong lines).
+  - [x] Ring/cap elimination target choice when multiple stacks are eligible.
+  - [x] Disconnected region processing order when multiple regions are available.
 
-### 4. Chain Capture Implementation (30% Complete)
+**Missing:**
+- [ ] Capture direction choices during chain captures.
+- [ ] Concrete `PlayerInteractionHandler` implementations for:
+  - [ ] Human players (WebSocket events `player_choice_required`/`player_choice_response`).
+  - [ ] AI players (AI-driven selection via AIServiceClient or local heuristics).
+- [ ] Client-side wiring of `ChoiceDialog` to actual server-driven choices.
+- [ ] Timeout handling for unanswered choices.
+- [ ] Choice validation on the server against allowed options.
+
+**Impact:** Strategic choices for lines, eliminations, and regions can now be requested at the engine level, but there is no end-to-end interaction loop with UI/AI yet.
+
+### 4. Chain Capture Implementation (70% Complete)
 
 #### Exists:
 - [x] Basic capture structure
 - [x] Single capture works
 - [x] Cap height validation
+- [x] Engine-level mandatory chain continuation (once a capture starts, GameEngine drives additional captures until no valid options remain)
+- [x] Engine-level capture direction choice via `PlayerInteractionManager` + `CaptureDirectionChoice` when multiple follow-up captures are available
 
 #### Missing:
-- [ ] Mandatory chain continuation
-- [ ] Multi-step capture sequences
-- [ ] 180° reversal patterns (FAQ Q15.3.1)
-- [ ] Cyclic capture patterns (FAQ Q15.3.2)
-- [ ] Player choice of capture direction
-- [ ] Chain capture testing
+- [ ] Scenario and regression tests for chain captures
+- [ ] Explicit coverage of 180° reversal patterns (FAQ Q15.3.1)
+- [ ] Explicit coverage of cyclic patterns (FAQ Q15.3.2)
+- [ ] End-to-end wiring of capture-direction choices through WebSockets and UI
+- [ ] AI decision logic for capture-direction choices
+- [ ] Performance/robustness testing for long chain sequences
+
 
 ### 5. Multiplayer Functionality (30% Complete)
 

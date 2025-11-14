@@ -2,28 +2,32 @@
 
 Thank you for your interest in contributing to RingRift! This document provides guidelines and priorities for development work.
 
-**Related Documents:**
-- [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) - Complete status analysis
+**Related Documents (single source of truth):**
+- [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) - Factual, code-verified status snapshot
+- [TODO.md](./TODO.md) - Task tracking and detailed implementation checklist
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs and issues
-- [TODO.md](./TODO.md) - Task tracking and checklist
+- [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md) - High-level evaluation and recommendations
 
 ---
 
 ## 🚦 Development Status
 
-**Current State:** Early development - core game logic incomplete  
-**Priority Focus:** Phase 1 - Core Game Logic Implementation
+**Current State:** Strong architecture and core engine (~75%) implemented; integration (UI/AI/multiplayer) and tests are the main gaps  
+**Priority Focus:** Phase 1 / Phase 0 – Core Game Logic finishing + Testing Foundation
 
 Before contributing, please review:
 1. The comprehensive game rules in `ringrift_complete_rules.md`
-2. Implementation status in `IMPLEMENTATION_STATUS.md`
-3. Known issues in `KNOWN_ISSUES.md`
+2. Current factual status in `CURRENT_STATE_ASSESSMENT.md`
+3. Tasks and priorities in `TODO.md`
+4. Known issues in `KNOWN_ISSUES.md`
 
 ---
 
 ## 🎯 Development Priorities
 
-### **PHASE 1: Core Game Logic** (Highest Priority - NOW)
+### **PHASE 1: Core Game Logic** (Historical Plan)
+
+> **Note:** The detailed Phase 1 task list below reflects an earlier snapshot of the project. For the canonical, up-to-date task list and statuses, always consult `TODO.md` and `CURRENT_STATE_ASSESSMENT.md`. Use the sections below as background/context only.
 
 **Goal:** Make the game engine correctly implement RingRift rules
 

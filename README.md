@@ -27,11 +27,11 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 - ✅ **Hexagonal board support** - Full 331-space board validated
 
 ### ⚠️ Critical Gaps (Blocks Playability)
-- ❌ **Player choice system NOT implemented** - All decisions default (NO player agency)
-- ❌ **Chain captures NOT enforced** - Mandatory continuation missing
-- ❌ **No playable UI** - Board rendering not implemented (cannot see or play game)
+- ⚠️ **Player choice system PARTIALLY implemented** - Shared types and `PlayerInteractionManager` exist and GameEngine now uses them for line order, line reward, ring elimination, and region order; capture direction choices and full UI/AI wiring are still missing.
+- ❌ **Chain captures NOT fully enforced** - Mandatory continuation and capture-direction choice are not yet implemented end-to-end.
+- ⚠️ **Minimal playable UI only** - Board rendering and a local sandbox exist for 8x8, 19x19, and hex boards, but moves/choices are not yet wired to the engine so full games cannot be played.
 - ❌ **Limited testing** - Cannot verify rule compliance (<10% coverage)
-- ❌ **AI service not integrated** - Python service exists but disconnected
+- ❌ **AI service not integrated** - Python service exists but disconnected from the turn loop
 
 ### 🎯 What This Means
 **Can Do:**
@@ -55,7 +55,7 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 | Board Manager | ✅ Complete | 90% |
 | Game Engine | ⚠️ Partial | 75% |
 | Rule Engine | ⚠️ Partial | 60% |
-| Frontend UI | ❌ Skeleton | 10% |
+| Frontend UI | ⚠️ Minimal board UI | 20% |
 | AI Integration | ❌ Not Connected | 40% |
 | Testing | ❌ Minimal | 5% |
 | Multiplayer | ❌ Infrastructure Only | 30% |
@@ -137,9 +137,11 @@ RingRift is a sophisticated turn-based strategy game featuring:
 - Basic class skeletons
 
 **To contribute or continue development, please review:**
-1. [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) - Detailed analysis of current state
-2. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs and missing features
-3. [CONTRIBUTING.md](./CONTRIBUTING.md) - Development priorities and guidelines
+1. [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) - Factual, code-verified analysis of the current state
+2. [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md) - Detailed codebase evaluation and recommendations
+3. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs, missing features, and prioritization
+4. [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) - Phased implementation plan and milestones
+5. [CONTRIBUTING.md](./CONTRIBUTING.md) - Development priorities and guidelines
 
 ---
 
@@ -212,14 +214,14 @@ npm start
 - **19x19 Square**: Extended strategic depth
 - **Hexagonal**: Unique geometric challenges
 
-### Multiplayer Features
+### Multiplayer Features *(planned/partially implemented)*
 - **Real-time Synchronization**: Instant move updates
 - **Spectator Mode**: Watch games with live commentary
 - **Chat System**: In-game communication
 - **Reconnection**: Seamless game resumption
 - **Time Controls**: Blitz, rapid, and classical formats
 
-### AI Integration
+### AI Integration *(planned/partially implemented)*
 - **Difficulty Levels**: 1-10 skill ratings
 - **Smart Opponents**: Strategic decision making
 - **Mixed Games**: Human-AI combinations
@@ -309,6 +311,8 @@ player_left    # Player left notification
 
 ## 🧪 Testing Strategy
 
+> Note: This section describes the target testing setup. As of now, only basic unit tests exist; see CURRENT_STATE_ASSESSMENT.md for up-to-date coverage details.
+
 ### Backend Testing
 ```bash
 npm test                   # Run all tests
@@ -329,7 +333,7 @@ npm run test:e2e          # End-to-end tests
 - UI component testing
 - End-to-end gameplay scenarios
 
-## 📈 Monitoring & Analytics
+## 📈 Monitoring & Analytics *(future/partially implemented)*
 
 ### Application Monitoring
 - Structured logging with Winston

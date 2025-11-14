@@ -1,4 +1,4 @@
-import { GameState, Move, Player } from './game';
+import { GameState, Move, Player, PlayerChoice, PlayerChoiceResponse } from './game';
 import { User } from './user';
 
 export interface ServerToClientEvents {
@@ -41,6 +41,19 @@ export interface ServerToClientEvents {
   'connected': () => void;
   'disconnected': (reason: string) => void;
   'reconnected': () => void;
+
+  // Choice system events
+  /**
+   * Emitted by the server when a player must make a strategic choice
+   * (capture direction, line reward, region order, etc.).
+   */
+  'player_choice_required': (choice: PlayerChoice) => void;
+
+  /**
+   * Optional: notify clients that a previously pending choice was
+   * cancelled/expired, so they can clear any UI.
+   */
+  'player_choice_canceled'?: (choiceId: string) => void;
 }
 
 export interface ClientToServerEvents {
@@ -82,6 +95,24 @@ export interface ClientToServerEvents {
   'ping': () => void;
   'authenticate': (token: string) => void;
   'heartbeat': () => void;
+
+  // Choice system events
+  /**
+   * Sent by the client when the user responds to a PlayerChoice.
+   *
+   * The server is responsible for validating that:
+   * - response.playerNumber matches the authenticated player
+   * - response.choiceId refers to a currently pending choice
+   * - response.selectedOption is one of the allowed options for that choice
+   */
+  'player_choice_response': (response: PlayerChoiceResponse<any>) => void;
+
+  /**
+   * Optional: let client proactively cancel/decline a choice (e.g. UI closed).
+   * In most RingRift flows, timeouts or forced defaults are more appropriate,
+   * so this can remain unused or be used only for UX niceties.
+   */
+  'player_choice_cancel'?: (choiceId: string) => void;
 }
 
 export interface InterServerEvents {

@@ -32,12 +32,13 @@
     "exactOptionalPropertyTypes": true
   },
   "include": [
-    "src/**/*"
+    "src/server/**/*",
+    "src/shared/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "client",
+    "src/client/**/*",
     "**/*.test.ts",
     "**/*.spec.ts"
   ]

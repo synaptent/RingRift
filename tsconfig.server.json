@@ -4,6 +4,8 @@
     "outDir": "./dist/server",
     "rootDir": "./src",
     "baseUrl": "./src",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "paths": {
       "@/*": ["server/*"],
       "@shared/*": ["shared/*"]

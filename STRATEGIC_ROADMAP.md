@@ -36,10 +36,10 @@
 - Infrastructure: Docker, PostgreSQL, Redis, WebSocket (95%)
 
 ### Critical Gaps ❌
-- **Player choice system (0%)** - All decisions default
+- **Player choice system (~40%)** - Shared types and PlayerInteractionManager exist; GameEngine uses them for line order, line reward, ring elimination, and region order, but capture direction choices and UI/AI wiring are still missing.
 - **Chain captures (40%)** - Not enforced as mandatory
-- **Playable UI (10%)** - Cannot see or interact with game
-- **Testing (5%)** - Cannot verify correctness
+- **Playable UI (20%)** - Minimal board UI and local sandbox exist, but no move/choice wiring to the engine
+- **Testing (8%)** - Cannot verify full rule compliance; only minimal and interaction tests exist
 - **AI integration (40%)** - Python service exists but disconnected
 
 ### Architecture Decision: **Keep Python AI Service** ✅

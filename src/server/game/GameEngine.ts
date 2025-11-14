@@ -14,9 +14,36 @@ import {
 } from '../../shared/types/game';
 import { BoardManager } from './BoardManager';
 import { RuleEngine } from './RuleEngine';
+import { PlayerInteractionManager } from './PlayerInteractionManager';
+
+/**
+ * Internal state for enforcing mandatory chain captures during the capture phase.
+ *
+ * This is intentionally kept out of the wire-level GameState so we can evolve
+ * the representation without breaking clients. It is roughly modeled after the
+ * Rust engine's `ChainCaptureState` and is used only inside GameEngine.
+ */
+interface TsChainCaptureSegment {
+  from: Position;
+  target: Position;
+  landing: Position;
+  capturedCapHeight: number;
+}
+
+interface TsChainCaptureState {
+  playerNumber: number;
+  startPosition: Position;
+  currentPosition: Position;
+  segments: TsChainCaptureSegment[];
+  // Full capture moves (from=currentPosition) that the player may choose from
+  availableMoves: Move[];
+  // Positions visited by the capturing stack to help avoid pathological cycles
+  visitedPositions: Set<string>;
+}
 
 // Timer functions for Node.js environment
 declare const setTimeout: (callback: () => void, ms: number) => any;
+
 declare const clearTimeout: (timer: any) => void;
 
 // Using a simple UUID generator for now
@@ -33,16 +60,26 @@ export class GameEngine {
   private boardManager: BoardManager;
   private ruleEngine: RuleEngine;
   private moveTimers: Map<number, any> = new Map();
+  private interactionManager: PlayerInteractionManager | undefined;
+  /**
+   * Internal chain capture state, used to enforce mandatory continuation of
+   * captures once started. When defined, only additional overtaking captures
+   * from `currentPosition` are legal until no options remain.
+   */
+  private chainCaptureState: TsChainCaptureState | undefined;
+
 
   constructor(
     gameId: string,
     boardType: BoardType,
     players: Player[],
     timeControl: TimeControl,
-    isRated: boolean = true
+    isRated: boolean = true,
+    interactionManager?: PlayerInteractionManager
   ) {
     this.boardManager = new BoardManager(boardType);
     this.ruleEngine = new RuleEngine(this.boardManager, boardType);
+    this.interactionManager = interactionManager;
     
     const config = BOARD_CONFIGS[boardType];
     
@@ -77,6 +114,19 @@ export class GameEngine {
     return { ...this.gameState };
   }
 
+  /**
+   * Helper to ensure that a PlayerInteractionManager is available when
+   * attempting to perform any player-facing choice. This keeps the core
+   * engine decoupled from transport/UI while still enforcing that choices
+   * cannot be resolved silently once integration is enabled.
+   */
+  private requireInteractionManager(): PlayerInteractionManager {
+    if (!this.interactionManager) {
+      throw new Error('PlayerInteractionManager is required for player choice operations');
+    }
+    return this.interactionManager;
+  }
+
   startGame(): boolean {
     // Check if all players are ready
     const allReady = this.gameState.players.every(p => p.isReady);
@@ -93,13 +143,41 @@ export class GameEngine {
     return true;
   }
 
-  makeMove(move: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>): {
+  async makeMove(move: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>): Promise<{
     success: boolean;
     error?: string;
     gameState?: GameState;
     gameResult?: GameResult;
-  } {
-    // Validate the move
+  }> {
+    // When a chain capture is in progress, only additional overtaking captures
+    // from the current chain position are legal until no options remain.
+    if (this.chainCaptureState) {
+      const state = this.chainCaptureState;
+
+      // All moves during a chain must be made by the same player.
+      if (move.player !== state.playerNumber) {
+        return {
+          success: false,
+          error: 'Chain capture in progress: only the capturing player may move'
+        };
+      }
+
+      // During a chain, only overtaking_capture moves from the current position
+      // are allowed. Ending a chain early is not permitted by the rules; the
+      // chain ends only when no further captures are available.
+      if (
+        move.type !== 'overtaking_capture' ||
+        !move.from ||
+        positionToString(move.from) !== positionToString(state.currentPosition)
+      ) {
+        return {
+          success: false,
+          error: 'Chain capture in progress: must continue capturing with the same stack'
+        };
+      }
+    }
+
+    // Validate the move at the rules level
     const fullMove: Move = {
       ...move,
       id: generateUUID(),
@@ -116,18 +194,101 @@ export class GameEngine {
       };
     }
 
-    // Stop current player's timer
+    // Capture context needed for chain state bookkeeping (cap height, etc.)
+    let capturedCapHeight = 0;
+    if (fullMove.type === 'overtaking_capture' && fullMove.captureTarget) {
+      const targetStack = this.boardManager.getStack(fullMove.captureTarget, this.gameState.board);
+      capturedCapHeight = targetStack ? targetStack.capHeight : 0;
+    }
+
+    // Stop current player's timer while we process the move
     this.stopPlayerTimer(this.gameState.currentPlayer);
 
-    // Apply the move
+    // Apply the move to the board state
     const moveResult = this.applyMove(fullMove);
-    
+
     // Add move to history
     this.gameState.moveHistory.push(fullMove);
     this.gameState.lastMoveAt = new Date();
 
-    // Process automatic consequences
-    this.processAutomaticConsequences(moveResult);
+    // If this was an overtaking capture, update or start the chain
+    // capture state and, if additional captures are available, drive
+    // the rest of the chain from within the engine. This includes
+    // invoking CaptureDirectionChoice via PlayerInteractionManager
+    // when multiple follow-up options exist.
+    if (fullMove.type === 'overtaking_capture') {
+      this.updateChainCaptureStateAfterCapture(fullMove, capturedCapHeight);
+
+      // Engine-driven chain continuation loop
+      while (true) {
+        const state = this.chainCaptureState;
+        const currentPlayer = this.gameState.currentPlayer;
+
+        if (!state || state.playerNumber !== currentPlayer) {
+          // No active chain (or somehow not this player's chain): stop.
+          this.chainCaptureState = undefined;
+          break;
+        }
+
+        const followUpMoves = this.getCaptureOptionsFromPosition(
+          state.currentPosition,
+          currentPlayer
+        );
+        state.availableMoves = followUpMoves;
+
+        if (followUpMoves.length === 0) {
+          // Chain is exhausted; clear state and exit loop.
+          this.chainCaptureState = undefined;
+          break;
+        }
+
+        // Let the player choose among available capture directions when
+        // appropriate; this uses the CaptureDirectionChoice flow.
+        const nextChosen = await this.chooseCaptureDirectionFromState();
+        if (!nextChosen) {
+          // Defensive: if no choice can be made, end the chain.
+          this.chainCaptureState = undefined;
+          break;
+        }
+
+        // Compute cap height for the next target, primarily for
+        // diagnostic/state-tracking parity with the Rust engine.
+        let nextCapturedCapHeight = 0;
+        if (nextChosen.captureTarget) {
+          const nextTargetStack = this.boardManager.getStack(
+            nextChosen.captureTarget,
+            this.gameState.board
+          );
+          nextCapturedCapHeight = nextTargetStack ? nextTargetStack.capHeight : 0;
+        }
+
+        // Promote the chosen follow-up capture into a full Move with
+        // its own id/timestamp and append it to history. These
+        // internal chain segments remain part of the same turn.
+        const internalMove: Move = {
+          ...nextChosen,
+          id: generateUUID(),
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: this.gameState.moveHistory.length + 1
+        };
+
+        const _internalResult = this.applyMove(internalMove);
+        this.gameState.moveHistory.push(internalMove);
+        this.gameState.lastMoveAt = new Date();
+
+        // Update chain state for the new position and continue loop.
+        this.updateChainCaptureStateAfterCapture(internalMove, nextCapturedCapHeight);
+      }
+    } else {
+      // Any non-capture move clears any stale chain state (defensive safety).
+      this.chainCaptureState = undefined;
+    }
+
+    // Process automatic consequences (line formations, territory, etc.) only
+    // after the full move (including any mandatory chain) has resolved.
+    await this.processAutomaticConsequences(moveResult);
+
 
     // Check for game end conditions
     const gameEndCheck = this.ruleEngine.checkGameEnd(this.gameState);
@@ -146,6 +307,7 @@ export class GameEngine {
       gameState: this.getGameState()
     };
   }
+
 
   private applyMove(move: Move): {
     captures: Position[];
@@ -209,62 +371,8 @@ export class GameEngine {
 
       case 'overtaking_capture':
         if (move.from && move.to && move.captureTarget) {
-          const stack = this.boardManager.getStack(move.from, this.gameState.board);
-          const targetStack = this.boardManager.getStack(move.captureTarget, this.gameState.board);
-          
-          if (stack && targetStack) {
-            // Rule Reference: Section 10.2 - Overtaking Capture
-            // Leave marker on departure space
-            this.boardManager.setMarker(move.from, move.player, this.gameState.board);
-            
-            // Process markers along path to target
-            this.processMarkersAlongPath(move.from, move.captureTarget, move.player);
-            
-            // Process markers along path from target to landing
-            this.processMarkersAlongPath(move.captureTarget, move.to, move.player);
-            
-            // Check if landing on same-color marker
-            const landingMarker = this.boardManager.getMarker(move.to, this.gameState.board);
-            if (landingMarker === move.player) {
-              this.boardManager.removeMarker(move.to, this.gameState.board);
-            }
-            
-            // Capture top ring from target stack and add to bottom of capturing stack
-            // Rule Reference: Section 10.2 - Top ring added to bottom
-            const capturedRing = targetStack.rings[0]; // Top ring
-            const newRings = [...stack.rings, capturedRing];
-            
-            // Update target stack (remove top ring)
-            const remainingTargetRings = targetStack.rings.slice(1);
-            if (remainingTargetRings.length > 0) {
-              const newTargetStack: RingStack = {
-                ...targetStack,
-                rings: remainingTargetRings,
-                stackHeight: remainingTargetRings.length,
-                capHeight: this.calculateCapHeight(remainingTargetRings),
-                controllingPlayer: remainingTargetRings[0]
-              };
-              this.boardManager.setStack(move.captureTarget, newTargetStack, this.gameState.board);
-            } else {
-              // Target stack is now empty, remove it
-              this.boardManager.removeStack(move.captureTarget, this.gameState.board);
-            }
-            
-            // Remove capturing stack from source
-            this.boardManager.removeStack(move.from, this.gameState.board);
-            
-            // Place capturing stack at landing position with captured ring
-            const newStack: RingStack = {
-              position: move.to,
-              rings: newRings,
-              stackHeight: newRings.length,
-              capHeight: this.calculateCapHeight(newRings),
-              controllingPlayer: newRings[0]
-            };
-            this.boardManager.setStack(move.to, newStack, this.gameState.board);
-            
-            result.captures.push(move.captureTarget);
-          }
+          this.performOvertakingCapture(move.from, move.captureTarget, move.to, move.player);
+          result.captures.push(move.captureTarget);
         }
         break;
 
@@ -322,21 +430,214 @@ export class GameEngine {
   }
 
   /**
+   * Update or initialize the internal chain capture state after an
+   * overtaking capture has been successfully applied to the board.
+   *
+   * This mirrors the Rust engine's ChainCaptureState at a high level:
+   * we track the start position, current position, and the sequence of
+   * capture segments taken so far.
+   */
+  private updateChainCaptureStateAfterCapture(move: Move, capturedCapHeight: number): void {
+    if (!move.from || !move.captureTarget || !move.to) {
+      return;
+    }
+
+    const segment: TsChainCaptureSegment = {
+      from: move.from,
+      target: move.captureTarget,
+      landing: move.to,
+      capturedCapHeight
+    };
+
+    if (!this.chainCaptureState) {
+      this.chainCaptureState = {
+        playerNumber: move.player,
+        startPosition: move.from,
+        currentPosition: move.to,
+        segments: [segment],
+        availableMoves: [],
+        visitedPositions: new Set<string>([positionToString(move.from)])
+      };
+      return;
+    }
+
+    // Continuing an existing chain
+    this.chainCaptureState.currentPosition = move.to;
+    this.chainCaptureState.segments.push(segment);
+    this.chainCaptureState.visitedPositions.add(positionToString(move.from));
+  }
+
+  /**
+   * Enumerate all valid capture moves from a given position for the
+   * specified player, using the RuleEngine's move generator.
+   *
+   * This is the TS analogue of the Rust CaptureProcessor's logic for
+   * computing follow-up chain options.
+   */
+  private getCaptureOptionsFromPosition(position: Position, playerNumber: number): Move[] {
+    // RuleEngine.getValidMoves will, in capture phase, return only
+    // overtaking_capture moves. We further filter by origin position.
+    const allMoves = this.ruleEngine.getValidMoves(this.gameState);
+    const positionKey = positionToString(position);
+
+    return allMoves.filter(m =>
+      m.type === 'overtaking_capture' &&
+      m.player === playerNumber &&
+      m.from &&
+      positionToString(m.from) === positionKey
+    );
+  }
+
+  /**
+   * When multiple capture continuations are available from the current
+   * chain position, use the generic PlayerChoice system to let the
+   * active player choose a direction and landing. This wires the
+   * CaptureDirectionChoice type into GameEngine using the
+   * chainCaptureState.availableMoves list.
+   *
+   * NOTE: This helper does not yet automatically apply the chosen move;
+   * it simply selects and returns it. Future work can integrate this
+   * into a full chain-capture loop once the transport/UI flow is ready.
+   */
+  private async chooseCaptureDirectionFromState(): Promise<Move | undefined> {
+    const state = this.chainCaptureState;
+    if (!state) return undefined;
+
+    const options = state.availableMoves;
+    if (options.length === 0) {
+      return undefined;
+    }
+
+    // If there is no interaction manager or only one option, keep
+    // behaviour simple for now and just return the sole available move.
+    if (!this.interactionManager || options.length === 1) {
+      return options[0];
+    }
+
+    const interaction = this.requireInteractionManager();
+
+    const choice = {
+      id: generateUUID(),
+      gameId: this.gameState.id,
+      playerNumber: state.playerNumber,
+      type: 'capture_direction' as const,
+      prompt: 'Choose capture direction and landing position',
+      options: options.map(opt => ({
+        targetPosition: opt.captureTarget!,
+        landingPosition: opt.to,
+        // At this point in the chain, the target stack still exists
+        // on the board; use its cap height as the capturedCapHeight.
+        capturedCapHeight:
+          this.boardManager.getStack(opt.captureTarget!, this.gameState.board)?.capHeight || 0
+      }))
+    };
+
+    const response = await interaction.requestChoice(choice as any);
+    const selected = response.selectedOption as {
+      targetPosition: Position;
+      landingPosition: Position;
+      capturedCapHeight: number;
+    };
+
+    const targetKey = positionToString(selected.targetPosition);
+    const landingKey = positionToString(selected.landingPosition);
+
+    // Find the matching Move in the available options; fall back to the
+    // first option if for some reason we cannot match exactly.
+    const matched = options.find(opt =>
+      opt.captureTarget &&
+      positionToString(opt.captureTarget) === targetKey &&
+      positionToString(opt.to) === landingKey
+    );
+
+    return matched || options[0];
+  }
+
+  /**
+   * Core overtaking capture operation used for both user-initiated
+   * captures (via applyMove) and engine-driven chain captures.
+   * Rule Reference: Section 10.2 - Overtaking Capture
+   */
+
+  private performOvertakingCapture(
+    from: Position,
+    captureTarget: Position,
+    landing: Position,
+    player: number
+  ): void {
+
+    const stack = this.boardManager.getStack(from, this.gameState.board);
+    const targetStack = this.boardManager.getStack(captureTarget, this.gameState.board);
+
+    if (!stack || !targetStack) {
+      return;
+    }
+
+    // Leave marker on departure space
+    this.boardManager.setMarker(from, player, this.gameState.board);
+
+    // Process markers along path to target
+    this.processMarkersAlongPath(from, captureTarget, player);
+
+    // Process markers along path from target to landing
+    this.processMarkersAlongPath(captureTarget, landing, player);
+
+    // Check if landing on same-color marker
+    const landingMarker = this.boardManager.getMarker(landing, this.gameState.board);
+    if (landingMarker === player) {
+      this.boardManager.removeMarker(landing, this.gameState.board);
+    }
+
+    // Capture top ring from target stack and add to bottom of capturing stack
+    const capturedRing = targetStack.rings[0]; // Top ring
+    const newRings = [...stack.rings, capturedRing];
+
+    // Update target stack (remove top ring)
+    const remainingTargetRings = targetStack.rings.slice(1);
+    if (remainingTargetRings.length > 0) {
+      const newTargetStack: RingStack = {
+        ...targetStack,
+        rings: remainingTargetRings,
+        stackHeight: remainingTargetRings.length,
+        capHeight: this.calculateCapHeight(remainingTargetRings),
+        controllingPlayer: remainingTargetRings[0]
+      };
+      this.boardManager.setStack(captureTarget, newTargetStack, this.gameState.board);
+    } else {
+      // Target stack is now empty, remove it
+      this.boardManager.removeStack(captureTarget, this.gameState.board);
+    }
+
+    // Remove capturing stack from source
+    this.boardManager.removeStack(from, this.gameState.board);
+
+    // Place capturing stack at landing position with captured ring
+    const newStack: RingStack = {
+      position: landing,
+      rings: newRings,
+      stackHeight: newRings.length,
+      capHeight: this.calculateCapHeight(newRings),
+      controllingPlayer: newRings[0]
+    };
+    this.boardManager.setStack(landing, newStack, this.gameState.board);
+  }
+
+  /**
    * Process automatic consequences after a move
    * Rule Reference: Section 4.5 - Post-Movement Processing
    */
-  private processAutomaticConsequences(moveResult: {
+  private async processAutomaticConsequences(moveResult: {
     captures: Position[];
     territoryChanges: Territory[];
     lineCollapses: LineInfo[];
-  }): void {
+  }): Promise<void> {
     // Captures are already processed in applyMove
     
     // Process line formations (Section 11.2, 11.3)
-    this.processLineFormations();
+    await this.processLineFormations();
     
     // Process territory disconnections (Section 12.2)
-    this.processDisconnectedRegions();
+    await this.processDisconnectedRegions();
   }
 
   /**
@@ -351,29 +652,51 @@ export class GameEngine {
    *   - Option 1: Collapse all + eliminate ring/cap
    *   - Option 2: Collapse required markers only, no elimination
    */
-  private processLineFormations(): void {
+  private async processLineFormations(): Promise<void> {
     const config = BOARD_CONFIGS[this.gameState.boardType];
     
     // Keep processing until no more lines exist
     while (true) {
-      const lines = this.boardManager.findAllLines(this.gameState.board);
-      if (lines.length === 0) break;
-      
-      // Process each line for the moving player
-      // TODO: In full implementation, moving player should choose which line to process first
-      // For now, process in order found
-      const line = lines[0];
-      
-      // Only process lines for the moving player
-      if (line.player !== this.gameState.currentPlayer) {
-        // Skip lines from other players (shouldn't happen in current rules)
-        break;
+      const allLines = this.boardManager.findAllLines(this.gameState.board);
+      if (allLines.length === 0) break;
+
+      // Only consider lines for the moving player
+      const playerLines = allLines.filter(
+        line => line.player === this.gameState.currentPlayer
+      );
+      if (playerLines.length === 0) break;
+
+      let lineToProcess: LineInfo;
+
+      if (!this.interactionManager || playerLines.length === 1) {
+        // No interaction manager wired yet, or only one choice: keep current behaviour
+        lineToProcess = playerLines[0];
+      } else {
+        const interaction = this.requireInteractionManager();
+
+        const choice = {
+          id: generateUUID(),
+          gameId: this.gameState.id,
+          playerNumber: this.gameState.currentPlayer,
+          type: 'line_order' as const,
+          prompt: 'Choose which line to process first',
+          options: playerLines.map((line, index) => ({
+            lineId: String(index),
+            markerPositions: line.positions
+          }))
+        };
+
+        const response = await interaction.requestChoice(choice as any);
+        const selected = response.selectedOption as {
+          lineId: string;
+          markerPositions: Position[];
+        };
+        const index = parseInt(selected.lineId, 10);
+        lineToProcess = playerLines[index] ?? playerLines[0];
       }
-      
-      this.processOneLine(line, config.lineLength);
-      
-      // After processing one line, re-check for remaining lines
-      // (lines may have changed due to collapsed spaces)
+
+      await this.processOneLine(lineToProcess, config.lineLength);
+      // After processing one line, loop will re-evaluate remaining lines
     }
   }
 
@@ -381,23 +704,49 @@ export class GameEngine {
    * Process a single line formation
    * Rule Reference: Section 11.2
    */
-  private processOneLine(line: LineInfo, requiredLength: number): void {
+  private async processOneLine(line: LineInfo, requiredLength: number): Promise<void> {
     const lineLength = line.positions.length;
     
     if (lineLength === requiredLength) {
       // Exact required length: Must collapse all and eliminate ring/cap
       this.collapseLineMarkers(line.positions, line.player);
-      this.eliminatePlayerRingOrCap(line.player);
+      await this.eliminatePlayerRingOrCapWithChoice(line.player);
     } else if (lineLength > requiredLength) {
-      // Longer than required: Choose option (for now, always use Option 2 to preserve rings)
-      // TODO: In full implementation, player should choose Option 1 or Option 2
-      // Option 2: Collapse only required markers, no elimination
-      const markersToCollapse = line.positions.slice(0, requiredLength);
-      this.collapseLineMarkers(markersToCollapse, line.player);
-      
-      // Option 1 would be:
-      // this.collapseLineMarkers(line.positions, line.player);
-      // this.eliminatePlayerRingOrCap(line.player);
+      // Longer than required: player chooses Option 1 or Option 2 when an
+      // interaction manager is available; otherwise, preserve current
+      // behaviour and default to Option 2 (collapse minimum only, no elimination).
+      if (!this.interactionManager) {
+        const markersToCollapse = line.positions.slice(0, requiredLength);
+        this.collapseLineMarkers(markersToCollapse, line.player);
+        return;
+      }
+
+      const interaction = this.requireInteractionManager();
+
+      const choice = {
+        id: generateUUID(),
+        gameId: this.gameState.id,
+        playerNumber: this.gameState.currentPlayer,
+        type: 'line_reward_option' as const,
+        prompt: 'Choose line reward option',
+        options: [
+          'option_1_collapse_all_and_eliminate',
+          'option_2_min_collapse_no_elimination'
+        ] as const
+      };
+
+      const response = await interaction.requestChoice(choice as any);
+      const selected = response.selectedOption as
+        | 'option_1_collapse_all_and_eliminate'
+        | 'option_2_min_collapse_no_elimination';
+
+      if (selected === 'option_1_collapse_all_and_eliminate') {
+        this.collapseLineMarkers(line.positions, line.player);
+        await this.eliminatePlayerRingOrCapWithChoice(line.player);
+      } else {
+        const markersToCollapse = line.positions.slice(0, requiredLength);
+        this.collapseLineMarkers(markersToCollapse, line.player);
+      }
     }
   }
 
@@ -440,10 +789,16 @@ export class GameEngine {
       return;
     }
     
-    // TODO: In full implementation, player should choose which stack
-    // For now, eliminate from first stack
+    // Default behaviour: eliminate from first stack
     const stack = playerStacks[0];
-    
+    this.eliminateFromStack(stack, player);
+  }
+
+  /**
+   * Core elimination logic from a specific stack. Used by both the
+   * default elimination path and the choice-based elimination helper.
+   */
+  private eliminateFromStack(stack: RingStack, player: number): void {
     // Calculate cap height
     const capHeight = this.calculateCapHeight(stack.rings);
     
@@ -477,6 +832,64 @@ export class GameEngine {
   }
 
   /**
+   * Eliminate one ring or cap using the player choice system when available.
+   * Falls back to default behaviour when no interaction manager is wired.
+   */
+  private async eliminatePlayerRingOrCapWithChoice(player: number): Promise<void> {
+    const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, player);
+
+    if (playerStacks.length === 0) {
+      // Mirror the hand-elimination behaviour from eliminatePlayerRingOrCap
+      const playerState = this.gameState.players.find(p => p.playerNumber === player);
+      if (playerState && playerState.ringsInHand > 0) {
+        playerState.ringsInHand--;
+        this.gameState.totalRingsEliminated++;
+        if (!this.gameState.board.eliminatedRings[player]) {
+          this.gameState.board.eliminatedRings[player] = 0;
+        }
+        this.gameState.board.eliminatedRings[player]++;
+        this.updatePlayerEliminatedRings(player, 1);
+      }
+      return;
+    }
+
+    if (!this.interactionManager || playerStacks.length === 1) {
+      // No manager or only one stack: use default behaviour
+      this.eliminatePlayerRingOrCap(player);
+      return;
+    }
+
+    const interaction = this.requireInteractionManager();
+
+    const choice = {
+      id: generateUUID(),
+      gameId: this.gameState.id,
+      playerNumber: player,
+      type: 'ring_elimination' as const,
+      prompt: 'Choose which stack to eliminate from',
+      options: playerStacks.map(stack => ({
+        stackPosition: stack.position,
+        capHeight: stack.capHeight,
+        totalHeight: stack.stackHeight
+      }))
+    };
+
+    const response = await interaction.requestChoice(choice as any);
+    const selected = response.selectedOption as {
+      stackPosition: Position;
+      capHeight: number;
+      totalHeight: number;
+    };
+
+    const selectedKey = positionToString(selected.stackPosition);
+    const chosenStack =
+      playerStacks.find(s => positionToString(s.position) === selectedKey) ||
+      playerStacks[0];
+
+    this.eliminateFromStack(chosenStack, player);
+  }
+
+  /**
    * Update player's eliminatedRings counter
    */
   private updatePlayerEliminatedRings(playerNumber: number, count: number): void {
@@ -500,7 +913,7 @@ export class GameEngine {
    * Process disconnected regions with chain reactions
    * Rule Reference: Section 12.2, 12.3 - Territory Disconnection and Chain Reactions
    */
-  private processDisconnectedRegions(): void {
+  private async processDisconnectedRegions(): Promise<void> {
     const movingPlayer = this.gameState.currentPlayer;
     
     // Keep processing until no more disconnections occur
@@ -512,10 +925,35 @@ export class GameEngine {
       
       if (disconnectedRegions.length === 0) break;
       
-      // Process each region (player chooses order)
-      // TODO: In full implementation, player should choose which region to process first
-      // For now, process in order found
-      const region = disconnectedRegions[0];
+      let region: Territory;
+      
+      if (!this.interactionManager || disconnectedRegions.length === 1) {
+        // No manager or only one region: keep existing behaviour
+        region = disconnectedRegions[0];
+      } else {
+        const interaction = this.requireInteractionManager();
+        const choice = {
+          id: generateUUID(),
+          gameId: this.gameState.id,
+          playerNumber: movingPlayer,
+          type: 'region_order' as const,
+          prompt: 'Choose which disconnected region to process first',
+          options: disconnectedRegions.map((r, index) => ({
+            regionId: String(index),
+            size: r.spaces.length,
+            representativePosition: r.spaces[0]
+          }))
+        };
+
+        const response = await interaction.requestChoice(choice as any);
+        const selected = response.selectedOption as {
+          regionId: string;
+          size: number;
+          representativePosition: Position;
+        };
+        const index = parseInt(selected.regionId, 10);
+        region = disconnectedRegions[index] ?? disconnectedRegions[0];
+      }
       
       // Self-elimination prerequisite check
       if (!this.canProcessDisconnectedRegion(region, movingPlayer)) {
@@ -526,7 +964,7 @@ export class GameEngine {
       }
       
       // Process the disconnected region
-      this.processOneDisconnectedRegion(region, movingPlayer);
+      await this.processOneDisconnectedRegion(region, movingPlayer);
     }
   }
 
@@ -557,7 +995,7 @@ export class GameEngine {
    * Process a single disconnected region
    * Rule Reference: Section 12.2 - Processing steps
    */
-  private processOneDisconnectedRegion(region: Territory, movingPlayer: number): void {
+  private async processOneDisconnectedRegion(region: Territory, movingPlayer: number): Promise<void> {
     // 1. Get border markers to collapse
     const borderMarkers = this.boardManager.getBorderMarkerPositions(
       region.spaces,
@@ -600,7 +1038,7 @@ export class GameEngine {
     this.updatePlayerEliminatedRings(movingPlayer, totalRingsEliminated);
     
     // 6. Mandatory self-elimination (one ring or cap from moving player)
-    this.eliminatePlayerRingOrCap(movingPlayer);
+    await this.eliminatePlayerRingOrCapWithChoice(movingPlayer);
   }
 
   /**

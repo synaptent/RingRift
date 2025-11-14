@@ -238,3 +238,89 @@ export const BOARD_CONFIGS = {
 } as const;
 
 export type BoardConfig = typeof BOARD_CONFIGS[keyof typeof BOARD_CONFIGS];
+
+// --- Player choice system types ---
+
+export type PlayerChoiceType =
+  | 'line_order'
+  | 'line_reward_option'
+  | 'ring_elimination'
+  | 'region_order'
+  | 'capture_direction';
+
+export interface PlayerChoiceBase {
+  id: string;
+  gameId: string;
+  playerNumber: number; // numeric player index, consistent with GameState.currentPlayer
+  type: PlayerChoiceType;
+  prompt: string;
+  timeoutMs?: number;
+}
+
+export interface LineOrderChoice extends PlayerChoiceBase {
+  type: 'line_order';
+  options: Array<{
+    lineId: string;
+    markerPositions: Position[];
+  }>;
+}
+
+export interface LineRewardChoice extends PlayerChoiceBase {
+  type: 'line_reward_option';
+  options: Array<'option_1_collapse_all_and_eliminate' | 'option_2_min_collapse_no_elimination'>;
+}
+
+export interface RingEliminationChoice extends PlayerChoiceBase {
+  type: 'ring_elimination';
+  options: Array<{
+    stackPosition: Position;
+    capHeight: number;
+    totalHeight: number;
+  }>;
+}
+
+export interface RegionOrderChoice extends PlayerChoiceBase {
+  type: 'region_order';
+  options: Array<{
+    regionId: string;
+    size: number;
+    representativePosition: Position;
+  }>;
+}
+
+export interface CaptureDirectionChoice extends PlayerChoiceBase {
+  type: 'capture_direction';
+  options: Array<{
+    targetPosition: Position;
+    landingPosition: Position;
+    capturedCapHeight: number;
+  }>;
+}
+
+export type PlayerChoice =
+  | LineOrderChoice
+  | LineRewardChoice
+  | RingEliminationChoice
+  | RegionOrderChoice
+  | CaptureDirectionChoice;
+
+export interface PlayerChoiceResponse<TOption = unknown> {
+  choiceId: string;
+  playerNumber: number;
+  /**
+   * Echoes the type of the originating PlayerChoice when available.
+   * Optional for backward compatibility while the choice system
+   * is still being integrated across transports.
+   */
+  choiceType?: PlayerChoiceType;
+  selectedOption: TOption;
+}
+
+/**
+ * Convenience helper: given a concrete PlayerChoice type, derive the
+ * corresponding PlayerChoiceResponse type with a correctly-typed
+ * selectedOption and a narrowed choiceType.
+ */
+export type PlayerChoiceResponseFor<TChoice extends PlayerChoice> = PlayerChoiceResponse<
+  TChoice['options'][number]
+> & { choiceType: TChoice['type'] };

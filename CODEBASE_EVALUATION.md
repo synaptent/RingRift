@@ -1,857 +1,452 @@
 # RingRift Codebase Evaluation & Development Recommendations
 
 **Evaluation Date:** November 13, 2025  
-**Evaluator:** Development Analysis System  
+**Evaluator:** Development Analysis System (code-verified)  
 **Repository:** https://github.com/an0mium/RingRift
 
 ---
 
 ## 📊 Executive Summary
 
-RingRift is a **sophisticated multiplayer strategy game** built with modern web technologies. The codebase demonstrates **excellent architectural planning and documentation** but is in the **early implementation phase** with critical game logic incomplete.
+RingRift is a **sophisticated multiplayer strategy game** with:
 
-### Quick Assessment
+- **Excellent architecture and documentation**
+- **Core game engine ~75% implemented and aligned with the rules**
+- **Python AI microservice and TypeScript client in place but not yet integrated into gameplay**
+- **Minimal UI and limited tests**, which currently block actual play and confident refactoring
 
-| Category | Rating | Status |
-|----------|--------|--------|
-| **Documentation** | ⭐⭐⭐⭐⭐ | Exceptional - comprehensive rule documentation |
-| **Architecture** | ⭐⭐⭐⭐⭐ | Excellent - clean separation of concerns |
-| **Infrastructure** | ⭐⭐⭐⭐☆ | Very Good - Docker, DB, Redis all configured |
-| **Core Logic** | ⭐☆☆☆☆ | Poor - fundamental game rules not implemented |
-| **Frontend** | ⭐☆☆☆☆ | Minimal - only skeleton components |
-| **Tests** | ☆☆☆☆☆ | None - testing framework configured but no tests |
-| **Overall Readiness** | 🔴 **15%** | Not functional for gameplay |
+### High-Level Assessment
 
-### Critical Finding
-**The game cannot be played yet.** While the infrastructure is solid, the core game engine does not implement the RingRift rules. This is a **6-8 week minimum effort** to reach a playable state.
+| Category              | Rating       | Status Overview |
+|-----------------------|-------------|-----------------|
+| **Documentation**     | ⭐⭐⭐⭐⭐ (A+) | Exceptional game rules & design docs |
+| **Architecture**      | ⭐⭐⭐⭐⭐ (A)  | Clean, modular, TypeScript-first |
+| **Core Game Logic**   | ⭐⭐⭐½☆ (B+) | ~75% complete; player choice & chain captures missing |
+| **Frontend/UI**       | ⭐☆☆☆☆ (D)  | Skeleton only; no board rendering |
+| **AI Implementation** | ⭐⭐⭐☆☆ (C+) | Python service + TS client exist; not wired into engine |
+| **Testing**           | ⭐☆☆☆☆ (D-) | Jest + CI configured; limited tests (BoardManager only) |
+| **DevOps/CI**         | ⭐⭐⭐⭐☆ (A-) | GitHub Actions, Docker, env setup in good shape |
+| **Overall Readiness** | 🔶 **~60%** | Strong foundation, incomplete execution |
 
----
-
-## 🏗️ Technology Stack Analysis
-
-### Backend Architecture ✅ Excellent
-```
-Runtime:     Node.js 18+ with TypeScript 5.3
-Framework:   Express.js
-Database:    PostgreSQL 14+ with Prisma ORM
-Cache:       Redis 6+
-WebSocket:   Socket.IO v4.7
-Auth:        JWT + bcrypt
-Validation:  Zod schemas
-Logging:     Winston
-```
-
-**Strengths:**
-- Modern, battle-tested stack
-- Strong typing with TypeScript throughout
-- Good security practices (Helmet, CORS, rate limiting)
-- Proper database abstraction with Prisma
-
-### Frontend Architecture ✅ Good Foundation
-```
-Framework:   React 18 with TypeScript
-Build Tool:  Vite 4.4 (fast dev server)
-State:       React Query + Context API
-Styling:     Tailwind CSS 3.3
-Routing:     React Router 6
-HTTP:        Axios
-WebSocket:   Socket.IO client
-```
-
-**Strengths:**
-- Modern React with hooks
-- Fast development with Vite
-- Utility-first styling with Tailwind
-- Type-safe API layer
-
-### Infrastructure ✅ Production-Ready
-```
-Docker:      Multi-stage builds configured
-Compose:     Full stack orchestration
-Scripts:     Comprehensive npm scripts
-Config:      Environment-based configuration
-```
-
-**Strengths:**
-- Easy local development setup
-- Containerized for deployment
-- Well-organized scripts
+**Key Reality:**
+- You **cannot yet play a full game through the UI**, and you **cannot be fully confident** all rules are implemented correctly due to low test coverage and missing player choice/chain capture mechanics.
 
 ---
 
-## ✅ What's Working Well
+## 🧱 Architecture & Technology Stack
 
-### 1. **Exceptional Documentation** (95% complete)
-The project has the most comprehensive game documentation I've analyzed:
+### Backend (TypeScript / Node.js)
 
-- **`ringrift_complete_rules.md`**: 1000+ line detailed rule specification
-  - Turn sequence clearly defined
-  - All movement/capture mechanics documented
-  - 24 FAQ items covering edge cases
-  - Concrete examples for complex scenarios
-  
-- **`IMPLEMENTATION_STATUS.md`**: Detailed gap analysis
-- **`RINGRIFT_IMPROVEMENT_PLAN.md`**: Complete implementation roadmap
-- **`TECHNICAL_ARCHITECTURE_ANALYSIS.md`**: System design docs
-- **`TODO.md`**: Granular task breakdown
+- **Runtime:** Node.js 18+
+- **Language:** TypeScript (strict configuration)
+- **Framework:** Express.js
+- **Game Engine:** `src/server/game/`
+  - `GameEngine.ts` – Orchestrates phases, applies moves, manages timers & game state
+  - `RuleEngine.ts` – Validates moves, computes valid moves, checks game end conditions
+  - `BoardManager.ts` – Board topology, positions, markers, stacks, line & territory analysis
+- **Game AI Integration:**
+  - `src/server/services/AIServiceClient.ts` – HTTP client for **Python FastAPI AI service** (ai-service)
+- **Persistence / Infra:**
+  - PostgreSQL via Prisma (`prisma/schema.prisma`)
+  - Redis cache (`src/server/cache/redis.ts`)
+  - WebSocket server via Socket.IO (`src/server/websocket/server.ts`)
+  - Middleware for auth, rate limiting, error handling
 
-**Verdict:** Documentation quality is exceptional and provides clear implementation guidance.
+### Frontend (React + TypeScript)
 
-### 2. **Clean Code Architecture** (90% complete)
-```
-RingRift/
-├── src/
-│   ├── client/        # React frontend (clean separation)
-│   ├── server/        # Express backend (well-organized)
-│   │   ├── game/      # Game engine (modular design)
-│   │   ├── routes/    # API endpoints
-│   │   ├── middleware/# Auth, errors, rate limiting
-│   │   └── websocket/ # Real-time communication
-│   └── shared/        # Types shared between client/server
-│       ├── types/     # Game types, user types
-│       └── validation/# Zod schemas
-```
+- **Build Tool:** Vite
+- **Framework:** React 18 with hooks
+- **Routing / Pages:** `src/client/pages/*`
+- **State:** React Contexts (`AuthContext`, `GameContext`)
+- **Styling:** Tailwind CSS
+- **HTTP:** Axios (`src/client/services/api.ts`)
+- **Current Status:** Shell + layout + basic auth flows; **no game board UI yet**.
 
-**Strengths:**
-- Clear separation of concerns
-- Shared types prevent duplication
-- Middleware properly isolated
-- Game logic in dedicated module
+### AI Service (Python FastAPI)
 
-### 3. **Type Safety** (95% complete)
-The TypeScript type system is comprehensive:
+- **Location:** `ai-service/`
+  - `app/main.py` – FastAPI app
+  - `app/ai/random_ai.py` – Random move AI
+  - `app/ai/heuristic_ai.py` – Heuristic-based AI
+- **Integration Surface:**
+  - TypeScript `AIServiceClient` calls `/ai/move`, `/ai/evaluate`, `/health`
+- **Status:** Deployable service, but **GameEngine does not yet call AIServiceClient in any game loop or route**.
 
-```typescript
-// Excellent type definitions
-export interface GameState {
-  id: string;
-  boardType: BoardType;
-  board: BoardState;
-  players: Player[];
-  currentPhase: GamePhase;
-  currentPlayer: number;
-  moveHistory: Move[];
-  timeControl: TimeControl;
-  // ... 15+ well-defined fields
-}
+### DevOps & Tooling
 
-// Clear move types
-export type MoveType = 
-  | 'place_ring' 
-  | 'move_ring' 
-  | 'build_stack';
+- **CI:** `.github/workflows/ci.yml` – Lint, type-check, tests, build, security scans, Docker build
+- **Testing:** `jest.config.js`, `tests/` directory with setup & a couple of unit tests
+- **Formatting & Linting:** ESLint, Prettier, Husky pre-commit hook
+- **Docker:** `Dockerfile`, `docker-compose.yml` for app + PostgreSQL + Redis + AI service
 
-// Comprehensive board configs
-export const BOARD_CONFIGS = {
-  'square_8x8': { size: 8, ringsPerPlayer: 3, lineLength: 4 },
-  'square_19x19': { size: 19, ringsPerPlayer: 5, lineLength: 5 },
-  'hexagonal': { size: 7, ringsPerPlayer: 4, lineLength: 5 }
-};
-```
-
-**Strengths:**
-- Well-thought-out type hierarchy
-- Strong contracts between components
-- Prevents many runtime errors
-- Clear interfaces for all major entities
-
-### 4. **Infrastructure Setup** (100% complete)
-All supporting infrastructure is configured and ready:
-
-- ✅ Docker & Docker Compose configured
-- ✅ PostgreSQL database schema defined
-- ✅ Redis caching configured
-- ✅ Environment variables properly managed
-- ✅ Build scripts for dev and production
-- ✅ Database migrations ready (Prisma)
-- ✅ Logging system configured (Winston)
-- ✅ Security middleware in place
-
-**Verdict:** Can start building features immediately without setup overhead.
+Overall: **The stack is modern, robust, and production-ready from an infrastructure standpoint.**
 
 ---
 
-## ❌ Critical Gaps & Issues
+## ✅ Verified Strengths
 
-### Priority 1: Core Game Logic Incomplete (🔴 CRITICAL)
+### 1. Documentation Quality (A+)
 
-#### Issue #1: Marker System Missing
-**Impact:** Game cannot function without markers  
-**Estimated Fix:** 2-3 days
+- `ringrift_complete_rules.md` – Detailed, authoritative rules spec
+- `RULES_ANALYSIS_PHASE1.md`, `RULES_ANALYSIS_PHASE2.md` – Deep rule breakdowns
+- `CURRENT_STATE_ASSESSMENT.md` – Code-verified status snapshot
+- `STRATEGIC_ROADMAP.md` – Phased implementation roadmap (already updated to keep Python AI)
+- `RINGRIFT_IMPROVEMENT_PLAN.md`, `TODO.md` – Fine-grained tasks and status
+- `TECHNICAL_ARCHITECTURE_ANALYSIS.md`, `ARCHITECTURE_ASSESSMENT.md` – Architecture decisions & evaluations
 
-**What's Missing:**
-```typescript
-// These methods don't exist but are essential:
-boardManager.setMarker(position, player, board)
-boardManager.flipMarker(position, newPlayer, board)
-boardManager.collapseMarker(position, player, board)
-```
+**Impact:** You have a clearer spec and plan than most production projects. Implementation can follow the docs rather than guesswork.
 
-**Current Code Problems:**
-```typescript
-// GameEngine.ts - Movement doesn't leave markers
-case 'move_ring':
-  if (move.from && move.to) {
-    const stack = this.boardManager.getStack(move.from, this.gameState.board);
-    if (stack) {
-      this.boardManager.removeStack(move.from, this.gameState.board);
-      this.boardManager.setStack(move.to, stack, this.gameState.board);
-    }
-  }
-  break;
-// ❌ No marker left at 'from' position
-// ❌ No markers flipped along path
-// ❌ No markers collapsed along path
-```
+### 2. Core Game Engine Implementation (B+)
 
-**Rule Violation:** Section 8.3 of rules requires:
-1. Marker placed at starting position
-2. Opponent markers flip to your color when jumped
-3. Own markers collapse to territory when jumped
-4. Same-color marker removed when landed on
+Based on `GameEngine.ts`, `RuleEngine.ts`, `BoardManager.ts`, and tests:
 
-#### Issue #2: Line Formation Incomplete
-**Impact:** Cannot claim territory or eliminate rings  
-**Estimated Fix:** 3-4 days
+**Implemented & Working (per CURRENT_STATE_ASSESSMENT):**
 
-**What's Missing:**
-- Graduated rewards (Option 1 vs Option 2 for longer lines)
-- Ring elimination when lines collapse
-- Player choice mechanism
-- Multiple line processing order
+- **Board Manager (~90%)**
+  - Position generation: 8x8, 19x19, hexagonal (331 hex cells) ✅
+  - Adjacency types: Moore, Von Neumann, Hexagonal ✅
+  - Marker model: `markers` map with MarkerInfo, `collapsedSpaces` tracking ✅
+  - Stack operations: get/set/remove stacks, player stack queries ✅
+  - Line detection: based on markers, not stacks, respecting required line lengths ✅
+  - Territory discovery: connected components and per-player territories, for all board types ✅
+  - Disconnection detection: regions & borders using collapsed spaces + marker borders ✅
 
-**Current Code:**
-```typescript
-// GameEngine.ts - Simplified line collapse
-for (const line of lines) {
-  if (line.positions.length >= config.lineLength) {
-    for (const pos of line.positions) {
-      this.boardManager.removeStack(pos, this.gameState.board);
-    }
-    result.lineCollapses.push(line);
-  }
-}
-// ❌ Doesn't distinguish 4-marker vs 5+ marker lines
-// ❌ No ring elimination
-// ❌ No player choice for longer lines
-```
+- **Game Engine (~75%)**
+  - Move application: ring placement, movement, overtaking capture, stack building ✅
+  - Marker behaviour along paths: leave marker on departure, flip/collapse markers, handle landing on own marker ✅
+  - Line processing: detection + collapsing + elimination logic **with defaults** (no player choice yet) ✅⚠️
+  - Territory disconnection processing: disconnection detection, border collapse, ring elimination, mandatory self-elimination ✅
+  - Phase flow: `ring_placement → movement → capture → line_processing → territory_processing → next player`, including forced elimination when blocked ✅
+  - Hex board: specialized logic and validations (distances, adjacency, edge detection) ✅
 
-**Rule Violation:** Section 11.2 requires:
-- Exactly 4 markers (8x8): Collapse all + eliminate 1 ring
-- 5+ markers (8x8): Player chooses Option 1 or Option 2
-  - Option 1: Collapse all + eliminate 1 ring
-  - Option 2: Collapse only 4 + no elimination
+- **Rule Engine (~60%)**
+  - Move validation: ring placement, stack movement, overtaking captures ✅
+  - Distance rules: stack height minimum for movement, hex distance for hex boards ✅
+  - Capture validation: cap height comparisons, straight-line & landing rules, path blocking ✅
+  - Valid move generation: basic `getValidRingPlacements`, `getValidStackMovements`, `getValidCaptures` ✅⚠️
+  - Game end detection: ring elimination and territory control thresholds ✅
 
-#### Issue #3: Territory Disconnection Not Implemented
-**Impact:** Major victory path unavailable  
-**Estimated Fix:** 4-5 days
+**Major Incomplete Elements:**
 
-**What's Missing:**
-- Von Neumann adjacency-based disconnection detection
-- Representation check
-- Self-elimination prerequisite
-- Border marker collapse
-- Chain reactions
+- **Player choice system** – All decisions default to first option or hard-coded behaviours:
+  - Which line to process when multiple exist
+  - Option 1 vs Option 2 for graduated line rewards
+  - Which stack/cap to eliminate when required
+  - Which disconnected region to process first
+  - Which capture direction to follow in chain captures
 
-**Current Code:**
-```typescript
-// GameEngine.ts - Placeholder territory processing
-for (const territory of territories) {
-  if (territory.isDisconnected) {
-    for (const pos of territory.spaces) {
-      this.boardManager.removeStack(pos, this.gameState.board);
-    }
-    result.territoryChanges.push(territory);
-  }
-}
-// ❌ Disconnection detection algorithm missing
-// ❌ No representation check
-// ❌ No self-elimination prerequisite check
-// ❌ No border marker collapse
-```
+- **Chain capture enforcement** – Single captures are valid, but:
+  - Mandatory continuation of chain captures is not fully enforced in GameEngine
+  - Complex patterns (180° reversals, cycles) are not exhaustively tested
 
-**Rule Violation:** Sections 12.1-12.3 specify complex multi-step process:
-1. Detect disconnected regions (Von Neumann adjacency)
-2. Check representation (region lacks active player)
-3. Validate self-elimination prerequisite
-4. Collapse region + borders to moving player
-5. Eliminate all rings in region
-6. Mandatory self-elimination
-7. Check for chain reactions
+### 3. Python AI Microservice + TypeScript Client (C+ but strategic)
 
-#### Issue #4: Capture Chains Not Mandatory
-**Impact:** Can't execute complex capture sequences  
-**Estimated Fix:** 2-3 days
+- Python service exists (`ai-service/app/`), with:
+  - `RandomAI` and `HeuristicAI` classes
+  - FastAPI endpoints for move generation and evaluation
 
-**What's Missing:**
-- Chain capture detection
-- Mandatory continuation enforcement
-- Landing flexibility (can land beyond target)
-- 180° reversal support
-- Cyclic pattern support
+- TypeScript AI client (`AIServiceClient.ts`):
+  - Configurable base URL (`AI_SERVICE_URL`)
+  - `getAIMove`, `evaluatePosition`, `healthCheck`, and cache control methods
+  - Logging & error handling via `logger`
 
-#### Issue #5: Movement Validation Incomplete
-**Impact:** Invalid moves accepted  
-**Estimated Fix:** 2-3 days
+**Current Gap:** The actual game loop (GameEngine and routes) does not yet:
 
-**Problems:**
-- Landing rules not fully implemented
-- Path validation incomplete
-- Marker interactions not validated
+- Decide when a player is AI-controlled
+- Call `AIServiceClient.getAIMove()` when it is the AI’s turn
+- Await AI decisions and inject resulting `Move` into `makeMove`
 
-#### Issue #6: Phase System Incorrect
-**Impact:** Game flow doesn't match rules  
-**Estimated Fix:** 1-2 days
+**Strategic Decision (per user preference):**
+- Keep the **Python AI microservice** as the primary AI path, to support future ML and self-play.
+- For robustness, we may still implement a simple TypeScript fallback AI (e.g. random/heuristic) for offline/local use or when the AI service is unavailable.
 
-**Current Phases:** `ring_placement | movement | capture | territory_processing | main_game`  
-**Correct Phases:** `ring_placement | movement | capture | line_processing | territory_processing`
+### 4. Tooling & CI (A-)
 
-**Problem:** `main_game` is undefined in rules; `line_processing` is missing.
+- `jest.config.js` – TypeScript Jest config, coverage thresholds set (80%)
+- `tests/` – Environment setup + initial unit tests for BoardManager and board position utilities
+- `.github/workflows/ci.yml` – Lint, type-check, tests with coverage + Codecov, build & Docker test
+- `.husky/pre-commit` – Git hooks for lint/format enforcement
 
-#### Issue #7: Player State Not Updated
-**Impact:** Victory conditions can't be evaluated  
-**Estimated Fix:** 1 day
-
-**Missing Updates:**
-- `ringsInHand` not decremented on placement
-- `eliminatedRings` not incremented on elimination
-- `territorySpaces` not updated on collapse
-
-#### Issue #8: Forced Elimination Missing
-**Impact:** Game can deadlock  
-**Estimated Fix:** 1 day
-
-**Missing:** When player has no valid moves, must eliminate a stack cap (Section 4.4)
-
-### Priority 2: Frontend Not Implemented (🟡 HIGH)
-
-**Current State:** Only skeleton components exist
-- ✅ App.tsx shell
-- ✅ LoadingSpinner component
-- ✅ AuthContext provider
-- ❌ No board rendering
-- ❌ No game visualization
-- ❌ No move input
-- ❌ No game state display
-
-**Required Work:**
-1. Board grid rendering (square 8x8, 19x19, hexagonal)
-2. Ring stack visualization
-3. Marker display
-4. Collapsed territory display
-5. Move selection UI
-6. Valid move highlighting
-7. Game state panel
-8. Timer/clock display
-
-**Estimated Effort:** 40-60 hours (3-4 weeks)
-
-### Priority 3: No Tests Written (🟡 HIGH)
-
-**Current State:**
-- ✅ Jest configured
-- ✅ Test scripts defined
-- ❌ Zero test files with actual tests
-
-**Critical Need:**
-- Unit tests for game logic (validation)
-- Integration tests (full turn sequences)
-- Scenario tests from FAQ (edge cases)
-- Regression tests
-
-**Estimated Effort:** 30-40 hours (2-3 weeks)
-
-### Priority 4: AI Not Implemented (🟢 MEDIUM)
-
-**Current State:** Only interface defined, no implementation
-
-**Required:**
-- Levels 1-3: Random valid moves
-- Levels 4-7: Heuristic evaluation
-- Levels 8-10: MCTS or minimax
-
-**Estimated Effort:** 50-70 hours (4-6 weeks)
+The pipeline is strong; the **missing piece is test volume and coverage**, not infrastructure.
 
 ---
 
-## 🎯 Recommended Development Path
+## 🔴 Key Gaps & Risks
 
-### Immediate Next Steps (Week 1-2)
+### 1. Missing Player Choice System (CRITICAL)
 
-#### Step 1: Set Up Development Environment
-```bash
-cd /Users/armand/code/RingRift
-npm install                    # Install all dependencies
-cp .env.example .env          # Configure environment
-docker-compose up -d          # Start PostgreSQL + Redis
-npm run db:generate           # Generate Prisma client
-npm run dev:server            # Test backend starts
-npm run dev:client            # Test frontend starts
-```
+Architectural gap: **no generic player interaction mechanism**. GameEngine currently hard-codes choices:
 
-#### Step 2: Fix BoardState Data Structure (Day 1-2)
-**Priority:** P0 - Everything depends on this
+- Processes the **first** line found instead of letting player choose
+- Always uses **Option 2** for long lines (no elimination)
+- Eliminates from the **first stack** instead of letting the player choose
+- Processes the **first disconnected region** rather than player-defined order
+- Has no interactive mechanism to choose capture directions when multiple chain options exist
 
-Edit `src/shared/types/game.ts`:
-```typescript
-export interface BoardState {
-  stacks: Map<string, RingStack>;
-  markers: Map<string, number>;           // position → player number
-  collapsedSpaces: Map<string, number>;   // position → player number
-  formedLines: LineInfo[];
-  size: number;
-  type: BoardType;
-}
+**Consequence:**
+- Rules are structurally implemented but **strategic agency is missing**.
+- You can’t claim full rules compliance.
+- AI cannot be meaningfully strategic without a unified way to decide choices.
 
-// Remove 'main_game', add 'line_processing'
-export type GamePhase = 
-  | 'ring_placement'
-  | 'movement'
-  | 'capture'
-  | 'line_processing'
-  | 'territory_processing';
-```
+**Needed:**
 
-#### Step 3: Implement Marker System (Day 3-5)
-**Priority:** P0 - Core game mechanic
+- A `PlayerInteractionManager` or similar abstraction that:
+  - Emits choice requests (with IDs, prompts, options)
+  - Collects responses from either the UI (human) or AIServiceClient (AI)
+  - Integrates smoothly into turn/phase flow without making GameEngine depend on network/UI directly
 
-Add to `src/server/game/BoardManager.ts`:
-```typescript
-setMarker(position: Position, player: number, board: BoardState): void {
-  const key = positionToString(position);
-  board.markers.set(key, player);
-}
+### 2. Chain Captures Not Fully Enforced (CRITICAL)
 
-getMarker(position: Position, board: BoardState): number | undefined {
-  const key = positionToString(position);
-  return board.markers.get(key);
-}
+- RuleEngine has logic for validating capture moves and hints of chain reaction processing.
+- GameEngine’s phase/turn logic **does not fully require** a player to continue capturing when possible.
+- Complex patterns mentioned in the rules/FAQ (e.g., 180° reversals, cycles) are not clearly encoded as scenario tests.
 
-flipMarker(position: Position, newPlayer: number, board: BoardState): void {
-  const key = positionToString(position);
-  if (board.markers.has(key)) {
-    board.markers.set(key, newPlayer);
-  }
-}
+**Consequence:**
+- Games played through the engine would diverge from actual RingRift rules.
+- AI evaluation and training would be based on incorrect dynamics.
 
-collapseMarker(position: Position, player: number, board: BoardState): void {
-  const key = positionToString(position);
-  board.markers.delete(key);
-  board.collapsedSpaces.set(key, player);
-}
-```
+### 3. UI is Minimal (BLOCKS HUMAN PLAY)
 
-Update `src/server/game/GameEngine.ts` movement:
-```typescript
-case 'move_ring':
-  if (move.from && move.to) {
-    const stack = this.boardManager.getStack(move.from, this.gameState.board);
-    if (stack) {
-      // 1. Leave marker at starting position
-      this.boardManager.setMarker(move.from, move.player, this.gameState.board);
-      
-      // 2. Process path for marker interactions
-      const path = this.boardManager.getPath(move.from, move.to);
-      for (const pos of path) {
-        const marker = this.boardManager.getMarker(pos, this.gameState.board);
-        if (marker !== undefined) {
-          if (marker === move.player) {
-            // Collapse own marker
-            this.boardManager.collapseMarker(pos, move.player, this.gameState.board);
-          } else {
-            // Flip opponent marker
-            this.boardManager.flipMarker(pos, move.player, this.gameState.board);
-          }
-        }
-      }
-      
-      // 3. Move stack
-      this.boardManager.removeStack(move.from, this.gameState.board);
-      
-      // 4. Remove same-color marker at destination
-      if (this.boardManager.getMarker(move.to, this.gameState.board) === move.player) {
-        this.boardManager.removeMarker(move.to, this.gameState.board);
-      }
-      
-      this.boardManager.setStack(move.to, stack, this.gameState.board);
-    }
-  }
-  break;
-```
+Front-end currently provides:
 
-#### Step 4: Write First Tests (Day 6-7)
-Create `src/server/game/__tests__/BoardManager.test.ts`:
-```typescript
-describe('BoardManager - Marker System', () => {
-  let boardManager: BoardManager;
-  let board: BoardState;
+- Layout and routing
+- Basic auth and placeholder pages (Home, Lobby, Game, etc.)
 
-  beforeEach(() => {
-    boardManager = new BoardManager('square_8x8');
-    board = boardManager.createBoard();
-  });
+But **no game board UI**:
 
-  test('setMarker places marker at position', () => {
-    const pos: Position = { row: 3, col: 4 };
-    boardManager.setMarker(pos, 1, board);
-    expect(boardManager.getMarker(pos, board)).toBe(1);
-  });
+- No board grid for any board type
+- No ring/marker/collapsed-space rendering
+- No click-to-move or choice dialogs
+- No visual representation of chains, lines, territory, or forced elimination
 
-  test('flipMarker changes marker color', () => {
-    const pos: Position = { row: 3, col: 4 };
-    boardManager.setMarker(pos, 1, board);
-    boardManager.flipMarker(pos, 2, board);
-    expect(boardManager.getMarker(pos, board)).toBe(2);
-  });
+**Consequence:**
+- Human users cannot play or even inspect game states visually.
+- Testing is limited to programmatic tests and logs.
 
-  test('collapseMarker removes marker and adds collapsed space', () => {
-    const pos: Position = { row: 3, col: 4 };
-    boardManager.setMarker(pos, 1, board);
-    boardManager.collapseMarker(pos, 1, board);
-    expect(boardManager.getMarker(pos, board)).toBeUndefined();
-    expect(boardManager.isCollapsedSpace(pos, board)).toBe(true);
-  });
-});
-```
+### 4. Testing Coverage is Very Low
 
-Run tests:
-```bash
-npm test
-```
+- Jest is configured with ambitious thresholds, but:
+  - Only a small handful of tests exist (BoardManager position & adjacency tests)
+  - No scenario tests built from the rules documentation
+  - No integration tests for full turns or games
 
-### Short-Term Goals (Week 3-5)
+**Consequence:**
+- Refactoring core logic is risky.
+- Many edge cases from `ringrift_complete_rules.md` and FAQs are unverified.
 
-#### Week 3: Complete Movement & Capture
-- [ ] Fix movement validation (distance ≥ stack height)
-- [ ] Implement landing rules (any valid space beyond markers)
-- [ ] Complete capture system (chain captures mandatory)
-- [ ] Fix phase transitions
-- [ ] Write tests for all rules
+### 5. AI Not Yet in the Game Loop
 
-#### Week 4: Line Formation
-- [ ] Implement line detection (4+ for 8x8, 5+ for 19x19/hex)
-- [ ] Add graduated rewards (Option 1 vs 2)
-- [ ] Implement ring elimination
-- [ ] Add player choice mechanism
-- [ ] Write scenario tests
+- Python AI service and TS client are ready to be used.
+- No code path from "it’s an AI player’s turn" → "ask AI for a move" → `GameEngine.makeMove()`.
 
-#### Week 5: Territory Disconnection
-- [ ] Implement region detection (Von Neumann adjacency)
-- [ ] Add representation check
-- [ ] Implement self-elimination prerequisite
-- [ ] Handle border markers and chain reactions
-- [ ] Test against rules examples
-
-### Medium-Term Goals (Week 6-10)
-
-#### Week 6-7: Complete Game Logic
-- [ ] Add forced elimination
-- [ ] Fix all player state updates
-- [ ] Implement victory conditions
-- [ ] Comprehensive testing (90%+ coverage)
-- [ ] Validate against all FAQ scenarios
-
-#### Week 8-10: Basic Frontend
-- [ ] Board rendering (square 8x8)
-- [ ] Ring stack visualization
-- [ ] Marker display
-- [ ] Move selection UI
-- [ ] Basic game state display
-- [ ] Manual testing with UI
-
-### Long-Term Goals (Week 11-16)
-
-#### Week 11-13: Advanced Features
-- [ ] Complete frontend (all board types)
-- [ ] Polish UI/UX
-- [ ] WebSocket integration
-- [ ] Spectator mode
-- [ ] Game persistence
-
-#### Week 14-16: AI & Multiplayer
-- [ ] Basic AI (levels 1-5)
-- [ ] Online multiplayer
-- [ ] Rating system
-- [ ] Advanced AI (levels 6-10)
-- [ ] Production deployment
+**Consequence:**
+- No single-player experience, despite the infrastructure being mostly ready.
 
 ---
 
-## 📈 Effort Estimates
+## 🧭 Recommended Strategic Plan (Codebase-Focused)
 
-### Minimum Viable Product (6-8 weeks)
-**Goal:** Playable 2-player game with basic UI
+This plan is consistent with, and refines, the existing `STRATEGIC_ROADMAP.md`, with emphasis on:
 
-- Week 1-2: Fix data structure + marker system
-- Week 3-5: Complete core game logic
-- Week 6-7: Testing & validation
-- Week 8: Basic frontend
+- **MVP-first:** a fully playable local game
+- **Testing-first:** tests validating rules + scenarios
+- **AI-ready:** Python microservice as the primary AI engine
 
-**Deliverable:** Can play complete games following all rules
+### Phase 0 – Testing & Quality Foundation (1–2 weeks)
 
-### Full Featured Game (12-15 weeks)
-**Goal:** Polished multi-player game with AI
+**Goals:** Make it safe to change the engine.
 
-- Weeks 1-8: MVP (above)
-- Weeks 9-11: Complete frontend + polish
-- Weeks 12-13: AI implementation
-- Weeks 14-15: Multiplayer + persistence
+1. **Solidify Jest setup (mostly done)**
+   - Confirm `tests/setup.ts` + `tests/test-environment.js` work across server tests.
+   - Add `npm run test:watch` and `npm run test:coverage` scripts if missing.
 
-**Deliverable:** Production-ready game
+2. **Initial unit tests:**
+   - Expand BoardManager tests to cover:
+     - Marker CRUD and collapsing
+     - Line detection edge cases for each board type
+     - Disconnected region detection for simple patterns
+   - Add RuleEngine tests for:
+     - Simple valid/invalid moves (movement + capture)
 
-### Production Ready (16-20 weeks)
-**Goal:** Deployed, tested, documented
+3. **CI gate:**
+   - Enforce `npm test` on PRs (already present) but temporarily relax coverage thresholds **until tests catch up**, then tighten again.
 
-- Weeks 1-15: Full featured (above)
-- Weeks 16-17: Advanced AI + optimizations
-- Weeks 18-19: Security audit + performance tuning
-- Week 20: Deployment + monitoring
+### Phase 1 – Finish Core Rules (2–3 weeks)
 
-**Deliverable:** Live, scalable service
+**Goals:** Fully rule-compliant engine, **before** heavy UI work.
 
----
+1. **Player Choice Infrastructure**
 
-## Risk Assessment
+   - Add shared types in `src/shared/types/game.ts`:
 
-### High Risk Areas
+     ```ts
+     export interface PlayerChoice<T> {
+       id: string;
+       type:
+         | 'line_order'
+         | 'line_reward_option'
+         | 'ring_elimination'
+         | 'region_order'
+         | 'capture_direction';
+       player: number;
+       prompt: string;
+       options: T[];
+       timeoutMs?: number;
+       defaultOption?: T;
+     }
 
-1. **Territory Disconnection Complexity** (🔴 HIGH)
-   - Most complex game mechanic
-   - Chain reactions can cascade
-   - Self-elimination prerequisite tricky
-   - **Mitigation:** Extra time buffer, extensive testing
+     export interface PlayerChoiceResponse<T> {
+       choiceId: string;
+       selectedOption: T;
+     }
+     ```
 
-2. **Marker System Integration** (🟡 MEDIUM)
-   - Affects all game mechanics
-   - Edge cases may emerge
-   - **Mitigation:** TDD approach, comprehensive tests
+   - Implement a `PlayerInteractionManager` on the server that:
+     - Emits choice events (to WebSocket or callback) without knowing about UI/transport
+     - Awaits responses (with timeout)
+     - Provides a synchronous-appearing API to GameEngine (e.g. `await getPlayerChoice(...)`)
+   - Integrate at all choice points in `GameEngine.ts`:
+     - Line ordering and Option 1 vs 2
+     - Elimination stack selection
+     - Region processing order
+     - Capture direction selection in chains
 
-3. **AI Implementation Difficulty** (🟡 MEDIUM)
-   - Multi-player game theory complex
-   - Performance constraints
-   - **Mitigation:** Start simple, optimize later
+2. **Chain Capture Enforcement**
 
-4. **WebSocket Synchronization** (🟡 MEDIUM)
-   - Real-time state sync challenging
-   - Reconnection edge cases
-   - **Mitigation:** Use proven patterns, thorough testing
+   - Extend GameEngine to:
+     - Mark when a chain capture is in progress
+     - After applying a capture, compute available follow-up captures for that stack
+     - Force the player (via UI/AI) to continue selecting capture moves until none remain
+   - Add explicit rule-based tests for:
+     - Mandatory continuation
+     - 180° reversal patterns
+     - Cyclic capture sequences
 
-### Low Risk Areas
+3. **Rule Scenario Tests**
 
-1. **Infrastructure** (🟢 LOW) - Already complete
-2. **Type System** (🟢 LOW) - Well-designed
-3. **Architecture** (🟢 LOW) - Clean separation
-4. **Documentation** (🟢 LOW) - Comprehensive
+   - Derive tests directly from `ringrift_complete_rules.md` and FAQs Q1–Q24.
+   - Encode a handful of emblematic scenarios first (e.g., simple captures, line formation, basic disconnections), then expand.
 
----
+### Phase 2 – Minimal Playable UI (2–3 weeks)
 
-## 💡 Key Recommendations
+**Goals:** Human-usable local 2-player game.
 
-### 1. **Start with Game Logic, Not UI**
-The instinct is often to build UI first, but the comprehensive rule documentation makes test-driven backend development ideal. Get the rules right first.
+1. **Board Rendering Components**
+   - `SquareBoard` and `HexBoard` React components that consume a normalized board-state view from the server (or a client mirror of `GameState`).
+   - `Cell` / `HexCell` components with appropriate coordinates.
+   - Visual layers for stacks, markers, and collapsed spaces.
 
-**Recommended Order:**
-1. Fix core game logic (Weeks 1-5)
-2. Write comprehensive tests (Week 6-7)
-3. Build UI (Week 8-10)
-4. Add AI/multiplayer (Week 11+)
+2. **Interaction & Choices**
+   - Click-to-select stack and destination; highlight valid moves.
+   - Show choices via modal or side panel when PlayerInteractionManager requests input.
+   - Display current phase, active player, ring/territory counts.
 
-### 2. **Use the Documentation as Your Specification**
-The `ringrift_complete_rules.md` file is exceptional. Treat it as your specification:
-- Every rule should have a test
-- Every FAQ scenario should pass
-- Reference rule sections in code comments
+3. **Local 2-Player Mode**
+   - Initially, skip multiplayer; just host a single game on the backend, with the client connected as both players.
 
-### 3. **Adopt Test-Driven Development**
-Given the rule complexity, TDD is essential:
-```
-Write test → Implement feature → Verify → Refactor
-```
+### Phase 3 – AI Integration (2–3 weeks)
 
-**Example Workflow:**
-```typescript
-// 1. Write test first
-test('marker flipped when opponent ring jumps over it', () => {
-  // Setup: Place marker for player 1 at (3,3)
-  // Action: Player 2 moves ring over (3,3)
-  // Assert: Marker at (3,3) is now player 2's color
-});
+**Goals:** Single-player mode powered by Python AI.
 
-// 2. Run test (fails)
-npm test
+1. **Define AI Player in GameState**
+   - Extend player type to include `type: 'human' | 'ai'` and AI config (difficulty, AI type).
 
-// 3. Implement feature
-boardManager.flipMarker(pos, move.player, board);
+2. **Wire AIServiceClient into Game Loop**
+   - In the server, when it’s an AI player’s turn:
+     - Use `AIServiceClient.healthCheck()` to confirm availability.
+     - Call `getAIMove(currentGameState, playerNumber, difficulty, aiType)`.
+     - Validate the returned move through RuleEngine to avoid trust issues.
+     - Apply via `GameEngine.makeMove()`.
 
-// 4. Run test (passes)
-npm test
+3. **AI + Choice Integration**
+   - When a choice is needed for an AI player, either:
+     - Delegate to AI service via a dedicated `/ai/choice` endpoint, or
+     - Use simple heuristics locally in TypeScript for now.
 
-// 5. Refactor if needed
-```
+4. **Fallback Strategy**
+   - If AI service is down, provide:
+     - A simple TypeScript random/heuristic AI
+     - Or degrade gracefully with an error instead of hanging.
 
-### 4. **Build Incrementally**
-Don't try to implement everything at once:
+### Phase 4 – Validation & Polish (1–2 weeks)
 
-**Sprint 1 (Week 1-2):** Markers only  
-**Sprint 2 (Week 3):** Movement + captures  
-**Sprint 3 (Week 4):** Line formation  
-**Sprint 4 (Week 5):** Territory disconnection  
-**Sprint 5 (Week 6-7):** Testing  
+- Heavy scenario-driven tests across board types.
+- Performance tuning for AI latency (< 2 seconds typical).
+- UX polish: animations, loading states, friendly error messages.
 
-Each sprint should produce working, tested code.
+### Phase 5 – Multiplayer, Persistence, and Extras (future)
 
-### 5. **Leverage Existing Work**
-The project already has excellent:
-- Type definitions (use them!)
-- Architecture (follow the patterns!)
-- Documentation (reference it constantly!)
-- Infrastructure (don't rebuild it!)
-
-### 6. **Code Quality Standards**
-Maintain the existing high standards:
-```typescript
-// ✅ Good: Clear, documented, rule-referenced
-/**
- * Processes marker flipping during ring movement.
- * Rule Reference: Section 8.3 - Marker Interaction
- */
-private processMarkerFlipping(
-  path: Position[], 
-  movingPlayer: number, 
-  board: BoardState
-): void {
-  for (const pos of path) {
-    const marker = this.boardManager.getMarker(pos, board);
-    if (marker && marker !== movingPlayer) {
-      this.boardManager.flipMarker(pos, movingPlayer, board);
-    }
-  }
-}
-
-// ❌ Bad: Unclear, undocumented
-private doStuff(p: Position[], n: number, b: any): void {
-  p.forEach(x => {
-    const m = this.bm.getM(x, b);
-    if (m && m !== n) this.bm.flipM(x, n, b);
-  });
-}
-```
+- Use existing WebSocket skeleton to sync moves across clients.
+- Use Prisma models to persist game and move history.
+- Implement spectator mode, replays, rating system, etc.
 
 ---
 
-## 🎯 Success Criteria
+## 🧪 Testing Strategy (Code-Centric)
 
-### Phase 1: Core Logic (Week 1-7)
-- [ ] All 8 critical issues resolved
-- [ ] 90%+ test coverage on game logic
-- [ ] All FAQ scenarios pass tests
-- [ ] Can play complete game via API
-- [ ] Zero known rule violations
+1. **Unit Tests (80–90% coverage on game modules)**
+   - BoardManager: positions, adjacency, markers, lines, disconnected regions.
+   - RuleEngine: validateMove for all move types, getValidMoves.
+   - GameEngine: phase transitions, state updates, forced elimination, line and territory post-processing.
 
-### Phase 2: Basic UI (Week 8-10)
-- [ ] Board renders correctly (8x8 square)
-- [ ] Can place rings via UI
-- [ ] Can make moves via UI
-- [ ] Game state clearly displayed
-- [ ] Move validation provides feedback
+2. **Integration Tests**
+   - End-to-end turn flows: place → move → capture → line → territory.
+   - Forced elimination scenarios.
+   - Hex vs square board differences.
 
-### Phase 3: Full Features (Week 11-16)
-- [ ] All board types supported
-- [ ] AI opponents functional
-- [ ] 2-4 players supported
-- [ ] WebSocket multiplayer works
-- [ ] Games persisted to database
+3. **Scenario Tests from Rules/FAQ**
+   - Encoded as structured setups + expected outcomes.
+   - Validate complex interactions beyond unit-level guarantees.
 
-### Phase 4: Production (Week 17-20)
-- [ ] Deployed to production
-- [ ] Performance optimized
-- [ ] Security audited
-- [ ] Monitoring in place
-- [ ] Documentation complete
+4. **AI Integration Tests**
+   - Mock AIServiceClient (or use a test instance) to:
+     - Ensure the game waits for AI moves.
+     - Ensure invalid moves from AI are rejected.
 
 ---
 
-## 📚 Resources & Next Steps
+## 🔍 Files & Areas Worth Examining (for Documentation & Planning)
 
-### Essential Reading
-1. `ringrift_complete_rules.md` - **Read this first!**
-2. `IMPLEMENTATION_STATUS.md` - Understand current state
-3. `TODO.md` - See specific tasks
-4. `RINGRIFT_IMPROVEMENT_PLAN.md` - Detailed roadmap
+From the current project tree:
 
-### Development Tools
-```bash
-# Start coding immediately
-npm install
-npm run dev:server  # Backend with hot reload
-npm run dev:client  # Frontend with Vite HMR
-npm test           # Run tests
-npm run lint       # Check code quality
+- **Core Engine & Rules**
+  - `src/server/game/BoardManager.ts`
+  - `src/server/game/GameEngine.ts`
+  - `src/server/game/RuleEngine.ts`
+  - `src/server/game/ai/AIEngine.ts`, `AIPlayer.ts` (TS-side AI scaffolding)
 
-# Docker development
-docker-compose up -d  # Start services
-npm run db:migrate    # Run migrations
-```
+- **AI Integration**
+  - `src/server/services/AIServiceClient.ts`
+  - `ai-service/app/main.py`, `ai-service/app/ai/*.py`
 
-### Code Entry Points
-- **Game Logic:** `src/server/game/GameEngine.ts`
-- **Rules:** `src/server/game/RuleEngine.ts`
-- **Board:** `src/server/game/BoardManager.ts`
-- **Types:** `src/shared/types/game.ts`
-- **Frontend:** `src/client/App.tsx`
+- **Shared Types & Validation**
+  - `src/shared/types/game.ts`
+  - `src/shared/types/websocket.ts`
+  - `src/shared/validation/schemas.ts`
 
-### Community & Support
-- **Issues:** Track bugs and features on GitHub
-- **Discussions:** Architecture decisions and questions
-- **PRs:** Code review and collaboration
+- **Frontend Shell**
+  - `src/client/App.tsx`, `src/client/components/Layout.tsx`
+  - `src/client/pages/GamePage.tsx`, `LobbyPage.tsx`, `HomePage.tsx`, etc.
 
----
+- **Docs & Plans**
+  - `CURRENT_STATE_ASSESSMENT.md`
+  - `STRATEGIC_ROADMAP.md`
+  - `RINGRIFT_IMPROVEMENT_PLAN.md`
+  - `TODO.md`
+  - `ARCHITECTURE_ASSESSMENT.md`
+  - `TECHNICAL_ARCHITECTURE_ANALYSIS.md`
+  - `BOARD_TYPE_IMPLEMENTATION_PLAN.md`
 
-## 🏁 Conclusion
-
-**RingRift has exceptional potential.** The documentation quality and architectural planning are among the best I've evaluated. The challenge is execution - implementing complex game rules correctly.
-
-### Key Takeaways
-
-**Strengths to Leverage:**
-- 📚 World-class documentation
-- 🏗️ Clean, modern architecture
-- 🔧 Complete infrastructure setup
-- 💻 Strong TypeScript foundation
-
-**Gaps to Address:**
-- 🎮 Core game logic incomplete (6-8 week effort)
-- 🎨 Frontend not implemented (3-4 week effort)
-- 🧪 No tests written (2-3 week effort parallel to dev)
-- 🤖 AI not started (4-6 week effort)
-
-**Recommended Path:**
-1. Start immediately with marker system (Week 1-2)
-2. Complete core logic with TDD (Week 3-6)
-3. Validate with comprehensive tests (Week 7)
-4. Build basic UI (Week 8-10)
-5. Add advanced features (Week 11-16)
-
-**Timeline to Playable Game:** 6-8 weeks  
-**Timeline to Full Features:** 12-15 weeks  
-**Timeline to Production:** 16-20 weeks
-
-### Final Recommendation
-
-**Begin implementation now.** The planning phase is complete. The documentation is thorough. The architecture is sound. The remaining work is systematic implementation of well-defined rules.
-
-**Priority Order:**
-1. Fix BoardState data structure (Day 1)
-2. Implement marker system (Day 2-5)
-3. Write marker tests (Day 6-7)
-4. Complete core game logic (Week 3-5)
-5. Comprehensive testing (Week 6-7)
-6. Build frontend (Week 8-10)
-
-**The path is clear. The tools are ready. Time to build!** 🚀
+These documents now mostly reflect the current state; this evaluation aligns with them and clarifies where earlier assessments (that assumed marker/territory systems were missing) are superseded by the current code.
 
 ---
 
-**Evaluation Complete**  
-**Recommended Action:** Begin Phase 1 implementation  
-**Next Review:** After completing marker system (Week 2)
+## ✅ Summary
+
+- The **architecture, documentation, and infrastructure are excellent**.
+- The **core engine is substantially implemented and code-verified** against the rules, especially markers, lines, territory, phases, and hex boards.
+- The **critical remaining engine gaps** are player choice and full chain capture enforcement.
+- The **biggest blockers to actual use** are the missing UI and low test coverage.
+- The **Python AI microservice and TypeScript AI client exist and should be kept**, with the next step being to actually integrate them into the game loop and choice system.
+
+If you follow the phased plan above (which dovetails with `STRATEGIC_ROADMAP.md` but emphasises Python AI integration and the true state of the core engine), RingRift can realistically reach a **playable, single-player MVP in ~8–10 weeks** of focused work.

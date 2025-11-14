@@ -5,7 +5,15 @@ import jwt from 'jsonwebtoken';
 import { getDatabaseClient } from '../database/connection';
 import { logger } from '../utils/logger';
 import { GameEngine } from '../game/GameEngine';
-import { Move, Player, TimeControl, BOARD_CONFIGS } from '../../shared/types/game';
+import {
+  Move,
+  Player,
+  TimeControl,
+  BOARD_CONFIGS,
+  PlayerChoiceResponse
+} from '../../shared/types/game';
+import { WebSocketInteractionHandler } from '../game/WebSocketInteractionHandler';
+import { PlayerInteractionManager } from '../game/PlayerInteractionManager';
 
 export interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -18,6 +26,8 @@ export class WebSocketServer {
   private gameRooms: Map<string, Set<string>> = new Map();
   private userSockets: Map<string, string> = new Map();
   private gameEngines: Map<string, GameEngine> = new Map();
+  private interactionManagers: Map<string, PlayerInteractionManager> = new Map();
+  private interactionHandlers: Map<string, WebSocketInteractionHandler> = new Map();
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -143,6 +153,26 @@ export class WebSocketServer {
         }
       });
 
+      // Handle player choice responses
+      socket.on('player_choice_response', (response: PlayerChoiceResponse<any>) => {
+        try {
+          const gameId = socket.gameId;
+          if (!gameId) {
+            throw new Error('player_choice_response received without an active gameId');
+          }
+
+          const handler = this.interactionHandlers.get(gameId);
+          if (!handler) {
+            throw new Error(`No WebSocketInteractionHandler found for gameId=${gameId}`);
+          }
+
+          handler.handleChoiceResponse(response);
+        } catch (error) {
+          logger.error('Error handling player_choice_response', error);
+          socket.emit('error', { message: 'Invalid choice response' });
+        }
+      });
+
       // Handle disconnection
       socket.on('disconnect', () => {
         this.handleDisconnect(socket);
@@ -212,12 +242,29 @@ export class WebSocketServer {
       JSON.parse(game.timeControl) :
       { type: 'standard', initialTime: 600000, increment: 0 };
 
-    // Create game engine
+    // Map playerNumber -> Socket.IO target (typically a user socket id).
+    const getTargetForPlayer = (playerNumber: number): string | undefined => {
+      const player = players.find(p => p.playerNumber === playerNumber);
+      if (!player) return undefined;
+      return this.userSockets.get(player.id);
+    };
+
+    const wsHandler = new WebSocketInteractionHandler(
+      this.io,
+      gameId,
+      getTargetForPlayer,
+      30_000
+    );
+    const interactionManager = new PlayerInteractionManager(wsHandler);
+
+    // Create game engine wired to the interaction manager for choices
     const gameEngine = new GameEngine(
       gameId,
       game.boardType as keyof typeof BOARD_CONFIGS,
       players,
-      timeControl
+      timeControl,
+      (game as any).isRated ?? true,
+      interactionManager
     );
 
     // Replay moves if any exist
@@ -237,6 +284,8 @@ export class WebSocketServer {
     }
 
     this.gameEngines.set(gameId, gameEngine);
+    this.interactionManagers.set(gameId, interactionManager);
+    this.interactionHandlers.set(gameId, wsHandler);
     return gameEngine;
   }
 

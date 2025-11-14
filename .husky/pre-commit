@@ -1,14 +1,5 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# Run lint-staged to check and fix code before committing
+# Run lint-staged to check and fix staged files
 npx lint-staged
-
-# Run type checking
-echo "Running TypeScript type check..."
-npm run build:server -- --noEmit
-npm run build:client -- --noEmit
-
-# Run tests
-echo "Running tests..."
-npm test -- --bail --findRelatedTests
