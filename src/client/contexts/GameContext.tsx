@@ -7,13 +7,24 @@ import React, {
   useState
 } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { BoardState, GameState, Move, PlayerChoice } from '../../shared/types/game';
+import { BoardState, GameState, Move, PlayerChoice, GameResult } from '../../shared/types/game';
 
 interface GameContextType {
   gameId: string | null;
   gameState: GameState | null;
+  /**
+   * Optional list of valid moves for the current player, as provided by the
+   * backend GameEngine in the latest game_state payload. Currently this is
+   * primarily intended for highlighting legal targets in the UI.
+   */
+  validMoves: Move[] | null;
   isConnecting: boolean;
   error: string | null;
+  /**
+   * When defined, contains the terminal GameResult for the current game.
+   * This is set in response to the server-emitted game_over event.
+   */
+  victoryState: GameResult | null;
   connectToGame: (gameId: string) => Promise<void>;
   disconnect: () => void;
 
@@ -93,10 +104,12 @@ function hydrateGameState(rawState: any): GameState {
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [gameId, setGameId] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [validMoves, setValidMoves] = useState<Move[] | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingChoice, setPendingChoice] = useState<PlayerChoice | null>(null);
   const [choiceDeadline, setChoiceDeadline] = useState<number | null>(null);
+  const [victoryState, setVictoryState] = useState<GameResult | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   const disconnect = useCallback(() => {
@@ -106,10 +119,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
     setGameId(null);
     setGameState(null);
+    setValidMoves(null);
     setIsConnecting(false);
     setError(null);
     setPendingChoice(null);
     setChoiceDeadline(null);
+    setVictoryState(null);
   }, []);
 
   const connectToGame = useCallback(async (targetGameId: string) => {
@@ -152,9 +167,30 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (data?.gameId === targetGameId && data?.gameState) {
           setGameId(targetGameId);
           setGameState(hydrateGameState(data.gameState));
+          setValidMoves(Array.isArray(data.validMoves) ? data.validMoves : null);
           setIsConnecting(false);
           setError(null);
         }
+      });
+
+      // Terminal game event carrying the final GameResult and snapshot.
+      socket.on('game_over', (payload: any) => {
+        const { data } = payload || {};
+        if (!data || data.gameId !== targetGameId) return;
+
+        setGameId(targetGameId);
+        if (data.gameState) {
+          setGameState(hydrateGameState(data.gameState));
+        }
+        if (data.gameResult) {
+          setVictoryState(data.gameResult as GameResult);
+        }
+        setValidMoves(null);
+        setIsConnecting(false);
+        setError(null);
+        // Any pending choices are no longer relevant once the game ends.
+        setPendingChoice(null);
+        setChoiceDeadline(null);
       });
 
       // Choice system events
@@ -251,12 +287,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     gameState,
     isConnecting,
     error,
+    victoryState,
     connectToGame,
     disconnect,
     pendingChoice,
     choiceDeadline,
     respondToChoice,
-    submitMove
+    submitMove,
+    validMoves
   };
 
   return (

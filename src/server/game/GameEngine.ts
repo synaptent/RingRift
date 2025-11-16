@@ -10,8 +10,15 @@ import {
   RingStack,
   Territory,
   LineInfo,
-  positionToString
+  positionToString,
+  LineOrderChoice,
+  LineRewardChoice,
+  RingEliminationChoice,
+  RegionOrderChoice,
+  CaptureDirectionChoice,
+  PlayerChoiceResponseFor
 } from '../../shared/types/game';
+import { calculateCapHeight, getPathPositions, getMovementDirectionsForBoardType } from '../../shared/engine/core';
 import { BoardManager } from './BoardManager';
 import { RuleEngine } from './RuleEngine';
 import { PlayerInteractionManager } from './PlayerInteractionManager';
@@ -204,8 +211,10 @@ export class GameEngine {
     // Stop current player's timer while we process the move
     this.stopPlayerTimer(this.gameState.currentPlayer);
 
-    // Apply the move to the board state
-    const moveResult = this.applyMove(fullMove);
+    // Apply the move to the board state. We intentionally ignore the
+    // granular result here; post-move consequences (lines, territory,
+    // etc.) are processed separately based on the updated gameState.
+    this.applyMove(fullMove);
 
     // Add move to history
     this.gameState.moveHistory.push(fullMove);
@@ -273,7 +282,7 @@ export class GameEngine {
           moveNumber: this.gameState.moveHistory.length + 1
         };
 
-        const _internalResult = this.applyMove(internalMove);
+        this.applyMove(internalMove);
         this.gameState.moveHistory.push(internalMove);
         this.gameState.lastMoveAt = new Date();
 
@@ -287,7 +296,7 @@ export class GameEngine {
 
     // Process automatic consequences (line formations, territory, etc.) only
     // after the full move (including any mandatory chain) has resolved.
-    await this.processAutomaticConsequences(moveResult);
+    await this.processAutomaticConsequences();
 
 
     // Check for game end conditions
@@ -469,23 +478,116 @@ export class GameEngine {
 
   /**
    * Enumerate all valid capture moves from a given position for the
-   * specified player, using the RuleEngine's move generator.
+   * specified player by ray-walking in each movement direction and
+   * validating each candidate via RuleEngine.
    *
-   * This is the TS analogue of the Rust CaptureProcessor's logic for
-   * computing follow-up chain options.
+   * This is intentionally kept in sync with the Rust
+   * CaptureProcessor::get_available_capture_details logic and is
+   * exercised by tests/unit/GameEngine.chainCaptureChoiceIntegration.test.ts
+   * as the TS reference for multi-option chain capture behavior.
    */
   private getCaptureOptionsFromPosition(position: Position, playerNumber: number): Move[] {
-    // RuleEngine.getValidMoves will, in capture phase, return only
-    // overtaking_capture moves. We further filter by origin position.
-    const allMoves = this.ruleEngine.getValidMoves(this.gameState);
-    const positionKey = positionToString(position);
+    // Enumerate all legal overtaking captures starting from the given
+    // position, mirroring the Rust CaptureProcessor ray-walk logic
+    // rather than relying on RuleEngine.getValidMoves (which operates
+    // globally over all stacks).
+    const board = this.gameState.board;
+    const attackerStack = this.boardManager.getStack(position, board);
 
-    return allMoves.filter(m =>
-      m.type === 'overtaking_capture' &&
-      m.player === playerNumber &&
-      m.from &&
-      positionToString(m.from) === positionKey
-    );
+    if (!attackerStack || attackerStack.controllingPlayer !== playerNumber) {
+      return [];
+    }
+
+    const moves: Move[] = [];
+    const directions = this.getAllDirections();
+
+    for (const dir of directions) {
+      // Step outward from the attacker to find the first potential target
+      let step = 1;
+      let targetPos: Position | undefined;
+
+      for (;;) {
+        const pos: Position = {
+          x: position.x + dir.x * step,
+          y: position.y + dir.y * step,
+          ...(dir.z !== undefined && { z: (position.z || 0) + dir.z * step })
+        };
+
+        if (!this.boardManager.isValidPosition(pos)) {
+          break; // Off-board
+        }
+
+        // Collapsed spaces block both target search and landing beyond
+        if (this.boardManager.isCollapsedSpace(pos, board)) {
+          break;
+        }
+
+        const stackAtPos = this.boardManager.getStack(pos, board);
+        if (stackAtPos && stackAtPos.rings.length > 0) {
+          // First stack encountered along this ray is the only possible
+          // capture target in this direction.
+          if (
+            stackAtPos.controllingPlayer !== playerNumber &&
+            attackerStack.capHeight >= stackAtPos.capHeight
+          ) {
+            targetPos = pos;
+          }
+          break;
+        }
+
+        step++;
+      }
+
+      if (!targetPos) continue;
+
+      // From the target, walk further along the same ray to find candidate
+      // landing positions. Each candidate is validated via validateMove to
+      // ensure consistency with the RuleEngine's rules (distance, path,
+      // landing legality, etc.).
+      let landingStep = 1;
+      for (;;) {
+        const landingPos: Position = {
+          x: targetPos.x + dir.x * landingStep,
+          y: targetPos.y + dir.y * landingStep,
+          ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep })
+        };
+
+        if (!this.boardManager.isValidPosition(landingPos)) {
+          break;
+        }
+
+        // Collapsed spaces and stacks at the landing position block further
+        // landings along this ray.
+        if (this.boardManager.isCollapsedSpace(landingPos, board)) {
+          break;
+        }
+
+        const landingStack = this.boardManager.getStack(landingPos, board);
+        if (landingStack && landingStack.rings.length > 0) {
+          break;
+        }
+
+        const candidate: Move = {
+          id: '',
+          type: 'overtaking_capture',
+          player: playerNumber,
+          from: position,
+          captureTarget: targetPos,
+          to: landingPos,
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: this.gameState.moveHistory.length + 1
+        };
+
+        if (this.ruleEngine.validateMove(candidate, this.gameState)) {
+          moves.push(candidate);
+        }
+
+        landingStep++;
+      }
+    }
+
+    return moves;
   }
 
   /**
@@ -516,11 +618,11 @@ export class GameEngine {
 
     const interaction = this.requireInteractionManager();
 
-    const choice = {
+    const choice: CaptureDirectionChoice = {
       id: generateUUID(),
       gameId: this.gameState.id,
       playerNumber: state.playerNumber,
-      type: 'capture_direction' as const,
+      type: 'capture_direction',
       prompt: 'Choose capture direction and landing position',
       options: options.map(opt => ({
         targetPosition: opt.captureTarget!,
@@ -532,12 +634,9 @@ export class GameEngine {
       }))
     };
 
-    const response = await interaction.requestChoice(choice as any);
-    const selected = response.selectedOption as {
-      targetPosition: Position;
-      landingPosition: Position;
-      capturedCapHeight: number;
-    };
+    const response: PlayerChoiceResponseFor<CaptureDirectionChoice> =
+      await interaction.requestChoice(choice);
+    const selected = response.selectedOption;
 
     const targetKey = positionToString(selected.targetPosition);
     const landingKey = positionToString(selected.landingPosition);
@@ -599,7 +698,7 @@ export class GameEngine {
         ...targetStack,
         rings: remainingTargetRings,
         stackHeight: remainingTargetRings.length,
-        capHeight: this.calculateCapHeight(remainingTargetRings),
+        capHeight: calculateCapHeight(remainingTargetRings),
         controllingPlayer: remainingTargetRings[0]
       };
       this.boardManager.setStack(captureTarget, newTargetStack, this.gameState.board);
@@ -616,7 +715,7 @@ export class GameEngine {
       position: landing,
       rings: newRings,
       stackHeight: newRings.length,
-      capHeight: this.calculateCapHeight(newRings),
+      capHeight: calculateCapHeight(newRings),
       controllingPlayer: newRings[0]
     };
     this.boardManager.setStack(landing, newStack, this.gameState.board);
@@ -626,11 +725,7 @@ export class GameEngine {
    * Process automatic consequences after a move
    * Rule Reference: Section 4.5 - Post-Movement Processing
    */
-  private async processAutomaticConsequences(moveResult: {
-    captures: Position[];
-    territoryChanges: Territory[];
-    lineCollapses: LineInfo[];
-  }): Promise<void> {
+  private async processAutomaticConsequences(): Promise<void> {
     // Captures are already processed in applyMove
     
     // Process line formations (Section 11.2, 11.3)
@@ -674,11 +769,11 @@ export class GameEngine {
       } else {
         const interaction = this.requireInteractionManager();
 
-        const choice = {
+        const choice: LineOrderChoice = {
           id: generateUUID(),
           gameId: this.gameState.id,
           playerNumber: this.gameState.currentPlayer,
-          type: 'line_order' as const,
+          type: 'line_order',
           prompt: 'Choose which line to process first',
           options: playerLines.map((line, index) => ({
             lineId: String(index),
@@ -686,11 +781,9 @@ export class GameEngine {
           }))
         };
 
-        const response = await interaction.requestChoice(choice as any);
-        const selected = response.selectedOption as {
-          lineId: string;
-          markerPositions: Position[];
-        };
+        const response: PlayerChoiceResponseFor<LineOrderChoice> =
+          await interaction.requestChoice(choice);
+        const selected = response.selectedOption;
         const index = parseInt(selected.lineId, 10);
         lineToProcess = playerLines[index] ?? playerLines[0];
       }
@@ -723,22 +816,21 @@ export class GameEngine {
 
       const interaction = this.requireInteractionManager();
 
-      const choice = {
+      const choice: LineRewardChoice = {
         id: generateUUID(),
         gameId: this.gameState.id,
         playerNumber: this.gameState.currentPlayer,
-        type: 'line_reward_option' as const,
+        type: 'line_reward_option',
         prompt: 'Choose line reward option',
         options: [
           'option_1_collapse_all_and_eliminate',
           'option_2_min_collapse_no_elimination'
-        ] as const
+        ]
       };
 
-      const response = await interaction.requestChoice(choice as any);
-      const selected = response.selectedOption as
-        | 'option_1_collapse_all_and_eliminate'
-        | 'option_2_min_collapse_no_elimination';
+      const response: PlayerChoiceResponseFor<LineRewardChoice> =
+        await interaction.requestChoice(choice);
+      const selected = response.selectedOption;
 
       if (selected === 'option_1_collapse_all_and_eliminate') {
         this.collapseLineMarkers(line.positions, line.player);
@@ -800,7 +892,7 @@ export class GameEngine {
    */
   private eliminateFromStack(stack: RingStack, player: number): void {
     // Calculate cap height
-    const capHeight = this.calculateCapHeight(stack.rings);
+    const capHeight = calculateCapHeight(stack.rings);
     
     // Eliminate the entire cap (all consecutive top rings of controlling color)
     const remainingRings = stack.rings.slice(capHeight);
@@ -821,7 +913,7 @@ export class GameEngine {
         ...stack,
         rings: remainingRings,
         stackHeight: remainingRings.length,
-        capHeight: this.calculateCapHeight(remainingRings),
+        capHeight: calculateCapHeight(remainingRings),
         controllingPlayer: remainingRings[0]
       };
       this.boardManager.setStack(stack.position, newStack, this.gameState.board);
@@ -861,11 +953,11 @@ export class GameEngine {
 
     const interaction = this.requireInteractionManager();
 
-    const choice = {
+    const choice: RingEliminationChoice = {
       id: generateUUID(),
       gameId: this.gameState.id,
       playerNumber: player,
-      type: 'ring_elimination' as const,
+      type: 'ring_elimination',
       prompt: 'Choose which stack to eliminate from',
       options: playerStacks.map(stack => ({
         stackPosition: stack.position,
@@ -874,12 +966,9 @@ export class GameEngine {
       }))
     };
 
-    const response = await interaction.requestChoice(choice as any);
-    const selected = response.selectedOption as {
-      stackPosition: Position;
-      capHeight: number;
-      totalHeight: number;
-    };
+    const response: PlayerChoiceResponseFor<RingEliminationChoice> =
+      await interaction.requestChoice(choice);
+    const selected = response.selectedOption;
 
     const selectedKey = positionToString(selected.stackPosition);
     const chosenStack =
@@ -924,43 +1013,47 @@ export class GameEngine {
       );
       
       if (disconnectedRegions.length === 0) break;
+
+      // Filter to regions that satisfy the self-elimination prerequisite
+      // for the moving player. This mirrors the Rust notion of
+      // "eligible" disconnected regions and prevents us from
+      // prematurely bailing out just because the first region is not
+      // processable.
+      const eligibleRegions = disconnectedRegions.filter(region =>
+        this.canProcessDisconnectedRegion(region, movingPlayer)
+      );
+
+      if (eligibleRegions.length === 0) {
+        // No region can be processed for this player; stop to avoid
+        // infinite loops.
+        break;
+      }
       
       let region: Territory;
       
-      if (!this.interactionManager || disconnectedRegions.length === 1) {
-        // No manager or only one region: keep existing behaviour
-        region = disconnectedRegions[0];
+      if (!this.interactionManager || eligibleRegions.length === 1) {
+        // No manager or only one eligible region: process it directly.
+        region = eligibleRegions[0];
       } else {
         const interaction = this.requireInteractionManager();
-        const choice = {
+        const choice: RegionOrderChoice = {
           id: generateUUID(),
           gameId: this.gameState.id,
           playerNumber: movingPlayer,
-          type: 'region_order' as const,
+          type: 'region_order',
           prompt: 'Choose which disconnected region to process first',
-          options: disconnectedRegions.map((r, index) => ({
+          options: eligibleRegions.map((r, index) => ({
             regionId: String(index),
             size: r.spaces.length,
             representativePosition: r.spaces[0]
           }))
         };
 
-        const response = await interaction.requestChoice(choice as any);
-        const selected = response.selectedOption as {
-          regionId: string;
-          size: number;
-          representativePosition: Position;
-        };
+        const response: PlayerChoiceResponseFor<RegionOrderChoice> =
+          await interaction.requestChoice(choice);
+        const selected = response.selectedOption;
         const index = parseInt(selected.regionId, 10);
-        region = disconnectedRegions[index] ?? disconnectedRegions[0];
-      }
-      
-      // Self-elimination prerequisite check
-      if (!this.canProcessDisconnectedRegion(region, movingPlayer)) {
-        // Cannot process this region, skip it
-        // In reality, if we can't process any regions, we should break
-        // For now, just break to avoid infinite loop
-        break;
+        region = eligibleRegions[index] ?? eligibleRegions[0];
       }
       
       // Process the disconnected region
@@ -1001,65 +1094,46 @@ export class GameEngine {
       region.spaces,
       this.gameState.board
     );
-    
-    // 2. Collapse all spaces in the region to moving player's color
-    for (const pos of region.spaces) {
-      this.boardManager.setCollapsedSpace(pos, movingPlayer, this.gameState.board);
-    }
-    
-    // 3. Collapse all border markers to moving player's color
-    for (const pos of borderMarkers) {
-      this.boardManager.setCollapsedSpace(pos, movingPlayer, this.gameState.board);
-    }
-    
-    // Update player's territory count (region spaces + border markers)
-    const totalTerritoryGained = region.spaces.length + borderMarkers.length;
-    this.updatePlayerTerritorySpaces(movingPlayer, totalTerritoryGained);
-    
-    // 4. Eliminate all rings within the region (all colors)
+
+    // 2. Eliminate all rings within the region (all colors) BEFORE
+    //    collapsing spaces. This mirrors the Rust engine's
+    //    core_apply_disconnect_region behaviour, where internal
+    //    eliminations are computed from the pre-collapse stacks.
     let totalRingsEliminated = 0;
     for (const pos of region.spaces) {
       const stack = this.boardManager.getStack(pos, this.gameState.board);
       if (stack) {
-        // Eliminate all rings in this stack
         totalRingsEliminated += stack.stackHeight;
         this.boardManager.removeStack(pos, this.gameState.board);
       }
     }
-    
+
+    // 3. Collapse all spaces in the region to the moving player's color
+    for (const pos of region.spaces) {
+      this.boardManager.setCollapsedSpace(pos, movingPlayer, this.gameState.board);
+    }
+
+    // 4. Collapse all border markers to the moving player's color
+    for (const pos of borderMarkers) {
+      this.boardManager.setCollapsedSpace(pos, movingPlayer, this.gameState.board);
+    }
+
+    // Update player's territory count (region spaces + border markers)
+    const totalTerritoryGained = region.spaces.length + borderMarkers.length;
+    this.updatePlayerTerritorySpaces(movingPlayer, totalTerritoryGained);
+
     // 5. Update elimination counts - ALL eliminated rings count toward moving player
     this.gameState.totalRingsEliminated += totalRingsEliminated;
     if (!this.gameState.board.eliminatedRings[movingPlayer]) {
       this.gameState.board.eliminatedRings[movingPlayer] = 0;
     }
     this.gameState.board.eliminatedRings[movingPlayer] += totalRingsEliminated;
-    
+
     // Update player state
     this.updatePlayerEliminatedRings(movingPlayer, totalRingsEliminated);
-    
+
     // 6. Mandatory self-elimination (one ring or cap from moving player)
     await this.eliminatePlayerRingOrCapWithChoice(movingPlayer);
-  }
-
-  /**
-   * Calculate cap height for a ring stack
-   * Rule Reference: Section 5.2 - Cap height is consecutive rings of same color from top
-   */
-  private calculateCapHeight(rings: number[]): number {
-    if (rings.length === 0) return 0;
-    
-    const topColor = rings[0];
-    let capHeight = 1;
-    
-    for (let i = 1; i < rings.length; i++) {
-      if (rings[i] === topColor) {
-        capHeight++;
-      } else {
-        break;
-      }
-    }
-    
-    return capHeight;
   }
 
   /**
@@ -1068,7 +1142,7 @@ export class GameEngine {
    */
   private processMarkersAlongPath(from: Position, to: Position, player: number): void {
     // Get all positions along the straight line path
-    const path = this.getPathPositions(from, to);
+    const path = getPathPositions(from, to);
     
     // Process each position in the path (excluding start and end)
     for (let i = 1; i < path.length - 1; i++) {
@@ -1085,38 +1159,6 @@ export class GameEngine {
         }
       }
     }
-  }
-
-  /**
-   * Get all positions along a straight line path
-   */
-  private getPathPositions(from: Position, to: Position): Position[] {
-    const path: Position[] = [from];
-    
-    // Calculate direction
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const dz = (to.z || 0) - (from.z || 0);
-    
-    // Normalize to step size of 1
-    const steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
-    const stepX = steps > 0 ? dx / steps : 0;
-    const stepY = steps > 0 ? dy / steps : 0;
-    const stepZ = steps > 0 ? dz / steps : 0;
-    
-    // Generate all positions along the path
-    for (let i = 1; i <= steps; i++) {
-      const pos: Position = {
-        x: Math.round(from.x + stepX * i),
-        y: Math.round(from.y + stepY * i)
-      };
-      if (to.z !== undefined) {
-        pos.z = Math.round((from.z || 0) + stepZ * i);
-      }
-      path.push(pos);
-    }
-    
-    return path;
   }
 
   /**
@@ -1242,6 +1284,16 @@ export class GameEngine {
   }
 
   /**
+   * Check if player has any valid actions available
+   * Rule Reference: Section 4.4
+   */
+  private hasValidActions(playerNumber: number): boolean {
+    return this.hasValidPlacements(playerNumber) || 
+           this.hasValidMovements(playerNumber) || 
+           this.hasValidCaptures(playerNumber);
+  }
+
+  /**
    * Check if player has any valid placement moves
    * Rule Reference: Section 4.1, 6.1-6.3
    */
@@ -1275,11 +1327,9 @@ export class GameEngine {
       // Check all 8 directions (or 6 for hexagonal)
       const directions = this.getAllDirections();
       
-      for (const direction of directions) {
-        // Check if we can move at least stack height in this direction
-        let currentPos = stack.position;
-        let distance = 0;
-        let pathClear = true;
+        for (const direction of directions) {
+          // Check if we can move at least stack height in this direction
+          let distance = 0;
         
         for (let step = 1; step <= stackHeight + 5; step++) {
           const nextPos: Position = {
@@ -1317,47 +1367,6 @@ export class GameEngine {
   }
 
   /**
-   * Get all movement directions based on board type
-   */
-  private getAllDirections(): { x: number; y: number; z?: number }[] {
-    const config = BOARD_CONFIGS[this.gameState.boardType];
-    
-    if (config.type === 'hexagonal') {
-      // Hexagonal directions (6 directions)
-      return [
-        { x: 1, y: 0, z: -1 },
-        { x: 0, y: 1, z: -1 },
-        { x: -1, y: 1, z: 0 },
-        { x: -1, y: 0, z: 1 },
-        { x: 0, y: -1, z: 1 },
-        { x: 1, y: -1, z: 0 }
-      ];
-    } else {
-      // Moore adjacency (8 directions) for square boards
-      return [
-        { x: 1, y: 0 },   // E
-        { x: 1, y: 1 },   // SE
-        { x: 0, y: 1 },   // S
-        { x: -1, y: 1 },  // SW
-        { x: -1, y: 0 },  // W
-        { x: -1, y: -1 }, // NW
-        { x: 0, y: -1 },  // N
-        { x: 1, y: -1 }   // NE
-      ];
-    }
-  }
-
-  /**
-   * Check if player has any valid actions available
-   * Rule Reference: Section 4.4
-   */
-  private hasValidActions(playerNumber: number): boolean {
-    return this.hasValidPlacements(playerNumber) || 
-           this.hasValidMovements(playerNumber) || 
-           this.hasValidCaptures(playerNumber);
-  }
-
-  /**
    * Force player to eliminate a cap when blocked with no valid moves
    * Rule Reference: Section 4.4 - Forced Elimination When Blocked
    */
@@ -1378,6 +1387,13 @@ export class GameEngine {
         return;
       }
     }
+  }
+
+  /**
+   * Get all movement directions based on board type
+   */
+  private getAllDirections(): { x: number; y: number; z?: number }[] {
+    return getMovementDirectionsForBoardType(this.gameState.boardType);
   }
 
   /**

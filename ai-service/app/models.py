@@ -164,3 +164,121 @@ class AIConfig(BaseModel):
     
     class Config:
         populate_by_name = True
+
+
+class LineRewardChoiceOption(str, Enum):
+    """Line reward choice options, mirroring the TypeScript union for LineRewardChoice."""
+    OPTION_1 = "option_1_collapse_all_and_eliminate"
+    OPTION_2 = "option_2_min_collapse_no_elimination"
+
+
+class LineRewardChoiceRequest(BaseModel):
+    """Request model for AI-backed line reward choices.
+
+    This mirrors the core fields of the TypeScript LineRewardChoice plus
+    the AI configuration metadata the service needs. GameState is not
+    required for the initial implementation but can be added later if we
+    want the Python service to make more context-aware decisions.
+    """
+
+    game_state: Optional[GameState] = Field(None, alias="gameState")
+    player_number: int = Field(alias="playerNumber")
+    difficulty: int = Field(ge=1, le=10, default=5)
+    ai_type: Optional[AIType] = Field(None, alias="aiType")
+    options: List[LineRewardChoiceOption]
+
+    class Config:
+      populate_by_name = True
+
+
+class LineRewardChoiceResponse(BaseModel):
+    """Response model for AI-backed line reward choices."""
+
+    selected_option: LineRewardChoiceOption = Field(alias="selectedOption")
+    ai_type: str = Field(alias="aiType")
+    difficulty: int
+
+    class Config:
+      populate_by_name = True
+
+
+class RingEliminationChoiceOption(BaseModel):
+    """Option for ring elimination choice.
+
+    Mirrors the TypeScript RingEliminationChoice option shape:
+    { stackPosition, capHeight, totalHeight }.
+    """
+
+    stack_position: Position = Field(alias="stackPosition")
+    cap_height: int = Field(alias="capHeight")
+    total_height: int = Field(alias="totalHeight")
+
+    class Config:
+        populate_by_name = True
+
+
+class RingEliminationChoiceRequest(BaseModel):
+    """Request model for AI-backed ring elimination choices.
+
+    Carries the same metadata as LineRewardChoiceRequest plus the
+    ring-elimination specific option list.
+    """
+
+    game_state: Optional[GameState] = Field(None, alias="gameState")
+    player_number: int = Field(alias="playerNumber")
+    difficulty: int = Field(ge=1, le=10, default=5)
+    ai_type: Optional[AIType] = Field(None, alias="aiType")
+    options: List[RingEliminationChoiceOption]
+
+    class Config:
+        populate_by_name = True
+
+
+class RingEliminationChoiceResponse(BaseModel):
+    """Response model for AI-backed ring elimination choices."""
+
+    selected_option: RingEliminationChoiceOption = Field(alias="selectedOption")
+    ai_type: str = Field(alias="aiType")
+    difficulty: int
+
+    class Config:
+        populate_by_name = True
+
+
+class RegionOrderChoiceOption(BaseModel):
+    """Option for region order choice.
+
+    Mirrors the TypeScript RegionOrderChoice option shape:
+    { regionId, size, representativePosition }.
+    """
+
+    region_id: str = Field(alias="regionId")
+    size: int
+    representative_position: Position = Field(alias="representativePosition")
+
+    class Config:
+        populate_by_name = True
+
+
+class RegionOrderChoiceRequest(BaseModel):
+    """Request model for AI-backed region order choices."""
+
+    game_state: Optional[GameState] = Field(None, alias="gameState")
+    player_number: int = Field(alias="playerNumber")
+    difficulty: int = Field(ge=1, le=10, default=5)
+    ai_type: Optional[AIType] = Field(None, alias="aiType")
+    options: List[RegionOrderChoiceOption]
+
+    class Config:
+        populate_by_name = True
+
+
+class RegionOrderChoiceResponse(BaseModel):
+    """Response model for AI-backed region order choices."""
+
+    selected_option: RegionOrderChoiceOption = Field(alias="selectedOption")
+    ai_type: str = Field(alias="aiType")
+    difficulty: int
+
+    class Config:
+        populate_by_name = True

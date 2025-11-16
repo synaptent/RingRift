@@ -11,14 +11,14 @@
 
 RingRift follows a **TypeScript-first architecture** with Node.js backend and React frontend. This assessment evaluates the current implementation distribution, identifies architectural strengths and gaps, and provides recommendations for optimal feature distribution.
 
-This document, together with `CODEBASE_EVALUATION.md`, supersedes earlier high-level design plans such as `ringrift_architecture_plan.md` and the more aspirational parts of `TECHNICAL_ARCHITECTURE_ANALYSIS.md`. Those older documents are now treated as historical context only; any architectural guidance still considered valid has been merged into the current assessment, roadmap, and improvement plan.
+This document, together with `deprecated/CODEBASE_EVALUATION.md`, supersedes earlier high-level design plans such as `deprecated/ringrift_architecture_plan.md` and the more aspirational parts of `deprecated/TECHNICAL_ARCHITECTURE_ANALYSIS.md`. Those older documents are now treated as historical context only; any architectural guidance still considered valid has been merged into the current assessment, roadmap, and improvement plan.
 
 **Overall Architecture Grade: B+**
 - ✅ Excellent: Architecture planning and documentation
 - ✅ Good: Technology stack choices and type safety
 - ⚠️ Needs Work: Implementation completeness
 - ⚠️ Needs Work: Testing infrastructure
-- ❌ Missing: Advanced AI engine and production monitoring (CI/CD and basic tests now exist but need expansion)
+- ❌ Missing: Advanced AI engine and production monitoring (CI/CD and Jest-based unit/integration suites now exist but still need broader coverage, stronger quality gates, and production-grade monitoring/alerting. For current per-component completion percentages, see `CURRENT_STATE_ASSESSMENT.md`.)
 
 ---
 
@@ -88,10 +88,10 @@ This document, together with `CODEBASE_EVALUATION.md`, supersedes earlier high-l
 
 #### ❌ **Missing Components** (Not Yet Implemented)
 
-1. **AI Integration** - CRITICAL GAP
-   - Python FastAPI AI microservice exists in `ai-service/` with Random/Heuristic AIs.
-   - TypeScript `AIServiceClient` exists, but is not yet wired into the GameEngine turn loop.
-   - Recommendation: Integrate AIServiceClient into a turn orchestrator so AI players can make moves and eventually answer PlayerChoices.
+1. **AI Integration** - PARTIAL / BOUNDARY GAP
+   - Python FastAPI AI microservice exists in `ai-service/` with Random/Heuristic AIs and is integrated into backend games via `AIEngine` / `AIServiceClient` and `WebSocketServer.maybePerformAITurn`, so AI players can select and apply moves.
+   - Several PlayerChoices (for example `line_reward_option`, `ring_elimination`, and `region_order`) are already service-backed behind `globalAIEngine` / `AIInteractionHandler`, with remaining choices currently answered via local heuristics.
+   - Recommendation: Harden the AI boundary (clear request/response contracts, failure/timeout behaviour, metrics) and progressively move more choice logic behind the service where it makes sense, keeping simple heuristics available as a low-latency fallback.
 
 2. **Frontend UI** - MAJOR GAP (PARTIALLY ADDRESSED)
    - Game board rendering now implemented via `BoardView` for 8×8, 19×19, and hex boards.
@@ -521,11 +521,11 @@ Controller → Service → GameEngine → RuleEngine
 
 ### Critical Gaps ❌
 
-1. **Testing**: No tests written (CRITICAL)
-2. **Core Logic**: Incomplete implementation (BLOCKING)
-3. **Frontend UI**: Minimal implementation (BLOCKING)
-4. **AI Engine**: Not implemented (HIGH PRIORITY)
-5. **Monitoring**: No observability (MEDIUM PRIORITY)
+1. **Testing**: Jest-based unit and integration suites exist, but coverage is still low relative to the rules’ complexity and does not yet encode all rule/FAQ scenarios (HIGH PRIORITY).
+2. **Core Logic**: The core loop (movement, captures, lines, territory, choices) is implemented and used in backend and sandbox games, but some edge-case rules and invariants still lack exhaustive tests and refinement (HIGH PRIORITY).
+3. **Frontend UI**: Game HUD, timers, post-game flows, and lobby/matchmaking remain minimal; UX is suitable for developers and playtesters but not yet for production audiences (BLOCKING for polished play).
+4. **AI Engine & Boundary**: The Python AI service plus TypeScript `AIEngine`/`AIServiceClient` are integrated for moves and several PlayerChoices, but stronger AI behaviour, explicit service contracts, and resilience under failure/latency are still needed (HIGH PRIORITY).
+5. **Monitoring/Observability**: Basic logging and CI exist, but there is no end-to-end monitoring/alerting pipeline or AI/service-level telemetry; Prometheus/Grafana in `docker-compose.yml` are not yet fully wired into the application (MEDIUM PRIORITY).
 
 ### Immediate Action Items
 

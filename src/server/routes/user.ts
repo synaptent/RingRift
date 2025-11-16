@@ -132,7 +132,7 @@ router.get('/stats', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         { player3Id: userId },
         { player4Id: userId }
       ],
-      status: 'COMPLETED'
+      status: 'completed'
     },
     orderBy: { endedAt: 'desc' },
     take: 10,

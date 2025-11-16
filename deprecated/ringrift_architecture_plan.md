@@ -206,6 +206,64 @@ interface GameEvents {
 
 ## Game State Management Architecture
 
+### Interaction Architecture (Player Choices & Turn Flow)
+
+At a high level, all player-facing and AI-facing decisions flow through a single, unified interaction pipeline. This keeps the GameEngine agnostic of transport (WebSocket, HTTP, UI) and of whether a player is human or AI:
+
+```text
+GameEngine
+  └─ PlayerInteractionManager
+       └─ DelegatingInteractionHandler
+            ├─ WebSocketInteractionHandler   (human players)
+            └─ AIInteractionHandler          (AI players)
+```
+
+- **GameEngine**
+  - Owns the authoritative GameState and the full turn/phase logic (movement, captures, lines, territory, forced elimination).
+  - When it reaches a decision point that requires player input (line order, line rewards, ring/cap elimination, region order, capture direction in chains), it does **not** talk directly to the network or UI. Instead, it constructs a typed `PlayerChoice` and calls `PlayerInteractionManager.requestChoice(choice)`.
+
+- **PlayerInteractionManager**
+  - Provides a type-safe async interface for the engine: `Promise<PlayerChoiceResponseFor<TChoice>>`.
+  - Knows nothing about WebSockets, HTTP, or AI services; it simply forwards each choice to a configured `PlayerInteractionHandler` and validates the shape of the response.
+
+- **DelegatingInteractionHandler**
+  - Implements `PlayerInteractionHandler` and decides, for each `choice.playerNumber`, which underlying handler to invoke based on the authoritative `PlayerType` in GameState.
+  - For **human players**, it calls `WebSocketInteractionHandler`.
+  - For **AI players**, it calls `AIInteractionHandler`.
+  - This guarantees that GameEngine always goes through the same interface for all players, and it makes it easy to add new handler types (e.g. bots, scripted test harnesses) without touching engine logic.
+
+- **WebSocketInteractionHandler (human transport)**
+  - Bridges typed `PlayerChoice` messages to the client over Socket.IO using shared discriminated-union types from `src/shared/types/game.ts`.
+  - Emits `player_choice_required` with a `choice.id`, `choice.type`, `playerNumber`, and typed option payload.
+  - Tracks pending choices in-memory keyed by `(choiceId, playerNumber)`.
+  - On `player_choice_response`, validates:
+    - That the responding player matches `choice.playerNumber`.
+    - That the selected option is one of the original `choice.options`.
+    - That the response arrives before a configurable timeout.
+  - Resolves or rejects the awaiting Promise in `PlayerInteractionManager` accordingly, with safe default timeouts to avoid hanging games.
+
+- **AIInteractionHandler (local AI heuristics for choices)**
+  - Implements `PlayerInteractionHandler` for AI-controlled players, but operates **purely on the `PlayerChoice` payload** without needing full GameState.
+  - Uses deterministic heuristics for each choice type, for example:
+    - Prefer longer lines for line order.
+    - Prefer preserving rings (Option 2) for line rewards when legal.
+    - Prefer eliminating rings from stacks with the smallest cap height.
+    - Prefer larger regions for territory processing order.
+    - Prefer capture directions that maximise captured cap height, tie-breaking by centrality.
+  - This keeps AI choice behaviour simple, predictable, and testable while still respecting the rules.
+
+- **Timeouts and Validation**
+  - Timeouts and option validation are handled centrally in `WebSocketInteractionHandler` and enforced before responses reach the engine.
+  - The engine therefore only ever sees valid, rule-respecting `selectedOption` values or an explicit error, never malformed choices.
+
+This architecture ensures that:
+- The GameEngine is independent of UI and network concerns.
+- Humans and AI share the same high-level interaction interface.
+- New transport mechanisms (e.g. HTTP polling, test harnesses) can be added by implementing `PlayerInteractionHandler` and/or extending `DelegatingInteractionHandler`.
+- AI choice behaviour can evolve (e.g. move from heuristics to AIService-backed decisions) without changing engine code.
+
+
+
 ### Core Game Engine Design
 
 ```mermaid
@@ -289,6 +347,8 @@ interface Move {
 ```
 
 ## AI Engine Integration
+
+The server-side AI is configured via shared `AIProfile` structures (see `src/shared/types/game.ts`) and the `AIEngine` façade (`globalAIEngine`), which accepts profiles through `createAIFromProfile`. For WebSocket-backed games, `WebSocketServer` constructs `AIProfile` entries for AI opponents and stores them on the corresponding `Player.aiProfile` so that both the engine and clients share a single source of truth for AI configuration. Future work can extend `AIProfile.mode` to support local heuristic move generation while continuing to use `AIInteractionHandler` as the canonical choice handler.
 
 ### Modular AI Architecture
 

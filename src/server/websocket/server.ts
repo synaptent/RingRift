@@ -2,6 +2,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
+import { GameStatus } from '@prisma/client';
 import { getDatabaseClient } from '../database/connection';
 import { logger } from '../utils/logger';
 import { GameEngine } from '../game/GameEngine';
@@ -10,10 +11,16 @@ import {
   Player,
   TimeControl,
   BOARD_CONFIGS,
-  PlayerChoiceResponse
+  PlayerChoiceResponse,
+  Position,
+  AIProfile
 } from '../../shared/types/game';
 import { WebSocketInteractionHandler } from '../game/WebSocketInteractionHandler';
 import { PlayerInteractionManager } from '../game/PlayerInteractionManager';
+import { DelegatingInteractionHandler } from '../game/DelegatingInteractionHandler';
+import { AIInteractionHandler } from '../game/ai/AIInteractionHandler';
+import { globalAIEngine } from '../game/ai/AIEngine';
+import { getOrCreateAIUser } from '../services/AIUserService';
 
 export interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -208,8 +215,17 @@ export class WebSocketServer {
       throw new Error('Game not found');
     }
 
-    // Create players array
+    // Create players array (humans + optional AI opponents from persisted gameState)
     const players: Player[] = [];
+    const boardConfig = BOARD_CONFIGS[game.boardType as keyof typeof BOARD_CONFIGS];
+    // timeControl is stored as a Prisma JsonValue; in practice it is
+    // persisted as JSON. Only parse when it is a string; otherwise
+    // fall back to a reasonable default.
+    const initialTimeMs =
+      typeof game.timeControl === 'string'
+        ? (JSON.parse(game.timeControl).initialTime as number)
+        : 600000;
+
     if (game.player1) {
       players.push({
         id: game.player1.id,
@@ -217,8 +233,8 @@ export class WebSocketServer {
         playerNumber: 1,
         type: 'human',
         isReady: true,
-        timeRemaining: game.timeControl ? JSON.parse(game.timeControl).initialTime : 600000,
-        ringsInHand: BOARD_CONFIGS[game.boardType as keyof typeof BOARD_CONFIGS].ringsPerPlayer,
+        timeRemaining: initialTimeMs,
+        ringsInHand: boardConfig.ringsPerPlayer,
         eliminatedRings: 0,
         territorySpaces: 0
       });
@@ -230,17 +246,80 @@ export class WebSocketServer {
         playerNumber: 2,
         type: 'human',
         isReady: true,
-        timeRemaining: game.timeControl ? JSON.parse(game.timeControl).initialTime : 600000,
-        ringsInHand: BOARD_CONFIGS[game.boardType as keyof typeof BOARD_CONFIGS].ringsPerPlayer,
+        timeRemaining: initialTimeMs,
+        ringsInHand: boardConfig.ringsPerPlayer,
         eliminatedRings: 0,
         territorySpaces: 0
       });
     }
 
-    // Create time control
-    const timeControl: TimeControl = game.timeControl ?
-      JSON.parse(game.timeControl) :
-      { type: 'standard', initialTime: 600000, increment: 0 };
+    // Optional AI opponents (persisted in gameState.aiOpponents). The
+    // shape here mirrors CreateGameSchema.aiOpponents so that lobby UI
+    // can configure difficulty, control mode, and tactical type.
+    const gameStateSnapshot = (game.gameState || {}) as any;
+    const aiOpponents = gameStateSnapshot.aiOpponents as {
+      count: number;
+      difficulty: number[];
+      mode?: 'local_heuristic' | 'service';
+      aiType?: 'random' | 'heuristic' | 'minimax' | 'mcts';
+    } | undefined;
+
+    if (aiOpponents && aiOpponents.count > 0) {
+      const startingNumber = players.length + 1;
+      const maxSlots = game.maxPlayers ?? 2;
+      const aiCount = Math.min(aiOpponents.count, maxSlots - players.length);
+
+      for (let i = 0; i < aiCount; i++) {
+        const playerNumber = startingNumber + i;
+        const difficulty = aiOpponents.difficulty?.[i] ?? 5;
+        const aiProfile: AIProfile = {
+          difficulty,
+          // Persisted mode/aiType come from CreateGameSchema.aiOpponents
+          // via game.gameState.aiOpponents; default to service-backed
+          // AI if not specified so behaviour remains backwards-compatible.
+          mode: aiOpponents.mode ?? 'service',
+          ...(aiOpponents.aiType && { aiType: aiOpponents.aiType })
+        };
+
+        players.push({
+          id: `ai-${gameId}-${playerNumber}`,
+          username: `AI (Level ${difficulty})`,
+          playerNumber,
+          type: 'ai',
+          isReady: true,
+          timeRemaining: initialTimeMs,
+          ringsInHand: boardConfig.ringsPerPlayer,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+          aiDifficulty: difficulty,
+          aiProfile
+        });
+
+        try {
+          globalAIEngine.createAIFromProfile(playerNumber, aiProfile);
+        } catch (err) {
+          logger.error('Failed to configure AI player', {
+            gameId,
+            playerNumber,
+            difficulty,
+            error: (err as Error).message
+          });
+        }
+      }
+    }
+
+    // Create time control from the persisted JSON value. Support both
+    // stringified and structured JSON representations.
+    let timeControl: TimeControl;
+    if (typeof game.timeControl === 'string') {
+      timeControl = JSON.parse(game.timeControl) as TimeControl;
+    } else if (game.timeControl && typeof game.timeControl === 'object') {
+      timeControl = game.timeControl as unknown as TimeControl;
+    } else {
+      // Default to a reasonable rapid-style time control if nothing is
+      // persisted. This keeps us within the TimeControl.type union.
+      timeControl = { type: 'rapid', initialTime: 600000, increment: 0 };
+    }
 
     // Map playerNumber -> Socket.IO target (typically a user socket id).
     const getTargetForPlayer = (playerNumber: number): string | undefined => {
@@ -255,7 +334,18 @@ export class WebSocketServer {
       getTargetForPlayer,
       30_000
     );
-    const interactionManager = new PlayerInteractionManager(wsHandler);
+
+    const aiHandler = new AIInteractionHandler();
+    const delegatingHandler = new DelegatingInteractionHandler(
+      wsHandler,
+      aiHandler,
+      (playerNumber: number) => {
+        const player = players.find(p => p.playerNumber === playerNumber);
+        return player?.type ?? 'human';
+      }
+    );
+
+    const interactionManager = new PlayerInteractionManager(delegatingHandler);
 
     // Create game engine wired to the interaction manager for choices
     const gameEngine = new GameEngine(
@@ -267,20 +357,66 @@ export class WebSocketServer {
       interactionManager
     );
 
-    // Replay moves if any exist
+    // Replay moves if any exist. move.position is stored as a
+    // Prisma JsonValue; historically this has been a JSON string, but
+    // we also support structured JSON. Handle both shapes without
+    // assuming a specific subtype.
     for (const move of game.moves) {
+      let from: Position | undefined;
+      let to: Position | undefined;
+
+      const rawPosition = move.position as unknown;
+      if (typeof rawPosition === 'string') {
+        try {
+          const parsed = JSON.parse(rawPosition) as any;
+          from = parsed.from as Position | undefined;
+          to = (parsed.to as Position | undefined) ?? (parsed as Position);
+        } catch (err) {
+          logger.warn('Failed to parse persisted move.position string', {
+            gameId,
+            moveId: move.id,
+            rawPosition,
+            error: (err as Error).message
+          });
+        }
+      } else if (rawPosition && typeof rawPosition === 'object') {
+        const parsed = rawPosition as any;
+        from = parsed.from as Position | undefined;
+        to = (parsed.to as Position | undefined) ?? (parsed as Position);
+      }
+
+      // Historical records should always contain a destination; if we
+      // cannot recover one, skip this move rather than constructing an
+      // invalid Move object.
+      if (!to) {
+        logger.warn('Skipping historical move with no destination', {
+          gameId,
+          moveId: move.id,
+          rawPosition
+        });
+        continue;
+      }
+
       const gameMove: Move = {
         id: move.id,
         type: move.moveType as any,
         player: parseInt(move.playerId),
-        from: move.position ? JSON.parse(move.position).from : undefined,
-        to: move.position ? JSON.parse(move.position).to : JSON.parse(move.position),
+        ...(from ? { from } : {}),
+        to,
         timestamp: move.timestamp,
         thinkTime: 0,
         moveNumber: move.moveNumber
       };
-      
-      gameEngine.makeMove(gameMove);
+
+      try {
+        gameEngine.makeMove(gameMove);
+      } catch (err) {
+        logger.error('Failed to replay historical move', {
+          gameId,
+          moveId: move.id,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
     }
 
     this.gameEngines.set(gameId, gameEngine);
@@ -411,7 +547,7 @@ export class WebSocketServer {
       throw new Error('Database not available');
     }
 
-    // Verify it's the player's turn and move is valid
+    // Verify game exists and is active
     const game = await prisma.game.findUnique({
       where: { id: gameId }
     });
@@ -420,14 +556,75 @@ export class WebSocketServer {
       throw new Error('Game not found');
     }
 
-    if (game.status !== 'ACTIVE') {
+    if (game.status !== GameStatus.ACTIVE) {
       throw new Error('Game is not active');
     }
 
-    // TODO: Validate move with game engine
-    // For now, just broadcast the move
+    // Resolve GameEngine instance for this game (cached after first load)
+    const gameEngine = await this.getOrCreateGameEngine(gameId);
+    const currentState = gameEngine.getGameState();
 
-    // Save move to database
+    // Determine the numeric playerNumber for this socket's user based on
+    // the engine's authoritative player list.
+    const player = currentState.players.find(p => p.id === socket.userId);
+    if (!player) {
+      throw new Error('Current socket user is not a player in this game');
+    }
+
+    // Parse the client-supplied position payload. The current client
+    // format is a JSON stringified object of the form { from, to }.
+    let from: Position | undefined;
+    let to: Position | undefined;
+
+    if (typeof move.position === 'string') {
+      try {
+        const parsed = JSON.parse(move.position);
+        from = parsed.from as Position | undefined;
+        to = (parsed.to as Position | undefined) ?? (parsed as Position);
+      } catch (err) {
+        logger.warn('Failed to parse move.position payload', {
+          gameId,
+          rawPosition: move.position,
+          error: (err as Error).message
+        });
+        throw new Error('Invalid move position payload');
+      }
+    }
+
+    // At minimum we require a destination position; the client is expected
+    // to provide this in the current payload shape.
+    if (!to) {
+      throw new Error('Move destination is required');
+    }
+
+    // Construct a partial Move for GameEngine. For now we support simple
+    // non-capture movement; capture-specific fields (captureTarget,
+    // buildAmount, etc.) can be added as the client grows more capable.
+    const engineMove = {
+      player: player.playerNumber,
+      type: move.moveType as Move['type'],
+      from,
+      to,
+      thinkTime: 0
+    } as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
+
+    // Ask the engine to apply the move. If invalid, surface an error back
+    // to the client instead of blindly broadcasting.
+    const result = await gameEngine.makeMove(engineMove);
+    if (!result.success) {
+      logger.warn('Engine rejected move', {
+        gameId,
+        userId: socket.userId,
+        reason: result.error
+      });
+      throw new Error(result.error || 'Invalid move');
+    }
+
+    const updatedState = gameEngine.getGameState();
+
+    // Persist the move as-is for now, keeping the existing representation
+    // (moveNumber and position JSON). In the future we may migrate to
+    // storing the richer Move shape directly.
     await prisma.move.create({
       data: {
         gameId,
@@ -439,25 +636,219 @@ export class WebSocketServer {
       }
     });
 
-    // Broadcast move to all players in the game
-    this.io.to(gameId).emit('player_move', {
-      type: 'player_move',
+    // If this move ended the game, persist the terminal status and emit
+    // a dedicated game_over event instead of a normal game_state
+    // update. The client can use this to present a clear victory UI.
+    if (result.gameResult) {
+      const winnerPlayerNumber = result.gameResult.winner;
+      let winnerId: string | null = null;
+
+      if (winnerPlayerNumber !== undefined) {
+        const winnerPlayer = updatedState.players.find(
+          p => p.playerNumber === winnerPlayerNumber && p.type === 'human'
+        );
+        winnerId = winnerPlayer?.id ?? null;
+      }
+
+      await prisma.game.update({
+        where: { id: gameId },
+        data: {
+          status: GameStatus.COMPLETED,
+          winnerId: winnerId ?? null,
+          endedAt: new Date(),
+          updatedAt: new Date()
+        }
+      });
+
+      this.io.to(gameId).emit('game_over', {
+        type: 'game_over',
+        data: {
+          gameId,
+          gameState: updatedState,
+          gameResult: result.gameResult
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      logger.info('Game ended after human move', {
+        gameId,
+        winnerPlayerNumber,
+        reason: result.gameResult.reason
+      });
+
+      return;
+    }
+
+    // Broadcast the updated game state to all participants. The client
+    // already hydrates BoardState and uses this as the single source of
+    // truth when rendering.
+    this.io.to(gameId).emit('game_state', {
+      type: 'game_update',
       data: {
         gameId,
-        move: {
-          ...move,
-          playerId: socket.userId!,
-          playerUsername: socket.username!
-        }
+        gameState: updatedState,
+        validMoves: gameEngine.getValidMoves(updatedState.currentPlayer)
       },
       timestamp: new Date().toISOString()
     });
 
-    logger.info('Player move processed', { 
-      userId: socket.userId, 
+    logger.info('Player move processed and applied', {
+      userId: socket.userId,
       gameId,
-      move 
+      moveType: move.moveType,
+      playerNumber: player.playerNumber
     });
+
+    // After a human move, if the next player is AI, let the AI service
+    // select and apply a move via the AIEngine. This keeps the
+    // GameEngine as the source of truth and uses the same broadcast
+    // pipeline as human moves.
+    await this.maybePerformAITurn(gameId, gameEngine);
+  }
+
+  /**
+   * If the current player in the given game is AI-controlled, request a
+   * move from the Python AI service via globalAIEngine and apply it via
+   * GameEngine. The resulting state is broadcast to all participants.
+   *
+   * This is intentionally conservative: it performs at most one AI move
+   * per call and bails out on any error, logging instead of throwing, to
+   * avoid destabilising the WebSocket loop.
+   */
+  private async maybePerformAITurn(gameId: string, gameEngine: GameEngine): Promise<void> {
+    try {
+      const state = gameEngine.getGameState();
+
+      if (state.gameStatus !== 'active') {
+        return;
+      }
+
+      const currentPlayerNumber = state.currentPlayer;
+      const currentPlayer = state.players.find(p => p.playerNumber === currentPlayerNumber);
+
+      if (!currentPlayer || currentPlayer.type !== 'ai') {
+        return;
+      }
+
+      const aiConfig = globalAIEngine.getAIConfig(currentPlayerNumber);
+      if (!aiConfig) {
+        // If no AI config exists, attempt to lazily create one using
+        // the player's aiDifficulty or a reasonable default.
+        const difficulty = currentPlayer.aiDifficulty ?? 5;
+        globalAIEngine.createAI(currentPlayerNumber, difficulty);
+      }
+
+      const aiMove = await globalAIEngine.getAIMove(currentPlayerNumber, state);
+      if (!aiMove) {
+        logger.warn('AI did not return a move', { gameId, playerNumber: currentPlayerNumber });
+        return;
+      }
+
+      const { id, timestamp, moveNumber, ...rest } = aiMove;
+      const engineMove = rest as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
+
+      const result = await gameEngine.makeMove(engineMove);
+      if (!result.success) {
+        logger.warn('Engine rejected AI move', {
+          gameId,
+          playerNumber: currentPlayerNumber,
+          reason: result.error
+        });
+        return;
+      }
+
+      const updatedState = gameEngine.getGameState();
+
+      // Persist the AI move to the database using a dedicated AI user,
+      // and, if the move ended the game, update the terminal status.
+      const prisma = getDatabaseClient();
+      if (prisma) {
+        try {
+          const aiUser = await getOrCreateAIUser();
+          const lastMove = updatedState.moveHistory[updatedState.moveHistory.length - 1];
+
+          await prisma.move.create({
+            data: {
+              gameId,
+              playerId: aiUser.id,
+              moveNumber: lastMove.moveNumber,
+              position: JSON.stringify({ from: lastMove.from, to: lastMove.to }),
+              moveType: lastMove.type as any,
+              timestamp: lastMove.timestamp
+            }
+          });
+
+          if (result.gameResult) {
+            const winnerPlayerNumber = result.gameResult.winner;
+            let winnerId: string | null = null;
+
+            if (winnerPlayerNumber !== undefined) {
+              const winnerPlayer = updatedState.players.find(
+                p => p.playerNumber === winnerPlayerNumber && p.type === 'human'
+              );
+              winnerId = winnerPlayer?.id ?? null;
+            }
+
+            await prisma.game.update({
+              where: { id: gameId },
+              data: {
+                status: GameStatus.COMPLETED,
+                winnerId: winnerId ?? null,
+                endedAt: new Date(),
+                updatedAt: new Date()
+              }
+            });
+          }
+        } catch (err) {
+          logger.error('Failed to persist AI move', {
+            gameId,
+            playerNumber: currentPlayerNumber,
+            error: err instanceof Error ? err.message : String(err)
+          });
+        }
+      }
+
+      if (result.gameResult) {
+        this.io.to(gameId).emit('game_over', {
+          type: 'game_over',
+          data: {
+            gameId,
+            gameState: updatedState,
+            gameResult: result.gameResult
+          },
+          timestamp: new Date().toISOString()
+        });
+
+        logger.info('Game ended after AI move', {
+          gameId,
+          playerNumber: currentPlayerNumber,
+          reason: result.gameResult.reason
+        });
+
+        return;
+      }
+
+      this.io.to(gameId).emit('game_state', {
+        type: 'game_update',
+        data: {
+          gameId,
+          gameState: updatedState,
+          validMoves: gameEngine.getValidMoves(updatedState.currentPlayer)
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      logger.info('AI move processed and applied', {
+        gameId,
+        playerNumber: currentPlayerNumber,
+        moveType: engineMove.type
+      });
+    } catch (error) {
+      logger.error('Error during AI turn', {
+        gameId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   private async handleChatMessage(socket: AuthenticatedSocket, data: any) {

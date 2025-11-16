@@ -13,6 +13,61 @@ export interface Position {
   z?: number; // For hexagonal boards
 }
 
+export type AIControlMode = 'local_heuristic' | 'service';
+
+export type AITacticType = 'random' | 'heuristic' | 'minimax' | 'mcts';
+
+/**
+ * Configuration for how many AI opponents should participate in a
+ * newly created game and how they should behave. This shape is
+ * intentionally mirrored by CreateGameSchema in Zod to keep the
+ * HTTP API, validation layer, and shared types aligned.
+ */
+export interface AiOpponentsConfig {
+  count: number;
+  /**
+   * Difficulty levels for the AI opponents (1-10). The length and
+   * indexing semantics are interpreted by the server when assigning
+   * AI players to seats.
+   */
+  difficulty: number[];
+  /** Where the AI logic runs for these opponents. */
+  mode?: AIControlMode | undefined;
+  /** Which tactical engine should be used for these opponents. */
+  aiType?: AITacticType | undefined;
+}
+
+/**
+ * Shared create-game request payload used by the client, server
+ * route handler, and validation schema. This is the long-term
+ * source of truth for the game creation API shape.
+ */
+export interface CreateGameRequest {
+  boardType: BoardType;
+  timeControl: TimeControl;
+  isRated: boolean;
+  isPrivate: boolean;
+  maxPlayers: number;
+  aiOpponents?: AiOpponentsConfig;
+}
+
+export interface AIProfile {
+  /** Primary difficulty knob for this AI player (1-10). */
+  difficulty: number;
+  /**
+   * How this AI makes decisions about moves:
+   * - 'service': rely primarily on the Python AI service via AIServiceClient/globalAIEngine.
+   * - 'local_heuristic': use local TypeScript heuristics (future extension for moves).
+   *
+   * Note: Regardless of this mode, PlayerChoices are currently answered via
+   * AIInteractionHandler (local heuristics) with the service as an optional
+   * future enhancement.
+   */
+  mode?: AIControlMode;
+  /** The underlying tactical engine type (random, heuristic, minimax, mcts). */
+  aiType?: AITacticType;
+}
+
 export interface Player {
   id: string;
   username: string;
@@ -21,7 +76,8 @@ export interface Player {
   rating?: number;
   isReady: boolean;
   timeRemaining: number;
-  aiDifficulty?: number; // 1-10 for AI players
+  aiDifficulty?: number; // 1-10 for AI players (legacy, see aiProfile)
+  aiProfile?: AIProfile; // Rich AI configuration for AI players
   ringsInHand: number; // Rings not yet placed on board
   eliminatedRings: number; // Rings permanently removed from game
   territorySpaces: number; // Spaces controlled as territory
@@ -93,6 +149,23 @@ export interface Move {
   timestamp: Date;
   thinkTime: number;
   moveNumber: number;
+}
+
+/**
+ * Wire-level move payload used by WebSockets and HTTP APIs. This
+ * intentionally stays simpler than the internal Move type and is
+ * validated by MoveSchema in src/shared/validation/schemas.ts.
+ */
+export interface MovePayload {
+  moveType: MoveType;
+  /**
+   * Either a JSON string or a structured object describing the
+   * move positions. The legacy shape uses a stringified
+   * `{ from?: Position; to: Position }` object; newer clients
+   * may send the structured object directly.
+   */
+  position: string | { from?: Position; to: Position };
+  moveNumber?: number;
 }
 
 export interface BoardState {

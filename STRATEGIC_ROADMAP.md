@@ -69,28 +69,29 @@ Older architecture/evaluation/improvement docs (e.g. `CODEBASE_EVALUATION.md`, `
 **Priority:** CRITICAL  
 **Goal:** Enable confident development
 
-#### 0.1 Jest/Vitest Setup (2-3 days)
-- [x] Jest already configured
-- [ ] Add test coverage reporting (target 80%+)
-- [ ] Create test utilities and fixtures
-- [ ] Add watch mode and coverage scripts
-- [ ] Document testing patterns
+#### 0.1 Jest Setup & Conventions (2-3 days)
+- [x] Jest already configured and running in CI
+- [ ] Add or refine test coverage reporting (align targets with `CURRENT_STATE_ASSESSMENT.md` rather than a flat 80% across all modules)
+- [ ] Create/extend shared test utilities and fixtures for BoardManager, RuleEngine, GameEngine, WebSocket, AI boundary, and sandbox engines
+- [ ] Ensure watch mode and coverage scripts are documented and easy to run locally
+- [ ] Document testing patterns by axis (rules/state, AI boundary, WebSocket/game loop, UI integration)
 
-#### 0.2 CI/CD Pipeline (2-3 days)
-- [ ] Create GitHub Actions workflow
-- [ ] Add linting step (ESLint --fix)
-- [ ] Add type checking (tsc --noEmit)
-- [ ] Add test execution
-- [ ] Add coverage threshold enforcement
-- [ ] Set up pre-commit hooks (Husky)
+#### 0.2 CI/CD Pipeline Hardening (2-3 days)
+- [x] Base GitHub Actions workflow exists (`.github/workflows/ci.yml`)
+- [ ] Keep linting step (ESLint) and tighten rules only where they reflect real quality risks
+- [ ] Ensure type checking (root `tsconfig.json`, `tsconfig.server.json`, `tsconfig.client.json`) runs on CI and fails builds on error
+- [ ] Make Jest test execution and coverage part of the required CI path (no merging on red)
+- [ ] Gradually introduce realistic coverage thresholds per axis/module instead of a single global number
+- [ ] Keep Husky + lint-staged hooks in sync with the CI pipeline so local checks match server-side expectations
 
-#### 0.3 Initial Test Coverage (3-5 days)
-- [ ] Write tests for BoardManager core methods
-- [ ] Write tests for RuleEngine validation
-- [ ] Write tests for GameEngine state transitions
-- [ ] Establish testing patterns for team
+#### 0.3 Initial Test Coverage Expansion (3-5 days)
+- [ ] Extend tests for BoardManager core methods and territory/line helpers (square + hex)
+- [ ] Extend tests for RuleEngine validation, especially around movement, captures, and "no dead placements" invariants
+- [ ] Extend tests for GameEngine state transitions, chain captures, and PlayerChoice-triggered flows
+- [ ] Add or refine tests for WebSocketServer, PlayerInteractionManager, WebSocketInteractionHandler, AIEngine/AIServiceClient, and AIInteractionHandler
+- [ ] Establish a living test map in `CURRENT_STATE_ASSESSMENT.md` that links rule/FAQ sections to specific tests and files
 
-**Deliverable:** Automated testing pipeline with initial coverage
+**Deliverable:** Automated testing pipeline with growing, axis-aligned coverage and CI gates that reflect the real health of the engine and integration points
 
 ---
 

@@ -157,16 +157,22 @@ export interface PlayerChoiceResponse<T> {
 
 **Goals:** Humans can play a full game locally against another human, using the engine as the source of truth.
 
+**Frontend geometry & movement grid foundation:** The React board layer now includes a reusable movement-grid overlay in `BoardView` (toggled via the `showMovementGrid` prop) and the shared `computeBoardMovementGrid(board: BoardState)` helper in `src/client/utils/boardMovementGrid.ts`. Future UI features—such as valid-move highlighting, interaction paths in the sandbox harness, AI path visualizations, and history playback overlays—should reuse this normalized-center geometry rather than re-deriving per-component coordinates.
+
+**Shared engine core for rules helpers:** A small but growing set of pure, browser-safe engine helpers now lives in `src/shared/engine/core.ts` (for example, `calculateCapHeight`, `getPathPositions`, and `getMovementDirectionsForBoardType`). Both the Node.js GameEngine and any client-side/local harnesses (such as the `/sandbox` mode) should prefer these shared helpers rather than re-implementing geometric or cap/stack logic in isolation.
+
 **Key UI components:**
 - Board components:
-  - `SquareBoard` (8×8, 19×19) and `HexBoard` (hex).  
+  - `SquareBoard` (8×8, 19×19) and `HexBoard` (hex), built on the existing `BoardView` and
+    the shared `computeBoardMovementGrid(board: BoardState)` geometry helper.
   - `Cell` / `HexCell` with coordinates and click handlers.
 - Piece visualization:
   - Ring stacks (including cap vs total height cues).
   - Markers and collapsed spaces.
 - Interaction & HUD:
   - Click-to-select source and destination.  
-  - Display of valid moves (ideally using RuleEngine.getValidMoves).  
+  - Display of valid moves (ideally using RuleEngine.getValidMoves), rendered as overlays
+    that reuse the same normalized centers used by the faint movement grid.
   - Dialogs for PlayerChoice prompts (line options, region order, elimination, capture direction).  
   - Current player, ring counts, territory counts, victory progress.
 

@@ -1,6 +1,6 @@
 # RingRift Codebase Evaluation & Development Recommendations
 
-**Evaluation Date:** November 13, 2025  
+**Evaluation Date:** November 14, 2025  
 **Evaluator:** Development Analysis System (code-verified)  
 **Repository:** https://github.com/an0mium/RingRift
 
@@ -22,14 +22,14 @@ RingRift is a **sophisticated multiplayer strategy game** with:
 | **Documentation**     | ⭐⭐⭐⭐⭐ (A+) | Exceptional game rules & design docs |
 | **Architecture**      | ⭐⭐⭐⭐⭐ (A)  | Clean, modular, TypeScript-first |
 | **Core Game Logic**   | ⭐⭐⭐½☆ (B+) | ~75% complete; player choice & chain captures missing |
-| **Frontend/UI**       | ⭐☆☆☆☆ (D)  | Skeleton only; no board rendering |
-| **AI Implementation** | ⭐⭐⭐☆☆ (C+) | Python service + TS client exist; not wired into engine |
-| **Testing**           | ⭐☆☆☆☆ (D-) | Jest + CI configured; limited tests (BoardManager only) |
+| **Frontend/UI**       | ⭐⭐½☆☆ (C-) | Minimal board/choice UI; backend play works but UX is rough |
+| **AI Implementation** | ⭐⭐⭐⭐☆ (B)  | Python service + TS client + AIEngine wired into backend AI turns (moves only) |
+| **Testing**           | ⭐⭐☆☆☆ (C-) | Jest + CI configured; focused tests for BoardManager, movement/capture, AI turns, choices, and territory |
 | **DevOps/CI**         | ⭐⭐⭐⭐☆ (A-) | GitHub Actions, Docker, env setup in good shape |
 | **Overall Readiness** | 🔶 **~60%** | Strong foundation, incomplete execution |
 
 **Key Reality:**
-- You **cannot yet play a full game through the UI**, and you **cannot be fully confident** all rules are implemented correctly due to low test coverage and missing player choice/chain capture mechanics.
+- You can now play backend-driven games through a minimal React UI (BoardView + GamePage + ChoiceDialog) against human and AI opponents, but you **cannot yet be fully confident** all rules are implemented correctly due to low overall test coverage and incomplete scenario coverage for player choice/chain capture mechanics.
 
 ---
 
@@ -450,3 +450,75 @@ These documents now mostly reflect the current state; this evaluation aligns wit
 - The **Python AI microservice and TypeScript AI client exist and should be kept**, with the next step being to actually integrate them into the game loop and choice system.
 
 If you follow the phased plan above (which dovetails with `STRATEGIC_ROADMAP.md` but emphasises Python AI integration and the true state of the core engine), RingRift can realistically reach a **playable, single-player MVP in ~8–10 weeks** of focused work.
+
+---
+
+## Refactoring Axes – Codebase View (TS/React/Python AI)
+
+This section mirrors the four architectural refactoring axes from `ARCHITECTURE_ASSESSMENT.md` and reframes them in terms of the current codebase reality and next concrete improvements.
+
+### Axis 1 – Game Rules & State Architecture
+
+From the code’s perspective:
+- `BoardManager`, `RuleEngine`, and `GameEngine` together already encode most of the rules in `ringrift_complete_rules.md`: movement, markers, overtaking captures, chain continuation, line formation/collapse, territory disconnection, forced elimination, and victory checks across 8×8, 19×19, and hex boards.  
+- The PlayerInteraction* layer (PlayerInteractionManager + WebSocketInteractionHandler + AIInteractionHandler + DelegatingInteractionHandler) provides the abstraction GameEngine uses to request PlayerChoices (line order, rewards, eliminations, region order, capture direction) from humans and AI.
+
+Code‑level technical debt:
+- There is no **single, authoritative mapping** from rules sections/FAQ items to specific engine methods and tests; knowledge is spread between docs and test names.  
+- Some invariants are encoded implicitly (e.g., the self‑elimination prerequisite is enforced inside `processDisconnectedRegions` and helper methods, but only partially documented in comments).  
+- The boundaries between BoardManager, RuleEngine, and GameEngine are mostly clean but not described as explicit contracts, which makes it harder for new contributors to know where to add logic or tests.
+
+Code‑centric recommendations:
+- Add a compact rules–code–tests matrix (likely in `CURRENT_STATE_ASSESSMENT.md` or a new `RULES_TO_CODE_MAPPING.md`) that, for each major rules section, lists:
+  - Primary engine entrypoints and helpers.  
+  - The Jest test files/cases that verify them.  
+- Treat that matrix as the checklist for future refactors: when we change rules or code, we update both the matrix and the tests.  
+- Where logic is “emergent” (e.g., forced elimination, chain termination rules, or specific FAQ edge cases), lift the underlying invariants into named helpers and comments so that tests can reference them directly.
+
+### Axis 2 – AI Boundary & Integration
+
+From the code’s perspective:
+- The AI surface is split across `ai-service/app/main.py`, Pydantic models, `src/server/services/AIServiceClient.ts`, and `src/server/game/ai/AIEngine.ts`.  
+- AI turns and some PlayerChoices (notably `line_reward_option`, with ring/region choices following) are already routed through `globalAIEngine` and `AIInteractionHandler`.
+
+Code‑level technical debt:
+- The TypeScript and Python sides agree informally on request/response shape (via shared naming and comments), but there is no small, central **“AI Contract”** document or type that both strictly follow.  
+- Policy decisions (service‑backed vs local heuristic, error handling, difficulty mapping) are scattered across `AIEngine`, `AIInteractionHandler`, WebSocket server, and tests.
+
+Code‑centric recommendations:
+- Define a minimal, versioned AI contract: TypeScript types and Python models that are clearly treated as external interfaces, plus a short doc section linking them.  
+- Centralise AI profile policy in `AIEngine`/`globalAIEngine` so that GameEngine and interaction handlers only depend on “ask AI for move/choice” semantics, not on how or where those decisions are computed.  
+- Extend tests around AI to cover both service success and failure paths systematically for moves and for at least the most important PlayerChoice types, using the real `AIEngine` façade rather than mocking deep internals.
+
+### Axis 3 – WebSocket/Game Loop Reliability
+
+From the code’s perspective:
+- `src/server/websocket/server.ts`, `WebSocketInteractionHandler`, and `GameContext`/`ChoiceDialog` implement the current game loop and choice flows over Socket.IO.  
+- Integration tests like `WebSocketServer.aiTurn.integration.test.ts` exercise parts of this loop, but not all failure/reconnection scenarios.
+
+Code‑level technical debt:
+- Some event flows (join/leave, reconnection, spectator handling) are stubs or only lightly tested.  
+- There is no single document that states, “Here is the authoritative sequence of WebSocket events for a turn / AI turn / PlayerChoice.”  
+- Message schemas live in `src/shared/types/websocket.ts` but are not treated as versioned contracts, so it’s easy to break them ad hoc.
+
+Code‑centric recommendations:
+- Write down the **canonical WebSocket turn flow** (including AI) and align server+client code and tests to that flow.  
+- Harden `WebSocketInteractionHandler` around duplicate/stale choice responses, timeouts, and unexpected disconnects, and encode those behaviours in tests.  
+- Treat `src/shared/types/websocket.ts` as the primary API surface: changes here should be deliberate and reflected in both server and client code, plus tests.
+
+### Axis 4 – Testing & Quality Gates
+
+From the code’s perspective:
+- Tests already exist for many critical areas (BoardManager adjacency/territory, RuleEngine movement/capture, GameEngine chain captures and territory disconnection, PlayerInteractionManager, WebSocketInteractionHandler, AIEngine/AIServiceClient, AIInteractionHandler, GameEngine choice integrations), but overall coverage is still low relative to rule complexity.  
+- CI is wired to run tests and collect coverage, but thresholds and grouping do not yet reflect the four axes.
+
+Code‑level technical debt:
+- Some older documents and comments still refer to “no tests” or “basic engine not implemented”, which no longer match reality and can mislead planning.  
+- There is no clear way to say, “Run all tests relevant to rules/state” vs “Run all tests relevant to AI boundary”.
+
+Code‑centric recommendations:
+- Group tests logically (by directory or naming convention) along the four axes, and add npm scripts to run those groupings conveniently.  
+- Incrementally raise coverage thresholds once each axis has a baseline suite.  
+- Keep `CODEBASE_EVALUATION.md`, `CURRENT_STATE_ASSESSMENT.md`, `STRATEGIC_ROADMAP.md`, and `TODO.md` in sync so that high‑level status, evaluation, roadmap, and concrete tasks all tell the same story.
+
+These axis‑specific views are intended to make it easier to choose the next deep refactor: pick a rule cluster or boundary in Axis 1–3, then drive tests and changes under Axis 4 to lock in the improvements.

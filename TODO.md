@@ -891,34 +891,20 @@ Keep non-choice WebSocket tasks (move broadcasting, reconnection, etc.) as TODO.
 - **Section 12:** Territory Disconnection - Von Neumann adjacency, representation
 - **FAQ Q1-Q24:** Edge cases and clarifications
 
-**Architecture:**
-- **Architecture Plan:** `ringrift_architecture_plan.md` - Original design
-- **Architecture Assessment:** `ARCHITECTURE_ASSESSMENT.md` - Current state analysis
-- **Technical Analysis:** `TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Detailed technical review
-- **Known Issues:** `KNOWN_ISSUES.md` - Bug tracking
-### Key Documentation References
-
-**Game Rules:**
-- **Complete Rules:** `ringrift_complete_rules.md` - Authoritative source
-- **Section 4:** Turn Sequence - Phase flow and turn structure
-- **Section 8:** Movement Rules - Distance, landing, marker interaction
-- **Section 9-10:** Capture Mechanics - Overtaking vs elimination, chains
-- **Section 11:** Line Formation - Graduated rewards system
-- **Section 12:** Territory Disconnection - Von Neumann adjacency, representation
-- **FAQ Q1-Q24:** Edge cases and clarifications
-
 **Architecture & Status (current, code-verified):**
 - **Architecture Assessment:** `ARCHITECTURE_ASSESSMENT.md` - Current architecture and refactoring axes
-- **Codebase Evaluation:** `CODEBASE_EVALUATION.md` - Code-level evaluation and recommendations
+- **Codebase Evaluation (historical):** `deprecated/CODEBASE_EVALUATION.md` - Earlier code-level evaluation, preserved for context only
 - **Current State:** `CURRENT_STATE_ASSESSMENT.md` - Factual, code-verified implementation status
 - **Known Issues:** `KNOWN_ISSUES.md` - Bug/issue tracking (P0/P1 gaps)
 
 **Roadmap & Playable Experience:**
 - **Strategic Roadmap:** `STRATEGIC_ROADMAP.md` - Phased strategic plan (testing → core logic → UI → AI → multiplayer)
-- **Improvement Plan:** `RINGRIFT_IMPROVEMENT_PLAN.md` - Rules/engine/UX/AI improvement plan
 - **Playable Game Implementation:** `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - End-to-end playable lifecycle plan (lobby → game → victory) and new-task context summary
 
-**Note:** Older high-level design documents such as `ringrift_architecture_plan.md` and `TECHNICAL_ARCHITECTURE_ANALYSIS.md` have been moved to `deprecated/` and are preserved only as historical context; any still-relevant guidance has been merged into the documents listed above.
+**Historical Design Docs (superseded, in `deprecated/`):**
+- `deprecated/ringrift_architecture_plan.md` – Original architecture plan
+- `deprecated/TECHNICAL_ARCHITECTURE_ANALYSIS.md` – Detailed technical analysis
+- `deprecated/RINGRIFT_IMPROVEMENT_PLAN.md` – Earlier improvement plan (replaced by the documents above)
 
 ## 📊 Progress Summary
 
@@ -988,32 +974,7 @@ Keep non-choice WebSocket tasks (move broadcasting, reconnection, etc.) as TODO.
 - Use scenario tests from rules document to validate correctness
 - Test edge cases from FAQ thoroughly
 
-### Key Documentation References
 
-**Game Rules:**
-- **Complete Rules:** `ringrift_complete_rules.md` - Authoritative source
-- **Section 4:** Turn Sequence - Phase flow and turn structure
-- **Section 8:** Movement Rules - Distance, landing, marker interaction
-- **Section 9-10:** Capture Mechanics - Overtaking vs elimination, chains
-- **Section 11:** Line Formation - Graduated rewards system
-- **Section 12:** Territory Disconnection - Von Neumann adjacency, representation
-- **FAQ Q1-Q24:** Edge cases and clarifications
-
-**Architecture:**
-- **Architecture Plan:** `ringrift_architecture_plan.md` - Original design
-- **Architecture Assessment:** `ARCHITECTURE_ASSESSMENT.md` - Current state analysis
-- **Technical Analysis:** `TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Detailed technical review
-- **Known Issues:** `KNOWN_ISSUES.md` - Bug tracking
-
-### Risk Mitigation
-
-- Complex territory logic may take longer than estimated
-- Marker system integration uncovered some edge cases (addressed in 1.2-1.3)
-- Phase transitions require careful testing to avoid state bugs
-- Plan buffer time for unexpected issues
-- Keep documentation updated as implementation progresses
-
----
 
 ## 📌 1–2 Week Implementation Checklist (Concrete Next Steps)
 

@@ -33,7 +33,7 @@ export const connectDatabase = async (): Promise<PrismaClient> => {
 
     // Log database queries in development
     if (process.env.NODE_ENV === 'development') {
-      prisma.$on('query', (e: any) => {
+      (prisma as any).$on('query', (e: any) => {
         logger.debug('Database Query:', {
           query: e.query,
           params: e.params,
@@ -43,17 +43,17 @@ export const connectDatabase = async (): Promise<PrismaClient> => {
     }
 
     // Log database errors
-    prisma.$on('error', (e: any) => {
+    (prisma as any).$on('error', (e: any) => {
       logger.error('Database Error:', e);
     });
 
     // Log database info
-    prisma.$on('info', (e: any) => {
+    (prisma as any).$on('info', (e: any) => {
       logger.info('Database Info:', e.message);
     });
 
     // Log database warnings
-    prisma.$on('warn', (e: any) => {
+    (prisma as any).$on('warn', (e: any) => {
       logger.warn('Database Warning:', e.message);
     });
 

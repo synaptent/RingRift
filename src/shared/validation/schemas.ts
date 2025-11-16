@@ -9,16 +9,37 @@ export const PositionSchema = z.object({
 });
 
 // Move validation
+// NOTE: This is a simplified wire-level move payload and is intentionally
+// narrower than the internal Move type. It is aligned with MovePayload
+// in src/shared/types/game.ts.
 export const MoveSchema = z.object({
-  type: z.enum(['place_ring', 'move_ring', 'place_marker', 'remove_row']),
-  player: z.number().int().min(1).max(4),
-  from: PositionSchema.optional(),
-  to: PositionSchema,
-  removedRow: z.array(PositionSchema).optional(),
-  thinkTime: z.number().min(0).max(300000) // Max 5 minutes think time
+  moveType: z.enum([
+    'place_ring',
+    'move_ring',
+    'build_stack',
+    'move_stack',
+    'overtaking_capture',
+    'line_formation',
+    'territory_claim'
+  ]),
+  position: z.union([
+    z.string(),
+    z.object({
+      from: PositionSchema.optional(),
+      to: PositionSchema
+    })
+  ]),
+  moveNumber: z.number().int().min(1).optional()
 });
 
+export type MoveInput = z.infer<typeof MoveSchema>;
+
 // Game creation validation
+// NOTE: The shape of this schema is intentionally kept in sync with
+// the shared CreateGameRequest/AiOpponentsConfig types in
+// src/shared/types/game.ts. If you add fields here, update those
+// types as well so the client, server, and validation layer share
+// a single mental model of the create-game payload.
 export const CreateGameSchema = z.object({
   boardType: z.enum(['square8', 'square19', 'hexagonal']),
   timeControl: z.object({
@@ -30,9 +51,15 @@ export const CreateGameSchema = z.object({
   maxPlayers: z.number().min(2).max(4).default(2),
   aiOpponents: z.object({
     count: z.number().min(0).max(3),
-    difficulty: z.array(z.number().min(1).max(10))
+    difficulty: z.array(z.number().min(1).max(10)),
+    mode: z.enum(['local_heuristic', 'service']).optional(),
+    aiType: z.enum(['random', 'heuristic', 'minimax', 'mcts']).optional()
   }).optional()
 });
+
+// Convenience alias so server code can use a single source of truth
+// for the parsed payload type.
+export type CreateGameInput = z.infer<typeof CreateGameSchema>;
 
 // User registration validation
 export const RegisterSchema = z.object({
@@ -162,6 +189,9 @@ export const SocketEventSchema = z.object({
 });
 
 // Game state validation (for API responses)
+// NOTE: This is a partial view of GameState, suitable for validating
+// API responses. It does not attempt to mirror the full internal
+// GameState shape used by GameEngine.
 export const GameStateSchema = z.object({
   id: z.string().uuid(),
   boardType: z.enum(['square8', 'square19', 'hexagonal']),
@@ -175,13 +205,15 @@ export const GameStateSchema = z.object({
     timeRemaining: z.number(),
     aiDifficulty: z.number().min(1).max(10).optional()
   })),
-  currentPhase: z.enum(['setup', 'placement', 'movement']),
+  currentPhase: z.enum(['ring_placement', 'movement', 'capture', 'line_processing', 'territory_processing']),
   currentPlayer: z.number().int().min(1).max(4),
-  gameStatus: z.enum(['waiting', 'active', 'finished', 'paused', 'abandoned']),
+  gameStatus: z.enum(['waiting', 'active', 'finished', 'paused', 'abandoned', 'completed']),
   winner: z.number().int().min(1).max(4).optional(),
   isRated: z.boolean(),
   maxPlayers: z.number().min(2).max(4)
 });
+
+export type GameStatePayload = z.infer<typeof GameStateSchema>;
 
 // Pagination validation
 export const PaginationSchema = z.object({

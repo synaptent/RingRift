@@ -447,6 +447,19 @@ spec:
 
 ## ⚠️ Implementation Status Assessment
 
+> **Update (November 15, 2025):** The implementation-status percentages
+> and some "no UI/AI" statements in this section reflect the project
+> state as of early November 13, 2025 and are **historical**. The
+> current, code-verified picture (core TS engine ~70–75% complete,
+> WebSocket-backed backend play, Python AI integration for moves and
+> several PlayerChoices, and a basic React board/choice UI) is
+> maintained in [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md),
+> [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md), and
+> [RINGRIFT_IMPROVEMENT_PLAN.md](./RINGRIFT_IMPROVEMENT_PLAN.md). Treat
+> those files as the primary source of truth for present-day status; the
+> remainder of this section is preserved to document the earlier gap
+> analysis that informed the current roadmap.
+
 **Assessment Date:** November 13, 2025  
 **Status:** INCOMPLETE - Core Game Logic Requires Major Work
 
@@ -494,7 +507,7 @@ spec:
 
 ### Revised Implementation Priority
 
-**See [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for complete analysis.**
+**See `CURRENT_STATE_ASSESSMENT.md`, `CODEBASE_EVALUATION.md`, and `TODO.md` for the up-to-date, code-verified implementation status; this section is preserved only as a historical snapshot.**
 
 **Immediate Priorities:**
 1. Fix BoardState data structure

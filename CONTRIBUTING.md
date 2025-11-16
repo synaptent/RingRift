@@ -6,7 +6,10 @@ Thank you for your interest in contributing to RingRift! This document provides 
 - [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) - Factual, code-verified status snapshot
 - [TODO.md](./TODO.md) - Task tracking and detailed implementation checklist
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs and issues
-- [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md) - High-level evaluation and recommendations
+- [ARCHITECTURE_ASSESSMENT.md](./ARCHITECTURE_ASSESSMENT.md) - Architecture and refactoring axes
+- [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) - Phased strategic plan and milestones
+- [PLAYABLE_GAME_IMPLEMENTATION_PLAN.md](./PLAYABLE_GAME_IMPLEMENTATION_PLAN.md) - End-to-end playable lifecycle plan (lobby → game → AI → victory)
+- [deprecated/CODEBASE_EVALUATION.md](./deprecated/CODEBASE_EVALUATION.md) - Historical code-level evaluation (kept for context only)
 
 ---
 
@@ -416,13 +419,15 @@ Description of how to fix
 
 **Must Read (in order):**
 1. `ringrift_complete_rules.md` - Complete game rules
-2. `IMPLEMENTATION_STATUS.md` - Current state analysis
-3. `KNOWN_ISSUES.md` - Specific bugs to fix
+2. `CURRENT_STATE_ASSESSMENT.md` - Current, code-verified state analysis
+3. `KNOWN_ISSUES.md` - Specific bugs and gaps to fix
 
-**Architecture Reference:**
-1. `ringrift_architecture_plan.md` - System design
-2. `TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Technical details
-3. `src/shared/types/game.ts` - Type definitions
+**Architecture & Planning Reference:**
+1. `ARCHITECTURE_ASSESSMENT.md` - Current architecture, refactoring axes, and deep improvement plan
+2. `STRATEGIC_ROADMAP.md` - Phased roadmap from core logic to UI, AI, and multiplayer
+3. `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Practical plan for a fully playable experience (lobby → game → AI → victory)
+4. `src/shared/types/game.ts` - Shared game type definitions
+5. `deprecated/ringrift_architecture_plan.md` and `deprecated/TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Historical design docs (preserved for context, but superseded by the files above)
 
 ### Understanding the Game
 
@@ -486,10 +491,11 @@ Description of how to fix
 
 ### Questions?
 
-- **Game rules:** Check `ringrift_complete_rules.md` Section 15.4 (FAQ)
-- **Architecture:** See `ringrift_architecture_plan.md`
+- **Game rules:** Check `ringrift_complete_rules.md` (especially the FAQ section)
+- **Architecture & refactoring axes:** See `ARCHITECTURE_ASSESSMENT.md`
+- **Roadmap & priorities:** See `STRATEGIC_ROADMAP.md` and `TODO.md`
 - **Current bugs:** Check `KNOWN_ISSUES.md`
-- **Implementation:** Review `IMPLEMENTATION_STATUS.md`
+- **Current implementation state:** Review `CURRENT_STATE_ASSESSMENT.md`
 
 ### Discussion
 
@@ -546,6 +552,6 @@ Your contributions help make RingRift a reality. Whether you fix a small bug or 
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** November 13, 2025  
+**Document Version:** 1.1  
+**Last Updated:** November 15, 2025  
 **Maintainer:** Development Team

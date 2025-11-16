@@ -13,7 +13,7 @@
 **Testing:** 10% Complete (minimal but growing unit/integration tests for rules, interaction flows, AI turns, territory, and the client-local sandbox engine)  
 **Frontend:** 30% Complete (board UI, client-local sandbox engine with strong rules parity, and basic backend play wired to the engine)  
 **AI Implementation:** 60% Complete (Python service integrated for move selection in backend games; `line_reward_option` choices are service-backed; other PlayerChoices still use local heuristics)
-**Multiplayer:** 60% Complete (infrastructure only, with basic backend play but no full lobby/matchmaking)
+**Multiplayer:** 30% Complete (Socket.IO and room infrastructure exist and backend games can be played via WebSockets, but there is no full lobby/matchmaking/reconnection/spectator UX yet)
 
 ---
 
@@ -550,6 +550,17 @@ Focus on **playability** before **scalability**:
 3. Write comprehensive tests
 4. Integrate AI service
 5. Then expand features
+
+**Near-Term Focus (next 1–2 weeks):**
+- **Scenario-driven tests:** Start encoding specific examples from `ringrift_complete_rules.md` and the FAQ (Q1–Q24) as Jest tests, with an initial emphasis on:
+  - Complex chain capture patterns (including 180° reversals and cycles) on square boards.
+  - Combined line + territory scenarios that exercise multiple PlayerChoices in one turn.
+  - Hex-board line/territory edge cases, using the existing sandbox and backend tests as references.
+- **HUD & lifecycle polish:** Flesh out `GameHUD`/`GamePage` so backend and sandbox games both show:
+  - Clear current player + phase indicators.
+  - Ring/territory counts per player, driven directly from `GameState` and `board.collapsedSpaces`.
+  - A minimal, consistent victory overlay (via `VictoryModal`) wired to the backend `game_over` event and the sandbox victory state.
+- **AI boundary hardening:** Extend `AIEngine`/`AIServiceClient` and `AIInteractionHandler` tests to cover service failures/timeouts and verify fallbacks, so AI decisions remain robust even when the Python service is unavailable or slow.
 
 **Timeline to Playable Game:** 6-8 weeks of focused work
 

@@ -124,4 +124,28 @@ describe('WebSocketInteractionHandler', () => {
 
     await expect(promise).rejects.toThrow(/playerNumber mismatch/);
   });
+
+  it('rejects with a timeout error when no response is received in time', async () => {
+    jest.useFakeTimers();
+
+    const io = new FakeSocketIOServer();
+    const getTargetForPlayer = jest.fn().mockReturnValue('socket-1');
+
+    // Use a very small timeout to keep the test fast.
+    const handler = new WebSocketInteractionHandler(
+      io as any,
+      gameId,
+      getTargetForPlayer,
+      10
+    );
+
+    const promise = handler.requestChoice(baseChoice);
+
+    // Advance timers past the timeout without sending any response.
+    jest.advanceTimersByTime(11);
+
+    await expect(promise).rejects.toThrow(/timed out/i);
+
+    jest.useRealTimers();
+  });
 });

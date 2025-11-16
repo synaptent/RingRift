@@ -11,18 +11,18 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  username      String   @unique
+  id            String    @id @default(cuid())
+  email         String    @unique
+  username      String    @unique
   passwordHash  String
-  role          UserRole @default(USER)
-  rating        Int      @default(1200)
-  gamesPlayed   Int      @default(0)
-  gamesWon      Int      @default(0)
-  emailVerified Boolean  @default(false)
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  role          UserRole  @default(USER)
+  rating        Int       @default(1200)
+  gamesPlayed   Int       @default(0)
+  gamesWon      Int       @default(0)
+  emailVerified Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   lastLoginAt   DateTime?
 
   // Game relationships
@@ -30,58 +30,58 @@ model User {
   gamesAsPlayer2 Game[] @relation("Player2")
   gamesAsPlayer3 Game[] @relation("Player3")
   gamesAsPlayer4 Game[] @relation("Player4")
-  gamesWon       Game[] @relation("Winner")
+  gamesWonGames  Game[] @relation("Winner")
   moves          Move[]
 
   @@map("users")
 }
 
 model Game {
-  id              String      @id @default(cuid())
+  id              String     @id @default(cuid())
   boardType       BoardType
   maxPlayers      Int
   timeControl     Json // { initialTime: number, increment: number }
-  isRated         Boolean     @default(true)
-  allowSpectators Boolean     @default(true)
-  status          GameStatus  @default(WAITING)
-  gameState       Json        @default("{}")
-  
+  isRated         Boolean    @default(true)
+  allowSpectators Boolean    @default(true)
+  status          GameStatus @default(waiting)
+  gameState       Json       @default("{}")
+
   // Players
-  player1Id       String?
-  player1         User?       @relation("Player1", fields: [player1Id], references: [id])
-  player2Id       String?
-  player2         User?       @relation("Player2", fields: [player2Id], references: [id])
-  player3Id       String?
-  player3         User?       @relation("Player3", fields: [player3Id], references: [id])
-  player4Id       String?
-  player4         User?       @relation("Player4", fields: [player4Id], references: [id])
-  
+  player1Id String?
+  player1   User?   @relation("Player1", fields: [player1Id], references: [id])
+  player2Id String?
+  player2   User?   @relation("Player2", fields: [player2Id], references: [id])
+  player3Id String?
+  player3   User?   @relation("Player3", fields: [player3Id], references: [id])
+  player4Id String?
+  player4   User?   @relation("Player4", fields: [player4Id], references: [id])
+
   // Game result
-  winnerId        String?
-  winner          User?       @relation("Winner", fields: [winnerId], references: [id])
-  
+  winnerId String?
+  winner   User?   @relation("Winner", fields: [winnerId], references: [id])
+
   // Timestamps
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
-  startedAt       DateTime?
-  endedAt         DateTime?
-  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  startedAt DateTime?
+  endedAt   DateTime?
+
   // Related data
-  moves           Move[]
+  moves Move[]
 
   @@map("games")
 }
 
 model Move {
-  id          String   @id @default(cuid())
-  gameId      String
-  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  playerId    String
-  player      User     @relation(fields: [playerId], references: [id])
-  moveNumber  Int
-  position    Json     // { x: number, y: number } or { q: number, r: number, s: number } for hex
-  moveType    MoveType
-  timestamp   DateTime @default(now())
+  id         String   @id @default(cuid())
+  gameId     String
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId   String
+  player     User     @relation(fields: [playerId], references: [id])
+  moveNumber Int
+  position   Json // { x: number, y: number } or { q: number, r: number, s: number } for hex
+  moveType   MoveType
+  timestamp  DateTime @default(now())
 
   @@unique([gameId, moveNumber])
   @@map("moves")
@@ -94,21 +94,27 @@ enum UserRole {
 }
 
 enum BoardType {
-  SQUARE_8
-  SQUARE_19
-  HEXAGONAL
+  square8
+  square19
+  hexagonal
 }
 
 enum GameStatus {
-  WAITING
-  ACTIVE
-  COMPLETED
-  CANCELLED
+  waiting
+  active
+  completed
+  cancelled
+  paused
+  abandoned
+  finished
 }
 
 enum MoveType {
-  PLACE_RING
-  MOVE_RING
-  REMOVE_RINGS
-  PASS
+  place_ring
+  move_ring
+  build_stack
+  move_stack
+  overtaking_capture
+  line_formation
+  territory_claim
 }

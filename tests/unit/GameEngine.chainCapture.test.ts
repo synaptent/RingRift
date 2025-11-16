@@ -214,4 +214,571 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
     // Internal chain state should be cleared once no further captures exist.
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
+
+  test('performs a 180-degree reversal chain capture (mirrors Rust test_chain_capture_180_reversal)', async () => {
+    // This scenario mirrors the Rust integration test
+    // `RingRift Rust/ringrift/tests/chain_capture_tests.rs::test_chain_capture_180_reversal`.
+    // Setup (SquareSmall / square8):
+    // - Red at (2,2) height 2
+    // - Blue at (2,3) height 2
+    // - Empty at (2,1) and (2,4)
+    // Expected behaviour:
+    // 1. Red captures Blue by jumping from (2,2) over (2,3) to land at (2,4).
+    //    Attacker becomes height 3 (R,R,B).
+    // 2. From (2,4) the only valid follow-up capture is a 180° reversal back
+    //    over (2,3), landing at (2,1). Final stack at (2,1) has height 4
+    //    (R,R,B,B), original positions are empty, and the chain is complete.
+
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+    const players: Player[] = [
+      {
+        id: 'red',
+        username: 'Red',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'blue',
+        username: 'Blue',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      }
+    ];
+
+    const engine = new GameEngine('chain-180', 'square8', players, timeControl, false);
+    const engineAny: any = engine;
+    const boardManager = engineAny.boardManager as any;
+    const gameState = engineAny.gameState as any;
+
+    // Ensure we are in capture phase and it is Red's turn so that
+    // RuleEngine.validateMove accepts an overtaking_capture.
+    gameState.currentPhase = 'capture';
+    gameState.currentPlayer = 1;
+
+    const makeStack = (playerNumber: number, height: number, position: Position) => {
+      const rings = Array(height).fill(playerNumber);
+      const stack: RingStack = {
+        position,
+        rings,
+        stackHeight: rings.length,
+        capHeight: rings.length,
+        controllingPlayer: playerNumber
+      };
+      boardManager.setStack(position, stack, gameState.board);
+    };
+
+    const redPos: Position = { x: 2, y: 2 };
+    const bluePos: Position = { x: 2, y: 3 };
+
+    // Red height 2 at (2,2); Blue height 2 at (2,3).
+    makeStack(1, 2, redPos);
+    makeStack(2, 2, bluePos);
+
+    const result = await engine.makeMove({
+      player: 1,
+      type: 'overtaking_capture',
+      from: redPos,
+      captureTarget: bluePos,
+      to: { x: 2, y: 4 }
+    } as any);
+
+    expect(result.success).toBe(true);
+
+    const board = gameState.board;
+    const stackAtInitial = board.stacks.get('2,2');
+    const stackAtBlue = board.stacks.get('2,3');
+    const stackAtIntermediate = board.stacks.get('2,4');
+    const stackAtFinal = board.stacks.get('2,1');
+
+    // Original positions and intermediate landing should be empty after the
+    // engine-driven chain completes.
+    expect(stackAtInitial).toBeUndefined();
+    expect(stackAtBlue).toBeUndefined();
+    expect(stackAtIntermediate).toBeUndefined();
+
+    // Final stack at (2,1) should contain all rings from the sequence: R2 + B2.
+    expect(stackAtFinal).toBeDefined();
+    expect(stackAtFinal!.stackHeight).toBe(4);
+    expect(stackAtFinal!.controllingPlayer).toBe(1);
+
+    // Chain state should be cleared once no further captures exist.
+    expect(engineAny.chainCaptureState).toBeUndefined();
+  });
+
+  test('respects marker interaction and landing rules during chain capture (mirrors Rust test_chain_capture_landing_rule_with_markers)', async () => {
+    // Mirrors `RingRift Rust/ringrift/tests/chain_capture_tests.rs::test_chain_capture_landing_rule_with_markers`.
+    // Setup (square8):
+    // - Red at (1,1) h1
+    // - Blue at (1,2) h1 (capture target)
+    // - Green marker at (1,3)
+    // - Empty at (1,4)
+    // Expected behaviour:
+    // Red jumps over Blue at (1,2) and lands on the first empty space after
+    // the marker at (1,3), i.e. at (1,4). The marker is processed along the
+    // path (flipped/collapsed per marker rules), but does not block landing.
+
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+    const players: Player[] = [
+      {
+        id: 'red',
+        username: 'Red',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'blue',
+        username: 'Blue',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      // Optional third player index to mirror Rust's use of a distinct marker color
+      {
+        id: 'green',
+        username: 'Green',
+        type: 'human',
+        playerNumber: 3,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      }
+    ];
+
+    const engine = new GameEngine('chain-markers', 'square8', players, timeControl, false);
+    const engineAny: any = engine;
+    const boardManager = engineAny.boardManager as any;
+    const gameState = engineAny.gameState as any;
+
+    // Ensure capture phase & correct player so RuleEngine allows the capture
+    gameState.currentPhase = 'capture';
+    gameState.currentPlayer = 1;
+
+    const makeStack = (playerNumber: number, height: number, position: Position) => {
+      const rings = Array(height).fill(playerNumber);
+      const stack: RingStack = {
+        position,
+        rings,
+        stackHeight: rings.length,
+        capHeight: rings.length,
+        controllingPlayer: playerNumber
+      };
+      boardManager.setStack(position, stack, gameState.board);
+    };
+
+    const redPos: Position = { x: 1, y: 1 };
+    const bluePos: Position = { x: 1, y: 2 };
+    const markerPos: Position = { x: 1, y: 3 };
+    const landingPos: Position = { x: 1, y: 4 };
+
+    // Red H1 at (1,1), Blue H1 at (1,2)
+    makeStack(1, 1, redPos);
+    makeStack(2, 1, bluePos);
+
+    // Place a Green marker at (1,3) to test marker interaction along the path
+    boardManager.setMarker(markerPos, 3, gameState.board);
+
+    const result = await engine.makeMove({
+      player: 1,
+      type: 'overtaking_capture',
+      from: redPos,
+      captureTarget: bluePos,
+      to: landingPos
+    } as any);
+
+    expect(result.success).toBe(true);
+
+    const board = gameState.board;
+    const stackAtStart = board.stacks.get('1,1');
+    const stackAtTarget = board.stacks.get('1,2');
+    const stackAtLanding = board.stacks.get('1,4');
+
+    // Original positions should be empty; attacker ends at (1,4)
+    expect(stackAtStart).toBeUndefined();
+    expect(stackAtTarget).toBeUndefined();
+    expect(stackAtLanding).toBeDefined();
+    expect(stackAtLanding!.stackHeight).toBe(2); // Red + Blue
+    expect(stackAtLanding!.controllingPlayer).toBe(1);
+
+    // Marker at (1,3) should have been processed along the path.
+    // According to TS engine rules, jumping over an opponent marker flips
+    // it to the mover's color (regular marker) rather than blocking landing.
+    const markerKey = '1,3';
+    const marker = board.markers.get(markerKey);
+    expect(marker).toBeDefined();
+    expect(marker!.player).toBe(1);
+
+    // Chain should be complete after this single capture with no further options.
+    expect(engineAny.chainCaptureState).toBeUndefined();
+  });
+
+  test('terminates chain when landing for next target is blocked (mirrors Rust test_chain_capture_termination_blocked_landing)', async () => {
+    // Mirrors `RingRift Rust/ringrift/tests/chain_capture_tests.rs::test_chain_capture_termination_blocked_landing`.
+    // Setup (square8):
+    // - Red(2,2) h1 (attacker)
+    // - Blue(2,3) h1 (first target)
+    // - Green(2,5) h1 (would-be second target)
+    // - Red(2,6) h1 (blocker on landing for Green)
+    // Expected behaviour:
+    // Red captures Blue and lands at (2,4). From there, Green at (2,5) is a
+    // geometric target but its landing space (2,6) is occupied by a stack, so
+    // no valid follow-up captures exist and the chain terminates automatically.
+
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+    const players: Player[] = [
+      {
+        id: 'red',
+        username: 'Red',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'blue',
+        username: 'Blue',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'green',
+        username: 'Green',
+        type: 'human',
+        playerNumber: 3,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      }
+    ];
+
+    const engine = new GameEngine('chain-termination-blocked', 'square8', players, timeControl, false);
+    const engineAny: any = engine;
+    const boardManager = engineAny.boardManager as any;
+    const gameState = engineAny.gameState as any;
+
+    // Ensure capture phase & correct player so RuleEngine allows the capture
+    gameState.currentPhase = 'capture';
+    gameState.currentPlayer = 1;
+
+    const makeStack = (playerNumber: number, height: number, position: Position) => {
+      const rings = Array(height).fill(playerNumber);
+      const stack: RingStack = {
+        position,
+        rings,
+        stackHeight: rings.length,
+        capHeight: rings.length,
+        controllingPlayer: playerNumber
+      };
+      boardManager.setStack(position, stack, gameState.board);
+    };
+
+    const redPos: Position = { x: 2, y: 2 };
+    const bluePos: Position = { x: 2, y: 3 };
+    const greenPos: Position = { x: 2, y: 5 };
+    const blockerPos: Position = { x: 2, y: 6 };
+
+    // Initial stacks: attacker, first target, potential second target, blocker
+    makeStack(1, 1, redPos);
+    makeStack(2, 1, bluePos);
+    makeStack(3, 1, greenPos);
+    makeStack(1, 1, blockerPos);
+
+    const result = await engine.makeMove({
+      player: 1,
+      type: 'overtaking_capture',
+      from: redPos,
+      captureTarget: bluePos,
+      to: { x: 2, y: 4 }
+    } as any);
+
+    expect(result.success).toBe(true);
+
+    const board = gameState.board;
+    const stackAtRed = board.stacks.get('2,2');
+    const stackAtBlue = board.stacks.get('2,3');
+    const stackAtLanding = board.stacks.get('2,4');
+    const stackAtGreen = board.stacks.get('2,5');
+    const stackAtBlocker = board.stacks.get('2,6');
+
+    // Red and Blue should be gone after the first capture
+    expect(stackAtRed).toBeUndefined();
+    expect(stackAtBlue).toBeUndefined();
+
+    // Attacker should now be at (2,4) with both rings (Red + Blue)
+    expect(stackAtLanding).toBeDefined();
+    expect(stackAtLanding!.stackHeight).toBe(2);
+    expect(stackAtLanding!.controllingPlayer).toBe(1);
+
+    // Green and the blocking Red stack should remain unchanged
+    expect(stackAtGreen).toBeDefined();
+    expect(stackAtGreen!.stackHeight).toBe(1);
+    expect(stackAtGreen!.controllingPlayer).toBe(3);
+
+    expect(stackAtBlocker).toBeDefined();
+    expect(stackAtBlocker!.stackHeight).toBe(1);
+    expect(stackAtBlocker!.controllingPlayer).toBe(1);
+
+    // Because the only geometric target (Green at (2,5)) has no legal landing
+    // beyond it, the chain must terminate automatically.
+    expect(engineAny.chainCaptureState).toBeUndefined();
+  });
+
+  test('terminates chain when all potential targets have higher cap height (mirrors Rust test_chain_capture_termination_no_valid_targets)', async () => {
+    // Mirrors `RingRift Rust/ringrift/tests/chain_capture_tests.rs::test_chain_capture_termination_no_valid_targets`.
+    // Setup (square8):
+    // - Red(2,2) h1 (attacker)
+    // - Blue(2,3) h1 (first target)
+    // - Green(3,4) h2 (potential target with higher cap)
+    // Expected behaviour:
+    // Red captures Blue and lands at (2,4). From there, Green at (3,4) is a
+    // geometric target, but its cap height (2) is greater than the attacker's
+    // cap (1), so no valid follow-up captures exist and the chain terminates.
+
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+    const players: Player[] = [
+      {
+        id: 'red',
+        username: 'Red',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'blue',
+        username: 'Blue',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'green',
+        username: 'Green',
+        type: 'human',
+        playerNumber: 3,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      }
+    ];
+
+    const engine = new GameEngine('chain-termination-cap', 'square8', players, timeControl, false);
+    const engineAny: any = engine;
+    const boardManager = engineAny.boardManager as any;
+    const gameState = engineAny.gameState as any;
+
+    // Ensure capture phase & correct player so RuleEngine allows the capture
+    gameState.currentPhase = 'capture';
+    gameState.currentPlayer = 1;
+
+    const makeStack = (playerNumber: number, height: number, position: Position) => {
+      const rings = Array(height).fill(playerNumber);
+      const stack: RingStack = {
+        position,
+        rings,
+        stackHeight: rings.length,
+        capHeight: rings.length,
+        controllingPlayer: playerNumber
+      };
+      boardManager.setStack(position, stack, gameState.board);
+    };
+
+    const redPos: Position = { x: 2, y: 2 };
+    const bluePos: Position = { x: 2, y: 3 };
+    const greenPos: Position = { x: 3, y: 4 };
+
+    // Initial stacks: attacker (H1), first target (H1), potential second target (H2)
+    makeStack(1, 1, redPos);
+    makeStack(2, 1, bluePos);
+    makeStack(3, 2, greenPos);
+
+    const result = await engine.makeMove({
+      player: 1,
+      type: 'overtaking_capture',
+      from: redPos,
+      captureTarget: bluePos,
+      to: { x: 2, y: 4 }
+    } as any);
+
+    expect(result.success).toBe(true);
+
+    const board = gameState.board;
+    const stackAtRed = board.stacks.get('2,2');
+    const stackAtBlue = board.stacks.get('2,3');
+    const stackAtLanding = board.stacks.get('2,4');
+    const stackAtGreen = board.stacks.get('3,4');
+
+    // Red and Blue should be gone after the first capture
+    expect(stackAtRed).toBeUndefined();
+    expect(stackAtBlue).toBeUndefined();
+
+    // Attacker should now be at (2,4) with both rings (Red + Blue)
+    expect(stackAtLanding).toBeDefined();
+    expect(stackAtLanding!.stackHeight).toBe(2);
+    expect(stackAtLanding!.controllingPlayer).toBe(1);
+
+    // Green stack with higher cap should remain unchanged
+    expect(stackAtGreen).toBeDefined();
+    expect(stackAtGreen!.stackHeight).toBe(2);
+    expect(stackAtGreen!.controllingPlayer).toBe(3);
+
+    // Because all geometric targets have higher cap height than the attacker,
+    // no valid follow-up captures exist, and the chain must terminate.
+    expect(engineAny.chainCaptureState).toBeUndefined();
+  });
+
+  test('runs post-movement processing once after an engine-driven chain capture', async () => {
+    // Use the same two-step chain scenario as the "full two-step" test, but
+    // focus on verifying that processAutomaticConsequences is invoked once
+    // after the chain capture has fully resolved. This ensures the
+    // capture → processAutomaticConsequences wiring remains intact.
+
+    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+    const players: Player[] = [
+      {
+        id: 'red',
+        username: 'Red',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'blue',
+        username: 'Blue',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'green',
+        username: 'Green',
+        type: 'human',
+        playerNumber: 3,
+        isReady: true,
+        timeRemaining: timeControl.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      }
+    ];
+
+    const engine = new GameEngine('chain-post-processing', 'square8', players, timeControl, false);
+    const engineAny: any = engine;
+    const boardManager = engineAny.boardManager as any;
+    const gameState = engineAny.gameState as any;
+
+    // Ensure capture phase & correct player so RuleEngine allows capture.
+    gameState.currentPhase = 'capture';
+    gameState.currentPlayer = 1;
+
+    const makeStack = (playerNumber: number, height: number, position: Position) => {
+      const rings = Array(height).fill(playerNumber);
+      const stack: RingStack = {
+        position,
+        rings,
+        stackHeight: rings.length,
+        capHeight: rings.length,
+        controllingPlayer: playerNumber
+      };
+      boardManager.setStack(position, stack, gameState.board);
+    };
+
+    const redPos: Position = { x: 2, y: 2 };
+    const bluePos: Position = { x: 2, y: 3 };
+    const greenPos: Position = { x: 2, y: 5 };
+
+    // Same configuration as the "full two-step chain" test.
+    makeStack(1, 2, redPos);
+    makeStack(2, 1, bluePos);
+    makeStack(3, 1, greenPos);
+
+    // Spy on processAutomaticConsequences to ensure it is invoked exactly once
+    // after the engine-driven chain is complete.
+    const processSpy = jest
+      .spyOn(engineAny, 'processAutomaticConsequences')
+      .mockResolvedValue(undefined);
+
+    const result = await engine.makeMove({
+      player: 1,
+      type: 'overtaking_capture',
+      from: redPos,
+      captureTarget: bluePos,
+      to: { x: 2, y: 4 }
+    } as any);
+
+    expect(result.success).toBe(true);
+
+    // processAutomaticConsequences should have been called exactly once for
+    // this turn, after the internal chain-capture loop concluded.
+    expect(processSpy).toHaveBeenCalledTimes(1);
+
+    // For sanity, the final chain state and board geometry should mirror the
+    // expectations from the earlier full two-step chain test.
+    const board = gameState.board;
+    const stackAtRed = board.stacks.get('2,2');
+    const stackAtBlue = board.stacks.get('2,3');
+    const stackAtGreen = board.stacks.get('2,5');
+    const stackAtFinal = board.stacks.get('2,7');
+
+    expect(stackAtRed).toBeUndefined();
+    expect(stackAtBlue).toBeUndefined();
+    expect(stackAtGreen).toBeUndefined();
+    expect(stackAtFinal).toBeDefined();
+    expect(stackAtFinal!.stackHeight).toBe(4);
+    expect(stackAtFinal!.controllingPlayer).toBe(1);
+
+    expect(engineAny.chainCaptureState).toBeUndefined();
+  });
 });

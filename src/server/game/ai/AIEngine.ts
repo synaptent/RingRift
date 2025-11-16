@@ -3,7 +3,7 @@
  * Delegates to Python AI microservice for move generation
  */
 
-import { GameState, Move } from '../../../shared/types/game';
+import { GameState, Move, AIProfile, AITacticType, AIControlMode, LineRewardChoice, RingEliminationChoice, RegionOrderChoice } from '../../../shared/types/game';
 import { getAIServiceClient, AIType as ServiceAIType } from '../../services/AIServiceClient';
 import { logger } from '../../utils/logger';
 
@@ -18,6 +18,10 @@ export interface AIConfig {
   difficulty: number;
   thinkTime?: number;
   randomness?: number;
+  /** Tactical engine chosen for this AI config. */
+  aiType?: AIType;
+  /** How this AI makes decisions about moves/choices. */
+  mode?: AIControlMode;
 }
 
 export const AI_DIFFICULTY_PRESETS: Record<number, Partial<AIConfig>> = {
@@ -35,7 +39,6 @@ export const AI_DIFFICULTY_PRESETS: Record<number, Partial<AIConfig>> = {
 
 export class AIEngine {
   private aiConfigs: Map<number, AIConfig> = new Map();
-  private aiServiceClient = getAIServiceClient();
 
   /**
    * Create/configure an AI player
@@ -48,24 +51,47 @@ export class AIEngine {
     difficulty: number = 5,
     type?: AIType
   ): void {
+    // Backwards-compatible wrapper around createAIFromProfile.
+    const profile: AIProfile = {
+      difficulty,
+      mode: 'service',
+      ...(type && { aiType: this.mapAITypeToTactic(type) })
+    };
+
+    this.createAIFromProfile(playerNumber, profile);
+  }
+
+  /**
+   * Configure an AI player from a rich AIProfile. This is the
+   * preferred entry point for new code paths.
+   */
+  createAIFromProfile(playerNumber: number, profile: AIProfile): void {
+    const difficulty = profile.difficulty;
+
     // Validate difficulty
     if (difficulty < 1 || difficulty > 10) {
       throw new Error('AI difficulty must be between 1 and 10');
     }
 
-    // Get configuration preset for this difficulty
+    const basePreset = AI_DIFFICULTY_PRESETS[difficulty] || {};
+    const aiType = profile.aiType
+      ? this.mapAITacticToAIType(profile.aiType)
+      : this.selectAITypeForDifficulty(difficulty);
+
     const config: AIConfig = {
-      ...AI_DIFFICULTY_PRESETS[difficulty],
+      ...basePreset,
       difficulty,
+      aiType,
+      mode: profile.mode ?? 'service'
     };
 
-    // Store AI configuration
     this.aiConfigs.set(playerNumber, config);
 
-    logger.info(`AI player configured`, {
+    logger.info('AI player configured from profile', {
       playerNumber,
       difficulty,
-      type: type || this.selectAITypeForDifficulty(difficulty)
+      aiType,
+      mode: config.mode
     });
   }
 
@@ -97,9 +123,10 @@ export class AIEngine {
     }
 
     try {
-      // Call Python AI service
-      const aiType = this.selectAITypeForDifficulty(config.difficulty);
-      const response = await this.aiServiceClient.getAIMove(
+      // Call Python AI service. Prefer any explicit aiType derived from
+      // AIProfile, falling back to a difficulty-based default.
+      const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const response = await getAIServiceClient().getAIMove(
         gameState,
         playerNumber,
         config.difficulty,
@@ -135,7 +162,7 @@ export class AIEngine {
     }
 
     try {
-      const response = await this.aiServiceClient.evaluatePosition(
+      const response = await getAIServiceClient().evaluatePosition(
         gameState,
         playerNumber
       );
@@ -148,6 +175,142 @@ export class AIEngine {
       return response.score;
     } catch (error) {
       logger.error('Failed to evaluate position from service', {
+        playerNumber,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Ask the AI service to choose a line_reward_option for an AI-controlled
+   * player. This is the service-backed analogue of the local heuristic in
+   * AIInteractionHandler and keeps all remote AI behaviour behind this
+   * façade.
+   */
+  async getLineRewardChoice(
+    playerNumber: number,
+    gameState: GameState | null,
+    options: LineRewardChoice['options']
+  ): Promise<LineRewardChoice['options'][number]> {
+    const config = this.aiConfigs.get(playerNumber);
+
+    if (!config) {
+      throw new Error(`No AI configuration found for player number ${playerNumber}`);
+    }
+
+    try {
+      const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const response = await getAIServiceClient().getLineRewardChoice(
+        gameState,
+        playerNumber,
+        config.difficulty,
+        aiType as unknown as ServiceAIType,
+        options
+      );
+
+      logger.info('AI line_reward_option choice generated', {
+        playerNumber,
+        difficulty: response.difficulty,
+        aiType: response.aiType,
+        selectedOption: response.selectedOption
+      });
+
+      return response.selectedOption;
+    } catch (error) {
+      logger.error('Failed to get line_reward_option choice from service', {
+        playerNumber,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Ask the AI service to choose a ring_elimination option for an
+   * AI-controlled player. This mirrors the TypeScript
+   * AIInteractionHandler heuristic (smallest capHeight, then
+   * smallest totalHeight) but keeps the remote call behind this
+   * façade so callers do not need to know about the Python
+   * service directly.
+   */
+  async getRingEliminationChoice(
+    playerNumber: number,
+    gameState: GameState | null,
+    options: RingEliminationChoice['options']
+  ): Promise<RingEliminationChoice['options'][number]> {
+    const config = this.aiConfigs.get(playerNumber);
+
+    if (!config) {
+      throw new Error(`No AI configuration found for player number ${playerNumber}`);
+    }
+
+    try {
+      const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const response = await getAIServiceClient().getRingEliminationChoice(
+        gameState,
+        playerNumber,
+        config.difficulty,
+        aiType as unknown as ServiceAIType,
+        options
+      );
+
+      logger.info('AI ring_elimination choice generated', {
+        playerNumber,
+        difficulty: response.difficulty,
+        aiType: response.aiType,
+        selectedOption: response.selectedOption
+      });
+
+      return response.selectedOption;
+    } catch (error) {
+      logger.error('Failed to get ring_elimination choice from service', {
+        playerNumber,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Ask the AI service to choose a region_order option for an
+   * AI-controlled player. This mirrors the TypeScript
+   * AIInteractionHandler heuristic (largest region by size, with
+   * additional context from GameState) but keeps the remote call
+   * behind this façade so callers do not need to know about the
+   * Python service directly.
+   */
+  async getRegionOrderChoice(
+    playerNumber: number,
+    gameState: GameState | null,
+    options: RegionOrderChoice['options']
+  ): Promise<RegionOrderChoice['options'][number]> {
+    const config = this.aiConfigs.get(playerNumber);
+
+    if (!config) {
+      throw new Error(`No AI configuration found for player number ${playerNumber}`);
+    }
+
+    try {
+      const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const response = await getAIServiceClient().getRegionOrderChoice(
+        gameState,
+        playerNumber,
+        config.difficulty,
+        aiType as unknown as ServiceAIType,
+        options
+      );
+
+      logger.info('AI region_order choice generated', {
+        playerNumber,
+        difficulty: response.difficulty,
+        aiType: response.aiType,
+        selectedOption: response.selectedOption
+      });
+
+      return response.selectedOption;
+    } catch (error) {
+      logger.error('Failed to get region_order choice from service', {
         playerNumber,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
@@ -181,7 +344,7 @@ export class AIEngine {
    */
   async checkServiceHealth(): Promise<boolean> {
     try {
-      return await this.aiServiceClient.healthCheck();
+      return await getAIServiceClient().healthCheck();
     } catch (error) {
       logger.error('AI service health check failed', { error });
       return false;
@@ -193,7 +356,7 @@ export class AIEngine {
    */
   async clearServiceCache(): Promise<void> {
     try {
-      await this.aiServiceClient.clearCache();
+      await getAIServiceClient().clearCache();
       logger.info('AI service cache cleared');
     } catch (error) {
       logger.error('Failed to clear AI service cache', { error });
@@ -215,6 +378,38 @@ export class AIEngine {
       return AIType.MINIMAX; // Levels 6-8: Minimax AI (falls back to Heuristic if not implemented)
     } else {
       return AIType.MCTS; // Levels 9-10: MCTS AI (falls back to Heuristic if not implemented)
+    }
+  }
+
+  /** Map shared AITacticType values onto the internal AIType enum. */
+  private mapAITacticToAIType(tactic: AITacticType): AIType {
+    switch (tactic) {
+      case 'random':
+        return AIType.RANDOM;
+      case 'heuristic':
+        return AIType.HEURISTIC;
+      case 'minimax':
+        return AIType.MINIMAX;
+      case 'mcts':
+        return AIType.MCTS;
+      default:
+        return AIType.HEURISTIC;
+    }
+  }
+
+  /** Map internal AIType to the shared AITacticType union. */
+  private mapAITypeToTactic(type: AIType): AITacticType {
+    switch (type) {
+      case AIType.RANDOM:
+        return 'random';
+      case AIType.HEURISTIC:
+        return 'heuristic';
+      case AIType.MINIMAX:
+        return 'minimax';
+      case AIType.MCTS:
+        return 'mcts';
+      default:
+        return 'heuristic';
     }
   }
 

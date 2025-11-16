@@ -12,7 +12,22 @@ import logging
 
 from .ai.random_ai import RandomAI
 from .ai.heuristic_ai import HeuristicAI
-from .models import GameState, Move, AIConfig, AIType
+from .models import (
+    GameState,
+    Move,
+    AIConfig,
+    AIType,
+    LineRewardChoiceRequest,
+    LineRewardChoiceResponse,
+    LineRewardChoiceOption,
+    RingEliminationChoiceRequest,
+    RingEliminationChoiceResponse,
+    RingEliminationChoiceOption,
+    RegionOrderChoiceRequest,
+    RegionOrderChoiceResponse,
+    RegionOrderChoiceOption,
+    Position,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -172,6 +187,179 @@ async def evaluate_position(request: EvaluationRequest):
         
     except Exception as e:
         logger.error(f"Error evaluating position: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/choice/line_reward_option", response_model=LineRewardChoiceResponse)
+async def choose_line_reward_option(request: LineRewardChoiceRequest):
+    """Select a line reward option for an AI-controlled player.
+
+    For now this mirrors the TypeScript AIInteractionHandler heuristic by
+    preferring Option 2 (minimum collapse, no elimination) when it is
+    available, falling back to the first option. The endpoint is
+    intentionally simple but carries enough metadata (difficulty,
+    ai_type, optional game_state) to be extended later without breaking
+    the contract.
+    """
+    try:
+        ai_type = request.ai_type or _select_ai_type(request.difficulty)
+
+        if not request.options:
+            # Default conservatively to Option 2 semantics when no
+            # options are provided, mirroring the TypeScript fallback.
+            selected = LineRewardChoiceOption.OPTION_2
+        elif LineRewardChoiceOption.OPTION_2 in request.options:
+            selected = LineRewardChoiceOption.OPTION_2
+        else:
+            selected = request.options[0]
+
+        return LineRewardChoiceResponse(
+            selected_option=selected,
+            ai_type=ai_type.value,
+            difficulty=request.difficulty,
+        )
+    except Exception as e:
+        logger.error(
+            f"Error selecting line reward option: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/choice/ring_elimination", response_model=RingEliminationChoiceResponse)
+async def choose_ring_elimination_option(request: RingEliminationChoiceRequest):
+    """Select a ring elimination option for an AI-controlled player.
+
+    This endpoint mirrors the TypeScript AIInteractionHandler heuristic
+    by preferring the option with the smallest ``capHeight``,
+    tie-breaking on ``totalHeight``. The full ``game_state`` is
+    available on the request for more advanced heuristics in the
+    future, but is not yet used directly.
+    """
+    try:
+        ai_type = request.ai_type or _select_ai_type(request.difficulty)
+
+        if not request.options:
+            # No options is a protocol error: the engine should never
+            # ask the AI to choose from an empty set of elimination
+            # targets. Surface this clearly so the caller can fix the
+            # upstream logic.
+            raise HTTPException(status_code=400, detail="ring_elimination choice has no options")
+
+        # Prefer the option with the smallest cap_height; if tied,
+        # choose the one with the smallest total_height.
+        selected = request.options[0]
+        for opt in request.options[1:]:
+            if opt.cap_height < selected.cap_height:
+                selected = opt
+            elif opt.cap_height == selected.cap_height and opt.total_height < selected.total_height:
+                selected = opt
+
+        return RingEliminationChoiceResponse(
+            selected_option=selected,
+            ai_type=ai_type.value,
+            difficulty=request.difficulty,
+        )
+    except HTTPException:
+        # Re-raise HTTPExceptions unchanged so FastAPI can handle them
+        # as intended.
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error selecting ring elimination option: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ai/choice/region_order", response_model=RegionOrderChoiceResponse)
+async def choose_region_order_option(request: RegionOrderChoiceRequest):
+    """Select a region order option for an AI-controlled player.
+
+    This endpoint prefers regions that are both *large* and
+    *strategically relevant* based on the current GameState. The
+    scoring heuristic is:
+
+    - Start from region size (larger regions are generally more
+      impactful).
+    - Add a bonus for nearby enemy-controlled stacks: for each stack
+      whose controlling player is not ``request.player_number`` and is
+      within a small radius of the region's representativePosition,
+      add a decaying score contribution.
+
+    This keeps the logic simple while still leveraging full GameState
+    context. If no game_state is provided, the heuristic falls back to
+    a size-only comparison.
+    """
+    try:
+        ai_type = request.ai_type or _select_ai_type(request.difficulty)
+
+        if not request.options:
+            # No options: synthesize a zero-sized region.
+            selected = RegionOrderChoiceOption(
+                regionId="0",  # type: ignore[call-arg]
+                size=0,
+                representativePosition=Position(x=0, y=0),
+            )
+        else:
+            # Precompute enemy player numbers when game_state is
+            # available.
+            enemy_players = set()
+            stacks_by_key: Dict[str, RingEliminationChoiceOption] = {}
+            if request.game_state is not None:
+                for p in request.game_state.players:
+                    if getattr(p, "player_number", None) != request.player_number:
+                        enemy_players.add(p.player_number)
+
+            def _manhattan(a: Position, b: Position) -> int:
+                az = a.z or 0
+                bz = b.z or 0
+                return abs(a.x - b.x) + abs(a.y - b.y) + abs(az - bz)
+
+            def score_region(option: RegionOrderChoiceOption) -> float:
+                # Base: region size.
+                score = float(option.size)
+
+                if request.game_state is None or not enemy_players:
+                    return score
+
+                # Bonus: nearby enemy stacks. We treat stacks within a
+                # small radius of the representative position as
+                # belonging to or strongly influencing this region.
+                board = request.game_state.board
+                centre = option.representative_position
+                radius = 3
+                for stack in board.stacks.values():
+                    if stack.controlling_player not in enemy_players:
+                        continue
+                    dist = _manhattan(stack.position, centre)
+                    if dist <= radius:
+                        # Closer stacks contribute more; ensure we
+                        # never divide by zero.
+                        score += 2.0 / float(1 + dist)
+
+                return score
+
+            # Select the option with the highest score; break ties by
+            # preferring the larger region, then the first encountered.
+            selected = request.options[0]
+            best_score = score_region(selected)
+            for opt in request.options[1:]:
+                s = score_region(opt)
+                if s > best_score or (s == best_score and opt.size > selected.size):
+                    selected = opt
+                    best_score = s
+
+        return RegionOrderChoiceResponse(
+            selected_option=selected,
+            ai_type=ai_type.value,
+            difficulty=request.difficulty,
+        )
+    except Exception as e:
+        logger.error(
+            f"Error selecting region order option: {str(e)}",
+            exc_info=True,
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 

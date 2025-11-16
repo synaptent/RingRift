@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   PlayerChoice,
   LineOrderChoice,
@@ -25,6 +25,8 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
   onSelectOption,
   onCancel
 }) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   if (!choice) return null;
 
   const renderLineOrder = (c: LineOrderChoice) => (
@@ -35,8 +37,13 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           <button
             key={opt.lineId}
             type="button"
-            onClick={() => onSelectOption(c, opt)}
-            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs border border-slate-600"
+            disabled={isSubmitting}
+            onClick={() => {
+              if (isSubmitting) return;
+              setIsSubmitting(true);
+              onSelectOption(c, opt);
+            }}
+            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Line {index + 1} – {opt.markerPositions.length} markers
           </button>
@@ -51,26 +58,32 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
       <div className="flex flex-col space-y-2 text-xs">
         <button
           type="button"
-          onClick={() =>
+          disabled={isSubmitting}
+          onClick={() => {
+            if (isSubmitting) return;
+            setIsSubmitting(true);
             onSelectOption(
               c,
               'option_1_collapse_all_and_eliminate'
-            )
-          }
-          className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left"
+            );
+          }}
+          className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <div className="font-semibold">Option 1</div>
           <div>Collapse entire line and eliminate one of your rings/caps.</div>
         </button>
         <button
           type="button"
-          onClick={() =>
+          disabled={isSubmitting}
+          onClick={() => {
+            if (isSubmitting) return;
+            setIsSubmitting(true);
             onSelectOption(
               c,
               'option_2_min_collapse_no_elimination'
-            )
-          }
-          className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left"
+            );
+          }}
+          className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <div className="font-semibold">Option 2</div>
           <div>Collapse only the minimum required markers with no elimination.</div>
@@ -87,8 +100,13 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           <button
             key={`${opt.stackPosition.x},${opt.stackPosition.y},${index}`}
             type="button"
-            onClick={() => onSelectOption(c, opt)}
-            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600"
+            disabled={isSubmitting}
+            onClick={() => {
+              if (isSubmitting) return;
+              setIsSubmitting(true);
+              onSelectOption(c, opt);
+            }}
+            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Stack at ({opt.stackPosition.x}, {opt.stackPosition.y}
             {opt.stackPosition.z !== undefined ? `, ${opt.stackPosition.z}` : ''}) – cap {opt.capHeight}, total {opt.totalHeight}
@@ -106,8 +124,13 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           <button
             key={opt.regionId}
             type="button"
-            onClick={() => onSelectOption(c, opt)}
-            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600"
+            disabled={isSubmitting}
+            onClick={() => {
+              if (isSubmitting) return;
+              setIsSubmitting(true);
+              onSelectOption(c, opt);
+            }}
+            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Region {opt.regionId} – {opt.size} spaces, sample ({
               opt.representativePosition.x
@@ -127,8 +150,13 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           <button
             key={`${opt.targetPosition.x},${opt.targetPosition.y},${index}`}
             type="button"
-            onClick={() => onSelectOption(c, opt)}
-            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600"
+            disabled={isSubmitting}
+            onClick={() => {
+              if (isSubmitting) return;
+              setIsSubmitting(true);
+              onSelectOption(c, opt);
+            }}
+            className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Direction {index + 1}: target ({opt.targetPosition.x}, {opt.targetPosition.y}
             {opt.targetPosition.z !== undefined ? `, ${opt.targetPosition.z}` : ''}) → landing ({
@@ -182,8 +210,12 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             {onCancel && (
               <button
                 type="button"
-                onClick={onCancel}
-                className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-gray-200"
+                disabled={isSubmitting}
+                onClick={() => {
+                  if (isSubmitting) return;
+                  onCancel();
+                }}
+                className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-gray-200 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>

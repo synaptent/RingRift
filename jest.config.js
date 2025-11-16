@@ -59,12 +59,6 @@ module.exports = {
   // Setup files - runs AFTER test framework is installed
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   
-  // Globals configuration
-  globals: {
-    'ts-jest': {
-      isolatedModules: true,
-    },
-  },
   
   // Module name mapper for path aliases
   moduleNameMapper: {

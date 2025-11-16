@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { User } from '../../shared/types/user';
-import { Game } from '../../shared/types/game';
+import { Game, CreateGameRequest } from '../../shared/types/game';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -58,15 +58,14 @@ export const authApi = {
 
 // Game API
 export const gameApi = {
-  async createGame(gameData: {
-    boardType: string;
-    maxPlayers: number;
-    timeControl: any;
-    isRated: boolean;
-    allowSpectators: boolean;
-  }): Promise<Game> {
+  /**
+   * Create a new backend game using the shared CreateGameRequest
+   * shape. The server responds with a standard envelope of the
+   * form { success, data: { game }, message }.
+   */
+  async createGame(gameData: CreateGameRequest): Promise<Game> {
     const response = await api.post('/games', gameData);
-    return response.data;
+    return response.data.data.game as Game;
   },
 
   async getGame(gameId: string): Promise<Game> {

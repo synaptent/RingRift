@@ -702,7 +702,7 @@ export class BoardManager {
    * Key Insight: Markers of a specific color can act as borders (treated like collapsed spaces).
    * We must check for disconnection with respect to each marker color separately.
    */
-  findDisconnectedRegions(board: BoardState, movingPlayer: number): Territory[] {
+  findDisconnectedRegions(board: BoardState, _movingPlayer: number): Territory[] {
     const disconnectedRegions: Territory[] = [];
     
     // Get all active players (those with stacks on board)
@@ -946,132 +946,15 @@ export class BoardManager {
     return true;
   }
 
-  /**
-   * Explore a region using flood fill
-   * Returns all connected empty/marker spaces starting from position
-   */
-  private exploreRegion(startPosition: Position, board: BoardState, visited: Set<string>): {
-    spaces: Position[];
-    borderPositions: Position[];
-  } {
-
-    const spaces: Position[] = [];
-    const borderPositions: Position[] = [];
-    const queue = [startPosition];
-    const localVisited = new Set<string>();
-    
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentKey = positionToString(current);
-      
-      if (localVisited.has(currentKey)) continue;
-      localVisited.add(currentKey);
-      visited.add(currentKey);
-      
-      // Check if this position is part of the region (empty or marker, not collapsed/stack)
-      const isCollapsed = this.isCollapsedSpace(current, board);
-      const hasStack = this.getStack(current, board) !== undefined;
-      
-      if (isCollapsed || hasStack) {
-        // This is a border position
-        borderPositions.push(current);
-        continue;
-      }
-      
-      // This is part of the region
-      spaces.push(current);
-      
-      // Explore neighbors using territory adjacency
-      const neighbors = this.getNeighbors(current, this.config.territoryAdjacency);
-      for (const neighbor of neighbors) {
-        const neighborKey = positionToString(neighbor);
-        if (!localVisited.has(neighborKey)) {
-          queue.push(neighbor);
-        }
-      }
-    }
-    
-    return { spaces, borderPositions };
-  }
-
-  /**
-   * Analyze the border of a region to determine if it's physically disconnected
-   * Rule Reference: Section 12.1 - Border can be collapsed spaces, board edges, or single-player marker border
-   */
-  private analyzeRegionBorder(regionSpaces: Position[], board: BoardState): {
-    isPhysicallyDisconnected: boolean;
-    borderMarkerPlayer?: number;
-  } {
-    if (regionSpaces.length === 0) {
-      return { isPhysicallyDisconnected: false };
-    }
-    
-    // Collect all border positions (neighbors of region spaces that are not in region)
-    const borderPositions = new Set<string>();
-    const regionSet = new Set(regionSpaces.map(positionToString));
-    
-    for (const space of regionSpaces) {
-      const neighbors = this.getNeighbors(space, this.config.territoryAdjacency);
-      for (const neighbor of neighbors) {
-        const neighborKey = positionToString(neighbor);
-        if (!regionSet.has(neighborKey)) {
-          borderPositions.add(neighborKey);
-        }
-      }
-    }
-    
-    // Check if border forms a complete disconnection
-    // Border can consist of: collapsed spaces, board edges, single-player markers
-    let borderMarkerPlayer: number | undefined = undefined;
-    let hasCollapsedOrEdge = false;
-    
-    for (const borderPosStr of borderPositions) {
-      const borderPos = stringToPosition(borderPosStr);
-      
-      // Check if it's a board edge
-      if (!this.isValidPosition(borderPos)) {
-        hasCollapsedOrEdge = true;
-        continue;
-      }
-      
-      // Check if it's collapsed
-      if (this.isCollapsedSpace(borderPos, board)) {
-        hasCollapsedOrEdge = true;
-        continue;
-      }
-      
-      // Check if it's a marker
-      const marker = this.getMarker(borderPos, board);
-      if (marker !== undefined) {
-        if (borderMarkerPlayer === undefined) {
-          borderMarkerPlayer = marker;
-        } else if (borderMarkerPlayer !== marker) {
-          // Borders with multiple player markers don't disconnect
-          return { isPhysicallyDisconnected: false };
-        }
-        continue;
-      }
-      
-      // Check if it's a stack (stacks don't form borders)
-      const stack = this.getStack(borderPos, board);
-      if (stack) {
-        // Stacks don't form disconnecting borders
-        return { isPhysicallyDisconnected: false };
-      }
-      
-      // It's an empty space - not a valid border
-      return { isPhysicallyDisconnected: false };
-    }
-    
-    // Valid border: all collapsed, edges, or single-player markers
-    const result: { isPhysicallyDisconnected: boolean; borderMarkerPlayer?: number } = {
-      isPhysicallyDisconnected: true
-    };
-    if (borderMarkerPlayer !== undefined) {
-      result.borderMarkerPlayer = borderMarkerPlayer;
-    }
-    return result;
-  }
+  // NOTE: Legacy region-exploration helpers (exploreRegion/analyzeRegionBorder)
+  // were superseded by the more explicit territory-disconnection
+  // implementations above (findRegionsWithBorderColor,
+  // findRegionsWithoutMarkerBorder, isRegionBorderedByCollapsedOnly).
+  //
+  // Their previous implementations remain available in git history but
+  // are intentionally removed from the compiled code to avoid unused-
+  // symbol noise and keep the BoardManager focused on the current rules
+  // interpretation.
 
   /**
    * Get all players represented in a region (by their ring stacks)
@@ -1091,33 +974,69 @@ export class BoardManager {
   }
 
   /**
-   * Get border marker positions for a disconnected region
-   * Returns positions of all markers that form part of the border
+   * Get border marker positions for a disconnected region.
+   *
+   * This is the TS analogue of the Rust engine's boundary handling in
+   * territory.rs / core_apply_disconnect_region:
+   *   - We first find all marker neighbors of the region using
+   *     territory adjacency (Von Neumann for square boards) to
+   *     identify the "inner edge" of the border.
+   *   - We then flood through MARKERS ONLY using Moore adjacency to
+   *     capture the entire connected marker ring, including diagonal
+   *     corners that are part of the border but not directly
+   *     Von-Neumann-adjacent to interior spaces.
+   *
+   * This two-step approach keeps region discovery aligned with
+   * territory adjacency while giving the border the same "Moore
+   * continuity" treatment used in the Rust implementation.
    */
   getBorderMarkerPositions(regionSpaces: Position[], board: BoardState): Position[] {
-    const borderMarkers: Position[] = [];
     const regionSet = new Set(regionSpaces.map(positionToString));
-    
+
+    // Step 1: seed border markers = direct territory-adjacent markers
+    const borderSeedMap = new Map<string, Position>();
     for (const space of regionSpaces) {
       const neighbors = this.getNeighbors(space, this.config.territoryAdjacency);
       for (const neighbor of neighbors) {
         const neighborKey = positionToString(neighbor);
-        if (!regionSet.has(neighborKey)) {
-          const marker = this.getMarker(neighbor, board);
-          if (marker !== undefined) {
-            borderMarkers.push(neighbor);
-          }
+        if (regionSet.has(neighborKey)) continue;
+        const marker = this.getMarker(neighbor, board);
+        if (marker !== undefined && !borderSeedMap.has(neighborKey)) {
+          borderSeedMap.set(neighborKey, neighbor);
         }
       }
     }
-    
-    // Remove duplicates
-    const uniqueMarkers = new Map<string, Position>();
-    for (const pos of borderMarkers) {
-      uniqueMarkers.set(positionToString(pos), pos);
+
+    // If there are no adjacent markers, there is no marker border.
+    if (borderSeedMap.size === 0) {
+      return [];
     }
-    
-    return Array.from(uniqueMarkers.values());
+
+    // Step 2: expand across connected markers using Moore adjacency to
+    // capture the full border ring, including diagonal corners.
+    const borderMarkers = new Map<string, Position>(borderSeedMap);
+    const queue: Position[] = Array.from(borderSeedMap.values());
+    const visited = new Set<string>(borderSeedMap.keys());
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const neighbors = this.getMooreNeighbors(current);
+
+      for (const neighbor of neighbors) {
+        const neighborKey = positionToString(neighbor);
+        if (visited.has(neighborKey)) continue;
+        if (regionSet.has(neighborKey)) continue; // never step into region
+
+        const marker = this.getMarker(neighbor, board);
+        if (marker !== undefined) {
+          visited.add(neighborKey);
+          borderMarkers.set(neighborKey, neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    return Array.from(borderMarkers.values());
   }
 
   // Get board configuration

@@ -1,10 +1,12 @@
 import { Router, Response } from 'express';
+import { GameStatus } from '@prisma/client';
 import { getDatabaseClient } from '../database/connection';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { gameRateLimiter } from '../middleware/rateLimiter';
 import { logger } from '../utils/logger';
-import { CreateGameSchema } from '../../shared/validation/schemas';
+import { CreateGameSchema, CreateGameInput } from '../../shared/validation/schemas';
+import { AiOpponentsConfig } from '../../shared/types/game';
 import { GameEngine } from '../game/GameEngine';
 
 const router = Router();
@@ -114,12 +116,24 @@ router.get('/:gameId', asyncHandler(async (req: AuthenticatedRequest, res: Respo
 
 // Create new game
 router.post('/', asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-  const gameData = CreateGameSchema.parse(req.body);
+  const gameData: CreateGameInput = CreateGameSchema.parse(req.body);
   const userId = req.user!.id;
 
   const prisma = getDatabaseClient();
   if (!prisma) {
     throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
+  }
+
+  // Derive any initial engine-side state we want to persist, such as
+  // AI opponent configuration. This remains a loose JSON blob so we can
+  // evolve it without schema migrations.
+  // Persist a minimal initial engine-side snapshot. We keep this loosely
+  // typed at the DB boundary but base it on the shared AiOpponentsConfig
+  // so WebSocketServer.getOrCreateGameEngine can reconstruct per-player
+  // AIProfile values in a type-safe way.
+  const initialGameState: { aiOpponents?: AiOpponentsConfig } = {};
+  if (gameData.aiOpponents) {
+    initialGameState.aiOpponents = gameData.aiOpponents;
   }
 
   // Create game in database
@@ -131,8 +145,8 @@ router.post('/', asyncHandler(async (req: AuthenticatedRequest, res: Response) =
       isRated: gameData.isRated,
       allowSpectators: !gameData.isPrivate,
       player1Id: userId,
-      status: 'WAITING',
-      gameState: {},
+      status: GameStatus.waiting,
+      gameState: initialGameState,
       createdAt: new Date(),
       updatedAt: new Date()
     },
@@ -179,7 +193,7 @@ router.post('/:gameId/join', asyncHandler(async (req: AuthenticatedRequest, res:
     throw createError('Game not found', 404, 'GAME_NOT_FOUND');
   }
 
-  if (game.status !== 'WAITING') {
+  if (game.status !== GameStatus.waiting) {
     throw createError('Game is not accepting players', 400, 'GAME_NOT_JOINABLE');
   }
 
@@ -229,7 +243,7 @@ router.post('/:gameId/join', asyncHandler(async (req: AuthenticatedRequest, res:
       await prisma.game.update({
         where: { id: gameId },
         data: {
-          status: 'ACTIVE',
+          status: GameStatus.active,
           startedAt: new Date(),
           updatedAt: new Date()
         }
@@ -272,7 +286,7 @@ router.post('/:gameId/leave', asyncHandler(async (req: AuthenticatedRequest, res
     throw createError('Not a player in this game', 400, 'NOT_A_PLAYER');
   }
 
-  if (game.status === 'ACTIVE') {
+  if (game.status === GameStatus.active) {
     // If game is active, this is a resignation
     const gameEngine = activeGames.get(gameId);
     if (gameEngine) {
@@ -283,7 +297,7 @@ router.post('/:gameId/leave', asyncHandler(async (req: AuthenticatedRequest, res
     await prisma.game.update({
       where: { id: gameId },
       data: {
-        status: 'COMPLETED',
+        status: GameStatus.completed,
         endedAt: new Date(),
         updatedAt: new Date()
       }
@@ -384,7 +398,7 @@ router.get('/lobby/available', asyncHandler(async (req: AuthenticatedRequest, re
   const userId = req.user!.id;
 
   const whereClause: any = {
-    status: 'WAITING',
+    status: GameStatus.waiting,
     // Exclude games where user is already a player
     NOT: {
       OR: [
