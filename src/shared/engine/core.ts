@@ -1,4 +1,4 @@
-import { BoardType, Position } from '../types/game';
+import { BoardType, Position, BoardState, GameState, ProgressSnapshot, BoardSummary } from '../types/game';
 
 /**
  * Shared, browser-safe core helpers for RingRift engine logic.
@@ -113,7 +113,7 @@ export function getPathPositions(from: Position, to: Position): Position[] {
 
 /**
  * Calculate distance between two positions based on board type.
- * - Square boards: Manhattan distance
+ * - Square boards: Chebyshev (king-move) distance
  * - Hex boards: cube-coordinate distance
  */
 export function calculateDistance(boardType: BoardType, from: Position, to: Position): number {
@@ -124,7 +124,10 @@ export function calculateDistance(boardType: BoardType, from: Position, to: Posi
     return (Math.abs(dx) + Math.abs(dy) + Math.abs(dz)) / 2;
   }
 
-  return Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+  const dx = Math.abs(to.x - from.x);
+  const dy = Math.abs(to.y - from.y);
+  // Chebyshev distance aligns with 8-direction movement: one step per king move.
+  return Math.max(dx, dy);
 }
 
 /**
@@ -149,6 +152,29 @@ export interface CaptureSegmentBoardView {
       }
     | undefined;
   /** Optional marker lookup for landing-on-own-marker checks. */
+  getMarkerOwner?(pos: Position): number | undefined;
+}
+
+/**
+ * Minimal, board-agnostic view used for movement + capture reachability
+ * checks ("does this stack have any legal move or capture?"). This is
+ * deliberately similar to CaptureSegmentBoardView but separated to keep
+ * responsibilities clear.
+ */
+export interface MovementBoardView {
+  /** True if the position is on the board and addressable. */
+  isValidPosition(pos: Position): boolean;
+  /** True if this space is a collapsed territory space (cannot move/capture through or land on). */
+  isCollapsedSpace(pos: Position): boolean;
+  /** Lightweight stack view (controlling player, cap height, total height). */
+  getStackAt(pos: Position):
+    | {
+        controllingPlayer: number;
+        capHeight: number;
+        stackHeight: number;
+      }
+    | undefined;
+  /** Optional marker lookup used for landing-on-own-marker checks. */
   getMarkerOwner?(pos: Position): number | undefined;
 }
 
@@ -284,4 +310,255 @@ export function validateCaptureSegmentOnBoard(
   }
 
   return true;
+}
+
+/**
+ * Shared helper to answer the question: "Does this stack have at least
+ * one legal non-capture move or overtaking capture?" for a given board
+ * type and minimal board view. This is used by both the backend
+ * RuleEngine and the client sandbox to enforce no-dead-placement and
+ * forced-elimination semantics while keeping the core logic in one
+ * place.
+ */
+export function hasAnyLegalMoveOrCaptureFromOnBoard(
+  boardType: BoardType,
+  from: Position,
+  player: number,
+  board: MovementBoardView,
+  options?: {
+    /** Optional cap on how far to search for non-capture moves. */
+    maxNonCaptureDistance?: number;
+    /** Optional cap on how far beyond the target to search for capture landings. */
+    maxCaptureLandingDistance?: number;
+  }
+): boolean {
+  const stack = board.getStackAt(from);
+  if (!stack || stack.controllingPlayer !== player) {
+    return false;
+  }
+
+  const directions = getMovementDirectionsForBoardType(boardType);
+
+  const defaultMaxNonCapture =
+    options?.maxNonCaptureDistance ?? stack.stackHeight + 5;
+  const defaultMaxCaptureLanding =
+    options?.maxCaptureLandingDistance ?? stack.stackHeight + 5;
+
+  // === Non-capture movement ===
+  for (const dir of directions) {
+    for (let distance = stack.stackHeight; distance <= defaultMaxNonCapture; distance++) {
+      const target: Position = {
+        x: from.x + dir.x * distance,
+        y: from.y + dir.y * distance
+      };
+      if (dir.z !== undefined) {
+        target.z = (from.z || 0) + dir.z * distance;
+      }
+
+      if (!board.isValidPosition(target)) {
+        break; // Off board in this direction
+      }
+
+      if (board.isCollapsedSpace(target)) {
+        break; // Cannot move into collapsed space
+      }
+
+      const path = getPathPositions(from, target).slice(1, -1);
+      let blocked = false;
+      for (const pos of path) {
+        if (!board.isValidPosition(pos)) {
+          blocked = true;
+          break;
+        }
+        if (board.isCollapsedSpace(pos)) {
+          blocked = true;
+          break;
+        }
+        const pathStack = board.getStackAt(pos);
+        if (pathStack && pathStack.stackHeight > 0) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) {
+        break; // Further distances along this ray are blocked
+      }
+
+      const landingStack = board.getStackAt(target);
+      const markerOwner = board.getMarkerOwner?.(target);
+
+      if (!landingStack || landingStack.stackHeight === 0) {
+        // Empty space or marker
+        if (markerOwner === undefined || markerOwner === player) {
+          return true;
+        }
+      } else {
+        // Landing on a stack (for merging) is also a legal move
+        return true;
+      }
+    }
+  }
+
+  // === Capture reachability ===
+  for (const dir of directions) {
+    let step = 1;
+    let targetPos: Position | undefined;
+
+    // Find first stack along this ray that could be a capture target
+    while (true) {
+      const pos: Position = {
+        x: from.x + dir.x * step,
+        y: from.y + dir.y * step
+      };
+      if (dir.z !== undefined) {
+        pos.z = (from.z || 0) + dir.z * step;
+      }
+
+      if (!board.isValidPosition(pos)) {
+        break;
+      }
+
+      if (board.isCollapsedSpace(pos)) {
+        break;
+      }
+
+      const stackAtPos = board.getStackAt(pos);
+      if (stackAtPos && stackAtPos.stackHeight > 0) {
+        // Rule fix: can overtake own stacks; only capHeight comparison matters.
+        if (stack.capHeight >= stackAtPos.capHeight) {
+          targetPos = pos;
+        }
+        break;
+      }
+
+      step++;
+    }
+
+    if (!targetPos) continue;
+
+    // From the target, search for valid landing positions beyond it.
+    for (let landingStep = 1; landingStep <= defaultMaxCaptureLanding; landingStep++) {
+      const landing: Position = {
+        x: targetPos.x + dir.x * landingStep,
+        y: targetPos.y + dir.y * landingStep
+      };
+      if (dir.z !== undefined) {
+        landing.z = (targetPos.z || 0) + dir.z * landingStep;
+      }
+
+      if (!board.isValidPosition(landing)) {
+        break;
+      }
+
+      if (board.isCollapsedSpace(landing)) {
+        break;
+      }
+
+      const landingStack = board.getStackAt(landing);
+      if (landingStack && landingStack.stackHeight > 0) {
+        break;
+      }
+
+      // Use the shared capture-segment validator to ensure full
+      // consistency with all other capture checks.
+      const view: CaptureSegmentBoardView = {
+        isValidPosition: (pos: Position) => board.isValidPosition(pos),
+        isCollapsedSpace: (pos: Position) => board.isCollapsedSpace(pos),
+        getStackAt: (pos: Position) => board.getStackAt(pos),
+        getMarkerOwner: (pos: Position) => board.getMarkerOwner?.(pos)
+      };
+
+      if (
+        validateCaptureSegmentOnBoard(
+          boardType,
+          from,
+          targetPos,
+          landing,
+          player,
+          view
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Compute the canonical S-invariant snapshot for a given GameState.
+ *
+ * S = M + C + E
+ *   M = markers.size
+ *   C = collapsedSpaces.size
+ *   E = totalRingsEliminated (falling back to the sum of
+ *       board.eliminatedRings when needed).
+ */
+export function computeProgressSnapshot(state: GameState): ProgressSnapshot {
+  const markers = state.board.markers.size;
+  const collapsed = state.board.collapsedSpaces.size;
+
+  const eliminatedFromBoard = Object.values(state.board.eliminatedRings ?? {}).reduce(
+    (sum, value) => sum + value,
+    0
+  );
+
+  const eliminated =
+    (state as GameState & { totalRingsEliminated?: number }).totalRingsEliminated ??
+    eliminatedFromBoard;
+
+  const S = markers + collapsed + eliminated;
+  return { markers, collapsed, eliminated, S };
+}
+
+/**
+ * Build a lightweight, order-independent summary of a BoardState. This is
+ * primarily used for parity debugging and log output and is kept stable
+ * across engines so that backend and sandbox traces can be compared.
+ */
+export function summarizeBoard(board: BoardState): BoardSummary {
+  const stacks: string[] = [];
+  for (const [key, stack] of board.stacks.entries()) {
+    stacks.push(`${key}:${stack.controllingPlayer}:${stack.stackHeight}:${stack.capHeight}`);
+  }
+  stacks.sort();
+
+  const markers: string[] = [];
+  for (const [key, marker] of board.markers.entries()) {
+    markers.push(`${key}:${marker.player}`);
+  }
+  markers.sort();
+
+  const collapsedSpaces: string[] = [];
+  for (const [key, owner] of board.collapsedSpaces.entries()) {
+    collapsedSpaces.push(`${key}:${owner}`);
+  }
+  collapsedSpaces.sort();
+
+  return { stacks, markers, collapsedSpaces };
+}
+
+/**
+ * Canonical hash of a GameState used by tests and diagnostic tooling to
+ * detect state changes and compare backend/sandbox traces. The exact
+ * string format is opaque to callers; only equality is relied upon.
+ */
+export function hashGameState(state: GameState): string {
+  const boardSummary = summarizeBoard(state.board);
+
+  const playersMeta = state.players
+    .map(p => `${p.playerNumber}:${p.ringsInHand}:${p.eliminatedRings}:${p.territorySpaces}`)
+    .sort()
+    .join('|');
+
+  const meta = `${state.currentPlayer}:${state.currentPhase}:${state.gameStatus}`;
+
+  return [
+    meta,
+    playersMeta,
+    boardSummary.stacks.join('|'),
+    boardSummary.markers.join('|'),
+    boardSummary.collapsedSpaces.join('|')
+  ].join('#');
 }

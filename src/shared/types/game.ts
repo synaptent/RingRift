@@ -2,7 +2,20 @@ export type BoardType = 'square8' | 'square19' | 'hexagonal';
 export type GamePhase = 'ring_placement' | 'movement' | 'capture' | 'line_processing' | 'territory_processing';
 export type GameStatus = 'waiting' | 'active' | 'finished' | 'paused' | 'abandoned' | 'completed';
 export type MarkerType = 'regular' | 'collapsed';
-export type MoveType = 'place_ring' | 'move_ring' | 'build_stack' | 'move_stack' | 'overtaking_capture' | 'line_formation' | 'territory_claim';
+export type MoveType =
+  | 'place_ring'
+  // Legacy alias for non-capture stack movement. The canonical type for
+  // simple movement is 'move_stack'; existing clients/tests may still
+  // emit or accept 'move_ring', and the backend RuleEngine/GameEngine
+  // treat it equivalently to 'move_stack'.
+  | 'move_ring'
+  | 'build_stack'
+  // Canonical non-capture movement type for moving entire stacks.
+  | 'move_stack'
+  | 'overtaking_capture'
+  | 'line_formation'
+  | 'territory_claim'
+  | 'skip_placement';
 export type PlayerType = 'human' | 'ai';
 export type CaptureType = 'overtaking' | 'elimination';
 export type AdjacencyType = 'moore' | 'von_neumann' | 'hexagonal';
@@ -123,6 +136,7 @@ export interface Move {
   
   // Ring placement specific
   placedOnStack?: boolean;
+  placementCount?: number; // Number of rings placed in this action (defaults to 1 when omitted)
   
   // Movement specific
   stackMoved?: RingStack;
@@ -149,6 +163,74 @@ export interface Move {
   timestamp: Date;
   thinkTime: number;
   moveNumber: number;
+}
+
+/**
+ * Canonical, engine-agnostic progress snapshot used for invariant checks
+ * and history entries. S is defined as markers + collapsed + eliminated
+ * (Section 13.5 of the complete rules).
+ */
+export interface ProgressSnapshot {
+  markers: number;
+  collapsed: number;
+  eliminated: number;
+  S: number;
+}
+
+/**
+ * Lightweight, order-independent summary of board state used for parity
+ * debugging and history logging. The concrete string formats are not
+ * intended for UI consumption; they exist to make backend/sandbox diffs
+ * stable and easy to compare in tests/logs.
+ */
+export interface BoardSummary {
+  /** entries like `${key}:${controllingPlayer}:${stackHeight}:${capHeight}` */
+  stacks: string[];
+  /** entries like `${key}:${player}` */
+  markers: string[];
+  /** entries like `${key}:${owner}` */
+  collapsedSpaces: string[];
+}
+
+/**
+ * Structured history entry capturing a single canonical action and its
+ * before/after context. Both backend GameEngine and client
+ * ClientSandboxEngine can emit these entries so tests and tools can
+ * compare traces step-by-step.
+ */
+export interface GameHistoryEntry {
+  /** 1-based move/action index for the lifetime of the game. */
+  moveNumber: number;
+  /** Canonical action that was applied. */
+  action: Move;
+  /** Player who performed the action (same as action.player). */
+  actor: number;
+
+  phaseBefore: GamePhase;
+  phaseAfter: GamePhase;
+  statusBefore: GameStatus;
+  statusAfter: GameStatus;
+
+  progressBefore: ProgressSnapshot;
+  progressAfter: ProgressSnapshot;
+
+  /** Optional but highly recommended for parity debugging. */
+  stateHashBefore?: string;
+  stateHashAfter?: string;
+
+  /** Optional shallow board summaries for diff-friendly diagnostics. */
+  boardBeforeSummary?: BoardSummary;
+  boardAfterSummary?: BoardSummary;
+}
+
+/**
+ * Complete trace of a game from an initial state through a sequence of
+ * history entries. Used by test harnesses and tooling to replay the same
+ * action list into different engines (backend vs sandbox).
+ */
+export interface GameTrace {
+  initialState: GameState;
+  entries: GameHistoryEntry[];
 }
 
 /**
@@ -191,7 +273,19 @@ export interface GameState {
   players: Player[];
   currentPhase: GamePhase;
   currentPlayer: number;
+  /**
+   * Legacy linear move log preserved for backward compatibility with
+   * existing clients/tests. New tooling should prefer the richer
+   * GameHistoryEntry-based history when available.
+   */
   moveHistory: Move[];
+  /**
+   * Structured history entries emitted by engines that support
+   * event-sourced tracing. This is the canonical source for parity and
+   * S-invariant debugging. Engines that do not yet record history
+   * initialise this as an empty array.
+   */
+  history: GameHistoryEntry[];
   timeControl: TimeControl;
   spectators: string[]; // User IDs
   gameStatus: GameStatus;

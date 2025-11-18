@@ -509,7 +509,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     expect(gameState.totalRingsEliminated).toBe(expectedEliminatedForP1);
   });
 
-  test('capture can produce line and territory consequences in a single turn', async () => {
+  test('Q15_Q7_combined_line_and_region_backend', async () => {
     const players = createPlayers();
     const engine = new GameEngine('territory-line-capture-combined', boardType, players, timeControl, false);
     const engineAny: any = engine;

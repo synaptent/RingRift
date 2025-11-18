@@ -95,38 +95,48 @@ class RandomAI(BaseAI):
             return []
     
     def _get_ring_placement_moves(self, game_state: GameState) -> List[Dict[str, Any]]:
+        """Get candidate ring placement moves for the current player.
+
+        This helper intentionally mirrors the *shape* of legal placements
+        rather than enforcing all RingRift rules itself; the authoritative
+        validation is still performed by the backend RuleEngine. To keep
+        behaviour aligned with the updated placement semantics, we:
+
+        - Allow placement on both empty spaces and existing stacks.
+        - Never generate placements on collapsed spaces.
+        - Use the canonical "place_ring" move type so the backend does
+          not need to special-case legacy "place" moves from the AI
+          service.
+
+        The exact number of rings placed (multi-ring vs single-ring) is
+        decided on the server side via AIEngine.normalizeServiceMove,
+        which consults the player’s ringsInHand and board occupancy.
         """
-        Get valid ring placement positions
-        
-        Args:
-            game_state: Current game state
-            
-        Returns:
-            List of valid placement moves
-        """
-        valid_moves = []
-        
-        # Get all positions on the board
-        # For now, we'll use a simplified approach
-        # In production, this should query valid positions from BoardManager
-        
-        # Get occupied positions
-        occupied = set(game_state.board.stacks.keys())
-        occupied.update(game_state.board.collapsed_spaces.keys())
-        
-        # Generate all possible positions based on board type
-        all_positions = self._generate_all_positions(game_state.board.type, game_state.board.size)
-        
-        # Filter out occupied positions
+        valid_moves: List[Dict[str, Any]] = []
+
+        board = game_state.board
+
+        # Positions that are completely unavailable for placement:
+        # collapsed territory spaces. Stacks are allowed targets for
+        # stacking placements and are therefore not excluded here.
+        blocked = set(board.collapsed_spaces.keys())
+
+        # Generate all geometrically valid positions for this board and
+        # filter out collapsed spaces only. The backend will apply
+        # no-dead-placement and ring-count rules.
+        all_positions = self._generate_all_positions(board.type, board.size)
+
         for pos in all_positions:
             pos_key = pos.to_key()
-            if pos_key not in occupied:
-                valid_moves.append({
-                    "type": "place",
-                    "to": pos,
-                    "from": None
-                })
-        
+            if pos_key in blocked:
+                continue
+
+            valid_moves.append({
+                "type": "place_ring",
+                "to": pos,
+                "from": None
+            })
+
         return valid_moves
     
     def _get_movement_moves(self, game_state: GameState) -> List[Dict[str, Any]]:

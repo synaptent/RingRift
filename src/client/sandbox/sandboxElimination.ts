@@ -13,6 +13,66 @@ export interface ForcedEliminationResult {
   totalRingsEliminatedDelta: number;
 }
 
+function assertForcedEliminationConsistency(
+  context: string,
+  before: { board: BoardState; players: Player[] },
+  after: { board: BoardState; players: Player[]; delta: number },
+  playerNumber: number
+): void {
+  const isTestEnv =
+    typeof process !== 'undefined' &&
+    !!(process as any).env &&
+    (process as any).env.NODE_ENV === 'test';
+
+  const sumEliminated = (players: Player[]): number =>
+    players.reduce((acc, p) => acc + p.eliminatedRings, 0);
+
+  const sumBoardEliminated = (board: BoardState): number =>
+    Object.values(board.eliminatedRings ?? {}).reduce((acc, v) => acc + v, 0);
+
+  const beforePlayerTotal = sumEliminated(before.players);
+  const beforeBoardTotal = sumBoardEliminated(before.board);
+  const afterPlayerTotal = sumEliminated(after.players);
+  const afterBoardTotal = sumBoardEliminated(after.board);
+
+  const deltaPlayers = afterPlayerTotal - beforePlayerTotal;
+  const deltaBoard = afterBoardTotal - beforeBoardTotal;
+
+  const errors: string[] = [];
+
+  if (deltaPlayers !== after.delta) {
+    errors.push(
+      `forced elimination (${context}) player delta mismatch: expected ${after.delta}, actual ${deltaPlayers}`
+    );
+  }
+
+  if (deltaBoard !== after.delta) {
+    errors.push(
+      `forced elimination (${context}) board delta mismatch: expected ${after.delta}, actual ${deltaBoard}`
+    );
+  }
+
+  if (after.delta < 0) {
+    errors.push(
+      `forced elimination (${context}) produced negative delta=${after.delta} for player ${playerNumber}`
+    );
+  }
+
+  if (errors.length === 0) {
+    return;
+  }
+
+  const message =
+    `sandboxElimination invariant violation (${context}):` + '\n' + errors.join('\n');
+
+  // eslint-disable-next-line no-console
+  console.error(message);
+
+  if (isTestEnv) {
+    throw new Error(message);
+  }
+}
+
 /**
  * Core cap-elimination helper operating directly on the board and players.
  * This mirrors the logic in ClientSandboxEngine.forceEliminateCap but is
@@ -77,9 +137,18 @@ export function forceEliminateCapOnBoard(
     nextBoard.stacks.delete(key);
   }
 
-  return {
+  const result: ForcedEliminationResult = {
     board: nextBoard,
     players: updatedPlayers,
     totalRingsEliminatedDelta: capHeight
   };
+
+  assertForcedEliminationConsistency(
+    'forceEliminateCapOnBoard',
+    { board, players },
+    { board: result.board, players: result.players, delta: result.totalRingsEliminatedDelta },
+    playerNumber
+  );
+
+  return result;
 }

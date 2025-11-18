@@ -11,6 +11,7 @@ import {
   PlayerChoiceResponse,
   PlayerChoiceResponseFor,
   Position,
+  RingStack,
   TimeControl
 } from '../../src/shared/types/game';
 
@@ -189,5 +190,187 @@ describe('GameEngine + WebSocketInteractionHandler capture direction choice inte
     // Internal chain state remains owned by the engine; this test only
     // asserts the correctness of the choice plumbing.
     expect(gameState.currentPlayer).toBe(1);
+  });
+
+  it('runs a full orthogonal chain via WebSocket capture_direction choices (backend + transport)', async () => {
+    // End-to-end version of the orthogonal multi-branch chain scenario used in
+    // GameEngine.chainCaptureChoiceIntegration and the sandbox tests. Here we
+    // drive the entire chain through:
+    //   GameEngine.makeMove → PlayerInteractionManager → WebSocketInteractionHandler
+    // and simulate client responses to player_choice_required events.
+
+    const io = new FakeSocketIOServer();
+    const getTargetForPlayer = jest.fn().mockReturnValue('socket-1');
+    const handler = new WebSocketInteractionHandler(
+      io as any,
+      'capture-direction-game-full-chain',
+      getTargetForPlayer,
+      30_000
+    );
+    const interactionManager = new PlayerInteractionManager(handler);
+
+    const timeControlLocal: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+    const playersForChain: Player[] = [
+      {
+        id: 'red',
+        username: 'Red',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: timeControlLocal.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'blue',
+        username: 'Blue',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: timeControlLocal.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'green',
+        username: 'Green',
+        type: 'human',
+        playerNumber: 3,
+        isReady: true,
+        timeRemaining: timeControlLocal.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      },
+      {
+        id: 'yellow',
+        username: 'Yellow',
+        type: 'human',
+        playerNumber: 4,
+        isReady: true,
+        timeRemaining: timeControlLocal.initialTime * 1000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0
+      }
+    ];
+
+    const engine = new GameEngine(
+      'capture-direction-game-full-chain',
+      boardType,
+      playersForChain,
+      timeControlLocal,
+      false,
+      interactionManager
+    );
+
+    const engineAny: any = engine;
+    const gameState = engineAny.gameState as any;
+    const boardManager = engineAny.boardManager as any;
+
+    // Ensure capture phase & correct player so RuleEngine allows capture.
+    gameState.currentPhase = 'capture';
+    gameState.currentPlayer = 1;
+
+    const makeStack = (playerNumber: number, height: number, position: Position) => {
+      const rings = Array(height).fill(playerNumber);
+      const stack = {
+        position,
+        rings,
+        stackHeight: rings.length,
+        capHeight: rings.length,
+        controllingPlayer: playerNumber
+      } as RingStack;
+      boardManager.setStack(position, stack, gameState.board);
+    };
+
+    const redPos: Position = { x: 3, y: 3 };
+    const bluePos: Position = { x: 3, y: 4 };
+    const greenPos: Position = { x: 4, y: 5 };
+    const yellowPos: Position = { x: 2, y: 5 };
+
+    makeStack(1, 2, redPos); // Red attacker
+    makeStack(2, 1, bluePos);
+    makeStack(3, 1, greenPos);
+    makeStack(4, 1, yellowPos);
+
+    const choices: CaptureDirectionChoice[] = [];
+
+    // Respond to each player_choice_required event by selecting the
+    // lexicographically earliest landing position, mirroring other tests.
+    io.on('player_choice_required', (payload: CaptureDirectionChoice) => {
+      choices.push(payload);
+
+      const options = payload.options || [];
+      expect(options.length).toBeGreaterThan(0);
+
+      const selected = options.reduce((prev, cur) =>
+        cur.landingPosition.x < prev.landingPosition.x ||
+        (cur.landingPosition.x === prev.landingPosition.x &&
+          cur.landingPosition.y < prev.landingPosition.y)
+          ? cur
+          : prev
+      );
+
+      const response: PlayerChoiceResponseFor<CaptureDirectionChoice> = {
+        choiceId: payload.id,
+        playerNumber: payload.playerNumber,
+        choiceType: 'capture_direction',
+        selectedOption: selected
+      };
+
+      handler.handleChoiceResponse(response as unknown as PlayerChoiceResponse<unknown>);
+    });
+
+    const result = await engine.makeMove({
+      player: 1,
+      type: 'overtaking_capture',
+      from: redPos,
+      captureTarget: bluePos,
+      to: { x: 3, y: 5 }
+    } as any);
+
+    expect(result.success).toBe(true);
+
+    // There should have been at least one capture_direction choice issued
+    // over WebSockets during the engine-driven chain.
+    expect(choices.length).toBeGreaterThan(0);
+
+    const allPairs = choices.flatMap(ch =>
+      (ch.options || []).map(o =>
+        `${o.targetPosition.x},${o.targetPosition.y}->${o.landingPosition.x},${o.landingPosition.y}`
+      )
+    );
+
+    expect(allPairs).toEqual(
+      expect.arrayContaining([
+        '4,5->6,5',
+        '4,5->7,5',
+        '2,5->0,5'
+      ])
+    );
+
+    const board = gameState.board;
+    const stackAtStart = board.stacks.get('3,3');
+    const stackAtBlue = board.stacks.get('3,4');
+    const stackAtIntermediate = board.stacks.get('3,5');
+
+    expect(stackAtStart).toBeUndefined();
+    expect(stackAtBlue).toBeUndefined();
+    expect(stackAtIntermediate).toBeUndefined();
+
+    // Exactly one Red-controlled stack should remain on the board as the
+    // final capturing stack for this turn.
+    const redStacks = Array.from(board.stacks.values()).filter(
+      (s: any) => s.controllingPlayer === 1
+    );
+    expect(redStacks.length).toBe(1);
+    expect(redStacks[0].stackHeight).toBeGreaterThanOrEqual(3);
+
+    // Chain state must be cleared after the engine-driven chain completes.
+    expect(engineAny.chainCaptureState).toBeUndefined();
   });
 });

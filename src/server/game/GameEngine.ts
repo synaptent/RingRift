@@ -16,12 +16,36 @@ import {
   RingEliminationChoice,
   RegionOrderChoice,
   CaptureDirectionChoice,
-  PlayerChoiceResponseFor
+  PlayerChoiceResponseFor,
+  GameHistoryEntry
 } from '../../shared/types/game';
-import { calculateCapHeight, getPathPositions, getMovementDirectionsForBoardType } from '../../shared/engine/core';
+import {
+  calculateCapHeight,
+  getPathPositions,
+  getMovementDirectionsForBoardType,
+  computeProgressSnapshot,
+  summarizeBoard,
+  hashGameState
+} from '../../shared/engine/core';
 import { BoardManager } from './BoardManager';
 import { RuleEngine } from './RuleEngine';
 import { PlayerInteractionManager } from './PlayerInteractionManager';
+import { processLinesForCurrentPlayer } from './rules/lineProcessing';
+import { processDisconnectedRegionsForCurrentPlayer } from './rules/territoryProcessing';
+import {
+  ChainCaptureState,
+  ChainCaptureSegment,
+  updateChainCaptureStateAfterCapture as updateChainCaptureStateAfterCaptureShared,
+  getCaptureOptionsFromPosition as getCaptureOptionsFromPositionShared,
+  chooseCaptureDirectionFromState as chooseCaptureDirectionFromStateShared
+} from './rules/captureChainEngine';
+import {
+  PerTurnState,
+  advanceGameForCurrentPlayer,
+  updatePerTurnStateAfterMove as updatePerTurnStateAfterMoveTurn,
+  TurnEngineDeps,
+  TurnEngineHooks
+} from './turn/TurnEngine';
 
 /**
  * Internal state for enforcing mandatory chain captures during the capture phase.
@@ -29,24 +53,13 @@ import { PlayerInteractionManager } from './PlayerInteractionManager';
  * This is intentionally kept out of the wire-level GameState so we can evolve
  * the representation without breaking clients. It is roughly modeled after the
  * Rust engine's `ChainCaptureState` and is used only inside GameEngine.
+ *
+ * The concrete shape is shared with the rules/captureChainEngine module; we
+ * keep the Ts* aliases here to preserve existing semantics and comments while
+ * centralising the implementation.
  */
-interface TsChainCaptureSegment {
-  from: Position;
-  target: Position;
-  landing: Position;
-  capturedCapHeight: number;
-}
-
-interface TsChainCaptureState {
-  playerNumber: number;
-  startPosition: Position;
-  currentPosition: Position;
-  segments: TsChainCaptureSegment[];
-  // Full capture moves (from=currentPosition) that the player may choose from
-  availableMoves: Move[];
-  // Positions visited by the capturing stack to help avoid pathological cycles
-  visitedPositions: Set<string>;
-}
+type TsChainCaptureSegment = ChainCaptureSegment;
+type TsChainCaptureState = ChainCaptureState;
 
 // Timer functions for Node.js environment
 declare const setTimeout: (callback: () => void, ms: number) => any;
@@ -68,6 +81,14 @@ export class GameEngine {
   private ruleEngine: RuleEngine;
   private moveTimers: Map<number, any> = new Map();
   private interactionManager: PlayerInteractionManager | undefined;
+  /**
+   * Per-turn placement state: when a ring placement occurs, we track that
+   * fact and remember which stack must be moved this turn. This mirrors
+   * the sandbox engine’s per-turn fields but remains internal to the
+   * backend engine.
+   */
+  private hasPlacedThisTurn: boolean = false;
+  private mustMoveFromStackKey: string | undefined;
   /**
    * Internal chain capture state, used to enforce mandatory continuation of
    * captures once started. When defined, only additional overtaking captures
@@ -103,6 +124,7 @@ export class GameEngine {
       currentPhase: 'ring_placement',
       currentPlayer: 1,
       moveHistory: [],
+      history: [],
       timeControl,
       spectators: [],
       gameStatus: 'waiting',
@@ -118,7 +140,30 @@ export class GameEngine {
   }
 
   getGameState(): GameState {
-    return { ...this.gameState };
+    const state = this.gameState;
+
+    // Deep-clone the board and key collections so tests (especially the
+    // AI simulation debug harness) see true pre/post snapshots rather
+    // than views that can be mutated via shared Maps.
+    const board = state.board;
+    const clonedBoard = {
+      ...board,
+      stacks: new Map(board.stacks),
+      markers: new Map(board.markers),
+      collapsedSpaces: new Map(board.collapsedSpaces),
+      territories: new Map(board.territories),
+      formedLines: [...board.formedLines],
+      eliminatedRings: { ...board.eliminatedRings }
+    };
+
+    return {
+      ...state,
+      board: clonedBoard,
+      moveHistory: [...state.moveHistory],
+      history: [...state.history],
+      players: state.players.map(p => ({ ...p })),
+      spectators: [...state.spectators]
+    };
   }
 
   /**
@@ -148,6 +193,40 @@ export class GameEngine {
     this.startPlayerTimer(this.gameState.currentPlayer);
     
     return true;
+  }
+
+  /**
+   * Append a structured history entry for a canonical move applied to the
+   * engine. This is the primary hook used by parity/debug tooling; it is
+   * intentionally side-effect-free with respect to core rules logic.
+   */
+  private appendHistoryEntry(before: GameState, action: Move): void {
+    const after = this.getGameState();
+
+    const progressBefore = computeProgressSnapshot(before);
+    const progressAfter = computeProgressSnapshot(after);
+
+    const entry: GameHistoryEntry = {
+      moveNumber: action.moveNumber,
+      action,
+      actor: action.player,
+      phaseBefore: before.currentPhase,
+      phaseAfter: after.currentPhase,
+      statusBefore: before.gameStatus,
+      statusAfter: after.gameStatus,
+      progressBefore,
+      progressAfter,
+      stateHashBefore: hashGameState(before),
+      stateHashAfter: hashGameState(after),
+      boardBeforeSummary: summarizeBoard(before.board),
+      boardAfterSummary: summarizeBoard(after.board)
+    };
+
+    const history: GameHistoryEntry[] = [...this.gameState.history, entry];
+    this.gameState = {
+      ...this.gameState,
+      history
+    };
   }
 
   async makeMove(move: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>): Promise<{
@@ -184,6 +263,32 @@ export class GameEngine {
       }
     }
 
+    // Enforce must-move origin when a placement has occurred this turn.
+    if (this.mustMoveFromStackKey) {
+      const moveFromKey = move.from ? positionToString(move.from) : undefined;
+
+      const isMovementOrCaptureType =
+        move.type === 'move_stack' ||
+        move.type === 'move_ring' ||
+        move.type === 'build_stack' ||
+        move.type === 'overtaking_capture';
+
+      if (
+        isMovementOrCaptureType &&
+        (!moveFromKey || moveFromKey !== this.mustMoveFromStackKey)
+      ) {
+        return {
+          success: false,
+          error: 'You must move the stack that was just placed or updated this turn'
+        };
+      }
+    }
+
+    // Capture a pre-move snapshot for history/event-sourcing. This uses the
+    // public getGameState() so callers and history entries share the same
+    // cloned view of board/maps.
+    const beforeStateForHistory = this.getGameState();
+
     // Validate the move at the rules level
     const fullMove: Move = {
       ...move,
@@ -199,6 +304,49 @@ export class GameEngine {
         success: false,
         error: 'Invalid move'
       };
+    }
+
+    // Defensive runtime check: for movement and capture moves, verify that
+    // the source stack actually exists and is controlled by this player.
+    // This catches stale moves where validation passed on an earlier state
+    // but the stack is now missing (e.g., due to intervening auto phases or
+    // concurrent state changes).
+    const isMovementOrCaptureType =
+      fullMove.type === 'move_stack' ||
+      fullMove.type === 'move_ring' ||
+      fullMove.type === 'overtaking_capture';
+
+    if (isMovementOrCaptureType && fullMove.from) {
+      const sourceStack = this.boardManager.getStack(fullMove.from, this.gameState.board);
+      if (!sourceStack) {
+        console.error('[GameEngine.makeMove] S-invariant violation: move validated but source stack missing', {
+          moveType: fullMove.type,
+          player: fullMove.player,
+          from: positionToString(fullMove.from),
+          to: fullMove.to ? positionToString(fullMove.to) : undefined,
+          currentPhase: this.gameState.currentPhase,
+          currentPlayer: this.gameState.currentPlayer
+        });
+        return {
+          success: false,
+          error: 'Source stack no longer exists'
+        };
+      }
+      if (sourceStack.controllingPlayer !== fullMove.player) {
+        console.error('[GameEngine.makeMove] S-invariant violation: move validated but source stack not controlled by player', {
+          moveType: fullMove.type,
+          player: fullMove.player,
+          sourceControllingPlayer: sourceStack.controllingPlayer,
+          from: positionToString(fullMove.from),
+          to: fullMove.to ? positionToString(fullMove.to) : undefined,
+          currentPhase: this.gameState.currentPhase,
+          currentPlayer: this.gameState.currentPlayer
+        });
+        return {
+          success: false,
+          error: 'Source stack is not controlled by this player'
+        };
+      }
     }
 
     // Capture context needed for chain state bookkeeping (cap height, etc.)
@@ -219,6 +367,10 @@ export class GameEngine {
     // Add move to history
     this.gameState.moveHistory.push(fullMove);
     this.gameState.lastMoveAt = new Date();
+
+    // Update per-turn placement/movement bookkeeping so that subsequent
+    // phases (movement/capture) can enforce must-move constraints.
+    this.updatePerTurnStateAfterMove(fullMove);
 
     // If this was an overtaking capture, update or start the chain
     // capture state and, if additional captures are available, drive
@@ -311,6 +463,9 @@ export class GameEngine {
     // Start next player's timer
     this.startPlayerTimer(this.gameState.currentPlayer);
 
+    // Record a structured history entry for this canonical move.
+    this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
     return {
       success: true,
       gameState: this.getGameState()
@@ -332,48 +487,95 @@ export class GameEngine {
     switch (move.type) {
       case 'place_ring':
         if (move.to) {
+          const board = this.gameState.board;
+          const existingStack = this.boardManager.getStack(move.to, board);
+          const placementCount = Math.max(1, move.placementCount ?? 1);
+
+          const placementRings = new Array(placementCount).fill(move.player);
+
+          let newRings: number[];
+          if (existingStack && existingStack.rings.length > 0) {
+            // Placing on an existing stack: new rings sit on top
+            newRings = [...placementRings, ...existingStack.rings];
+          } else {
+            // Placing on an empty space
+            newRings = placementRings;
+          }
+
           const newStack: RingStack = {
             position: move.to,
-            stackHeight: 1,
-            capHeight: 1,
-            controllingPlayer: move.player,
-            rings: [move.player]
+            rings: newRings,
+            stackHeight: newRings.length,
+            capHeight: calculateCapHeight(newRings),
+            controllingPlayer: newRings[0]
           };
-          this.boardManager.setStack(move.to, newStack, this.gameState.board);
-          
-          // Update player state: decrement rings in hand
+
+          this.boardManager.setStack(move.to, newStack, board);
+
+          // Update player state: decrement rings in hand by placementCount,
+          // clamped defensively to avoid going below zero.
           const player = this.gameState.players.find(p => p.playerNumber === move.player);
           if (player && player.ringsInHand > 0) {
-            player.ringsInHand--;
+            const toSpend = Math.min(placementCount, player.ringsInHand);
+            player.ringsInHand -= toSpend;
           }
         }
         break;
 
+      case 'skip_placement':
+        // No-op at the board level. The RuleEngine has already verified
+        // that skipping is only allowed when placement is optional, so
+        // we simply advance to movement via advanceGame() without
+        // modifying board or per-player ring counts.
+        break;
+
       case 'move_ring':
+      case 'move_stack':
         if (move.from && move.to) {
           const stack = this.boardManager.getStack(move.from, this.gameState.board);
-          if (stack) {
-            // Rule Reference: Section 4.2.1 - Leave marker on departure space
-            this.boardManager.setMarker(move.from, move.player, this.gameState.board);
-            
-            // Process markers along movement path (Section 8.3)
-            this.processMarkersAlongPath(move.from, move.to, move.player);
-            
-            // Check if landing on same-color marker (Section 8.2)
-            const landingMarker = this.boardManager.getMarker(move.to, this.gameState.board);
-            if (landingMarker === move.player) {
-              this.boardManager.removeMarker(move.to, this.gameState.board);
-            }
-            
-            // Remove stack from source
-            this.boardManager.removeStack(move.from, this.gameState.board);
-            
-            // Normal movement (no capture at landing position)
-            const movedStack: RingStack = {
-              ...stack,
-              position: move.to
-            };
-            this.boardManager.setStack(move.to, movedStack, this.gameState.board);
+          if (!stack) {
+            // DIAGNOSTIC: This should never happen if validation and defensive
+            // checks are working correctly. Log and bail to prevent silent no-ops.
+            console.error('[GameEngine.applyMove] BUG: move_stack/move_ring but no source stack', {
+              moveType: move.type,
+              player: move.player,
+              from: positionToString(move.from),
+              to: positionToString(move.to),
+              availableStacks: Array.from(this.gameState.board.stacks.keys())
+            });
+            break; // Early exit from switch - no state change
+          }
+
+          // Rule Reference: Section 4.2.1 - Leave marker on departure space
+          this.boardManager.setMarker(move.from, move.player, this.gameState.board);
+
+          // Process markers along movement path (Section 8.3)
+          this.processMarkersAlongPath(move.from, move.to, move.player);
+
+          // Check if landing on same-color marker (Section 8.2 / 8.3.1)
+          const landingMarker = this.boardManager.getMarker(move.to, this.gameState.board);
+          const landedOnOwnMarker = landingMarker === move.player;
+          if (landedOnOwnMarker) {
+            // Stacks cannot coexist with markers; remove the marker prior
+            // to landing, then apply the self-elimination rule below.
+            this.boardManager.removeMarker(move.to, this.gameState.board);
+          }
+
+          // Remove stack from source
+          this.boardManager.removeStack(move.from, this.gameState.board);
+
+          // Normal movement (no capture at landing position)
+          const movedStack: RingStack = {
+            ...stack,
+            position: move.to
+          };
+          this.boardManager.setStack(move.to, movedStack, this.gameState.board);
+
+          if (landedOnOwnMarker) {
+            // New rule: landing on your own marker with a non-capture move
+            // removes that marker and immediately eliminates your top ring,
+            // credited toward ring-elimination victory conditions.
+            this.eliminateTopRingAt(move.to, move.player);
           }
         }
         break;
@@ -447,33 +649,11 @@ export class GameEngine {
    * capture segments taken so far.
    */
   private updateChainCaptureStateAfterCapture(move: Move, capturedCapHeight: number): void {
-    if (!move.from || !move.captureTarget || !move.to) {
-      return;
-    }
-
-    const segment: TsChainCaptureSegment = {
-      from: move.from,
-      target: move.captureTarget,
-      landing: move.to,
+    this.chainCaptureState = updateChainCaptureStateAfterCaptureShared(
+      this.chainCaptureState,
+      move,
       capturedCapHeight
-    };
-
-    if (!this.chainCaptureState) {
-      this.chainCaptureState = {
-        playerNumber: move.player,
-        startPosition: move.from,
-        currentPosition: move.to,
-        segments: [segment],
-        availableMoves: [],
-        visitedPositions: new Set<string>([positionToString(move.from)])
-      };
-      return;
-    }
-
-    // Continuing an existing chain
-    this.chainCaptureState.currentPosition = move.to;
-    this.chainCaptureState.segments.push(segment);
-    this.chainCaptureState.visitedPositions.add(positionToString(move.from));
+    );
   }
 
   /**
@@ -487,107 +667,11 @@ export class GameEngine {
    * as the TS reference for multi-option chain capture behavior.
    */
   private getCaptureOptionsFromPosition(position: Position, playerNumber: number): Move[] {
-    // Enumerate all legal overtaking captures starting from the given
-    // position, mirroring the Rust CaptureProcessor ray-walk logic
-    // rather than relying on RuleEngine.getValidMoves (which operates
-    // globally over all stacks).
-    const board = this.gameState.board;
-    const attackerStack = this.boardManager.getStack(position, board);
-
-    if (!attackerStack || attackerStack.controllingPlayer !== playerNumber) {
-      return [];
-    }
-
-    const moves: Move[] = [];
-    const directions = this.getAllDirections();
-
-    for (const dir of directions) {
-      // Step outward from the attacker to find the first potential target
-      let step = 1;
-      let targetPos: Position | undefined;
-
-      for (;;) {
-        const pos: Position = {
-          x: position.x + dir.x * step,
-          y: position.y + dir.y * step,
-          ...(dir.z !== undefined && { z: (position.z || 0) + dir.z * step })
-        };
-
-        if (!this.boardManager.isValidPosition(pos)) {
-          break; // Off-board
-        }
-
-        // Collapsed spaces block both target search and landing beyond
-        if (this.boardManager.isCollapsedSpace(pos, board)) {
-          break;
-        }
-
-        const stackAtPos = this.boardManager.getStack(pos, board);
-        if (stackAtPos && stackAtPos.rings.length > 0) {
-          // First stack encountered along this ray is the only possible
-          // capture target in this direction.
-          if (
-            stackAtPos.controllingPlayer !== playerNumber &&
-            attackerStack.capHeight >= stackAtPos.capHeight
-          ) {
-            targetPos = pos;
-          }
-          break;
-        }
-
-        step++;
-      }
-
-      if (!targetPos) continue;
-
-      // From the target, walk further along the same ray to find candidate
-      // landing positions. Each candidate is validated via validateMove to
-      // ensure consistency with the RuleEngine's rules (distance, path,
-      // landing legality, etc.).
-      let landingStep = 1;
-      for (;;) {
-        const landingPos: Position = {
-          x: targetPos.x + dir.x * landingStep,
-          y: targetPos.y + dir.y * landingStep,
-          ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep })
-        };
-
-        if (!this.boardManager.isValidPosition(landingPos)) {
-          break;
-        }
-
-        // Collapsed spaces and stacks at the landing position block further
-        // landings along this ray.
-        if (this.boardManager.isCollapsedSpace(landingPos, board)) {
-          break;
-        }
-
-        const landingStack = this.boardManager.getStack(landingPos, board);
-        if (landingStack && landingStack.rings.length > 0) {
-          break;
-        }
-
-        const candidate: Move = {
-          id: '',
-          type: 'overtaking_capture',
-          player: playerNumber,
-          from: position,
-          captureTarget: targetPos,
-          to: landingPos,
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: this.gameState.moveHistory.length + 1
-        };
-
-        if (this.ruleEngine.validateMove(candidate, this.gameState)) {
-          moves.push(candidate);
-        }
-
-        landingStep++;
-      }
-    }
-
-    return moves;
+    return getCaptureOptionsFromPositionShared(position, playerNumber, this.gameState, {
+      boardManager: this.boardManager,
+      ruleEngine: this.ruleEngine,
+      interactionManager: this.interactionManager
+    });
   }
 
   /**
@@ -602,54 +686,15 @@ export class GameEngine {
    * into a full chain-capture loop once the transport/UI flow is ready.
    */
   private async chooseCaptureDirectionFromState(): Promise<Move | undefined> {
-    const state = this.chainCaptureState;
-    if (!state) return undefined;
-
-    const options = state.availableMoves;
-    if (options.length === 0) {
-      return undefined;
-    }
-
-    // If there is no interaction manager or only one option, keep
-    // behaviour simple for now and just return the sole available move.
-    if (!this.interactionManager || options.length === 1) {
-      return options[0];
-    }
-
-    const interaction = this.requireInteractionManager();
-
-    const choice: CaptureDirectionChoice = {
-      id: generateUUID(),
-      gameId: this.gameState.id,
-      playerNumber: state.playerNumber,
-      type: 'capture_direction',
-      prompt: 'Choose capture direction and landing position',
-      options: options.map(opt => ({
-        targetPosition: opt.captureTarget!,
-        landingPosition: opt.to,
-        // At this point in the chain, the target stack still exists
-        // on the board; use its cap height as the capturedCapHeight.
-        capturedCapHeight:
-          this.boardManager.getStack(opt.captureTarget!, this.gameState.board)?.capHeight || 0
-      }))
-    };
-
-    const response: PlayerChoiceResponseFor<CaptureDirectionChoice> =
-      await interaction.requestChoice(choice);
-    const selected = response.selectedOption;
-
-    const targetKey = positionToString(selected.targetPosition);
-    const landingKey = positionToString(selected.landingPosition);
-
-    // Find the matching Move in the available options; fall back to the
-    // first option if for some reason we cannot match exactly.
-    const matched = options.find(opt =>
-      opt.captureTarget &&
-      positionToString(opt.captureTarget) === targetKey &&
-      positionToString(opt.to) === landingKey
+    return chooseCaptureDirectionFromStateShared(
+      this.chainCaptureState,
+      this.gameState,
+      {
+        boardManager: this.boardManager,
+        ruleEngine: this.ruleEngine,
+        interactionManager: this.interactionManager
+      }
     );
-
-    return matched || options[0];
   }
 
   /**
@@ -664,7 +709,6 @@ export class GameEngine {
     landing: Position,
     player: number
   ): void {
-
     const stack = this.boardManager.getStack(from, this.gameState.board);
     const targetStack = this.boardManager.getStack(captureTarget, this.gameState.board);
 
@@ -681,9 +725,16 @@ export class GameEngine {
     // Process markers along path from target to landing
     this.processMarkersAlongPath(captureTarget, landing, player);
 
-    // Check if landing on same-color marker
-    const landingMarker = this.boardManager.getMarker(landing, this.gameState.board);
-    if (landingMarker === player) {
+    // Check if landing on a marker before resolving the capture. Any marker
+    // present at the landing cell must be removed prior to placing the
+    // capturing stack so that stacks and markers never coexist on the same
+    // space. If the marker belongs to the capturing player, we also apply
+    // the self-elimination rule after landing.
+    const landingMarkerPlayer = this.boardManager.getMarker(landing, this.gameState.board);
+    const landedOnOwnMarker = landingMarkerPlayer === player;
+    if (landingMarkerPlayer !== undefined) {
+      // Remove the marker prior to landing; the self-elimination rule, when
+      // applicable, will be applied after the capturing stack is placed.
       this.boardManager.removeMarker(landing, this.gameState.board);
     }
 
@@ -719,6 +770,13 @@ export class GameEngine {
       controllingPlayer: newRings[0]
     };
     this.boardManager.setStack(landing, newStack, this.gameState.board);
+
+    if (landedOnOwnMarker) {
+      // New rule: landing on your own marker during an overtaking capture
+      // removes that marker and immediately eliminates your top ring,
+      // credited toward ring-elimination victory conditions.
+      this.eliminateTopRingAt(landing, player);
+    }
   }
 
   /**
@@ -727,12 +785,18 @@ export class GameEngine {
    */
   private async processAutomaticConsequences(): Promise<void> {
     // Captures are already processed in applyMove
-    
+
     // Process line formations (Section 11.2, 11.3)
-    await this.processLineFormations();
-    
+    this.gameState = await processLinesForCurrentPlayer(this.gameState, {
+      boardManager: this.boardManager,
+      interactionManager: this.interactionManager
+    });
+
     // Process territory disconnections (Section 12.2)
-    await this.processDisconnectedRegions();
+    this.gameState = await processDisconnectedRegionsForCurrentPlayer(this.gameState, {
+      boardManager: this.boardManager,
+      interactionManager: this.interactionManager
+    });
   }
 
   /**
@@ -893,20 +957,20 @@ export class GameEngine {
   private eliminateFromStack(stack: RingStack, player: number): void {
     // Calculate cap height
     const capHeight = calculateCapHeight(stack.rings);
-    
+
     // Eliminate the entire cap (all consecutive top rings of controlling color)
     const remainingRings = stack.rings.slice(capHeight);
-    
+
     // Update eliminated rings count
     this.gameState.totalRingsEliminated += capHeight;
     if (!this.gameState.board.eliminatedRings[player]) {
       this.gameState.board.eliminatedRings[player] = 0;
     }
     this.gameState.board.eliminatedRings[player] += capHeight;
-    
+
     // Update player state
     this.updatePlayerEliminatedRings(player, capHeight);
-    
+
     if (remainingRings.length > 0) {
       // Update stack with remaining rings
       const newStack: RingStack = {
@@ -920,6 +984,47 @@ export class GameEngine {
     } else {
       // Stack is now empty, remove it
       this.boardManager.removeStack(stack.position, this.gameState.board);
+    }
+  }
+
+  /**
+   * Eliminate exactly the top ring from the stack at the given position,
+   * crediting the elimination to the specified player. This is used for
+   * the "landing on your own marker eliminates your top ring" rule,
+   * which applies to both non-capture moves and overtaking capture
+   * segments.
+   */
+  private eliminateTopRingAt(position: Position, creditedPlayer: number): void {
+    const stack = this.boardManager.getStack(position, this.gameState.board);
+    if (!stack || stack.stackHeight === 0) {
+      return;
+    }
+
+    // Remove the single top ring from the stack.
+    const [, ...remainingRings] = stack.rings;
+
+    // Update global elimination counters (one ring credited to the mover).
+    this.gameState.totalRingsEliminated += 1;
+    if (!this.gameState.board.eliminatedRings[creditedPlayer]) {
+      this.gameState.board.eliminatedRings[creditedPlayer] = 0;
+    }
+    this.gameState.board.eliminatedRings[creditedPlayer] += 1;
+
+    // Update per-player elimination stats.
+    this.updatePlayerEliminatedRings(creditedPlayer, 1);
+
+    if (remainingRings.length > 0) {
+      const newStack: RingStack = {
+        ...stack,
+        rings: remainingRings,
+        stackHeight: remainingRings.length,
+        capHeight: calculateCapHeight(remainingRings),
+        controllingPlayer: remainingRings[0]
+      };
+      this.boardManager.setStack(position, newStack, this.gameState.board);
+    } else {
+      // If no rings remain, remove the stack entirely.
+      this.boardManager.removeStack(position, this.gameState.board);
     }
   }
 
@@ -1174,90 +1279,50 @@ export class GameEngine {
    * 6. Next player's turn
    */
   private advanceGame(): void {
-    switch (this.gameState.currentPhase) {
-      case 'ring_placement':
-        // After placing a ring (or skipping), must move
-        // Rule Reference: Section 4.1, 4.2
-        this.gameState.currentPhase = 'movement';
-        break;
+    const deps: TurnEngineDeps = {
+      boardManager: this.boardManager,
+      ruleEngine: this.ruleEngine
+    };
 
-      case 'movement':
-        // After movement, check if captures are available
-        // Rule Reference: Section 4.3
-        const canCapture = this.hasValidCaptures(this.gameState.currentPlayer);
-        if (canCapture) {
-          this.gameState.currentPhase = 'capture';
-        } else {
-          // Skip to line processing
-          this.gameState.currentPhase = 'line_processing';
-        }
-        break;
+    const hooks: TurnEngineHooks = {
+      eliminatePlayerRingOrCap: (playerNumber: number) => {
+        this.eliminatePlayerRingOrCap(playerNumber);
+      },
+      endGame: (winner?: number, reason?: string) => this.endGame(winner, reason)
+    };
 
-      case 'capture':
-        // After captures complete, proceed to line processing
-        // Rule Reference: Section 4.3, 4.5
-        this.gameState.currentPhase = 'line_processing';
-        break;
+    const turnStateBefore: PerTurnState = {
+      hasPlacedThisTurn: this.hasPlacedThisTurn,
+      mustMoveFromStackKey: this.mustMoveFromStackKey
+    };
 
-      case 'line_processing':
-        // After processing lines, proceed to territory processing
-        // Rule Reference: Section 4.5
-        this.gameState.currentPhase = 'territory_processing';
-        break;
+    const turnStateAfter = advanceGameForCurrentPlayer(
+      this.gameState,
+      turnStateBefore,
+      deps,
+      hooks
+    );
 
-      case 'territory_processing':
-        // After processing territory, turn is complete
-        // Check if player still has rings/stacks or needs to place
-        // Rule Reference: Section 4, Section 4.1
-        this.nextPlayer();
-        
-        // Determine starting phase for next player
-        const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, this.gameState.currentPlayer);
-        const currentPlayer = this.gameState.players.find(p => p.playerNumber === this.gameState.currentPlayer);
-        
-        // Rule Reference: Section 4.4 - Forced Elimination When Blocked
-        // Check if player has no valid actions but controls stacks
-        if (playerStacks.length > 0 && !this.hasValidActions(this.gameState.currentPlayer)) {
-          // Player is blocked with stacks - must eliminate a cap
-          this.processForcedElimination(this.gameState.currentPlayer);
-          
-          // After forced elimination, check victory conditions
-          const gameEndCheck = this.ruleEngine.checkGameEnd(this.gameState);
-          if (gameEndCheck.isGameOver) {
-            // Game ended due to forced elimination
-            this.endGame(gameEndCheck.winner, gameEndCheck.reason || 'forced_elimination');
-            return; // Exit early - game is over
-          }
-          
-          // Continue to next player after forced elimination
-          this.nextPlayer();
-          
-          // Re-evaluate starting phase for the actual next player
-          const nextPlayerStacks = this.boardManager.getPlayerStacks(this.gameState.board, this.gameState.currentPlayer);
-          const nextPlayer = this.gameState.players.find(p => p.playerNumber === this.gameState.currentPlayer);
-          
-          if (nextPlayerStacks.length === 0 && nextPlayer && nextPlayer.ringsInHand > 0) {
-            this.gameState.currentPhase = 'ring_placement';
-          } else if (nextPlayer && nextPlayer.ringsInHand > 0) {
-            this.gameState.currentPhase = 'ring_placement';
-          } else {
-            this.gameState.currentPhase = 'movement';
-          }
-        } else {
-          // Normal turn progression
-          if (playerStacks.length === 0 && currentPlayer && currentPlayer.ringsInHand > 0) {
-            // No rings on board but has rings in hand - must place
-            this.gameState.currentPhase = 'ring_placement';
-          } else if (currentPlayer && currentPlayer.ringsInHand > 0) {
-            // Has rings in hand and on board - can optionally place
-            this.gameState.currentPhase = 'ring_placement';
-          } else {
-            // No rings in hand or all rings placed - go directly to movement
-            this.gameState.currentPhase = 'movement';
-          }
-        }
-        break;
-    }
+    this.hasPlacedThisTurn = turnStateAfter.hasPlacedThisTurn;
+    this.mustMoveFromStackKey = turnStateAfter.mustMoveFromStackKey;
+  }
+
+  /**
+   * Update internal per-turn placement/movement bookkeeping after a move
+   * has been applied. This keeps the must-move origin in sync with the
+   * stack that was placed or moved, mirroring the sandbox engine’s
+   * behaviour while keeping these details off of GameState.
+   */
+  private updatePerTurnStateAfterMove(move: Move): void {
+    const before: PerTurnState = {
+      hasPlacedThisTurn: this.hasPlacedThisTurn,
+      mustMoveFromStackKey: this.mustMoveFromStackKey
+    };
+
+    const after = updatePerTurnStateAfterMoveTurn(before, move);
+
+    this.hasPlacedThisTurn = after.hasPlacedThisTurn;
+    this.mustMoveFromStackKey = after.mustMoveFromStackKey;
   }
 
   /**
@@ -1265,22 +1330,19 @@ export class GameEngine {
    * Rule Reference: Section 10.1
    */
   private hasValidCaptures(playerNumber: number): boolean {
-    const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, playerNumber);
-    
-    for (const stack of playerStacks) {
-      // Check all adjacent positions for valid captures
-      const adjacentPositions = this.getAdjacentPositions(stack.position);
-      for (const adjPos of adjacentPositions) {
-        const targetStack = this.boardManager.getStack(adjPos, this.gameState.board);
-        if (targetStack && 
-            targetStack.controllingPlayer !== playerNumber &&
-            stack.capHeight >= targetStack.capHeight) {
-          return true; // Found at least one valid capture
-        }
-      }
-    }
-    
-    return false;
+    // Delegate to RuleEngine for capture generation so that the
+    // decision to enter the capture phase stays in sync with the
+    // actual overtaking_capture semantics. We construct a lightweight
+    // view of the current state with phase forced to 'capture' for the
+    // specified player and ask RuleEngine for valid moves.
+    const tempState: GameState = {
+      ...this.gameState,
+      currentPlayer: playerNumber,
+      currentPhase: 'capture'
+    };
+
+    const moves = this.ruleEngine.getValidMoves(tempState);
+    return moves.some(m => m.type === 'overtaking_capture');
   }
 
   /**
@@ -1580,9 +1642,287 @@ export class GameEngine {
   }
 
   getValidMoves(_playerNumber: number): Move[] {
-    // This would return all valid moves for the current player
-    // For now, return empty array
-    return [];
+    const playerNumber = _playerNumber;
+
+    // Only generate moves for the active player to keep server/UI
+    // expectations clear.
+    if (playerNumber !== this.gameState.currentPlayer) {
+      return [];
+    }
+
+    // Base move generation comes from RuleEngine, which is responsible
+    // for phase-specific legality (placement vs movement vs capture).
+    let moves = this.ruleEngine.getValidMoves(this.gameState);
+
+    // When a placement has occurred this turn, restrict movement/capture
+    // options so that only the placed/updated stack may move.
+    if (
+      this.mustMoveFromStackKey &&
+      (this.gameState.currentPhase === 'movement' ||
+        this.gameState.currentPhase === 'capture')
+    ) {
+      moves = moves.filter(m => {
+        const isMovementOrCaptureType =
+          m.type === 'move_stack' ||
+          m.type === 'move_ring' ||
+          m.type === 'build_stack' ||
+          m.type === 'overtaking_capture';
+
+        if (!isMovementOrCaptureType) {
+          // Non-movement moves (e.g. future skip_placement) are not
+          // constrained here.
+          return true;
+        }
+
+        if (!m.from) {
+          return false;
+        }
+
+        const fromKey = positionToString(m.from);
+        return fromKey === this.mustMoveFromStackKey;
+      });
+    }
+
+    return moves;
+  }
+
+  /**
+   * Test-only helper: resolve a late-detected "blocked with no moves"
+   * situation for the current player.
+   *
+   * In normal play, TurnEngine is responsible for ensuring that we
+   * never enter an interactive phase (ring_placement, movement,
+   * capture) for a player who has no legal placement, movement, or
+   * capture available. If a test harness nonetheless observes
+   * `gameStatus === 'active'` and `getValidMoves(currentPlayer).length
+   * === 0` in an interactive phase, it may call this safety net to:
+   *
+   *   1. Apply forced elimination for any player who controls stacks
+   *      but has no legal actions (Section 4.4 / compact rules 2.3),
+   *   2. Skip over players who have no material at all,
+   *   3. Stop once we either reach a player with at least one legal
+   *      action (placement or movement/capture) or the game ends.
+   *
+   * This helper is intentionally conservative and only used from tests;
+   * it does not create any new kinds of actions, it just applies the
+   * same forced-elimination / skip semantics the TurnEngine would have
+   * applied earlier if the blocked state had been detected on time.
+   */
+  public resolveBlockedStateForCurrentPlayerForTesting(): void {
+    if (this.gameState.gameStatus !== 'active') {
+      return;
+    }
+
+    const phase = this.gameState.currentPhase;
+    if (phase !== 'ring_placement' && phase !== 'movement' && phase !== 'capture') {
+      // Only resolve for interactive phases. Automatic bookkeeping
+      // phases should be handled via stepAutomaticPhasesForTesting.
+      return;
+    }
+
+    const players = this.gameState.players;
+    const playerCount = players.length;
+
+    // Compute an upper bound on how many forced-elimination steps we
+    // might ever need: the total number of rings still in play (on the
+    // board or in hand). Every forced elimination reduces this by at
+    // least one, and S is globally non-decreasing, so this bound keeps
+    // the resolver from looping forever even in badly broken states.
+    const totalRingsRemaining = (() => {
+      let total = 0;
+      for (const stack of this.gameState.board.stacks.values()) {
+        total += stack.stackHeight;
+      }
+      for (const p of players) {
+        total += p.ringsInHand;
+      }
+      return total;
+    })();
+
+    const maxIterations = totalRingsRemaining + playerCount * 4;
+    let iterations = 0;
+
+    while (this.gameState.gameStatus === 'active' && iterations < maxIterations) {
+      iterations++;
+
+      // 1. First, look for ANY player who has at least one legal
+      // placement, movement, or capture under the real rules. If we
+      // find such a player, hand the turn to them and reseed the phase
+      // so normal play can resume from that point.
+      for (const player of players) {
+        const playerNumber = player.playerNumber;
+
+        const hasAnyPlacement = (() => {
+          if (player.ringsInHand <= 0) {
+            return false;
+          }
+
+          const tempPlacementState: GameState = {
+            ...this.gameState,
+            currentPlayer: playerNumber,
+            currentPhase: 'ring_placement'
+          };
+
+          const placementMoves = this.ruleEngine.getValidMoves(tempPlacementState);
+          return placementMoves.some(m => m.type === 'place_ring');
+        })();
+
+        const { hasMovement, hasCapture } = (() => {
+          const tempMovementState: GameState = {
+            ...this.gameState,
+            currentPlayer: playerNumber,
+            currentPhase: 'movement'
+          };
+
+          const movementMoves = this.ruleEngine.getValidMoves(tempMovementState);
+          const hasMovementLocal = movementMoves.some(
+            m =>
+              m.type === 'move_stack' ||
+              m.type === 'move_ring' ||
+              m.type === 'build_stack'
+          );
+
+          const tempCaptureState: GameState = {
+            ...this.gameState,
+            currentPlayer: playerNumber,
+            currentPhase: 'capture'
+          };
+
+          const captureMoves = this.ruleEngine.getValidMoves(tempCaptureState);
+          const hasCaptureLocal = captureMoves.some(m => m.type === 'overtaking_capture');
+
+          return { hasMovement: hasMovementLocal, hasCapture: hasCaptureLocal };
+        })();
+
+        if (hasAnyPlacement || hasMovement || hasCapture) {
+          // Hand the turn to this player and reseed the phase according
+          // to whether they still have rings in hand and which kinds of
+          // actions are actually available, mirroring the TurnEngine
+          // phase flow:
+          //   - Prefer ring_placement when placements are legal;
+          //   - Otherwise prefer movement when non-capture moves exist;
+          //   - Otherwise enter capture phase when only captures remain.
+          this.gameState.currentPlayer = playerNumber;
+
+          if (hasAnyPlacement && player.ringsInHand > 0) {
+            this.gameState.currentPhase = 'ring_placement';
+          } else if (hasMovement) {
+            this.gameState.currentPhase = 'movement';
+          } else {
+            this.gameState.currentPhase = 'capture';
+          }
+
+          // Clear per-turn bookkeeping so the next explicit move is
+          // treated as the start of a fresh turn.
+          this.hasPlacedThisTurn = false;
+          this.mustMoveFromStackKey = undefined;
+          return;
+        }
+      }
+
+      // 2. No player has any legal placement/movement/capture. If there
+      // are no stacks left on the board, structural terminality has
+      // been reached. At this point the compact rules define a
+      // stalemate ladder where any rings remaining in hand are treated
+      // as eliminated for tie-break purposes (hand → E).
+      if (this.gameState.board.stacks.size === 0) {
+        let handEliminations = 0;
+
+        for (const player of players) {
+          if (player.ringsInHand > 0) {
+            const delta = player.ringsInHand;
+            player.ringsInHand = 0;
+            player.eliminatedRings += delta;
+            handEliminations += delta;
+
+            if (!this.gameState.board.eliminatedRings[player.playerNumber]) {
+              this.gameState.board.eliminatedRings[player.playerNumber] = 0;
+            }
+            this.gameState.board.eliminatedRings[player.playerNumber] += delta;
+          }
+        }
+
+        if (handEliminations > 0) {
+          this.gameState.totalRingsEliminated += handEliminations;
+        }
+
+        const endCheck = this.ruleEngine.checkGameEnd(this.gameState);
+        if (endCheck.isGameOver) {
+          this.endGame(endCheck.winner, endCheck.reason || 'structural_stalemate');
+        }
+        return;
+      }
+
+      // 3. Global forced elimination pass: walk players in turn order
+      // starting from the current player and eliminate a cap from the
+      // first player who still controls stacks. This mirrors the rules
+      // text: when everyone is globally blocked but stacks remain,
+      // successive forced eliminations must eventually resolve the
+      // stalemate until no stacks are left.
+      const currentIndex = players.findIndex(p => p.playerNumber === this.gameState.currentPlayer);
+      let eliminatedThisIteration = false;
+
+      for (let offset = 0; offset < playerCount; offset++) {
+        const idx = (currentIndex + offset) % playerCount;
+        const playerNumber = players[idx].playerNumber;
+        const stacksForPlayer = this.boardManager.getPlayerStacks(
+          this.gameState.board,
+          playerNumber
+        );
+
+        if (stacksForPlayer.length === 0) {
+          continue;
+        }
+
+        this.eliminatePlayerRingOrCap(playerNumber);
+        eliminatedThisIteration = true;
+
+        const endCheck = this.ruleEngine.checkGameEnd(this.gameState);
+        if (endCheck.isGameOver) {
+          this.endGame(endCheck.winner, endCheck.reason || 'forced_elimination');
+          return;
+        }
+
+        // After a forced elimination, make that player the current
+        // player in movement phase with fresh per-turn state. The next
+        // loop iteration will re-check for available actions for all
+        // players from this new board state.
+        this.gameState.currentPlayer = playerNumber;
+        this.gameState.currentPhase = 'movement';
+        this.hasPlacedThisTurn = false;
+        this.mustMoveFromStackKey = undefined;
+        break;
+      }
+
+      if (!eliminatedThisIteration) {
+        // Safety: if we somehow failed to eliminate any rings even
+        // though stacks remain, bail out rather than spin forever. The
+        // caller will continue to treat this as a diagnostic failure.
+        return;
+      }
+    }
+
+    // If we exit because maxIterations was reached while the game is
+    // still active, leave the state as-is. The AI simulation harness
+    // will continue to treat this as a non-terminating diagnostic
+    // failure, but we have avoided an infinite loop inside the engine.
+  }
+
+  /**
+   * Test-only helper: advance through automatic phases (line_processing
+   * and territory_processing) without requiring an explicit player move.
+   *
+   * This is used by AI simulation/diagnostic harnesses so they do not
+   * treat these internal bookkeeping phases as "no legal move" stalls.
+   */
+  public stepAutomaticPhasesForTesting(): void {
+    while (
+      this.gameState.gameStatus === 'active' &&
+      (this.gameState.currentPhase === 'line_processing' ||
+        this.gameState.currentPhase === 'territory_processing')
+    ) {
+      this.advanceGame();
+    }
   }
 
 }

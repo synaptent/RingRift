@@ -44,17 +44,18 @@ export function enumerateSimpleMovementLandings(
 
         const toKey = positionToString(to);
 
+        // Stop once we move off the logical board or far beyond its bounds.
         if (!isValidPosition(to) || Math.abs(to.x) > config.size * 2 || Math.abs(to.y) > config.size * 2) {
           break;
         }
 
-        // Disallow landing on collapsed spaces or occupied stacks.
-        if (board.collapsedSpaces.has(toKey) || board.stacks.has(toKey)) {
+        // Collapsed spaces block movement and cannot be landed on.
+        if (board.collapsedSpaces.has(toKey)) {
           break;
         }
 
         // Check that the path between from and to is unobstructed (no stacks
-        // or collapsed spaces).
+        // or collapsed spaces) excluding the landing cell itself.
         const path = getPathPositions(from, to).slice(1, -1);
         let blocked = false;
         for (const pos of path) {
@@ -68,12 +69,43 @@ export function enumerateSimpleMovementLandings(
           break;
         }
 
+        const destinationStack = board.stacks.get(toKey);
+        const marker = board.markers.get(toKey);
+        const markerOwner = marker?.player;
+
+        // Rule alignment with backend validateStackMovement and
+        // hasAnyLegalMoveOrCaptureFromOnBoard:
+        // - Can land on empty or same-color marker.
+        // - Cannot land on opponent marker, but opponent markers do NOT
+        //   block further movement along the ray.
+        if (!destinationStack || destinationStack.stackHeight === 0) {
+          if (markerOwner !== undefined && markerOwner !== stack.controllingPlayer) {
+            // Opponent marker: this cell is not a legal landing square,
+            // but the ray continues past it.
+            step += 1;
+            continue;
+          }
+
+          const distance = calculateDistance(boardType, from, to);
+          if (distance >= stack.stackHeight) {
+            results.push({ fromKey, to });
+          }
+
+          // Empty/own-marker-only spaces do not block further exploration;
+          // keep walking along this ray.
+          step += 1;
+          continue;
+        }
+
+        // Landing on a stack (own or opponent) is allowed for simple merging
+        // movement, but we cannot move beyond that stack.
         const distance = calculateDistance(boardType, from, to);
         if (distance >= stack.stackHeight) {
           results.push({ fromKey, to });
         }
 
-        step += 1;
+        // Stacks block further positions along this ray.
+        break;
       }
     }
   }

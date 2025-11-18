@@ -38,8 +38,34 @@ module.exports = {
   ],
   
   // Coverage thresholds (80% target)
+  // Global thresholds remain at 80%, and we also enforce the same target on
+  // core rules modules so regressions in the engine/sandbox surface clearly.
   coverageThreshold: {
     global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    '<rootDir>/src/server/game/BoardManager.ts': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    '<rootDir>/src/server/game/RuleEngine.ts': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    '<rootDir>/src/server/game/GameEngine.ts': {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+    '<rootDir>/src/client/sandbox/ClientSandboxEngine.ts': {
       branches: 80,
       functions: 80,
       lines: 80,
@@ -79,7 +105,11 @@ module.exports = {
   testTimeout: 10000,
   
   // Verbose output
-  verbose: true,
+  // Default to non-verbose so large suites (especially AI simulations)
+  // don't spam the console. You can override this per-run with
+  // `jest --verbose` or `npm run test:verbose` when you actually
+  // want per-test output.
+  verbose: false,
   
   // Clear mocks between tests
   clearMocks: true,

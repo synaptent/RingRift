@@ -16,6 +16,18 @@ export interface BoardViewProps {
   validTargets?: Position[];
   onCellClick?: (position: Position) => void;
   /**
+   * Optional double-click handler, primarily used by the local sandbox
+   * to distinguish between selection (single click) and stacked ring
+   * placement (double click) during the ring placement phase.
+   */
+  onCellDoubleClick?: (position: Position) => void;
+  /**
+   * Optional context menu handler (right-click / long-press proxy),
+   * used by the local sandbox to surface ring-count selection dialogs
+   * for multi-ring placements.
+   */
+  onCellContextMenu?: (position: Position) => void;
+  /**
    * Optional movement grid overlay toggle. When true, an SVG overlay
    * renders faint movement lines and node dots based on a board-local
    * normalized geometry. This is shared between square and hex boards
@@ -35,25 +47,25 @@ const PLAYER_COLOR_CLASSES: Record<
     ring: 'bg-emerald-400',
     ringBorder: 'border-emerald-200',
     marker: 'border-emerald-400',
-    territory: 'bg-emerald-900/60'
+    territory: 'bg-emerald-700/85'
   },
   2: {
-    ring: 'bg-sky-400',
-    ringBorder: 'border-sky-200',
-    marker: 'border-sky-400',
-    territory: 'bg-sky-900/60'
+    ring: 'bg-sky-600',
+    ringBorder: 'border-sky-300',
+    marker: 'border-sky-500',
+    territory: 'bg-sky-700/85'
   },
   3: {
     ring: 'bg-amber-400',
     ringBorder: 'border-amber-200',
     marker: 'border-amber-400',
-    territory: 'bg-amber-900/60'
+    territory: 'bg-amber-600/85'
   },
   4: {
     ring: 'bg-fuchsia-400',
     ringBorder: 'border-fuchsia-200',
     marker: 'border-fuchsia-400',
-    territory: 'bg-fuchsia-900/60'
+    territory: 'bg-fuchsia-700/85'
   }
 };
 
@@ -76,24 +88,43 @@ const getPlayerColors = (playerNumber?: number) => {
   );
 };
 
-const StackWidget: React.FC<{ stack: RingStack }> = ({ stack }) => {
+const StackWidget: React.FC<{ stack: RingStack; boardType: BoardType }> = ({ stack, boardType }) => {
   const { rings, capHeight, stackHeight } = stack;
-  const topIndex = rings.length - 1;
-  const capStartIndex = Math.max(0, topIndex - capHeight + 1);
 
-  // Vertical offset so the stack sits slightly lower in the hex cell,
-  // leaving more room at the top for tall stacks (up to height ~10).
+  // Engine semantics: rings[0] is the top ring (cap); additional rings
+  // are appended toward the bottom. Reflect that here so colors and cap
+  // highlighting match the actual stack state.
+  const topIndex = 0;
+  const capEndIndex = Math.min(capHeight - 1, rings.length - 1);
+
+  const isSquare8 = boardType === 'square8';
+  const isHex = boardType === 'hexagonal';
+
+  // Slight vertical offset so stacks sit comfortably inside both square
+  // and hex cells, leaving room for tall stacks while keeping labels legible.
   const verticalOffsetClasses = 'translate-y-[3px] md:translate-y-[4px]';
+
+  const ringSizeClasses = isSquare8
+    ? 'w-7 md:w-8 h-[5px] md:h-[6px]'
+    : isHex
+    ? 'w-5 md:w-6 h-[3px] md:h-[4px]'
+    : 'w-6 md:w-7 h-[4px] md:h-[5px]';
+
+  const labelTextClasses = isSquare8
+    ? 'text-[9px] md:text-[10px]'
+    : isHex
+    ? 'text-[7px] md:text-[8px]'
+    : 'text-[8px] md:text-[9px]';
 
   return (
     <div className={`flex flex-col items-center justify-center gap-[1px] ${verticalOffsetClasses}`}>
-      <div className="flex flex-col-reverse items-center -space-y-[1px]">
+      <div className="flex flex-col items-center -space-y-[1px]">
         {rings.map((playerNumber, index) => {
           const { ring, ringBorder } = getPlayerColors(playerNumber);
           const isTop = index === topIndex;
-          const isInCap = index >= capStartIndex;
+          const isInCap = index <= capEndIndex;
 
-          const baseShape = 'w-6 md:w-7 h-[4px] md:h-[5px] rounded-full border';
+          const baseShape = `${ringSizeClasses} rounded-full border`;
           const capOutline = isInCap ? 'ring-[0.5px] ring-offset-[0.5px] ring-offset-slate-900' : '';
           const topShadow = isTop ? 'shadow-md shadow-slate-900/70' : 'shadow-sm';
 
@@ -106,7 +137,7 @@ const StackWidget: React.FC<{ stack: RingStack }> = ({ stack }) => {
           );
         })}
       </div>
-      <div className="mt-[1px] text-[8px] md:text-[9px] leading-tight font-semibold text-slate-900">
+      <div className={`mt-[1px] leading-tight font-semibold text-slate-900 ${labelTextClasses}`}>
         H{stackHeight} C{capHeight}
       </div>
     </div>
@@ -119,6 +150,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
   selectedPosition,
   validTargets = [],
   onCellClick,
+  onCellDoubleClick,
+  onCellContextMenu,
   showMovementGrid = false
 }) => {
   // Square boards: simple grid using (x, y) coordinates.
@@ -209,7 +242,12 @@ export const BoardView: React.FC<BoardViewProps> = ({
           'border-slate-600 text-slate-900',
           territoryClasses || baseSquareBg,
           isSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
-          isValid ? 'outline outline-2 outline-emerald-300/80' : ''
+          // Valid target highlighting on square boards: thin, bright-green inset
+          // ring plus a light near-white emerald tint that reads clearly even
+          // over the dark board container background.
+          isValid
+            ? 'outline outline-[2px] outline-emerald-300/90 outline-offset-[-4px] bg-emerald-50'
+            : ''
         ]
           .filter(Boolean)
           .join(' ');
@@ -217,20 +255,41 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const hasMarker = marker && marker.type === 'regular';
         const markerColors = hasMarker ? getPlayerColors(marker.player) : null;
 
+        const markerOuterSizeClasses =
+          boardType === 'square8'
+            ? 'w-6 h-6 md:w-7 md:h-7'
+            : 'w-5 h-5 md:w-6 md:h-6';
+
         cells.push(
           <button
             key={key}
             type="button"
             onClick={() => onCellClick?.(pos)}
+            onDoubleClick={() => onCellDoubleClick?.(pos)}
+            onContextMenu={e => {
+              e.preventDefault();
+              onCellContextMenu?.(pos);
+            }}
             className={cellClasses}
           >
-            {stack ? <StackWidget stack={stack} /> : null}
+            {stack ? <StackWidget stack={stack} boardType={boardType} /> : null}
 
             {hasMarker && markerColors && (
               <div
-                className={`absolute top-0.5 right-0.5 w-3 h-3 rounded-full border-2 ${markerColors.marker} bg-slate-950/80`}
+                className={`absolute inset-0 m-auto rounded-full border-[6px] ${markerColors.marker} bg-transparent shadow-sm shadow-slate-900/70 z-10 flex items-center justify-center ${markerOuterSizeClasses}`}
+              >
+                <div className="w-2/3 h-2/3 rounded-full bg-slate-950/75 flex items-center justify-center">
+                  <div className="w-1/3 h-1/3 rounded-full bg-slate-950/95 border border-slate-900/95" />
+                </div>
+              </div>
+            )}
+
+            {collapsedOwner && (
+              <div
+                className={`pointer-events-none absolute inset-[2px] rounded-sm border-2 ${getPlayerColors(collapsedOwner).marker} border-opacity-90`}
               />
             )}
+
           </button>
         );
       }
@@ -272,35 +331,56 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
         const territoryClasses = collapsedOwner
           ? getPlayerColors(collapsedOwner).territory
-          : 'bg-slate-700/60';
+          : 'bg-slate-300/80';
 
         const cellClasses = [
           'relative w-8 h-8 md:w-9 md:h-9 mx-0 flex items-center justify-center text-[11px] md:text-xs rounded-full border',
           'border-slate-600 text-slate-100',
           territoryClasses,
           isSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
-          isValid ? 'outline outline-2 outline-emerald-300/80' : ''
+          isValid
+            ? 'outline outline-[2px] outline-emerald-300/90 outline-offset-[-4px] bg-emerald-400/[0.03]'
+            : ''
         ]
           .filter(Boolean)
           .join(' ');
 
+
         const hasMarker = marker && marker.type === 'regular';
         const markerColors = hasMarker ? getPlayerColors(marker.player) : null;
+
+        const markerOuterSizeClasses = 'w-4 h-4 md:w-5 md:h-5';
 
         cells.push(
           <button
             key={key}
             type="button"
             onClick={() => onCellClick?.(pos)}
+            onDoubleClick={() => onCellDoubleClick?.(pos)}
+            onContextMenu={e => {
+              e.preventDefault();
+              onCellContextMenu?.(pos);
+            }}
             className={cellClasses}
           >
-            {stack ? <StackWidget stack={stack} /> : null}
+            {stack ? <StackWidget stack={stack} boardType={boardType} /> : null}
 
             {hasMarker && markerColors && (
               <div
-                className={`absolute top-0.5 right-0.5 w-3 h-3 rounded-full border-2 ${markerColors.marker} bg-slate-950/80`}
+                className={`absolute inset-0 m-auto rounded-full border-[4px] ${markerColors.marker} bg-transparent shadow-sm shadow-slate-900/70 z-10 flex items-center justify-center ${markerOuterSizeClasses}`}
+              >
+                <div className="w-2/3 h-2/3 rounded-full bg-slate-950/75 flex items-center justify-center">
+                  <div className="w-1/3 h-1/3 rounded-full bg-slate-950/95 border border-slate-900/95" />
+                </div>
+              </div>
+            )}
+
+            {collapsedOwner && (
+              <div
+                className={`pointer-events-none absolute inset-[1.5px] rounded-full border-2 ${getPlayerColors(collapsedOwner).marker} border-opacity-90`}
               />
             )}
+
           </button>
         );
       }

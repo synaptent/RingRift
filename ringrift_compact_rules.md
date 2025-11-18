@@ -109,14 +109,18 @@ Placement options (if allowed):
 
 1. **On empty space**:
    - Choose a non-collapsed, empty cell.
-   - Place one or more rings (any count ≤ `ringsInHand`) forming a new stack.
-   - **Legality constraint:** After placement, there must exist at least one legal non-capture or capture move for this exact stack according to movement/capture rules. If not, this placement is illegal.
+   - Place **1–3 rings** forming a new stack, subject to:
+     - You cannot exceed `ringsInHand`, and
+     - You cannot exceed your remaining capacity under `boardConfig.ringsPerPlayer`.
+   - **Legality constraint (no-dead-placement):** After placement, there must exist at least one legal non-capture or capture move for this exact stack according to movement/capture rules. If not, this placement is illegal.
 
 2. **On existing stack (any owner)**:
    - Choose a non-collapsed cell with a stack.
-   - Place **exactly one ring** of `P` on top of that stack.
+   - Place **exactly one ring** of `P` on top of that stack (**never more than one ring per placement action**).
    - New controllingPlayer becomes `P`.
-   - **Legality constraint:** After this placement, that stack must have at least one legal move/capture.
+   - **Legality constraint (no-dead-placement):** After this placement, that stack must have at least one legal move/capture.
+
+> **Note:** Multi-ring placement is only ever allowed on **empty** spaces. When placing onto an existing stack, you may place at most **one** ring per placement action.
 
 If no legal placement exists when placement is mandatory, the player **skips placement** and proceeds to forced-elimination / movement logic as below.
 
@@ -124,11 +128,12 @@ If no legal placement exists when placement is mandatory, the player **skips pla
 
 After placement step, define the set of **controlled stacks** `S = { stacks where controllingPlayer = P }`.
 
-- If `S` is empty AND `P.ringsInHand == 0` → go to **forced elimination** (Section 2.3).
-- Otherwise, compute all legal movement/capture moves from stacks in `S` (Section 3 & 4).
-  - If **no legal moves or captures** exist *and* `P.ringsInHand > 0`:
-    - If placement was not yet attempted but was possible, this situation should not occur (enforce via placement legality). If it occurs, treat as forced elimination.
-  - If **no legal moves/captures** and `P.ringsInHand == 0` → forced elimination.
+- If `S` is empty:
+  - If `P.ringsInHand > 0`, you must fall back to the ring‑placement rules in Section 2.1/6: your only way to act is by placing a new stack that satisfies the no‑dead‑placement rule.
+  - If `P.ringsInHand == 0`, you have no material under your direct control and therefore no movement or capture action; your turn ends immediately and play passes to the next player. You are temporarily inactive or eliminated according to Section 7.3.
+- Otherwise (`S` non‑empty), compute all legal movement/capture moves from stacks in `S` (Section 3 & 4).
+  - If **no legal moves or captures** exist *and* there is at least one legal placement (per the no‑dead‑placement rule), you must either place (if placement is mandatory) or you may choose to place (if placement is optional).
+  - If **no legal moves/captures** and **no legal placements** exist, you are **blocked with stacks** and must go to forced elimination (Section 2.3).
   - If ≥1 legal move/capture exists:
     - Movement is **mandatory**.
     - If a placement occurred this turn, you **must move that specific stack**.
@@ -142,14 +147,15 @@ At the start of your action (after any mandatory placement checks) and before mo
 
 - If:
   - `P` controls at least one stack **on the board**, AND
-  - `P` has `ringsInHand == 0`, AND
-  - There is **no legal placement, movement, or overtaking capture** for `P`,
+  - There is **no legal placement, movement, or overtaking capture** for `P` (taking the no‑dead‑placement rule into account),
 - Then `P` must **eliminate one entire cap** from any one stack they control:
   - Remove the top `capHeight` rings from that stack.
   - Update `board.stacks` and `eliminatedRings` counters.
   - If that stack becomes empty, remove it.
 
 If after this elimination `P` still has no legal action, their turn ends.
+
+However, as long as any stacks remain on the board, it is never legal for the game to remain in an `active` state with the current player having no legal action. In any situation where **no player** has any legal placement, movement, or capture but at least one stack still exists on the board, the controlling player of some stack on their turn must satisfy the condition above and perform a forced elimination. Successive forced eliminations continue (possibly cycling through multiple players) until **no stacks remain**; only then can the game reach a structurally terminal state that is resolved by the stalemate rules in Section 7.4.
 
 ---
 ## 3. Non-Capture Movement
@@ -185,7 +191,7 @@ When moving along the path:
   - If marker belongs to opponent `Q ≠ P`: **flip** it to `P`.
   - If marker belongs to `P`: **collapse** it to `collapsedSpaces[pos] = P` and remove marker.
 - At landing cell `pk`:
-  - If there is a `P` marker, **remove** it (no collapse on landing); then place the stack.
+  - If there is a `P` marker, **remove** it (no collapse on landing); then place the stack and immediately eliminate the top ring of that stack, crediting that eliminated ring to `P` for victory-condition purposes.
 
 You are **not required** to stop at the first legal landing after markers; any landing `pk` satisfying distance and landing conditions is allowed.
 
@@ -217,8 +223,8 @@ A single overtaking capture segment is defined by `(from, target, landing)`:
    - On `target → landing` (excluding endpoints): no collapsed spaces, no stacks.
 
 4. **Distance constraints**:
-   - Let `segmentDistance = distance(from, landing)` (Manhattan on square, cube distance on hex).
-   - `segmentDistance ≥ H`.
+  - Let `segmentDistance = distance(from, landing)` (Chebyshev/king-move distance on square boards, cube distance on hex).
+  - `segmentDistance ≥ H`.
    - `landing` must be strictly further from `from` than `target` is (i.e. beyond the target in same direction).
 
 5. **Landing cell**:
@@ -414,22 +420,30 @@ A player `P` wins by last-player-standing if, after a completed turn and post-pr
   - no legal capture,
 - And `P` still has at least one legal action available on their own next turn.
 
-A player is effectively “dead” when:
-- They control no stacks on the board, AND
-- They have `ringsInHand == 0`, OR
-- They have stacks but no legal moves/captures *and* cannot place any ring.
+A player is **temporarily inactive** (has no legal actions on their own turn, but remain in the game) when:
+- They have stacks but no legal moves/captures *and* cannot place any ring, OR
+- They control no stacks on the board, *and* cannot place any ring, BUT
+- They have rings on the board in stacks controlled by others
+- They may potentially become active again as a result of other players' turns.
 
-Control may later be regained if another player’s captures expose a top ring of their color on some stack.
+In practice, this means a temporarily inactive player can become active again if capture or elimination expose one of their buried rings as the new top ring of a stack, thereby giving them a controlled stack on a later turn.
+
+A player is **eliminated** (has no legal actions on their own turn, and cannot in future turns) when:
+- They have no stacks or rings anywhere on the board AND
+- They have `ringsInHand == 0`
 
 ### 7.4 Stalemate resolution
 
-If **no** player has any legal placement, movement, or capture (global stalemate):
+If **no** player has any legal placement, movement, capture, or forced elimination available (global stalemate):
+
+- In practice, this can only occur once **no stacks remain** anywhere on the board. Structural terminality with stacks still present is ruled out by the forced-elimination rule in Section 2.3, because any such situation must be resolved by successive forced eliminations until all stacks have been removed.
 
 1. Convert any rings in hand for each player into **eliminated rings** for that player.
 2. Compute the following ranking, in order:
    1. **Most collapsed spaces** controlled.
-   2. If tied, **most eliminated rings**.
+   2. If tied, **most eliminated rings** (including rings converted from hand in step 1).
    3. If still tied, **most markers** on the board.
+   4. If still tied, the **last player to complete a valid turn action**.
 3. Highest rank wins.
 
 ---
@@ -450,3 +464,42 @@ If **no** player has any legal placement, movement, or capture (global stalemate
 - Carefully respect **version parameters** (lineLength; adjacency type; ringsPerPlayer; thresholds) so that the same engine logic can run square8, square19, and hex.
 
 This compact spec plus the full narrative rules and tests should suffice to produce a complete, correct implementation of RingRift’s rules for both server engines and AI agents.
+
+---
+## 9. Progress & Termination Invariant (Implementation Note)
+
+For engine and AI authors, it is useful to track a simple global progress measure over the course of a game:
+
+- Let **M** = number of markers currently on the board.
+- Let **C** = number of collapsed spaces currently on the board.
+- Let **E** = total number of *eliminated* rings credited to any player (including rings eliminated from lines, territory disconnections, forced eliminations, and stalemate conversion of rings in hand).
+- Define the **progress metric**:
+  
+  ```text
+  S = M + C + E
+  ```
+
+Under the rules above:
+
+- Any legal **movement** (non-capture or overtaking) always places at least one new marker on the departure space, and never removes collapsed spaces or resurrects eliminated rings. Landing on one of your own markers removes that marker but immediately eliminates the top ring of the moving stack, keeping `M + E` unchanged at the landing cell. The departure marker therefore ensures **S strictly increases** on every move.
+- **Collapsing markers to territory** (e.g., via lines or region processing) replaces markers with collapsed spaces one-for-one, so `M + C` remains unchanged by that operation alone.
+- **Eliminations** (from lines, disconnected regions, forced elimination, or stalemate conversion of rings in hand) strictly increase `E` and never decrease markers or collapsed spaces.
+- **Forced elimination when blocked** (Section 4.4 / 2.3) always eliminates at least one ring, so it strictly increases `E` even on turns where no movement is possible.
+- No rule ever decreases the number of collapsed spaces or eliminated rings.
+
+On any turn where a player performs a legal action (movement, chain capture segment, region processing, or forced elimination), **S strictly increases**. The only turns that may leave `S` unchanged are rare “pure forfeits” where a player is required to place but has no legal placement and no stacks, so they simply pass.
+
+Because the board has a finite number of spaces and a finite total number of rings, there is a finite upper bound on `S`:
+
+```text
+S ≤ (#boardSpaces) + (#boardSpaces) + (totalRingsInPlay) = 2·N + R_total.
+```
+
+Since `S` is non-decreasing and bounded, there can only be **finitely many** turns that involve a real action (movement or forced elimination) in any game. Eventually, no player can have any legal placement, movement, or capture without exceeding this bound. At that point the game is in a global no-moves state and must be resolved by the rules in Section 7 (victory thresholds, last-player-standing, or stalemate tiebreakers).
+
+This invariant is primarily an implementation aid, but it justifies the expectation that:
+
+- Every correctly implemented RingRift engine must see any legal game terminate in finite time.
+- Any long-running simulation that fails to terminate within a large move cap either:
+  - violates the rules’ accounting for markers, collapsed spaces, or eliminated rings, or
+  - is using a move cap that is simply too small relative to the worst-case legal game length.

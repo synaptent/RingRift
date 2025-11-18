@@ -215,7 +215,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
 
-  test('performs a 180-degree reversal chain capture (mirrors Rust test_chain_capture_180_reversal)', async () => {
+  test('Q15_3_1_180_degree_reversal_pattern_backend', async () => {
     // This scenario mirrors the Rust integration test
     // `RingRift Rust/ringrift/tests/chain_capture_tests.rs::test_chain_capture_180_reversal`.
     // Setup (SquareSmall / square8):

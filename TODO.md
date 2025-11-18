@@ -1,8 +1,8 @@
 # RingRift Development TODO
 
-**Last Updated:** November 14, 2025  
+**Last Updated:** November 16, 2025  
 **Current Phase:** Phase 1 - Core Game Logic Implementation  
-**Overall Progress:** 7/30 major tasks completed (~23%)
+**Overall Progress:** 9/30 major tasks completed (~30%)
 
 This document is the **single source of truth** for RingRift development tracking.
 
@@ -391,26 +391,26 @@ Updates based on recent work:
 **Rationale:** Testing infrastructure must be in place BEFORE completing core logic to enable test-driven development and prevent regressions.
 
 ### Task 0.1: Testing Framework Setup
-- [ ] Install and configure Jest/Vitest
-- [ ] Set up test coverage reporting (target 80%+)
-- [ ] Create test utilities and fixtures
-- [ ] Configure TypeScript for tests
-- [ ] Add test scripts to package.json
+- [x] Install and configure Jest/Vitest
+- [x] Set up test coverage reporting (target 80%+)
+- [x] Create test utilities and fixtures
+- [x] Configure TypeScript for tests
+- [x] Add test scripts to package.json
 
 ### Task 0.2: CI/CD Pipeline
-- [ ] Create GitHub Actions workflow
-- [ ] Add linting step (ESLint)
-- [ ] Add type checking step (tsc)
-- [ ] Add unit test step
-- [ ] Add coverage reporting
-- [ ] Set up pre-commit hooks
+- [x] Create GitHub Actions workflow
+- [x] Add linting step (ESLint)
+- [x] Add type checking step (tsc)
+- [x] Add unit test step
+- [x] Add coverage reporting
+- [x] Set up pre-commit hooks
 
 ### Task 0.3: Initial Test Coverage
-- [ ] Write tests for BoardManager utilities
-- [ ] Write tests for existing GameEngine methods
-- [ ] Write tests for RuleEngine validation
+- [x] Write tests for BoardManager utilities
+- [x] Write tests for existing GameEngine methods
+- [x] Write tests for RuleEngine validation
 - [ ] Write tests for shared type utilities
-- [ ] Document testing patterns
+- [x] Document testing patterns
 
 ---
 
@@ -555,18 +555,18 @@ Under **Task 3.4: Game State Display**, add:
 **Target Completion:** 3-4 weeks after Phase 1.5
 
 ### Task 3.1: Board Rendering
-- [ ] Square grid component (8x8)
-- [ ] Square grid component (19x19)
-- [ ] Hexagonal grid component (11 spaces per side, 331 total)
-  - [ ] Implement cube coordinate system (x, y, z)
-  - [ ] Hexagonal cell rendering
-  - [ ] 6-direction adjacency visualization
-  - [ ] Proper hexagonal grid layout algorithm
+- [x] Square grid component (8x8)
+- [x] Square grid component (19x19)
+- [x] Hexagonal grid component (11 spaces per side, 331 total)
+  - [x] Implement cube coordinate system (x, y, z)
+  - [x] Hexagonal cell rendering
+  - [x] 6-direction adjacency visualization
+  - [x] Proper hexagonal grid layout algorithm
 - [ ] Cell/space components (unified for square and hex)
-- [ ] Coordinate overlay (support both square and cube coordinates)
-- [ ] Responsive sizing (handle different board shapes)
+- [x] Coordinate overlay (support both square and cube coordinates)
+- [x] Responsive sizing (handle different board shapes)
 - [ ] Visual polish and animations
-- [ ] Board type selector UI
+- [x] Board type selector UI
 
 ### Task 3.2: Game Piece Visualization
 - [ ] Ring stack component (show individual rings)
@@ -595,30 +595,30 @@ Under **Task 3.4: Game State Display**, add:
 - [ ] Ring placement controls
   - [ ] In the local sandbox mode on `GamePage` (when no `gameId` is present), allow clicking an empty cell to **place a ring on the board** for a chosen/current player, updating the `BoardState.stacks` map and reusing the same ring stack widget used in backend games.
   - [ ] Once the sandbox is wired to the real GameEngine, align sandbox ring placement with the rules (respecting per-player ring limits and phase flow), and clearly label any simpler "free placement" mode as experimental.
-- [ ] Move selection (drag or click)
-- [ ] Valid move highlighting
+- [x] Move selection (drag or click)
+- [x] Valid move highlighting
 - [ ] Move confirmation dialog
 - [ ] Undo/redo buttons
-- [ ] Graduated line reward choice UI (Option 1 vs Option 2)
-- [ ] Disconnected region processing order UI
-- [ ] Forced elimination ring/cap selection
-- [ ] Multiple capture direction choice
+- [x] Graduated line reward choice UI (Option 1 vs Option 2)
+- [x] Disconnected region processing order UI
+- [x] Forced elimination ring/cap selection
+- [x] Multiple capture direction choice
 
 ### Task 3.4: Game State Display
-- [ ] Current player indicator
-  - [ ] Highlight the active player consistently in both backend GamePage view and local sandbox using `GameState.currentPlayer` and `GameState.currentPhase`.
-  - [ ] Use a unified color/typography system so the current player stands out clearly while remaining readable in dark mode.
-- [ ] Ring count displays (in hand, on board, eliminated)
-  - [ ] Derive counts from `GameState.players[*].ringsInHand`, `GameState.board.stacks`, and `GameState.players[*].eliminatedRings` rather than maintaining separate local counters.
-  - [ ] Ensure displays stay correct for 2–4 players and mixed human/AI configurations.
-- [ ] Territory statistics panel (collapsed spaces per player)
-  - [ ] Compute territory statistics from `GameState.board.collapsedSpaces` and any BoardManager helpers, keeping TS as the source of truth rather than re-implementing rules client-side.
+- [x] Current player indicator
+  - [x] Highlight the active player consistently in both backend GamePage view and local sandbox using `GameState.currentPlayer` and `GameState.currentPhase`.
+  - [x] Use a unified color/typography system so the current player stands out clearly while remaining readable in dark mode.
+- [x] Ring count displays (in hand, on board, eliminated)
+  - [x] Derive counts from `GameState.players[*].ringsInHand`, `GameState.board.stacks`, and `GameState.players[*].eliminatedRings` rather than maintaining separate local counters.
+  - [x] Ensure displays stay correct for 2–4 players and mixed human/AI configurations.
+- [x] Territory statistics panel (collapsed spaces per player)
+  - [x] Compute territory statistics from `GameState.board.collapsedSpaces` and any BoardManager helpers, keeping TS as the source of truth rather than re-implementing rules client-side.
   - [ ] Show both absolute counts and simple percentages of total board spaces for each player.
 - [ ] Move history list
   - [ ] Render a scrollable history based on `GameState.moveHistory`, with a simple, human-readable notation for placements, movements, captures, line collapses, and territory events.
   - [ ] Prepare the history panel to later include PlayerChoice events (line options, region order, eliminations, capture directions) as a separate, filterable layer.
-- [ ] Timer/clock display
-  - [ ] Use `GameState.timeControl` and `players[*].timeRemaining` to render per-player clocks in minutes:seconds, without enforcing time rules in the client.
+- [x] Timer/clock display
+  - [x] Use `GameState.timeControl` and `players[*].timeRemaining` to render per-player clocks in minutes:seconds, without enforcing time rules in the client.
   - [ ] Integrate clock highlighting with the current player indicator so the active player’s clock is visually dominant and paused clocks appear clearly inactive.
 - [ ] Victory progress indicators (ring elimination %, territory control %)
   - [ ] Drive victory progress from `GameState.totalRingsInPlay`, `GameState.totalRingsEliminated`, `GameState.victoryThreshold`, and `GameState.territoryVictoryThreshold`.
@@ -880,6 +880,68 @@ Keep non-choice WebSocket tasks (move broadcasting, reconnection, etc.) as TODO.
 ---
 
 ======= SEARCH
+## 🧪 Capture Sequence Enumeration Parity Harness (NEW)
+
+**File:** `tests/unit/captureSequenceEnumeration.test.ts`  
+**Status:** IMPLEMENTED (expensive but deterministic diagnostic)
+
+This Jest suite exhaustively compares **sandbox vs backend** capture-sequence enumeration over a large set of seeded-random positions, using the *real* marker and collapsed-space rules from both engines.
+
+**Core behaviour:**
+- Uses shared capture segment helpers and real marker/territory logic:
+  - Sandbox path delegates to `applyMarkerEffectsAlongPathOnBoard` + sandbox helpers.
+  - Backend path delegates to `applyMarkerEffectsAlongPathOnBoard` with `BoardManager` APIs.
+- For each maximal capture chain, keeps an evolving `BoardState` and stores the `finalBoard` for statistics.
+- Normalizes sequences into string keys for strict parity comparison per position.
+
+**Parameters / generation:**
+- `MAX_SEQUENCES = 100_000` per position (hard cap to avoid explosion).
+- ~50 seeded-random positions per board type, with constraints:
+  - **square8:** 2–6 targets.
+  - **square19:** 2–4 targets.
+  - **hexagonal:** 2–4 targets.
+- 0–2 initial collapsed spaces per board, placed away from a guaranteed primary capture ray so at least one legal capture always exists.
+
+**Diagnostics printed per board type:**
+- Case with **max number of distinct capture sequences** (with longest-chain example).
+- Case with **max capture chain length** (example chain).
+- Case with **max markers** on the final board after a valid capture sequence (board + example sequence).
+- Case with **max collapsed spaces** on the final board after a valid capture sequence (board + example sequence).
+
+These all use the same summary format (`logCaseSummary`, `logOutcomeSummary`) so console output is easy to scan and compare across board types.
+
+**Runtime caveats:**
+- This suite is intentionally heavy and currently takes several minutes to run (square19 + hexagonal are the slowest).
+- For CI, consider either:
+  - Reducing cases and/or `MAX_SEQUENCES`, or
+  - Running this suite in a separate, slower “diagnostic” job rather than the main per-PR test job.
+
+## 🧪 Trace Parity & GameTrace Infrastructure (NEW)
+
+**Status (November 18, 2025):** Core trace/parity infrastructure is implemented and exercised by Jest suites. Remaining work focuses on **semantic parity** (move semantics and phase alignment) plus hardening of replay helpers.
+
+**Implemented:**
+- [x] Promote `GameHistoryEntry` and `GameTrace` in `src/shared/types/game.ts` as the canonical event log for both engines (initial state + per-move snapshots, including S-invariant, optional state hashes, and board summaries).
+- [x] Add trace utilities in `tests/utils/traces.ts`:
+  - [x] `runSandboxAITrace(boardType, numPlayers, seed, maxSteps)` – run seeded AI-vs-AI games in `ClientSandboxEngine` and emit `GameTrace`.
+  - [x] `replayTraceOnBackend(trace)` – rebuild a backend `GameEngine` from `trace.initialState` and replay canonical moves via `findMatchingBackendMove`.
+  - [x] `replayTraceOnSandbox(trace)` – rebuild a fresh sandbox engine and re-apply the same canonical moves via `applyCanonicalMove`.
+- [x] Introduce a canonical sandbox mutation path:
+  - [x] `applyCanonicalMoveInternal(move, opts)` in `ClientSandboxEngine` applies canonical moves (place_ring, skip_placement, move_stack/move_ring, overtaking_capture) using shared sandbox helpers and returns a `stateChanged` boolean.
+  - [x] `applyCanonicalMove` wraps the internal helper, computing S/hashes and calling `appendHistoryEntry` only when the state hash changes, with an option to bypass no-dead-placement checks during canonical replays.
+- [x] Add `tests/unit/ClientSandboxEngine.traceStructure.test.ts` to enforce structural invariants on sandbox-emitted traces (contiguous `moveNumber` from 1, `actor === action.player`, non-negative S-invariants, explicit `skip_placement` entries when no legal placements exist).
+- [x] Extend README.md and tests/README.md with a "Trace parity & GameTrace" section documenting these helpers and how to run the parity/debug suites.
+- [x] Wire trace diagnostics controlled by env vars:
+  - [x] `RINGRIFT_TRACE_DEBUG` – logs sandbox trace opening sequences and backend mismatch snapshots (including valid move lists) to `logs/ai/trace-parity.log`.
+  - [x] `RINGRIFT_AI_DEBUG` – mirrors AI/trace diagnostics to the console and enables extra sandbox AI debug logging.
+
+**Next steps (tracked in Phase 1E / sandbox modularization and trace parity work):**
+- [ ] Unify sandbox AI turns (`maybeRunAITurn`) so that all AI actions are expressed as canonical `Move` objects and routed through `applyCanonicalMoveInternal` + history recording, eliminating bespoke mutation paths.
+- [ ] Solidify backend replay helpers by introducing a reusable `replayMovesOnBackend(initialConfig, moves: Move[]): GameTrace` that wraps `GameEngine` + `findMatchingBackendMove` and returns a backend `GameTrace` for analysis.
+- [ ] Keep the backend↔sandbox parity suites (`Backend_vs_Sandbox.traceParity.test.ts`, `Sandbox_vs_Backend.seed5.traceDebug.test.ts`, `Backend_vs_Sandbox.aiParallelDebug.test.ts`) green as semantic gaps are closed, using the new logging to diagnose remaining discrepancies (e.g. overtaking_capture vs non-enumerated backend moves, capture vs placement phase mismatches for specific seeds).
+
+---
+
 ### Key Documentation References
 
 **Game Rules:**
@@ -908,9 +970,9 @@ Keep non-choice WebSocket tasks (move broadcasting, reconnection, etc.) as TODO.
 
 ## 📊 Progress Summary
 
-### Phase 0 Progress: 1/3 tasks (33%)
+### Phase 0 Progress: 2/3 tasks (67%)
 - [x] 0.1 Testing Framework Setup (basic Jest + ts-jest wired, though config needs modernization)
-- [ ] 0.2 CI/CD Pipeline
+- [x] 0.2 CI/CD Pipeline
 - [ ] 0.3 Initial Test Coverage
 
 ### Phase 1 Progress: 10/11 tasks (~80%)
@@ -1003,6 +1065,15 @@ Keep non-choice WebSocket tasks (move broadcasting, reconnection, etc.) as TODO.
      - `tests/unit/GameEngine.territoryDisconnection.test.ts`
      - `tests/unit/AIEngine.serviceClient.test.ts`
 
+### Sandbox & BoardView Visual/State-Update Fixes (NEW)
+- [ ] Fix `/sandbox` chain capture re-rendering by coupling `ClientSandboxEngine` capture resolution steps to a React state bump (for example, `setSandboxTurn(t => t + 1)`), and clearing `selected` / `validTargets` / capture-related state after each human click that triggers a board mutation.
+- [ ] Ensure any human click that changes the sandbox board (including capture-direction choices and continuation landings) always triggers a fresh `gameState` read for `BoardView`, so ring stacks and markers never display stale heights after the final capture segment.
+- [ ] Align the movement grid overlay with square boards (8×8 and 19×19) by adjusting `computeBoardMovementGrid` and the SVG viewBox/transform in `BoardView` so grid node dots and movement lines coincide with cell centers for all board types.
+- [ ] Finalize valid-target highlight and marker styling across square and hex boards so that:
+  - [ ] Valid destinations use a thin, bright-green ring inset inside the cell border plus a subtle green background tint, with no highlight extending outside the cell.
+  - [ ] Hex and square markers share the three-layer pattern (outer colored ring, smaller dark middle disc, tiny inner core) with correct relative sizes and transparent outer backgrounds so the outer ring color remains vivid.
+- [ ] Add a brief manual test script (and/or a lightweight Jest/React test) that exercises a multi-segment capture in `/sandbox` on square8 and hex, confirming that stack heights and markers are visually correct after each segment and especially after the final capture segment.
+
 ## PHASE 3S: Sandbox Stage 2 – Fully Local Playable Game (NEW)
 
 **Current Status (November 15, 2025):** Core client-local sandbox functionality is implemented. `ClientSandboxEngine` plus `sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxElimination.ts`, `sandboxLines.ts`, `sandboxLinesEngine.ts`, `sandboxTerritory.ts`, `sandboxTerritoryEngine.ts`, and `sandboxVictory.ts` now drive a full rules-complete game loop in `/sandbox` (movement, overtaking and mandatory chain captures, line processing, territory disconnection on square + hex boards, and ring/territory victories), with dedicated Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts`. The remaining tasks below focus on richer HUD/UX integration, stronger sandbox AI heuristics, and additional lifecycle polish rather than basic rules coverage.
@@ -1054,6 +1125,54 @@ Keep non-choice WebSocket tasks (move broadcasting, reconnection, etc.) as TODO.
   - [ ] Clearly describe Sandbox Stage 2 as a fully local GameEngine harness that mirrors backend behaviour but lives entirely in the browser for experimentation and teaching.
   - [ ] Document that the sandbox AI is intentionally simple (random among valid options) to prioritise correctness and completeness of rules over strength.
 
+### 3S.6: Sandbox Stage 2 – Next Steps to Fully Playable Local Sandbox (Updated Nov 16, 2025)
+- [ ] Wire sandbox AI turn driving into `GamePage`:
+  - [ ] After each human action in sandbox mode, call `sandboxEngine.maybeRunAITurn()` (potentially in a loop) while `currentPlayer` is an AI and `gameStatus === 'active'`, so AI turns proceed automatically without manual clicks.
+  - [ ] Extend `ClientSandboxEngine.maybeRunAITurn` to handle both `ring_placement` and `movement` phases. For ring placement, choose among legal placement positions computed via `hasAnyLegalMoveOrCaptureFrom`; for movement, consider both simple moves from `enumerateSimpleMovementLandings` and overtaking captures from `enumerateCaptureSegmentsFrom` (via `sandboxCaptures` / `sandboxCaptureSearch`).
+- [ ] Surface sandbox-valid targets in the UI:
+  - [ ] Implement a sandbox-specific valid-move enumeration that mirrors backend `validMoves` but uses `ClientSandboxEngine` and the `sandboxMovement` / `sandboxCaptures` helpers instead of WebSocket data.
+  - [ ] When a stack is selected in sandbox mode, highlight all legal landing positions (including capture landings) in `BoardView` by setting `validTargets`, and ignore clicks on illegal cells.
+- [ ] Unify HUD between backend and sandbox games:
+  - [ ] Reuse `GameHUD` in local sandbox mode, driven by the sandbox `GameState` from `ClientSandboxEngine.getGameState()`, so ring counts, territory stats, current player, and phase are presented consistently across both surfaces.
+  - [ ] Ensure sandbox HUD reflects `GameState.totalRingsEliminated`, `victoryThreshold`, and `territoryVictoryThreshold` so local games expose progress toward victory just like backend games.
+- [ ] Harden sandbox AI choice behaviour:
+  - [ ] Keep the current “random among options” policy for all `PlayerChoice` types, but ensure the interaction handler always returns a valid option and never hangs if the choice is cleared mid-turn.
+  - [ ] Add a minimal timeout/guard around sandbox choices so miswired UI cannot stall the turn loop.
+- [ ] Add end-to-end sandbox flow tests:
+  - [ ] Add a focused Jest suite (e.g. `ClientSandboxEngine.playableFlow.test.ts`) that simulates a short 2-player sandbox game with one human and one AI, driving the engine via `handleHumanCellClick` and `maybeRunAITurn` and asserting that:
+    - [ ] All moves and captures applied by the AI are legal.
+    - [ ] Phases progress correctly for both players.
+    - [ ] The game reaches a valid victory state (`GameResult`) without entering an infinite loop.
+  - [ ] Add a second scenario that exercises at least one line-formation + territory-disconnection sequence in the sandbox, to confirm local rules stay aligned with backend behaviour.
+
+## 🧱 Architecture & Refactoring – Rules + Engines + AI (NEW)
+
+**Status (November 16, 2025):** INITIAL REFACTOR COMPLETE · **Priority:** P1 – HIGH (supports rules consistency, testability, and future sandbox/backend unification)
+
+### A. Completed Refactor (shared core helpers)
+- [x] Consolidate path/distance helpers between RuleEngine and shared core:
+  - [x] Updated `src/server/game/RuleEngine.ts` to use `getPathPositions` from `src/shared/engine/core.ts` instead of a private implementation.
+  - [x] Updated `RuleEngine.isPathClear` and `RuleEngine.isPathClearForHypothetical` to operate on `getPathPositions(from, to).slice(1, -1)` so that both backend and sandbox engines share identical path geometry for movement, capture, and no-dead-placement checks.
+  - [x] Re-ran the Jest suite to confirm that movement/capture tests (`RuleEngine.movementCapture.test.ts`, `RuleEngine.placementMultiRing.test.ts`, and the various `GameEngine`/`ClientSandboxEngine` parity tests) still pass, ensuring no behavioural regressions.
+
+### B. Planned Refactors (rules/engines/AI alignment)
+- [ ] Introduce a shared "movement/capture board view" helper in `src/shared/engine/core.ts` to centralize "can this stack move or capture?" logic:
+  - [ ] Define a minimal `MovementBoardView` interface (parallel to `CaptureSegmentBoardView`) with methods like `isValidPosition`, `isCollapsedSpace`, `getStackAt`, and `getMarkerOwner`, implemented via:
+    - [ ] A `BoardManager`-backed adapter on the backend (for `RuleEngine`/`GameEngine`).
+    - [ ] A `BoardState`-backed adapter on the client (for `ClientSandboxEngine`).
+  - [ ] Implement a shared `hasAnyLegalMoveOrCaptureFromOnBoard(boardType, from, player, boardView)` helper in `src/shared/engine/core.ts` that encapsulates:
+    - [ ] Non-capture movement enumeration (respecting stack height, collapsed spaces, and markers).
+    - [ ] Capture ray-walk and landing validation (delegating to `validateCaptureSegmentOnBoard` for segment legality).
+  - [ ] Refactor both:
+    - [ ] `RuleEngine.hasAnyLegalMoveOrCaptureFrom` to delegate to the shared helper via a `BoardManager` adapter.
+    - [ ] `ClientSandboxEngine.hasAnyLegalMoveOrCaptureFrom` to delegate via a sandbox `BoardState` adapter.
+  - [ ] Add focused unit tests around the new shared helper, using simple square and hex boards, to assert that backend and sandbox observers compute the same set of "at least one legal action" outcomes for representative positions.
+  - [ ] Once parity is confirmed, update `TODO.md`, `CURRENT_STATE_ASSESSMENT.md`, and `ARCHITECTURE_ASSESSMENT.md` to note that movement/capture reachability is now defined in a single shared location.
+
+### C. Future Opportunities (beyond first shared helper)
+- [ ] Evaluate consolidating capture move generation (ray-walk logic) between `RuleEngine.getValidCaptures`, `GameEngine.getCaptureOptionsFromPosition`, and sandbox capture helpers, using `validateCaptureSegmentOnBoard` as the single legality oracle and shared direction sets from `getMovementDirectionsForBoardType`.
+- [ ] Explore moving additional small geometric helpers (e.g. adjacency checks, simple distance helpers) fully into `src/shared/engine/core.ts` and making `BoardManager` a thin adapter over those helpers for both backend and potential future client-local engines.
+
 ## 🔧 Development Guidelines
 
 ### Code Quality Standards
@@ -1077,8 +1196,115 @@ Keep non-choice WebSocket tasks (move broadcasting, reconnection, etc.) as TODO.
 - Keep `KNOWN_ISSUES.md` updated with bugs
 - Update `README.md` with new features
 
+## 🧱 PHASE 1E: Engine Modularization – Backend & Sandbox (NEW)
+
+**Status:** Not Started  
+**Priority:** P1 - HIGH  
+**Rationale:** GameEngine/RuleEngine and ClientSandboxEngine/sandbox helpers have grown large and complex. We need to modularize engine-related code while preserving movement/capture parity, move-type unification, and existing AI/parity harness behaviour.
+
+### 1E.1: Baseline & Constraints (Movement Parity Safe)
+- [ ] Reconfirm current movement/capture/move-type invariants before refactor:
+  - [ ] `move_stack` is canonical non-capture movement; `move_ring` remains a legacy alias accepted by backend/sandbox and tests.
+  - [ ] Backend movement semantics for non-capture moves are constrained to legal rays via `RuleEngine.isStraightLineMovement`.
+  - [ ] Path rules: distance ≥ stack height; stacks/collapsed spaces block; markers do not block; legal landing: empty/own marker/stack; illegal: opponent marker.
+- [ ] Re-run and document as the guardrail suite for this refactor:
+  - [ ] `tests/unit/movementReachabilityParity.test.ts`
+  - [ ] `tests/unit/reachabilityParity.RuleEngine_vs_Sandbox.test.ts`
+  - [ ] `tests/unit/ClientSandboxEngine.moveParity.test.ts`
+  - [ ] `tests/unit/GameEngine.landingOnOwnMarker.test.ts`
+  - [ ] `tests/unit/captureSequenceEnumeration.test.ts`
+  - [ ] `tests/unit/Backend_vs_Sandbox.aiParallelDebug.test.ts`
+- [ ] Note in `CURRENT_STATE_ASSESSMENT.md` that engine modularization must keep these suites green throughout.
+
+### 1E.2: Backend Engine Modularization (RuleEngine, GameEngine, AI/Interaction Glue)
+
+**Files in scope:**
+- `src/server/game/RuleEngine.ts`
+- `src/server/game/GameEngine.ts`
+- `src/server/game/BoardManager.ts` (as needed for helpers/adapters)
+- `src/server/game/ai/AIEngine.ts`, `AIInteractionHandler.ts`, `DelegatingInteractionHandler.ts`
+- `src/server/game/PlayerInteractionManager.ts`
+- `src/server/game/WebSocketInteractionHandler.ts`
+
+**Goals:** Keep public entrypoints and types stable while splitting concerns into smaller, cohesive modules (target: each file well under ~700 lines).
+
+- [ ] Design target backend engine module layout (document in `ARCHITECTURE_ASSESSMENT.md`):
+  - [ ] Turn/phase orchestration (e.g. `GameEngine` core turn loop, `advanceGame`, game end handling).
+  - [ ] Rules/validation and enumerators (e.g. movement, captures, lines, territory, placements), ideally under `src/server/game/rules/` alongside `placementHelpers.ts`.
+  - [ ] Board/geometry helpers (adapters around `BoardManager` + `src/shared/engine/core.ts`).
+  - [ ] AI/choice integration glue (AIEngine + interaction handlers) separate from pure rules.
+- [ ] Extract RuleEngine responsibilities into dedicated modules without changing semantics:
+  - [ ] Movement & simple non-capture enumeration/validation.
+  - [ ] Capture validation and capture-sequence helpers.
+  - [ ] Line formation helpers / enumerators.
+  - [ ] Territory disconnection helpers.
+  - [ ] Shared reachability helpers (wrapping `hasAnyLegalMoveOrCaptureFromOnBoard`).
+- [ ] Extract GameEngine responsibilities into dedicated modules:
+  - [ ] Turn/phase state machine and per-turn state (`hasPlacedThisTurn`, `mustMoveFromStackKey`, `chainCaptureState`).
+  - [ ] Move application and game end handling (`applyMove`, `makeMove`, `getValidMoves`, `checkGameEnd`).
+  - [ ] Forced elimination and ring/territory victory handling.
+  - [ ] PlayerChoice plumbing (line reward choice, capture direction choice, region/ring elimination ordering) kept in a clearly separated interaction layer.
+- [ ] Introduce narrow internal interfaces where useful (e.g. `RulesEngineFacade`, `TurnEngine`, `BoardViewAdapter`) while keeping external API stable:
+  - [ ] Preserve existing public methods used by tests, WebSocket handlers, and CLI tools.
+  - [ ] Avoid breaking call sites in `test-complete-backend.ts` and WebSocket server.
+- [ ] After each extraction step, re-run:
+  - [ ] Core backend engine tests (all `tests/unit/GameEngine.*.test.ts`, `tests/unit/RuleEngine.*.test.ts`).
+  - [ ] Player interaction/choice tests (`tests/unit/PlayerInteractionManager.test.ts`, `tests/unit/WebSocketInteractionHandler.test.ts`, WebSocket/AI integration tests).
+  - [ ] Movement/capture parity suites listed in 1E.1.
+
+### 1E.3: Sandbox Engine Modularization (ClientSandboxEngine + Helpers)
+
+**Files in scope:**
+- `src/client/sandbox/ClientSandboxEngine.ts`
+- `src/client/sandbox/sandboxMovement.ts`
+- `src/client/sandbox/sandboxCaptures.ts`
+- `src/client/sandbox/sandboxCaptureSearch.ts`
+- `src/client/sandbox/sandboxLines.ts`, `sandboxLinesEngine.ts`
+- `src/client/sandbox/sandboxTerritory.ts`, `sandboxTerritoryEngine.ts`
+- `src/client/sandbox/sandboxElimination.ts`
+- `src/client/sandbox/sandboxVictory.ts`
+- `src/client/sandbox/localSandboxController.ts`
+
+**Goals:** Keep sandbox rules in parity with backend while making the client-local engine easier to understand, test, and extend.
+
+- [ ] Design target sandbox engine module layout (document in `CURRENT_STATE_ASSESSMENT.md` and reference from `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`):
+  - [ ] Sandbox turn/phase orchestration layer (client-local analogue of GameEngine turn loop).
+  - [ ] Movement and capture helpers (building on `sandboxMovement`/`sandboxCaptures` and shared `core.ts`).
+  - [ ] Line and territory helpers (`sandboxLines*`, `sandboxTerritory*`).
+  - [ ] Victory/termination helpers (`sandboxVictory`, forced elimination).
+  - [ ] Sandbox AI loop (`maybeRunAITurn`) and PlayerChoice glue, kept distinct from pure rules.
+- [ ] Clarify and, where helpful, re-split responsibilities so that:
+  - [ ] `ClientSandboxEngine` focuses on state orchestration, turn loop, and choice/AI integration.
+  - [ ] Pure rules/geometry logic lives in small helper modules that mirror backend structure and shared `core.ts` helpers.
+- [ ] Ensure any new sandbox modules:
+  - [ ] Use shared types from `src/shared/types/game.ts` and helpers from `src/shared/engine/core.ts` rather than duplicating logic.
+  - [ ] Keep movement and capture semantics identical to the backend.
+- [ ] After refactors, re-run sandbox-focused suites:
+  - [ ] `tests/unit/ClientSandboxEngine.*.test.ts` (all).
+  - [ ] Sandbox AI tests (`tests/unit/ClientSandboxEngine.aiSimulation.test.ts`, `tests/unit/ClientSandboxEngine.aiMovementCaptures.test.ts`).
+
+### 1E.4: Parity & Behavioural Regression Guardrail
+- [ ] Add a short comment block in new backend and sandbox engine modules noting that movement/capture semantics are verified by the parity harnesses listed in 1E.1.
+- [ ] Ensure that the backend↔sandbox harness tests still pass after modularization:
+  - [ ] `tests/unit/Sandbox_vs_Backend.aiHeuristicCoverage.test.ts` (allowing for known AI-depth issues documented in `KNOWN_ISSUES.md`).
+  - [ ] `tests/unit/Backend_vs_Sandbox.aiParallelDebug.test.ts`.
+- [ ] Keep the move-type unification behaviour stable:
+  - [ ] Backend `validateMove` continues to treat `move_ring` as a legacy alias for `move_stack`.
+  - [ ] Sandbox `applyCanonicalMove` continues to accept both while emitting `move_stack` for AI moves.
+
+### 1E.5: Documentation & Follow-up Work Hooks
+- [ ] Add a concise "Engine Module Layout" section to:
+  - [ ] `ARCHITECTURE_ASSESSMENT.md` (backend engine layout).
+  - [ ] `CURRENT_STATE_ASSESSMENT.md` (sandbox/local engine layout and parity notes).
+- [ ] Update `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` to reference the new modular engine structure as the place to plug in:
+  - [ ] Future AI termination fixes.
+  - [ ] Game phase/state debugging.
+  - [ ] Additional parity harnesses and Rust-test ports.
+- [ ] Add a brief note in `TODO.md` under "Near-Term Implementation Focus" pointing back to Phase 1E once the initial layout is agreed.
+
 ---
 
 **Document Version:** 2.1  
-**Last Updated:** November 14, 2025  
+**Last Updated:** November 16, 2025  
 **Maintained By:** Development Team
+****

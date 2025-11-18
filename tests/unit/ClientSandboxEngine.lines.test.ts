@@ -69,7 +69,7 @@ describe('ClientSandboxEngine line processing', () => {
     board.stacks.set(positionToString(position), stack);
   }
 
-  test('exact-length line collapses all markers and eliminates a cap', () => {
+  test('Q7_exact_length_line_collapse_sandbox', () => {
     const engine = createEngine();
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;

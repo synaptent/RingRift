@@ -3,7 +3,7 @@
  * Delegates to Python AI microservice for move generation
  */
 
-import { GameState, Move, AIProfile, AITacticType, AIControlMode, LineRewardChoice, RingEliminationChoice, RegionOrderChoice } from '../../../shared/types/game';
+import { GameState, Move, AIProfile, AITacticType, AIControlMode, LineRewardChoice, RingEliminationChoice, RegionOrderChoice, positionToString } from '../../../shared/types/game';
 import { getAIServiceClient, AIType as ServiceAIType } from '../../services/AIServiceClient';
 import { logger } from '../../utils/logger';
 
@@ -133,15 +133,17 @@ export class AIEngine {
         aiType as unknown as ServiceAIType
       );
 
+      const normalizedMove = this.normalizeServiceMove(response.move, gameState, playerNumber);
+
       logger.info('AI move generated', {
         playerNumber,
-        moveType: response.move?.type,
+        moveType: normalizedMove?.type,
         evaluation: response.evaluation,
         thinkingTime: response.thinking_time_ms,
         aiType: response.ai_type
       });
 
-      return response.move;
+      return normalizedMove;
     } catch (error) {
       logger.error('Failed to get AI move from service', {
         playerNumber,
@@ -149,6 +151,92 @@ export class AIEngine {
       });
       throw error;
     }
+  }
+
+  /**
+   * Normalise a move returned from the Python AI service so that it
+   * respects the backend placement semantics:
+   * - Use the canonical 'place_ring' type for ring placements.
+   * - On existing stacks, enforce exactly 1 ring per placement and set
+   *   placedOnStack=true.
+   * - On empty cells, allow small multi-ring placements by filling in
+   *   placementCount when the service omits it, clamped by the
+   *   player’s ringsInHand.
+   *
+   * This keeps the AI service relatively agnostic of RingRift’s
+   * evolving placement rules while ensuring GameEngine/RuleEngine see
+   * well-formed moves.
+   */
+  private normalizeServiceMove(
+    move: Move | null,
+    gameState: GameState,
+    playerNumber: number
+  ): Move | null {
+    if (!move) {
+      return null;
+    }
+
+    // Defensive: if board/players are missing (e.g. in unit tests that
+    // mock GameState), return the move as-is.
+    if (!gameState.board || !Array.isArray(gameState.players)) {
+      return move;
+    }
+
+    const normalized: Move = { ...move };
+
+    // Normalise any historical 'place' type to the canonical
+    // 'place_ring'.
+    if (normalized.type === 'place' as any) {
+      normalized.type = 'place_ring';
+    }
+
+    if (normalized.type !== 'place_ring') {
+      return normalized;
+    }
+
+    const playerState = gameState.players.find(p => p.playerNumber === playerNumber);
+    const ringsInHand = playerState?.ringsInHand ?? 0;
+
+    if (!normalized.to || ringsInHand <= 0) {
+      // Let RuleEngine reject impossible placements; we only ensure the
+      // metadata is consistent when a placement is otherwise plausible.
+      return normalized;
+    }
+
+    const board = gameState.board;
+    const posKey = positionToString(normalized.to);
+    const stack = board.stacks.get(posKey as any);
+    const isOccupied = !!stack && stack.rings.length > 0;
+
+    if (isOccupied) {
+      // Canonical rule: at most one ring per placement onto an existing
+      // stack, and the placement is flagged as stacking.
+      normalized.placedOnStack = true;
+      normalized.placementCount = 1;
+      return normalized;
+    }
+
+    // Empty cell: allow small multi-ring placements. If the service
+    // already provided a placementCount, clamp it; otherwise choose a
+    // simple count in [1, min(3, ringsInHand)].
+    const maxPerPlacement = ringsInHand;
+    if (maxPerPlacement <= 0) {
+      return normalized;
+    }
+
+    if (normalized.placementCount && normalized.placementCount > 0) {
+      const clamped = Math.min(Math.max(normalized.placementCount, 1), maxPerPlacement);
+      normalized.placementCount = clamped;
+      normalized.placedOnStack = false;
+      return normalized;
+    }
+
+    const upper = Math.min(3, maxPerPlacement);
+    const chosen = upper > 1 ? 1 + Math.floor(Math.random() * upper) : 1;
+    normalized.placementCount = chosen;
+    normalized.placedOnStack = false;
+
+    return normalized;
   }
 
   /**

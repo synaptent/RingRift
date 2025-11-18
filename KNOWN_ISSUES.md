@@ -87,6 +87,90 @@ especially in less-tested corners of the rules.
   loop, UI integration) so targeted runs are easy.
 - Raise coverage thresholds per axis once baseline suites are in place.
 
+### P0.2 – Backend ↔ Sandbox Semantic Trace Parity Gaps
+
+**Component(s):** GameEngine, ClientSandboxEngine, trace utilities, AI turn logic  
+**Severity:** Critical for engine correctness/debuggability  
+**Status:** Trace infrastructure in place; several semantic mismatches remain
+
+**What’s implemented and working:**
+
+- Canonical trace types (`GameHistoryEntry`, `GameTrace`) defined in
+  `src/shared/types/game.ts` and used across backend and sandbox.
+- Shared trace helpers in `tests/utils/traces.ts`:
+  - `runSandboxAITrace` – generates sandbox AI-vs-AI traces from
+    `ClientSandboxEngine`.
+  - `replayTraceOnBackend` – rebuilds a backend `GameEngine` from
+    `trace.initialState` and replays canonical moves using
+    `findMatchingBackendMove`.
+  - `replayTraceOnSandbox` – replays canonical moves through a fresh
+    `ClientSandboxEngine`.
+- Backend replay now calls `engine.stepAutomaticPhasesForTesting()` between
+  moves, so internal `line_processing` / `territory_processing` phases no
+  longer stall replay.
+- Diagnostic env vars and logging:
+  - `RINGRIFT_TRACE_DEBUG=1` – writes sandbox opening sequences and
+    backend mismatch snapshots to `logs/ai/trace-parity.log`.
+  - `RINGRIFT_AI_DEBUG=1` – mirrors AI/trace diagnostics to the console.
+- Parity/debug suites exist and are wired into Jest:
+  - `Backend_vs_Sandbox.traceParity.test.ts`
+  - `Sandbox_vs_Backend.seed5.traceDebug.test.ts`
+  - `Backend_vs_Sandbox.aiParallelDebug.test.ts`
+
+**What’s going wrong:**
+
+Even with phase-stepping and trace structure fixes, several **semantic
+mismatches** remain between backend and sandbox traces:
+
+- In some AI-generated positions (e.g. certain `square8` seeds such as seed 5
+  in `Sandbox_vs_Backend.seed5.traceDebug.test.ts`), the sandbox emits
+  `overtaking_capture` moves where the backend never enumerates a matching
+  capture from the same position.
+- In other positions, the sandbox AI attempts `place_ring` while the backend
+  is already in a capture phase with only `overtaking_capture` moves legal.
+  From the backend’s perspective, the attempted placement is illegal given
+  the current phase and rules.
+- These discrepancies appear **after** internal-phase replay issues were fixed,
+  so they reflect genuine differences in how the sandbox AI and backend
+  enumerate/apply moves and transitions between phases, not simply replay
+  harness problems.
+
+**Impact:**
+
+- The parity suites above intermittently fail, even though the S-invariant,
+  hashing, and trace logging are wired correctly.
+- Debugging backend bugs via sandbox AI traces is harder than it should be
+  because some failures are caused by sandbox semantics diverging from the
+  backend rather than by true backend rule bugs.
+- Until these semantic gaps are closed, trace-based diagnostics must always
+  distinguish **infrastructure issues** (now mostly resolved) from
+  **sandbox/backend semantic differences**.
+
+**Planned direction (see TODO.md Phase 1E / Sandbox Stage 2):**
+
+- Unify all sandbox canonical mutations through a single, well-structured
+  path in `ClientSandboxEngine`:
+  - Treat `applyCanonicalMoveInternal` as the single source of truth for
+    applying canonical `Move` objects (place_ring, skip_placement,
+    move_stack/move_ring, overtaking_capture).
+  - Refactor `maybeRunAITurn` so that **every** AI action is expressed as a
+    canonical `Move` and routed through the same mutation + history pipeline
+    used by `applyCanonicalMove`, instead of using bespoke mutation logic.
+- Harden backend replay helpers:
+  - Introduce a generic `replayMovesOnBackend(initialConfig, moves: Move[]):
+    GameTrace` helper that builds a backend `GameEngine`, finds matching
+    backend moves via `findMatchingBackendMove`, and produces a backend
+    `GameTrace` suitable for parity analysis.
+  - Treat `replayTraceOnBackend` / `replayMovesOnBackend` as canonical
+    backend replay APIs used by parity tests and future tooling.
+- Use the existing parity suites plus the new logging to iteratively close
+  semantic gaps:
+  - When a parity failure occurs, confirm first that the backend has a
+    genuinely matching legal move for the sandbox action (or vice versa).
+  - Where semantics diverge (e.g. missing backend overtaking captures, phase
+    transitions that disagree), treat that as a P0/P1 engine bug and fix the
+    underlying rules/phase logic rather than patching tests.
+
 ---
 
 ## 🟠 P1 – High-Priority Issues (UX, AI, Multiplayer)

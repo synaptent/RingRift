@@ -11,10 +11,15 @@ import {
 import { BoardManager } from './BoardManager';
 import {
   calculateCapHeight,
+  calculateDistance,
   getMovementDirectionsForBoardType,
+  getPathPositions,
   validateCaptureSegmentOnBoard,
-  CaptureSegmentBoardView
+  CaptureSegmentBoardView,
+  MovementBoardView,
+  hasAnyLegalMoveOrCaptureFromOnBoard
 } from '../../shared/engine/core';
+import { createHypotheticalBoardWithPlacement as createHypotheticalBoardWithPlacementHelper } from './rules/placementHelpers';
 
 export class RuleEngine {
   private boardManager: BoardManager;
@@ -44,13 +49,60 @@ export class RuleEngine {
     switch (move.type) {
       case 'place_ring':
         return this.validateRingPlacement(move, gameState);
+      case 'move_ring': // legacy alias for simple stack movement
       case 'move_stack':
         return this.validateStackMovement(move, gameState);
       case 'overtaking_capture':
         return this.validateCapture(move, gameState);
+      case 'skip_placement':
+        // Trivial validation: skipping placement is only allowed during the
+        // ring_placement phase, and only when placement is optional under
+        // the rules (i.e. the player has rings in hand *and* at least one
+        // controlled stack with a legal move or capture available).
+        return this.validateSkipPlacement(move, gameState);
       default:
         return false;
     }
+  }
+
+  /**
+   * Validates a skip_placement move. This is a no-op move that is only
+   * legal during the ring_placement phase when placement is *optional*:
+   * the player has rings in hand, controls at least one stack on the
+   * board, and has at least one legal move or capture from some
+   * controlled stack. It is *not* allowed to skip when placement is
+   * mandatory (no stacks on board, or stacks with no legal moves).
+   *
+   * Rule Reference: Section 4.1 / 2.1 – optional placement when
+   * movement/capture is available.
+   */
+  private validateSkipPlacement(move: Move, gameState: GameState): boolean {
+    if (gameState.currentPhase !== 'ring_placement') {
+      return false;
+    }
+
+    const playerState = gameState.players.find(p => p.playerNumber === move.player);
+    if (!playerState || playerState.ringsInHand <= 0) {
+      // No rings to optionally place – skipping is meaningless here.
+      return false;
+    }
+
+    const board = gameState.board;
+    const playerStacks = this.getPlayerStacks(move.player, board);
+
+    // If the player has no stacks at all, placement is mandatory.
+    if (playerStacks.length === 0) {
+      return false;
+    }
+
+    // Check if at least one controlled stack has a legal move or capture
+    // in the *current* board state. If none do, placement is mandatory
+    // (the player is effectively blocked without placing).
+    const hasAnyAction = playerStacks.some(pos =>
+      this.hasAnyLegalMoveOrCaptureFrom(pos, move.player, board)
+    );
+
+    return hasAnyAction;
   }
 
   /**
@@ -63,38 +115,84 @@ export class RuleEngine {
       return false;
     }
 
-    // Check if position is valid and empty
+    // Basic position validity
     if (!this.boardManager.isValidPosition(move.to)) {
       return false;
     }
 
-    const posKey = positionToString(move.to);
-    const stack = gameState.board.stacks.get(posKey);
-    if (stack && stack.rings.length > 0) {
-      return false; // Position already occupied
-    }
-
-    // Check if player has rings available to place
-    const playerStacks = this.getPlayerStacks(move.player, gameState.board);
-    const totalRingsPlaced = playerStacks.reduce((sum, pos) => {
-      const stackKey = positionToString(pos);
-      const stack = gameState.board.stacks.get(stackKey);
-      return sum + (stack ? stack.rings.length : 0);
-    }, 0);
-    
-    if (totalRingsPlaced >= this.boardConfig.ringsPerPlayer) {
+    // Cannot place on collapsed spaces
+    if (this.boardManager.isCollapsedSpace(move.to, gameState.board)) {
       return false;
     }
 
-    // Rule fix: Placement must leave at least one legal move or capture
-    // Create a hypothetical board state with the ring placed
+    // Cannot place on a marker. Markers represent movement history and
+    // must not coexist with stacks; allowing placement onto a marker
+    // would create stack+marker coexistence and break the S-invariant.
+    {
+      const posKey = positionToString(move.to);
+      if (gameState.board.markers.has(posKey)) {
+        return false;
+      }
+    }
+
+    const playerState = gameState.players.find(p => p.playerNumber === move.player);
+    if (!playerState) {
+      return false;
+    }
+
+    const ringsInHand = playerState.ringsInHand;
+    if (ringsInHand <= 0) {
+      return false;
+    }
+
+    // Compute how many rings this player already has on the board
+    const playerStacks = this.getPlayerStacks(move.player, gameState.board);
+    const ringsOnBoard = playerStacks.reduce((sum, pos) => {
+      const stackKey = positionToString(pos);
+      const stackAtPos = gameState.board.stacks.get(stackKey);
+      return sum + (stackAtPos ? stackAtPos.rings.length : 0);
+    }, 0);
+
+    const perPlayerCap = this.boardConfig.ringsPerPlayer;
+    const remainingByCap = perPlayerCap - ringsOnBoard;
+    const remainingBySupply = ringsInHand;
+    const maxAvailable = Math.min(remainingByCap, remainingBySupply);
+
+    if (maxAvailable <= 0) {
+      return false;
+    }
+
+    const posKey = positionToString(move.to);
+    const existingStack = gameState.board.stacks.get(posKey);
+    const isOccupied = !!(existingStack && existingStack.rings.length > 0);
+
+    let maxPerPlacement: number;
+    if (isOccupied) {
+      // On existing stacks we only ever place a single ring
+      if (maxAvailable < 1) {
+        return false;
+      }
+      maxPerPlacement = 1;
+    } else {
+      // On empty spaces we allow multi-ring placements (typically up to 3)
+      maxPerPlacement = Math.min(3, maxAvailable);
+    }
+
+    const requestedCount = move.placementCount ?? 1;
+
+    if (requestedCount < 1 || requestedCount > maxPerPlacement) {
+      return false;
+    }
+
+    // No-dead-placement: after placing, the resulting stack must have at least
+    // one legal move or capture.
     const hypotheticalBoard = this.createHypotheticalBoardWithPlacement(
       gameState.board,
       move.to,
-      move.player
+      move.player,
+      requestedCount
     );
 
-    // Check if the resulting stack has any legal moves or captures
     if (!this.hasAnyLegalMoveOrCaptureFrom(move.to, move.player, hypotheticalBoard)) {
       return false;
     }
@@ -120,6 +218,13 @@ export class RuleEngine {
     const fromKey = positionToString(move.from);
     const sourceStack = gameState.board.stacks.get(fromKey);
     if (!sourceStack || sourceStack.controllingPlayer !== move.player) {
+      return false;
+    }
+
+    // Movement must follow a straight ray consistent with the board's
+    // movement directions (Moore for square, cube axes for hex), matching
+    // sandboxMovement and hasAnyLegalMoveOrCaptureFromOnBoard.
+    if (!this.isStraightLineMovement(move.from, move.to)) {
       return false;
     }
 
@@ -172,7 +277,7 @@ export class RuleEngine {
    */
   private isPathClear(from: Position, to: Position, board: BoardState): boolean {
     // Get path positions (excluding start and end)
-    const pathPositions = this.getPathPositions(from, to);
+    const pathPositions = getPathPositions(from, to).slice(1, -1);
     
     // Check each position along the path
     for (const pos of pathPositions) {
@@ -196,45 +301,9 @@ export class RuleEngine {
   }
 
   /**
-   * Gets all positions along a straight path (excluding start and end)
-   * Helper for path validation and marker processing
+   * Validates overtaking capture move according to RingRift rules
+   * Rule Reference: Section 10.1, Section 10.2
    */
-  private getPathPositions(from: Position, to: Position): Position[] {
-    const positions: Position[] = [];
-    
-    // Calculate direction
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const dz = (to.z || 0) - (from.z || 0);
-    
-    // Determine step count
-    const steps = Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz));
-    
-    if (steps === 0) {
-      return positions; // Same position
-    }
-    
-    // Calculate unit step
-    const stepX = dx / steps;
-    const stepY = dy / steps;
-    const stepZ = dz / steps;
-    
-    // Generate intermediate positions
-    for (let i = 1; i < steps; i++) {
-      const x = Math.round(from.x + stepX * i);
-      const y = Math.round(from.y + stepY * i);
-      
-      // Only include z if the positions have z coordinates (hexagonal board)
-      if (from.z !== undefined || to.z !== undefined) {
-        const z = Math.round((from.z || 0) + stepZ * i);
-        positions.push({ x, y, z });
-      } else {
-        positions.push({ x, y });
-      }
-    }
-    
-    return positions;
-  }
 
   /**
    * Validates overtaking capture move according to RingRift rules
@@ -508,35 +577,87 @@ export class RuleEngine {
   }
 
   /**
-   * Checks for game end conditions
+   * Checks for game end conditions.
+   *
+   * Backend victory semantics are aligned with the sandbox victory helper
+   * (src/client/sandbox/sandboxVictory.ts) and the compact rules:
+   *
+   * - Ring-elimination victory: a player wins when their eliminatedRings
+   *   count reaches or exceeds GameState.victoryThreshold (>50% of total
+   *   rings in play).
+   * - Territory-control victory: a player wins when their territorySpaces
+   *   count reaches or exceeds GameState.territoryVictoryThreshold (>50%
+   *   of board spaces).
+   * - Fallback structural terminality: when there are no stacks on the
+   *   board and no player has ringsInHand, the game cannot progress.
+   *   In that case we apply territory, then eliminated-rings tie-breakers;
+   *   if still tied, we mark the game as completed with no winner.
    */
   checkGameEnd(gameState: GameState): { isGameOver: boolean; winner?: number; reason?: string } {
-    const playerStats = this.getPlayerStats(gameState);
-    const totalRings = Object.values(playerStats).reduce((sum, stats) => sum + stats.totalRings, 0);
-    const totalPositions = this.boardConfig.totalSpaces;
+    const players = gameState.players;
 
-    // Check ring elimination victory (>50% of total rings eliminated)
-    for (const [playerNumber, stats] of Object.entries(playerStats)) {
-      const eliminationPercentage = (totalRings - stats.totalRings) / totalRings;
-      if (eliminationPercentage > 0.5) {
-        return {
-          isGameOver: true,
-          winner: parseInt(playerNumber),
-          reason: 'ring_elimination'
-        };
-      }
+    // 1) Ring-elimination victory: strictly more than 50% of total rings
+    // in play have been eliminated for a single player.
+    const ringWinner = players.find(
+      p => p.eliminatedRings >= gameState.victoryThreshold
+    );
+    if (ringWinner) {
+      return {
+        isGameOver: true,
+        winner: ringWinner.playerNumber,
+        reason: 'ring_elimination'
+      };
     }
 
-    // Check territory control victory (>50% of board controlled)
-    for (const [playerNumber, stats] of Object.entries(playerStats)) {
-      const territoryPercentage = stats.controlledPositions / totalPositions;
-      if (territoryPercentage > 0.5) {
+    // 2) Territory-control victory: strictly more than 50% of the board's
+    // spaces are controlled as territory by a single player.
+    const territoryWinner = players.find(
+      p => p.territorySpaces >= gameState.territoryVictoryThreshold
+    );
+    if (territoryWinner) {
+      return {
+        isGameOver: true,
+        winner: territoryWinner.playerNumber,
+        reason: 'territory_control'
+      };
+    }
+
+    // 3) Fallback structural terminality: no stacks on the board and no
+    // rings in hand for any player. In this situation the game cannot
+    // progress further, even if nobody has reached the strict thresholds.
+    const noStacksLeft = gameState.board.stacks.size === 0;
+    const anyRingsInHand = players.some(p => p.ringsInHand > 0);
+
+    if (noStacksLeft && !anyRingsInHand) {
+      // First tie-breaker: territory spaces.
+      const maxTerritory = Math.max(...players.map(p => p.territorySpaces));
+      const territoryLeaders = players.filter(p => p.territorySpaces === maxTerritory);
+
+      if (territoryLeaders.length === 1 && maxTerritory > 0) {
         return {
           isGameOver: true,
-          winner: parseInt(playerNumber),
+          winner: territoryLeaders[0].playerNumber,
           reason: 'territory_control'
         };
       }
+
+      // Second tie-breaker: eliminated rings.
+      const maxEliminated = Math.max(...players.map(p => p.eliminatedRings));
+      const eliminationLeaders = players.filter(p => p.eliminatedRings === maxEliminated);
+
+      if (eliminationLeaders.length === 1 && maxEliminated > 0) {
+        return {
+          isGameOver: true,
+          winner: eliminationLeaders[0].playerNumber,
+          reason: 'ring_elimination'
+        };
+      }
+
+      // Perfect tie: signal a completed game with no specific winner.
+      return {
+        isGameOver: true,
+        reason: 'game_completed'
+      };
     }
 
     return { isGameOver: false };
@@ -550,9 +671,34 @@ export class RuleEngine {
     const currentPlayer = gameState.currentPlayer;
 
     switch (gameState.currentPhase) {
-      case 'ring_placement':
+      case 'ring_placement': {
+        // Generate all legal ring placements for the active player.
         moves.push(...this.getValidRingPlacements(currentPlayer, gameState));
+
+        // Also expose the skip_placement no-op when (and only when) placement
+        // is optional under the rules. This mirrors TurnEngine.hasValidPlacements
+        // and prevents "active game with no legal moves" states in
+        // ring_placement when the player has rings in hand *and* at least one
+        // legal move/capture from a controlled stack.
+        const skipMoveCandidate: Move = {
+          id: 'skip_placement',
+          type: 'skip_placement',
+          player: currentPlayer,
+          // Skip placement is a pure phase transition with no board
+          // coordinates. However, the shared Move type requires a `to`
+          // position, so we supply a harmless sentinel value that is
+          // never inspected by skip_placement-specific logic.
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: gameState.moveHistory.length + 1
+        };
+
+        if (this.validateSkipPlacement(skipMoveCandidate, gameState)) {
+          moves.push(skipMoveCandidate);
+        }
         break;
+      }
       case 'movement':
         moves.push(...this.getValidStackMovements(currentPlayer, gameState));
         break;
@@ -569,21 +715,83 @@ export class RuleEngine {
    */
   private getValidRingPlacements(player: number, gameState: GameState): Move[] {
     const moves: Move[] = [];
+    const playerState = gameState.players.find(p => p.playerNumber === player);
+    if (!playerState || playerState.ringsInHand <= 0) {
+      return moves;
+    }
+
+    const board = gameState.board;
     const allPositions = this.boardManager.getAllPositions();
-    
+
+    // Compute rings on board for capacity checks
+    const playerStacks = this.getPlayerStacks(player, board);
+    const ringsOnBoard = playerStacks.reduce((sum, pos) => {
+      const stackKey = positionToString(pos);
+      const stackAtPos = board.stacks.get(stackKey);
+      return sum + (stackAtPos ? stackAtPos.rings.length : 0);
+    }, 0);
+
+    const perPlayerCap = this.boardConfig.ringsPerPlayer;
+    const remainingByCap = perPlayerCap - ringsOnBoard;
+    const remainingBySupply = playerState.ringsInHand;
+    const maxAvailableGlobal = Math.min(remainingByCap, remainingBySupply);
+
+    if (maxAvailableGlobal <= 0) {
+      return moves;
+    }
+
     for (const pos of allPositions) {
+      if (!this.boardManager.isValidPosition(pos)) {
+        continue;
+      }
+
+      if (this.boardManager.isCollapsedSpace(pos, board)) {
+        continue;
+      }
+
       const posKey = positionToString(pos);
-      const stack = gameState.board.stacks.get(posKey);
-      if (!stack || stack.rings.length === 0) {
-        moves.push({
-          id: `place-${positionToString(pos)}`,
+      const stack = board.stacks.get(posKey);
+      const isOccupied = !!(stack && stack.rings.length > 0);
+
+      if (isOccupied) {
+        if (maxAvailableGlobal < 1) {
+          continue;
+        }
+
+        const candidate: Move = {
+          id: `place-${positionToString(pos)}-stack`,
           type: 'place_ring',
           player,
           to: pos,
+          placedOnStack: true,
+          placementCount: 1,
           timestamp: new Date(),
           thinkTime: 0,
           moveNumber: gameState.moveHistory.length + 1
-        });
+        };
+
+        if (this.validateRingPlacement(candidate, gameState)) {
+          moves.push(candidate);
+        }
+      } else {
+        const maxPerPlacement = Math.min(3, maxAvailableGlobal);
+        for (let count = 1; count <= maxPerPlacement; count++) {
+          const candidate: Move = {
+            id: `place-${positionToString(pos)}-x${count}`,
+            type: 'place_ring',
+            player,
+            to: pos,
+            placedOnStack: false,
+            placementCount: count,
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber: gameState.moveHistory.length + 1
+          };
+
+          if (this.validateRingPlacement(candidate, gameState)) {
+            moves.push(candidate);
+          }
+        }
       }
     }
 
@@ -799,16 +1007,10 @@ export class RuleEngine {
   }
 
   private calculateDistance(from: Position, to: Position): number {
-    if (this.boardConfig.type === 'hexagonal') {
-      // Hexagonal distance
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const dz = (to.z || 0) - (from.z || 0);
-      return (Math.abs(dx) + Math.abs(dy) + Math.abs(dz)) / 2;
-    } else {
-      // Manhattan distance for square boards
-      return Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
-    }
+    // Delegate to the shared core helper so distance semantics match
+    // ClientSandboxEngine and capture validation (Chebyshev for
+    // square boards, cube distance for hex).
+    return calculateDistance(this.boardConfig.type as any, from, to);
   }
 
   private areAdjacent(pos1: Position, pos2: Position): boolean {
@@ -860,6 +1062,34 @@ export class RuleEngine {
     return adjacent;
   }
 
+  /**
+   * True if the move from `from` to `to` is along a straight ray consistent
+   * with the board's movement directions (8-direction Moore for square,
+   * 6 cube-coordinate axes for hex). This mirrors the directional checks
+   * used by the shared capture validator and sandbox movement.
+   */
+  private isStraightLineMovement(from: Position, to: Position): boolean {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = (to.z || 0) - (from.z || 0);
+
+    if (this.boardConfig.type === 'hexagonal') {
+      // In cube coordinates, an axis-aligned ray changes exactly two
+      // coordinates (the third is implied by x + y + z = 0).
+      const coordChanges = [dx !== 0, dy !== 0, dz !== 0].filter(Boolean).length;
+      return coordChanges === 2;
+    }
+
+    // Square boards: orthogonal or diagonal only.
+    if (dx === 0 && dy === 0) {
+      return false;
+    }
+    if (dx !== 0 && dy !== 0 && Math.abs(dx) !== Math.abs(dy)) {
+      return false;
+    }
+    return true;
+  }
+
   private cloneGameState(gameState: GameState): GameState {
     return {
       ...gameState,
@@ -884,44 +1114,10 @@ export class RuleEngine {
   private createHypotheticalBoardWithPlacement(
     board: BoardState,
     position: Position,
-    player: number
+    player: number,
+    count: number = 1
   ): BoardState {
-    const hypotheticalBoard: BoardState = {
-      ...board,
-      stacks: new Map(board.stacks),
-      markers: new Map(board.markers),
-      collapsedSpaces: new Map(board.collapsedSpaces),
-      territories: new Map(board.territories),
-      formedLines: [...board.formedLines],
-      eliminatedRings: { ...board.eliminatedRings }
-    };
-
-    const posKey = positionToString(position);
-    const existingStack = hypotheticalBoard.stacks.get(posKey);
-
-    if (existingStack && existingStack.rings.length > 0) {
-      // Placing on existing stack (shouldn't happen in normal play but handle safely)
-      const newStack: RingStack = {
-        ...existingStack,
-        rings: [player, ...existingStack.rings],
-        stackHeight: existingStack.stackHeight + 1,
-        capHeight: 1, // New ring on top forms cap height 1
-        controllingPlayer: player
-      };
-      hypotheticalBoard.stacks.set(posKey, newStack);
-    } else {
-      // Placing on empty space
-      const newStack: RingStack = {
-        position,
-        rings: [player],
-        stackHeight: 1,
-        capHeight: 1,
-        controllingPlayer: player
-      };
-      hypotheticalBoard.stacks.set(posKey, newStack);
-    }
-
-    return hypotheticalBoard;
+    return createHypotheticalBoardWithPlacementHelper(board, position, player, count);
   }
 
   /**
@@ -936,127 +1132,34 @@ export class RuleEngine {
     player: number,
     board: BoardState
   ): boolean {
-    const fromKey = positionToString(from);
-    const stack = board.stacks.get(fromKey);
-    if (!stack || stack.controllingPlayer !== player) {
-      return false;
-    }
-
-    const directions = getMovementDirectionsForBoardType(this.boardConfig.type as any);
-
-    // Check for any legal non-capture movement
-    // Stack height is 1 for a newly placed ring, so we need distance >= 1
-    for (const dir of directions) {
-      for (let distance = stack.stackHeight; distance <= 8; distance++) {
-        const targetPos: Position = {
-          x: from.x + dir.x * distance,
-          y: from.y + dir.y * distance,
-          ...(dir.z !== undefined && { z: (from.z || 0) + dir.z * distance })
+    const view: MovementBoardView = {
+      isValidPosition: (pos: Position) => this.boardManager.isValidPosition(pos),
+      isCollapsedSpace: (pos: Position) => this.boardManager.isCollapsedSpace(pos, board),
+      getStackAt: (pos: Position) => {
+        const key = positionToString(pos);
+        const stack = board.stacks.get(key);
+        if (!stack) return undefined;
+        return {
+          controllingPlayer: stack.controllingPlayer,
+          capHeight: stack.capHeight,
+          stackHeight: stack.stackHeight
         };
+      },
+      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, board)
+    };
 
-        if (!this.boardManager.isValidPosition(targetPos)) {
-          break; // Off board in this direction
-        }
-
-        if (this.boardManager.isCollapsedSpace(targetPos, board)) {
-          break; // Can't move through collapsed space
-        }
-
-        // Check if path is clear
-        const pathClear = this.isPathClearForHypothetical(from, targetPos, board);
-        if (!pathClear) {
-          break; // Blocked by stacks/collapsed spaces
-        }
-
-        // Check landing position
-        const targetKey = positionToString(targetPos);
-        const targetStack = board.stacks.get(targetKey);
-        const targetMarker = this.boardManager.getMarker(targetPos, board);
-
-        // Can land on empty space, same-color marker, or own/opponent stacks (for merging)
-        if (!targetStack || targetStack.rings.length === 0) {
-          // Empty space or marker
-          if (targetMarker === undefined || targetMarker === player) {
-            return true; // Found a legal move
-          }
-        } else {
-          // Landing on a stack - allowed for merging
-          return true;
-        }
+    return hasAnyLegalMoveOrCaptureFromOnBoard(
+      this.boardConfig.type as any,
+      from,
+      player,
+      view,
+      {
+        // Preserve legacy RuleEngine semantics: non-capture moves
+        // search out to distance 8 and capture landings out to 5.
+        maxNonCaptureDistance: 8,
+        maxCaptureLandingDistance: 5
       }
-    }
-
-    // Check for any legal capture
-    for (const dir of directions) {
-      let step = 1;
-      let targetPos: Position | undefined;
-
-      // Find first stack along this ray
-      while (true) {
-        const pos: Position = {
-          x: from.x + dir.x * step,
-          y: from.y + dir.y * step,
-          ...(dir.z !== undefined && { z: (from.z || 0) + dir.z * step })
-        };
-
-        if (!this.boardManager.isValidPosition(pos)) {
-          break;
-        }
-
-        if (this.boardManager.isCollapsedSpace(pos, board)) {
-          break;
-        }
-
-        const posKey = positionToString(pos);
-        const stackAtPos = board.stacks.get(posKey);
-
-        if (stackAtPos && stackAtPos.rings.length > 0) {
-          // Check if this stack is capturable
-          if (stack.capHeight >= stackAtPos.capHeight) {
-            targetPos = pos;
-          }
-          break;
-        }
-
-        step++;
-      }
-
-      if (!targetPos) continue;
-
-      // Try to find at least one valid landing position beyond the target
-      let landingStep = 1;
-      while (landingStep <= 5) {
-        // Check a few positions
-        const landingPos: Position = {
-          x: targetPos.x + dir.x * landingStep,
-          y: targetPos.y + dir.y * landingStep,
-          ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep })
-        };
-
-        if (!this.boardManager.isValidPosition(landingPos)) {
-          break;
-        }
-
-        if (this.boardManager.isCollapsedSpace(landingPos, board)) {
-          break;
-        }
-
-        const landingKey = positionToString(landingPos);
-        const landingStack = board.stacks.get(landingKey);
-        if (landingStack && landingStack.rings.length > 0) {
-          break;
-        }
-
-        // Validate this capture segment
-        if (this.validateCaptureSegment(from, targetPos, landingPos, player, board)) {
-          return true; // Found a legal capture
-        }
-
-        landingStep++;
-      }
-    }
-
-    return false; // No legal moves or captures found
+    );
   }
 
   /**
@@ -1064,7 +1167,7 @@ export class RuleEngine {
    * that works with a board state rather than game state.
    */
   private isPathClearForHypothetical(from: Position, to: Position, board: BoardState): boolean {
-    const pathPositions = this.getPathPositions(from, to);
+    const pathPositions = getPathPositions(from, to).slice(1, -1);
 
     for (const pos of pathPositions) {
       if (this.boardManager.isCollapsedSpace(pos, board)) {

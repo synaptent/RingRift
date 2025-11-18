@@ -387,4 +387,59 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     expect(finalState.board.eliminatedRings[1]).toBe(expectedEliminatedForP1);
     expect(finalState.totalRingsEliminated).toBe(expectedEliminatedForP1);
   });
+
+  test('Q23_disconnected_region_illegal_when_no_self_elimination_available_sandbox', async () => {
+    // Sandbox parity for FAQ Q23: if the moving player has no stack outside
+    // a disconnected region, that region must not be processed.
+    const engine = createEngine();
+    const engineAny = engine as any;
+    const state: GameState = engineAny.gameState as GameState;
+    const board = state.board;
+
+    state.currentPlayer = 1;
+
+    // Synthetic 3x3 region in the middle of the board.
+    const interiorCoords: Position[] = [];
+    for (let x = 5; x <= 7; x++) {
+      for (let y = 5; y <= 7; y++) {
+        const p = pos(x, y);
+        interiorCoords.push(p);
+        // Place stacks for player 1 *inside* the region only.
+        addStack(board, p, 1, 1);
+      }
+    }
+
+    // Player 2 is active elsewhere but not inside the region, to satisfy
+    // the representation-based disconnection criteria.
+    addStack(board, pos(0, 0), 2, 1);
+
+    // Crucially, player 1 has NO stacks outside the region.
+    const stacksP1 = Array.from(board.stacks.values()).filter(s => s.controllingPlayer === 1);
+    const outsideRegion = stacksP1.filter(s =>
+      !interiorCoords.some(p => positionToString(p) === positionToString(s.position))
+    );
+    expect(outsideRegion.length).toBe(0);
+
+    const initialCollapsedCount = board.collapsedSpaces.size;
+    const initialTotalEliminated = state.totalRingsEliminated;
+    const initialP1Eliminated = state.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+
+    await engineAny.processDisconnectedRegionsForCurrentPlayer();
+
+    // Region should NOT have been processed:
+    // - No additional collapsed spaces.
+    // - All interior stacks remain.
+    // - No eliminations credited to player 1.
+    expect(board.collapsedSpaces.size).toBe(initialCollapsedCount);
+
+    const stacksInRegion = Array.from(board.stacks.keys()).filter(key =>
+      interiorCoords.some(p => positionToString(p) === key)
+    );
+    expect(stacksInRegion.length).toBe(interiorCoords.length);
+
+    const finalTotalEliminated = state.totalRingsEliminated;
+    const finalP1Eliminated = state.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+    expect(finalTotalEliminated).toBe(initialTotalEliminated);
+    expect(finalP1Eliminated).toBe(initialP1Eliminated);
+  });
 });

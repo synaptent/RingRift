@@ -270,7 +270,21 @@ export class BoardManager {
   }
 
   setStack(position: Position, stack: RingStack, board: BoardState): void {
-    board.stacks.set(positionToString(position), stack);
+    const posKey = positionToString(position);
+
+    // Invariant guard: stacks and markers should not coexist on the same
+    // space. If we ever see both at once, log a diagnostic so tests can
+    // pinpoint the earlier operation that created the invalid state.
+    if (board.markers.has(posKey)) {
+      // eslint-disable-next-line no-console
+      console.error('[BoardManager.setStack] Invariant violation: setting stack on position that already has a marker', {
+        posKey,
+        stack,
+        existingMarker: board.markers.get(posKey)
+      });
+    }
+
+    board.stacks.set(posKey, stack);
   }
 
   removeStack(position: Position, board: BoardState): void {

@@ -22,6 +22,45 @@ export interface TerritoryInteractionHandler {
   ): Promise<PlayerChoiceResponseFor<TChoice>>;
 }
 
+function assertTerritoryEngineMonotonicity(
+  context: string,
+  before: { collapsedSpaces: number; totalRingsEliminated: number },
+  after: { collapsedSpaces: number; totalRingsEliminated: number }
+): void {
+  const isTestEnv =
+    typeof process !== 'undefined' &&
+    !!(process as any).env &&
+    (process as any).env.NODE_ENV === 'test';
+
+  const errors: string[] = [];
+
+  if (after.collapsedSpaces < before.collapsedSpaces) {
+    errors.push(
+      `collapsedSpaces decreased in territory engine (${context}): before=${before.collapsedSpaces}, after=${after.collapsedSpaces}`
+    );
+  }
+
+  if (after.totalRingsEliminated < before.totalRingsEliminated) {
+    errors.push(
+      `totalRingsEliminated decreased in territory engine (${context}): before=${before.totalRingsEliminated}, after=${after.totalRingsEliminated}`
+    );
+  }
+
+  if (errors.length === 0) {
+    return;
+  }
+
+  const message =
+    `sandboxTerritoryEngine invariant violation (${context}):` + '\n' + errors.join('\n');
+
+  // eslint-disable-next-line no-console
+  console.error(message);
+
+  if (isTestEnv) {
+    throw new Error(message);
+  }
+}
+
 /**
  * Pure territory-processing helper for the sandbox engine.
  *
@@ -83,6 +122,11 @@ export async function processDisconnectedRegionsForCurrentPlayerEngine(
       regionSpaces = selectedRegion.spaces;
     }
 
+    const beforeSnapshot = {
+      collapsedSpaces: state.board.collapsedSpaces.size,
+      totalRingsEliminated: state.totalRingsEliminated
+    };
+
     const result = processDisconnectedRegionOnBoard(
       state.board,
       state.players,
@@ -96,6 +140,17 @@ export async function processDisconnectedRegionsForCurrentPlayerEngine(
       players: result.players,
       totalRingsEliminated: state.totalRingsEliminated + result.totalRingsEliminatedDelta
     };
+
+    const afterSnapshot = {
+      collapsedSpaces: state.board.collapsedSpaces.size,
+      totalRingsEliminated: state.totalRingsEliminated
+    };
+
+    assertTerritoryEngineMonotonicity(
+      'processDisconnectedRegionsForCurrentPlayerEngine',
+      beforeSnapshot,
+      afterSnapshot
+    );
   }
 
   return state;

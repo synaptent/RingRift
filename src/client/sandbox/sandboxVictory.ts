@@ -65,13 +65,42 @@ export function checkSandboxVictory(state: GameState): GameResult | null {
     return buildGameResult(state, stats, territoryWinner.playerNumber, 'territory_control');
   }
 
+  // 3. Fallback: no stacks and no rings in hand for any player. In this
+  // situation, the game cannot progress further, even if nobody reached
+  // the strict elimination/territory thresholds. Mirror the backend's
+  // endGame final-score semantics by declaring the game completed using
+  // territory (then eliminated rings) as tie-breakers, and allowing for
+  // a draw when all scores are equal.
+  const noStacksLeft = state.board.stacks.size === 0;
+  const anyRingsInHand = state.players.some(p => p.ringsInHand > 0);
+
+  if (noStacksLeft && !anyRingsInHand) {
+    const maxTerritory = Math.max(...stats.map(s => s.territorySpaces));
+    const territoryLeaders = stats.filter(s => s.territorySpaces === maxTerritory);
+
+    if (territoryLeaders.length === 1 && maxTerritory > 0) {
+      return buildGameResult(state, stats, territoryLeaders[0].playerNumber, 'territory_control');
+    }
+
+    const maxEliminated = Math.max(...stats.map(s => s.ringsEliminated));
+    const eliminationLeaders = stats.filter(s => s.ringsEliminated === maxEliminated);
+
+    if (eliminationLeaders.length === 1 && maxEliminated > 0) {
+      return buildGameResult(state, stats, eliminationLeaders[0].playerNumber, 'ring_elimination');
+    }
+
+    // Perfect tie: mark the game as completed with no winner, leaving
+    // finalScore populated for UI/debug consumers.
+    return buildGameResult(state, stats, undefined, 'game_completed' as any);
+  }
+
   return null;
 }
 
 function buildGameResult(
   state: GameState,
   stats: PlayerVictoryStats[],
-  winner: number,
+  winner: number | undefined,
   reason: GameResult['reason']
 ): GameResult {
   const ringsRemaining: { [playerNumber: number]: number } = {};
@@ -85,7 +114,7 @@ function buildGameResult(
   }
 
   return {
-    winner,
+    ...(winner !== undefined && { winner }),
     reason,
     finalScore: {
       ringsEliminated,

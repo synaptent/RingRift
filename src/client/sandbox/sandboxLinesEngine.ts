@@ -13,6 +13,45 @@ import { calculateCapHeight } from '../../shared/engine/core';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { forceEliminateCapOnBoard } from './sandboxElimination';
 
+function assertLineEngineMonotonicity(
+  context: string,
+  before: { collapsedSpaces: number; totalRingsEliminated: number },
+  after: { collapsedSpaces: number; totalRingsEliminated: number }
+): void {
+  const isTestEnv =
+    typeof process !== 'undefined' &&
+    !!(process as any).env &&
+    (process as any).env.NODE_ENV === 'test';
+
+  const errors: string[] = [];
+
+  if (after.collapsedSpaces < before.collapsedSpaces) {
+    errors.push(
+      `collapsedSpaces decreased in line engine (${context}): before=${before.collapsedSpaces}, after=${after.collapsedSpaces}`
+    );
+  }
+
+  if (after.totalRingsEliminated < before.totalRingsEliminated) {
+    errors.push(
+      `totalRingsEliminated decreased in line engine (${context}): before=${before.totalRingsEliminated}, after=${after.totalRingsEliminated}`
+    );
+  }
+
+  if (errors.length === 0) {
+    return;
+  }
+
+  const message =
+    `sandboxLinesEngine invariant violation (${context}):` + '\n' + errors.join('\n');
+
+  // eslint-disable-next-line no-console
+  console.error(message);
+
+  if (isTestEnv) {
+    throw new Error(message);
+  }
+}
+
 /**
  * Pure line-processing helpers for the sandbox engine.
  *
@@ -115,6 +154,11 @@ export function processLinesForCurrentPlayer(gameState: GameState): GameState {
   let totalRingsEliminated = gameState.totalRingsEliminated;
   const currentPlayer = gameState.currentPlayer;
 
+  const beforeSnapshot = {
+    collapsedSpaces: board.collapsedSpaces.size,
+    totalRingsEliminated
+  };
+
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const allLines: LineInfo[] = findAllLinesOnBoard(
@@ -154,6 +198,13 @@ export function processLinesForCurrentPlayer(gameState: GameState): GameState {
       break;
     }
   }
+
+  const afterSnapshot = {
+    collapsedSpaces: board.collapsedSpaces.size,
+    totalRingsEliminated
+  };
+
+  assertLineEngineMonotonicity('processLinesForCurrentPlayer', beforeSnapshot, afterSnapshot);
 
   return {
     ...gameState,

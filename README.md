@@ -404,6 +404,26 @@ npm run test:unit          # Unit tests (tests/unit)
 npm run test:integration   # Integration tests (tests/integration if present)
 ```
 
+### Trace parity & GameTrace
+
+A set of AI-heavy suites compare backend and sandbox behaviour step-by-step using a shared **GameTrace** format and replay helpers:
+
+- `GameHistoryEntry` / `GameTrace` live in `src/shared/types/game.ts` and are the canonical event-sourcing types for both engines.
+- `tests/utils/traces.ts` provides:
+  - `runSandboxAITrace(boardType, numPlayers, seed, maxSteps)` → generate a sandbox AI-vs-AI trace using `ClientSandboxEngine`.
+  - `replayTraceOnBackend(trace)` → rebuild a backend `GameEngine` from the trace’s initial state and replay the same canonical moves.
+  - `replayTraceOnSandbox(trace)` → rebuild a fresh `ClientSandboxEngine` and re-apply the same canonical moves.
+- Core parity/debug suites:
+  - `tests/unit/Backend_vs_Sandbox.traceParity.test.ts`
+  - `tests/unit/Sandbox_vs_Backend.seed5.traceDebug.test.ts`
+  - `tests/unit/Backend_vs_Sandbox.aiParallelDebug.test.ts`
+
+Diagnostics can be enabled via:
+- `RINGRIFT_TRACE_DEBUG` – write structured JSON snapshots for trace parity runs to `logs/ai/trace-parity.log` (sandbox opening sequence, backend mismatches, S/hashes, valid move lists).
+- `RINGRIFT_AI_DEBUG` – mirror AI diagnostics to the console and enable extra sandbox AI debug logs, in addition to the existing `logs/ai/*.log` streams used by AI simulation tests.
+
+For more details and usage patterns, see `tests/README.md`.
+
 ### Frontend / Sandbox Testing
 ```bash
 # Currently all tests are Jest-based and live under tests/unit

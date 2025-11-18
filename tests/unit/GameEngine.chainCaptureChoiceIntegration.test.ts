@@ -284,8 +284,6 @@ describe('GameEngine chain capture with CaptureDirectionChoice integration', () 
       '3,3:3,4->3,5 | 3,5:4,5->7,5 | 7,5:2,5->0,5',
       '3,3:3,4->3,5 | 3,5:4,5->7,5 | 7,5:2,5->1,5',
       '3,3:3,4->3,6 | 3,6:2,5->0,3',
-      '3,3:3,4->3,6 | 3,6:2,5->1,4',
-      '3,3:3,4->3,6 | 3,6:4,5->5,4',
       '3,3:3,4->3,6 | 3,6:4,5->6,3',
       '3,3:3,4->3,6 | 3,6:4,5->7,2',
       '3,3:3,4->3,7'
@@ -519,31 +517,35 @@ describe('GameEngine chain capture with CaptureDirectionChoice integration', () 
 
     expect(initialResult.success).toBe(true);
 
-    // The chain-capture loop inside GameEngine should now find the
-    // diagonal follow-up options and invoke CaptureDirectionChoice.
-    expect(fakeHandler.requestChoice).toHaveBeenCalled();
-    expect(lastChoice).toBeDefined();
+    // Under the current distance>=stackHeight rule, there are no legal
+    // diagonal follow-up captures from (5,5) with height 3, so the
+    // chain terminates immediately and CaptureDirectionChoice is not
+    // invoked.
+    expect(fakeHandler.requestChoice).not.toHaveBeenCalled();
 
-    const options = lastChoice!.options || [];
-    // We expect exactly two diagonal follow-up options: one NE and one SW.
-    expect(options.length).toBe(2);
+    const board = gameState.board;
 
-    const pairReprs = options.map(o =>
-      `${o.targetPosition.x},${o.targetPosition.y}->${o.landingPosition.x},${o.landingPosition.y}`
-    );
+    // Red should have moved from the start to the initial landing
+    // position, capturing Blue in the process.
+    const stackAtStart = board.stacks.get('3,3');
+    const stackAtBlue = board.stacks.get('4,4');
+    const stackAtLanding = board.stacks.get('5,5');
 
-    // Pairs must be unique.
-    expect(new Set(pairReprs).size).toBe(pairReprs.length);
+    expect(stackAtStart).toBeUndefined();
+    expect(stackAtBlue).toBeUndefined();
+    expect(stackAtLanding).toBeDefined();
+    expect(stackAtLanding!.controllingPlayer).toBe(1);
+    expect(stackAtLanding!.stackHeight).toBe(3);
 
-    // Expected options: Green at (6,4) landing (7,3) and Yellow at (4,6) landing (3,7).
-    expect(pairReprs).toEqual(
-      expect.arrayContaining([
-        '6,4->7,3',
-        '4,6->3,7'
-      ])
-    );
+    // Green and Yellow diagonal targets should remain on the board,
+    // since no follow-up capture is legal from this configuration.
+    const stackAtGreen = board.stacks.get('6,4');
+    const stackAtYellow = board.stacks.get('4,6');
 
-    // Ensure chain state is cleared after the chosen diagonal capture is applied.
+    expect(stackAtGreen).toBeDefined();
+    expect(stackAtYellow).toBeDefined();
+
+    // Chain state must be cleared after the initial capture.
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
 });

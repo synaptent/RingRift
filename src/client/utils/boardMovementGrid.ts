@@ -236,20 +236,20 @@ function adjustSquareCenter(baseCx: number, baseCy: number, size: number): { cx:
   // in the DOM layout; the underlying normalized geometry remains the
   // same across board types.
   if (size === 19) {
-    const scaleX19 = 0.985;
-    const scaleY19 = 0.99;
-    const offsetX19 = 0.0;
-    const offsetY19 = 0.0;
+    const scaleX19 = 1.0025;
+    const scaleY19 = 1.002;
+    const offsetX19 = 0.0074;
+    const offsetY19 = 0.0055;
 
     const cx19 = (baseCx - 0.5) * scaleX19 + 0.5 + offsetX19;
     const cy19 = (baseCy - 0.5) * scaleY19 + 0.5 + offsetY19;
     return { cx: cx19, cy: cy19 };
   }
 
-  const scaleX = 0.98; // shrink slightly to avoid overshooting near edges on 8x8
-  const scaleY = 1.003;
-  const offsetX = 0.0; // tweakable horizontal nudge if future layout changes
-  const offsetY = 0.004; // small downward shift to compensate for vertical padding
+  const scaleX = 1.005; // shrink slightly to avoid overshooting near edges on 8x8
+  const scaleY = 1.0275;
+  const offsetX = 0.0125; // tweakable horizontal nudge if future layout changes
+  const offsetY = 0.0165; // small downward shift to compensate for vertical padding
 
   const cx = (baseCx - 0.5) * scaleX + 0.5 + offsetX;
   const cy = (baseCy - 0.5) * scaleY + 0.5 + offsetY;
@@ -262,10 +262,10 @@ function adjustSquareCenter(baseCx: number, baseCy: number, size: number): { cx:
  * centred within the board container.
  */
 function adjustHexCenter(baseCx: number, baseCy: number): { cx: number; cy: number } {
- const scaleX = 0.93; // shrink slightly to avoid overshooting near edges
-  const scaleY = 0.875;
-  const offsetX = 0.0; // tweakable horizontal nudge if future layout changes
-  const offsetY = -0.0275; // tweakable vertical nudge if future layout changes
+ const scaleX = 0.95; // shrink slightly to avoid overshooting near edges
+  const scaleY = 0.8937;
+  const offsetX = 0.011; // tweakable horizontal nudge if future layout changes
+  const offsetY = -0.0168; // tweakable vertical nudge if future layout changes
 
   const cx = (baseCx - 0.5) * scaleX + 0.5 + offsetX;
   const cy = (baseCy - 0.5) * scaleY + 0.5 + offsetY;

@@ -107,6 +107,7 @@ Above all, embrace the dynamic and emergent nature of the game - the richest str
     - [13.2 Territory Victory (Primary Victory Path)](#132-territory-victory-primary-victory-path)
     - [13.3 Last Player Standing](#133-last-player-standing)
     - [13.4 End of Game "Stalemate" Resolution](#134-end-of-game-stalemate-resolution)
+    - [13.5 Progress \& Termination Invariant (Implementation Note)](#135-progress--termination-invariant-implementation-note)
   - [14. Strategy Guide (All Versions)](#14-strategy-guide-all-versions)
     - [14.1 Stack Management Principles](#141-stack-management-principles)
     - [14.2 Territory Control Tactics](#142-territory-control-tactics)
@@ -360,15 +361,16 @@ Each player's turn consists of distinct phases that must be executed in order:
 
 - If you have rings remaining in hand and no rings on the board, you must attempt to place one on any empty space.
 - If you have rings in hand and already have rings or stacks on the board, you may optionally:
-  - Place **one or more rings** on an empty space, forming a stack of the chosen height (up to the number of rings in hand), or
+  - Place **1-3 rings** on an empty, non-collapsed space, forming a stack of the chosen height, subject to both your remaining rings in hand and your remaining capacity under the version’s `ringsPerPlayer` limit, or
   - Place a **single ring** on top of any existing stack (friendly or opponent-controlled). This immediately gives you control of that stack through the new top ring, which becomes the controlling color.
 - 
  • **Placement Restrictions**:
 - Ring placement must only occur before the movement phase
 - **Subsequent Move Prerequisite:** Before a placement is considered valid, it must be confirmed that the resulting stack (at its new position and with its potentially new height) would have at least one legal move available according to the standard movement rules (Section 8 and Sections 16.5.1 / 16.9.4.1). This check is performed on the hypothetical state *after* placement. If no legal move would be possible, the placement itself is illegal and cannot be chosen. For example, placing a ring to create a stack of height 9 on an 8x8 board is illegal anywhere, as no subsequent move is possible. This check applies to both placing on empty spaces and placing on top of existing stacks.
  • **Edge Cases**:
-- If a player must place a ring but no legal placement locations exist, the player forfeits their turn
-- Play continues normally, and if the situation changes to allow legal placements, the player may place rings on future turns
+- If a player must place a ring but no legal placement locations exist **and they control no stacks on the board**, the player forfeits their turn.
+- If a player must place a ring but no legal placement locations exist **and they do control at least one stack on the board**, they are treated as **blocked with stacks** and must resolve the situation using the forced elimination rule in Section 4.4 before their turn can end.
+- Play continues normally, and if the situation changes to allow legal placements, the player may place rings on future turns.
 
 ### 4.2 Movement Phase (Required if Ring Placed or Valid Moves Available)
 
@@ -379,7 +381,7 @@ Each player's turn consists of distinct phases that must be executed in order:
   - No other rings or stacks may be moved for the player turn
 - If no ring was placed:
   - Player must move one of their controlled rings or stacks, freely chosen from those that have valid moves
-  - Movement is only skipped if no valid moves are available
+  - Movement is only skipped if no valid moves are available. In particular, if at the beginning of a player's action they have no legal placement, no legal movement, and no legal capture **but still control one or more stacks on the board**, they do **not** simply skip movement; instead they are considered **blocked with stacks** and must follow the forced‑elimination rule in Section 4.4.
 
 #### 4.2.1 Basic Movement Requirements
 
@@ -418,13 +420,14 @@ Each player's turn consists of distinct phases that must be executed in order:
   - **Mandatory Continuation vs. Choice of Path:** While continuing the capture *sequence* is mandatory as long as *any* legal capture segment exists from the current landing spot, the player *chooses which specific legal capture segment* to perform at each step. This choice might lead to a position with no further captures, thus ending the mandatory chain, even if other initial choices might have allowed the chain to continue longer.
 - Capture segments may change direction (within the grid's axes - 8 for square, 6 for hex), continue straight, or reverse 180° (if legal) to jump back over a previously encountered stack.
 - It is possible to jump over the same ring stack multiple times (capturing its new top ring each time) if the path and landing spots remain valid for each subsequent jump.
+
 ### 4.4 Forced Elimination When Blocked
 
  • **Condition:** At the *beginning* of a player's turn, before any placement (see Sections 4.1, 6.1-6.3) or movement selection (see Sections 4.2.1, 8.1 for standard moves; Sections 4.3, 10.1 for captures) is made, if that player has no valid placement, standard move, or capture option available, but they control one or more ring stacks on the board.
  • **Action:** The player *must* eliminate the entire cap (all consecutive top rings of the controlling color) of one of their controlled ring stacks.
  • **Choice:** The choice of which stack's cap to eliminate is up to the player.
  • **Victory Condition:** These eliminated rings are removed from play and count towards the player's total for the Ring Elimination victory condition.
- • **Consequence:** If a player cannot perform this mandatory elimination (e.g., they control stacks but all caps have already been eliminated, which shouldn't normally happen unless the stack is empty), they forfeit their turn.
+ • **Global Note (Structural Terminality):** As long as **any stacks remain on the board**, it is never legal for the game to sit in an `active` state with no available action for the current player. In any situation where **no player** has a legal placement, movement, or capture available but at least one stack still exists on the board, the controlling player of some stack on their turn will satisfy the condition above and must perform a forced elimination. Successive forced eliminations continue (possibly cycling through multiple players) until **no stacks remain**; only then can the game reach a truly structurally terminal state that is resolved by the stalemate rules in Section 13.4.
 
 ### 4.5 Post-Movement Processing
 
@@ -550,7 +553,8 @@ Ring stacks are a central element of RingRift. Understanding their fundamental m
 
 ### 6.2 Placement on Empty Spaces
 
- • Can place **one or more rings** (up to available rings in hand) on any empty, non-collapsed space, forming a stack.
+ • Can place **1–3 rings** on any empty, non-collapsed space, forming a stack. The exact maximum is constrained by both your remaining rings in hand and your remaining capacity under `ringsPerPlayer` for the chosen board type.
+ • Before a placement is legal, the resulting stack must have at least one legal move or capture available according to the standard movement and capture rules (the **no-dead-placement** rule).
  • Must move the newly placed stack immediately.
  • The placed stack's movement follows standard rules for its initial height (e.g., placing 3 rings requires moving at least 3 spaces).
  • No special rule for first placement
@@ -607,7 +611,7 @@ Ring stacks are a central element of RingRift. Understanding their fundamental m
     - The landing space is either **(a) empty** or **(b) occupied by a single marker of the moving stack's color**.
     - The total distance traveled (from start, over markers, to landing) is **at least your stack's height**.
     - The path to the landing space is clear of other rings/stacks and collapsed spaces.
-    - If landing on a same-color marker, that marker is immediately removed from the board (before checking for lines or disconnections). Landing on opponent markers or collapsed spaces remains illegal.
+    - If landing on a same-color marker, that marker is immediately removed from the board and then the moving stack must eliminate its top ring, crediting that eliminated ring to the moving player (before checking for lines or disconnections). Landing on opponent markers or collapsed spaces remains illegal.
     - You are **not required to stop at the first valid space** after the markers.
  • *(Rule Unified)*: The landing rule after passing markers during non-capture moves is now consistent across all versions.
 ```mermaid
@@ -737,7 +741,7 @@ graph LR
  - Remain unchanged when jumped over.
  - Count toward minimum distance requirement.
  • **Landing on Same-Color Markers**:
- - If a move or overtaking capture segment concludes by landing on a space occupied by a single marker of the moving stack's color (and all other movement conditions like distance and path legality are met), first the marker occupying that space is removed from the board, and then next the stack lands on that space. This marker removal occurs immediately and *before* the Post-Movement Processing phase (checking for lines and disconnections).
+ - If a move or overtaking capture segment concludes by landing on a space occupied by a single marker of the moving stack's color (and all other movement conditions like distance and path legality are met), first the marker occupying that space is removed from the board, then the stack lands on that space, and immediately after landing the moving stack must eliminate its top ring, crediting that eliminated ring to the moving player. This removal and elimination occurs *before* the Post-Movement Processing phase (checking for lines and disconnections).
 ## 9. Capture Types: Overtaking vs Elimination (All Versions)
 
 There are two fundamentally different ways to capture rings in RingRift - Overtaking vs Elimination. Understanding this distinction is crucial for play:
@@ -745,7 +749,7 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 
 ### 9.1  Overtaking Captures (Rings Stay in Play)
 
- •  **When Occurs:** During movement when jumping over a ring or ring stack
+ • **When Occurs:** During movement when jumping over a ring or ring stack
  • **Process:**
  • The captured ring is taken from the top of the jumped-over stack and added to the bottom of the capturing stack
  • The captured ring remains in play on the board as the bottommost part of the new, now taller overtaking capturing stack
@@ -789,13 +793,14 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
     - The total distance traveled (from start, over target, to landing) is **at least your stack's height**.
     - The path to the landing space (excluding the target itself) is clear of other rings/stacks and collapsed spaces.
     - The landing space itself is either **(a) empty and not collapsed**, or **(b) occupied by a single marker of the moving stack's color and not collapsed**.
- • If landing on a same-color marker, that marker is immediately removed from the board (before checking for lines or disconnections).
+ • If landing on a same-color marker, that marker is immediately removed from the board and then the moving stack must eliminate its top ring, crediting that eliminated ring to the moving player (before checking for lines or disconnections).
  • Crucially, you are **not required to stop at the first valid space** after the captured piece during an Overtaking capture move (this differs from non-capture movement in 19x19/Hex).
  • Add captured ring (always the top ring of the target stack) to the bottom of your stack.
  • Handle markers along the path as usual (flip opponent's, collapse your own).
  • For capture over a multi-ring stack, only the top ring is captured per jump segment.
  • Can capture the top ring from either friendly or opponent stacks.
  • If no valid landing space exists beyond the target that meets the minimum distance requirement, capture in that direction is disallowed.
+ 
 ### 10.3 Chain Overtaking
 
  • **Mandatory Chain Rule:** Once an Overtaking capture begins, chain Overtaking becomes mandatory: at each landing position, if any legal capture segment exists, you MUST perform one of them. You may choose which legal capture segment to take when multiple options are available (strategic choice).
@@ -1256,26 +1261,66 @@ Note: With more than 50% of territory required for victory, simultaneous victory
  • **Victory Condition:** A player wins by Last Player Standing if, after completing all phases of a turn and its post‑movement processing, they are the only player who has any legal action available on their next turn (a legal ring placement, non‑capture move, or overtaking capture), while all other players have no legal placements, movements, or captures.
     - *Example Scenario:* Win by being the only player able to make legal moves—for instance, if all other players lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, while you still have at least one legal placement, movement, or capture available on yours.
  • **Player Status Details:**
-    - A player is effectively eliminated when they have:
-      - No rings or stacks on the board, or when their rings/stacks are blocked from movement or capture, AND
-      - No rings remaining in hand.
+    - A player is **temporarily inactive** on their own turns when:
+      - They control no stacks on the board, AND
+      - They have no legal placements (either because `ringsInHand == 0` or because all placements would be illegal), OR
+      - They have stacks but no legal moves/captures *and* no legal placements.
+    - In this state the player has no legal actions when their turn comes around, but this does **not** mean all of their rings have left the game. They may still have rings buried inside mixed-color stacks controlled by other players; those rings simply cannot act until exposed.
     - A player with rings in hand but no board presence is still active if any legal placements exist.
- • **Recovery Possibility:** A previously eliminated player can return to play if they gain control of a multicolored stack through its top ring becoming their color, thereby regaining a controlled stack.
+ • **Recovery Possibility:** A temporarily inactive player can return to full activity if they gain control of a multicolored stack through its top ring becoming their color, thereby regaining a controlled stack. This commonly happens when captures or eliminations expose one of their buried rings as the new top ring of a stack.
 
 ### 13.4 End of Game "Stalemate" Resolution
 
- • When Applied:
- • If no player can make any legal moves, including ring placements
- • If all players must consecutively forfeit their turns
+
+ • Global Stalemate Is Applied and Game Ends When:
+ • No player can complete any legal actions during their turn, including ring placements and forced eliminations
+ • Equivalently, all players must consecutively forfeit their turns
+ • Importantly, this **global stalemate** can only occur when **no player** has any legal placement, non‑capture move, capture, or forced elimination available. This means that all stacks have been eliminated from the board. Global stalemate due to structural terminality is ruled out by the forced‑elimination rule in Section 4.4 if there are any rings or stacks still present on the board, as a forced elimination action is treated as a turn action completing a player turn.
+
+• Upon Global Stalemate The Following Events Occur:
  • Ring Handling:
  • Any rings remaining in players' hands are counted as Eliminated rings for those players.
- • Comprehensive Tie-Breaking System (in order) - Winner is the player with:
+ • The Game Ends, and the Winner is determined by the following Tie-Breaking System (in order) - Winner is the player with:
 
  1. Most collapsed spaces (indicating the most territorial control)
- 2. Most Eliminated rings (including rings eliminated during gameplay AND any rings remaining in hand at the point of stalemate) if still tied
- 3. Most remaining markers (the greatest board presence) if still tied
+ 2. Most Eliminated rings (including rings eliminated during gameplay AND any rings remaining in hand at the point of stalemate), if still tied after comparing collapsed spaces.
+ 3. Most remaining markers (the greatest board presence), if still tied after comparing Eliminated rings.
+ 4. Last person to complete a valid turn action, if still tied after comparing the above.
 
-This victory system ensures every game reaches a definitive conclusion while rewarding both tactical play (ring control) and strategic positioning (territorial control).
+This victory system ensures every game reaches a definitive conclusion with a definitive winner, while rewarding both tactical play (ring control) and strategic positioning (territorial control), and it formalises the idea that **structural terminality only happens once both ordinary actions and forced eliminations have been exhausted**.
+
+### 13.5 Progress & Termination Invariant (Implementation Note)
+
+For engine and AI authors, it is useful to track a simple global progress measure over the course of a game:
+
+- Let **M** = number of markers currently on the board.
+- Let **C** = number of collapsed spaces currently on the board.
+- Let **E** = total number of *eliminated* rings credited to any player (including rings eliminated from lines, disconnected regions, forced eliminations, and stalemate conversion of rings in hand).
+- Define the **progress metric**:
+
+  ```text
+  S = M + C + E
+  ```
+
+Under the rules above:
+
+- Any legal **movement** (non-capture or overtaking) always places a new marker on the departure space, and never removes collapsed spaces or resurrects eliminated rings. Landing on one of your own markers removes that marker but immediately eliminates the top ring of the moving stack, keeping `M + E` unchanged at the landing cell. The departure marker therefore ensures **S strictly increases** on every move.
+- **Collapsing markers to territory** (from line formation or territory disconnection) replaces markers with collapsed spaces one-for-one, so `M + C` remains unchanged by that operation alone.
+- **Eliminations** (from lines, disconnected regions, forced elimination, or stalemate conversion of rings in hand) strictly increase `E` and never decrease markers or collapsed spaces.
+- **Forced elimination when blocked** always eliminates at least one ring, so it strictly increases `E` even on turns where no movement is possible.
+- No rule ever decreases the number of collapsed spaces or eliminated rings.
+
+On any turn where a player performs a legal action (movement, chain capture segment, region processing, or forced elimination), **S strictly increases**. The only turns that may leave `S` unchanged are rare “pure forfeits” where a player is required to place but has no legal placement and no stacks, so they simply pass.
+
+Because the board has a finite number of spaces and a finite total number of rings, there is a finite upper bound on `S`:
+
+```text
+S ≤ (#boardSpaces) + (#boardSpaces) + (totalRingsInPlay) = 2·N + R_total.
+```
+
+Since `S` is non-decreasing and bounded, there can only be **finitely many** turns that involve a real action (movement or forced elimination) in any game. Eventually, no player can have any legal placement, movement, or capture without exceeding this bound. At that point the game is in a global no-moves state and must be resolved by the rules in this section (victory thresholds, last-player-standing, or stalemate tiebreakers).
+
+This invariant justifies the expectation that every correctly implemented RingRift engine will see any legal game terminate in finite time with a definite result according to the rules above.
 
 ## 14. Strategy Guide (All Versions)
 
@@ -1534,7 +1579,7 @@ A2: The minimum jump requirements differ between game versions:
 **For 19×19 / Hexagonal / 8x8 Versions (Unified Rule)**:
  • When moving over markers during a non-capture move, you may land on **any valid space beyond the markers** (empty or same-color marker) that satisfies the minimum distance requirement (at least stack height away).
  • You are **not required to stop at the first** such valid space.
- • If landing on your marker, it is removed.
+ • If landing on your marker, it is removed and then the moving stack must eliminate its top ring, with that ring credited to you for victory-condition purposes.
  • If no valid landing space beyond the markers satisfies the minimum distance, movement in that direction is disallowed.
 
 **For 8×8 Version Only**:
@@ -1556,7 +1601,7 @@ Yes, with restrictions. You may land on **any valid space beyond the captured pi
 - The landing space itself is either **(a) empty and not collapsed**, or **(b) occupied by a single marker of the moving stack's color and not collapsed**.
 - You cannot land closer than your stack height.
 - You are **not required to stop at the first valid space** after the captured piece.
-- If landing on your marker, it is removed.
+- If landing on your marker, it is removed and then the moving stack must eliminate its top ring, with that ring credited to you for victory-condition purposes.
 
 **(Note:** The core landing flexibility during captures is now consistent across versions, allowing landing on empty spaces or same-color markers beyond the target, provided distance and path rules are met.)
 **In Both Versions**: The captured ring is always taken from the top of the target stack and added to the bottom of your stack, changing the stack height for subsequent captures.
@@ -1802,7 +1847,7 @@ A24: In this specific situation, you cannot simply skip your turn. You *must* ch
  • Territory Disconnection checks use **4-direction (Von Neumann neighborhood)** adjacency (orthogonal only). This standardizes the territory rule across square boards.
  2. Movement Distance Rule
  • Single simplified rule:
- "You can move in a straight line (orthogonal or diagonal) any number of empty spaces, but you must not stop closer to your start than your stack's height. If no available empty space meets that requirement, you cannot move in that direction."
+ "You can move in a straight line (orthogonal or diagonal) any number of empty spaces (or to a same‑color marker space, which is then handled as described in Sections 8.2 / 16.5.1), but you must not stop closer to your start than your stack's height. If no available landing space meets that requirement, you cannot move in that direction."
  • *(Rule Unified)*: The landing rule after passing markers during non-capture moves is now consistent across all versions. You are not required to stop at the first valid space after markers.
  3. Rings & Counts
  • Each player has 18 rings (instead of 36). This yields 36 total rings for 2 players, or 54 total rings for 3 players.
@@ -1843,7 +1888,7 @@ Turn Flow Summary:
  • Leave a marker of your color on its starting space.
  • Move in a straight line (orthogonal or diagonal) any distance, landing on a space that is at least your stack's height away from your start. The landing space must be either **(a) empty** or **(b) occupied by a single marker of the moving stack's color**. You cannot pass through collapsed spaces or ring stacks.
  • Markers jumped over: Opponent markers flip to your color, your own markers become collapsed territory of your color.
- • Landing on your own marker: If the move concludes by landing on a space occupied by a single marker of your color (and meets distance/path rules), the stack lands there, and the marker is removed from the board. This removal happens *before* checking for lines/disconnections.
+ • Landing on your own marker: If the move concludes by landing on a space occupied by a single marker of your color (and meets distance/path rules), the stack lands there, the marker is removed from the board, and then the stack must eliminate its top ring, with that ring credited to you for victory-condition purposes. This removal and elimination happens *before* checking for lines/disconnections.
 
 #### 16.5.2 Overtaking (Stack Capture)
 
@@ -2071,8 +2116,9 @@ Elimination  Lines/Disconnection  Rings physically removed from board   Yes
  2. Last Player Standing: If the other two lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, but you can move on your turn, and they still cannot move on their subsequent turns, then you win.
  3. Stalemate: If no moves are possible for any players, compare, in order:
     - Most collapsed spaces (indicating territorial control) first
-    - Most Eliminated rings (including rings in hand) if still tied
+    - Most Eliminated rings (including rings eliminated during gameplay **and** any rings remaining in hand at the point of stalemate) if still tied
     - Most remaining markers (board presence) if still tied
+    - Last person to complete a valid turn action, if still tied
  • Important Notes:
     - Victory conditions are checked only after all post-movement processing
     - Ring Elimination victory takes precedence over other conditions
@@ -2135,6 +2181,8 @@ Scenario 3 - Chain Capture with Territory Impact:
     - If this border helps surround a region containing only B's rings, that region would become disconnected
 
 #### 16.9.6 Territory Disconnection Example (19×19 Using Von Neumann/4-Direction Adjacency)
+
+In practice, territory disconnection on the 19×19 board works exactly like the 8×8 example in Section 16.8 and the general rules in Sections 12.1–12.3, but on a larger canvas. Use Von Neumann (4‑direction) adjacency for region connectivity, apply the same two‑step test (physical disconnection plus missing color representation), then collapse each qualifying region and its single‑color border markers, eliminate all rings inside, and pay the mandatory self‑elimination cost as described in Section 12.2.
 
 #### 16.9.7 Victory Through Territory Control
 

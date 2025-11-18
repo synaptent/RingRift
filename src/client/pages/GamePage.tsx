@@ -73,6 +73,10 @@ export default function GamePage() {
   const lastCurrentPlayerRef = useRef<number | null>(null);
   const lastChoiceIdRef = useRef<string | null>(null);
 
+  // Local sandbox render tick used to force re-renders for AI-vs-AI games
+  // even when React state derived from GameState hasn’t otherwise changed.
+  const [, setSandboxTurn] = useState(0);
+
   // Local setup state (used only when no gameId route param is provided)
   const [config, setConfig] = useState<LocalConfig>({
     numPlayers: 2,
@@ -96,6 +100,8 @@ export default function GamePage() {
   const sandboxChoiceResolverRef = useRef<
     ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
   >(null);
+  const [sandboxCaptureChoice, setSandboxCaptureChoice] = useState<PlayerChoice | null>(null);
+  const [sandboxCaptureTargets, setSandboxCaptureTargets] = useState<Position[]>([]);
 
   // UI selection state (used in both modes)
   const [selected, setSelected] = useState<Position | undefined>();
@@ -128,8 +134,22 @@ export default function GamePage() {
           } as PlayerChoiceResponseFor<TChoice>;
         }
 
-        // Human players: surface the choice to the sandbox UI and wait for a selection.
-        setSandboxPendingChoice(choice);
+        // Human players
+        if (choice.type === 'capture_direction') {
+          // For capture_direction in the local sandbox, highlight the
+          // possible landing squares on the board and let the user
+          // choose by clicking one of them instead of showing a dialog.
+          const anyChoice = choice as any;
+          const options = (anyChoice.options ?? []) as any[];
+          const targets: Position[] = options.map(opt => opt.landingPosition as Position);
+          setSandboxCaptureChoice(choice);
+          setSandboxCaptureTargets(targets);
+        } else {
+          // Other choices (e.g. region_order) continue to use the
+          // dialog-based ChoiceDialog UI.
+          setSandboxPendingChoice(choice);
+        }
+
         return new Promise<PlayerChoiceResponseFor<TChoice>>(resolve => {
           sandboxChoiceResolverRef.current = ((
             response: PlayerChoiceResponseFor<PlayerChoice>
@@ -250,20 +270,159 @@ export default function GamePage() {
     setValidTargets([]);
     setSandboxPendingChoice(null);
     setIsConfigured(true);
+
+    // If the first player is an AI, immediately start the sandbox AI turn
+    // loop so AI-vs-AI games progress without any human clicks.
+    const engine = sandboxEngineRef.current;
+    if (engine) {
+      const state = engine.getGameState();
+      const current = state.players.find(p => p.playerNumber === state.currentPlayer);
+      if (current && current.type === 'ai') {
+        void runSandboxAiTurnLoop();
+      }
+    }
+  };
+
+  const runSandboxAiTurnLoop = async () => {
+    const engine = sandboxEngineRef.current;
+    if (!engine) return;
+
+    let safetyCounter = 0;
+    // Allow a bounded number of consecutive AI turns per batch to avoid
+    // accidental infinite loops, but drive progression one visible move at a
+    // time so AI-vs-AI games feel continuous rather than "bursty".
+    while (safetyCounter < 32) {
+      const state = engine.getGameState();
+      if (state.gameStatus !== 'active') break;
+      const current = state.players.find(p => p.playerNumber === state.currentPlayer);
+      if (!current || current.type !== 'ai') break;
+
+      await engine.maybeRunAITurn();
+
+      // After each AI move, clear any stale selection/highlights and bump the
+      // sandboxTurn counter so BoardView re-renders with the latest state.
+      setSelected(undefined);
+      setValidTargets([]);
+      setSandboxTurn(t => t + 1);
+
+      safetyCounter += 1;
+
+      // Small delay between moves so AI-only games progress in a smooth
+      // sequence rather than a single visual burst of many moves.
+      await new Promise(resolve => window.setTimeout(resolve, 120));
+    }
+
+    // If the game is still active and the next player is an AI, schedule
+    // another batch so AI-vs-AI games continue advancing without manual
+    // clicks. The safety counter above still bounds each batch.
+    const finalState = engine.getGameState();
+    const next = finalState.players.find(p => p.playerNumber === finalState.currentPlayer);
+    if (finalState.gameStatus === 'active' && next && next.type === 'ai') {
+      window.setTimeout(() => {
+        void runSandboxAiTurnLoop();
+      }, 200);
+    }
   };
 
   // Unified sandbox click handler: prefer the ClientSandboxEngine when
   // available (Stage 2 harness), otherwise fall back to the legacy
   // LocalSandboxState controller.
   const handleSandboxCellClick = (pos: Position) => {
+    // When a capture_direction choice is pending in the local sandbox,
+    // interpret clicks as selecting one of the highlighted landing
+    // squares instead of sending a normal click into the engine.
+    if (sandboxCaptureChoice && sandboxCaptureChoice.type === 'capture_direction') {
+      const currentChoice: any = sandboxCaptureChoice;
+      const options: any[] = (currentChoice.options ?? []) as any[];
+      const matching = options.find(opt => positionsEqual(opt.landingPosition, pos));
+
+      if (matching) {
+        const resolver = sandboxChoiceResolverRef.current;
+        if (resolver) {
+          resolver({
+            choiceId: currentChoice.id,
+            playerNumber: currentChoice.playerNumber,
+            choiceType: currentChoice.type,
+            selectedOption: matching
+          } as PlayerChoiceResponseFor<PlayerChoice>);
+        }
+        sandboxChoiceResolverRef.current = null;
+        setSandboxCaptureChoice(null);
+        setSandboxCaptureTargets([]);
+
+        // After resolving a capture_direction choice, the sandbox engine
+        // continues the capture chain (possibly with additional automatic
+        // segments). Bump sandboxTurn on the next tick so BoardView
+        // re-reads the latest GameState once that chain has fully
+        // resolved.
+        window.setTimeout(() => {
+          setSandboxTurn(t => t + 1);
+        }, 0);
+      }
+      // Ignore clicks that are not on a highlighted landing square.
+      return;
+    }
+
     const engine = sandboxEngineRef.current;
     if (engine) {
-      engine.handleHumanCellClick(pos);
-      // In future iterations we will call engine.maybeRunAITurn() here when
-      // the next player is AI, and re-render from engine.getGameState().
-      setSelected(pos);
-      setValidTargets([]);
+      const stateBefore = engine.getGameState();
+
+      // Ring-placement phase: a single click attempts a 1-ring placement
+      // via the engine. On success, we immediately highlight the legal
+      // movement targets for the newly placed/updated stack, and the
+      // human must then move that stack; the AI will respond only after
+      // the movement step completes.
+      if (stateBefore.currentPhase === 'ring_placement') {
+        engine.handleHumanCellClick(pos);
+
+        setSelected(pos);
+        const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+        setValidTargets(targets);
+        setSandboxTurn(t => t + 1);
+        return;
+      }
+
+      // Movement phase: mirror backend UX – first click selects a stack
+      // and highlights its legal landing positions; second click on a
+      // highlighted cell executes the move.
+      if (!selected) {
+        // Selection click: record selected cell and highlight valid targets.
+        setSelected(pos);
+        const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+        setValidTargets(targets);
+        // Inform the engine about the selection so its internal
+        // movement state (_selectedStackKey) matches the UI.
+        engine.handleHumanCellClick(pos);
+        return;
+      }
+
+      // Clicking the same cell clears selection.
+      if (positionsEqual(selected, pos)) {
+        setSelected(undefined);
+        setValidTargets([]);
+        // Let the engine clear its internal selection as well.
+        engine.clearSelection();
+        return;
+      }
+
+      // If this click is on a highlighted target, treat it as executing
+      // the move and then let the AI respond.
+      const isTarget = validTargets.some(t => positionsEqual(t, pos));
+      if (isTarget) {
+        engine.handleHumanCellClick(pos);
+        setSelected(undefined);
+        setValidTargets([]);
+        setSandboxTurn(t => t + 1);
+        void runSandboxAiTurnLoop();
+        return;
+      }
+
+      // Otherwise, ignore clicks on non-highlighted cells while a stack
+      // is selected so that invalid landings cannot be executed. Users
+      // can either click the selected stack again to clear selection, or
+      // select a different stack by first clearing and then re-clicking.
       return;
+
     }
 
     if (!localSandbox) return;
@@ -275,16 +434,183 @@ export default function GamePage() {
   };
 
   /**
-   * Backend game click handling: simple "select source, then select target" flow.
+   * Sandbox double-click handler: implements the richer placement semantics
+   * for the local sandbox during the ring_placement phase.
    *
-   * - First click selects a source position and highlights legal targets
-   *   using the validMoves array from the backend (if available).
-   * - Second click on a highlighted target constructs a partial Move and
-   *   calls submitMove, letting the server-side GameEngine validate and
-   *   apply the move.
+   * - Empty cells: attempt a 2-ring placement (falling back to 1 ring if
+   *   necessary) and then highlight movement targets from the new stack.
+   * - Occupied cells: attempt a single-ring placement onto the stack and
+   *   then highlight movement targets from that stack.
+   */
+  const handleSandboxCellDoubleClick = (pos: Position) => {
+    const engine = sandboxEngineRef.current;
+    if (!engine) return;
+
+    const state = engine.getGameState();
+    if (state.currentPhase !== 'ring_placement') {
+      return;
+    }
+
+    const board = state.board;
+    const key = positionToString(pos);
+    const stack = board.stacks.get(key);
+    const player = state.players.find(p => p.playerNumber === state.currentPlayer);
+    if (!player || player.ringsInHand <= 0) {
+      return;
+    }
+
+    const isOccupied = !!stack && stack.rings.length > 0;
+    const maxFromHand = player.ringsInHand;
+    const maxPerPlacement = isOccupied ? 1 : maxFromHand;
+
+    if (maxPerPlacement <= 0) {
+      return;
+    }
+
+    let placed = false;
+
+    if (!isOccupied) {
+      // Empty cell: treat as a request to place 2 rings here in a single
+      // placement action when possible.
+      const desiredCount = Math.min(2, maxPerPlacement);
+      placed = engine.tryPlaceRings(pos, desiredCount);
+
+      // If the desired multi-ring placement fails no-dead-placement checks,
+      // fall back to a single-ring placement.
+      if (!placed && desiredCount > 1) {
+        placed = engine.tryPlaceRings(pos, 1);
+      }
+    } else {
+      // Existing stack: canonical rule is exactly 1 ring per placement.
+      placed = engine.tryPlaceRings(pos, 1);
+    }
+
+    if (!placed) {
+      return;
+    }
+
+    // After a successful placement, we are now in the movement step for
+    // this player, and the placed/updated stack must move. Highlight its
+    // legal landing targets so the user can complete the turn.
+    setSelected(pos);
+    const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+    setValidTargets(targets);
+    setSandboxTurn(t => t + 1);
+  };
+
+  /**
+   * Sandbox context-menu handler (right-click / long-press proxy): prompts
+   * the user for a ring-count to place at the clicked position, then applies
+   * that placement via tryPlaceRings when legal.
+   */
+  const handleSandboxCellContextMenu = (pos: Position) => {
+    const engine = sandboxEngineRef.current;
+    if (!engine) return;
+
+    const state = engine.getGameState();
+    if (state.currentPhase !== 'ring_placement') {
+      return;
+    }
+
+    const board = state.board;
+    const key = positionToString(pos);
+    const stack = board.stacks.get(key);
+    const player = state.players.find(p => p.playerNumber === state.currentPlayer);
+    if (!player || player.ringsInHand <= 0) {
+      return;
+    }
+
+    const isOccupied = !!stack && stack.rings.length > 0;
+    const maxFromHand = player.ringsInHand;
+    const maxPerPlacement = isOccupied ? 1 : maxFromHand;
+
+    if (maxPerPlacement <= 0) {
+      return;
+    }
+
+    const promptLabel = isOccupied
+      ? 'Place how many rings on this stack? (canonical: 1)'
+      : `Place how many rings on this empty cell? (1–${maxPerPlacement})`;
+
+    const raw = window.prompt(promptLabel, Math.min(2, maxPerPlacement).toString());
+    if (!raw) {
+      return;
+    }
+
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > maxPerPlacement) {
+      return;
+    }
+
+    const placed = engine.tryPlaceRings(pos, parsed);
+    if (!placed) {
+      return;
+    }
+
+    setSelected(pos);
+    const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+    setValidTargets(targets);
+    setSandboxTurn(t => t + 1);
+  };
+
+  /**
+   * Backend game click handling.
+   *
+   * Placement phase:
+   *   - Single-click on an empty cell sends a place_ring with placementCount = 1
+   *     if the backend reports such a move as legal.
+   *   - Single-click on a stack simply selects it (no placement yet), mirroring
+   *     the sandbox UX where stacked placements use double/right-click.
+   *
+   * Movement/capture phases:
+   *   - First click selects a source stack and highlights legal targets using
+   *     validMoves from the backend.
+   *   - Second click on a highlighted target submits the matching move.
    */
   const handleBackendCellClick = (pos: Position, board: BoardState) => {
     if (!gameState) return;
+
+    // Ring placement phase: attempt a canonical 1-ring placement on empties
+    // using the backend-reported validMoves. We never synthesize moves that
+    // the backend hasn't already declared legal.
+    if (gameState.currentPhase === 'ring_placement') {
+      if (!Array.isArray(validMoves) || validMoves.length === 0) {
+        return;
+      }
+
+      const key = positionToString(pos);
+      const hasStack = !!board.stacks.get(key);
+
+      if (!hasStack) {
+        const placeMovesAtPos = validMoves.filter(
+          m => m.type === 'place_ring' && positionsEqual(m.to, pos)
+        );
+        if (placeMovesAtPos.length === 0) {
+          return;
+        }
+
+        const preferred =
+          placeMovesAtPos.find(m => (m.placementCount ?? 1) === 1) || placeMovesAtPos[0];
+
+        submitMove({
+          type: 'place_ring',
+          to: preferred.to,
+          placementCount: preferred.placementCount,
+          placedOnStack: preferred.placedOnStack
+        } as any);
+
+        setSelected(undefined);
+        setValidTargets([]);
+        return;
+      }
+
+      // Clicking stacks in placement phase just selects them for now.
+      setSelected(pos);
+      setValidTargets([]);
+      return;
+    }
+
+    // Movement/capture phases: simple "select source, then target" flow.
 
     // No existing selection: select this cell and highlight its valid targets.
     if (!selected) {
@@ -337,6 +663,116 @@ export default function GamePage() {
     } else {
       setValidTargets([]);
     }
+  };
+
+  /**
+   * Backend double-click handling: in placement phase, prefer a 2-ring placement
+   * on empty cells, falling back to a 1-ring placement if needed. On stacks,
+   * double-click attempts a 1-ring placement onto the stack when the backend
+   * reports such a move.
+   */
+  const handleBackendCellDoubleClick = (pos: Position, board: BoardState) => {
+    if (!gameState) return;
+    if (gameState.currentPhase !== 'ring_placement') {
+      return;
+    }
+
+    if (!Array.isArray(validMoves) || validMoves.length === 0) {
+      return;
+    }
+
+    const key = positionToString(pos);
+    const hasStack = !!board.stacks.get(key);
+
+    const placeMovesAtPos = validMoves.filter(
+      m => m.type === 'place_ring' && positionsEqual(m.to, pos)
+    );
+    if (placeMovesAtPos.length === 0) {
+      return;
+    }
+
+    let chosen: any | undefined;
+
+    if (!hasStack) {
+      const twoRing = placeMovesAtPos.find(m => (m.placementCount ?? 1) === 2);
+      const oneRing = placeMovesAtPos.find(m => (m.placementCount ?? 1) === 1);
+      chosen = twoRing || oneRing || placeMovesAtPos[0];
+    } else {
+      chosen =
+        placeMovesAtPos.find(m => (m.placementCount ?? 1) === 1) || placeMovesAtPos[0];
+    }
+
+    if (!chosen) {
+      return;
+    }
+
+    submitMove({
+      type: 'place_ring',
+      to: chosen.to,
+      placementCount: chosen.placementCount,
+      placedOnStack: chosen.placedOnStack
+    } as any);
+
+    setSelected(undefined);
+    setValidTargets([]);
+  };
+
+  /**
+   * Backend context-menu handling (right-click / long-press proxy): prompt for
+   * a ring count and submit the corresponding place_ring move if the backend
+   * has advertised it via validMoves.
+   */
+  const handleBackendCellContextMenu = (pos: Position, board: BoardState) => {
+    if (!gameState) return;
+    if (gameState.currentPhase !== 'ring_placement') {
+      return;
+    }
+
+    if (!Array.isArray(validMoves) || validMoves.length === 0) {
+      return;
+    }
+
+    const key = positionToString(pos);
+    const hasStack = !!board.stacks.get(key);
+
+    const placeMovesAtPos = validMoves.filter(
+      m => m.type === 'place_ring' && positionsEqual(m.to, pos)
+    );
+    if (placeMovesAtPos.length === 0) {
+      return;
+    }
+
+    const counts = placeMovesAtPos.map(m => m.placementCount ?? 1);
+    const maxCount = Math.max(...counts);
+
+    const promptLabel = hasStack
+      ? 'Place how many rings on this stack? (canonical: 1)'
+      : `Place how many rings on this empty cell? (1–${maxCount})`;
+
+    const raw = window.prompt(promptLabel, Math.min(2, maxCount).toString());
+    if (!raw) {
+      return;
+    }
+
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > maxCount) {
+      return;
+    }
+
+    const chosen = placeMovesAtPos.find(m => (m.placementCount ?? 1) === parsed);
+    if (!chosen) {
+      return;
+    }
+
+    submitMove({
+      type: 'place_ring',
+      to: chosen.to,
+      placementCount: chosen.placementCount,
+      placedOnStack: chosen.placedOnStack
+    } as any);
+
+    setSelected(undefined);
+    setValidTargets([]);
   };
 
   // Track phase / player / choice changes for diagnostics
@@ -442,6 +878,33 @@ export default function GamePage() {
     const board = gameState.board;
     const boardType = gameState.boardType;
 
+    // Approximate must-move stack highlighting by inspecting backend-valid
+    // movement/capture moves: if all such moves originate from the same
+    // stack, we treat that stack as the must-move origin and highlight it
+    // when the user has not made their own selection yet.
+    const backendMustMoveFrom: Position | undefined = (() => {
+      if (!Array.isArray(validMoves) || validMoves.length === 0) return undefined;
+      if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'capture') {
+        return undefined;
+      }
+
+      const origins = validMoves
+        .filter(
+          m =>
+            m.from &&
+            (m.type === 'move_stack' ||
+              m.type === 'move_ring' ||
+              m.type === 'build_stack' ||
+              m.type === 'overtaking_capture')
+        )
+        .map(m => m.from as Position);
+
+      if (origins.length === 0) return undefined;
+      const first = origins[0];
+      const allSame = origins.every(p => positionsEqual(p, first));
+      return allSame ? first : undefined;
+    })();
+
     return (
       <div className="container mx-auto px-4 py-8 space-y-4">
         <header className="flex items-center justify-between">
@@ -466,9 +929,11 @@ export default function GamePage() {
             <BoardView
               boardType={boardType}
               board={board}
-              selectedPosition={selected}
+              selectedPosition={selected || backendMustMoveFrom}
               validTargets={validTargets}
               onCellClick={pos => handleBackendCellClick(pos, board)}
+              onCellDoubleClick={pos => handleBackendCellDoubleClick(pos, board)}
+              onCellContextMenu={pos => handleBackendCellContextMenu(pos, board)}
             />
           </section>
 
@@ -714,8 +1179,10 @@ export default function GamePage() {
               boardType={sandboxBoardState.type}
               board={sandboxBoardState}
               selectedPosition={selected}
-              validTargets={validTargets}
+              validTargets={sandboxCaptureTargets.length > 0 ? sandboxCaptureTargets : validTargets}
               onCellClick={pos => handleSandboxCellClick(pos)}
+              onCellDoubleClick={pos => handleSandboxCellDoubleClick(pos)}
+              onCellContextMenu={pos => handleSandboxCellContextMenu(pos)}
               showMovementGrid
             />
           )}
@@ -730,7 +1197,10 @@ export default function GamePage() {
                   Selected: ({selected.x}, {selected.y}
                   {selected.z !== undefined ? `, ${selected.z}` : ''})
                 </div>
-                <div className="text-xs text-slate-300 mt-1">Valid targets not yet wired.</div>
+                <div className="text-xs text-slate-300 mt-1">
+                  Valid targets are highlighted on the board; click a highlighted cell to
+                  move.
+                </div>
               </div>
             ) : (
               <div className="text-slate-200">Click a cell to select it.</div>

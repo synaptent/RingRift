@@ -103,12 +103,25 @@ class TimeControl(BaseModel):
 
 
 class Move(BaseModel):
-    """Move representation"""
+    """Move representation.
+
+    This mirrors the TypeScript Move type closely enough for the AI
+    service to participate in both movement and ring placement:
+    - `type` is a string MoveType (e.g. 'place_ring', 'move_ring',
+      'move_stack', 'overtaking_capture').
+    - For placement moves, `placement_count` and `placed_on_stack`
+      carry the multi-ring and stacking metadata introduced on the
+      backend.
+    """
+
     id: str
     type: str
     player: int
     from_pos: Optional[Position] = Field(None, alias="from")
     to: Position
+    # Ring placement specific metadata (optional for non-placement moves)
+    placed_on_stack: Optional[bool] = Field(None, alias="placedOnStack")
+    placement_count: Optional[int] = Field(None, alias="placementCount")
     timestamp: datetime
     think_time: int = Field(alias="thinkTime")
     move_number: int = Field(alias="moveNumber")
