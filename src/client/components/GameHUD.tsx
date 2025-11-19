@@ -1,13 +1,24 @@
 import React from 'react';
 import { GameState, Player, GamePhase } from '../../shared/types/game';
+import { ConnectionStatus } from '../contexts/GameContext';
 
 interface GameHUDProps {
   gameState: GameState;
   currentPlayer: Player | undefined;
   instruction?: string;
+  connectionStatus?: ConnectionStatus;
+  isSpectator?: boolean;
+  lastHeartbeatAt?: number | null;
 }
 
-export function GameHUD({ gameState, currentPlayer, instruction }: GameHUDProps) {
+export function GameHUD({
+  gameState,
+  currentPlayer,
+  instruction,
+  connectionStatus = 'connected',
+  isSpectator = false,
+  lastHeartbeatAt,
+}: GameHUDProps) {
   if (!currentPlayer) return null;
 
   const getPhaseLabel = (phase: GamePhase) => {
@@ -64,8 +75,49 @@ export function GameHUD({ gameState, currentPlayer, instruction }: GameHUDProps)
     }
   };
 
+  const connectionLabel = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return 'Connected';
+      case 'connecting':
+        return 'Connecting…';
+      case 'reconnecting':
+        return 'Reconnecting…';
+      case 'disconnected':
+      default:
+        return 'Disconnected';
+    }
+  };
+
+  const HEARTBEAT_STALE_THRESHOLD_MS = 8000;
+  const heartbeatAge = lastHeartbeatAt ? Date.now() - lastHeartbeatAt : null;
+  const isHeartbeatStale =
+    heartbeatAge !== null &&
+    heartbeatAge > HEARTBEAT_STALE_THRESHOLD_MS &&
+    connectionStatus === 'connected';
+
+  const connectionColor =
+    connectionStatus === 'connected' && !isHeartbeatStale
+      ? 'text-emerald-300'
+      : connectionStatus === 'reconnecting'
+        ? 'text-amber-300'
+        : 'text-rose-300';
+
   return (
     <div className="w-full max-w-4xl mx-auto mb-4">
+      <div className="flex items-center justify-between text-xs text-slate-300 mb-3">
+        <div className={`font-semibold ${connectionColor}`}>
+          Connection: {connectionLabel()}
+          {isHeartbeatStale && (
+            <span className="ml-1 text-[11px] text-amber-200">(awaiting update…)</span>
+          )}
+        </div>
+        {isSpectator && (
+          <span className="px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/40 text-purple-100 uppercase tracking-wide font-semibold">
+            Spectator
+          </span>
+        )}
+      </div>
       {/* Current Turn Banner */}
       <div
         className={`

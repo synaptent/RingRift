@@ -1,5 +1,8 @@
 # RingRift Playable Game Implementation Plan
+
 **Created: November 15, 2025 · Status Updated: November 16, 2025**
+
+> **Historical Note:** This document captures a snapshot of the end-to-end playability plan as of mid-November 2025. Many items described here have since been implemented or superseded. For canonical, up-to-date status and tasks, see `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `TODO.md`, `STRATEGIC_ROADMAP.md`, and `KNOWN_ISSUES.md`.
 
 ## Executive Summary
 
@@ -36,6 +39,7 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 **RECOMMENDATION: Focus on backend-driven games first**
 
 **Rationale:**
+
 - Backend infrastructure (routes, WebSocket, GameEngine persistence) is already built
 - LobbyPage → `gameApi.createGame()` → navigation to `/game/:gameId` works
 - WebSocket server properly initializes GameEngine from database with move replay
@@ -43,6 +47,7 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 - Local sandbox is useful for quick testing but shouldn't block playability goals
 
 **Current State:**
+
 - GamePage already attempts backend-first: tries `createGame()` before falling back to local
 - WebSocket server has comprehensive game lifecycle management
 - Only gaps: game status transitions and victory detection UI
@@ -52,12 +57,14 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 **RECOMMENDATION: Default to service-backed with graceful degradation**
 
 **Rationale:**
+
 - `globalAIEngine` already abstracts local vs service-backed AI
 - WebSocket server creates AI from `aiProfile` persisted in game state
 - AIEngine attempts service call and logs errors without crashing
 - Service-backed AI enables richer strategic play (heuristic, minimax, MCTS)
 
 **Implementation:**
+
 ```typescript
 // In AIEngine, current behavior is already reasonable:
 // 1. Try service-backed AI first
@@ -69,6 +76,7 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 ```
 
 **Action Items:**
+
 - [ ] Add explicit fallback in `AIEngine.getAIMove()` - if service fails, use local heuristic
 - [ ] Display AI mode (service/local) in GamePage UI so users know which is active
 - [ ] Add health check endpoint for AI service connectivity
@@ -84,6 +92,7 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 5. **Victory notification** - Clear modal when game ends
 
 **Current State:**
+
 - GamePage shows phase/player/status in small text (top-right)
 - ChoiceDialog handles strategic decisions
 - Missing: prominent turn indicator, ring counts, victory modal
@@ -93,12 +102,14 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 **RECOMMENDATION: Support 2-4 players from the start**
 
 **Rationale:**
+
 - GameEngine, WebSocket, and LobbyPage already handle 2-4 players
 - No architectural changes needed - just testing
 - Game rules don't change based on player count (just more players)
 - Limiting to 2-player first provides no implementation savings
 
 **Current State:**
+
 - Database schema supports player1Id through player4Id
 - LobbyPage dropdown allows 2-4 players
 - GameEngine creates players array from database
@@ -118,12 +129,14 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 ### Gap 1: Game Status Transitions ⚠️
 
 **Current State:**
+
 - Games created with status `waiting`
 - Join endpoint transitions to `active` when ≥2 players
 - No automatic start for AI-only games
 - No completion/victory detection
 
 **What's Needed:**
+
 ```typescript
 // In WebSocket server after game engine creation:
 // 1. Check if all AI opponents filled → auto-start
@@ -132,18 +145,21 @@ This `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` is intentionally focused on the **en
 ```
 
 **Files to Modify:**
+
 - `src/server/websocket/server.ts` - Add auto-start logic in `getOrCreateGameEngine()`
 - `src/server/websocket/server.ts` - Add victory check in `handlePlayerMove()` and `maybePerformAITurn()`
 
 ### Gap 2: Victory Signalling & UI 🎯
 
 **Current State:**
+
 - `RuleEngine` and `GameEngine` already cooperate to perform a game-end check after moves via `checkGameEnd`, and `GameEngine.endGame` updates `GameState` with `winner` and a `GameResult`.
 - `WebSocketServer.handlePlayerMove` currently ignores the `gameResult` returned by `makeMove` and always continues by broadcasting `game_state` only.
 - The database game record is not yet consistently updated to `COMPLETED`/`winnerId` when the engine ends a game.
 - The frontend (`GameContext` / `GamePage`) has no dedicated `game_over` signal or victory UI; users only see the final board state.
 
 **What's Needed:**
+
 ```typescript
 // In WebSocketServer.handlePlayerMove (and maybePerformAITurn):
 const result = await gameEngine.makeMove(engineMove);
@@ -174,6 +190,7 @@ if (result.gameResult) {
 ```
 
 On the frontend:
+
 ```typescript
 // In GameContext.tsx (pseudo-code)
 const [victoryState, setVictoryState] = useState<GameResult | null>(null);
@@ -185,6 +202,7 @@ socket.on('game_over', (payload) => {
 ```
 
 **Files to Modify:**
+
 - `src/server/websocket/server.ts` – wire `gameResult` from `GameEngine.makeMove()` / `maybePerformAITurn()` into DB updates and a `game_over` event.
 - `src/client/contexts/GameContext.tsx` – add `victoryState` handling on `game_over`.
 - `src/client/pages/GamePage.tsx` – render a minimal victory UI (modal/banner) driven by `victoryState`.
@@ -193,11 +211,13 @@ socket.on('game_over', (payload) => {
 ### Gap 3: Enhanced HUD ✨
 
 **Current State:**
+
 - GamePage shows minimal status (phase, player, game ID)
 - Player info buried in sidebar
 - No visual emphasis on current turn
 
 **What's Needed:**
+
 ```typescript
 // Component hierarchy:
 // <GameHUD>
@@ -209,6 +229,7 @@ socket.on('game_over', (payload) => {
 ```
 
 **Files to Create:**
+
 - `src/client/components/GameHUD.tsx`
 - `src/client/components/CurrentPlayerBanner.tsx`
 - `src/client/components/PlayerStats.tsx`
@@ -216,11 +237,13 @@ socket.on('game_over', (payload) => {
 ### Gap 4: Lobby Game List 📋
 
 **Current State:**
+
 - Backend route `/game/lobby/available` exists
 - LobbyPage only has create form, no game list
 - No way to view/join existing waiting games
 
 **What's Needed:**
+
 ```typescript
 // Add to LobbyPage:
 // 1. Fetch available games on mount
@@ -230,17 +253,20 @@ socket.on('game_over', (payload) => {
 ```
 
 **Files to Modify:**
+
 - `src/client/pages/LobbyPage.tsx` - Add game list section
 - `src/client/services/api.ts` - Add `getAvailableGames()` method
 
 ### Gap 5: Ring Placement Phase UI 🔵
 
 **Current State:**
+
 - GameEngine handles ring placement validation
 - GamePage supports move submission
 - No visual affordance for where rings can be placed
 
 **What's Needed:**
+
 ```typescript
 // During placement phase:
 // 1. Highlight all valid placement positions (edge positions typically)
@@ -249,6 +275,7 @@ socket.on('game_over', (payload) => {
 ```
 
 **Files to Modify:**
+
 - `src/client/pages/GamePage.tsx` - Add placement mode handling
 - `src/client/utils/boardMovementGrid.ts` - Add placement position calculation
 
@@ -257,17 +284,19 @@ socket.on('game_over', (payload) => {
 ## Detailed Implementation Roadmap
 
 ### Phase 1: Core Playability (1-2 days) 🎮
+
 **Goal: Enable completing a full 2-player human vs AI game from lobby to victory**
 
 #### Step 1.1: Fix Game Auto-Start
+
 - [ ] In `WebSocketServer.getOrCreateGameEngine()`, after creating players array:
   ```typescript
   // If all players ready (humans connected OR AI), start game
-  const allReady = players.every(p => p.isReady);
+  const allReady = players.every((p) => p.isReady);
   if (allReady && game.status === 'waiting') {
     await prisma.game.update({
       where: { id: gameId },
-      data: { status: 'ACTIVE', startedAt: new Date() }
+      data: { status: 'ACTIVE', startedAt: new Date() },
     });
   }
   ```
@@ -286,7 +315,9 @@ Engine-side victory detection already exists via `RuleEngine.checkGameEnd` and `
 - [ ] In `GamePage`, render a minimal, clear victory UI (modal or banner) driven by `victoryState`, providing at least a "Return to Lobby" action and the ability to inspect the final board.
 
 #### Step 1.3: Victory Modal UI
+
 - [ ] Create `src/client/components/VictoryModal.tsx`:
+
   ```typescript
   interface VictoryModalProps {
     isOpen: boolean;
@@ -294,7 +325,7 @@ Engine-side victory detection already exists via `RuleEngine.checkGameEnd` and `
     reason: string;
     onClose: () => void;
   }
-  
+
   export function VictoryModal({ isOpen, winner, reason, onClose }: VictoryModalProps) {
     // Full-screen overlay with confetti animation
     // Display winner name, avatar, reason
@@ -310,6 +341,7 @@ Engine-side victory detection already exists via `RuleEngine.checkGameEnd` and `
   ```
 
 #### Step 1.4: Basic HUD
+
 - [ ] Create `src/client/components/GameHUD.tsx` with:
   - Current player banner (large, colored)
   - Phase indicator (icon + text)
@@ -319,35 +351,43 @@ Engine-side victory detection already exists via `RuleEngine.checkGameEnd` and `
 - [ ] Integrate into GamePage above BoardView
 
 ### Phase 2: Enhanced UX (1 day) ✨
+
 **Goal: Make the game feel polished and intuitive**
 
 #### Step 2.1: Lobby Game List
+
 - [ ] Add game list to LobbyPage above create form
 - [ ] Show: Board type icon, player count (2/4), creator name, time created
 - [ ] Join button with confirmation dialog
 - [ ] Auto-refresh every 10 seconds
 
 #### Step 2.2: Ring Placement UX
+
 - [ ] When `currentPhase === 'placement'`:
   - Highlight all edge positions (valid placement spots)
   - Show prompt: "Place ring {{ringNumber}}/{{totalRings}}"
   - Disable "from" selection (only "to" matters in placement)
 
 #### Step 2.3: Move Validation Feedback
+
 - [ ] When invalid move attempted, show toast notification with reason
 - [ ] Add visual shake animation on invalid cell click
 - [ ] Display valid move count in HUD ("{{count}} moves available")
 
 #### Step 2.4: Loading States
+
 - [ ] Show skeleton UI while loading game state
 - [ ] Display "Waiting for opponent" during AI thinking
 - [ ] Add connection status indicator (online/offline/reconnecting)
 
 ### Phase 3: Robustness (1 day) 🛡️
+
 **Goal: Handle edge cases and failure modes gracefully**
 
 #### Step 3.1: AI Service Fallback
+
 - [ ] Modify `AIEngine.getAIMove()`:
+
   ```typescript
   try {
     return await this.getServiceBackedMove(playerNumber, gameState);
@@ -361,21 +401,25 @@ Engine-side victory detection already exists via `RuleEngine.checkGameEnd` and `
 - [ ] Display AI mode in player stats (🌐 service / 💻 local)
 
 #### Step 3.2: Reconnection Handling
+
 - [ ] In GameContext, detect socket disconnect
 - [ ] Show reconnection banner
 - [ ] On reconnect, re-emit `join_game` and sync state
 
 #### Step 3.3: Error Boundaries
+
 - [ ] Wrap GamePage in React error boundary
 - [ ] On error, show recovery options: reload / return to lobby
 - [ ] Log errors to backend for debugging
 
 #### Step 3.4: Choice Timeout Handling
+
 - [ ] Already implemented in WebSocketInteractionHandler ✅
 - [ ] Add visual countdown in ChoiceDialog (already exists ✅)
 - [ ] Show notification when choice times out with default selected
 
 ### Phase 4: Testing & Refinement (1 day) 🧪
+
 **Goal: Validate complete game flow with various scenarios**
 
 In parallel with the backend-driven game lifecycle, `TODO.md` now tracks a dedicated **Phase 3S – Sandbox Stage 2** that will make `http://localhost:3000/sandbox` capable of running a complete 2–4 player game entirely in the browser using a client-local engine harness, with human and AI players. The sandbox will:
@@ -402,6 +446,7 @@ The sandbox Stage 2 work is intentionally scoped and tracked in `TODO.md` under 
 This matrix will be kept in sync between backend-driven and sandbox-driven flows to ensure consistent rules behaviour across both surfaces.
 
 #### Test Scenarios:
+
 1. **Human vs AI (2-player)**
    - [ ] Create game from lobby
    - [ ] Place all rings
@@ -439,6 +484,7 @@ This matrix will be kept in sync between backend-driven and sandbox-driven flows
 ## Priority Files to Modify
 
 ### Critical (Phase 1):
+
 1. `src/server/game/GameEngine.ts` - Add `checkVictoryCondition()`
 2. `src/server/websocket/server.ts` - Add victory detection + auto-start
 3. `src/shared/types/game.ts` - Add `VictoryCondition` type
@@ -448,11 +494,13 @@ This matrix will be kept in sync between backend-driven and sandbox-driven flows
 7. `src/client/pages/GamePage.tsx` - Integrate HUD + victory modal
 
 ### Important (Phase 2):
+
 8. `src/client/pages/LobbyPage.tsx` - Add game list
 9. `src/client/services/api.ts` - Add `getAvailableGames()`
 10. `src/client/utils/boardPlacementHelpers.ts` - NEW FILE
 
 ### Nice-to-Have (Phase 3):
+
 11. `src/server/game/ai/AIEngine.ts` - Enhance fallback logic
 12. `src/server/routes/health.ts` - NEW FILE (AI service health)
 13. `src/client/components/ErrorBoundary.tsx` - NEW FILE
@@ -462,49 +510,53 @@ This matrix will be kept in sync between backend-driven and sandbox-driven flows
 ## Quick Wins (Can implement now)
 
 ### 1. Auto-Start AI Games (15 min)
+
 ```typescript
 // In WebSocketServer.getOrCreateGameEngine(), after player creation:
 if (players.length >= 2 && game.status !== 'ACTIVE') {
   await prisma.game.update({
     where: { id: gameId },
-    data: { status: 'ACTIVE', startedAt: new Date() }
+    data: { status: 'ACTIVE', startedAt: new Date() },
   });
 }
 ```
 
 ### 2. Victory Check Stub (20 min)
+
 ```typescript
 // In GameEngine.ts:
 public checkVictoryCondition(): { isGameOver: boolean; winner?: number } {
-  const playersWithRings = this.gameState.players.filter(p => 
+  const playersWithRings = this.gameState.players.filter(p =>
     p.ringsInHand > 0 || p.eliminatedRings < BOARD_CONFIGS[this.gameState.boardType].ringsPerPlayer
   );
-  
+
   if (playersWithRings.length === 1) {
     return { isGameOver: true, winner: playersWithRings[0].playerNumber };
   }
-  
+
   return { isGameOver: false };
 }
 ```
 
 ### 3. Victory Event Emission (10 min)
+
 ```typescript
 // In WebSocketServer.handlePlayerMove() and maybePerformAITurn():
 const victoryCheck = gameEngine.checkVictoryCondition();
 if (victoryCheck.isGameOver) {
-  this.io.to(gameId).emit('game_over', { 
+  this.io.to(gameId).emit('game_over', {
     winner: victoryCheck.winner,
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString(),
   });
 }
 ```
 
 ### 4. Simple Victory Toast (15 min)
+
 ```typescript
 // In GameContext.tsx:
 socket.on('game_over', (data) => {
-  const winner = gameState?.players.find(p => p.playerNumber === data.winner);
+  const winner = gameState?.players.find((p) => p.playerNumber === data.winner);
   alert(`Game Over! ${winner?.username || 'Player ' + data.winner} wins!`);
 });
 ```
@@ -516,6 +568,7 @@ socket.on('game_over', (data) => {
 ## Testing Strategy
 
 ### Manual Testing Checklist:
+
 - [ ] Create 2-player game human vs AI from lobby
 - [ ] Game auto-starts immediately
 - [ ] Place all rings (both players)
@@ -528,6 +581,7 @@ socket.on('game_over', (data) => {
 - [ ] Return to lobby
 
 ### Automated Testing:
+
 - Current 103 tests should continue passing ✅
 - Add integration test: `tests/e2e/fullGame.test.ts`
 - Test each victory condition scenario
@@ -550,17 +604,20 @@ socket.on('game_over', (data) => {
 ## Recommended Next Actions
 
 ### Immediate (Today):
+
 1. ✅ Review this plan
 2. Implement quick wins (1 hour) → immediate playability
 3. Create VictoryModal component
 4. Add victory check to GameEngine
 
 ### This Week:
+
 1. Complete Phase 1 (Core Playability)
 2. Test end-to-end human vs AI game
 3. Begin Phase 2 (Enhanced UX)
 
 ### Next Week:
+
 1. Complete Phases 2-3
 2. Comprehensive testing
 3. Bug fixes and polish
@@ -571,6 +628,7 @@ socket.on('game_over', (data) => {
 ## Success Metrics
 
 **Definition of "Fully Playable":**
+
 - ✅ User creates game from lobby with AI opponent
 - ✅ Game starts automatically
 - ✅ User places all rings
@@ -589,6 +647,7 @@ socket.on('game_over', (data) => {
 ## Conclusion
 
 RingRift's architecture is **excellent**. The core systems are sound:
+
 - Game engine logic is solid (19 test suites, 103 tests passing)
 - WebSocket lifecycle is complete
 - AI integration works end-to-end
@@ -618,7 +677,7 @@ Use the following as a concise context block when spinning up a new task or agen
   - `KNOWN_ISSUES.md` – P0/P1 issues, now focused on test coverage, UX, and AI depth rather than missing mechanics.
   - `TODO.md` – phased development tasks, including PlayerChoice, chain captures, AI, WebSocket, sandbox, and HUD items.
   - `STRATEGIC_ROADMAP.md` – phased roadmap (testing/core logic → minimal UI → AI → polish → multiplayer).
-  - `RINGRIFT_IMPROVEMENT_PLAN.md` – improvement-focused plan around rules fidelity, playability, and AI.
-  - `ARCHITECTURE_ASSESSMENT.md` & `CODEBASE_EVALUATION.md` – architecture and code-quality views structured along four axes: rules/state, AI boundary, WebSocket/game loop, and testing/quality gates.
+  - `deprecated/RINGRIFT_IMPROVEMENT_PLAN.md` – historical improvement-focused plan around rules fidelity, playability, and AI.
+  - `ARCHITECTURE_ASSESSMENT.md` & `deprecated/CODEBASE_EVALUATION.md` – architecture and code-quality views structured along four axes: rules/state, AI boundary, WebSocket/game loop, and testing/quality gates.
 
 When creating a new task, anchor it to one or more of these axes (rules/state, AI boundary, WebSocket/game loop, testing/quality) and clearly state whether the goal is **rules fidelity**, **playability/UX**, **AI strength**, or **operational robustness**. This keeps changes aligned with the long-term architecture and minimises technical debt.

@@ -1,9 +1,4 @@
-import {
-  GameState,
-  Move,
-  GameResult,
-  Position
-} from '../../../shared/types/game';
+import { GameState, Move, GameResult, Position } from '../../../shared/types/game';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
 import { getMovementDirectionsForBoardType } from '../../../shared/engine/core';
@@ -47,10 +42,7 @@ export interface TurnEngineHooks {
  * This is a direct extraction of GameEngine.updatePerTurnStateAfterMove
  * rewritten in functional style.
  */
-export function updatePerTurnStateAfterMove(
-  turnState: PerTurnState,
-  move: Move
-): PerTurnState {
+export function updatePerTurnStateAfterMove(turnState: PerTurnState, move: Move): PerTurnState {
   let { hasPlacedThisTurn, mustMoveFromStackKey } = turnState;
 
   // When a ring is placed, mark that we have placed this turn and
@@ -102,34 +94,23 @@ export function advanceGameForCurrentPlayer(
   switch (gameState.currentPhase) {
     case 'ring_placement': {
       // After placing a ring (or skipping), the active player must
-      // take an action if any are available. However, depending on
-      // the board state and must-move constraints, that action might
-      // be a movement *or* a capture. To avoid transitioning into an
-      // interactive phase with zero legal moves, we choose the next
-      // phase based on actual move availability.
+      // take an action if any are available. Depending on the board
+      // state and must-move constraints, that action might be a
+      // movement *or* an overtaking capture. Both of these are chosen
+      // from the movement phase in the current backend engine
+      // (captures are exposed as overtaking_capture moves alongside
+      // simple movements), so we only need to decide whether any
+      // action exists at all.
 
-      const canMove = hasValidMovements(
-        gameState,
-        turnState,
-        deps,
-        gameState.currentPlayer
-      );
-      const canCapture = hasValidCaptures(
-        gameState,
-        turnState,
-        deps,
-        gameState.currentPlayer
-      );
+      const canMove = hasValidMovements(gameState, turnState, deps, gameState.currentPlayer);
+      const canCapture = hasValidCaptures(gameState, turnState, deps, gameState.currentPlayer);
 
-      if (canMove) {
-        // At least one legal movement move exists (respecting any
-        // must-move origin), so starting in movement is safe.
+      if (canMove || canCapture) {
+        // At least one legal movement or capture exists (respecting
+        // any must-move origin). Start the interactive part of the
+        // turn in the movement phase so the player/AI can choose
+        // between simple moves and overtaking_capture.
         gameState.currentPhase = 'movement';
-      } else if (canCapture) {
-        // No legal movements from the must-move stack, but at least
-        // one overtaking capture is available; jump directly to the
-        // capture phase so the player can act.
-        gameState.currentPhase = 'capture';
       } else {
         // Defensive fallback: no actions remain despite a
         // ring_placement phase. In well-formed games this should be
@@ -143,15 +124,18 @@ export function advanceGameForCurrentPlayer(
     }
 
     case 'movement': {
-      // After movement, check if captures are available
-      // Rule Reference: Section 4.3
-      const canCapture = hasValidCaptures(gameState, turnState, deps, gameState.currentPlayer);
-      if (canCapture) {
-        gameState.currentPhase = 'capture';
-      } else {
-        // Skip to line processing
-        gameState.currentPhase = 'line_processing';
-      }
+      // After the interactive movement step (which may be either a
+      // simple move_stack/move_ring or an initial overtaking_capture),
+      // all mandatory capture chaining is driven internally by
+      // GameEngine via its chainCaptureState loop. By the time control
+      // returns here, either the chain has been fully resolved or no
+      // captures were taken at all, and the next step is always to
+      // run post-move bookkeeping (lines, territory, etc.).
+      //
+      // Therefore we skip the legacy "enter capture phase if any
+      // captures exist" behaviour and advance directly to
+      // line_processing.
+      gameState.currentPhase = 'line_processing';
       break;
     }
 
@@ -182,17 +166,17 @@ export function advanceGameForCurrentPlayer(
       const { boardManager, ruleEngine } = deps;
 
       // Determine starting phase for next player
-      const playerStacks = boardManager.getPlayerStacks(
-        gameState.board,
-        gameState.currentPlayer
-      );
+      const playerStacks = boardManager.getPlayerStacks(gameState.board, gameState.currentPlayer);
       const currentPlayer = gameState.players.find(
-        p => p.playerNumber === gameState.currentPlayer
+        (p) => p.playerNumber === gameState.currentPlayer
       );
 
       // Rule Reference: Section 4.4 - Forced Elimination When Blocked
       // Check if player has no valid actions but controls stacks
-      if (playerStacks.length > 0 && !hasValidActions(gameState, turnState, deps, gameState.currentPlayer)) {
+      if (
+        playerStacks.length > 0 &&
+        !hasValidActions(gameState, turnState, deps, gameState.currentPlayer)
+      ) {
         // Player is blocked with stacks - must eliminate a cap
         processForcedElimination(gameState, deps, hooks, gameState.currentPlayer);
 
@@ -220,7 +204,7 @@ export function advanceGameForCurrentPlayer(
             gameState.currentPlayer
           );
           const currentPlayerState = gameState.players.find(
-            p => p.playerNumber === gameState.currentPlayer
+            (p) => p.playerNumber === gameState.currentPlayer
           );
 
           if (!currentPlayerState) {
@@ -267,7 +251,7 @@ export function advanceGameForCurrentPlayer(
             gameState.currentPlayer
           );
           const currentPlayerState = gameState.players.find(
-            p => p.playerNumber === gameState.currentPlayer
+            (p) => p.playerNumber === gameState.currentPlayer
           );
 
           if (!currentPlayerState) {
@@ -329,7 +313,7 @@ function hasValidCaptures(
   const tempState: GameState = {
     ...gameState,
     currentPlayer: playerNumber,
-    currentPhase: 'capture'
+    currentPhase: 'capture',
   };
 
   let moves = ruleEngine.getValidMoves(tempState);
@@ -341,7 +325,7 @@ function hasValidCaptures(
   // GameEngine.getValidMoves, which applies the same restriction.
   const { mustMoveFromStackKey } = turnState;
   if (mustMoveFromStackKey) {
-    moves = moves.filter(m => {
+    moves = moves.filter((m) => {
       const isMovementOrCaptureType =
         m.type === 'move_stack' ||
         m.type === 'move_ring' ||
@@ -357,7 +341,7 @@ function hasValidCaptures(
     });
   }
 
-  return moves.some(m => m.type === 'overtaking_capture');
+  return moves.some((m) => m.type === 'overtaking_capture');
 }
 
 /**
@@ -386,7 +370,7 @@ function hasValidPlacements(
   deps: TurnEngineDeps,
   playerNumber: number
 ): boolean {
-  const player = gameState.players.find(p => p.playerNumber === playerNumber);
+  const player = gameState.players.find((p) => p.playerNumber === playerNumber);
   if (!player || player.ringsInHand === 0) {
     return false; // No rings in hand to place
   }
@@ -400,11 +384,11 @@ function hasValidPlacements(
   const tempState: GameState = {
     ...gameState,
     currentPlayer: playerNumber,
-    currentPhase: 'ring_placement'
+    currentPhase: 'ring_placement',
   };
 
   const moves = ruleEngine.getValidMoves(tempState);
-  return moves.some(m => m.type === 'place_ring' || m.type === 'skip_placement');
+  return moves.some((m) => m.type === 'place_ring' || m.type === 'skip_placement');
 }
 
 /**
@@ -425,7 +409,7 @@ function hasValidMovements(
   const tempState: GameState = {
     ...gameState,
     currentPlayer: playerNumber,
-    currentPhase: 'movement'
+    currentPhase: 'movement',
   };
 
   let moves = ruleEngine.getValidMoves(tempState);
@@ -437,11 +421,9 @@ function hasValidMovements(
   // GameEngine.getValidMoves, which applies the same restriction.
   const { mustMoveFromStackKey } = turnState;
   if (mustMoveFromStackKey) {
-    moves = moves.filter(m => {
+    moves = moves.filter((m) => {
       const isMovementType =
-        m.type === 'move_stack' ||
-        m.type === 'move_ring' ||
-        m.type === 'build_stack';
+        m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack';
 
       if (!isMovementType || !m.from) {
         return false;
@@ -453,7 +435,7 @@ function hasValidMovements(
   }
 
   return moves.some(
-    m => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack'
+    (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack'
   );
 }
 
@@ -488,7 +470,9 @@ function processForcedElimination(
 /**
  * Get all movement directions based on board type.
  */
-function getAllDirections(boardType: GameState['boardType']): { x: number; y: number; z?: number }[] {
+function getAllDirections(
+  boardType: GameState['boardType']
+): { x: number; y: number; z?: number }[] {
   return getMovementDirectionsForBoardType(boardType);
 }
 
@@ -497,7 +481,7 @@ function getAllDirections(boardType: GameState['boardType']): { x: number; y: nu
  */
 function nextPlayer(gameState: GameState): void {
   const currentIndex = gameState.players.findIndex(
-    p => p.playerNumber === gameState.currentPlayer
+    (p) => p.playerNumber === gameState.currentPlayer
   );
   const nextIndex = (currentIndex + 1) % gameState.players.length;
   gameState.currentPlayer = gameState.players[nextIndex].playerNumber;

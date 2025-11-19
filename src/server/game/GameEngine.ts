@@ -17,7 +17,7 @@ import {
   RegionOrderChoice,
   CaptureDirectionChoice,
   PlayerChoiceResponseFor,
-  GameHistoryEntry
+  GameHistoryEntry,
 } from '../../shared/types/game';
 import {
   calculateCapHeight,
@@ -25,7 +25,7 @@ import {
   getMovementDirectionsForBoardType,
   computeProgressSnapshot,
   summarizeBoard,
-  hashGameState
+  hashGameState,
 } from '../../shared/engine/core';
 import { BoardManager } from './BoardManager';
 import { RuleEngine } from './RuleEngine';
@@ -37,14 +37,14 @@ import {
   ChainCaptureSegment,
   updateChainCaptureStateAfterCapture as updateChainCaptureStateAfterCaptureShared,
   getCaptureOptionsFromPosition as getCaptureOptionsFromPositionShared,
-  chooseCaptureDirectionFromState as chooseCaptureDirectionFromStateShared
+  chooseCaptureDirectionFromState as chooseCaptureDirectionFromStateShared,
 } from './rules/captureChainEngine';
 import {
   PerTurnState,
   advanceGameForCurrentPlayer,
   updatePerTurnStateAfterMove as updatePerTurnStateAfterMoveTurn,
   TurnEngineDeps,
-  TurnEngineHooks
+  TurnEngineHooks,
 } from './turn/TurnEngine';
 
 /**
@@ -68,9 +68,9 @@ declare const clearTimeout: (timer: any) => void;
 
 // Using a simple UUID generator for now
 function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
@@ -96,7 +96,6 @@ export class GameEngine {
    */
   private chainCaptureState: TsChainCaptureState | undefined;
 
-
   constructor(
     gameId: string,
     boardType: BoardType,
@@ -108,9 +107,9 @@ export class GameEngine {
     this.boardManager = new BoardManager(boardType);
     this.ruleEngine = new RuleEngine(this.boardManager, boardType);
     this.interactionManager = interactionManager;
-    
+
     const config = BOARD_CONFIGS[boardType];
-    
+
     this.gameState = {
       id: gameId,
       boardType,
@@ -119,7 +118,7 @@ export class GameEngine {
         ...p,
         playerNumber: index + 1,
         timeRemaining: timeControl.initialTime * 1000, // Convert to milliseconds
-        isReady: p.type === 'ai' // AI players are always ready
+        isReady: p.type === 'ai', // AI players are always ready
       })),
       currentPhase: 'ring_placement',
       currentPlayer: 1,
@@ -134,8 +133,8 @@ export class GameEngine {
       maxPlayers: players.length,
       totalRingsInPlay: config.ringsPerPlayer * players.length,
       totalRingsEliminated: 0,
-      victoryThreshold: Math.floor(config.ringsPerPlayer * players.length / 2) + 1,
-      territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1
+      victoryThreshold: Math.floor((config.ringsPerPlayer * players.length) / 2) + 1,
+      territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,
     };
   }
 
@@ -153,7 +152,7 @@ export class GameEngine {
       collapsedSpaces: new Map(board.collapsedSpaces),
       territories: new Map(board.territories),
       formedLines: [...board.formedLines],
-      eliminatedRings: { ...board.eliminatedRings }
+      eliminatedRings: { ...board.eliminatedRings },
     };
 
     return {
@@ -161,8 +160,8 @@ export class GameEngine {
       board: clonedBoard,
       moveHistory: [...state.moveHistory],
       history: [...state.history],
-      players: state.players.map(p => ({ ...p })),
-      spectators: [...state.spectators]
+      players: state.players.map((p) => ({ ...p })),
+      spectators: [...state.spectators],
     };
   }
 
@@ -181,17 +180,17 @@ export class GameEngine {
 
   startGame(): boolean {
     // Check if all players are ready
-    const allReady = this.gameState.players.every(p => p.isReady);
+    const allReady = this.gameState.players.every((p) => p.isReady);
     if (!allReady) {
       return false;
     }
 
     this.gameState.gameStatus = 'active';
     this.gameState.lastMoveAt = new Date();
-    
+
     // Start the first player's timer
     this.startPlayerTimer(this.gameState.currentPlayer);
-    
+
     return true;
   }
 
@@ -219,13 +218,13 @@ export class GameEngine {
       stateHashBefore: hashGameState(before),
       stateHashAfter: hashGameState(after),
       boardBeforeSummary: summarizeBoard(before.board),
-      boardAfterSummary: summarizeBoard(after.board)
+      boardAfterSummary: summarizeBoard(after.board),
     };
 
     const history: GameHistoryEntry[] = [...this.gameState.history, entry];
     this.gameState = {
       ...this.gameState,
-      history
+      history,
     };
   }
 
@@ -244,7 +243,7 @@ export class GameEngine {
       if (move.player !== state.playerNumber) {
         return {
           success: false,
-          error: 'Chain capture in progress: only the capturing player may move'
+          error: 'Chain capture in progress: only the capturing player may move',
         };
       }
 
@@ -258,7 +257,7 @@ export class GameEngine {
       ) {
         return {
           success: false,
-          error: 'Chain capture in progress: must continue capturing with the same stack'
+          error: 'Chain capture in progress: must continue capturing with the same stack',
         };
       }
     }
@@ -273,13 +272,10 @@ export class GameEngine {
         move.type === 'build_stack' ||
         move.type === 'overtaking_capture';
 
-      if (
-        isMovementOrCaptureType &&
-        (!moveFromKey || moveFromKey !== this.mustMoveFromStackKey)
-      ) {
+      if (isMovementOrCaptureType && (!moveFromKey || moveFromKey !== this.mustMoveFromStackKey)) {
         return {
           success: false,
-          error: 'You must move the stack that was just placed or updated this turn'
+          error: 'You must move the stack that was just placed or updated this turn',
         };
       }
     }
@@ -295,14 +291,14 @@ export class GameEngine {
       id: generateUUID(),
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: this.gameState.moveHistory.length + 1
+      moveNumber: this.gameState.moveHistory.length + 1,
     };
 
     const validation = this.ruleEngine.validateMove(fullMove, this.gameState);
     if (!validation) {
       return {
         success: false,
-        error: 'Invalid move'
+        error: 'Invalid move',
       };
     }
 
@@ -319,32 +315,38 @@ export class GameEngine {
     if (isMovementOrCaptureType && fullMove.from) {
       const sourceStack = this.boardManager.getStack(fullMove.from, this.gameState.board);
       if (!sourceStack) {
-        console.error('[GameEngine.makeMove] S-invariant violation: move validated but source stack missing', {
-          moveType: fullMove.type,
-          player: fullMove.player,
-          from: positionToString(fullMove.from),
-          to: fullMove.to ? positionToString(fullMove.to) : undefined,
-          currentPhase: this.gameState.currentPhase,
-          currentPlayer: this.gameState.currentPlayer
-        });
+        console.error(
+          '[GameEngine.makeMove] S-invariant violation: move validated but source stack missing',
+          {
+            moveType: fullMove.type,
+            player: fullMove.player,
+            from: positionToString(fullMove.from),
+            to: fullMove.to ? positionToString(fullMove.to) : undefined,
+            currentPhase: this.gameState.currentPhase,
+            currentPlayer: this.gameState.currentPlayer,
+          }
+        );
         return {
           success: false,
-          error: 'Source stack no longer exists'
+          error: 'Source stack no longer exists',
         };
       }
       if (sourceStack.controllingPlayer !== fullMove.player) {
-        console.error('[GameEngine.makeMove] S-invariant violation: move validated but source stack not controlled by player', {
-          moveType: fullMove.type,
-          player: fullMove.player,
-          sourceControllingPlayer: sourceStack.controllingPlayer,
-          from: positionToString(fullMove.from),
-          to: fullMove.to ? positionToString(fullMove.to) : undefined,
-          currentPhase: this.gameState.currentPhase,
-          currentPlayer: this.gameState.currentPlayer
-        });
+        console.error(
+          '[GameEngine.makeMove] S-invariant violation: move validated but source stack not controlled by player',
+          {
+            moveType: fullMove.type,
+            player: fullMove.player,
+            sourceControllingPlayer: sourceStack.controllingPlayer,
+            from: positionToString(fullMove.from),
+            to: fullMove.to ? positionToString(fullMove.to) : undefined,
+            currentPhase: this.gameState.currentPhase,
+            currentPlayer: this.gameState.currentPlayer,
+          }
+        );
         return {
           success: false,
-          error: 'Source stack is not controlled by this player'
+          error: 'Source stack is not controlled by this player',
         };
       }
     }
@@ -431,7 +433,7 @@ export class GameEngine {
           id: generateUUID(),
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: this.gameState.moveHistory.length + 1
+          moveNumber: this.gameState.moveHistory.length + 1,
         };
 
         this.applyMove(internalMove);
@@ -450,7 +452,6 @@ export class GameEngine {
     // after the full move (including any mandatory chain) has resolved.
     await this.processAutomaticConsequences();
 
-
     // Check for game end conditions
     const gameEndCheck = this.ruleEngine.checkGameEnd(this.gameState);
     if (gameEndCheck.isGameOver) {
@@ -460,6 +461,12 @@ export class GameEngine {
     // Advance to next phase/player
     this.advanceGame();
 
+    // Step through automatic bookkeeping phases (line_processing and
+    // territory_processing) so the post-move snapshot and history entry
+    // reflect the same next-player interactive phase that the sandbox
+    // engine records in its traces.
+    this.stepAutomaticPhasesForTesting();
+
     // Start next player's timer
     this.startPlayerTimer(this.gameState.currentPlayer);
 
@@ -468,10 +475,9 @@ export class GameEngine {
 
     return {
       success: true,
-      gameState: this.getGameState()
+      gameState: this.getGameState(),
     };
   }
-
 
   private applyMove(move: Move): {
     captures: Position[];
@@ -481,7 +487,7 @@ export class GameEngine {
     const result = {
       captures: [] as Position[],
       territoryChanges: [] as Territory[],
-      lineCollapses: [] as LineInfo[]
+      lineCollapses: [] as LineInfo[],
     };
 
     switch (move.type) {
@@ -507,14 +513,14 @@ export class GameEngine {
             rings: newRings,
             stackHeight: newRings.length,
             capHeight: calculateCapHeight(newRings),
-            controllingPlayer: newRings[0]
+            controllingPlayer: newRings[0],
           };
 
           this.boardManager.setStack(move.to, newStack, board);
 
           // Update player state: decrement rings in hand by placementCount,
           // clamped defensively to avoid going below zero.
-          const player = this.gameState.players.find(p => p.playerNumber === move.player);
+          const player = this.gameState.players.find((p) => p.playerNumber === move.player);
           if (player && player.ringsInHand > 0) {
             const toSpend = Math.min(placementCount, player.ringsInHand);
             player.ringsInHand -= toSpend;
@@ -541,7 +547,7 @@ export class GameEngine {
               player: move.player,
               from: positionToString(move.from),
               to: positionToString(move.to),
-              availableStacks: Array.from(this.gameState.board.stacks.keys())
+              availableStacks: Array.from(this.gameState.board.stacks.keys()),
             });
             break; // Early exit from switch - no state change
           }
@@ -567,7 +573,7 @@ export class GameEngine {
           // Normal movement (no capture at landing position)
           const movedStack: RingStack = {
             ...stack,
-            position: move.to
+            position: move.to,
           };
           this.boardManager.setStack(move.to, movedStack, this.gameState.board);
 
@@ -591,25 +597,25 @@ export class GameEngine {
         if (move.from && move.to && move.buildAmount) {
           const sourceStack = this.boardManager.getStack(move.from, this.gameState.board);
           const targetStack = this.boardManager.getStack(move.to, this.gameState.board);
-          
+
           if (sourceStack && targetStack && move.buildAmount) {
             // Transfer rings from source to target
             const transferRings = sourceStack.rings.slice(0, move.buildAmount);
             const remainingRings = sourceStack.rings.slice(move.buildAmount);
-            
+
             const newSourceStack: RingStack = {
               ...sourceStack,
               stackHeight: sourceStack.stackHeight - move.buildAmount,
-              rings: remainingRings
+              rings: remainingRings,
             };
-            
+
             const newTargetStack: RingStack = {
               ...targetStack,
               stackHeight: targetStack.stackHeight + move.buildAmount,
               capHeight: Math.max(targetStack.capHeight, move.buildAmount),
-              rings: [...targetStack.rings, ...transferRings]
+              rings: [...targetStack.rings, ...transferRings],
             };
-            
+
             // Update stacks
             if (newSourceStack.stackHeight > 0) {
               this.boardManager.setStack(move.from, newSourceStack, this.gameState.board);
@@ -670,7 +676,7 @@ export class GameEngine {
     return getCaptureOptionsFromPositionShared(position, playerNumber, this.gameState, {
       boardManager: this.boardManager,
       ruleEngine: this.ruleEngine,
-      interactionManager: this.interactionManager
+      interactionManager: this.interactionManager,
     });
   }
 
@@ -686,15 +692,11 @@ export class GameEngine {
    * into a full chain-capture loop once the transport/UI flow is ready.
    */
   private async chooseCaptureDirectionFromState(): Promise<Move | undefined> {
-    return chooseCaptureDirectionFromStateShared(
-      this.chainCaptureState,
-      this.gameState,
-      {
-        boardManager: this.boardManager,
-        ruleEngine: this.ruleEngine,
-        interactionManager: this.interactionManager
-      }
-    );
+    return chooseCaptureDirectionFromStateShared(this.chainCaptureState, this.gameState, {
+      boardManager: this.boardManager,
+      ruleEngine: this.ruleEngine,
+      interactionManager: this.interactionManager,
+    });
   }
 
   /**
@@ -750,7 +752,7 @@ export class GameEngine {
         rings: remainingTargetRings,
         stackHeight: remainingTargetRings.length,
         capHeight: calculateCapHeight(remainingTargetRings),
-        controllingPlayer: remainingTargetRings[0]
+        controllingPlayer: remainingTargetRings[0],
       };
       this.boardManager.setStack(captureTarget, newTargetStack, this.gameState.board);
     } else {
@@ -767,7 +769,7 @@ export class GameEngine {
       rings: newRings,
       stackHeight: newRings.length,
       capHeight: calculateCapHeight(newRings),
-      controllingPlayer: newRings[0]
+      controllingPlayer: newRings[0],
     };
     this.boardManager.setStack(landing, newStack, this.gameState.board);
 
@@ -789,40 +791,38 @@ export class GameEngine {
     // Process line formations (Section 11.2, 11.3)
     this.gameState = await processLinesForCurrentPlayer(this.gameState, {
       boardManager: this.boardManager,
-      interactionManager: this.interactionManager
+      interactionManager: this.interactionManager,
     });
 
     // Process territory disconnections (Section 12.2)
     this.gameState = await processDisconnectedRegionsForCurrentPlayer(this.gameState, {
       boardManager: this.boardManager,
-      interactionManager: this.interactionManager
+      interactionManager: this.interactionManager,
     });
   }
 
   /**
    * Process all line formations with graduated rewards
    * Rule Reference: Section 11.2, 11.3
-   * 
+   *
    * For exact required length (4 for 8x8, 5 for 19x19/hex):
    *   - Collapse all markers
    *   - Eliminate one ring or cap from controlled stack
-   * 
+   *
    * For longer lines (5+ for 8x8, 6+ for 19x19/hex):
    *   - Option 1: Collapse all + eliminate ring/cap
    *   - Option 2: Collapse required markers only, no elimination
    */
   private async processLineFormations(): Promise<void> {
     const config = BOARD_CONFIGS[this.gameState.boardType];
-    
+
     // Keep processing until no more lines exist
     while (true) {
       const allLines = this.boardManager.findAllLines(this.gameState.board);
       if (allLines.length === 0) break;
 
       // Only consider lines for the moving player
-      const playerLines = allLines.filter(
-        line => line.player === this.gameState.currentPlayer
-      );
+      const playerLines = allLines.filter((line) => line.player === this.gameState.currentPlayer);
       if (playerLines.length === 0) break;
 
       let lineToProcess: LineInfo;
@@ -841,8 +841,8 @@ export class GameEngine {
           prompt: 'Choose which line to process first',
           options: playerLines.map((line, index) => ({
             lineId: String(index),
-            markerPositions: line.positions
-          }))
+            markerPositions: line.positions,
+          })),
         };
 
         const response: PlayerChoiceResponseFor<LineOrderChoice> =
@@ -863,7 +863,7 @@ export class GameEngine {
    */
   private async processOneLine(line: LineInfo, requiredLength: number): Promise<void> {
     const lineLength = line.positions.length;
-    
+
     if (lineLength === requiredLength) {
       // Exact required length: Must collapse all and eliminate ring/cap
       this.collapseLineMarkers(line.positions, line.player);
@@ -886,10 +886,7 @@ export class GameEngine {
         playerNumber: this.gameState.currentPlayer,
         type: 'line_reward_option',
         prompt: 'Choose line reward option',
-        options: [
-          'option_1_collapse_all_and_eliminate',
-          'option_2_min_collapse_no_elimination'
-        ]
+        options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
       };
 
       const response: PlayerChoiceResponseFor<LineRewardChoice> =
@@ -924,27 +921,27 @@ export class GameEngine {
    */
   private eliminatePlayerRingOrCap(player: number): void {
     const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, player);
-    
+
     if (playerStacks.length === 0) {
       // No stacks to eliminate from, player might have rings in hand
-      const playerState = this.gameState.players.find(p => p.playerNumber === player);
+      const playerState = this.gameState.players.find((p) => p.playerNumber === player);
       if (playerState && playerState.ringsInHand > 0) {
         // Eliminate from hand
         playerState.ringsInHand--;
         this.gameState.totalRingsEliminated++;
-        
+
         // Track eliminated rings in board state
         if (!this.gameState.board.eliminatedRings[player]) {
           this.gameState.board.eliminatedRings[player] = 0;
         }
         this.gameState.board.eliminatedRings[player]++;
-        
+
         // Update player state
         this.updatePlayerEliminatedRings(player, 1);
       }
       return;
     }
-    
+
     // Default behaviour: eliminate from first stack
     const stack = playerStacks[0];
     this.eliminateFromStack(stack, player);
@@ -978,7 +975,7 @@ export class GameEngine {
         rings: remainingRings,
         stackHeight: remainingRings.length,
         capHeight: calculateCapHeight(remainingRings),
-        controllingPlayer: remainingRings[0]
+        controllingPlayer: remainingRings[0],
       };
       this.boardManager.setStack(stack.position, newStack, this.gameState.board);
     } else {
@@ -1019,7 +1016,7 @@ export class GameEngine {
         rings: remainingRings,
         stackHeight: remainingRings.length,
         capHeight: calculateCapHeight(remainingRings),
-        controllingPlayer: remainingRings[0]
+        controllingPlayer: remainingRings[0],
       };
       this.boardManager.setStack(position, newStack, this.gameState.board);
     } else {
@@ -1037,7 +1034,7 @@ export class GameEngine {
 
     if (playerStacks.length === 0) {
       // Mirror the hand-elimination behaviour from eliminatePlayerRingOrCap
-      const playerState = this.gameState.players.find(p => p.playerNumber === player);
+      const playerState = this.gameState.players.find((p) => p.playerNumber === player);
       if (playerState && playerState.ringsInHand > 0) {
         playerState.ringsInHand--;
         this.gameState.totalRingsEliminated++;
@@ -1064,11 +1061,11 @@ export class GameEngine {
       playerNumber: player,
       type: 'ring_elimination',
       prompt: 'Choose which stack to eliminate from',
-      options: playerStacks.map(stack => ({
+      options: playerStacks.map((stack) => ({
         stackPosition: stack.position,
         capHeight: stack.capHeight,
-        totalHeight: stack.stackHeight
-      }))
+        totalHeight: stack.stackHeight,
+      })),
     };
 
     const response: PlayerChoiceResponseFor<RingEliminationChoice> =
@@ -1077,8 +1074,7 @@ export class GameEngine {
 
     const selectedKey = positionToString(selected.stackPosition);
     const chosenStack =
-      playerStacks.find(s => positionToString(s.position) === selectedKey) ||
-      playerStacks[0];
+      playerStacks.find((s) => positionToString(s.position) === selectedKey) || playerStacks[0];
 
     this.eliminateFromStack(chosenStack, player);
   }
@@ -1087,7 +1083,7 @@ export class GameEngine {
    * Update player's eliminatedRings counter
    */
   private updatePlayerEliminatedRings(playerNumber: number, count: number): void {
-    const player = this.gameState.players.find(p => p.playerNumber === playerNumber);
+    const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
     if (player) {
       player.eliminatedRings += count;
     }
@@ -1097,7 +1093,7 @@ export class GameEngine {
    * Update player's territorySpaces counter
    */
   private updatePlayerTerritorySpaces(playerNumber: number, count: number): void {
-    const player = this.gameState.players.find(p => p.playerNumber === playerNumber);
+    const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
     if (player) {
       player.territorySpaces += count;
     }
@@ -1109,14 +1105,14 @@ export class GameEngine {
    */
   private async processDisconnectedRegions(): Promise<void> {
     const movingPlayer = this.gameState.currentPlayer;
-    
+
     // Keep processing until no more disconnections occur
     while (true) {
       const disconnectedRegions = this.boardManager.findDisconnectedRegions(
         this.gameState.board,
         movingPlayer
       );
-      
+
       if (disconnectedRegions.length === 0) break;
 
       // Filter to regions that satisfy the self-elimination prerequisite
@@ -1124,7 +1120,7 @@ export class GameEngine {
       // "eligible" disconnected regions and prevents us from
       // prematurely bailing out just because the first region is not
       // processable.
-      const eligibleRegions = disconnectedRegions.filter(region =>
+      const eligibleRegions = disconnectedRegions.filter((region) =>
         this.canProcessDisconnectedRegion(region, movingPlayer)
       );
 
@@ -1133,9 +1129,9 @@ export class GameEngine {
         // infinite loops.
         break;
       }
-      
+
       let region: Territory;
-      
+
       if (!this.interactionManager || eligibleRegions.length === 1) {
         // No manager or only one eligible region: process it directly.
         region = eligibleRegions[0];
@@ -1150,8 +1146,8 @@ export class GameEngine {
           options: eligibleRegions.map((r, index) => ({
             regionId: String(index),
             size: r.spaces.length,
-            representativePosition: r.spaces[0]
-          }))
+            representativePosition: r.spaces[0],
+          })),
         };
 
         const response: PlayerChoiceResponseFor<RegionOrderChoice> =
@@ -1160,7 +1156,7 @@ export class GameEngine {
         const index = parseInt(selected.regionId, 10);
         region = eligibleRegions[index] ?? eligibleRegions[0];
       }
-      
+
       // Process the disconnected region
       await this.processOneDisconnectedRegion(region, movingPlayer);
     }
@@ -1169,13 +1165,13 @@ export class GameEngine {
   /**
    * Check if player can process a disconnected region
    * Rule Reference: Section 12.2 - Self-Elimination Prerequisite
-   * 
+   *
    * Player must have at least one ring/cap outside the region before processing
    */
   private canProcessDisconnectedRegion(region: Territory, player: number): boolean {
-    const regionPositionSet = new Set(region.spaces.map(pos => positionToString(pos)));
+    const regionPositionSet = new Set(region.spaces.map((pos) => positionToString(pos)));
     const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, player);
-    
+
     // Check if player has at least one ring/cap outside this region
     for (const stack of playerStacks) {
       const stackPosKey = positionToString(stack.position);
@@ -1184,7 +1180,7 @@ export class GameEngine {
         return true;
       }
     }
-    
+
     // No stacks outside the region - cannot process
     return false;
   }
@@ -1193,7 +1189,10 @@ export class GameEngine {
    * Process a single disconnected region
    * Rule Reference: Section 12.2 - Processing steps
    */
-  private async processOneDisconnectedRegion(region: Territory, movingPlayer: number): Promise<void> {
+  private async processOneDisconnectedRegion(
+    region: Territory,
+    movingPlayer: number
+  ): Promise<void> {
     // 1. Get border markers to collapse
     const borderMarkers = this.boardManager.getBorderMarkerPositions(
       region.spaces,
@@ -1248,12 +1247,12 @@ export class GameEngine {
   private processMarkersAlongPath(from: Position, to: Position, player: number): void {
     // Get all positions along the straight line path
     const path = getPathPositions(from, to);
-    
+
     // Process each position in the path (excluding start and end)
     for (let i = 1; i < path.length - 1; i++) {
       const pos = path[i];
       const marker = this.boardManager.getMarker(pos, this.gameState.board);
-      
+
       if (marker !== undefined) {
         if (marker === player) {
           // Own marker: collapse to territory (Section 8.3)
@@ -1269,7 +1268,7 @@ export class GameEngine {
   /**
    * Advance game through phases according to RingRift rules
    * Rule Reference: Section 4, Section 15.2
-   * 
+   *
    * Phase Flow:
    * 1. ring_placement (optional unless no rings on board)
    * 2. movement (required if able)
@@ -1281,19 +1280,19 @@ export class GameEngine {
   private advanceGame(): void {
     const deps: TurnEngineDeps = {
       boardManager: this.boardManager,
-      ruleEngine: this.ruleEngine
+      ruleEngine: this.ruleEngine,
     };
 
     const hooks: TurnEngineHooks = {
       eliminatePlayerRingOrCap: (playerNumber: number) => {
         this.eliminatePlayerRingOrCap(playerNumber);
       },
-      endGame: (winner?: number, reason?: string) => this.endGame(winner, reason)
+      endGame: (winner?: number, reason?: string) => this.endGame(winner, reason),
     };
 
     const turnStateBefore: PerTurnState = {
       hasPlacedThisTurn: this.hasPlacedThisTurn,
-      mustMoveFromStackKey: this.mustMoveFromStackKey
+      mustMoveFromStackKey: this.mustMoveFromStackKey,
     };
 
     const turnStateAfter = advanceGameForCurrentPlayer(
@@ -1316,7 +1315,7 @@ export class GameEngine {
   private updatePerTurnStateAfterMove(move: Move): void {
     const before: PerTurnState = {
       hasPlacedThisTurn: this.hasPlacedThisTurn,
-      mustMoveFromStackKey: this.mustMoveFromStackKey
+      mustMoveFromStackKey: this.mustMoveFromStackKey,
     };
 
     const after = updatePerTurnStateAfterMoveTurn(before, move);
@@ -1338,11 +1337,11 @@ export class GameEngine {
     const tempState: GameState = {
       ...this.gameState,
       currentPlayer: playerNumber,
-      currentPhase: 'capture'
+      currentPhase: 'capture',
     };
 
     const moves = this.ruleEngine.getValidMoves(tempState);
-    return moves.some(m => m.type === 'overtaking_capture');
+    return moves.some((m) => m.type === 'overtaking_capture');
   }
 
   /**
@@ -1350,9 +1349,11 @@ export class GameEngine {
    * Rule Reference: Section 4.4
    */
   private hasValidActions(playerNumber: number): boolean {
-    return this.hasValidPlacements(playerNumber) || 
-           this.hasValidMovements(playerNumber) || 
-           this.hasValidCaptures(playerNumber);
+    return (
+      this.hasValidPlacements(playerNumber) ||
+      this.hasValidMovements(playerNumber) ||
+      this.hasValidCaptures(playerNumber)
+    );
   }
 
   /**
@@ -1360,7 +1361,7 @@ export class GameEngine {
    * Rule Reference: Section 4.1, 6.1-6.3
    */
   private hasValidPlacements(playerNumber: number): boolean {
-    const player = this.gameState.players.find(p => p.playerNumber === playerNumber);
+    const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
     if (!player || player.ringsInHand === 0) {
       return false; // No rings in hand to place
     }
@@ -1377,7 +1378,7 @@ export class GameEngine {
    */
   private hasValidMovements(playerNumber: number): boolean {
     const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, playerNumber);
-    
+
     if (playerStacks.length === 0) {
       return false; // No stacks to move
     }
@@ -1385,38 +1386,38 @@ export class GameEngine {
     // For each player stack, check if it has any valid moves
     for (const stack of playerStacks) {
       const stackHeight = stack.stackHeight;
-      
+
       // Check all 8 directions (or 6 for hexagonal)
       const directions = this.getAllDirections();
-      
-        for (const direction of directions) {
-          // Check if we can move at least stack height in this direction
-          let distance = 0;
-        
+
+      for (const direction of directions) {
+        // Check if we can move at least stack height in this direction
+        let distance = 0;
+
         for (let step = 1; step <= stackHeight + 5; step++) {
           const nextPos: Position = {
             x: stack.position.x + direction.x * step,
             y: stack.position.y + direction.y * step,
-            ...(direction.z !== undefined && { z: (stack.position.z || 0) + direction.z * step })
+            ...(direction.z !== undefined && { z: (stack.position.z || 0) + direction.z * step }),
           };
-          
+
           if (!this.boardManager.isValidPosition(nextPos)) {
             break; // Out of bounds
           }
-          
+
           // Check if this position is blocked (collapsed space or stack)
           if (this.boardManager.isCollapsedSpace(nextPos, this.gameState.board)) {
             break; // Blocked by collapsed space
           }
-          
+
           const stackAtPos = this.boardManager.getStack(nextPos, this.gameState.board);
           if (stackAtPos) {
             break; // Blocked by another stack
           }
-          
+
           // This position is reachable
           distance = step;
-          
+
           // If we've met the minimum distance requirement, we have a valid move
           if (distance >= stackHeight) {
             return true;
@@ -1424,7 +1425,7 @@ export class GameEngine {
         }
       }
     }
-    
+
     return false; // No valid movements found
   }
 
@@ -1434,12 +1435,12 @@ export class GameEngine {
    */
   private processForcedElimination(playerNumber: number): void {
     const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, playerNumber);
-    
+
     if (playerStacks.length === 0) {
       // No stacks to eliminate from - player forfeits turn
       return;
     }
-    
+
     // TODO: In full implementation, player should choose which stack
     // For now, eliminate from first stack with a valid cap
     for (const stack of playerStacks) {
@@ -1465,7 +1466,7 @@ export class GameEngine {
   private getAdjacentPositions(pos: Position): Position[] {
     const adjacent: Position[] = [];
     const config = BOARD_CONFIGS[this.gameState.boardType];
-    
+
     if (config.type === 'hexagonal') {
       // Hexagonal adjacency (6 directions)
       const directions = [
@@ -1474,14 +1475,14 @@ export class GameEngine {
         { x: -1, y: 1, z: 0 },
         { x: -1, y: 0, z: 1 },
         { x: 0, y: -1, z: 1 },
-        { x: 1, y: -1, z: 0 }
+        { x: 1, y: -1, z: 0 },
       ];
-      
+
       for (const dir of directions) {
         const newPos: Position = {
           x: pos.x + dir.x,
           y: pos.y + dir.y,
-          z: (pos.z || 0) + dir.z
+          z: (pos.z || 0) + dir.z,
         };
         if (this.boardManager.isValidPosition(newPos)) {
           adjacent.push(newPos);
@@ -1492,10 +1493,10 @@ export class GameEngine {
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
           if (dx === 0 && dy === 0) continue;
-          
+
           const newPos: Position = {
             x: pos.x + dx,
-            y: pos.y + dy
+            y: pos.y + dy,
           };
           if (this.boardManager.isValidPosition(newPos)) {
             adjacent.push(newPos);
@@ -1503,18 +1504,20 @@ export class GameEngine {
         }
       }
     }
-    
+
     return adjacent;
   }
 
   private nextPlayer(): void {
-    const currentIndex = this.gameState.players.findIndex(p => p.playerNumber === this.gameState.currentPlayer);
+    const currentIndex = this.gameState.players.findIndex(
+      (p) => p.playerNumber === this.gameState.currentPlayer
+    );
     const nextIndex = (currentIndex + 1) % this.gameState.players.length;
     this.gameState.currentPlayer = this.gameState.players[nextIndex].playerNumber;
   }
 
   private startPlayerTimer(playerNumber: number): void {
-    const player = this.gameState.players.find(p => p.playerNumber === playerNumber);
+    const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
     if (!player || player.type === 'ai') return;
 
     const timer = setTimeout(() => {
@@ -1533,7 +1536,10 @@ export class GameEngine {
     }
   }
 
-  private endGame(winner?: number, reason?: string): {
+  private endGame(
+    winner?: number,
+    reason?: string
+  ): {
     success: boolean;
     gameResult: GameResult;
   } {
@@ -1549,12 +1555,21 @@ export class GameEngine {
     // Calculate final scores
     const finalScore: { [playerNumber: number]: number } = {};
     for (const player of this.gameState.players) {
-      const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, player.playerNumber);
+      const playerStacks = this.boardManager.getPlayerStacks(
+        this.gameState.board,
+        player.playerNumber
+      );
       const stackCount = playerStacks.reduce((sum, stack) => sum + stack.stackHeight, 0);
-      
-      const territories = this.boardManager.findPlayerTerritories(this.gameState.board, player.playerNumber);
-      const territorySize = territories.reduce((sum, territory) => sum + territory.spaces.length, 0);
-      
+
+      const territories = this.boardManager.findPlayerTerritories(
+        this.gameState.board,
+        player.playerNumber
+      );
+      const territorySize = territories.reduce(
+        (sum, territory) => sum + territory.spaces.length,
+        0
+      );
+
       finalScore[player.playerNumber] = stackCount + territorySize;
     }
 
@@ -1564,7 +1579,7 @@ export class GameEngine {
       finalScore: {
         ringsEliminated: {},
         territorySpaces: {},
-        ringsRemaining: finalScore
+        ringsRemaining: finalScore,
       },
     };
 
@@ -1575,19 +1590,19 @@ export class GameEngine {
 
     return {
       success: true,
-      gameResult
+      gameResult,
     };
   }
 
   private updatePlayerRatings(gameResult: GameResult): void {
     // Rating calculation logic would go here
-    const winnerPlayer = this.gameState.players.find(p => p.playerNumber === gameResult.winner);
-    const loserPlayers = this.gameState.players.filter(p => p.playerNumber !== gameResult.winner);
+    const winnerPlayer = this.gameState.players.find((p) => p.playerNumber === gameResult.winner);
+    const loserPlayers = this.gameState.players.filter((p) => p.playerNumber !== gameResult.winner);
 
     // For now, just log the rating update
     console.log('Rating update needed for:', {
       winner: winnerPlayer?.username,
-      losers: loserPlayers.map(p => p.username)
+      losers: loserPlayers.map((p) => p.username),
     });
   }
 
@@ -1611,10 +1626,10 @@ export class GameEngine {
   pauseGame(): boolean {
     if (this.gameState.gameStatus === 'active') {
       this.gameState.gameStatus = 'paused';
-      
+
       // Stop current player's timer
       this.stopPlayerTimer(this.gameState.currentPlayer);
-      
+
       return true;
     }
     return false;
@@ -1623,10 +1638,10 @@ export class GameEngine {
   resumeGame(): boolean {
     if (this.gameState.gameStatus === 'paused') {
       this.gameState.gameStatus = 'active';
-      
+
       // Restart current player's timer
       this.startPlayerTimer(this.gameState.currentPlayer);
-      
+
       return true;
     }
     return false;
@@ -1636,8 +1651,10 @@ export class GameEngine {
     success: boolean;
     gameResult?: GameResult;
   } {
-    const winner = this.gameState.players.find(p => p.playerNumber !== parseInt(playerNumber))?.playerNumber;
-    
+    const winner = this.gameState.players.find(
+      (p) => p.playerNumber !== parseInt(playerNumber)
+    )?.playerNumber;
+
     return this.endGame(winner, 'resignation');
   }
 
@@ -1658,10 +1675,9 @@ export class GameEngine {
     // options so that only the placed/updated stack may move.
     if (
       this.mustMoveFromStackKey &&
-      (this.gameState.currentPhase === 'movement' ||
-        this.gameState.currentPhase === 'capture')
+      (this.gameState.currentPhase === 'movement' || this.gameState.currentPhase === 'capture')
     ) {
-      moves = moves.filter(m => {
+      moves = moves.filter((m) => {
         const isMovementOrCaptureType =
           m.type === 'move_stack' ||
           m.type === 'move_ring' ||
@@ -1760,36 +1776,33 @@ export class GameEngine {
           const tempPlacementState: GameState = {
             ...this.gameState,
             currentPlayer: playerNumber,
-            currentPhase: 'ring_placement'
+            currentPhase: 'ring_placement',
           };
 
           const placementMoves = this.ruleEngine.getValidMoves(tempPlacementState);
-          return placementMoves.some(m => m.type === 'place_ring');
+          return placementMoves.some((m) => m.type === 'place_ring');
         })();
 
         const { hasMovement, hasCapture } = (() => {
           const tempMovementState: GameState = {
             ...this.gameState,
             currentPlayer: playerNumber,
-            currentPhase: 'movement'
+            currentPhase: 'movement',
           };
 
           const movementMoves = this.ruleEngine.getValidMoves(tempMovementState);
           const hasMovementLocal = movementMoves.some(
-            m =>
-              m.type === 'move_stack' ||
-              m.type === 'move_ring' ||
-              m.type === 'build_stack'
+            (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack'
           );
 
           const tempCaptureState: GameState = {
             ...this.gameState,
             currentPlayer: playerNumber,
-            currentPhase: 'capture'
+            currentPhase: 'capture',
           };
 
           const captureMoves = this.ruleEngine.getValidMoves(tempCaptureState);
-          const hasCaptureLocal = captureMoves.some(m => m.type === 'overtaking_capture');
+          const hasCaptureLocal = captureMoves.some((m) => m.type === 'overtaking_capture');
 
           return { hasMovement: hasMovementLocal, hasCapture: hasCaptureLocal };
         })();
@@ -1859,7 +1872,9 @@ export class GameEngine {
       // text: when everyone is globally blocked but stacks remain,
       // successive forced eliminations must eventually resolve the
       // stalemate until no stacks are left.
-      const currentIndex = players.findIndex(p => p.playerNumber === this.gameState.currentPlayer);
+      const currentIndex = players.findIndex(
+        (p) => p.playerNumber === this.gameState.currentPlayer
+      );
       let eliminatedThisIteration = false;
 
       for (let offset = 0; offset < playerCount; offset++) {
@@ -1924,5 +1939,4 @@ export class GameEngine {
       this.advanceGame();
     }
   }
-
 }

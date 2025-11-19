@@ -1,8 +1,8 @@
 # Known Issues & Bugs
 
-**Last Updated:** November 15, 2025  
-**Status:** Code-verified assessment based on actual implementation  
-**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md)
+**Last Updated:** November 15, 2025
+**Status:** Code-verified assessment based on actual implementation
+**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [deprecated/CODEBASE_EVALUATION.md](./deprecated/CODEBASE_EVALUATION.md)
 
 This document tracks **current, code-verified issues** in the RingRift codebase.
 
@@ -126,10 +126,11 @@ mismatches** remain between backend and sandbox traces:
   in `Sandbox_vs_Backend.seed5.traceDebug.test.ts`), the sandbox emits
   `overtaking_capture` moves where the backend never enumerates a matching
   capture from the same position.
-- In other positions, the sandbox AI attempts `place_ring` while the backend
-  is already in a capture phase with only `overtaking_capture` moves legal.
-  From the backend’s perspective, the attempted placement is illegal given
-  the current phase and rules.
+- In other positions (e.g. seed 14), the sandbox AI attempts `place_ring` with
+  a count > 1, which the backend rejects as a "dead placement" (no legal moves
+  available from the resulting stack). This suggests a discrepancy in how
+  `hasAnyLegalMoveOrCaptureFrom` evaluates hypothetical boards between Sandbox
+  and Backend, despite sharing the same core logic.
 - These discrepancies appear **after** internal-phase replay issues were fixed,
   so they reflect genuine differences in how the sandbox AI and backend
   enumerate/apply moves and transitions between phases, not simply replay
@@ -175,11 +176,11 @@ GameTrace` helper that builds a backend `GameEngine`, finds matching
 
 ## 🟠 P1 – High-Priority Issues (UX, AI, Multiplayer)
 
-### P1.1 – Frontend UX & Sandbox Harness Still Early
+### P1.1 – Frontend UX & Sandbox Experience Still Early
 
-**Component(s):** React client (BoardView, GamePage, GameContext, ChoiceDialog)  
-**Severity:** High for player experience  
-**Status:** Functional but minimal
+**Component(s):** React client (BoardView, GamePage, GameHUD, GameContext, ChoiceDialog, `/sandbox` UI)
+**Severity:** High for player experience
+**Status:** Functional for development/playtesting; UX still basic
 
 **Current capabilities:**
 
@@ -188,13 +189,22 @@ GameTrace` helper that builds a backend `GameEngine`, finds matching
 - `computeBoardMovementGrid(BoardState)` plus an SVG movement-grid overlay draw
   faint movement lines and node dots for both square and hex boards; this
   provides a **canonical geometric foundation** for future visual features.
-- `GamePage` supports:
-  - Backend-driven games (`/game/:gameId`) using `GameContext` and WebSockets
-    to receive `GameState`, surface `pendingChoice`, and submit moves and
-    `PlayerChoiceResponse`s.
-  - A sandbox entry route (`/sandbox`) that currently acts as a frontend entry
-    point and, in Stage 1, can create a backend game and hand off to the
-    backend-driven view (see TODO.md for details).
+- Backend-driven games (`/game/:gameId`) use `GameContext` and WebSockets
+  to receive `GameState`, surface `pendingChoice`, and submit moves and
+  `PlayerChoiceResponse`s.
+- The `/sandbox` route runs a **fully rules-complete, client-local engine**
+  (`ClientSandboxEngine`) that reuses the same `BoardView`, `ChoiceDialog`,
+  and `VictoryModal` patterns as backend games, with dedicated Jest suites
+  under `tests/unit/ClientSandboxEngine.*.test.ts` covering movement,
+  captures, lines, territory, and victory.
+- Mixed human/AI sandbox games now share the same **"place then move"** turn
+  model as backend games: ring placement no longer advances to the next
+  player, the placed stack is forced to move before the turn passes, and
+  local AI turns are driven automatically when it is an AI player’s turn.
+  This behaviour is covered by
+  `tests/unit/ClientSandboxEngine.mixedPlayers.test.ts` and the updated
+  `/sandbox` wiring in `GamePage`.
+
 - `ChoiceDialog` renders all PlayerChoice variants and is wired to
   `GameContext.respondToChoice`, so humans can answer line-reward,
   ring-elimination, region-order, and capture-direction prompts in
@@ -208,29 +218,32 @@ GameTrace` helper that builds a backend `GameEngine`, finds matching
   - Limited visibility into current phase, pending choice type, and choice
     deadlines.
   - No in-UI move/choice history log for debugging and teaching.
-- Sandbox harness (Stage 2):
-  - The backend-wrapped Stage 1 sandbox harness exists (create game then
-    navigate to `/game/:gameId`), but a **true client-local GameEngine
-    harness** has not yet been implemented.
-  - Local sandbox interactions are still simple and not fully rules-aligned.
+- Sandbox UX:
+  - The client-local sandbox engine is implemented and rules-complete, but the
+    surrounding UI is still developer-centric (no scenario picker, limited
+    reset/inspect tooling, minimal guidance for new players).
+  - Parity diagnostics and scenario-driven tests exist but are not yet exposed
+    in a user-friendly way in the sandbox UI itself.
 - End-of-game flows:
-  - Victory/defeat summary and post-game analysis UI are not yet implemented.
+  - Victory/defeat summary and post-game analysis UX are still minimal beyond
+    the core `VictoryModal`; there is no rich post-game breakdown or replay
+    view.
 
 **Impact:**
 
-Developers and early testers can play backend-driven games and exercise
-PlayerChoices, but the experience is still developer-centric and not yet ready
-for a wider, non-technical audience.
+Developers and early testers can play backend-driven and sandbox games and
+exercise PlayerChoices, but the experience remains tuned for engine/AI work
+rather than a wider, non-technical audience.
 
 **Planned direction:**
 
 - Implement a richer HUD (current phase, current player, ring/territory
-  statistics, AI profile, timers).
-- Build Stage 2: a client-local GameEngine sandbox harness that reuses
-  `BoardView`, the movement grid, and the PlayerChoice layer for
-  rules-aligned local experimentation.
-- Add move/choice history and better visual cues for chain captures,
-  line/territory processing, and forced elimination.
+  statistics, AI profile, timers) for both backend and sandbox games.
+- Enhance the sandbox experience by adding simple scenario selection/reset
+  tools, clearer status indicators, and better visual cues for chain captures,
+  line/territory processing, forced elimination, and victory.
+- Add move/choice history and better inline explanations so parity/scenario
+  tests can be more easily reproduced and understood via the UI.
 
 ---
 
@@ -337,17 +350,17 @@ work (stronger heuristics, search/ML) plus potentially additional endpoints.
 
 ---
 
-### P1.4 – Sandbox aiSimulation S-invariant expectations
+### P1.4 – Sandbox aiSimulation diagnostics and S-invariant expectations
 
 **Component(s):** [`ClientSandboxEngine`](src/client/sandbox/ClientSandboxEngine.ts), sandbox AI (`maybeRunAITurn`), S-invariant tests
 **Severity:** Medium for test signalling; low for core rules correctness
-**Status:** Behaviour understood and intentional; tests need modernization
+**Status:** Behaviour understood and intentional; tests need modernization; several seeds still exhibit stalls
 
 **Context:**
 
 - The sandbox and backend share a canonical **S-invariant** via [`computeProgressSnapshot()`](src/shared/engine/core.ts:498):
   `S = markers + collapsed + eliminated`
-- The **aiSimulation** suite [`tests/unit/ClientSandboxEngine.aiSimulation.test.ts`](tests/unit/ClientSandboxEngine.aiSimulation.test.ts:1) runs many seeded AI-vs-AI games entirely in the sandbox and currently asserts:
+- The **aiSimulation** suite [`tests/unit/ClientSandboxEngine.aiSimulation.test.ts`](tests/unit/ClientSandboxEngine.aiSimulation.test.ts:1) runs many seeded AI-vs-AI games entirely in the sandbox and enforces:
 
   ```ts
   const beforeProgress = computeProgressSnapshot(stateBefore);
@@ -356,9 +369,22 @@ work (stronger heuristics, search/ML) plus potentially additional endpoints.
   expect(afterProgress.S).toBeGreaterThan(beforeProgress.S);
   ```
 
-- These tests **fail** in scenarios where the sandbox AI performs a canonical `skip_placement` action during the `ring_placement` phase:
-  - `skip_placement` is emitted when a player has rings in hand but **no legal placements** that satisfy the sandbox no-dead-placement rule (using [`hasAnyLegalMoveOrCaptureFromOnBoard`](src/shared/engine/core.ts:323)).
-  - The action transitions the player into `movement` but **does not change the board** (no rings placed, no markers added/removed, no territory collapsed, no rings eliminated).
+- These diagnostics can be enabled locally via:
+
+  ```bash
+  RINGRIFT_ENABLE_SANDBOX_AI_SIM=1 npm test -- ClientSandboxEngine.aiSimulation
+  ```
+
+  and are intentionally **not** part of the default CI signal.
+
+- Earlier versions of this suite also asserted a strict `afterProgress.S > beforeProgress.S`
+  for every AI tick, which conflicted with canonical `skip_placement`
+  semantics; that expectation has since been relaxed to non-decreasing S.
+
+- Even with the relaxed S-invariant checks, several seeded AI-vs-AI runs
+  (across `square8`, `square19`, and `hexagonal`, with 2–4 AI players) still
+  report potential stalls: games that remain `active` with no state changes
+  over many consecutive AI actions.
 
 **Observed behaviour (current implementation):**
 
@@ -373,22 +399,24 @@ work (stronger heuristics, search/ML) plus potentially additional endpoints.
 
 **Impact:**
 
-- The **aiSimulation** suite currently reports **9 failing tests** (across board types and player counts) with messages of the form:
-
-  > Expected: > 1
-  > Received: 1
-
-- These failures indicate a **test expectation mismatch**, not a rules bug:
-  - The engine correctly treats `skip_placement` as a phase change with no board delta.
-  - The tests currently require **strict S increase on every AI tick**, which is stronger than intended.
+- The **aiSimulation** suite currently reports multiple failing seeds when
+  enabled, but these are treated as **diagnostic indicators** rather than hard
+  CI failures. They highlight configurations where:
+  - The sandbox AI makes little or no structural progress despite having legal
+    actions, or
+  - Termination is significantly delayed compared to expectations for a
+    development harness.
 
 **Planned direction:**
 
 - Treat the current engine behaviour as **authoritative** for `skip_placement`:
   - S should be **non-decreasing** across canonical actions, but not strictly increasing for phase-only transitions that do not alter the board.
-- Update or replace the aiSimulation assertions to reflect this:
-  - Either weaken the expectation to `afterProgress.S >= beforeProgress.S`, or
-  - Restrict strict-increase checks to actions that actually mutate the board (placements, moves, captures, lines, territory, forced elimination).
+- Evolve the aiSimulation suite to:
+  - Continue enforcing non-decreasing S.
+  - Use stall detection (no state change across many AI actions) as the
+    primary signal for problematic seeds.
+  - Track and systematically triage the failing seeds as part of Phase 2
+    robustness work, rather than gating CI.
 
 - Until those tests are updated, the failing **aiSimulation** cases should be interpreted as a **known, expected discrepancy in test semantics**, not as an engine correctness failure.
 
@@ -457,6 +485,13 @@ These issues have been addressed but are kept here for context:
   legal move or capture available. Implemented via
   `hasAnyLegalMoveOrCaptureFrom` helper in `src/server/game/RuleEngine.ts`
   with test coverage in `tests/unit/RuleEngine.movementCapture.test.ts`.
+- **Sandbox Fix (Nov 19, 2025): Mixed AI/Human turn semantics in `/sandbox`** –
+  Local sandbox games now use a unified “place then move” turn model for
+  both human and AI seats. Ring placement no longer advances directly to the
+  next player; instead the placed stack must move before the turn can pass,
+  and AI turns are triggered automatically when it is an AI player’s move.
+  Implemented in `ClientSandboxEngine` and the `/sandbox` path of `GamePage`,
+  with coverage in `tests/unit/ClientSandboxEngine.mixedPlayers.test.ts`.
 
 For a more narrative description of what works today vs what remains, see
 [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md).

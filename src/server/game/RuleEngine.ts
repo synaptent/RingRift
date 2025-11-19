@@ -6,7 +6,7 @@ import {
   RingStack,
   positionToString,
   positionsEqual,
-  BOARD_CONFIGS
+  BOARD_CONFIGS,
 } from '../../shared/types/game';
 import { BoardManager } from './BoardManager';
 import {
@@ -17,13 +17,13 @@ import {
   validateCaptureSegmentOnBoard,
   CaptureSegmentBoardView,
   MovementBoardView,
-  hasAnyLegalMoveOrCaptureFromOnBoard
+  hasAnyLegalMoveOrCaptureFromOnBoard,
 } from '../../shared/engine/core';
 import { createHypotheticalBoardWithPlacement as createHypotheticalBoardWithPlacementHelper } from './rules/placementHelpers';
 
 export class RuleEngine {
   private boardManager: BoardManager;
-  private boardConfig: typeof BOARD_CONFIGS[keyof typeof BOARD_CONFIGS];
+  private boardConfig: (typeof BOARD_CONFIGS)[keyof typeof BOARD_CONFIGS];
   private boardType: keyof typeof BOARD_CONFIGS;
 
   constructor(boardManager: BoardManager, boardType: keyof typeof BOARD_CONFIGS) {
@@ -81,7 +81,7 @@ export class RuleEngine {
       return false;
     }
 
-    const playerState = gameState.players.find(p => p.playerNumber === move.player);
+    const playerState = gameState.players.find((p) => p.playerNumber === move.player);
     if (!playerState || playerState.ringsInHand <= 0) {
       // No rings to optionally place – skipping is meaningless here.
       return false;
@@ -98,7 +98,7 @@ export class RuleEngine {
     // Check if at least one controlled stack has a legal move or capture
     // in the *current* board state. If none do, placement is mandatory
     // (the player is effectively blocked without placing).
-    const hasAnyAction = playerStacks.some(pos =>
+    const hasAnyAction = playerStacks.some((pos) =>
       this.hasAnyLegalMoveOrCaptureFrom(pos, move.player, board)
     );
 
@@ -135,7 +135,7 @@ export class RuleEngine {
       }
     }
 
-    const playerState = gameState.players.find(p => p.playerNumber === move.player);
+    const playerState = gameState.players.find((p) => p.playerNumber === move.player);
     if (!playerState) {
       return false;
     }
@@ -278,25 +278,25 @@ export class RuleEngine {
   private isPathClear(from: Position, to: Position, board: BoardState): boolean {
     // Get path positions (excluding start and end)
     const pathPositions = getPathPositions(from, to).slice(1, -1);
-    
+
     // Check each position along the path
     for (const pos of pathPositions) {
       const posKey = positionToString(pos);
-      
+
       // Cannot pass through collapsed spaces
       if (this.boardManager.isCollapsedSpace(pos, board)) {
         return false;
       }
-      
+
       // Cannot pass through other rings/stacks
       const stack = board.stacks.get(posKey);
       if (stack && stack.rings.length > 0) {
         return false;
       }
-      
+
       // Markers are OK to pass through - they get flipped/collapsed
     }
-    
+
     return true;
   }
 
@@ -310,8 +310,11 @@ export class RuleEngine {
    * Rule Reference: Section 10.1, Section 10.2
    */
   private validateCapture(move: Move, gameState: GameState): boolean {
-    // Captures are only allowed during capture phase
-    if (gameState.currentPhase !== 'capture') {
+    // Captures are only allowed during interactive phases (movement/capture).
+    // This allows an initial overtaking capture to be chosen as the first
+    // action of the turn, while still disallowing captures during placement
+    // and post-processing phases.
+    if (gameState.currentPhase !== 'capture' && gameState.currentPhase !== 'movement') {
       return false;
     }
 
@@ -351,10 +354,10 @@ export class RuleEngine {
         return {
           controllingPlayer: stack.controllingPlayer,
           capHeight: stack.capHeight,
-          stackHeight: stack.stackHeight
+          stackHeight: stack.stackHeight,
         };
       },
-      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, board)
+      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, board),
     };
 
     return validateCaptureSegmentOnBoard(
@@ -366,8 +369,6 @@ export class RuleEngine {
       view
     );
   }
-
-
 
   /**
    * Processes a move and returns the new game state
@@ -403,7 +404,7 @@ export class RuleEngine {
       rings: [move.player],
       stackHeight: 1,
       capHeight: 1,
-      controllingPlayer: move.player
+      controllingPlayer: move.player,
     };
 
     const posKey = positionToString(move.to);
@@ -418,7 +419,7 @@ export class RuleEngine {
 
     const fromKey = positionToString(move.from);
     const toKey = positionToString(move.to);
-    
+
     const sourceStack = gameState.board.stacks.get(fromKey);
     if (!sourceStack) return;
 
@@ -431,14 +432,14 @@ export class RuleEngine {
         rings: [...destinationStack.rings, ...sourceStack.rings],
         stackHeight: destinationStack.stackHeight + sourceStack.stackHeight,
         capHeight: sourceStack.capHeight, // Moving stack's cap becomes new cap
-        controllingPlayer: sourceStack.controllingPlayer
+        controllingPlayer: sourceStack.controllingPlayer,
       };
       gameState.board.stacks.set(toKey, mergedStack);
     } else {
       // Move to empty position
       const movedStack: RingStack = {
         ...sourceStack,
-        position: move.to
+        position: move.to,
       };
       gameState.board.stacks.set(toKey, movedStack);
     }
@@ -480,7 +481,7 @@ export class RuleEngine {
           rings: remaining,
           stackHeight: remaining.length,
           capHeight: calculateCapHeight(remaining),
-          controllingPlayer: remaining[0]
+          controllingPlayer: remaining[0],
         };
         gameState.board.stacks.set(capturedKey, newTarget);
       } else {
@@ -493,7 +494,7 @@ export class RuleEngine {
         rings: newRings,
         stackHeight: newRings.length,
         capHeight: calculateCapHeight(newRings),
-        controllingPlayer: newRings[0]
+        controllingPlayer: newRings[0],
       };
     }
 
@@ -513,14 +514,15 @@ export class RuleEngine {
     if (!triggerStack) return;
 
     const adjacentPositions = this.getAdjacentPositions(triggerPos);
-    
+
     for (const adjPos of adjacentPositions) {
       const adjKey = positionToString(adjPos);
       const adjStack = gameState.board.stacks.get(adjKey);
-      if (adjStack && 
-          adjStack.controllingPlayer !== triggerStack.controllingPlayer &&
-          triggerStack.capHeight >= adjStack.capHeight) {
-        
+      if (
+        adjStack &&
+        adjStack.controllingPlayer !== triggerStack.controllingPlayer &&
+        triggerStack.capHeight >= adjStack.capHeight
+      ) {
         // Trigger another capture
         const captureMove: Move = {
           id: `chain-${Date.now()}`,
@@ -531,7 +533,7 @@ export class RuleEngine {
           capturedStacks: [adjStack],
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: gameState.moveHistory.length + 1
+          moveNumber: gameState.moveHistory.length + 1,
         };
 
         this.processCapture(captureMove, gameState);
@@ -544,7 +546,7 @@ export class RuleEngine {
    */
   private processLineFormation(gameState: GameState): void {
     const lines = this.boardManager.findAllLines(gameState.board);
-    
+
     for (const line of lines) {
       if (line.positions.length >= this.boardConfig.lineLength) {
         // Collapse line - remove all stacks in the line
@@ -562,8 +564,11 @@ export class RuleEngine {
   private processTerritoryDisconnection(gameState: GameState): void {
     // Check territories for each player
     for (const player of gameState.players) {
-      const territories = this.boardManager.findAllTerritories(player.playerNumber, gameState.board);
-      
+      const territories = this.boardManager.findAllTerritories(
+        player.playerNumber,
+        gameState.board
+      );
+
       for (const territory of territories) {
         if (territory.isDisconnected) {
           // Remove all stacks in disconnected territory
@@ -598,27 +603,25 @@ export class RuleEngine {
 
     // 1) Ring-elimination victory: strictly more than 50% of total rings
     // in play have been eliminated for a single player.
-    const ringWinner = players.find(
-      p => p.eliminatedRings >= gameState.victoryThreshold
-    );
+    const ringWinner = players.find((p) => p.eliminatedRings >= gameState.victoryThreshold);
     if (ringWinner) {
       return {
         isGameOver: true,
         winner: ringWinner.playerNumber,
-        reason: 'ring_elimination'
+        reason: 'ring_elimination',
       };
     }
 
     // 2) Territory-control victory: strictly more than 50% of the board's
     // spaces are controlled as territory by a single player.
     const territoryWinner = players.find(
-      p => p.territorySpaces >= gameState.territoryVictoryThreshold
+      (p) => p.territorySpaces >= gameState.territoryVictoryThreshold
     );
     if (territoryWinner) {
       return {
         isGameOver: true,
         winner: territoryWinner.playerNumber,
-        reason: 'territory_control'
+        reason: 'territory_control',
       };
     }
 
@@ -626,37 +629,37 @@ export class RuleEngine {
     // rings in hand for any player. In this situation the game cannot
     // progress further, even if nobody has reached the strict thresholds.
     const noStacksLeft = gameState.board.stacks.size === 0;
-    const anyRingsInHand = players.some(p => p.ringsInHand > 0);
+    const anyRingsInHand = players.some((p) => p.ringsInHand > 0);
 
     if (noStacksLeft && !anyRingsInHand) {
       // First tie-breaker: territory spaces.
-      const maxTerritory = Math.max(...players.map(p => p.territorySpaces));
-      const territoryLeaders = players.filter(p => p.territorySpaces === maxTerritory);
+      const maxTerritory = Math.max(...players.map((p) => p.territorySpaces));
+      const territoryLeaders = players.filter((p) => p.territorySpaces === maxTerritory);
 
       if (territoryLeaders.length === 1 && maxTerritory > 0) {
         return {
           isGameOver: true,
           winner: territoryLeaders[0].playerNumber,
-          reason: 'territory_control'
+          reason: 'territory_control',
         };
       }
 
       // Second tie-breaker: eliminated rings.
-      const maxEliminated = Math.max(...players.map(p => p.eliminatedRings));
-      const eliminationLeaders = players.filter(p => p.eliminatedRings === maxEliminated);
+      const maxEliminated = Math.max(...players.map((p) => p.eliminatedRings));
+      const eliminationLeaders = players.filter((p) => p.eliminatedRings === maxEliminated);
 
       if (eliminationLeaders.length === 1 && maxEliminated > 0) {
         return {
           isGameOver: true,
           winner: eliminationLeaders[0].playerNumber,
-          reason: 'ring_elimination'
+          reason: 'ring_elimination',
         };
       }
 
       // Perfect tie: signal a completed game with no specific winner.
       return {
         isGameOver: true,
-        reason: 'game_completed'
+        reason: 'game_completed',
       };
     }
 
@@ -691,7 +694,7 @@ export class RuleEngine {
           to: { x: 0, y: 0 },
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: gameState.moveHistory.length + 1
+          moveNumber: gameState.moveHistory.length + 1,
         };
 
         if (this.validateSkipPlacement(skipMoveCandidate, gameState)) {
@@ -700,7 +703,11 @@ export class RuleEngine {
         break;
       }
       case 'movement':
+        // During movement phase, expose both simple movements and
+        // overtaking capture options so that an initial capture can be
+        // chosen directly when legal.
         moves.push(...this.getValidStackMovements(currentPlayer, gameState));
+        moves.push(...this.getValidCaptures(currentPlayer, gameState));
         break;
       case 'capture':
         moves.push(...this.getValidCaptures(currentPlayer, gameState));
@@ -715,7 +722,7 @@ export class RuleEngine {
    */
   private getValidRingPlacements(player: number, gameState: GameState): Move[] {
     const moves: Move[] = [];
-    const playerState = gameState.players.find(p => p.playerNumber === player);
+    const playerState = gameState.players.find((p) => p.playerNumber === player);
     if (!playerState || playerState.ringsInHand <= 0) {
       return moves;
     }
@@ -767,7 +774,7 @@ export class RuleEngine {
           placementCount: 1,
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: gameState.moveHistory.length + 1
+          moveNumber: gameState.moveHistory.length + 1,
         };
 
         if (this.validateRingPlacement(candidate, gameState)) {
@@ -785,7 +792,7 @@ export class RuleEngine {
             placementCount: count,
             timestamp: new Date(),
             thinkTime: 0,
-            moveNumber: gameState.moveHistory.length + 1
+            moveNumber: gameState.moveHistory.length + 1,
           };
 
           if (this.validateRingPlacement(candidate, gameState)) {
@@ -804,10 +811,10 @@ export class RuleEngine {
   private getValidStackMovements(player: number, gameState: GameState): Move[] {
     const moves: Move[] = [];
     const playerStacks = this.getPlayerStacks(player, gameState.board);
-    
+
     for (const stackPos of playerStacks) {
       const allPositions = this.boardManager.getAllPositions();
-      
+
       for (const targetPos of allPositions) {
         if (positionsEqual(stackPos, targetPos)) continue;
 
@@ -819,14 +826,14 @@ export class RuleEngine {
           to: targetPos,
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: 0
+          moveNumber: 0,
         };
 
         if (this.validateStackMovement(testMove, gameState)) {
           moves.push({
             ...testMove,
             id: `move-${positionToString(stackPos)}-${positionToString(targetPos)}`,
-            moveNumber: gameState.moveHistory.length + 1
+            moveNumber: gameState.moveHistory.length + 1,
           });
         }
       }
@@ -864,7 +871,7 @@ export class RuleEngine {
           const pos: Position = {
             x: stackPos.x + dir.x * step,
             y: stackPos.y + dir.y * step,
-            ...(dir.z !== undefined && { z: (stackPos.z || 0) + dir.z * step })
+            ...(dir.z !== undefined && { z: (stackPos.z || 0) + dir.z * step }),
           };
 
           if (!this.boardManager.isValidPosition(pos)) {
@@ -881,7 +888,7 @@ export class RuleEngine {
 
           if (stackAtPos && stackAtPos.rings.length > 0) {
             // First stack encountered along this ray is the only possible
-            // capture target in this direction. 
+            // capture target in this direction.
             // Rule fix: Can overtake own stacks (no same-player restriction)
             if (attackerStack.capHeight >= stackAtPos.capHeight) {
               targetPos = pos;
@@ -902,7 +909,7 @@ export class RuleEngine {
           const landingPos: Position = {
             x: targetPos.x + dir.x * landingStep,
             y: targetPos.y + dir.y * landingStep,
-            ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep })
+            ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep }),
           };
 
           if (!this.boardManager.isValidPosition(landingPos)) {
@@ -930,14 +937,14 @@ export class RuleEngine {
             to: landingPos,
             timestamp: new Date(),
             thinkTime: 0,
-            moveNumber: 0
+            moveNumber: 0,
           };
 
           if (this.validateCaptureSegment(stackPos, targetPos, landingPos, player, board)) {
             moves.push({
               ...testMove,
               id: `capture-${positionToString(stackPos)}-${positionToString(targetPos)}-${positionToString(landingPos)}`,
-              moveNumber: gameState.moveHistory.length + 1
+              moveNumber: gameState.moveHistory.length + 1,
             });
           }
 
@@ -967,7 +974,7 @@ export class RuleEngine {
    * Helper methods
    */
   private isValidPlayer(player: number, gameState: GameState): boolean {
-    return gameState.players.some(p => p.playerNumber === player);
+    return gameState.players.some((p) => p.playerNumber === player);
   }
 
   private isPlayerTurn(player: number, gameState: GameState): boolean {
@@ -976,7 +983,7 @@ export class RuleEngine {
 
   private getPlayerStacks(player: number, board: BoardState): Position[] {
     const positions: Position[] = [];
-    
+
     for (const [, stack] of board.stacks) {
       if (stack.controllingPlayer === player) {
         positions.push(stack.position);
@@ -986,9 +993,11 @@ export class RuleEngine {
     return positions;
   }
 
-  private getPlayerStats(gameState: GameState): { [player: number]: { totalRings: number; controlledPositions: number } } {
+  private getPlayerStats(gameState: GameState): {
+    [player: number]: { totalRings: number; controlledPositions: number };
+  } {
     const stats: { [player: number]: { totalRings: number; controlledPositions: number } } = {};
-    
+
     // Initialize stats
     for (const player of gameState.players) {
       stats[player.playerNumber] = { totalRings: 0, controlledPositions: 0 };
@@ -1020,23 +1029,23 @@ export class RuleEngine {
 
   private getAdjacentPositions(pos: Position): Position[] {
     const adjacent: Position[] = [];
-    
+
     if (this.boardConfig.type === 'hexagonal') {
       // Hexagonal adjacency
       const directions = [
-        { x: 1, y: 0, z: -1 },   // East
-        { x: 0, y: 1, z: -1 },   // Southeast
-        { x: -1, y: 1, z: 0 },   // Southwest
-        { x: -1, y: 0, z: 1 },   // West
-        { x: 0, y: -1, z: 1 },   // Northwest
-        { x: 1, y: -1, z: 0 }    // Northeast
+        { x: 1, y: 0, z: -1 }, // East
+        { x: 0, y: 1, z: -1 }, // Southeast
+        { x: -1, y: 1, z: 0 }, // Southwest
+        { x: -1, y: 0, z: 1 }, // West
+        { x: 0, y: -1, z: 1 }, // Northwest
+        { x: 1, y: -1, z: 0 }, // Northeast
       ];
-      
+
       for (const dir of directions) {
         const newPos: Position = {
           x: pos.x + dir.x,
           y: pos.y + dir.y,
-          z: (pos.z || 0) + dir.z
+          z: (pos.z || 0) + dir.z,
         };
         if (this.boardManager.isValidPosition(newPos)) {
           adjacent.push(newPos);
@@ -1047,10 +1056,10 @@ export class RuleEngine {
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
           if (dx === 0 && dy === 0) continue;
-          
+
           const newPos: Position = {
             x: pos.x + dx,
-            y: pos.y + dy
+            y: pos.y + dy,
           };
           if (this.boardManager.isValidPosition(newPos)) {
             adjacent.push(newPos);
@@ -1099,11 +1108,11 @@ export class RuleEngine {
         markers: new Map(gameState.board.markers),
         territories: new Map(gameState.board.territories),
         formedLines: [...gameState.board.formedLines],
-        eliminatedRings: { ...gameState.board.eliminatedRings }
+        eliminatedRings: { ...gameState.board.eliminatedRings },
       },
       moveHistory: [...gameState.moveHistory],
       players: [...gameState.players],
-      spectators: [...gameState.spectators]
+      spectators: [...gameState.spectators],
     };
   }
 
@@ -1127,11 +1136,7 @@ export class RuleEngine {
    *
    * Rule Reference: Section 7.1 - Must have at least one legal move or capture
    */
-  private hasAnyLegalMoveOrCaptureFrom(
-    from: Position,
-    player: number,
-    board: BoardState
-  ): boolean {
+  private hasAnyLegalMoveOrCaptureFrom(from: Position, player: number, board: BoardState): boolean {
     const view: MovementBoardView = {
       isValidPosition: (pos: Position) => this.boardManager.isValidPosition(pos),
       isCollapsedSpace: (pos: Position) => this.boardManager.isCollapsedSpace(pos, board),
@@ -1142,24 +1147,13 @@ export class RuleEngine {
         return {
           controllingPlayer: stack.controllingPlayer,
           capHeight: stack.capHeight,
-          stackHeight: stack.stackHeight
+          stackHeight: stack.stackHeight,
         };
       },
-      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, board)
+      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, board),
     };
 
-    return hasAnyLegalMoveOrCaptureFromOnBoard(
-      this.boardConfig.type as any,
-      from,
-      player,
-      view,
-      {
-        // Preserve legacy RuleEngine semantics: non-capture moves
-        // search out to distance 8 and capture landings out to 5.
-        maxNonCaptureDistance: 8,
-        maxCaptureLandingDistance: 5
-      }
-    );
+    return hasAnyLegalMoveOrCaptureFromOnBoard(this.boardConfig.type as any, from, player, view);
   }
 
   /**

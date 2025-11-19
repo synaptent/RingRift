@@ -7,6 +7,7 @@ import {
   TimeControl,
   positionToString,
 } from '../../src/shared/types/game';
+import { computeProgressSnapshot } from '../../src/shared/engine/core';
 
 /**
  * Scenario Tests: Forced Elimination & Stalemate (FAQ Q24, Q11)
@@ -51,12 +52,14 @@ describe('Scenario: Forced Elimination & Stalemate (backend)', () => {
     ];
   }
 
-  test('Q24_forced_elimination_when_blocked_with_stacks_backend', () => {
+  test('4.4.1_forced_elimination_when_blocked_with_stacks_backend', () => {
     // Rules reference:
     // - Section 4.4 / FAQ Q24: At the beginning of a player's turn, if
     //   they have no legal placement, movement, or capture but still
     //   control stacks, they must eliminate the entire cap of one of
     //   their stacks (forced elimination).
+    // - Section 13.5: Progress invariant S = markers + collapsed + eliminated
+    //   must be non-decreasing and strictly increases on forced elimination.
     //
     // Scenario:
     // - Player 1 is the current player, gameStatus is active.
@@ -66,7 +69,7 @@ describe('Scenario: Forced Elimination & Stalemate (backend)', () => {
     // - Both players have ringsInHand = 0, so no placements are legal.
     // - resolveBlockedStateForCurrentPlayerForTesting() should apply
     //   forced elimination, removing Player 1's cap and increasing
-    //   eliminatedRings and totalRingsEliminated.
+    //   eliminatedRings and totalRingsEliminated, and increasing S.
 
     const players = createPlayers();
     const engine = new GameEngine('forced-elim-q24', boardType, players, timeControl, false);
@@ -109,11 +112,13 @@ describe('Scenario: Forced Elimination & Stalemate (backend)', () => {
 
     const initialP1Eliminated = p1.eliminatedRings;
     const initialTotalEliminated = gameState.totalRingsEliminated;
+    const progressBefore = computeProgressSnapshot(gameState);
 
     engine.resolveBlockedStateForCurrentPlayerForTesting();
 
     const finalState = engine.getGameState();
     const finalP1 = finalState.players.find((p: Player) => p.playerNumber === 1)!;
+    const progressAfter = computeProgressSnapshot(finalState);
 
     // Forced elimination must have increased P1's eliminatedRings and
     // the global total. In this setup we expect the entire cap (2 rings)
@@ -124,14 +129,21 @@ describe('Scenario: Forced Elimination & Stalemate (backend)', () => {
     // The original stack at (0,0) should be gone.
     const finalStack = finalState.board.stacks.get(positionToString(stackPos));
     expect(finalStack).toBeUndefined();
+
+    // Progress invariant S must strictly increase when forced elimination fires.
+    expect(progressAfter.S).toBeGreaterThan(progressBefore.S);
   });
 
-  test('Q11_stalemate_with_rings_in_hand_converts_hand_to_eliminated_backend', () => {
+  test('13.5.1_structural_stalemate_converts_rings_in_hand_to_eliminated_backend', () => {
     // Rules reference:
     // - Section 13.4 / FAQ Q11: In global stalemate when no legal
     //   actions (placements, movements, captures, forced eliminations)
     //   remain and no stacks are on the board, any rings remaining in
     //   hand are counted as eliminated rings for tie-breaking.
+    // - Section 13.5: Progress & termination invariant – once no player
+    //   has placements/moves/captures/forced eliminations, the game must
+    //   be structurally terminal and S should increase as rings in hand
+    //   are converted to eliminated rings.
     //
     // Scenario:
     // - No stacks on the board for any player.
@@ -139,7 +151,7 @@ describe('Scenario: Forced Elimination & Stalemate (backend)', () => {
     //   structurally terminal via resolveBlockedStateForCurrentPlayerForTesting.
     // - The helper should convert ringsInHand → eliminatedRings for
     //   each player and mark the game as completed once checkGameEnd
-    //   resolves the stalemate.
+    //   resolves the stalemate, with S strictly increasing.
 
     const players: Player[] = [
       {
@@ -185,11 +197,14 @@ describe('Scenario: Forced Elimination & Stalemate (backend)', () => {
       }
     }
 
+    const progressBefore = computeProgressSnapshot(gameState);
+
     engine.resolveBlockedStateForCurrentPlayerForTesting();
 
     const finalState = engine.getGameState();
     const finalP1 = finalState.players.find((p: Player) => p.playerNumber === 1)!;
     const finalP2 = finalState.players.find((p: Player) => p.playerNumber === 2)!;
+    const progressAfter = computeProgressSnapshot(finalState);
 
     // Rings in hand should have been converted to eliminated rings.
     expect(finalP1.ringsInHand).toBe(0);
@@ -202,5 +217,9 @@ describe('Scenario: Forced Elimination & Stalemate (backend)', () => {
 
     // The game should no longer be active after stalemate resolution.
     expect(finalState.gameStatus).toBe('completed');
+
+    // Progress invariant S must strictly increase as rings in hand are
+    // converted into eliminated rings at structural terminality.
+    expect(progressAfter.S).toBeGreaterThan(progressBefore.S);
   });
 });

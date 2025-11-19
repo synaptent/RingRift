@@ -1,0 +1,203 @@
+/**
+ * Scenario Tests: Turn Sequence & Forced Elimination (Section 4, FAQ 15.2, FAQ 24)
+ *
+ * These tests exercise the extracted TurnEngine orchestration logic that backs
+ * GameEngine.advanceGame. They focus on:
+ *
+ * - Handing the turn to the next player after territory_processing.
+ * - Applying forced elimination when a player controls stacks but has no legal
+ *   placements, movements, or captures (FAQ Q24).
+ * - Skipping players who have no material at all (no stacks and no rings in hand)
+ *   so the game can continue for remaining players.
+ *
+ * They deliberately use stubbed BoardManager / RuleEngine dependencies so that
+ * the scenarios are isolated from low-level geometry and move generation.
+ */
+import {
+  advanceGameForCurrentPlayer,
+  PerTurnState,
+  TurnEngineDeps,
+  TurnEngineHooks,
+} from '../../src/server/game/turn/TurnEngine';
+import { GameState, BoardState, BoardType, TimeControl, Player } from '../../src/shared/types/game';
+import { createTestBoard, createTestPlayer } from '../utils/fixtures';
+
+describe('GameEngine turn sequence & forced elimination scenarios (backend)', () => {
+  const boardType: BoardType = 'square8';
+  const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+  function createGameState(players: Player[], board?: BoardState): GameState {
+    const now = new Date();
+    const boardState = board ?? createTestBoard(boardType);
+
+    return {
+      id: 'turn-sequence-scenario',
+      boardType,
+      board: boardState,
+      players,
+      currentPhase: 'territory_processing',
+      currentPlayer: 1,
+      moveHistory: [],
+      history: [],
+      timeControl,
+      spectators: [],
+      gameStatus: 'active',
+      createdAt: now,
+      lastMoveAt: now,
+      isRated: false,
+      maxPlayers: players.length,
+      totalRingsInPlay: 0,
+      totalRingsEliminated: 0,
+      victoryThreshold: 0,
+      territoryVictoryThreshold: 0,
+    };
+  }
+
+  test('Q24_forced_elimination_when_blocked_with_stacks_turn_engine', () => {
+    // Player 2 controls a stack but has no legal placements, movements, or captures
+    // (ringsInHand = 0, RuleEngine.getValidMoves = []). After territory_processing,
+    // TurnEngine must invoke forced elimination on player 2 before handing the turn
+    // to the next player with material.
+
+    const player1 = createTestPlayer(1, { ringsInHand: 0 });
+    const player2 = createTestPlayer(2, { ringsInHand: 0 });
+    const players = [player1, player2];
+
+    const board = createTestBoard(boardType);
+
+    const stacksByPlayer: Record<number, { x: number; y: number; z?: number }[]> = {
+      1: [],
+      2: [{ x: 0, y: 0 }],
+    };
+
+    const boardManager: any = {
+      getPlayerStacks: jest.fn((_board: BoardState, playerNumber: number) => {
+        return stacksByPlayer[playerNumber] ?? [];
+      }),
+      isValidPosition: jest.fn(() => true),
+      isCollapsedSpace: jest.fn(() => false),
+      getMarker: jest.fn(() => undefined),
+    };
+
+    const ruleEngine: any = {
+      // No placements, movements, or captures for any player in this scenario.
+      getValidMoves: jest.fn(() => []),
+      checkGameEnd: jest.fn(() => ({ isGameOver: false })),
+    };
+
+    const deps: TurnEngineDeps = { boardManager, ruleEngine };
+
+    const eliminatePlayerRingOrCap = jest.fn();
+    const endGame: TurnEngineHooks['endGame'] = jest.fn((_winner?: number, _reason?: string) => {
+      return {
+        success: true,
+        gameResult: {
+          reason: 'game_completed',
+          finalScore: {
+            ringsEliminated: {},
+            territorySpaces: {},
+            ringsRemaining: {},
+          },
+        },
+      };
+    });
+
+    const hooks: TurnEngineHooks = { eliminatePlayerRingOrCap, endGame };
+
+    const gameState = createGameState(players, board);
+    const initialTurnState: PerTurnState = {
+      hasPlacedThisTurn: false,
+      mustMoveFromStackKey: undefined,
+    };
+
+    const afterTurnState = advanceGameForCurrentPlayer(gameState, initialTurnState, deps, hooks);
+
+    // Forced elimination must have been applied to player 2 (FAQ Q24).
+    expect(eliminatePlayerRingOrCap).toHaveBeenCalledTimes(1);
+    expect(eliminatePlayerRingOrCap).toHaveBeenCalledWith(2);
+
+    // After elimination and turn handoff, the next interactive turn belongs
+    // to player 2 again (the only player with material) in the movement phase.
+    expect(gameState.currentPlayer).toBe(2);
+    expect(gameState.currentPhase).toBe('movement');
+
+    // Per-turn placement bookkeeping is reset for the new turn.
+    expect(afterTurnState).toEqual({
+      hasPlacedThisTurn: false,
+      mustMoveFromStackKey: undefined,
+    });
+  });
+
+  test('Players with no stacks and no rings are skipped when starting a new turn', () => {
+    // Section 4 / FAQ 15.2: when advancing from territory_processing, players who
+    // have no stacks and no rings in hand cannot take any actions and should be
+    // skipped so the turn is given to a player who can act.
+
+    const player1 = createTestPlayer(1, { ringsInHand: 0 });
+    const player2 = createTestPlayer(2, { ringsInHand: 0 });
+    const player3 = createTestPlayer(3, { ringsInHand: 5 });
+    const players = [player1, player2, player3];
+
+    const board = createTestBoard(boardType);
+
+    const stacksByPlayer: Record<number, { x: number; y: number; z?: number }[]> = {
+      1: [],
+      2: [],
+      3: [],
+    };
+
+    const boardManager: any = {
+      getPlayerStacks: jest.fn((_board: BoardState, playerNumber: number) => {
+        return stacksByPlayer[playerNumber] ?? [];
+      }),
+      isValidPosition: jest.fn(() => true),
+      isCollapsedSpace: jest.fn(() => false),
+      getMarker: jest.fn(() => undefined),
+    };
+
+    const ruleEngine: any = {
+      getValidMoves: jest.fn(() => []),
+      checkGameEnd: jest.fn(() => ({ isGameOver: false })),
+    };
+
+    const deps: TurnEngineDeps = { boardManager, ruleEngine };
+
+    const eliminatePlayerRingOrCap = jest.fn();
+    const endGame: TurnEngineHooks['endGame'] = jest.fn((_winner?: number, _reason?: string) => {
+      return {
+        success: true,
+        gameResult: {
+          reason: 'game_completed',
+          finalScore: {
+            ringsEliminated: {},
+            territorySpaces: {},
+            ringsRemaining: {},
+          },
+        },
+      };
+    });
+
+    const hooks: TurnEngineHooks = { eliminatePlayerRingOrCap, endGame };
+
+    const gameState = createGameState(players, board);
+    const initialTurnState: PerTurnState = {
+      hasPlacedThisTurn: false,
+      mustMoveFromStackKey: undefined,
+    };
+
+    const afterTurnState = advanceGameForCurrentPlayer(gameState, initialTurnState, deps, hooks);
+
+    // Player 2 has no stacks and no rings in hand; they must be skipped.
+    // Player 3 has rings in hand and no stacks, so their turn begins in
+    // ring_placement phase.
+    expect(gameState.currentPlayer).toBe(3);
+    expect(gameState.currentPhase).toBe('ring_placement');
+
+    // No forced elimination occurs in this scenario.
+    expect(eliminatePlayerRingOrCap).not.toHaveBeenCalled();
+    expect(afterTurnState).toEqual({
+      hasPlacedThisTurn: false,
+      mustMoveFromStackKey: undefined,
+    });
+  });
+});

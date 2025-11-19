@@ -882,32 +882,28 @@ export class WebSocketServer {
   }
 
   private async handleChatMessage(socket: AuthenticatedSocket, data: any) {
-    const { gameId, content } = data;
+    const { gameId, text } = data;
 
-    if (!socket.gameId || socket.gameId !== gameId) {
-      throw new Error('Not in game room');
+    if (!gameId || !text) {
+      throw new Error('Missing gameId or text');
+    }
+
+    // Verify user is in the game room
+    if (!socket.rooms.has(gameId)) {
+      throw new Error('User not in game room');
     }
 
     // Broadcast chat message to all players in the game
     this.io.to(gameId).emit('chat_message', {
-      type: 'chat_message',
-      data: {
-        gameId,
-        message: {
-          id: Date.now().toString(),
-          playerId: socket.userId!,
-          playerUsername: socket.username!,
-          content: content,
-          timestamp: new Date().toISOString(),
-        },
-      },
+      sender: socket.username || 'Unknown',
+      text,
       timestamp: new Date().toISOString(),
     });
 
     logger.info('Chat message sent', {
       userId: socket.userId,
       gameId,
-      messageLength: content.length,
+      messageLength: text.length,
     });
   }
 

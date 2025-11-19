@@ -1,6 +1,6 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** November 18, 2025  
+**Assessment Date:** November 19, 2025
 **Assessor:** Code + Test Review  
 **Purpose:** Factual status of the codebase as it exists today
 
@@ -248,6 +248,8 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
 - AIEngine/AIServiceClient tests for success/failure/fallback paths.
 - WebSocketServer integration tests for AI turns and choice integration.
 - Trace and parity harnesses using `GameTrace` and `tests/utils/traces.ts`.
+- Turn sequence & forced-elimination scenario suite in place, keyed to Sections 4.x and 13.5 and FAQ 15.2/24 (see [`GameEngine.turnSequence.scenarios.test.ts`](tests/unit/GameEngine.turnSequence.scenarios.test.ts:1) and [`ForcedEliminationAndStalemate.test.ts`](tests/scenarios/ForcedEliminationAndStalemate.test.ts:12)).
+- Sandbox AI simulation diagnostics for `ClientSandboxEngine` (`ClientSandboxEngine.aiSimulation.test.ts`) and a targeted stall regression test for `square8` with 2 AI players and seed `1` (`ClientSandboxEngine.aiStall.seed1.test.ts`). These suites are enabled via environment flags (see `tests/README.md`) and are treated as **diagnostic tools**: some seeded AI‑vs‑AI runs currently fail by exceeding the AI‑action budget and are tracked under P1.4 in `KNOWN_ISSUES.md` rather than gating CI.
 - `tests/integration/FullGameFlow.test.ts`: full AI‑vs‑AI game using GameEngine with service mocked as failing.
 
 **Verdict:** The test suite is strong where it exists, but coverage is still sparse relative to the full ruleset.

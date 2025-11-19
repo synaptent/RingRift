@@ -22,7 +22,7 @@ import {
   CreateGameRequest,
 } from '../../shared/types/game';
 import { toast } from 'react-hot-toast';
-import { useGame } from '../contexts/GameContext';
+import { useGame, ConnectionStatus } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
 import { gameApi } from '../services/api';
 
@@ -33,6 +33,81 @@ interface LocalConfig {
   boardType: BoardType;
   playerTypes: LocalPlayerType[]; // indexed 0..3 for players 1..4
 }
+
+const BOARD_PRESETS: Array<{
+  value: BoardType;
+  label: string;
+  subtitle: string;
+  blurb: string;
+}> = [
+  {
+    value: 'square8',
+    label: '8×8 Compact',
+    subtitle: 'Fast tactical battles',
+    blurb: 'Ideal for quick tests, fewer territories, emphasizes captures.',
+  },
+  {
+    value: 'square19',
+    label: '19×19 Classic',
+    subtitle: 'Full RingRift experience',
+    blurb: 'All line lengths and ring counts enabled for marathon sessions.',
+  },
+  {
+    value: 'hexagonal',
+    label: 'Hex 331',
+    subtitle: 'High-mobility frontier',
+    blurb: 'Hex adjacency, sweeping captures, and large territory swings.',
+  },
+];
+
+const PLAYER_TYPE_META: Record<
+  LocalPlayerType,
+  { label: string; description: string; accent: string; chip: string }
+> = {
+  human: {
+    label: 'Human',
+    description: 'You control every move',
+    accent: 'border-emerald-500 text-emerald-200',
+    chip: 'bg-emerald-900/40 text-emerald-200',
+  },
+  ai: {
+    label: 'Computer',
+    description: 'Local heuristic AI',
+    accent: 'border-sky-500 text-sky-200',
+    chip: 'bg-sky-900/40 text-sky-200',
+  },
+};
+
+const PHASE_COPY: Record<
+  string,
+  {
+    label: string;
+    summary: string;
+  }
+> = {
+  ring_placement: {
+    label: 'Ring Placement',
+    summary: 'Place fresh stacks or build existing ones while keeping a legal move available.',
+  },
+  movement: {
+    label: 'Movement',
+    summary:
+      'Pick a stack and travel a distance equal to its height, respecting board blocking rules.',
+  },
+  capture: {
+    label: 'Capture',
+    summary: 'Chain overtaking captures until no follow-up exists or a choice resolves.',
+  },
+  line_processing: {
+    label: 'Line Processing',
+    summary: 'Resolve completed lines and apply marker collapses/reward decisions.',
+  },
+  territory_processing: {
+    label: 'Territory Processing',
+    summary:
+      'Evaluate disconnected regions, collapsing captured territory and enforcing self-elimination.',
+  },
+};
 
 function renderGameHeader(gameState: GameState) {
   const playerSummary = gameState.players
@@ -69,14 +144,34 @@ export default function GamePage() {
     choiceDeadline,
     respondToChoice,
     submitMove,
+    sendChatMessage,
+    chatMessages: backendChatMessages,
+    connectionStatus,
+    lastHeartbeatAt,
   } = useGame();
 
   const { user } = useAuth();
 
   // Derived state for HUD
   const currentPlayer = gameState?.players.find((p) => p.playerNumber === gameState.currentPlayer);
-  const isPlayer = gameState?.players.some((p) => p.id === user?.id);
+  const isPlayer = !!gameState?.players.some((p) => p.id === user?.id);
   const isMyTurn = currentPlayer?.id === user?.id;
+  const isConnectionActive = connectionStatus === 'connected';
+  const boardInteractionDisabled = !isConnectionActive || !isPlayer || !!victoryState;
+  const boardInteractionMessage = (() => {
+    if (!isPlayer) {
+      return 'Moves disabled while spectating.';
+    }
+    if (!isConnectionActive) {
+      return connectionStatus === 'reconnecting' || connectionStatus === 'connecting'
+        ? 'Reconnecting to server…'
+        : 'Disconnected from server.';
+    }
+    if (victoryState) {
+      return 'Game completed.';
+    }
+    return null;
+  })();
 
   const getInstruction = () => {
     if (!gameState || !currentPlayer) return undefined;
@@ -103,13 +198,20 @@ export default function GamePage() {
 
   // Choice/phase diagnostics
   const [eventLog, setEventLog] = useState<string[]>([]);
-  const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
+  // Use backend chat messages if available, otherwise local state (for sandbox/fallback)
+  const [localChatMessages, setLocalChatMessages] = useState<{ sender: string; text: string }[]>(
+    []
+  );
+  const chatMessages = backendChatMessages || localChatMessages;
+
   const [chatInput, setChatInput] = useState('');
   const [choiceTimeRemainingMs, setChoiceTimeRemainingMs] = useState<number | null>(null);
+
   const choiceTimerRef = useRef<number | null>(null);
   const lastPhaseRef = useRef<string | null>(null);
   const lastCurrentPlayerRef = useRef<number | null>(null);
   const lastChoiceIdRef = useRef<string | null>(null);
+  const lastConnectionStatusRef = useRef<ConnectionStatus | null>(null);
 
   // Local sandbox render tick used to force re-renders for AI-vs-AI games
   // even when React state derived from GameState hasn’t otherwise changed.
@@ -227,6 +329,16 @@ export default function GamePage() {
     setConfig((prev) => {
       const next = [...prev.playerTypes];
       next[index] = type;
+      return { ...prev, playerTypes: next };
+    });
+  };
+
+  const setAllPlayerTypes = (type: LocalPlayerType) => {
+    setConfig((prev) => {
+      const next = [...prev.playerTypes];
+      for (let i = 0; i < prev.numPlayers; i += 1) {
+        next[i] = type;
+      }
       return { ...prev, playerTypes: next };
     });
   };
@@ -361,6 +473,17 @@ export default function GamePage() {
     }
   };
 
+  const maybeRunSandboxAiIfNeeded = () => {
+    const engine = sandboxEngineRef.current;
+    if (!engine) return;
+
+    const state = engine.getGameState();
+    const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
+    if (state.gameStatus === 'active' && current && current.type === 'ai') {
+      void runSandboxAiTurnLoop();
+    }
+  };
+
   // Unified sandbox click handler: prefer the ClientSandboxEngine when
   // available (Stage 2 harness), otherwise fall back to the legacy
   // LocalSandboxState controller.
@@ -391,9 +514,10 @@ export default function GamePage() {
         // continues the capture chain (possibly with additional automatic
         // segments). Bump sandboxTurn on the next tick so BoardView
         // re-reads the latest GameState once that chain has fully
-        // resolved.
+        // resolved, and then trigger AI turns if the next player is an AI.
         window.setTimeout(() => {
           setSandboxTurn((t) => t + 1);
+          maybeRunSandboxAiIfNeeded();
         }, 0);
       }
       // Ignore clicks that are not on a highlighted landing square.
@@ -410,7 +534,10 @@ export default function GamePage() {
       // human must then move that stack; the AI will respond only after
       // the movement step completes.
       if (stateBefore.currentPhase === 'ring_placement') {
-        engine.handleHumanCellClick(pos);
+        const placed = engine.tryPlaceRings(pos, 1);
+        if (!placed) {
+          return;
+        }
 
         setSelected(pos);
         const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
@@ -450,7 +577,7 @@ export default function GamePage() {
         setSelected(undefined);
         setValidTargets([]);
         setSandboxTurn((t) => t + 1);
-        void runSandboxAiTurnLoop();
+        maybeRunSandboxAiIfNeeded();
         return;
       }
 
@@ -606,6 +733,16 @@ export default function GamePage() {
   const handleBackendCellClick = (pos: Position, board: BoardState) => {
     if (!gameState) return;
 
+    if (!isPlayer) {
+      toast.error('Spectators cannot submit moves', { id: 'interaction-locked' });
+      return;
+    }
+
+    if (!isConnectionActive) {
+      toast.error('Moves paused while disconnected', { id: 'interaction-locked' });
+      return;
+    }
+
     // Ring placement phase: attempt a canonical 1-ring placement on empties
     // using the backend-reported validMoves. We never synthesize moves that
     // the backend hasn't already declared legal.
@@ -715,6 +852,12 @@ export default function GamePage() {
    */
   const handleBackendCellDoubleClick = (pos: Position, board: BoardState) => {
     if (!gameState) return;
+    if (!isPlayer || !isConnectionActive) {
+      toast.error('Cannot modify placements while disconnected or spectating', {
+        id: 'interaction-locked',
+      });
+      return;
+    }
     if (gameState.currentPhase !== 'ring_placement') {
       return;
     }
@@ -765,6 +908,12 @@ export default function GamePage() {
    */
   const handleBackendCellContextMenu = (pos: Position, board: BoardState) => {
     if (!gameState) return;
+    if (!isPlayer || !isConnectionActive) {
+      toast.error('Cannot modify placements while disconnected or spectating', {
+        id: 'interaction-locked',
+      });
+      return;
+    }
     if (gameState.currentPhase !== 'ring_placement') {
       return;
     }
@@ -879,6 +1028,25 @@ export default function GamePage() {
     }
   }, [gameState, pendingChoice]);
 
+  useEffect(() => {
+    if (!connectionStatus || lastConnectionStatusRef.current === connectionStatus) {
+      lastConnectionStatusRef.current = connectionStatus;
+      return;
+    }
+
+    const label =
+      connectionStatus === 'connected'
+        ? 'Connection restored'
+        : connectionStatus === 'reconnecting'
+          ? 'Connection interrupted – reconnecting'
+          : connectionStatus === 'connecting'
+            ? 'Connecting to server…'
+            : 'Disconnected from server';
+
+    setEventLog((prev) => [label, ...prev].slice(0, 50));
+    lastConnectionStatusRef.current = connectionStatus;
+  }, [connectionStatus]);
+
   // Maintain a live countdown for the current choice (if any)
   useEffect(() => {
     if (!pendingChoice || !choiceDeadline) {
@@ -920,9 +1088,15 @@ export default function GamePage() {
 
     // Reconnection banner
     const reconnectionBanner =
-      isConnecting && gameState ? (
+      connectionStatus !== 'connected' && gameState ? (
         <div className="bg-amber-500/20 border border-amber-500/50 text-amber-200 px-4 py-2 rounded mb-4 flex items-center justify-between">
-          <span>Connection lost. Reconnecting...</span>
+          <span>
+            {connectionStatus === 'reconnecting'
+              ? 'Connection lost. Attempting to reconnect…'
+              : connectionStatus === 'connecting'
+                ? 'Connecting to game server…'
+                : 'Disconnected from server. Moves are paused.'}
+          </span>
           <div className="animate-spin h-4 w-4 border-2 border-amber-500 border-t-transparent rounded-full"></div>
         </div>
       ) : null;
@@ -1028,6 +1202,7 @@ export default function GamePage() {
           <ChoiceDialog
             choice={pendingChoice}
             deadline={choiceDeadline}
+            timeRemainingMs={choiceTimeRemainingMs}
             onSelectOption={(choice, option) => respondToChoice(choice, option)}
           />
 
@@ -1048,12 +1223,18 @@ export default function GamePage() {
               ) : (
                 <div className="text-slate-200">Click a cell to inspect it.</div>
               )}
+              {boardInteractionMessage && (
+                <div className="mt-3 text-xs text-amber-300">{boardInteractionMessage}</div>
+              )}
             </div>
 
             <GameHUD
               gameState={gameState}
               currentPlayer={currentPlayer}
               instruction={getInstruction()}
+              connectionStatus={connectionStatus}
+              isSpectator={!isPlayer}
+              lastHeartbeatAt={lastHeartbeatAt}
             />
 
             <div className="p-3 border border-slate-700 rounded bg-slate-900/50 max-h-48 overflow-y-auto">
@@ -1088,8 +1269,13 @@ export default function GamePage() {
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (!chatInput.trim()) return;
-                  // TODO: Wire up to backend socket
-                  setChatMessages((prev) => [...prev, { sender: 'You', text: chatInput }]);
+
+                  if (sendChatMessage) {
+                    sendChatMessage(chatInput);
+                  } else {
+                    // Fallback for local sandbox
+                    setLocalChatMessages((prev) => [...prev, { sender: 'You', text: chatInput }]);
+                  }
                   setChatInput('');
                 }}
                 className="flex gap-2"
@@ -1118,6 +1304,12 @@ export default function GamePage() {
   // === Local sandbox mode (no gameId in route) ===
 
   // Render setup form before game starts
+  const activePlayerTypes = config.playerTypes.slice(0, config.numPlayers);
+  const humanSeatCount = activePlayerTypes.filter((t) => t === 'human').length;
+  const aiSeatCount = activePlayerTypes.length - humanSeatCount;
+  const selectedBoardPreset =
+    BOARD_PRESETS.find((preset) => preset.value === config.boardType) ?? BOARD_PRESETS[0];
+
   if (!isConfigured || (!localSandbox && !sandboxEngineRef.current)) {
     return (
       <div className="container mx-auto px-4 py-8 space-y-6">
@@ -1130,70 +1322,164 @@ export default function GamePage() {
           </p>
         </header>
 
-        <section className="max-w-xl p-4 rounded-md bg-slate-800 border border-slate-700 space-y-4 text-slate-100">
-          {backendSandboxError && (
-            <div className="p-2 text-sm text-red-300 bg-red-900/40 border border-red-700 rounded">
-              {backendSandboxError}
-            </div>
-          )}
+        <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div className="p-5 rounded-2xl bg-slate-800/70 border border-slate-700 space-y-6 text-slate-100 shadow-lg">
+            {backendSandboxError && (
+              <div className="p-3 text-sm text-red-300 bg-red-900/40 border border-red-700 rounded-lg">
+                {backendSandboxError}
+              </div>
+            )}
 
-          <div>
-            <label className="block text-sm font-medium mb-1 text-slate-100">
-              Number of players
-            </label>
-            <select
-              className="w-full max-w-xs px-2 py-1 rounded bg-slate-700 border border-slate-500 text-sm text-slate-100"
-              value={config.numPlayers}
-              onChange={(e) => handleSetupChange({ numPlayers: Number(e.target.value) })}
-            >
-              {[2, 3, 4].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1 text-slate-100">Board type</label>
-            <select
-              className="w-full max-w-xs px-2 py-1 rounded bg-slate-700 border border-slate-500 text-sm text-slate-100"
-              value={config.boardType}
-              onChange={(e) => handleSetupChange({ boardType: e.target.value as BoardType })}
-            >
-              <option value="square8">8x8 (compact)</option>
-              <option value="square19">19x19 (full)</option>
-              <option value="hexagonal">Hexagonal</option>
-            </select>
-          </div>
-
-          <div>
-            <p className="block text-sm font-medium mb-2 text-slate-100">Players</p>
-            <div className="space-y-2 text-sm">
-              {Array.from({ length: config.numPlayers }, (_, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <span className="text-slate-100">Player {i + 1}</span>
-                  <select
-                    className="px-2 py-1 rounded bg-slate-700 border border-slate-500 text-slate-100"
-                    value={config.playerTypes[i]}
-                    onChange={(e) => handlePlayerTypeChange(i, e.target.value as LocalPlayerType)}
-                  >
-                    <option value="human">Human</option>
-                    <option value="ai">Computer (AI)</option>
-                  </select>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Players</p>
+                  <h2 className="text-lg font-semibold text-white">Seats & control</h2>
                 </div>
-              ))}
+                <div className="flex gap-2 text-xs">
+                  {[2, 3, 4].map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => handleSetupChange({ numPlayers: count })}
+                      className={`px-2 py-1 rounded-full border ${
+                        config.numPlayers === count
+                          ? 'border-emerald-400 text-emerald-200 bg-emerald-900/30'
+                          : 'border-slate-600 text-slate-300 hover:border-slate-400'
+                      }`}
+                    >
+                      {count} Players
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {Array.from({ length: config.numPlayers }, (_, i) => {
+                  const type = config.playerTypes[i];
+                  const meta = PLAYER_TYPE_META[type];
+                  return (
+                    <div
+                      key={i}
+                      className={`rounded-xl border bg-slate-900/60 px-4 py-3 flex items-center justify-between gap-4 ${
+                        meta.accent
+                      }`}
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-white">Player {i + 1}</p>
+                        <p className="text-xs text-slate-300">{meta.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        {(['human', 'ai'] as LocalPlayerType[]).map((candidate) => {
+                          const isActive = type === candidate;
+                          return (
+                            <button
+                              key={candidate}
+                              type="button"
+                              onClick={() => handlePlayerTypeChange(i, candidate)}
+                              className={`px-3 py-1 rounded-full border text-xs font-semibold transition ${
+                                isActive
+                                  ? 'border-white/80 text-white bg-white/10'
+                                  : 'border-slate-600 text-slate-300 hover:border-slate-400'
+                              }`}
+                            >
+                              {PLAYER_TYPE_META[candidate].label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setAllPlayerTypes('human')}
+                  className="px-3 py-1 rounded-full border border-slate-500 text-slate-200 hover:border-emerald-400 hover:text-emerald-200 transition"
+                >
+                  All Human
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllPlayerTypes('ai')}
+                  className="px-3 py-1 rounded-full border border-slate-500 text-slate-200 hover:border-sky-400 hover:text-sky-200 transition"
+                >
+                  All AI
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Board</p>
+                  <h2 className="text-lg font-semibold text-white">Choose a layout</h2>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {BOARD_PRESETS.map((preset) => {
+                  const isSelected = preset.value === config.boardType;
+                  return (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      onClick={() => handleSetupChange({ boardType: preset.value })}
+                      className={`p-4 text-left rounded-2xl border transition shadow-sm ${
+                        isSelected
+                          ? 'border-emerald-400 bg-emerald-900/20 text-white'
+                          : 'border-slate-600 bg-slate-900/60 text-slate-200 hover:border-slate-400'
+                      }`}
+                    >
+                      <span className="text-xs uppercase tracking-wide text-slate-400">
+                        {preset.subtitle}
+                      </span>
+                      <p className="text-lg font-semibold">{preset.label}</p>
+                      <p className="text-xs text-slate-300 mt-1">{preset.blurb}</p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={handleStartLocalGame}
-              className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white"
-            >
-              Start Local Game
-            </button>
+          <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-700 text-slate-100 shadow-lg space-y-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">Summary</p>
+              <h2 className="text-xl font-bold text-white">{selectedBoardPreset.label}</h2>
+              <p className="text-sm text-slate-300">{selectedBoardPreset.blurb}</p>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-300">Humans</span>
+                <span className="font-semibold">{humanSeatCount}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-300">AI opponents</span>
+                <span className="font-semibold">{aiSeatCount}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-300">Total seats</span>
+                <span className="font-semibold">{config.numPlayers}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs text-slate-400">
+                We first attempt to stand up a backend game with these settings. If that fails, we
+                fall back to a purely client-local sandbox so you can still test moves offline.
+              </p>
+              <button
+                type="button"
+                onClick={handleStartLocalGame}
+                className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition"
+              >
+                Launch Game
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -1231,33 +1517,133 @@ export default function GamePage() {
 
   const sandboxBoardState: BoardState | null = sandboxGameState?.board ?? null;
   const sandboxVictoryResult = sandboxEngine ? sandboxEngine.getVictoryResult() : null;
-
+  const boardTypeValue = sandboxBoardState?.type ?? config.boardType;
+  const boardPresetInfo = BOARD_PRESETS.find((preset) => preset.value === boardTypeValue);
+  const boardDisplayLabel = boardPresetInfo?.label ?? boardTypeValue;
+  const boardDisplaySubtitle = boardPresetInfo?.subtitle ?? 'Custom configuration';
+  const boardDisplayBlurb =
+    boardPresetInfo?.blurb ?? 'Custom layout selected for this local sandbox match.';
+  const sandboxPlayersList =
+    sandboxGameState?.players ??
+    Array.from({ length: config.numPlayers }, (_, idx) => ({
+      playerNumber: idx + 1,
+      username: `Player ${idx + 1}`,
+      type: config.playerTypes[idx] ?? 'human',
+      ringsInHand: 0,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    }));
+  const sandboxCurrentPlayerNumber = sandboxGameState?.currentPlayer ?? 1;
+  const sandboxCurrentPlayer =
+    sandboxPlayersList.find((p) => p.playerNumber === sandboxCurrentPlayerNumber) ??
+    sandboxPlayersList[0];
+  const sandboxPhaseKey = sandboxGameState?.currentPhase ?? 'ring_placement';
+  const sandboxPhaseDetails = PHASE_COPY[sandboxPhaseKey] ?? PHASE_COPY.ring_placement;
+  const displayedValidTargets =
+    sandboxCaptureTargets.length > 0 ? sandboxCaptureTargets : validTargets;
+  const selectedStackDetails = (() => {
+    if (!sandboxBoardState || !selected) return null;
+    const key = positionToString(selected);
+    const stack = sandboxBoardState.stacks.get(key);
+    if (!stack) return null;
+    return {
+      height: stack.stackHeight,
+      cap: stack.capHeight,
+      controllingPlayer: stack.controllingPlayer,
+    };
+  })();
+  const sandboxModeNotes = [
+    `Board: ${boardDisplayLabel}`,
+    `${humanSeatCount} human seat${humanSeatCount === 1 ? '' : 's'} · ${aiSeatCount} AI`,
+    sandboxEngine
+      ? 'Engine parity mode with local AI and choice handler.'
+      : 'Legacy local sandbox fallback (no backend).',
+    'Runs entirely in-browser; use "Change Setup" to switch configurations.',
+  ];
   return (
     <div className="container mx-auto px-4 py-8 space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold mb-1">Game (Local Sandbox)</h1>
-          <p className="text-sm text-gray-500">
-            Board type: {sandboxBoardState?.type ?? config.boardType} • Players: {config.numPlayers}{' '}
-            ({config.playerTypes.slice(0, config.numPlayers).join(', ')})
-          </p>
+      <header className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.1fr)]">
+        <div className="p-5 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">Local Sandbox</p>
+              <h1 className="text-2xl font-bold text-white">Game – {boardDisplayLabel}</h1>
+              <p className="text-sm text-slate-300">{boardDisplayBlurb}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsConfigured(false);
+                setLocalSandbox(null);
+                sandboxEngineRef.current = null;
+                setSelected(undefined);
+                setValidTargets([]);
+                setBackendSandboxError(null);
+                setSandboxPendingChoice(null);
+              }}
+              className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
+            >
+              Change Setup
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs text-slate-200">
+            <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
+              {boardDisplaySubtitle}
+            </span>
+            <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
+              Players: {config.numPlayers} ({humanSeatCount} human, {aiSeatCount} AI)
+            </span>
+            <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
+              Phase: {sandboxPhaseDetails.label}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2 text-xs">
+            {sandboxPlayersList.map((player) => {
+              const typeKey = player.type === 'ai' ? 'ai' : 'human';
+              const meta = PLAYER_TYPE_META[typeKey as LocalPlayerType];
+              const isCurrent = player.playerNumber === sandboxCurrentPlayerNumber;
+              const nameLabel = player.username || `Player ${player.playerNumber}`;
+              return (
+                <span
+                  key={player.playerNumber}
+                  className={`px-3 py-1 rounded-full border transition ${
+                    isCurrent ? 'border-white text-white bg-white/15' : meta.chip
+                  }`}
+                >
+                  P{player.playerNumber} • {nameLabel} ({meta.label}) · hand {player.ringsInHand}
+                </span>
+              );
+            })}
+          </div>
         </div>
-        <div className="flex items-center space-x-2 text-sm">
-          <button
-            type="button"
-            onClick={() => {
-              setIsConfigured(false);
-              setLocalSandbox(null);
-              sandboxEngineRef.current = null;
-              setSelected(undefined);
-              setValidTargets([]);
-              setBackendSandboxError(null);
-              setSandboxPendingChoice(null);
-            }}
-            className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-gray-200"
-          >
-            Change Setup
-          </button>
+
+        <div className="p-5 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">Current Turn</p>
+              <h2 className="text-xl font-semibold text-white">
+                {sandboxCurrentPlayer?.username ||
+                  `Player ${sandboxCurrentPlayer?.playerNumber ?? '?'}`}
+              </h2>
+              <p className="text-sm text-slate-300">{sandboxPhaseDetails.summary}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs text-slate-200">
+            <div className="rounded-lg bg-slate-800/50 border border-slate-700 p-3">
+              <p className="uppercase tracking-wide text-[11px] text-slate-400">Rings in hand</p>
+              <p className="text-2xl font-bold text-white">
+                {sandboxCurrentPlayer?.ringsInHand ?? 0}
+              </p>
+            </div>
+            <div className="rounded-lg bg-slate-800/50 border border-slate-700 p-3">
+              <p className="uppercase tracking-wide text-[11px] text-slate-400">Territory</p>
+              <p className="text-2xl font-bold text-white">
+                {sandboxCurrentPlayer?.territorySpaces ?? 0}
+              </p>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -1307,49 +1693,105 @@ export default function GamePage() {
               boardType={sandboxBoardState.type}
               board={sandboxBoardState}
               selectedPosition={selected}
-              validTargets={sandboxCaptureTargets.length > 0 ? sandboxCaptureTargets : validTargets}
+              validTargets={displayedValidTargets}
               onCellClick={(pos) => handleSandboxCellClick(pos)}
               onCellDoubleClick={(pos) => handleSandboxCellDoubleClick(pos)}
               onCellContextMenu={(pos) => handleSandboxCellContextMenu(pos)}
               showMovementGrid
+              showCoordinateLabels={
+                sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
+              }
             />
           )}
         </section>
 
-        <aside className="w-full md:w-64 space-y-3 text-sm text-slate-100">
-          <div className="p-3 border border-slate-700 rounded bg-slate-900/50">
-            <h2 className="font-semibold mb-2">Selection</h2>
+        <aside className="w-full md:w-80 space-y-4 text-sm text-slate-100">
+          <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Selection</h2>
+              {displayedValidTargets && (
+                <span className="text-xs text-slate-400">
+                  Targets: {displayedValidTargets?.length ?? 0}
+                </span>
+              )}
+            </div>
             {selected ? (
-              <div>
-                <div>
-                  Selected: ({selected.x}, {selected.y}
+              <div className="space-y-2">
+                <div className="text-lg font-mono font-semibold text-white">
+                  ({selected.x}, {selected.y}
                   {selected.z !== undefined ? `, ${selected.z}` : ''})
                 </div>
-                <div className="text-xs text-slate-300 mt-1">
-                  Valid targets are highlighted on the board; click a highlighted cell to move.
-                </div>
+                {selectedStackDetails ? (
+                  <ul className="text-xs text-slate-300 space-y-1">
+                    <li>Stack height: {selectedStackDetails.height}</li>
+                    <li>Cap height: {selectedStackDetails.cap}</li>
+                    <li>Controlled by: P{selectedStackDetails.controllingPlayer}</li>
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-300">Empty cell – choose a placement target.</p>
+                )}
+                <p className="text-xs text-slate-400">
+                  Click a highlighted destination to commit the move, or select a new source.
+                </p>
               </div>
             ) : (
-              <div className="text-slate-200">Click a cell to select it.</div>
+              <div className="text-slate-200">
+                Click a cell to inspect stacks and available moves.
+              </div>
             )}
           </div>
 
-          <div className="p-3 border border-slate-700 rounded bg-slate-900/50">
-            <h2 className="font-semibold mb-2">Status</h2>
-            <ul className="list-disc list-inside text-slate-200 space-y-1">
-              <li>
-                Board rendered for{' '}
-                {sandboxBoardState?.type === 'square8'
-                  ? '8x8'
-                  : sandboxBoardState?.type === 'square19'
-                    ? '19x19'
-                    : sandboxBoardState?.type === 'hexagonal'
-                      ? 'hexagonal'
-                      : 'unknown'}{' '}
-                layout.
-              </li>
-              <li>This mode is currently local-only (no backend moves yet).</li>
-              <li>Next: connect moves to GameEngine and AI/choice flow.</li>
+          <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
+            <h2 className="font-semibold">Phase Guide</h2>
+            <p className="text-xs uppercase tracking-wide text-slate-400">
+              {sandboxPhaseDetails.label}
+            </p>
+            <p className="text-sm text-slate-200">{sandboxPhaseDetails.summary}</p>
+            <p className="text-xs text-slate-400">
+              Complete the current requirement to advance the turn (chain captures, line rewards,
+              etc.).
+            </p>
+          </div>
+
+          <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
+            <h2 className="font-semibold">Players</h2>
+            <div className="space-y-2">
+              {sandboxPlayersList.map((player) => {
+                const isCurrent = player.playerNumber === sandboxCurrentPlayerNumber;
+                return (
+                  <div
+                    key={player.playerNumber}
+                    className={`rounded-xl border px-3 py-2 text-xs flex items-center justify-between ${
+                      isCurrent
+                        ? 'border-emerald-400 bg-emerald-900/20'
+                        : 'border-slate-700 bg-slate-900/40'
+                    }`}
+                  >
+                    <div>
+                      <p className="font-semibold text-white">
+                        P{player.playerNumber} {player.username ? `• ${player.username}` : ''}
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        {player.type === 'ai' ? 'Computer' : 'Human'} · territory{' '}
+                        {player.territorySpaces}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-white">{player.ringsInHand}</p>
+                      <p className="text-[11px] text-slate-400">in hand</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
+            <h2 className="font-semibold">Sandbox Notes</h2>
+            <ul className="list-disc list-inside text-slate-300 space-y-1 text-xs">
+              {sandboxModeNotes.map((note, idx) => (
+                <li key={idx}>{note}</li>
+              ))}
             </ul>
           </div>
         </aside>

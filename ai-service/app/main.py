@@ -12,6 +12,7 @@ import logging
 
 from .ai.random_ai import RandomAI
 from .ai.heuristic_ai import HeuristicAI
+from .ai.neural_net import NeuralNetAI
 from .models import (
     GameState,
     Move,
@@ -381,7 +382,8 @@ def _select_ai_type(difficulty: int) -> AIType:
     elif difficulty <= 8:
         return AIType.MINIMAX
     else:
-        return AIType.MCTS
+        # Use Neural Network for highest difficulty
+        return AIType.MCTS # Placeholder until MCTS is implemented, or use NeuralNetAI here if desired
 
 
 def _get_randomness_for_difficulty(difficulty: int) -> float:
@@ -401,8 +403,8 @@ def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
         return HeuristicAI(player_number, config)
     # elif ai_type == AIType.MINIMAX:
     #     return MinimaxAI(player_number, config)
-    # elif ai_type == AIType.MCTS:
-    #     return MCTSAI(player_number, config)
+    elif ai_type == AIType.MCTS: # Using MCTS enum for NeuralNetAI temporarily or add NEURAL_NET enum
+         return NeuralNetAI(player_number, config)
     else:
         # Default to heuristic
         return HeuristicAI(player_number, config)

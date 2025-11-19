@@ -3,6 +3,8 @@ import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 import { BoardState, GameState, Move, PlayerChoice, GameResult } from '../../shared/types/game';
 
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+
 interface GameContextType {
   gameId: string | null;
   gameState: GameState | null;
@@ -33,6 +35,13 @@ interface GameContextType {
 
   // Move submission (backend game mode)
   submitMove: (partialMove: Omit<Move, 'id' | 'timestamp' | 'thinkTime' | 'moveNumber'>) => void;
+
+  // Chat
+  sendChatMessage: (text: string) => void;
+  chatMessages: { sender: string; text: string }[];
+  connectionStatus: ConnectionStatus;
+  /** Timestamp of the most recent game_state heartbeat (ms since epoch). */
+  lastHeartbeatAt: number | null;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -102,6 +111,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [pendingChoice, setPendingChoice] = useState<PlayerChoice | null>(null);
   const [choiceDeadline, setChoiceDeadline] = useState<number | null>(null);
   const [victoryState, setVictoryState] = useState<GameResult | null>(null);
+  const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
+  const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   const disconnect = useCallback(() => {
@@ -117,6 +129,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setPendingChoice(null);
     setChoiceDeadline(null);
     setVictoryState(null);
+    setChatMessages([]);
+    setConnectionStatus('disconnected');
+    setLastHeartbeatAt(null);
   }, []);
 
   const connectToGame = useCallback(
@@ -131,6 +146,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       setIsConnecting(true);
       setError(null);
+      setConnectionStatus('connecting');
 
       try {
         const token = localStorage.getItem('token');
@@ -149,20 +165,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setError(msg);
           toast.error(msg);
           setIsConnecting(false);
+          setConnectionStatus('disconnected');
+          setLastHeartbeatAt(null);
         });
 
         socket.on('connect', () => {
+          setConnectionStatus('connected');
           // After connecting, join the specific game room.
           socket.emit('join_game', { gameId: targetGameId });
         });
 
         socket.on('reconnect_attempt', () => {
           setIsConnecting(true);
+          setConnectionStatus('reconnecting');
           toast('Reconnecting...', { icon: '🔄', id: 'reconnecting' });
         });
 
         socket.on('reconnect', () => {
           setIsConnecting(false);
+          setConnectionStatus('connected');
           toast.success('Reconnected!', { id: 'reconnecting' });
         });
 
@@ -175,6 +196,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             setValidMoves(Array.isArray(data.validMoves) ? data.validMoves : null);
             setIsConnecting(false);
             setError(null);
+            setConnectionStatus('connected');
+            setLastHeartbeatAt(Date.now());
           }
         });
 
@@ -210,6 +233,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setChoiceDeadline((current) => (current ? null : current));
         });
 
+        socket.on('chat_message', (payload: any) => {
+          // Payload: { sender: string, text: string }
+          setChatMessages((prev) => [...prev, payload]);
+        });
+
         socket.on('error', (payload: any) => {
           const message = payload?.message || 'Game error';
           console.error('Game socket error', payload);
@@ -221,11 +249,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         socket.on('disconnect', () => {
           // Keep error state, but clear connection.
           socketRef.current = null;
+          setConnectionStatus('disconnected');
+          setLastHeartbeatAt(null);
         });
       } catch (err: any) {
         console.error('Failed to connect to game', err);
         setError(err?.message || 'Failed to connect to game');
         setIsConnecting(false);
+        setConnectionStatus('disconnected');
       }
     },
     [gameId, disconnect]
@@ -288,6 +319,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     [gameId, gameState]
   );
 
+  const sendChatMessage = useCallback(
+    (text: string) => {
+      const socket = socketRef.current;
+      if (!socket || !gameId) {
+        console.warn('sendChatMessage called without active socket/game');
+        return;
+      }
+
+      socket.emit('chat_message', {
+        gameId,
+        text,
+      });
+    },
+    [gameId]
+  );
+
   const value: GameContextType = {
     gameId,
     gameState,
@@ -301,6 +348,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     respondToChoice,
     submitMove,
     validMoves,
+    sendChatMessage,
+    chatMessages,
+    connectionStatus,
+    lastHeartbeatAt,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

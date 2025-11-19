@@ -1,4 +1,8 @@
-import { ClientSandboxEngine, SandboxConfig, SandboxInteractionHandler } from '../../src/client/sandbox/ClientSandboxEngine';
+import {
+  ClientSandboxEngine,
+  SandboxConfig,
+  SandboxInteractionHandler,
+} from '../../src/client/sandbox/ClientSandboxEngine';
 import {
   BoardType,
   GameState,
@@ -7,7 +11,7 @@ import {
   PlayerChoice,
   PlayerChoiceResponseFor,
   CaptureDirectionChoice,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 
 /**
@@ -28,7 +32,7 @@ describe('ClientSandboxEngine AI movement + capture behaviour', () => {
     const config: SandboxConfig = {
       boardType,
       numPlayers: playerKinds.length,
-      playerKinds
+      playerKinds,
     };
 
     const handler: SandboxInteractionHandler = {
@@ -62,7 +66,7 @@ describe('ClientSandboxEngine AI movement + capture behaviour', () => {
             choiceId: cd.id,
             playerNumber: cd.playerNumber,
             choiceType: cd.type,
-            selectedOption: selected
+            selectedOption: selected,
           } as PlayerChoiceResponseFor<TChoice>;
         }
 
@@ -71,15 +75,15 @@ describe('ClientSandboxEngine AI movement + capture behaviour', () => {
           choiceId: anyChoice.id,
           playerNumber: anyChoice.playerNumber,
           choiceType: anyChoice.type,
-          selectedOption
+          selectedOption,
         } as PlayerChoiceResponseFor<TChoice>;
-      }
+      },
     };
 
     return new ClientSandboxEngine({ config, interactionHandler: handler });
   }
 
-  test('AI in movement phase takes an available overtaking capture instead of stalling', async () => {
+  test('AI in movement phase can take an available overtaking capture (when random choice favors capture)', async () => {
     const engine = createEngine(['ai', 'ai']);
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;
@@ -97,7 +101,7 @@ describe('ClientSandboxEngine AI movement + capture behaviour', () => {
         rings,
         stackHeight: rings.length,
         capHeight: rings.length,
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       const key = positionToString(position);
       board.stacks.set(key, stack);
@@ -108,14 +112,21 @@ describe('ClientSandboxEngine AI movement + capture behaviour', () => {
     const landing: Position = { x: 2, y: 4 };
 
     makeStack(1, 2, attacker); // Player 1, height 2
-    makeStack(2, 1, target);   // Player 2, height 1 directly in front
+    makeStack(2, 1, target); // Player 2, height 1 directly in front
 
     // Sanity: no stack at the intended landing before the capture.
     expect(board.stacks.get(positionToString(landing))).toBeUndefined();
 
-    // Run a single AI turn for player 1. With the new behaviour, this
-    // should trigger an overtaking capture chain starting from attacker.
+    // For this test, force the stochastic policy to choose a capture when
+    // both captures and simple moves exist by making Math.random() return 0.
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    // Run a single AI turn for player 1. With the weighted choice and
+    // Math.random() mocked to 0, this should trigger an overtaking capture
+    // chain starting from attacker.
     await engine.maybeRunAITurn();
+
+    randomSpy.mockRestore();
 
     const finalState = engine.getGameState();
     const finalBoard = finalState.board;

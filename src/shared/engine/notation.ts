@@ -34,10 +34,7 @@ export interface MoveNotationOptions {
  * For hex boards or positions with negative coordinates, a raw tuple
  * "(x,y,z)" is used to avoid ambiguity.
  */
-export function formatPosition(
-  pos: Position,
-  options: MoveNotationOptions = {}
-): string {
+export function formatPosition(pos: Position, options: MoveNotationOptions = {}): string {
   const boardType = options.boardType ?? 'square8';
   const config = BOARD_CONFIGS[boardType];
 
@@ -50,6 +47,25 @@ export function formatPosition(
     const file = String.fromCharCode(fileCode);
     const rank = (pos.y + 1).toString();
     return `${file}${rank}`;
+  }
+
+  if (config.type === 'hexagonal') {
+    // Map hex coordinates (q, r, s) to algebraic-like (File+Rank).
+    // We treat 'q' (vertical) as Rank and 'r' (oblique) as File.
+    // Radius is size - 1.
+    const radius = config.size - 1;
+
+    // Rank: Map q from [-radius, radius] to [2*radius + 1, 1]
+    // Top row (q = -radius) -> Rank 2*radius + 1
+    // Bottom row (q = radius) -> Rank 1
+    const rankNum = radius - pos.x + 1;
+
+    // File: Map r from [-radius, radius] to ['a', ...]
+    // We shift r by radius to get a 0-based index.
+    const fileCode = 'a'.charCodeAt(0) + (pos.y + radius);
+    const file = String.fromCharCode(fileCode);
+
+    return `${file}${rankNum}`;
   }
 
   const z = pos.z !== undefined ? pos.z : -pos.x - pos.y;
@@ -90,15 +106,11 @@ export function formatMove(move: Move, options: MoveNotationOptions = {}): strin
 
   const toPos = move.to ? formatPosition(move.to, options) : undefined;
   const fromPos = move.from ? formatPosition(move.from, options) : undefined;
-  const targetPos = move.captureTarget
-    ? formatPosition(move.captureTarget, options)
-    : undefined;
+  const targetPos = move.captureTarget ? formatPosition(move.captureTarget, options) : undefined;
 
   if (move.type === 'place_ring') {
-    const count = move.placementCount && move.placementCount > 1
-      ? ` x${move.placementCount}`
-      : '';
-    return `${prefix} ${kind} ${toPos ?? '?' }${count}`;
+    const count = move.placementCount && move.placementCount > 1 ? ` x${move.placementCount}` : '';
+    return `${prefix} ${kind} ${toPos ?? '?'}${count}`;
   }
 
   if (move.type === 'move_ring' || move.type === 'move_stack') {
@@ -132,9 +144,6 @@ export function formatMove(move: Move, options: MoveNotationOptions = {}): strin
  * Very small helper to render a list of moves as numbered notation lines.
  * Primarily used by tests, logs, and debug tools.
  */
-export function formatMoveList(
-  moves: Move[],
-  options: MoveNotationOptions = {}
-): string[] {
+export function formatMoveList(moves: Move[], options: MoveNotationOptions = {}): string[] {
   return moves.map((m, idx) => `${idx + 1}. ${formatMove(m, options)}`);
 }

@@ -250,6 +250,10 @@ export class ClientSandboxEngine {
    * entry point for the /sandbox UI, analogous to the backend click-to-move
    * flow in GamePage, but targeting the local GameState instead of the
    * WebSocket server.
+   *
+   * Ring placement is routed through tryPlaceRings so that both human and AI
+   * turns share the same no-dead-placement and per-turn semantics. Movement
+   * clicks delegate to handleMovementClick.
    */
   public async handleHumanCellClick(pos: Position): Promise<void> {
     if (this.gameState.gameStatus !== 'active') {
@@ -257,7 +261,11 @@ export class ClientSandboxEngine {
     }
 
     if (this.gameState.currentPhase === 'ring_placement') {
-      this.handleRingPlacementClick(pos);
+      // Single-ring placement for the current player at the clicked position.
+      // The sandbox UI is responsible for following up with a movement click
+      // when required; after a successful placement, tryPlaceRings will
+      // transition the turn into the movement phase for this player.
+      this.tryPlaceRings(pos, 1);
     } else if (this.gameState.currentPhase === 'movement') {
       await this.handleMovementClick(pos);
     }
@@ -304,10 +312,9 @@ export class ClientSandboxEngine {
         const placementCandidates = this.enumerateLegalRingPlacements(current.playerNumber);
 
         if (placementCandidates.length === 0) {
-          // No legal placement
-          // this player directly into movement; a subsequent AI tick for this
-          // player will attempt movement or forced elimination instead of
-          // stalling in placement.
+          // No legal placement: transition this player directly into movement so
+          // a subsequent AI tick can attempt movement or forced elimination
+          // instead of stalling in placement.
           this.gameState = {
             ...this.gameState,
             currentPhase: 'movement',
@@ -351,9 +358,22 @@ export class ClientSandboxEngine {
           requestedCount = 1 + Math.floor(Math.random() * Math.min(3, maxPerPlacement));
         }
 
-        const placed = this.tryPlaceRings(choice, requestedCount);
+        // To avoid AI stalls when the initially requested multi-ring
+        // placement is illegal under no-dead-placement, degrade through
+        // smaller counts down to 1. enumerateLegalRingPlacements
+        // guarantees that at least a single-ring placement at this
+        // position is legal when it includes this position.
+        let placed = false;
+        let effectiveCount = requestedCount;
+        while (!placed && effectiveCount >= 1) {
+          placed = this.tryPlaceRings(choice, effectiveCount);
+          if (!placed) {
+            effectiveCount -= 1;
+          }
+        }
 
-        // Record a canonical placement summary for debug harnesses.
+        // Record a canonical placement summary for debug harnesses when
+        // we successfully placed rings.
         if (placed) {
           this._lastAIMove = {
             id: '',
@@ -361,24 +381,46 @@ export class ClientSandboxEngine {
             player: current.playerNumber,
             from: undefined,
             to: choice,
-            placementCount: requestedCount,
+            placementCount: effectiveCount,
             timestamp: new Date(),
             thinkTime: 0,
             moveNumber: this.gameState.history.length + 1,
           } as Move;
+          return;
         }
+
+        // Defensive fallback: if, despite enumerateLegalRingPlacements
+        // including this position, all attempts to place rings here fail,
+        // treat this as a skip_placement to avoid repeated no-op AI
+        // ticks. This should be rare, but keeps the AI simulation
+        // harness from stalling indefinitely.
+        this.gameState = {
+          ...this.gameState,
+          currentPhase: 'movement',
+        };
+
+        this._lastAIMove = {
+          id: '',
+          type: 'skip_placement',
+          player: current.playerNumber,
+          from: undefined,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: this.gameState.history.length + 1,
+        } as Move;
 
         return;
       }
 
-      // Movement phase: captures first, then simple non-capturing moves.
+      // Movement phase: choose between captures and simple non-capturing moves.
       if (this.gameState.currentPhase !== 'movement') {
         return;
       }
 
       const playerNumber = current.playerNumber;
 
-      // Prefer overtaking captures whenever any are available for this player.
+      // Enumerate all available overtaking capture segments for this player.
       const captureSegments: Array<{
         from: Position;
         target: Position;
@@ -395,11 +437,93 @@ export class ClientSandboxEngine {
       for (const stack of stacks) {
         const segmentsFromStack = this.enumerateCaptureSegmentsFrom(stack.position, playerNumber);
         for (const seg of segmentsFromStack) {
+          console.log(
+            `Sandbox AI found capture: ${positionToString(seg.from)} -> ${positionToString(
+              seg.landing
+            )}`
+          );
           captureSegments.push(seg);
         }
       }
 
-      if (captureSegments.length > 0) {
+      // Enumerate simple non-capturing movement candidates.
+      let landingCandidates = this.enumerateSimpleMovementLandings(playerNumber);
+
+      // Enforce must-move semantics for simple movement as well: when a
+      // placement has occurred this turn, only moves originating from the
+      // placed/updated stack are eligible.
+      if (this._mustMoveFromStackKey) {
+        landingCandidates = landingCandidates.filter(
+          (m) => m.fromKey === this._mustMoveFromStackKey
+        );
+      }
+
+      const hasCaptures = captureSegments.length > 0;
+      const hasMoves = landingCandidates.length > 0;
+
+      if (!hasCaptures && !hasMoves) {
+        // When no moves or captures are available, attempt forced elimination
+        // if the rules require it (no legal actions of any kind remain).
+        const beforeElimState = this.getGameState();
+        const beforeElimHash = hashGameState(beforeElimState);
+
+        const eliminated = this.maybeProcessForcedEliminationForCurrentPlayer();
+
+        const afterElimState = this.getGameState();
+        const afterElimHash = hashGameState(afterElimState);
+
+        // Optional diagnostic hook: when enabled via env, log cases where the
+        // AI turn had no legal actions, forced elimination did not fire, and
+        // the game state hash did not change. These situations are candidates
+        // for "AI stall" behaviour in the aiSimulation harness.
+        if (
+          typeof process !== 'undefined' &&
+          (process as any).env &&
+          (process as any).env.RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS === '1'
+        ) {
+          if (
+            !eliminated &&
+            beforeElimHash === afterElimHash &&
+            afterElimState.gameStatus === 'active'
+          ) {
+            // eslint-disable-next-line no-console
+            console.warn(
+              '[Sandbox AI Stall Diagnostic] No captures/moves, forced elimination did not change state',
+              {
+                boardType: this.gameState.boardType,
+                currentPlayer: this.gameState.currentPlayer,
+                currentPhase: this.gameState.currentPhase,
+                ringsInHand: this.gameState.players.map((p) => ({
+                  playerNumber: p.playerNumber,
+                  type: p.type,
+                  ringsInHand: p.ringsInHand,
+                  stacks: this.getPlayerStacks(p.playerNumber, this.gameState.board).length,
+                })),
+              }
+            );
+          }
+        }
+
+        return;
+      }
+
+      // When both captures and simple moves exist, choose between them in
+      // proportion to their counts. Degenerates to always-capture or
+      // always-move when only one type is present.
+      let chooseCapture = false;
+      if (hasCaptures && hasMoves) {
+        const captureCount = captureSegments.length;
+        const moveCount = landingCandidates.length;
+        const total = captureCount + moveCount;
+        const r = Math.random() * total;
+        chooseCapture = r < captureCount;
+      } else if (hasCaptures) {
+        chooseCapture = true;
+      } else {
+        chooseCapture = false;
+      }
+
+      if (chooseCapture && hasCaptures) {
         // Choose a deterministic capture segment by lexicographically smallest
         // landing position. This mirrors the capture_direction test handler
         // and keeps AI traces reproducible for parity/debug tooling.
@@ -438,16 +562,7 @@ export class ClientSandboxEngine {
         return;
       }
 
-      // No captures available – fall back to simple non-capturing movement.
-      const landingCandidates = this.enumerateSimpleMovementLandings(playerNumber);
-
-      if (landingCandidates.length === 0) {
-        // When no moves or captures are available, attempt forced elimination
-        // if the rules require it (no legal actions of any kind remain).
-        this.maybeProcessForcedEliminationForCurrentPlayer();
-        return;
-      }
-
+      // Fall back to simple non-capturing movement.
       const choice = landingCandidates[Math.floor(Math.random() * landingCandidates.length)];
       const fromPos = this.stringToPositionLocal(choice.fromKey);
 
@@ -752,69 +867,13 @@ export class ClientSandboxEngine {
     applyMarkerEffectsAlongPathOnBoard(board, from, to, playerNumber, helpers);
   }
 
+  /**
+   * Legacy ring-placement helper retained for backward compatibility. All new
+   * sandbox placement paths should call tryPlaceRings directly so that
+   * no-dead-placement and per-turn semantics remain unified.
+   */
   private handleRingPlacementClick(position: Position): void {
-    if (!this.isValidPosition(position)) {
-      return;
-    }
-
-    const key = positionToString(position);
-    const board = this.gameState.board;
-
-    // Do not allow placement on collapsed territory.
-    if (board.collapsedSpaces.has(key)) {
-      return;
-    }
-
-    const existingStack = board.stacks.get(key);
-    if (existingStack) {
-      return;
-    }
-
-    const player = this.gameState.players.find(
-      (p) => p.playerNumber === this.gameState.currentPlayer
-    );
-    if (!player || player.ringsInHand <= 0) {
-      return;
-    }
-
-    // No-dead-placement constraint: placing must leave a legal move/capture.
-    const hypotheticalBoard = this.createHypotheticalBoardWithPlacement(
-      board,
-      position,
-      this.gameState.currentPlayer
-    );
-    if (
-      !this.hasAnyLegalMoveOrCaptureFrom(position, this.gameState.currentPlayer, hypotheticalBoard)
-    ) {
-      return;
-    }
-
-    const rings = [this.gameState.currentPlayer];
-    const newStack: RingStack = {
-      position,
-      rings,
-      stackHeight: rings.length,
-      capHeight: calculateCapHeight(rings),
-      controllingPlayer: this.gameState.currentPlayer,
-    };
-
-    const nextStacks = new Map(board.stacks);
-    nextStacks.set(key, newStack);
-
-    this.gameState = {
-      ...this.gameState,
-      board: {
-        ...board,
-        stacks: nextStacks,
-      },
-      players: this.gameState.players.map((p) =>
-        p.playerNumber === this.gameState.currentPlayer
-          ? { ...p, ringsInHand: Math.max(0, p.ringsInHand - 1) }
-          : p
-      ),
-    };
-
-    this.advanceAfterPlacement();
+    this.tryPlaceRings(position, 1);
   }
 
   private async handleMovementClick(position: Position): Promise<void> {
@@ -1635,11 +1694,12 @@ export class ClientSandboxEngine {
     // and movement/capture semantics (landing on a marker removes it).
     board.markers.delete(key);
 
-    // For human players in the sandbox, stay in ring_placement after a
-    // successful placement so the user can either add more rings to the
-    // same stack or decide to move it. For AI players, advance directly
-    // to movement so their turn can complete automatically.
-    const nextPhase: GamePhase = player.type === 'ai' ? 'movement' : this.gameState.currentPhase;
+    // After a successful placement, always advance into the movement phase
+    // for this player. This matches the intended per-turn flow of "place
+    // then move" for both humans and AIs; the sandbox UI drives the
+    // subsequent move for humans, while maybeRunAITurn continues the turn
+    // for AI players.
+    const nextPhase: GamePhase = 'movement';
 
     this.gameState = {
       ...this.gameState,
@@ -1660,8 +1720,9 @@ export class ClientSandboxEngine {
     this._selectedStackKey = key;
 
     // REMOVED: this.advanceAfterPlacement();
-    // Instead, we rely on the updated currentPhase ('movement' for AI) to
-    // drive the next step in the turn loop.
+    // Instead, we rely on currentPhase === 'movement' and the normal
+    // movement/turn-advancement flow (advanceAfterMovement + startTurn)
+    // to drive subsequent actions.
     return true;
   }
 

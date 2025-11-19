@@ -5,7 +5,7 @@ import {
   Position,
   RingStack,
   positionToString,
-  positionsEqual
+  positionsEqual,
 } from '../../shared/types/game';
 import { computeBoardMovementGrid } from '../utils/boardMovementGrid';
 
@@ -35,6 +35,11 @@ export interface BoardViewProps {
    * visualizations, and AI/debug overlays.
    */
   showMovementGrid?: boolean;
+  /**
+   * When true, render algebraic coordinate labels (files/ranks) around
+   * square boards. Currently leveraged by the sandbox to aid manual play.
+   */
+  showCoordinateLabels?: boolean;
 }
 
 // Tailwind-friendly, fixed color classes per player number to avoid
@@ -47,26 +52,26 @@ const PLAYER_COLOR_CLASSES: Record<
     ring: 'bg-emerald-400',
     ringBorder: 'border-emerald-200',
     marker: 'border-emerald-400',
-    territory: 'bg-emerald-700/85'
+    territory: 'bg-emerald-700/85',
   },
   2: {
     ring: 'bg-sky-600',
     ringBorder: 'border-sky-300',
     marker: 'border-sky-500',
-    territory: 'bg-sky-700/85'
+    territory: 'bg-sky-700/85',
   },
   3: {
     ring: 'bg-amber-400',
     ringBorder: 'border-amber-200',
     marker: 'border-amber-400',
-    territory: 'bg-amber-600/85'
+    territory: 'bg-amber-600/85',
   },
   4: {
     ring: 'bg-fuchsia-400',
     ringBorder: 'border-fuchsia-200',
     marker: 'border-fuchsia-400',
-    territory: 'bg-fuchsia-700/85'
-  }
+    territory: 'bg-fuchsia-700/85',
+  },
 };
 
 const getPlayerColors = (playerNumber?: number) => {
@@ -75,7 +80,7 @@ const getPlayerColors = (playerNumber?: number) => {
       ring: 'bg-slate-300',
       ringBorder: 'border-slate-100',
       marker: 'border-slate-300',
-      territory: 'bg-slate-800/70'
+      territory: 'bg-slate-800/70',
     };
   }
   return (
@@ -83,12 +88,33 @@ const getPlayerColors = (playerNumber?: number) => {
       ring: 'bg-slate-300',
       ringBorder: 'border-slate-100',
       marker: 'border-slate-300',
-      territory: 'bg-slate-800/70'
+      territory: 'bg-slate-800/70',
     }
   );
 };
 
-const StackWidget: React.FC<{ stack: RingStack; boardType: BoardType }> = ({ stack, boardType }) => {
+const generateFileLabels = (size: number, skipI = false): string[] => {
+  const labels: string[] = [];
+  let code = 'a'.charCodeAt(0);
+  while (labels.length < size) {
+    const char = String.fromCharCode(code);
+    if (skipI && char === 'i') {
+      code += 1;
+      continue;
+    }
+    labels.push(char);
+    code += 1;
+  }
+  return labels;
+};
+
+const generateRankLabels = (size: number): string[] =>
+  Array.from({ length: size }, (_, idx) => (size - idx).toString());
+
+const StackWidget: React.FC<{ stack: RingStack; boardType: BoardType }> = ({
+  stack,
+  boardType,
+}) => {
   const { rings, capHeight, stackHeight } = stack;
 
   // Engine semantics: rings[0] is the top ring (cap); additional rings
@@ -107,14 +133,14 @@ const StackWidget: React.FC<{ stack: RingStack; boardType: BoardType }> = ({ sta
   const ringSizeClasses = isSquare8
     ? 'w-7 md:w-8 h-[5px] md:h-[6px]'
     : isHex
-    ? 'w-5 md:w-6 h-[3px] md:h-[4px]'
-    : 'w-6 md:w-7 h-[4px] md:h-[5px]';
+      ? 'w-5 md:w-6 h-[3px] md:h-[4px]'
+      : 'w-6 md:w-7 h-[4px] md:h-[5px]';
 
   const labelTextClasses = isSquare8
     ? 'text-[9px] md:text-[10px]'
     : isHex
-    ? 'text-[7px] md:text-[8px]'
-    : 'text-[8px] md:text-[9px]';
+      ? 'text-[7px] md:text-[8px]'
+      : 'text-[8px] md:text-[9px]';
 
   return (
     <div className={`flex flex-col items-center justify-center gap-[1px] ${verticalOffsetClasses}`}>
@@ -125,7 +151,9 @@ const StackWidget: React.FC<{ stack: RingStack; boardType: BoardType }> = ({ sta
           const isInCap = index <= capEndIndex;
 
           const baseShape = `${ringSizeClasses} rounded-full border`;
-          const capOutline = isInCap ? 'ring-[0.5px] ring-offset-[0.5px] ring-offset-slate-900' : '';
+          const capOutline = isInCap
+            ? 'ring-[0.5px] ring-offset-[0.5px] ring-offset-slate-900'
+            : '';
           const topShadow = isTop ? 'shadow-md shadow-slate-900/70' : 'shadow-sm';
 
           return (
@@ -152,7 +180,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onCellClick,
   onCellDoubleClick,
   onCellContextMenu,
-  showMovementGrid = false
+  showMovementGrid = false,
+  showCoordinateLabels = false,
 }) => {
   // Square boards: simple grid using (x, y) coordinates.
   // Hex board: rendered using the same cube/axial coordinate system
@@ -160,7 +189,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
   const movementGrid = showMovementGrid ? computeBoardMovementGrid(board) : null;
   const centersByKey = movementGrid
-    ? new Map(movementGrid.centers.map(center => [center.key, center] as const))
+    ? new Map(movementGrid.centers.map((center) => [center.key, center] as const))
     : null;
 
   const renderMovementOverlay = () => {
@@ -174,7 +203,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         viewBox="0 0 1 1"
         preserveAspectRatio="xMidYMid meet"
       >
-        {movementGrid.edges.map(edge => {
+        {movementGrid.edges.map((edge) => {
           const from = centersByKey.get(edge.fromKey);
           const to = centersByKey.get(edge.toKey);
           if (!from || !to) return null;
@@ -192,7 +221,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
           );
         })}
 
-        {movementGrid.centers.map(center => (
+        {movementGrid.centers.map((center) => (
           <circle
             key={center.key}
             cx={center.cx}
@@ -209,15 +238,84 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Hex board: rendered using the same cube/axial coordinate system
   // as BoardManager (q = x, r = y, s = z, with q + r + s = 0).
 
+  const renderSquareCoordinateLabels = (size: number) => {
+    const skipI = boardType === 'square19';
+    const files = generateFileLabels(size, skipI);
+    const ranks = generateRankLabels(size);
+    const topOffset = boardType === 'square19' ? 28 : 22;
+    const sideOffset = boardType === 'square19' ? 28 : 24;
+    const labelClass =
+      'pointer-events-none absolute text-[10px] md:text-[11px] font-semibold tracking-wide text-slate-400 uppercase';
+
+    return (
+      <>
+        <div className="pointer-events-none absolute left-0 right-0" style={{ top: -topOffset }}>
+          {files.map((file, idx) => (
+            <span
+              key={`file-top-${file}`}
+              className={labelClass}
+              style={{
+                left: `${((idx + 0.5) / size) * 100}%`,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              {file}
+            </span>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute left-0 right-0" style={{ bottom: -topOffset }}>
+          {files.map((file, idx) => (
+            <span
+              key={`file-bottom-${file}`}
+              className={labelClass}
+              style={{
+                left: `${((idx + 0.5) / size) * 100}%`,
+                transform: 'translateX(-50%)',
+              }}
+            >
+              {file}
+            </span>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute top-0 bottom-0" style={{ left: -sideOffset }}>
+          {ranks.map((rank, idx) => (
+            <span
+              key={`rank-left-${rank}`}
+              className={labelClass}
+              style={{
+                top: `${((idx + 0.5) / size) * 100}%`,
+                transform: 'translateY(-50%)',
+              }}
+            >
+              {rank}
+            </span>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute top-0 bottom-0" style={{ right: -sideOffset }}>
+          {ranks.map((rank, idx) => (
+            <span
+              key={`rank-right-${rank}`}
+              className={labelClass}
+              style={{
+                top: `${((idx + 0.5) / size) * 100}%`,
+                transform: 'translateY(-50%)',
+              }}
+            >
+              {rank}
+            </span>
+          ))}
+        </div>
+      </>
+    );
+  };
+
   const renderSquareBoard = (size: number) => {
     const rows: JSX.Element[] = [];
     // Cell sizing: make 8x8 squares roughly 2x the original size, and
     // 19x19 squares ~30% larger, so stacks up to height 10 remain legible
     // without overwhelming the viewport.
     const squareCellSizeClasses =
-      boardType === 'square8'
-        ? 'w-16 h-16 md:w-20 md:h-20'
-        : 'w-11 h-11 md:w-14 md:h-14';
+      boardType === 'square8' ? 'w-16 h-16 md:w-20 md:h-20' : 'w-11 h-11 md:w-14 md:h-14';
 
     for (let y = 0; y < size; y++) {
       const cells: JSX.Element[] = [];
@@ -228,13 +326,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const marker = board.markers.get(key);
         const collapsedOwner = board.collapsedSpaces.get(key);
         const isSelected = selectedPosition && positionsEqual(selectedPosition, pos);
-        const isValid = validTargets.some(p => positionsEqual(p, pos));
+        const isValid = validTargets.some((p) => positionsEqual(p, pos));
 
         const isDarkSquare = (x + y) % 2 === 0;
         const baseSquareBg = isDarkSquare ? 'bg-slate-300' : 'bg-slate-100';
-        const territoryClasses = collapsedOwner
-          ? getPlayerColors(collapsedOwner).territory
-          : '';
+        const territoryClasses = collapsedOwner ? getPlayerColors(collapsedOwner).territory : '';
 
         const cellClasses = [
           'relative border flex items-center justify-center text-[11px] md:text-xs rounded-sm',
@@ -247,7 +343,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
           // over the dark board container background.
           isValid
             ? 'outline outline-[2px] outline-emerald-300/90 outline-offset-[-4px] bg-emerald-50'
-            : ''
+            : '',
         ]
           .filter(Boolean)
           .join(' ');
@@ -256,9 +352,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const markerColors = hasMarker ? getPlayerColors(marker.player) : null;
 
         const markerOuterSizeClasses =
-          boardType === 'square8'
-            ? 'w-6 h-6 md:w-7 md:h-7'
-            : 'w-5 h-5 md:w-6 md:h-6';
+          boardType === 'square8' ? 'w-6 h-6 md:w-7 md:h-7' : 'w-5 h-5 md:w-6 md:h-6';
 
         cells.push(
           <button
@@ -266,7 +360,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             type="button"
             onClick={() => onCellClick?.(pos)}
             onDoubleClick={() => onCellDoubleClick?.(pos)}
-            onContextMenu={e => {
+            onContextMenu={(e) => {
               e.preventDefault();
               onCellContextMenu?.(pos);
             }}
@@ -289,7 +383,6 @@ export const BoardView: React.FC<BoardViewProps> = ({
                 className={`pointer-events-none absolute inset-[2px] rounded-sm border-2 ${getPlayerColors(collapsedOwner).marker} border-opacity-90`}
               />
             )}
-
           </button>
         );
       }
@@ -299,7 +392,18 @@ export const BoardView: React.FC<BoardViewProps> = ({
         </div>
       );
     }
-    return rows;
+    const containerClasses =
+      boardType === 'square8'
+        ? 'relative space-y-1 bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner inline-block'
+        : 'relative space-y-0.5 bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner inline-block scale-75 origin-top-left';
+
+    return (
+      <div className={containerClasses}>
+        {rows}
+        {renderMovementOverlay()}
+        {showCoordinateLabels ? renderSquareCoordinateLabels(size) : null}
+      </div>
+    );
   };
 
   const renderHexBoard = () => {
@@ -314,6 +418,18 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const radius = board.size - 1; // e.g. size=11 => radius=10
     const rows: JSX.Element[] = [];
 
+    // Helper to generate algebraic labels for hex cells
+    // Matches logic in notation.ts:
+    //   Rank = radius - q + 1
+    //   File = 'a' + (r + radius)
+    const getHexLabel = (q: number, r: number) => {
+      if (!showCoordinateLabels) return null;
+      const rankNum = radius - q + 1;
+      const fileCode = 'a'.charCodeAt(0) + (r + radius);
+      const file = String.fromCharCode(fileCode);
+      return `${file}${rankNum}`;
+    };
+
     for (let q = -radius; q <= radius; q++) {
       const r1 = Math.max(-radius, -q - radius);
       const r2 = Math.min(radius, -q + radius);
@@ -327,7 +443,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const marker = board.markers.get(key);
         const collapsedOwner = board.collapsedSpaces.get(key);
         const isSelected = selectedPosition && positionsEqual(selectedPosition, pos);
-        const isValid = validTargets.some(p => positionsEqual(p, pos));
+        const isValid = validTargets.some((p) => positionsEqual(p, pos));
 
         const territoryClasses = collapsedOwner
           ? getPlayerColors(collapsedOwner).territory
@@ -340,16 +456,16 @@ export const BoardView: React.FC<BoardViewProps> = ({
           isSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
           isValid
             ? 'outline outline-[2px] outline-emerald-300/90 outline-offset-[-4px] bg-emerald-400/[0.03]'
-            : ''
+            : '',
         ]
           .filter(Boolean)
           .join(' ');
-
 
         const hasMarker = marker && marker.type === 'regular';
         const markerColors = hasMarker ? getPlayerColors(marker.player) : null;
 
         const markerOuterSizeClasses = 'w-4 h-4 md:w-5 md:h-5';
+        const label = getHexLabel(q, r);
 
         cells.push(
           <button
@@ -357,7 +473,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             type="button"
             onClick={() => onCellClick?.(pos)}
             onDoubleClick={() => onCellDoubleClick?.(pos)}
-            onContextMenu={e => {
+            onContextMenu={(e) => {
               e.preventDefault();
               onCellContextMenu?.(pos);
             }}
@@ -381,6 +497,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
               />
             )}
 
+            {label && !stack && !hasMarker && (
+              <span className="pointer-events-none absolute text-[8px] text-slate-500/50 font-mono">
+                {label}
+              </span>
+            )}
           </button>
         );
       }
@@ -397,26 +518,22 @@ export const BoardView: React.FC<BoardViewProps> = ({
     return <div className="flex flex-col -space-y-1">{rows}</div>;
   };
 
-  return (
-    <div className="inline-block">
-      {boardType === 'square8' && (
-        <div className="relative space-y-1 bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner">
-          {renderSquareBoard(8)}
-          {renderMovementOverlay()}
-        </div>
-      )}
-      {boardType === 'square19' && (
-        <div className="relative space-y-0.5 scale-75 origin-top-left bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner">
-          {renderSquareBoard(19)}
-          {renderMovementOverlay()}
-        </div>
-      )}
-      {boardType === 'hexagonal' && (
-        <div className="relative p-2 border border-slate-300 rounded-md bg-white text-slate-900 shadow-inner">
-          {renderHexBoard()}
-          {renderMovementOverlay()}
-        </div>
-      )}
-    </div>
-  );
+  if (boardType === 'square8') {
+    return <div className="inline-block">{renderSquareBoard(8)}</div>;
+  }
+
+  if (boardType === 'square19') {
+    return <div className="inline-block">{renderSquareBoard(19)}</div>;
+  }
+
+  if (boardType === 'hexagonal') {
+    return (
+      <div className="relative inline-block p-2 border border-slate-300 rounded-md bg-white text-slate-900 shadow-inner">
+        {renderHexBoard()}
+        {renderMovementOverlay()}
+      </div>
+    );
+  }
+
+  return null;
 };

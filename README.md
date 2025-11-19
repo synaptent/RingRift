@@ -61,6 +61,31 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 
 ---
 
+## 📚 Documentation Map
+
+To understand the project, use these documents:
+
+- **Rules & engine spec**
+  - `ringrift_complete_rules.md` – full, narrative rules for players and designers.
+  - `ringrift_compact_rules.md` – compact, implementation-oriented spec for engine/AI authors.
+  - `RULES_ANALYSIS_PHASE2.md` – consistency and strategic assessment of the rules.
+
+- **Status & roadmap (canonical, living)**
+  - `CURRENT_STATE_ASSESSMENT.md` – factual, code-verified current state.
+  - `IMPLEMENTATION_STATUS.md` – short high-level status summary.
+  - `TODO.md` – phase-structured task tracker.
+  - `STRATEGIC_ROADMAP.md` – phased roadmap to production.
+  - `KNOWN_ISSUES.md` – current P0/P1 bugs and gaps.
+
+- **Subsystem guides**
+  - `tests/README.md` – Jest setup, test structure, and the rules/FAQ → scenario test matrix.
+  - `ai-service/README.md` – Python AI microservice (Random/Heuristic AI, endpoints, setup).
+  - `CONTRIBUTING.md` – contribution workflow and historical phase breakdown (for background; always defer to the status & roadmap docs above for current tasks).
+
+- **Historical plans & evaluations**
+  - `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` – historical end-to-end playability plan; many items are now implemented.
+  - Docs under `deprecated/` – earlier architecture and improvement plans, preserved for context only.
+
 ## 🎯 Overview
 
 RingRift is a sophisticated turn-based strategy game featuring:
@@ -529,8 +554,12 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## 🆘 Support
 
-- Issues: [GitHub Issues](link-to-issues)
-- Discussions: [GitHub Discussions](link-to-discussions)
+This repository is currently geared toward engine, AI, and rules development. When hosted on a public Git provider, this section should be updated with real URLs for:
+
+- Issues (bug reports, feature requests)
+- Discussions (design questions, strategy, and rules clarifications)
+
+For now, please use the documents listed in the **Documentation Map** above to understand the current state, roadmap, and contribution priorities.
 
 ---
 

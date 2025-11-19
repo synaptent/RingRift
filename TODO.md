@@ -32,8 +32,13 @@
 
 ### Task 2.2: Sandbox Stage 2
 
-- [ ] Complete client-local playable sandbox
-- [ ] Ensure parity between backend and sandbox engines
+- [x] Stabilize client-local sandbox with unified “place then move” turn semantics
+      for both human and AI seats (including mixed games), and automatic local AI
+      turns when it is an AI player’s move. Covered by `ClientSandboxEngine`
+      and `/sandbox` wiring plus `ClientSandboxEngine.mixedPlayers` tests.
+- [ ] Harden backend ↔ sandbox parity and AI-vs-AI termination behaviour
+      (see P0.2 / P1.4 in KNOWN_ISSUES and the sandbox AI simulation diagnostics
+      in `ClientSandboxEngine.aiSimulation`).
 
 ---
 

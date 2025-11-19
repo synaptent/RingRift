@@ -199,7 +199,7 @@ export async function runSandboxAITrace(
  * player seats; canonical moves from the trace are then applied to reach
  * comparable positions for parity debugging.
  */
-function createBackendEngineFromInitialState(initial: GameState): GameEngine {
+export function createBackendEngineFromInitialState(initial: GameState): GameEngine {
   const timeControl = initial.timeControl;
   const boardType = initial.boardType;
   const boardConfig = BOARD_CONFIGS[boardType];

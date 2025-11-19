@@ -4,7 +4,7 @@ import {
   GameState,
   Position,
   BOARD_CONFIGS,
-  positionToString
+  positionToString,
 } from '../../shared/types/game';
 import { BoardState, RingStack } from '../../shared/types/game';
 
@@ -92,7 +92,7 @@ export function startTurnForCurrentPlayerSandbox(
   // safety counter to avoid pathological loops.
   for (let safety = 0; safety < state.players.length; safety++) {
     const current = state.currentPlayer;
-    const player = state.players.find(p => p.playerNumber === current);
+    const player = state.players.find((p) => p.playerNumber === current);
     if (!player) {
       return { state, turnState };
     }
@@ -120,7 +120,7 @@ export function startTurnForCurrentPlayerSandbox(
 
     state = {
       ...state,
-      currentPhase: nextPhase
+      currentPhase: nextPhase,
     };
     return { state, turnState };
   }
@@ -141,7 +141,7 @@ export function maybeProcessForcedEliminationForCurrentPlayerSandbox(
   hooks: SandboxTurnHooks
 ): { state: GameState; turnState: SandboxTurnState; eliminated: boolean } {
   const current = state.currentPlayer;
-  const player = state.players.find(p => p.playerNumber === current);
+  const player = state.players.find((p) => p.playerNumber === current);
   if (!player) {
     return { state, turnState, eliminated: false };
   }
@@ -149,6 +149,31 @@ export function maybeProcessForcedEliminationForCurrentPlayerSandbox(
   const board = state.board;
   const stacks = hooks.getPlayerStacks(state, current, board);
   if (stacks.length === 0) {
+    // When the player has no stacks and no rings in hand, they are
+    // completely out of pieces. In this case, advance turn order to
+    // the next player instead of leaving the game stuck on an
+    // unplayable turn.
+    if (player.ringsInHand <= 0) {
+      const nextPlayer = getNextPlayerNumberSandbox(state, current);
+      state = {
+        ...state,
+        currentPlayer: nextPlayer,
+      };
+
+      const nextTurnState: SandboxTurnState = {
+        hasPlacedThisTurn: false,
+        mustMoveFromStackKey: undefined,
+      };
+
+      // Treat this as an "eliminated" turn for control-flow purposes
+      // so callers such as startTurnForCurrentPlayerSandbox will
+      // continue advancing turn order.
+      return { state, turnState: nextTurnState, eliminated: true };
+    }
+
+    // If the player still has rings in hand but no stacks, they may be
+    // able to act again once they re-enter ring_placement; do not
+    // advance turn order here.
     return { state, turnState, eliminated: false };
   }
 
@@ -162,26 +187,21 @@ export function maybeProcessForcedEliminationForCurrentPlayerSandbox(
   let nextTurnState = { ...turnState };
 
   if (mustKey && state.currentPhase === 'movement') {
-    const mustStack = stacks.find(s => positionToString(s.position) === mustKey);
+    const mustStack = stacks.find((s) => positionToString(s.position) === mustKey);
 
     if (mustStack) {
-      hasAnyAction = hooks.hasAnyLegalMoveOrCaptureFrom(
-        state,
-        mustStack.position,
-        current,
-        board
-      );
+      hasAnyAction = hooks.hasAnyLegalMoveOrCaptureFrom(state, mustStack.position, current, board);
     } else {
       // The must-move stack has been removed (e.g. via capture, lines,
       // or territory effects). In this case the constraint is no longer
       // meaningful; clear it and defer to the global reachability check.
       nextTurnState.mustMoveFromStackKey = undefined;
-      hasAnyAction = stacks.some(stack =>
+      hasAnyAction = stacks.some((stack) =>
         hooks.hasAnyLegalMoveOrCaptureFrom(state, stack.position, current, board)
       );
     }
   } else {
-    hasAnyAction = stacks.some(stack =>
+    hasAnyAction = stacks.some((stack) =>
       hooks.hasAnyLegalMoveOrCaptureFrom(state, stack.position, current, board)
     );
   }
@@ -208,7 +228,7 @@ export function maybeProcessForcedEliminationForCurrentPlayerSandbox(
   const nextPlayer = getNextPlayerNumberSandbox(state, current);
   state = {
     ...state,
-    currentPlayer: nextPlayer
+    currentPlayer: nextPlayer,
   };
 
   // After forced elimination, clear per-turn must-move state for the
@@ -224,7 +244,7 @@ export function maybeProcessForcedEliminationForCurrentPlayerSandbox(
  */
 export function getNextPlayerNumberSandbox(state: GameState, current: number): number {
   const players = state.players;
-  const idx = players.findIndex(p => p.playerNumber === current);
+  const idx = players.findIndex((p) => p.playerNumber === current);
   const nextIdx = (idx + 1) % players.length;
   return players[nextIdx].playerNumber;
 }

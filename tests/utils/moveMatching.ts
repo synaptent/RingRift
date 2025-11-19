@@ -36,10 +36,14 @@ export function movesLooselyMatch(a: Move, b: Move): boolean {
 
   if (a.type !== b.type) return false;
 
-  // For placement moves, require same destination; placementCount and
-  // other metadata may differ.
+  // For placement moves, require same destination and the same
+  // placementCount. Earlier we ignored placementCount, but for
+  // trace-parity we need backend placements to mirror the sandbox
+  // multi-ring counts so hashes and ring inventories stay aligned.
   if (a.type === 'place_ring') {
-    return positionsEqual(a.to, b.to);
+    const aCount = a.placementCount ?? 1;
+    const bCount = b.placementCount ?? 1;
+    return positionsEqual(a.to, b.to) && aCount === bCount;
   }
 
   // For overtaking captures, require from, captureTarget, and landing

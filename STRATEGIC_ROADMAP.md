@@ -39,8 +39,15 @@
 
 #### 2.2 Sandbox Stage 2
 
-- [ ] Complete client-local playable sandbox
-- [ ] Ensure parity between backend and sandbox engines
+- [x] Stabilize client-local sandbox with unified “place then move” turn semantics
+      for both human and AI seats (including mixed games), and automatic local AI
+      turns when it is an AI player’s move. Implemented in the browser-only
+      sandbox via `ClientSandboxEngine` and the `/sandbox` path of `GamePage`,
+      with coverage from `ClientSandboxEngine.mixedPlayers` tests.
+- [ ] Ensure parity between backend and sandbox engines and improve AI-vs-AI
+      termination behaviour using the sandbox AI simulation diagnostics
+      (`ClientSandboxEngine.aiSimulation` with `RINGRIFT_ENABLE_SANDBOX_AI_SIM=1`),
+      as tracked in P0.2 / P1.4 of `KNOWN_ISSUES.md`.
 
 ### **PHASE 3: Multiplayer Polish**
 

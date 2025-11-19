@@ -118,5 +118,9 @@ module.exports = {
   restoreMocks: true,
   
   // Reset mocks between tests
-  resetMocks: true,
+  // NOTE: We keep resetMocks disabled so that manual jest.fn-based stub
+  // implementations (e.g. the in-memory Prisma/bcrypt auth harness) remain
+  // attached across tests. We still clear/restore mocks between tests via
+  // clearMocks/restoreMocks and tests/setup.ts.
+  resetMocks: false,
 };

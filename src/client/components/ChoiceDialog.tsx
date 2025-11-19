@@ -5,13 +5,15 @@ import {
   LineRewardChoice,
   RingEliminationChoice,
   RegionOrderChoice,
-  CaptureDirectionChoice
+  CaptureDirectionChoice,
 } from '../../shared/types/game';
 
 export interface ChoiceDialogProps {
   choice: PlayerChoice | null;
   /** Optional absolute deadline (ms since epoch) when this choice expires. */
   deadline?: number | null;
+  /** Live countdown supplied by the parent (ms). */
+  timeRemainingMs?: number | null;
   onSelectOption: <TChoice extends PlayerChoice>(
     choice: TChoice,
     option: TChoice['options'][number]
@@ -22,12 +24,21 @@ export interface ChoiceDialogProps {
 export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
   choice,
   deadline,
+  timeRemainingMs,
   onSelectOption,
-  onCancel
+  onCancel,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!choice) return null;
+
+  const totalTimeoutMs = typeof choice.timeoutMs === 'number' ? choice.timeoutMs : null;
+  const countdownMs = typeof timeRemainingMs === 'number' ? Math.max(0, timeRemainingMs) : null;
+  const countdownSeconds = countdownMs !== null ? Math.ceil(countdownMs / 1000) : null;
+  const progressPercent =
+    totalTimeoutMs && countdownMs !== null
+      ? Math.min(100, Math.max(0, (countdownMs / totalTimeoutMs) * 100))
+      : null;
 
   const renderLineOrder = (c: LineOrderChoice) => (
     <div className="space-y-2">
@@ -62,10 +73,7 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           onClick={() => {
             if (isSubmitting) return;
             setIsSubmitting(true);
-            onSelectOption(
-              c,
-              'option_1_collapse_all_and_eliminate'
-            );
+            onSelectOption(c, 'option_1_collapse_all_and_eliminate');
           }}
           className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left disabled:opacity-60 disabled:cursor-not-allowed"
         >
@@ -78,10 +86,7 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           onClick={() => {
             if (isSubmitting) return;
             setIsSubmitting(true);
-            onSelectOption(
-              c,
-              'option_2_min_collapse_no_elimination'
-            );
+            onSelectOption(c, 'option_2_min_collapse_no_elimination');
           }}
           className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left disabled:opacity-60 disabled:cursor-not-allowed"
         >
@@ -109,7 +114,8 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Stack at ({opt.stackPosition.x}, {opt.stackPosition.y}
-            {opt.stackPosition.z !== undefined ? `, ${opt.stackPosition.z}` : ''}) – cap {opt.capHeight}, total {opt.totalHeight}
+            {opt.stackPosition.z !== undefined ? `, ${opt.stackPosition.z}` : ''}) – cap{' '}
+            {opt.capHeight}, total {opt.totalHeight}
           </button>
         ))}
       </div>
@@ -120,7 +126,7 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
     <div className="space-y-2">
       <p className="text-sm text-gray-200 mb-1">{c.prompt}</p>
       <div className="space-y-1 max-h-48 overflow-auto text-xs">
-        {c.options.map(opt => (
+        {c.options.map((opt) => (
           <button
             key={opt.regionId}
             type="button"
@@ -132,9 +138,8 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             }}
             className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Region {opt.regionId} – {opt.size} spaces, sample ({
-              opt.representativePosition.x
-            }, {opt.representativePosition.y}
+            Region {opt.regionId} – {opt.size} spaces, sample ({opt.representativePosition.x},{' '}
+            {opt.representativePosition.y}
             {opt.representativePosition.z !== undefined ? `, ${opt.representativePosition.z}` : ''})
           </button>
         ))}
@@ -159,12 +164,10 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Direction {index + 1}: target ({opt.targetPosition.x}, {opt.targetPosition.y}
-            {opt.targetPosition.z !== undefined ? `, ${opt.targetPosition.z}` : ''}) → landing ({
-              opt.landingPosition.x
-            }, {opt.landingPosition.y}
-            {opt.landingPosition.z !== undefined ? `, ${opt.landingPosition.z}` : ''}) – cap {
-              opt.capturedCapHeight
-            }
+            {opt.targetPosition.z !== undefined ? `, ${opt.targetPosition.z}` : ''}) → landing (
+            {opt.landingPosition.x}, {opt.landingPosition.y}
+            {opt.landingPosition.z !== undefined ? `, ${opt.landingPosition.z}` : ''}) – cap{' '}
+            {opt.capturedCapHeight}
           </button>
         ))}
       </div>
@@ -200,14 +203,29 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
       <div className="w-full max-w-md mx-4 p-4 rounded-md bg-slate-900 border border-slate-700 shadow-lg">
         {content}
 
-        <div className="mt-4 flex justify-between items-center space-x-2 text-xs">
+        <div className="mt-4 flex flex-col space-y-2 text-xs">
           {deadline && (
-            <span className="text-[11px] text-gray-400">
-              Choice timeout active
-            </span>
+            <div>
+              {countdownSeconds !== null ? (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
+                    <span>Respond within</span>
+                    <span>{countdownSeconds}s</span>
+                  </div>
+                  <div className="h-1 bg-slate-800 rounded">
+                    <div
+                      className="h-full bg-amber-400 rounded transition-all duration-200"
+                      style={{ width: `${progressPercent ?? 100}%` }}
+                    />
+                  </div>
+                </>
+              ) : (
+                <span className="text-[11px] text-gray-400">Choice timeout active</span>
+              )}
+            </div>
           )}
-          <div className="flex justify-end space-x-2 text-xs">
-            {onCancel && (
+          {onCancel && (
+            <div className="flex justify-end">
               <button
                 type="button"
                 disabled={isSubmitting}
@@ -219,8 +237,8 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
               >
                 Cancel
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

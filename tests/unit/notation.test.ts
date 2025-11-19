@@ -16,11 +16,16 @@ describe('notation helpers', () => {
       expect(formatPosition(pos(7, 7), { boardType })).toBe('h8');
     });
 
-    it('falls back to raw tuple for negative or hex coordinates', () => {
+    it('falls back to raw tuple for negative coordinates on square boards', () => {
       expect(formatPosition(pos(-1, 0), { boardType })).toBe('(-1,0,1)');
-      expect(formatPosition({ x: 1, y: -1, z: 0 }, { boardType: 'hexagonal' })).toBe(
-        '(1,-1,0)'
-      );
+    });
+
+    it('formats hex coordinates using algebraic notation', () => {
+      // Hex board size 11 -> radius 10
+      // q=1, r=-1 -> Rank = 10 - 1 + 1 = 10
+      // File = 'a' + (-1 + 10) = 'j'
+      // Expected: j10
+      expect(formatPosition({ x: 1, y: -1, z: 0 }, { boardType: 'hexagonal' })).toBe('j10');
     });
   });
 
@@ -28,7 +33,7 @@ describe('notation helpers', () => {
     const baseMove: Omit<Move, 'id' | 'timestamp' | 'thinkTime' | 'moveNumber'> = {
       type: 'place_ring',
       player: 1,
-      to: pos(0, 0)
+      to: pos(0, 0),
     } as any;
 
     it('formats ring placements with player prefix and destination', () => {
@@ -37,7 +42,7 @@ describe('notation helpers', () => {
         id: '',
         timestamp: new Date(),
         thinkTime: 0,
-        moveNumber: 1
+        moveNumber: 1,
       };
       expect(formatMove(move, { boardType })).toBe('P1: R a1');
     });
@@ -49,7 +54,7 @@ describe('notation helpers', () => {
         id: '',
         timestamp: new Date(),
         thinkTime: 0,
-        moveNumber: 1
+        moveNumber: 1,
       };
       expect(formatMove(move, { boardType })).toBe('P1: R a1 x3');
     });
@@ -63,7 +68,7 @@ describe('notation helpers', () => {
         to: pos(2, 5),
         timestamp: new Date(),
         thinkTime: 0,
-        moveNumber: 5
+        moveNumber: 5,
       } as Move;
       expect(formatMove(move, { boardType })).toBe('P2: M c3→c6');
     });
@@ -78,7 +83,7 @@ describe('notation helpers', () => {
         to: pos(5, 5),
         timestamp: new Date(),
         thinkTime: 0,
-        moveNumber: 7
+        moveNumber: 7,
       } as Move;
       expect(formatMove(move, { boardType })).toBe('P3: C d4×e5→f6');
     });
@@ -94,7 +99,7 @@ describe('notation helpers', () => {
           to: pos(0, 0),
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: 1
+          moveNumber: 1,
         } as Move,
         {
           id: '',
@@ -104,8 +109,8 @@ describe('notation helpers', () => {
           to: pos(1, 3),
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: 2
-        } as Move
+          moveNumber: 2,
+        } as Move,
       ];
 
       const lines = formatMoveList(moves, { boardType });

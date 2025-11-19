@@ -198,6 +198,88 @@ GAME_PHASES.forEach((phase) => {
 });
 ```
 
+## Backend route tests & Prisma stub harness
+
+For backend HTTP route tests (auth, users, games, etc.) that exercise real Express routers
+against an in-memory database, use the shared Prisma stub harness in
+`tests/utils/prismaTestUtils.ts`.
+
+This helper provides:
+
+- `mockDb` – simple in-memory collections backing the stub:
+  - `mockDb.users: any[]`
+  - `mockDb.refreshTokens: any[]`
+- `prismaStub` – a minimal Prisma-like client object implementing the subset of
+  methods used by the current routes:
+  - `user.findFirst`, `user.findUnique`, `user.create`, `user.update`
+  - `refreshToken.create`, `refreshToken.findFirst`, `refreshToken.delete`, `refreshToken.deleteMany`
+  - `$transaction([...])` – sequentially awaits each operation in order
+- `resetPrismaMockDb()` – clears `mockDb.users` and `mockDb.refreshTokens` between tests
+
+Typical usage in a route test (example: `tests/unit/auth.routes.test.ts`):
+
+```ts
+import express from 'express';
+import request from 'supertest';
+import authRoutes from '../../src/server/routes/auth';
+import { errorHandler } from '../../src/server/middleware/errorHandler';
+import { mockDb, prismaStub, resetPrismaMockDb } from '../utils/prismaTestUtils';
+
+// Wire the in-memory Prisma stub into the real database connection helper.
+jest.mock('../../src/server/database/connection', () => ({
+  getDatabaseClient: () => prismaStub,
+}));
+
+describe('Auth HTTP routes', () => {
+  beforeEach(() => {
+    resetPrismaMockDb();
+  });
+
+  it('registers a new user', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/auth', authRoutes);
+    app.use(errorHandler);
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        /* ... */
+      })
+      .expect(201);
+
+    expect(prismaStub.user.create).toHaveBeenCalled();
+  });
+
+  it('returns 409 when email already exists', async () => {
+    mockDb.users.push({
+      id: 'user-1',
+      email: 'user1@example.com',
+      username: 'other',
+      password: 'hashed:Secret123',
+      role: 'USER',
+      isActive: true,
+      emailVerified: false,
+      createdAt: new Date(),
+    });
+
+    // ... call route and assert on 409 + EMAIL_EXISTS
+  });
+});
+```
+
+When adding new route tests (for example `user`/`game` routes):
+
+1. Import `mockDb`, `prismaStub`, and `resetPrismaMockDb` from `tests/utils/prismaTestUtils`.
+2. `jest.mock('../../src/server/database/connection', () => ({ getDatabaseClient: () => prismaStub }))`.
+3. Call `resetPrismaMockDb()` in your `beforeEach` to clear in-memory state between tests.
+4. Seed `mockDb.*` collections directly in each test to set up scenarios.
+5. Extend `prismaTestUtils.ts` with additional models/methods as new routes require them,
+   keeping all Prisma stubbing logic centralized.
+
+This pattern keeps route tests close to the real Express + middleware stack while avoiding
+network and real database dependencies.
+
 ## Writing Tests
 
 ### Basic Test Structure
@@ -361,6 +443,32 @@ To debug a tricky AI/parity failure locally:
 2. Re-run the relevant trace/parity test (for example `Backend_vs_Sandbox.traceParity.test.ts`).
 3. Inspect `logs/ai/trace-parity.log` for the structured JSON entries referenced in the failing test output.
 
+## Sandbox AI simulation diagnostics
+
+A separate set of AI-vs-AI sandbox diagnostics lives in `tests/unit/ClientSandboxEngine.aiSimulation.test.ts`. These tests run seeded games entirely in `ClientSandboxEngine` and are intended as **diagnostic tools**, not as part of the default CI signal.
+
+```bash
+RINGRIFT_ENABLE_SANDBOX_AI_SIM=1 npm test -- ClientSandboxEngine.aiSimulation
+```
+
+The harness:
+
+- Uses a deterministic PRNG seed to make runs reproducible.
+- Monitors the shared progress snapshot `S = markers + collapsed + eliminated` and asserts that S is **non-decreasing** over canonical AI actions.
+- Enforces a cap on the number of AI actions per run (`MAX_AI_ACTIONS`) and flags seeds that fail to reach a terminal state within that budget.
+
+Some seeded configurations (including `square8` with 2 AI players and seed `1`) are currently expected to exceed `MAX_AI_ACTIONS`; they are tracked as **diagnostic failures** under P1.4 in `KNOWN_ISSUES.md` rather than as hard CI blockers.
+
+For a targeted regression test of a previously observed sandbox stall on `square8` with 2 AI players and seed `1`, use:
+
+```bash
+RINGRIFT_ENABLE_SANDBOX_AI_STALL_REPRO=1 \
+RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS=1 \
+npm test -- ClientSandboxEngine.aiStall.seed1
+```
+
+This test asserts that the engine **does not** get stuck in a long run of consecutive AI turns with no state change for that seed and emits `[Sandbox AI Stall Diagnostic]` warnings when it encounters “no captures/moves and no forced elimination” situations while debugging.
+
 ## Scenario Matrix (Rules/FAQ → Jest suites)
 
 This matrix links key sections of `ringrift_complete_rules.md` and FAQ entries to concrete Jest suites. Existing suites are marked **(existing)**; scenario-focused suites under `tests/scenarios/` are marked **(scenario)**; proposed suites are marked **(planned)**.
@@ -373,7 +481,16 @@ This matrix links key sections of `ringrift_complete_rules.md` and FAQ entries t
 ### Turn sequence & forced elimination
 
 - **Section 4 (Turn Sequence)**, **FAQ 15.2 (Flowchart of a Turn)**, **FAQ 24 (Forced elimination when blocked)**
-  - (planned) `tests/unit/GameEngine.turnSequence.scenarios.test.ts`
+  - (scenario) `tests/unit/GameEngine.turnSequence.scenarios.test.ts` — backend turn-sequence and forced-elimination orchestration tests covering blocked-with-stacks and skip-over-no-material players.
+
+#### Mini rules→tests matrix: Turn sequence, movement & progress (cluster example)
+
+| Rule / FAQ cluster                             | Description                                                                  | Primary tests                                                                                                                                                                                                                         |
+| ---------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Section 4.x Turn Sequence & Forced Elimination | Turn start/end, blocked-with-stacks behaviour, skipping dead players         | [`tests/unit/GameEngine.turnSequence.scenarios.test.ts`](tests/unit/GameEngine.turnSequence.scenarios.test.ts:1), [`tests/scenarios/ForcedEliminationAndStalemate.test.ts`](tests/scenarios/ForcedEliminationAndStalemate.test.ts:12) |
+| Sections 8.2–8.3 Non‑capture Movement          | Minimum distance ≥ stack height, marker landing, blocked paths               | [`tests/unit/RuleEngine.movementCapture.test.ts`](tests/unit/RuleEngine.movementCapture.test.ts:1)                                                                                                                                    |
+| Section 13.5 Progress & Termination Invariant  | S-invariant (markers + collapsed + eliminated) under forced elim & stalemate | [`tests/scenarios/ForcedEliminationAndStalemate.test.ts`](tests/scenarios/ForcedEliminationAndStalemate.test.ts:12)                                                                                                                   |
+| FAQ 15.2 / 24 (Turn flow & forced elimination) | Flowchart of a turn and forced elimination when blocked                      | [`tests/unit/GameEngine.turnSequence.scenarios.test.ts`](tests/unit/GameEngine.turnSequence.scenarios.test.ts:1), [`tests/scenarios/ForcedEliminationAndStalemate.test.ts`](tests/scenarios/ForcedEliminationAndStalemate.test.ts:12) |
 
 ### Movement, minimum distance, and markers
 

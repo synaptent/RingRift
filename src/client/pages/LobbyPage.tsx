@@ -357,10 +357,10 @@ export default function LobbyPage() {
                     value={form.aiType}
                     onChange={(e) => handleChange('aiType', e.target.value as FormState['aiType'])}
                   >
-                    <option value="random">Random</option>
-                    <option value="heuristic">Heuristic</option>
-                    <option value="minimax">Minimax</option>
-                    <option value="mcts">MCTS</option>
+                    <option value="random">Random (Easy)</option>
+                    <option value="heuristic">Heuristic (Medium)</option>
+                    <option value="minimax">Minimax (Hard)</option>
+                    <option value="mcts">MCTS (Expert)</option>
                   </select>
                 </div>
               </div>
