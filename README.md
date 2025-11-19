@@ -1,25 +1,26 @@
 # RingRift - Multiplayer Strategy Game
 
-⚠️ **PROJECT STATUS: CORE LOGIC ~70–75% COMPLETE – BACKEND PLAY AND AI TURNS WORK, UI & TESTING STILL EARLY** ⚠️
+⚠️ **PROJECT STATUS: ENGINE/AI-FOCUSED BETA – BACKEND PLAY & AI TURNS WORK; UX & SCENARIO TESTS STILL IN PROGRESS** ⚠️
 
-> **Important:** Core game mechanics are largely implemented (~72%), and there is now a **playable backend game flow**: the server’s `GameEngine` drives rules, WebSocket-backed games use it as the source of truth, the React client renders boards and submits moves, and AI opponents can make moves via the Python AI service. In addition, a **client-local sandbox engine** (`ClientSandboxEngine`) powers the `/sandbox` route with strong rules parity and dedicated Jest suites for movement, captures, lines, territory, and victory checks. However, the UI is still minimal, end-to-end UX is rough, and test coverage is low. See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) for a verified breakdown.
+> **Important:** Core game mechanics are largely implemented, and there is now a **playable backend game flow**: the server’s `GameEngine` drives rules, WebSocket-backed games use it as the source of truth, the React client renders boards and submits moves, and AI opponents can make moves via the Python AI service. In addition, a **client-local sandbox engine** (`ClientSandboxEngine`) powers the `/sandbox` route with strong rules parity and dedicated Jest suites for movement, captures, lines, territory, and victory checks. However, the UI/UX is still evolving and there is not yet a comprehensive scenario matrix for every rule/FAQ example. See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) and [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for code‑verified status.
 
 A web-based multiplayer implementation of the RingRift strategy game supporting 2-4 players with flexible human/AI combinations across multiple board configurations.
 
 ## 📋 Current Status
 
-**Last Updated:** November 14, 2025  
+**Last Updated:** November 18, 2025  
 **Verification:** Code-verified assessment (see `CURRENT_STATE_ASSESSMENT.md`)  
-**Overall Progress:** 58% Complete (strong foundation, critical gaps remain)
+**Overall Progress:** Strong foundation with critical gaps; see `IMPLEMENTATION_STATUS.md` for the latest high-level summary.
 
-### ✅ What's Working (75% of Core Logic)
+### ✅ What's Working
+
 - ✅ Project infrastructure (Docker, database, Redis, WebSocket)
-- ✅ TypeScript type system and architecture (100%)
+- ✅ TypeScript type system and architecture
 - ✅ Comprehensive game rules documentation
 - ✅ Server and client scaffolding
 - ✅ **Marker system** - Placement, flipping, collapsing fully functional
 - ✅ **Movement validation** - Distance rules, path checking working
-- ✅ **Basic captures** - Single captures work correctly
+- ✅ **Basic and chained captures** - Overtaking captures and mandatory continuation implemented
 - ✅ **Line detection** - All board types (8x8, 19x19, hexagonal)
 - ✅ **Territory disconnection** - Detection and processing implemented
 - ✅ **Phase transitions** - Correct game flow through all phases
@@ -28,49 +29,42 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 - ✅ **Client-local sandbox engine** - `/sandbox` uses `ClientSandboxEngine` plus `sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxLinesEngine.ts`, `sandboxTerritoryEngine.ts`, and `sandboxVictory.ts` to run full games in the browser (movement, captures, lines, territory, and ring/territory victories) with dedicated Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts`.
 
 ### ⚠️ Critical Gaps (Blocks Production-Quality Play)
-- ⚠️ **Player choice system is implemented but not yet deeply battle-tested** – Shared types and `PlayerInteractionManager` exist and GameEngine now uses them for line order, line reward, ring elimination, region order, and capture direction. `WebSocketInteractionHandler`, `GameContext`, and `ChoiceDialog` wire these choices to human clients for backend-driven games, and `AIInteractionHandler` answers choices for AI players via local heuristics. What’s missing is broad scenario coverage (all FAQ/rules examples), polished UX around errors/timeouts, and – optionally – AI-service–backed choice decisions.
-- ⚠️ **Chain captures enforced engine-side; more edge-case tests still needed** – GameEngine maintains internal chain-capture state and uses `CaptureDirectionChoice` via `PlayerInteractionManager` to drive mandatory continuation when multiple follow-up captures exist. Core behaviour is covered by focused unit/integration tests, but additional rule/FAQ scenarios (e.g. complex 180° and cyclic patterns) and full UI/AI flows still need to be exercised.
-- ⚠️ **UI is functional but minimal** – Board rendering, a local sandbox, and backend game mode exist for 8x8, 19x19, and hex boards. Backend games now support “click source, click highlighted destination” moves and server-driven choices, and AI opponents can take turns. However, the HUD, polish, and game lifecycle UX are still early.
-- ❌ **Limited testing** – Dedicated Jest suites now cover the client-local sandbox engine (movement, captures, lines, territory, victory) and several backend engine/interaction paths, but overall coverage is still low and there is no comprehensive scenario suite derived from the rules/FAQ.
-- ⚠️ **AI service integration is move- and choice-focused but still evolving** – The Python AI microservice is integrated into the turn loop via `AIEngine`/`AIServiceClient` and `WebSocketServer.maybePerformAITurn`, so AI players can select moves in backend games. The service is also used for several PlayerChoices (`line_reward_option`, `ring_elimination`, `region_order`) behind `globalAIEngine`/`AIInteractionHandler`, with remaining choices currently answered via local heuristics. Higher-difficulty tactical behaviour still depends on future work.
+
+- ⚠️ **Player choice system is implemented but not yet deeply battle-tested** – Shared types and `PlayerInteractionManager` exist and GameEngine uses them for line order, line reward, ring elimination, region order, and capture direction. `WebSocketInteractionHandler`, `GameContext`, and `ChoiceDialog` wire these choices to human clients for backend-driven games, and `AIInteractionHandler` answers choices for AI players via local heuristics and (for some choices) the Python AI service. What’s missing is broad scenario coverage (all FAQ/rules examples), polished UX around errors/timeouts, and full test coverage of complex multi-choice turns.
+- ⚠️ **Chain captures enforced engine-side; more edge-case tests still needed** – GameEngine maintains internal chain-capture state and uses `CaptureDirectionChoice` via `PlayerInteractionManager` to drive mandatory continuation when multiple follow-up captures exist. Core behaviour is covered by focused unit/integration tests, but additional rule/FAQ scenarios (e.g. complex 180° and cyclic patterns) and full UI/AI flows still need to be exercised and encoded as named scenarios.
+- ⚠️ **UI is functional but not polished** – Board rendering, a local sandbox, and backend game mode exist for 8x8, 19x19, and hex boards. Backend games now support “click source, click highlighted destination” moves and server-driven choices, and AI opponents can take turns. However, the HUD, timers, post-game flows, and multiplayer UX (spectators, reconnection, chat) still need refinement.
+- ⚠️ **Testing is incomplete relative to rules complexity** – Dedicated Jest suites now cover the client-local sandbox engine (movement, captures, lines, territory, victory) and several backend engine/interaction paths, but there is no comprehensive scenario suite derived systematically from `ringrift_complete_rules.md` and the FAQ. See `CURRENT_STATE_ASSESSMENT.md` and `KNOWN_ISSUES.md` for details.
+- ⚠️ **AI service integration is move- and choice-focused but still evolving** – The Python AI microservice is integrated into the turn loop via `AIEngine`/`AIServiceClient` and `WebSocketServer.maybePerformAITurn`, so AI players can select moves in backend games. The service is also used for several PlayerChoices (`line_reward_option`, `ring_elimination`, `region_order`) behind `globalAIEngine`/`AIInteractionHandler`, with remaining choices currently answered via local heuristics. Higher-difficulty tactical behaviour and ML-based agents are future work.
 
 ### 🎯 What This Means
+
 **Can Do (today):**
+
 - Create games via the HTTP API and from the React lobby (including AI opponent configuration).
 - Play backend-driven games end-to-end using the React client (BoardView + GamePage) with click-to-move and server-validated moves.
-- Have AI opponents take turns in backend games via the Python AI service, using the unified `AIProfile` / `aiOpponents` pipeline.
+- Have AI opponents take turns in backend games via the Python AI service and/or local heuristics, using the unified `AIProfile` / `aiOpponents` pipeline.
 - Process lines and territory disconnection, forced elimination, and hex boards through the shared GameEngine.
 - Track full game state (phases, players, rings, territory, timers) and broadcast updates over WebSockets.
 - Run full, rules-complete games in the `/sandbox` route using the client-local `ClientSandboxEngine` with simple random-choice AI for all PlayerChoices, reusing the same BoardView/ChoiceDialog/VictoryModal patterns as backend games.
 
-**Cannot Do (yet):**
+**Cannot Reliably Do (yet):**
+
 - Rely on tests for full rule coverage (scenario/edge-case tests and coverage are still incomplete).
 - Guarantee every chain capture and PlayerChoice edge case from the rules/FAQ is battle-tested and bug-free.
-- Enjoy a fully polished UX (HUD, timers, post-game flows, and lobby/matchmaking are still basic).
+- Offer a fully polished UX (HUD, timers, post-game flows, and lobby/matchmaking are still basic).
 - Use the AI service for all PlayerChoice decisions (several choices are still answered via local heuristics only).
-- Play production-grade multiplayer with lobbies, matchmaking, reconnection UX, and spectators.
-
-### 📊 Component Status
-| Component | Status | Completion |
-|-----------|--------|-----------|
-| Type System | ✅ Complete | 100% |
-| Board Manager | ✅ Complete | 90% |
-| Game Engine | ⚠️ Partial | 75% |
-| Rule Engine | ⚠️ Partial | 60% |
-| Frontend UI | ⚠️ Basic board & choice UI + client-local sandbox engine | 30% |
-| AI Integration | ⚠️ Moves + some choices service-backed | 60% |
-| Testing | ⚠️ Growing but incomplete | 10% |
-| Multiplayer | ⚠️ Basic backend play, no full lobby yet | 30% |
+- Provide production-grade multiplayer with robust lobbies, matchmaking, reconnection UX, spectators, and chat.
 
 **For complete assessment, see [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md)**  
 **For detailed issues, see [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)**  
-**For roadmap, see [TODO.md](./TODO.md)**
+**For roadmap, see [TODO.md](./TODO.md) and [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md)**
 
 ---
 
 ## 🎯 Overview
 
 RingRift is a sophisticated turn-based strategy game featuring:
+
 - **Multiple Board Types**: 8x8 square, 19x19 square, and hexagonal layouts
 - **Flexible Player Support**: 2-4 players with human/AI combinations
 - **Real-time Multiplayer**: WebSocket-based live gameplay (engine and transport implemented; UX still evolving)
@@ -84,6 +78,7 @@ RingRift is a sophisticated turn-based strategy game featuring:
 ### Technology Stack
 
 #### Backend
+
 - **Runtime**: Node.js with TypeScript
 - **Framework**: Express.js with comprehensive middleware
 - **Database**: PostgreSQL with Prisma ORM
@@ -95,6 +90,7 @@ RingRift is a sophisticated turn-based strategy game featuring:
 - **Security**: Helmet, CORS, rate limiting
 
 #### Frontend
+
 - **Framework**: React 18 with TypeScript
 - **Build Tool**: Vite for fast development and optimized builds
 - **Routing**: React Router for SPA navigation
@@ -104,6 +100,7 @@ RingRift is a sophisticated turn-based strategy game featuring:
 - **HTTP Client**: Axios with interceptors for API communication
 
 #### Infrastructure
+
 - **Containerization**: Docker with multi-stage builds
 - **Orchestration**: Docker Compose for local development and basic deployment
 - **Database**: PostgreSQL with connection pooling
@@ -136,17 +133,19 @@ RingRift is a sophisticated turn-based strategy game featuring:
 **This application is not yet production-ready.** The current codebase includes a working backend game loop and a minimal but functional React client for playing backend-driven games, but the overall UX, multiplayer flows, observability, and test coverage are still incomplete. In its current state, the project is best suited for engine/AI development, rules validation, and early playtesting rather than public release.
 
 The codebase currently provides:
+
 - Infrastructure setup and configuration (Docker, database, Redis, WebSockets, logging, authentication)
 - Fully typed shared game state and rules data structures
 - A largely implemented GameEngine + BoardManager + RuleEngine for all board types
 - A Python AI service wired into backend AI turns via `AIEngine` / `AIServiceClient`
-- A minimal React client (LobbyPage + GamePage + BoardView + ChoiceDialog) that can:
+- A React client (LobbyPage + GamePage + BoardView + ChoiceDialog + GameHUD) that can:
   - Create backend games (including AI opponents) via the HTTP API and lobby UI
   - Connect to backend games over WebSockets and play via click-to-move
   - Surface server-driven PlayerChoices for humans (e.g. line rewards, ring elimination)
-- A growing but still limited Jest test suite around core rules, interaction flows, AI turns, and territory disconnection
+- A growing Jest test suite around core rules, interaction flows, AI turns, territory disconnection, and sandbox parity
 
 **To contribute or continue development, please review:**
+
 1. [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) - Factual, code-verified analysis of the current state
 2. [ARCHITECTURE_ASSESSMENT.md](./ARCHITECTURE_ASSESSMENT.md) - Architecture and refactoring axes (supersedes older codebase evaluation docs)
 3. [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs, missing features, and prioritization
@@ -158,6 +157,7 @@ The codebase currently provides:
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Node.js 18+ and npm 9+
 - Docker and Docker Compose
 - PostgreSQL 14+ (or use Docker)
@@ -166,6 +166,7 @@ The codebase currently provides:
 ### Development Setup
 
 1. **Clone and Install**
+
 ```bash
 git clone <repository-url>
 cd ringrift
@@ -173,12 +174,14 @@ npm install
 ```
 
 2. **Environment Configuration**
+
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
 3. **Database Setup**
+
 ```bash
 # Start services with Docker (database + redis)
 docker-compose up -d postgres redis
@@ -189,6 +192,7 @@ npm run db:generate
 ```
 
 4. **Start Development**
+
 ```bash
 # Start both frontend and backend (concurrently)
 npm run dev
@@ -228,6 +232,7 @@ The `/sandbox` route is backed by a fully rules-complete, client-local engine (`
 - **How it’s tested:** Dedicated Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts` cover chain captures, placement/forced elimination, line processing, territory disconnection (square + hex), region order, and victory conditions.
 
 Use the sandbox when:
+
 - You want to quickly verify a rule interaction or FAQ scenario visually.
 - You’re developing new UI/HUD features that should apply equally to backend games and the sandbox.
 - You’re iterating on rules-related code and want a local harness that won’t affect backend persistence.
@@ -262,24 +267,28 @@ For a detailed, task-level view, see `TODO.md` (especially Phase 0/1/3S near-ter
 ## 🎮 Game Features
 
 ### Core Gameplay
+
 - **Ring Placement**: Strategic positioning of rings on the board
 - **Movement Phase**: Tactical ring repositioning
 - **Row Formation**: Create rows of markers to remove opponent rings
 - **Victory Conditions**: Remove required number of opponent rings and/or win via territory control
 
 ### Board Configurations
+
 - **8x8 Square**: Compact tactical gameplay
 - **19x19 Square**: Extended strategic depth
 - **Hexagonal**: Unique geometric challenges
 
-### Multiplayer Features *(planned/partially implemented)*
+### Multiplayer Features _(planned/partially implemented)_
+
 - **Real-time Synchronization**: Instant move updates over WebSockets
 - **Spectator Mode**: Watch games where `allowSpectators` is enabled
 - **Chat System**: In-game chat per game room
 - **Reconnection**: Basic Socket.IO reconnection; dedicated reconnection UX still future work
 - **Time Controls**: Persisted per-game time controls, with more UI polish planned
 
-### AI Integration *(planned/partially implemented)*
+### AI Integration _(planned/partially implemented)_
+
 - **Difficulty Levels**: AI profiles with difficulty ratings
 - **Smart Opponents**: Python service-backed RandomAI + HeuristicAI
 - **Mixed Games**: Human-AI combinations supported
@@ -290,6 +299,7 @@ For a detailed, task-level view, see `TODO.md` (especially Phase 0/1/3S near-ter
 This section describes the **current** HTTP and WebSocket surface exposed by the TypeScript backend as of the latest assessment. For deeper details, see `src/server/routes/*.ts` and `src/server/websocket/server.ts`.
 
 ### Authentication Endpoints (`/api/auth`)
+
 ```http
 POST /api/auth/register       # User registration
 POST /api/auth/login          # User authentication
@@ -303,6 +313,7 @@ POST /api/auth/reset-password   # Placeholder – returns "not implemented yet"
 ```
 
 ### User Endpoints (`/api/users` – authenticated)
+
 ```http
 GET  /api/users/profile       # Get current user profile
 PUT  /api/users/profile       # Update current user profile (username only for now)
@@ -314,6 +325,7 @@ GET  /api/users/leaderboard   # Paginated rating leaderboard
 ```
 
 ### Game Management (`/api/games` – authenticated)
+
 ```http
 GET  /api/games                       # List games the user participates in (filterable by status)
 POST /api/games                       # Create new game (boardType, maxPlayers, timeControl, isRated, aiOpponents, etc.)
@@ -331,6 +343,7 @@ GET  /api/games/lobby/available       # List joinable games (waiting status, not
 WebSockets are served from the same Node process. Events are defined and handled in `src/server/websocket/server.ts` and `src/server/game/WebSocketInteractionHandler.ts`.
 
 #### Client → Server
+
 ```text
 join_game             # Join a specific game room (requires auth token)
 leave_game            # Leave a game room
@@ -340,6 +353,7 @@ player_choice_response # Respond to a pending PlayerChoice (line reward, ring el
 ```
 
 #### Server → Client
+
 ```text
 game_state            # Game state update (BoardState + GameState + validMoves)
 game_over             # Game ended, includes final GameState + GameResult
@@ -356,12 +370,14 @@ The WebSocket layer sits on top of `GameEngine` and `PlayerInteractionManager`, 
 ## 🛡️ Security Features
 
 ### Authentication & Authorization
+
 - JWT token-based authentication for HTTP and WebSocket connections
 - Secure password hashing with bcrypt
 - Role field on users (future extension point for admin/moderator roles)
 - Rating and statistics fields for players
 
 ### API Security
+
 - Rate limiting per endpoint group (auth/game/global)
 - CORS configuration (configurable via `CORS_ORIGIN`)
 - Helmet security headers
@@ -369,6 +385,7 @@ The WebSocket layer sits on top of `GameEngine` and `PlayerInteractionManager`, 
 - SQL injection prevention with Prisma
 
 ### Game Security
+
 - Move validation on server via `RuleEngine` and `GameEngine`
 - Game state integrity checks
 - WebSocket authentication via JWT
@@ -376,16 +393,19 @@ The WebSocket layer sits on top of `GameEngine` and `PlayerInteractionManager`, 
 ## 📊 Performance & Observability
 
 ### Backend Optimizations (current)
+
 - Database connection pooling via Prisma/pg
 - Centralized logging with Winston (ingested by CI/log tooling)
 - Efficient game state serialization through typed GameState / BoardState
 
 ### Planned / Early-Stage Work
+
 - Redis caching for frequently accessed data (infrastructure in place, usage expanding)
 - More aggressive game-state diffing and delta updates over WebSockets
 - Application-level Prometheus metrics and dashboards using the existing Prometheus/Grafana stack in `docker-compose.yml`
 
 ### Frontend Optimizations (current/planned)
+
 - Vite-based build for fast HMR and optimized production bundles
 - React Query for server-state caching (in use, coverage expanding)
 - Targeted memoization and derived-state calculations in BoardView
@@ -396,6 +416,7 @@ The WebSocket layer sits on top of `GameEngine` and `PlayerInteractionManager`, 
 > The test setup described here reflects the **intended structure**. As of the latest assessment, there is a **growing suite of unit and integration tests** across the engine, WebSocket, AI boundary, and client-local sandbox, but coverage is still incomplete. See `CURRENT_STATE_ASSESSMENT.md` for up-to-date coverage details and gaps.
 
 ### Backend Testing
+
 ```bash
 npm test                   # Run all Jest tests
 npm run test:watch         # Watch mode
@@ -419,12 +440,14 @@ A set of AI-heavy suites compare backend and sandbox behaviour step-by-step usin
   - `tests/unit/Backend_vs_Sandbox.aiParallelDebug.test.ts`
 
 Diagnostics can be enabled via:
+
 - `RINGRIFT_TRACE_DEBUG` – write structured JSON snapshots for trace parity runs to `logs/ai/trace-parity.log` (sandbox opening sequence, backend mismatches, S/hashes, valid move lists).
 - `RINGRIFT_AI_DEBUG` – mirror AI diagnostics to the console and enable extra sandbox AI debug logs, in addition to the existing `logs/ai/*.log` streams used by AI simulation tests.
 
 For more details and usage patterns, see `tests/README.md`.
 
 ### Frontend / Sandbox Testing
+
 ```bash
 # Currently all tests are Jest-based and live under tests/unit
 # including client-local sandbox engine tests.
@@ -432,20 +455,23 @@ npm test
 ```
 
 ### Test Coverage Goals
+
 - Unit tests for game logic (BoardManager, RuleEngine, GameEngine)
 - Integration tests for API endpoints and WebSocket flows
 - AI boundary tests (AIEngine, AIServiceClient, AIInteractionHandler)
 - UI-level tests for critical components (BoardView, GamePage, ChoiceDialog, VictoryModal)
 - Scenario-driven tests derived from `ringrift_complete_rules.md` and the FAQ
 
-## 📈 Monitoring & Analytics *(future/partially implemented)*
+## 📈 Monitoring & Analytics _(future/partially implemented)_
 
 ### Application Monitoring
+
 - Structured logging with Winston (currently active)
 - CI pipeline with Jest coverage publishing to Codecov (`.github/workflows/ci.yml`)
 - Planned: error tracking, runtime metrics, and dashboards using Prometheus/Grafana
 
 ### Game Analytics (planned)
+
 - Player behavior tracking
 - Game duration statistics
 - Move pattern analysis
@@ -455,6 +481,7 @@ npm test
 ## 🔄 Development Workflow
 
 ### Code Quality
+
 - TypeScript for type safety
 - ESLint for code standards (`npm run lint`)
 - Prettier for formatting
@@ -462,6 +489,7 @@ npm test
 - Conventional commits recommended
 
 ### CI/CD Pipeline
+
 - GitHub Actions workflow in `.github/workflows/ci.yml` with jobs for:
   - Lint + type check
   - Jest tests + coverage upload to Codecov
@@ -472,11 +500,13 @@ npm test
 ## 📚 Additional Resources
 
 ### Game Rules
+
 - Complete rule documentation in `ringrift_complete_rules.md`
 - Compact rules summary in `ringrift_compact_rules.md`
 - Future: interactive tutorial system, strategy guides, and video demonstrations
 
 ### Development Guides
+
 - Architecture assessment: `ARCHITECTURE_ASSESSMENT.md`
 - Current state assessment: `CURRENT_STATE_ASSESSMENT.md`
 - Strategic roadmap: `STRATEGIC_ROADMAP.md`

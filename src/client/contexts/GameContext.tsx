@@ -1,12 +1,6 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState
-} from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { toast } from 'react-hot-toast';
 import { BoardState, GameState, Move, PlayerChoice, GameResult } from '../../shared/types/game';
 
 interface GameContextType {
@@ -38,9 +32,7 @@ interface GameContextType {
   respondToChoice: (choice: PlayerChoice, selectedOption: any) => void;
 
   // Move submission (backend game mode)
-  submitMove: (
-    partialMove: Omit<Move, 'id' | 'timestamp' | 'thinkTime' | 'moveNumber'>
-  ) => void;
+  submitMove: (partialMove: Omit<Move, 'id' | 'timestamp' | 'thinkTime' | 'moveNumber'>) => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -71,7 +63,7 @@ function hydrateBoardState(rawBoard: any): BoardState {
       formedLines: [],
       eliminatedRings: {},
       size: 0,
-      type: 'square8'
+      type: 'square8',
     };
   }
 
@@ -90,14 +82,14 @@ function hydrateBoardState(rawBoard: any): BoardState {
     formedLines: rawBoard.formedLines || [],
     eliminatedRings: rawBoard.eliminatedRings || {},
     size: rawBoard.size,
-    type: rawBoard.type
+    type: rawBoard.type,
   };
 }
 
 function hydrateGameState(rawState: any): GameState {
   return {
     ...rawState,
-    board: hydrateBoardState(rawState.board)
+    board: hydrateBoardState(rawState.board),
   } as GameState;
 }
 
@@ -127,103 +119,117 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setVictoryState(null);
   }, []);
 
-  const connectToGame = useCallback(async (targetGameId: string) => {
-    // If already connected to this game, do nothing.
-    if (gameId === targetGameId && socketRef.current) {
-      return;
-    }
+  const connectToGame = useCallback(
+    async (targetGameId: string) => {
+      // If already connected to this game, do nothing.
+      if (gameId === targetGameId && socketRef.current) {
+        return;
+      }
 
-    // Tear down any existing connection.
-    disconnect();
+      // Tear down any existing connection.
+      disconnect();
 
-    setIsConnecting(true);
-    setError(null);
+      setIsConnecting(true);
+      setError(null);
 
-    try {
-      const token = localStorage.getItem('token');
-      const baseUrl = getSocketBaseUrl();
+      try {
+        const token = localStorage.getItem('token');
+        const baseUrl = getSocketBaseUrl();
 
-      const socket = io(baseUrl, {
-        transports: ['websocket', 'polling'],
-        auth: token ? { token } : undefined
-      });
+        const socket = io(baseUrl, {
+          transports: ['websocket', 'polling'],
+          auth: token ? { token } : undefined,
+        });
 
-      socketRef.current = socket;
+        socketRef.current = socket;
 
-      socket.on('connect_error', (err: Error) => {
-        console.error('Socket connect_error', err);
-        setError(err.message || 'Failed to connect to game server');
-        setIsConnecting(false);
-      });
+        socket.on('connect_error', (err: Error) => {
+          console.error('Socket connect_error', err);
+          const msg = err.message || 'Failed to connect to game server';
+          setError(msg);
+          toast.error(msg);
+          setIsConnecting(false);
+        });
 
-      socket.on('connect', () => {
-        // After connecting, join the specific game room.
-        socket.emit('join_game', { gameId: targetGameId });
-      });
+        socket.on('connect', () => {
+          // After connecting, join the specific game room.
+          socket.emit('join_game', { gameId: targetGameId });
+        });
 
-      socket.on('game_state', (payload: any) => {
-        // Payload shape from server: { type: 'game_update', data: { gameId, gameState, validMoves }, timestamp }
-        const { data } = payload || {};
-        if (data?.gameId === targetGameId && data?.gameState) {
+        socket.on('reconnect_attempt', () => {
+          setIsConnecting(true);
+          toast('Reconnecting...', { icon: '🔄', id: 'reconnecting' });
+        });
+
+        socket.on('reconnect', () => {
+          setIsConnecting(false);
+          toast.success('Reconnected!', { id: 'reconnecting' });
+        });
+
+        socket.on('game_state', (payload: any) => {
+          // Payload shape from server: { type: 'game_update', data: { gameId, gameState, validMoves }, timestamp }
+          const { data } = payload || {};
+          if (data?.gameId === targetGameId && data?.gameState) {
+            setGameId(targetGameId);
+            setGameState(hydrateGameState(data.gameState));
+            setValidMoves(Array.isArray(data.validMoves) ? data.validMoves : null);
+            setIsConnecting(false);
+            setError(null);
+          }
+        });
+
+        // Terminal game event carrying the final GameResult and snapshot.
+        socket.on('game_over', (payload: any) => {
+          const { data } = payload || {};
+          if (!data || data.gameId !== targetGameId) return;
+
           setGameId(targetGameId);
-          setGameState(hydrateGameState(data.gameState));
-          setValidMoves(Array.isArray(data.validMoves) ? data.validMoves : null);
+          if (data.gameState) {
+            setGameState(hydrateGameState(data.gameState));
+          }
+          if (data.gameResult) {
+            setVictoryState(data.gameResult as GameResult);
+          }
+          setValidMoves(null);
           setIsConnecting(false);
           setError(null);
-        }
-      });
+          // Any pending choices are no longer relevant once the game ends.
+          setPendingChoice(null);
+          setChoiceDeadline(null);
+        });
 
-      // Terminal game event carrying the final GameResult and snapshot.
-      socket.on('game_over', (payload: any) => {
-        const { data } = payload || {};
-        if (!data || data.gameId !== targetGameId) return;
+        // Choice system events
+        socket.on('player_choice_required', (choice: PlayerChoice) => {
+          setPendingChoice(choice);
+          const deadline = choice.timeoutMs ? Date.now() + choice.timeoutMs : null;
+          setChoiceDeadline(deadline);
+        });
 
-        setGameId(targetGameId);
-        if (data.gameState) {
-          setGameState(hydrateGameState(data.gameState));
-        }
-        if (data.gameResult) {
-          setVictoryState(data.gameResult as GameResult);
-        }
-        setValidMoves(null);
+        socket.on('player_choice_canceled', (choiceId: string) => {
+          setPendingChoice((current) => (current && current.id === choiceId ? null : current));
+          setChoiceDeadline((current) => (current ? null : current));
+        });
+
+        socket.on('error', (payload: any) => {
+          const message = payload?.message || 'Game error';
+          console.error('Game socket error', payload);
+          setError(message);
+          toast.error(message);
+          setIsConnecting(false);
+        });
+
+        socket.on('disconnect', () => {
+          // Keep error state, but clear connection.
+          socketRef.current = null;
+        });
+      } catch (err: any) {
+        console.error('Failed to connect to game', err);
+        setError(err?.message || 'Failed to connect to game');
         setIsConnecting(false);
-        setError(null);
-        // Any pending choices are no longer relevant once the game ends.
-        setPendingChoice(null);
-        setChoiceDeadline(null);
-      });
-
-      // Choice system events
-      socket.on('player_choice_required', (choice: PlayerChoice) => {
-        setPendingChoice(choice);
-        const deadline = choice.timeoutMs ? Date.now() + choice.timeoutMs : null;
-        setChoiceDeadline(deadline);
-      });
-
-      socket.on('player_choice_canceled', (choiceId: string) => {
-        setPendingChoice(current =>
-          current && current.id === choiceId ? null : current
-        );
-        setChoiceDeadline(current => (current ? null : current));
-      });
-
-      socket.on('error', (payload: any) => {
-        const message = payload?.message || 'Game error';
-        console.error('Game socket error', payload);
-        setError(message);
-        setIsConnecting(false);
-      });
-
-      socket.on('disconnect', () => {
-        // Keep error state, but clear connection.
-        socketRef.current = null;
-      });
-    } catch (err: any) {
-      console.error('Failed to connect to game', err);
-      setError(err?.message || 'Failed to connect to game');
-      setIsConnecting(false);
-    }
-  }, [gameId, disconnect]);
+      }
+    },
+    [gameId, disconnect]
+  );
 
   // Clean up on unmount
   useEffect(() => {
@@ -246,7 +252,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         choiceId: choice.id,
         playerNumber: choice.playerNumber,
         choiceType: choice.type,
-        selectedOption
+        selectedOption,
       };
 
       socket.emit('player_choice_response', response);
@@ -271,12 +277,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const movePayload = {
         moveNumber: (gameState?.moveHistory.length ?? 0) + 1,
         position: JSON.stringify({ from: partialMove.from, to: partialMove.to }),
-        moveType: partialMove.type
+        moveType: partialMove.type,
       };
 
       socket.emit('player_move', {
         gameId,
-        move: movePayload
+        move: movePayload,
       });
     },
     [gameId, gameState]
@@ -294,14 +300,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     choiceDeadline,
     respondToChoice,
     submitMove,
-    validMoves
+    validMoves,
   };
 
-  return (
-    <GameContext.Provider value={value}>
-      {children}
-    </GameContext.Provider>
-  );
+  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
 
 export function useGame(): GameContextType {

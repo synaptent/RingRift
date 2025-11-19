@@ -7,9 +7,13 @@ import {
   Player,
   PlayerChoice,
   PlayerChoiceResponseFor,
-  CaptureDirectionChoice
+  CaptureDirectionChoice,
 } from '../../src/shared/types/game';
-import { ClientSandboxEngine, SandboxConfig, SandboxInteractionHandler } from '../../src/client/sandbox/ClientSandboxEngine';
+import {
+  ClientSandboxEngine,
+  SandboxConfig,
+  SandboxInteractionHandler,
+} from '../../src/client/sandbox/ClientSandboxEngine';
 import { GameEngine } from '../../src/server/game/GameEngine';
 import { findMatchingBackendMove, describeMovesListForLog } from './moveMatching';
 import { logAiDiagnostic } from './aiTestLogger';
@@ -70,7 +74,7 @@ function createDeterministicSandboxHandler(): SandboxInteractionHandler {
           choiceId: cd.id,
           playerNumber: cd.playerNumber,
           choiceType: cd.type,
-          selectedOption: selected
+          selectedOption: selected,
         } as PlayerChoiceResponseFor<TChoice>;
       }
 
@@ -79,9 +83,9 @@ function createDeterministicSandboxHandler(): SandboxInteractionHandler {
         choiceId: anyChoice.id,
         playerNumber: anyChoice.playerNumber,
         choiceType: anyChoice.type,
-        selectedOption
+        selectedOption,
       } as PlayerChoiceResponseFor<TChoice>;
-    }
+    },
   };
 
   return handler;
@@ -107,7 +111,7 @@ export async function runSandboxAITrace(
     const config: SandboxConfig = {
       boardType,
       numPlayers,
-      playerKinds: Array.from({ length: numPlayers }, () => 'ai')
+      playerKinds: Array.from({ length: numPlayers }, () => 'ai'),
     };
 
     const handler = createDeterministicSandboxHandler();
@@ -116,12 +120,22 @@ export async function runSandboxAITrace(
     const initialState = engine.getGameState();
 
     for (let step = 0; step < maxSteps; step++) {
+      console.log(`[runSandboxAITrace] Step ${step} start`);
       const state = engine.getGameState();
+      // DIAGNOSTIC: trace harness view of current player/phase before AI turn
+      console.log('[runSandboxAITrace] State before maybeRunAITurn', {
+        step,
+        currentPlayer: state.currentPlayer,
+        currentPhase: state.currentPhase,
+        gameStatus: state.gameStatus,
+        ringsInHand: state.players.find((p) => p.playerNumber === state.currentPlayer)?.ringsInHand,
+        stacksOnBoard: state.board.stacks.size,
+      });
       if (state.gameStatus !== 'active') {
         break;
       }
 
-      const currentPlayer = state.players.find(p => p.playerNumber === state.currentPlayer);
+      const currentPlayer = state.players.find((p) => p.playerNumber === state.currentPlayer);
       if (!currentPlayer || currentPlayer.type !== 'ai') {
         // Non-AI to move (should be rare in this harness). Just break; the
         // trace up to this point is still useful for debugging.
@@ -137,7 +151,7 @@ export async function runSandboxAITrace(
       const initialProgress = computeProgressSnapshot(initialState);
       const initialHash = hashGameState(initialState);
 
-      const firstEntries = finalState.history.slice(0, 5).map(entry => ({
+      const firstEntries = finalState.history.slice(0, 5).map((entry) => ({
         moveNumber: entry.moveNumber,
         actor: entry.actor,
         phaseBefore: entry.phaseBefore,
@@ -146,7 +160,7 @@ export async function runSandboxAITrace(
         statusAfter: entry.statusAfter,
         S_before: entry.progressBefore?.S,
         S_after: entry.progressAfter?.S,
-        notation: formatMove(entry.action, { boardType })
+        notation: formatMove(entry.action, { boardType }),
       }));
 
       logAiDiagnostic(
@@ -161,10 +175,10 @@ export async function runSandboxAITrace(
             currentPhase: initialState.currentPhase,
             gameStatus: initialState.gameStatus,
             S: initialProgress.S,
-            stateHash: initialHash
+            stateHash: initialHash,
           },
           historyLength: finalState.history.length,
-          firstEntries
+          firstEntries,
         },
         'trace-parity'
       );
@@ -172,7 +186,7 @@ export async function runSandboxAITrace(
 
     return {
       initialState,
-      entries: finalState.history
+      entries: finalState.history,
     };
   } finally {
     Math.random = originalRandom;
@@ -196,17 +210,20 @@ function createBackendEngineFromInitialState(initial: GameState): GameEngine {
   const players: Player[] = initial.players
     .slice()
     .sort((a, b) => a.playerNumber - b.playerNumber)
-    .map(p => ({
-      id: p.id || `trace-p${p.playerNumber}`,
-      username: p.username || `Player ${p.playerNumber}`,
-      type: p.type,
-      playerNumber: p.playerNumber,
-      isReady: true,
-      timeRemaining: timeControl.initialTime * 1000,
-      ringsInHand: boardConfig.ringsPerPlayer,
-      eliminatedRings: 0,
-      territorySpaces: 0
-    } as Player));
+    .map(
+      (p) =>
+        ({
+          id: p.id || `trace-p${p.playerNumber}`,
+          username: p.username || `Player ${p.playerNumber}`,
+          type: p.type,
+          playerNumber: p.playerNumber,
+          isReady: true,
+          timeRemaining: timeControl.initialTime * 1000,
+          ringsInHand: boardConfig.ringsPerPlayer,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        }) as Player
+    );
 
   const engine = new GameEngine('trace-backend-replay', boardType, players, timeControl, false);
   const started = engine.startGame();
@@ -217,32 +234,32 @@ function createBackendEngineFromInitialState(initial: GameState): GameEngine {
 }
 
 /**
- * Replay a GameTrace onto a fresh backend GameEngine constructed from the
- * trace's initial configuration. Returns the backend's own GameTrace
- * (initial state + history entries) so tests can compare S metrics,
- * state hashes, and summaries step-by-step against the original trace.
+ * Replay a sequence of moves onto a fresh backend GameEngine constructed from
+ * the provided initial state.
+ *
+ * This is useful for verifying backend behavior against a known sequence of
+ * moves (e.g. from a sandbox trace or a manual test case).
  */
-export async function replayTraceOnBackend(trace: GameTrace): Promise<GameTrace> {
-  const engine = createBackendEngineFromInitialState(trace.initialState);
-  const initialState = engine.getGameState();
+export async function replayMovesOnBackend(
+  initialState: GameState,
+  moves: Move[]
+): Promise<GameTrace> {
+  const engine = createBackendEngineFromInitialState(initialState);
+  const backendInitialState = engine.getGameState();
 
-  for (const entry of trace.entries) {
-    const sandboxMove = entry.action;
-
-    // Before attempting to match this sandbox move, advance the
-    // backend through any automatic bookkeeping phases so that we
-    // only ever compare against interactive phases (placement,
-    // movement, capture) where getValidMoves is meaningful.
+  for (const move of moves) {
+    // Before attempting to match this move, advance the backend through any
+    // automatic bookkeeping phases so that we only ever compare against
+    // interactive phases (placement, movement, capture) where getValidMoves
+    // is meaningful.
     engine.stepAutomaticPhasesForTesting();
 
     // For backend replay we always advance from the backend's current
-    // state, rather than assuming the trace indices line up perfectly
-    // with moveNumber. This keeps the adapter resilient to small
-    // differences in how moveNumber is assigned.
+    // state.
     const backendStateBefore = engine.getGameState();
     const backendMoves = engine.getValidMoves(backendStateBefore.currentPlayer);
 
-    const matchingBackendMove = findMatchingBackendMove(sandboxMove, backendMoves);
+    const matchingBackendMove = findMatchingBackendMove(move, backendMoves);
     if (!matchingBackendMove) {
       if (TRACE_DEBUG_ENABLED) {
         const backendProgress = computeProgressSnapshot(backendStateBefore);
@@ -253,14 +270,14 @@ export async function replayTraceOnBackend(trace: GameTrace): Promise<GameTrace>
           {
             sandboxMove: {
               raw: {
-                type: sandboxMove.type,
-                player: sandboxMove.player,
-                from: sandboxMove.from,
-                to: sandboxMove.to,
-                captureTarget: sandboxMove.captureTarget,
-                moveNumber: sandboxMove.moveNumber
+                type: move.type,
+                player: move.player,
+                from: move.from,
+                to: move.to,
+                captureTarget: move.captureTarget,
+                moveNumber: move.moveNumber,
               },
-              notation: formatMove(sandboxMove, { boardType: backendStateBefore.boardType })
+              notation: formatMove(move, { boardType: backendStateBefore.boardType }),
             },
             backendStateBefore: {
               boardType: backendStateBefore.boardType,
@@ -274,43 +291,54 @@ export async function replayTraceOnBackend(trace: GameTrace): Promise<GameTrace>
                 type: p.type,
                 ringsInHand: p.ringsInHand,
                 eliminatedRings: p.eliminatedRings,
-                territorySpaces: p.territorySpaces
+                territorySpaces: p.territorySpaces,
               })),
               validMovesCount: backendMoves.length,
               validMovesNotation: formatMoveList(backendMoves as Move[], {
-                boardType: backendStateBefore.boardType
-              })
-            }
+                boardType: backendStateBefore.boardType,
+              }),
+            },
           },
           'trace-parity'
         );
       }
 
       throw new Error(
-        `replayTraceOnBackend: no matching backend move found for sandbox move ` +
-          `moveNumber=${sandboxMove.moveNumber}, player=${sandboxMove.player}, ` +
-          `sandboxMove=${JSON.stringify({ type: sandboxMove.type, from: sandboxMove.from, to: sandboxMove.to, captureTarget: sandboxMove.captureTarget })}, ` +
+        `replayMovesOnBackend: no matching backend move found for move ` +
+          `moveNumber=${move.moveNumber}, player=${move.player}, ` +
+          `move=${JSON.stringify({ type: move.type, from: move.from, to: move.to, captureTarget: move.captureTarget })}, ` +
           `backendMovesCount=${backendMoves.length}\n` +
           describeMovesListForLog(backendMoves)
       );
     }
 
     const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
-    const result = await engine.makeMove(
-      payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-    );
+    const result = await engine.makeMove(payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>);
     if (!result.success) {
       throw new Error(
-        `replayTraceOnBackend: makeMove failed at backend moveNumber=${matchingBackendMove.moveNumber}: ${result.error}`
+        `replayMovesOnBackend: makeMove failed at backend moveNumber=${matchingBackendMove.moveNumber}: ${result.error}`
       );
     }
   }
 
   const finalState = engine.getGameState();
   return {
-    initialState,
-    entries: finalState.history
+    initialState: backendInitialState,
+    entries: finalState.history,
   };
+}
+
+/**
+ * Replay a GameTrace onto a fresh backend GameEngine constructed from the
+ * trace's initial configuration. Returns the backend's own GameTrace
+ * (initial state + history entries) so tests can compare S metrics,
+ * state hashes, and summaries step-by-step against the original trace.
+ */
+export async function replayTraceOnBackend(trace: GameTrace): Promise<GameTrace> {
+  return replayMovesOnBackend(
+    trace.initialState,
+    trace.entries.map((e) => e.action)
+  );
 }
 
 /**
@@ -328,7 +356,7 @@ function createSandboxEngineFromInitialState(initial: GameState): ClientSandboxE
     playerKinds: initial.players
       .slice()
       .sort((a, b) => a.playerNumber - b.playerNumber)
-      .map(p => p.type as 'human' | 'ai')
+      .map((p) => p.type as 'human' | 'ai'),
   };
 
   const handler = createDeterministicSandboxHandler();
@@ -353,6 +381,6 @@ export async function replayTraceOnSandbox(trace: GameTrace): Promise<GameTrace>
   const finalState = engine.getGameState();
   return {
     initialState,
-    entries: finalState.history
+    entries: finalState.history,
   };
 }

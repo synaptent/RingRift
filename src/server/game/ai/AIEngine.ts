@@ -3,15 +3,27 @@
  * Delegates to Python AI microservice for move generation
  */
 
-import { GameState, Move, AIProfile, AITacticType, AIControlMode, LineRewardChoice, RingEliminationChoice, RegionOrderChoice, positionToString } from '../../../shared/types/game';
+import {
+  GameState,
+  Move,
+  AIProfile,
+  AITacticType,
+  AIControlMode,
+  LineRewardChoice,
+  RingEliminationChoice,
+  RegionOrderChoice,
+  positionToString,
+} from '../../../shared/types/game';
 import { getAIServiceClient, AIType as ServiceAIType } from '../../services/AIServiceClient';
 import { logger } from '../../utils/logger';
+import { BoardManager } from '../BoardManager';
+import { RuleEngine } from '../RuleEngine';
 
 export enum AIType {
   RANDOM = 'random',
   HEURISTIC = 'heuristic',
   MINIMAX = 'minimax',
-  MCTS = 'mcts'
+  MCTS = 'mcts',
 }
 
 export interface AIConfig {
@@ -46,16 +58,12 @@ export class AIEngine {
    * @param difficulty - Difficulty level (1-10)
    * @param type - AI type (optional, auto-selected based on difficulty if not provided)
    */
-  createAI(
-    playerNumber: number,
-    difficulty: number = 5,
-    type?: AIType
-  ): void {
+  createAI(playerNumber: number, difficulty: number = 5, type?: AIType): void {
     // Backwards-compatible wrapper around createAIFromProfile.
     const profile: AIProfile = {
       difficulty,
       mode: 'service',
-      ...(type && { aiType: this.mapAITypeToTactic(type) })
+      ...(type && { aiType: this.mapAITypeToTactic(type) }),
     };
 
     this.createAIFromProfile(playerNumber, profile);
@@ -82,7 +90,7 @@ export class AIEngine {
       ...basePreset,
       difficulty,
       aiType,
-      mode: profile.mode ?? 'service'
+      mode: profile.mode ?? 'service',
     };
 
     this.aiConfigs.set(playerNumber, config);
@@ -91,7 +99,7 @@ export class AIEngine {
       playerNumber,
       difficulty,
       aiType,
-      mode: config.mode
+      mode: config.mode,
     });
   }
 
@@ -117,7 +125,7 @@ export class AIEngine {
    */
   async getAIMove(playerNumber: number, gameState: GameState): Promise<Move | null> {
     const config = this.aiConfigs.get(playerNumber);
-    
+
     if (!config) {
       throw new Error(`No AI configuration found for player number ${playerNumber}`);
     }
@@ -140,16 +148,81 @@ export class AIEngine {
         moveType: normalizedMove?.type,
         evaluation: response.evaluation,
         thinkingTime: response.thinking_time_ms,
-        aiType: response.ai_type
+        aiType: response.ai_type,
       });
 
       return normalizedMove;
     } catch (error) {
-      logger.error('Failed to get AI move from service', {
+      logger.error('Failed to get AI move from service, falling back to local heuristic', {
         playerNumber,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
-      throw error;
+
+      // Fallback to local heuristic
+      return this.getLocalAIMove(playerNumber, gameState);
+    }
+  }
+
+  /**
+   * Generate a move using local heuristics when the AI service is unavailable.
+   * Uses RuleEngine to find valid moves and selects one randomly.
+   */
+  private getLocalAIMove(playerNumber: number, gameState: GameState): Move | null {
+    try {
+      const boardManager = new BoardManager(gameState.boardType);
+      const ruleEngine = new RuleEngine(boardManager, gameState.boardType);
+
+      let validMoves = ruleEngine.getValidMoves(gameState);
+
+      // Enforce "must move placed stack" rule if applicable, since RuleEngine
+      // doesn't track per-turn state but GameEngine does. We infer it from history.
+      if (gameState.currentPhase === 'movement' || gameState.currentPhase === 'capture') {
+        const lastMove = gameState.moveHistory[gameState.moveHistory.length - 1];
+        // If the last move was a placement by the current player in the same turn sequence...
+        // Actually, simpler: if we are in movement/capture, and the last move was 'place_ring',
+        // then we must move that stack.
+        if (
+          lastMove &&
+          lastMove.type === 'place_ring' &&
+          lastMove.player === gameState.currentPlayer &&
+          lastMove.to
+        ) {
+          const placedKey = positionToString(lastMove.to);
+          validMoves = validMoves.filter((m) => {
+            // Only filter movement/capture moves
+            if (
+              m.type === 'move_stack' ||
+              m.type === 'move_ring' ||
+              m.type === 'overtaking_capture' ||
+              m.type === 'build_stack'
+            ) {
+              return m.from && positionToString(m.from) === placedKey;
+            }
+            return true;
+          });
+        }
+      }
+
+      if (validMoves.length === 0) {
+        return null;
+      }
+
+      // Simple random selection for fallback
+      const randomIndex = Math.floor(Math.random() * validMoves.length);
+      const selectedMove = validMoves[randomIndex];
+
+      logger.info('Local AI fallback move generated', {
+        playerNumber,
+        moveType: selectedMove.type,
+      });
+
+      return selectedMove;
+    } catch (error) {
+      logger.error('Failed to generate local AI move', {
+        playerNumber,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
     }
   }
 
@@ -186,7 +259,7 @@ export class AIEngine {
 
     // Normalise any historical 'place' type to the canonical
     // 'place_ring'.
-    if (normalized.type === 'place' as any) {
+    if (normalized.type === ('place' as any)) {
       normalized.type = 'place_ring';
     }
 
@@ -194,7 +267,7 @@ export class AIEngine {
       return normalized;
     }
 
-    const playerState = gameState.players.find(p => p.playerNumber === playerNumber);
+    const playerState = gameState.players.find((p) => p.playerNumber === playerNumber);
     const ringsInHand = playerState?.ringsInHand ?? 0;
 
     if (!normalized.to || ringsInHand <= 0) {
@@ -244,27 +317,24 @@ export class AIEngine {
    */
   async evaluatePosition(playerNumber: number, gameState: GameState): Promise<number> {
     const config = this.aiConfigs.get(playerNumber);
-    
+
     if (!config) {
       throw new Error(`No AI configuration found for player number ${playerNumber}`);
     }
 
     try {
-      const response = await getAIServiceClient().evaluatePosition(
-        gameState,
-        playerNumber
-      );
+      const response = await getAIServiceClient().evaluatePosition(gameState, playerNumber);
 
       logger.debug('Position evaluated', {
         playerNumber,
-        score: response.score
+        score: response.score,
       });
 
       return response.score;
     } catch (error) {
       logger.error('Failed to evaluate position from service', {
         playerNumber,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }
@@ -301,14 +371,14 @@ export class AIEngine {
         playerNumber,
         difficulty: response.difficulty,
         aiType: response.aiType,
-        selectedOption: response.selectedOption
+        selectedOption: response.selectedOption,
       });
 
       return response.selectedOption;
     } catch (error) {
       logger.error('Failed to get line_reward_option choice from service', {
         playerNumber,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }
@@ -347,14 +417,14 @@ export class AIEngine {
         playerNumber,
         difficulty: response.difficulty,
         aiType: response.aiType,
-        selectedOption: response.selectedOption
+        selectedOption: response.selectedOption,
       });
 
       return response.selectedOption;
     } catch (error) {
       logger.error('Failed to get ring_elimination choice from service', {
         playerNumber,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }
@@ -393,14 +463,14 @@ export class AIEngine {
         playerNumber,
         difficulty: response.difficulty,
         aiType: response.aiType,
-        selectedOption: response.selectedOption
+        selectedOption: response.selectedOption,
       });
 
       return response.selectedOption;
     } catch (error) {
       logger.error('Failed to get region_order choice from service', {
         playerNumber,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       throw error;
     }
@@ -524,7 +594,9 @@ export class AIEngine {
   /**
    * Get recommended difficulty for player skill level
    */
-  static getRecommendedDifficulty(skillLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert'): number {
+  static getRecommendedDifficulty(
+    skillLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert'
+  ): number {
     const recommendations = {
       beginner: 2, // Easy
       intermediate: 4, // Medium

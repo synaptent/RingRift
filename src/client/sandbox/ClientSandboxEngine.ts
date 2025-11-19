@@ -15,7 +15,7 @@ import {
   positionToString,
   LineInfo,
   RegionOrderChoice,
-  GameHistoryEntry
+  GameHistoryEntry,
 } from '../../shared/types/game';
 import {
   calculateCapHeight,
@@ -28,33 +28,36 @@ import {
   hasAnyLegalMoveOrCaptureFromOnBoard,
   computeProgressSnapshot,
   summarizeBoard,
-  hashGameState
+  hashGameState,
 } from '../../shared/engine/core';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { processLinesForCurrentPlayer as processLinesForCurrentPlayerHelper } from './sandboxLinesEngine';
 import {
   enumerateSimpleMovementLandings,
   applyMarkerEffectsAlongPathOnBoard,
-  MarkerPathHelpers
+  MarkerPathHelpers,
 } from './sandboxMovement';
 import {
   enumerateCaptureSegmentsFromBoard,
   applyCaptureSegmentOnBoard,
   CaptureBoardAdapters,
-  CaptureApplyAdapters
+  CaptureApplyAdapters,
 } from './sandboxCaptures';
 import { forceEliminateCapOnBoard } from './sandboxElimination';
 import {
   findDisconnectedRegionsOnBoard,
-  processDisconnectedRegionOnBoard
+  processDisconnectedRegionOnBoard,
 } from './sandboxTerritory';
-import { processDisconnectedRegionsForCurrentPlayerEngine, TerritoryInteractionHandler } from './sandboxTerritoryEngine';
+import {
+  processDisconnectedRegionsForCurrentPlayerEngine,
+  TerritoryInteractionHandler,
+} from './sandboxTerritoryEngine';
 import { checkSandboxVictory } from './sandboxVictory';
 import {
   SandboxTurnState,
   SandboxTurnHooks,
   startTurnForCurrentPlayerSandbox,
-  maybeProcessForcedEliminationForCurrentPlayerSandbox
+  maybeProcessForcedEliminationForCurrentPlayerSandbox,
 } from './sandboxTurnEngine';
 
 /**
@@ -143,12 +146,12 @@ export class ClientSandboxEngine {
       stateHashBefore: hashGameState(before),
       stateHashAfter: hashGameState(after),
       boardBeforeSummary: summarizeBoard(before.board),
-      boardAfterSummary: summarizeBoard(after.board)
+      boardAfterSummary: summarizeBoard(after.board),
     };
 
     this.gameState = {
       ...this.gameState,
-      history: [...this.gameState.history, entry]
+      history: [...this.gameState.history, entry],
     };
   }
 
@@ -170,7 +173,7 @@ export class ClientSandboxEngine {
         aiDifficulty: kind === 'ai' ? 5 : undefined,
         ringsInHand: BOARD_CONFIGS[config.boardType].ringsPerPlayer,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       };
     });
 
@@ -189,7 +192,7 @@ export class ClientSandboxEngine {
       timeControl: {
         type: 'rapid',
         initialTime: 600,
-        increment: 0
+        increment: 0,
       },
       spectators: [],
       gameStatus: 'active',
@@ -200,7 +203,7 @@ export class ClientSandboxEngine {
       totalRingsInPlay: boardConfig.ringsPerPlayer * config.numPlayers,
       totalRingsEliminated: 0,
       victoryThreshold: Math.floor((boardConfig.ringsPerPlayer * config.numPlayers) / 2) + 1,
-      territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1
+      territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
     };
   }
 
@@ -248,7 +251,7 @@ export class ClientSandboxEngine {
    * flow in GamePage, but targeting the local GameState instead of the
    * WebSocket server.
    */
-  public handleHumanCellClick(pos: Position): void {
+  public async handleHumanCellClick(pos: Position): Promise<void> {
     if (this.gameState.gameStatus !== 'active') {
       return;
     }
@@ -256,7 +259,7 @@ export class ClientSandboxEngine {
     if (this.gameState.currentPhase === 'ring_placement') {
       this.handleRingPlacementClick(pos);
     } else if (this.gameState.currentPhase === 'movement') {
-      this.handleMovementClick(pos);
+      await this.handleMovementClick(pos);
     }
   }
 
@@ -286,7 +289,7 @@ export class ClientSandboxEngine {
 
     try {
       const current = this.gameState.players.find(
-        p => p.playerNumber === this.gameState.currentPlayer
+        (p) => p.playerNumber === this.gameState.currentPlayer
       );
       if (!current || current.type !== 'ai' || this.gameState.gameStatus !== 'active') {
         return;
@@ -301,14 +304,13 @@ export class ClientSandboxEngine {
         const placementCandidates = this.enumerateLegalRingPlacements(current.playerNumber);
 
         if (placementCandidates.length === 0) {
-          // No legal placement that satisfies the sandbox no-dead-placement
-          // check. Mirror backend skip_placement semantics by transitioning
+          // No legal placement
           // this player directly into movement; a subsequent AI tick for this
           // player will attempt movement or forced elimination instead of
           // stalling in placement.
           this.gameState = {
             ...this.gameState,
-            currentPhase: 'movement'
+            currentPhase: 'movement',
           };
 
           // Record an explicit skip_placement action so GameTrace entries
@@ -325,7 +327,7 @@ export class ClientSandboxEngine {
             to: { x: 0, y: 0 },
             timestamp: new Date(),
             thinkTime: 0,
-            moveNumber: this.gameState.history.length + 1
+            moveNumber: this.gameState.history.length + 1,
           } as Move;
 
           return;
@@ -362,7 +364,7 @@ export class ClientSandboxEngine {
             placementCount: requestedCount,
             timestamp: new Date(),
             thinkTime: 0,
-            moveNumber: this.gameState.history.length + 1
+            moveNumber: this.gameState.history.length + 1,
           } as Move;
         }
 
@@ -383,7 +385,12 @@ export class ClientSandboxEngine {
         landing: Position;
       }> = [];
 
-      const stacks = this.getPlayerStacks(playerNumber, this.gameState.board);
+      let stacks = this.getPlayerStacks(playerNumber, this.gameState.board);
+
+      // If a placement occurred this turn, we must move the placed stack.
+      if (this._mustMoveFromStackKey) {
+        stacks = stacks.filter((s) => positionToString(s.position) === this._mustMoveFromStackKey);
+      }
 
       for (const stack of stacks) {
         const segmentsFromStack = this.enumerateCaptureSegmentsFrom(stack.position, playerNumber);
@@ -393,7 +400,25 @@ export class ClientSandboxEngine {
       }
 
       if (captureSegments.length > 0) {
-        const seg = captureSegments[Math.floor(Math.random() * captureSegments.length)];
+        // Choose a deterministic capture segment by lexicographically smallest
+        // landing position. This mirrors the capture_direction test handler
+        // and keeps AI traces reproducible for parity/debug tooling.
+        const seg = captureSegments.reduce((best, current) => {
+          const bx = best.landing.x;
+          const by = best.landing.y;
+          const bz = best.landing.z !== undefined ? best.landing.z : 0;
+          const cx = current.landing.x;
+          const cy = current.landing.y;
+          const cz = current.landing.z !== undefined ? current.landing.z : 0;
+
+          if (cx < bx) return current;
+          if (cx > bx) return best;
+          if (cy < by) return current;
+          if (cy > by) return best;
+          if (cz < bz) return current;
+          if (cz > bz) return best;
+          return best;
+        }, captureSegments[0]);
 
         await this.performCaptureChain(seg.from, seg.target, seg.landing, playerNumber);
 
@@ -407,7 +432,7 @@ export class ClientSandboxEngine {
           to: seg.landing,
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: this.gameState.history.length + 1
+          moveNumber: this.gameState.history.length + 1,
         } as Move;
 
         return;
@@ -426,7 +451,9 @@ export class ClientSandboxEngine {
       const choice = landingCandidates[Math.floor(Math.random() * landingCandidates.length)];
       const fromPos = this.stringToPositionLocal(choice.fromKey);
 
-      this.handleMovementClick(choice.to);
+      // Simulate the two-click interaction: select source, then click destination.
+      this._selectedStackKey = choice.fromKey;
+      await this.handleMovementClick(choice.to);
 
       // Record a canonical movement summary for debug harnesses.
       this._lastAIMove = {
@@ -437,7 +464,7 @@ export class ClientSandboxEngine {
         to: choice.to,
         timestamp: new Date(),
         thinkTime: 0,
-        moveNumber: this.gameState.history.length + 1
+        moveNumber: this.gameState.history.length + 1,
       } as Move;
     } finally {
       const afterStateForHistory = this.getGameState();
@@ -451,6 +478,24 @@ export class ClientSandboxEngine {
         this.appendHistoryEntry(beforeStateForHistory, this._lastAIMove);
       }
     }
+  }
+  /**
+   * Get all valid landing positions for the current player from the given
+   * source position. This is used by the UI to highlight valid targets.
+   */
+  public getValidLandingPositionsForCurrentPlayer(from: Position): Position[] {
+    const playerNumber = this.gameState.currentPlayer;
+    const fromKey = positionToString(from);
+
+    // 1. Check for capture segments
+    const captureSegments = this.enumerateCaptureSegmentsFrom(from, playerNumber);
+    if (captureSegments.length > 0) {
+      return captureSegments.map((seg) => seg.landing);
+    }
+
+    // 2. Check for simple movement
+    const simpleMoves = this.enumerateSimpleMovementLandings(playerNumber);
+    return simpleMoves.filter((m) => m.fromKey === fromKey).map((m) => m.to);
   }
 
   /**
@@ -482,11 +527,7 @@ export class ClientSandboxEngine {
           // placement on existing stacks.
           if (board.collapsedSpaces.has(key)) continue;
 
-          const hypothetical = this.createHypotheticalBoardWithPlacement(
-            board,
-            pos,
-            playerNumber
-          );
+          const hypothetical = this.createHypotheticalBoardWithPlacement(board, pos, playerNumber);
 
           if (this.hasAnyLegalMoveOrCaptureFrom(pos, playerNumber, hypothetical)) {
             results.push(pos);
@@ -505,11 +546,7 @@ export class ClientSandboxEngine {
 
           if (board.collapsedSpaces.has(key)) continue;
 
-          const hypothetical = this.createHypotheticalBoardWithPlacement(
-            board,
-            pos,
-            playerNumber
-          );
+          const hypothetical = this.createHypotheticalBoardWithPlacement(board, pos, playerNumber);
 
           if (this.hasAnyLegalMoveOrCaptureFrom(pos, playerNumber, hypothetical)) {
             results.push(pos);
@@ -550,7 +587,7 @@ export class ClientSandboxEngine {
       formedLines: [],
       eliminatedRings: {},
       size: config.size,
-      type: boardType
+      type: boardType,
     };
   }
 
@@ -597,34 +634,49 @@ export class ClientSandboxEngine {
     return board.collapsedSpaces.has(key);
   }
 
-  private getMarkerOwner(position: Position, board: BoardState = this.gameState.board): number | undefined {
+  private getMarkerOwner(
+    position: Position,
+    board: BoardState = this.gameState.board
+  ): number | undefined {
     const key = positionToString(position);
     const marker = board.markers.get(key);
     return marker?.player;
   }
 
-  private setMarker(position: Position, playerNumber: number, board: BoardState = this.gameState.board): void {
+  private setMarker(
+    position: Position,
+    playerNumber: number,
+    board: BoardState = this.gameState.board
+  ): void {
     const key = positionToString(position);
     board.markers.set(key, {
       player: playerNumber,
       position,
-      type: 'regular'
+      type: 'regular',
     });
   }
 
-  private flipMarker(position: Position, playerNumber: number, board: BoardState = this.gameState.board): void {
+  private flipMarker(
+    position: Position,
+    playerNumber: number,
+    board: BoardState = this.gameState.board
+  ): void {
     const key = positionToString(position);
     const existing = board.markers.get(key);
     if (existing && existing.player !== playerNumber) {
       board.markers.set(key, {
         player: playerNumber,
         position,
-        type: 'regular'
+        type: 'regular',
       });
     }
   }
 
-  private collapseMarker(position: Position, playerNumber: number, board: BoardState = this.gameState.board): void {
+  private collapseMarker(
+    position: Position,
+    playerNumber: number,
+    board: BoardState = this.gameState.board
+  ): void {
     const key = positionToString(position);
     board.markers.delete(key);
     board.collapsedSpaces.set(key, playerNumber);
@@ -662,7 +714,7 @@ export class ClientSandboxEngine {
     }
 
     const territoryGain = collapsedKeys.size;
-    const updatedPlayers = this.gameState.players.map(p =>
+    const updatedPlayers = this.gameState.players.map((p) =>
       p.playerNumber === playerNumber
         ? { ...p, territorySpaces: p.territorySpaces + territoryGain }
         : p
@@ -674,9 +726,9 @@ export class ClientSandboxEngine {
         ...board,
         markers: new Map(board.markers),
         stacks: new Map(board.stacks),
-        collapsedSpaces: new Map(board.collapsedSpaces)
+        collapsedSpaces: new Map(board.collapsedSpaces),
       },
-      players: updatedPlayers
+      players: updatedPlayers,
     };
   }
 
@@ -694,7 +746,7 @@ export class ClientSandboxEngine {
     const helpers: MarkerPathHelpers = {
       setMarker: (pos, player, b) => this.setMarker(pos, player, b),
       collapseMarker: (pos, player, b) => this.collapseMarker(pos, player, b),
-      flipMarker: (pos, player, b) => this.flipMarker(pos, player, b)
+      flipMarker: (pos, player, b) => this.flipMarker(pos, player, b),
     };
 
     applyMarkerEffectsAlongPathOnBoard(board, from, to, playerNumber, helpers);
@@ -719,7 +771,7 @@ export class ClientSandboxEngine {
     }
 
     const player = this.gameState.players.find(
-      p => p.playerNumber === this.gameState.currentPlayer
+      (p) => p.playerNumber === this.gameState.currentPlayer
     );
     if (!player || player.ringsInHand <= 0) {
       return;
@@ -732,11 +784,7 @@ export class ClientSandboxEngine {
       this.gameState.currentPlayer
     );
     if (
-      !this.hasAnyLegalMoveOrCaptureFrom(
-        position,
-        this.gameState.currentPlayer,
-        hypotheticalBoard
-      )
+      !this.hasAnyLegalMoveOrCaptureFrom(position, this.gameState.currentPlayer, hypotheticalBoard)
     ) {
       return;
     }
@@ -747,7 +795,7 @@ export class ClientSandboxEngine {
       rings,
       stackHeight: rings.length,
       capHeight: calculateCapHeight(rings),
-      controllingPlayer: this.gameState.currentPlayer
+      controllingPlayer: this.gameState.currentPlayer,
     };
 
     const nextStacks = new Map(board.stacks);
@@ -757,19 +805,19 @@ export class ClientSandboxEngine {
       ...this.gameState,
       board: {
         ...board,
-        stacks: nextStacks
+        stacks: nextStacks,
       },
-      players: this.gameState.players.map(p =>
+      players: this.gameState.players.map((p) =>
         p.playerNumber === this.gameState.currentPlayer
           ? { ...p, ringsInHand: Math.max(0, p.ringsInHand - 1) }
           : p
-      )
+      ),
     };
 
     this.advanceAfterPlacement();
   }
 
-  private handleMovementClick(position: Position): void {
+  private async handleMovementClick(position: Position): Promise<void> {
     const board = this.gameState.board;
     const key = positionToString(position);
     const stackAtPos = board.stacks.get(key);
@@ -838,10 +886,10 @@ export class ClientSandboxEngine {
           return {
             controllingPlayer: stack.controllingPlayer,
             capHeight: stack.capHeight,
-            stackHeight: stack.stackHeight
+            stackHeight: stack.stackHeight,
           };
         },
-        getMarkerOwner: (pos: Position) => this.getMarkerOwner(pos, board)
+        getMarkerOwner: (pos: Position) => this.getMarkerOwner(pos, board),
       };
 
       const isValid = validateCaptureSegmentOnBoard(
@@ -881,23 +929,89 @@ export class ClientSandboxEngine {
 
     const nextStacks = new Map(board.stacks);
     nextStacks.delete(fromKey);
-    nextStacks.set(key, {
-      ...movingStack,
-      position
-    });
+
+    const existingDest = nextStacks.get(key);
+    if (existingDest && existingDest.rings.length > 0) {
+      // Merge stacks when landing on an existing stack. The resulting
+      // cap height is recalculated from the combined rings so that
+      // same-color stacks (e.g. H2 C2) are represented correctly in
+      // both sandbox logic and BoardView.
+      const mergedRings = [...existingDest.rings, ...movingStack.rings];
+      const mergedStack: RingStack = {
+        position,
+        rings: mergedRings,
+        stackHeight: mergedRings.length,
+        capHeight: calculateCapHeight(mergedRings),
+        controllingPlayer: mergedRings[0],
+      };
+      nextStacks.set(key, mergedStack);
+    } else {
+      // Move to an empty position.
+      nextStacks.set(key, {
+        ...movingStack,
+        position,
+      });
+    }
+
+    // Remember whether this movement lands on an existing same-color marker
+    // before marker processing removes it. This mirrors the backend
+    // GameEngine behaviour where landing on your own marker immediately
+    // eliminates your top ring (Section 8.2 / 8.3.1).
+    const landingMarkerOwner = this.getMarkerOwner(position, board);
+    const landedOnOwnMarker = landingMarkerOwner === movingStack.controllingPlayer;
 
     this.applyMarkerEffectsAlongPath(fromPos, position, movingStack.controllingPlayer);
+
+    let stacksAfterMove: Map<string, RingStack> = nextStacks;
+    let eliminatedRingsMap = this.gameState.board.eliminatedRings;
+    let playersAfterMove = this.gameState.players;
+    let totalRingsEliminatedDelta = 0;
+
+    if (landedOnOwnMarker) {
+      const stackAtLanding = stacksAfterMove.get(key);
+      if (stackAtLanding && stackAtLanding.stackHeight > 0) {
+        const [, ...remainingRings] = stackAtLanding.rings;
+
+        stacksAfterMove = new Map(stacksAfterMove);
+
+        if (remainingRings.length > 0) {
+          const newStack: RingStack = {
+            ...stackAtLanding,
+            rings: remainingRings,
+            stackHeight: remainingRings.length,
+            capHeight: calculateCapHeight(remainingRings),
+            controllingPlayer: remainingRings[0],
+          };
+          stacksAfterMove.set(key, newStack);
+        } else {
+          stacksAfterMove.delete(key);
+        }
+
+        const creditedPlayer = movingStack.controllingPlayer;
+        eliminatedRingsMap = {
+          ...eliminatedRingsMap,
+          [creditedPlayer]: (eliminatedRingsMap[creditedPlayer] || 0) + 1,
+        };
+        playersAfterMove = playersAfterMove.map((p) =>
+          p.playerNumber === creditedPlayer ? { ...p, eliminatedRings: p.eliminatedRings + 1 } : p
+        );
+        totalRingsEliminatedDelta = 1;
+      }
+    }
 
     this.gameState = {
       ...this.gameState,
       board: {
         ...board,
-        stacks: nextStacks
-      }
+        stacks: stacksAfterMove,
+        eliminatedRings: eliminatedRingsMap,
+      },
+      players: playersAfterMove,
+      totalRingsEliminated: this.gameState.totalRingsEliminated + totalRingsEliminatedDelta,
     };
 
     this._selectedStackKey = undefined;
-    this.advanceAfterMovement();
+    await this.advanceAfterMovement();
   }
 
   /**
@@ -906,13 +1020,13 @@ export class ClientSandboxEngine {
    * hand are exhausted, then move to the movement phase.
    */
   private advanceAfterPlacement(): void {
-    const allRingsExhausted = this.gameState.players.every(p => p.ringsInHand <= 0);
+    const allRingsExhausted = this.gameState.players.every((p) => p.ringsInHand <= 0);
     const nextPlayer = this.getNextPlayerNumber(this.gameState.currentPlayer);
 
     this.gameState = {
       ...this.gameState,
       currentPlayer: nextPlayer,
-      currentPhase: allRingsExhausted ? 'movement' : 'ring_placement'
+      currentPhase: allRingsExhausted ? 'movement' : 'ring_placement',
     };
 
     // At the start of the next player's turn, if they are completely blocked,
@@ -939,7 +1053,7 @@ export class ClientSandboxEngine {
     const nextPlayer = this.getNextPlayerNumber(this.gameState.currentPlayer);
     this.gameState = {
       ...this.gameState,
-      currentPlayer: nextPlayer
+      currentPlayer: nextPlayer,
     };
 
     this.startTurnForCurrentPlayer();
@@ -954,7 +1068,7 @@ export class ClientSandboxEngine {
   private async processDisconnectedRegionsForCurrentPlayer(): Promise<void> {
     const handler: TerritoryInteractionHandler | null = this.interactionHandler
       ? {
-          requestChoice: (choice: any) => this.interactionHandler.requestChoice(choice)
+          requestChoice: (choice: any) => this.interactionHandler.requestChoice(choice),
         }
       : null;
 
@@ -1003,7 +1117,7 @@ export class ClientSandboxEngine {
     this.gameState = {
       ...this.gameState,
       gameStatus: 'completed',
-      winner: result.winner
+      winner: result.winner,
     };
   }
 
@@ -1037,7 +1151,7 @@ export class ClientSandboxEngine {
       collapsedSpaces: new Map(board.collapsedSpaces),
       territories: new Map(board.territories),
       formedLines: [...board.formedLines],
-      eliminatedRings: { ...board.eliminatedRings }
+      eliminatedRings: { ...board.eliminatedRings },
     };
 
     const key = positionToString(position);
@@ -1058,7 +1172,7 @@ export class ClientSandboxEngine {
         rings,
         stackHeight: rings.length,
         capHeight: calculateCapHeight(rings),
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       hypothetical.stacks.set(key, newStack);
     } else {
@@ -1068,7 +1182,7 @@ export class ClientSandboxEngine {
         rings,
         stackHeight: rings.length,
         capHeight: calculateCapHeight(rings),
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       hypothetical.stacks.set(key, newStack);
     }
@@ -1095,24 +1209,22 @@ export class ClientSandboxEngine {
         return {
           controllingPlayer: stack.controllingPlayer,
           capHeight: stack.capHeight,
-          stackHeight: stack.stackHeight
+          stackHeight: stack.stackHeight,
         };
       },
-      getMarkerOwner: (pos: Position) => this.getMarkerOwner(pos, board)
+      getMarkerOwner: (pos: Position) => this.getMarkerOwner(pos, board),
     };
 
-    return hasAnyLegalMoveOrCaptureFromOnBoard(
-      this.gameState.boardType,
-      from,
-      playerNumber,
-      view
-    );
+    return hasAnyLegalMoveOrCaptureFromOnBoard(this.gameState.boardType, from, playerNumber, view);
   }
 
   /**
    * Get all stacks controlled by the specified player on the given board.
    */
-  private getPlayerStacks(playerNumber: number, board: BoardState = this.gameState.board): RingStack[] {
+  private getPlayerStacks(
+    playerNumber: number,
+    board: BoardState = this.gameState.board
+  ): RingStack[] {
     const stacks: RingStack[] = [];
     for (const stack of board.stacks.values()) {
       if (stack.controllingPlayer === playerNumber) {
@@ -1133,8 +1245,7 @@ export class ClientSandboxEngine {
         this.enumerateLegalRingPlacements(playerNumber),
       hasAnyLegalMoveOrCaptureFrom: (state, from, playerNumber, board) =>
         this.hasAnyLegalMoveOrCaptureFrom(from, playerNumber, board),
-      getPlayerStacks: (state, playerNumber, board) =>
-        this.getPlayerStacks(playerNumber, board),
+      getPlayerStacks: (state, playerNumber, board) => this.getPlayerStacks(playerNumber, board),
       forceEliminateCap: (state, playerNumber) => {
         // forceEliminateCap mutates this.gameState; adapt to functional
         // style by operating on a local copy when needed.
@@ -1145,12 +1256,12 @@ export class ClientSandboxEngine {
         this.gameState = state;
         this.checkAndApplyVictory();
         return this.gameState;
-      }
+      },
     };
 
     const turnStateBefore: SandboxTurnState = {
       hasPlacedThisTurn: this._hasPlacedThisTurn,
-      mustMoveFromStackKey: this._mustMoveFromStackKey
+      mustMoveFromStackKey: this._mustMoveFromStackKey,
     };
 
     const { state, turnState } = startTurnForCurrentPlayerSandbox(
@@ -1175,8 +1286,7 @@ export class ClientSandboxEngine {
         this.enumerateLegalRingPlacements(playerNumber),
       hasAnyLegalMoveOrCaptureFrom: (state, from, playerNumber, board) =>
         this.hasAnyLegalMoveOrCaptureFrom(from, playerNumber, board),
-      getPlayerStacks: (state, playerNumber, board) =>
-        this.getPlayerStacks(playerNumber, board),
+      getPlayerStacks: (state, playerNumber, board) => this.getPlayerStacks(playerNumber, board),
       forceEliminateCap: (state, playerNumber) => {
         this.forceEliminateCap(playerNumber);
         return this.gameState;
@@ -1185,12 +1295,12 @@ export class ClientSandboxEngine {
         this.gameState = state;
         this.checkAndApplyVictory();
         return this.gameState;
-      }
+      },
     };
 
     const turnStateBefore: SandboxTurnState = {
       hasPlacedThisTurn: this._hasPlacedThisTurn,
-      mustMoveFromStackKey: this._mustMoveFromStackKey
+      mustMoveFromStackKey: this._mustMoveFromStackKey,
     };
 
     const result = maybeProcessForcedEliminationForCurrentPlayerSandbox(
@@ -1223,14 +1333,13 @@ export class ClientSandboxEngine {
       ...this.gameState,
       board: result.board,
       players: result.players,
-      totalRingsEliminated:
-        this.gameState.totalRingsEliminated + result.totalRingsEliminatedDelta
+      totalRingsEliminated: this.gameState.totalRingsEliminated + result.totalRingsEliminatedDelta,
     };
   }
 
   private getNextPlayerNumber(current: number): number {
     const players = this.gameState.players;
-    const idx = players.findIndex(p => p.playerNumber === current);
+    const idx = players.findIndex((p) => p.playerNumber === current);
     const nextIdx = (idx + 1) % players.length;
     return players[nextIdx].playerNumber;
   }
@@ -1278,16 +1387,16 @@ export class ClientSandboxEngine {
           playerNumber,
           type: 'capture_direction' as const,
           prompt: 'Select capture direction',
-          options: options.map(opt => ({
+          options: options.map((opt) => ({
             targetPosition: opt.target,
             landingPosition: opt.landing,
             capturedCapHeight:
-              this.gameState.board.stacks.get(positionToString(opt.target))?.capHeight ?? 0
-          }))
+              this.gameState.board.stacks.get(positionToString(opt.target))?.capHeight ?? 0,
+          })),
         };
 
         const response = await this.interactionHandler.requestChoice(choice);
-        const selected = options.find(opt => {
+        const selected = options.find((opt) => {
           const o = (response as any).selectedOption;
           return (
             o &&
@@ -1326,7 +1435,7 @@ export class ClientSandboxEngine {
     const adapters: CaptureBoardAdapters = {
       isValidPosition: (pos: Position) => this.isValidPosition(pos),
       isCollapsedSpace: (pos: Position, b: BoardState) => this.isCollapsedSpace(pos, b),
-      getMarkerOwner: (pos: Position, b: BoardState) => this.getMarkerOwner(pos, b)
+      getMarkerOwner: (pos: Position, b: BoardState) => this.getMarkerOwner(pos, b),
     };
 
     return enumerateCaptureSegmentsFromBoard(
@@ -1350,20 +1459,67 @@ export class ClientSandboxEngine {
   ): void {
     const board = this.gameState.board;
 
+    // Detect whether we are about to land on an existing same-color marker
+    // before marker processing removes it. This mirrors the backend
+    // GameEngine behaviour where landing on your own marker during an
+    // overtaking capture immediately eliminates your top ring
+    // (Section 8.2 / 8.3.1).
+    const landingMarkerOwner = this.getMarkerOwner(landing, board);
+    const landedOnOwnMarker = landingMarkerOwner === playerNumber;
+
     const adapters: CaptureApplyAdapters = {
-      applyMarkerEffectsAlongPath: (f, t, player) => this.applyMarkerEffectsAlongPath(f, t, player)
+      applyMarkerEffectsAlongPath: (f, t, player) => this.applyMarkerEffectsAlongPath(f, t, player),
     };
 
     applyCaptureSegmentOnBoard(board, from, target, landing, playerNumber, adapters);
+
+    const landingKey = positionToString(landing);
+    const stacksAfterCapture: Map<string, RingStack> = new Map(board.stacks);
+    let eliminatedRingsMap = this.gameState.board.eliminatedRings;
+    let playersAfterCapture = this.gameState.players;
+    let totalRingsEliminatedDelta = 0;
+
+    if (landedOnOwnMarker) {
+      const stackAtLanding = stacksAfterCapture.get(landingKey);
+      if (stackAtLanding && stackAtLanding.stackHeight > 0) {
+        const [, ...remainingRings] = stackAtLanding.rings;
+
+        if (remainingRings.length > 0) {
+          const newStack: RingStack = {
+            ...stackAtLanding,
+            rings: remainingRings,
+            stackHeight: remainingRings.length,
+            capHeight: calculateCapHeight(remainingRings),
+            controllingPlayer: remainingRings[0],
+          };
+          stacksAfterCapture.set(landingKey, newStack);
+        } else {
+          stacksAfterCapture.delete(landingKey);
+        }
+
+        const creditedPlayer = playerNumber;
+        eliminatedRingsMap = {
+          ...eliminatedRingsMap,
+          [creditedPlayer]: (eliminatedRingsMap[creditedPlayer] || 0) + 1,
+        };
+        playersAfterCapture = playersAfterCapture.map((p) =>
+          p.playerNumber === creditedPlayer ? { ...p, eliminatedRings: p.eliminatedRings + 1 } : p
+        );
+        totalRingsEliminatedDelta = 1;
+      }
+    }
 
     this.gameState = {
       ...this.gameState,
       board: {
         ...board,
-        stacks: new Map(board.stacks),
+        stacks: stacksAfterCapture,
         markers: new Map(board.markers),
-        collapsedSpaces: new Map(board.collapsedSpaces)
-      }
+        collapsedSpaces: new Map(board.collapsedSpaces),
+        eliminatedRings: eliminatedRingsMap,
+      },
+      players: playersAfterCapture,
+      totalRingsEliminated: this.gameState.totalRingsEliminated + totalRingsEliminatedDelta,
     };
   }
 
@@ -1410,7 +1566,7 @@ export class ClientSandboxEngine {
     }
 
     const player = this.gameState.players.find(
-      p => p.playerNumber === this.gameState.currentPlayer
+      (p) => p.playerNumber === this.gameState.currentPlayer
     );
     if (!player || player.ringsInHand <= 0) {
       return false;
@@ -1438,11 +1594,7 @@ export class ClientSandboxEngine {
     );
 
     if (
-      !this.hasAnyLegalMoveOrCaptureFrom(
-        position,
-        this.gameState.currentPlayer,
-        hypotheticalBoard
-      )
+      !this.hasAnyLegalMoveOrCaptureFrom(position, this.gameState.currentPlayer, hypotheticalBoard)
     ) {
       return false;
     }
@@ -1457,7 +1609,7 @@ export class ClientSandboxEngine {
         rings,
         stackHeight: rings.length,
         capHeight: calculateCapHeight(rings),
-        controllingPlayer: this.gameState.currentPlayer
+        controllingPlayer: this.gameState.currentPlayer,
       };
       nextStacks.set(key, newStack);
     } else {
@@ -1467,12 +1619,12 @@ export class ClientSandboxEngine {
         rings,
         stackHeight: rings.length,
         capHeight: calculateCapHeight(rings),
-        controllingPlayer: this.gameState.currentPlayer
+        controllingPlayer: this.gameState.currentPlayer,
       };
       nextStacks.set(key, newStack);
     }
 
-    const updatedPlayers = this.gameState.players.map(p =>
+    const updatedPlayers = this.gameState.players.map((p) =>
       p.playerNumber === this.gameState.currentPlayer
         ? { ...p, ringsInHand: Math.max(0, p.ringsInHand - effectiveCount) }
         : p
@@ -1493,10 +1645,10 @@ export class ClientSandboxEngine {
       ...this.gameState,
       board: {
         ...board,
-        stacks: nextStacks
+        stacks: nextStacks,
       },
       players: updatedPlayers,
-      currentPhase: nextPhase
+      currentPhase: nextPhase,
     };
 
     // Record per-turn placement state so movement (when it happens) is
@@ -1507,6 +1659,9 @@ export class ClientSandboxEngine {
     this._mustMoveFromStackKey = key;
     this._selectedStackKey = key;
 
+    // REMOVED: this.advanceAfterPlacement();
+    // Instead, we rely on the updated currentPhase ('movement' for AI) to
+    // drive the next step in the turn loop.
     return true;
   }
 
@@ -1526,7 +1681,7 @@ export class ClientSandboxEngine {
     if (move.player !== this.gameState.currentPlayer) {
       this.gameState = {
         ...this.gameState,
-        currentPlayer: move.player
+        currentPlayer: move.player,
       };
     }
 
@@ -1561,13 +1716,13 @@ export class ClientSandboxEngine {
             rings: newRings,
             stackHeight: newRings.length,
             capHeight: calculateCapHeight(newRings),
-            controllingPlayer: newRings[0]
+            controllingPlayer: newRings[0],
           };
 
           const nextStacks = new Map(board.stacks);
           nextStacks.set(key, newStack);
 
-          const updatedPlayers = this.gameState.players.map(p =>
+          const updatedPlayers = this.gameState.players.map((p) =>
             p.playerNumber === move.player
               ? { ...p, ringsInHand: Math.max(0, p.ringsInHand - placementCount) }
               : p
@@ -1577,10 +1732,10 @@ export class ClientSandboxEngine {
             ...this.gameState,
             board: {
               ...board,
-              stacks: nextStacks
+              stacks: nextStacks,
             },
             players: updatedPlayers,
-            currentPhase: 'movement'
+            currentPhase: 'movement',
           };
 
           applied = true;
@@ -1598,7 +1753,7 @@ export class ClientSandboxEngine {
       case 'skip_placement': {
         this.gameState = {
           ...this.gameState,
-          currentPhase: 'movement'
+          currentPhase: 'movement',
         };
         applied = true;
         break;
@@ -1612,7 +1767,7 @@ export class ClientSandboxEngine {
         // Reuse existing movement handler by simulating a source
         // selection followed by a destination click.
         this._selectedStackKey = positionToString(move.from);
-        this.handleMovementClick(move.to);
+        await this.handleMovementClick(move.to);
         applied = true;
         break;
       }
@@ -1624,12 +1779,7 @@ export class ClientSandboxEngine {
         // Drive a single-segment capture chain corresponding to the
         // canonical move. Subsequent segments (if any) will be handled by
         // performCaptureChain's own continuation logic.
-        await this.performCaptureChain(
-          move.from,
-          move.captureTarget,
-          move.to,
-          move.player
-        );
+        await this.performCaptureChain(move.from, move.captureTarget, move.to, move.player);
         applied = true;
         break;
       }
@@ -1670,7 +1820,7 @@ export class ClientSandboxEngine {
       'skip_placement',
       'move_ring',
       'move_stack',
-      'overtaking_capture'
+      'overtaking_capture',
     ];
 
     if (!supportedTypes.includes(move.type)) {
@@ -1680,7 +1830,7 @@ export class ClientSandboxEngine {
     }
 
     const changed = await this.applyCanonicalMoveInternal(move, {
-      bypassNoDeadPlacement: true
+      bypassNoDeadPlacement: true,
     });
 
     if (changed) {
@@ -1688,3 +1838,39 @@ export class ClientSandboxEngine {
     }
   }
 }
+
+// Test-only: attach a lightweight board-invariant helper to the prototype so
+// invariant tests can exercise internal board sanity checks without expanding
+// the public class surface for production code.
+(ClientSandboxEngine.prototype as any).assertBoardInvariants = function (
+  this: ClientSandboxEngine,
+  context: string
+): void {
+  const isTestEnv =
+    typeof process !== 'undefined' &&
+    !!(process as any).env &&
+    (process as any).env.NODE_ENV === 'test';
+
+  const board: BoardState = (this as any).gameState.board as BoardState;
+  const errors: string[] = [];
+
+  for (const key of board.stacks.keys()) {
+    if (board.collapsedSpaces.has(key)) {
+      errors.push(`stack present on collapsed space at ${key}`);
+    }
+  }
+
+  if (errors.length === 0) {
+    return;
+  }
+
+  const message =
+    `ClientSandboxEngine invariant violation (${context}):` + '\n' + errors.join('\n');
+
+  // eslint-disable-next-line no-console
+  console.error(message);
+
+  if (isTestEnv) {
+    throw new Error(message);
+  }
+};

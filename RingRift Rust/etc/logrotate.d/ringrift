@@ -1,9 +1,0 @@
-/Users/armand/Development/RingRift/game_output.log {
-    size 500k
-    rotate 5
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-}

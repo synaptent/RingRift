@@ -83,6 +83,14 @@ export const gameApi = {
     return response.data;
   },
 
+  async getAvailableGames(params?: {
+    boardType?: string;
+    maxPlayers?: number;
+  }): Promise<{ games: Game[] }> {
+    const response = await api.get('/games/lobby/available', { params });
+    return response.data;
+  },
+
   async joinGame(gameId: string): Promise<Game> {
     const response = await api.post(`/games/${gameId}/join`);
     return response.data;

@@ -1,5 +1,5 @@
 import { BoardType } from '../../src/shared/types/game';
-import { runSandboxAITrace, replayTraceOnBackend, replayTraceOnSandbox } from '../utils/traces';
+import { runSandboxAITrace, replayMovesOnBackend, replayTraceOnSandbox } from '../utils/traces';
 import { formatMoveList } from '../../src/shared/engine/notation';
 
 /**
@@ -27,7 +27,11 @@ describe('Backend vs Sandbox trace parity (square8 / 2p)', () => {
 
       expect(sandboxTrace.entries.length).toBeGreaterThan(0);
 
-      const backendTrace = await replayTraceOnBackend(sandboxTrace);
+      // Use the new replayMovesOnBackend helper
+      const backendTrace = await replayMovesOnBackend(
+        sandboxTrace.initialState,
+        sandboxTrace.entries.map((e) => e.action)
+      );
       const sandboxReplayTrace = await replayTraceOnSandbox(sandboxTrace);
 
       const minLen = Math.min(
@@ -69,7 +73,7 @@ describe('Backend vs Sandbox trace parity (square8 / 2p)', () => {
       const lengthMismatch = {
         originalEntries: sandboxTrace.entries.length,
         backendEntries: backendTrace.entries.length,
-        sandboxReplayEntries: sandboxReplayTrace.entries.length
+        sandboxReplayEntries: sandboxReplayTrace.entries.length,
       };
 
       expect(lengthMismatch.backendEntries).toBe(lengthMismatch.originalEntries);
@@ -77,7 +81,10 @@ describe('Backend vs Sandbox trace parity (square8 / 2p)', () => {
 
       // If this ever fails in CI, having an easy way to print the move list
       // is useful when debugging locally.
-      void formatMoveList(sandboxTrace.entries.map(e => e.action), { boardType });
+      void formatMoveList(
+        sandboxTrace.entries.map((e) => e.action),
+        { boardType }
+      );
     });
   }
 });

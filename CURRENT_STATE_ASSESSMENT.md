@@ -1,571 +1,300 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** November 14, 2025  
-**Assessor:** Code Analysis & Verification  
-**Purpose:** Provide factual, verified status of all project components
+**Assessment Date:** November 18, 2025  
+**Assessor:** Code + Test Review  
+**Purpose:** Factual status of the codebase as it exists today
+
+> This document should be read together with:
+>
+> - `IMPLEMENTATION_STATUS.md` – short, high-level summary
+> - `KNOWN_ISSUES.md` – P0/P1 issues and gaps
+> - `TODO.md` – phase/task tracker
+> - `STRATEGIC_ROADMAP.md` – phased roadmap to MVP
+
+The intent here is accuracy, not optimism. When in doubt, the **code and tests** win over any percentage or label.
 
 ---
 
 ## 📊 Executive Summary
 
-**Overall Status:** STRONG FOUNDATION, INCOMPLETE IMPLEMENTATION  
-**Core Logic:** 72% Complete (Phase 1)  
-**Testing:** 10% Complete (minimal but growing unit/integration tests for rules, interaction flows, AI turns, territory, and the client-local sandbox engine)  
-**Frontend:** 30% Complete (board UI, client-local sandbox engine with strong rules parity, and basic backend play wired to the engine)  
-**AI Implementation:** 60% Complete (Python service integrated for move selection in backend games; `line_reward_option` choices are service-backed; other PlayerChoices still use local heuristics)
-**Multiplayer:** 30% Complete (Socket.IO and room infrastructure exist and backend games can be played via WebSockets, but there is no full lobby/matchmaking/reconnection/spectator UX yet)
+**Overall:** Strong architectural foundation and rules implementation; **not yet production-ready**.
+
+- Core rules (movement, markers, captures including chains, lines, territory, forced elimination, victory) are implemented in the TypeScript engine and exercised by focused Jest suites.
+- Backend play via WebSockets works end-to-end, including AI turns via the Python service / local fallback and server-driven PlayerChoices surfaced to the client.
+- The React client has a usable lobby, backend GamePage (board + HUD + victory modal), and a rich local sandbox harness.
+- Testing is solid around core mechanics and several interaction paths, but there is **no complete scenario matrix** mapping `ringrift_complete_rules.md` + FAQ to tests.
+- Multiplayer UX (spectators, reconnection UX, matchmaking, chat UI) and advanced AI are still **clearly incomplete**.
+
+A reasonable label for the current state is: **engine/AI-focused beta suitable for developers and playtesters**, not for a broad public audience.
 
 ---
 
-## ✅ Verified Completed Features
+## ✅ Completed / Working Components
 
-### 1. Architecture & Infrastructure (95%)
-- [x] TypeScript project structure
-- [x] Express.js backend server
-- [x] React frontend scaffold
-- [x] PostgreSQL + Prisma ORM schema
-- [x] Redis caching client
-- [x] Socket.IO WebSocket setup
-- [x] Docker containerization
-- [x] Environment configuration
-- [x] Logging infrastructure (Winston)
-- [x] Authentication middleware (JWT)
-- [x] Rate limiting
-- [x] CORS configuration
-- [x] Error handling middleware
+### 1. Architecture & Infrastructure
 
-### 2. Type System & Data Structures (100%)
-- [x] Complete game type definitions
-- [x] BoardState interface with stacks, markers, collapsed spaces
-- [x] Move types (place_ring, move_stack, overtaking_capture)
-- [x] Position system (square and hexagonal coordinates)
-- [x] Player and game state types
-- [x] WebSocket event types
-- [x] Validation schemas (Zod)
+- TypeScript monorepo with separate server/client `tsconfig` and shared types under `src/shared/`.
+- Express.js API with modular routes (`src/server/routes/{auth,game,user}.ts`).
+- PostgreSQL via Prisma (`prisma/schema.prisma`) for users/games/moves.
+- Redis client for caching (currently lightly used).
+- Socket.IO WebSocket server (`src/server/websocket/server.ts`) with:
+  - Authenticated connections (JWT-based handshake middleware).
+  - Game rooms, join/leave, and basic disconnection handling.
+  - Events for `join_game`, `leave_game`, `player_move`, `player_choice_response`, `chat_message`.
+- Docker and docker-compose for local DB/Redis and the AI service.
+- Logging via Winston and simple structured logs around game/AI/WebSocket flows.
 
-### 3. Board Management (90%)
+**Verdict:** Infrastructure is in good shape for continued engine/AI development and early playtesting.
+
+---
+
+### 2. Type System & Shared Data
+
+**Files:** `src/shared/types/game.ts`, `src/shared/types/user.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/schemas.ts`
+
+- Comprehensive TypeScript types for:
+  - `GameState`, `BoardState`, `Player`, `Move`, `GameHistoryEntry`, `GameTrace`.
+  - `PlayerChoice` and `PlayerChoiceResponseFor<TChoice>` for all strategic decision points (line order/reward, ring/cap elimination, region order, capture direction).
+  - Board types (`square8`, `square19`, `hexagonal`) and related `BOARD_CONFIGS`.
+  - AI-related types (`AIProfile`, `AIControlMode`, etc.).
+- Zod schemas for API payloads and validation.
+
+**Verdict:** Type system is a major strength; it is both expressive and well-aligned with the rules.
+
+---
+
+### 3. Board Management
+
 **File:** `src/server/game/BoardManager.ts`
 
-- [x] Board initialization (8x8, 19x19, hexagonal)
-- [x] Position generation and validation
-- [x] Adjacency calculations (Moore, Von Neumann, Hexagonal)
-- [x] Distance calculations
-- [x] Marker CRUD operations (set, get, remove, flip, collapse)
-- [x] Collapsed space tracking
-- [x] Stack management (get, set, remove)
-- [x] Player stack queries
-- [x] Line detection (all 3 board types)
-- [x] Territory disconnection detection
-- [x] Region exploration algorithms
-- [x] Border analysis for disconnection
-- [x] Representation checking
-- [x] Edge and center position utilities
-- [x] Path finding
+- Board initialization for all supported board types.
+- Position/coordinate utilities and adjacency for square and hex boards.
+- Stack/ring management: create/remove stacks, add/remove rings, compute cap height.
+- Marker management: place/flip/collapse markers; collapsed territory spaces.
+- Line detection helpers (square + hex): detect contiguous sequences of markers according to board-type line length rules.
+- Territory region discovery: region traversal, border detection, and disconnection helpers.
 
-**Verified working:** Position system, adjacency, basic operations
+**Tests:**
 
-### 4. Game Engine Core (75%)
-**File:** `src/server/game/GameEngine.ts`
+- `tests/unit/BoardManager.territoryDisconnection*.test.ts` for territory regions.
+- Indirect coverage via GameEngine/RuleEngine tests.
 
-#### ✅ Completed:
-- [x] Game initialization with players and board type
-- [x] Game state management
-- [x] Move application (place_ring, move_ring, overtaking_capture)
-- [x] Marker placement on movement
-- [x] Marker flipping (opponent markers)
-- [x] Marker collapsing (own markers)
-- [x] Basic capture mechanics (single captures)
-- [x] Cap height calculation
-- [x] Line detection
-- [x] Line collapse with graduated rewards (structure exists)
-- [x] Ring/cap elimination
-- [x] Territory disconnection detection
-- [x] Disconnected region processing
-- [x] Chain reaction detection (for territory)
-- [x] Phase transitions (ring_placement → movement → capture → line_processing → territory_processing)
-- [x] Player state tracking (ringsInHand, eliminatedRings, territorySpaces)
-- [x] Forced elimination when blocked
-- [x] Victory condition checking
-- [x] Timer management
-- [x] Spectator management
-- [x] Game pause/resume
-
-#### ⚠️ Partially Implemented:
-- [~] Player choice mechanisms (engine-level complete, integration in progress)
-  - Shared PlayerChoice types defined in `src/shared/types/game.ts`.
-  - `PlayerInteractionManager` implemented in `src/server/game/PlayerInteractionManager.ts`.
-  - `WebSocketInteractionHandler` bridges choices to Socket.IO, with server-side validation and timeouts.
-  - GameEngine now uses the interaction manager for:
-    - Line processing order (when multiple lines form)
-    - Graduated line rewards (Option 1 vs Option 2 for overlong lines)
-    - Ring/cap elimination target choice when multiple stacks are eligible
-    - Region processing order (when multiple disconnected regions exist)
-    - Capture direction selection during chain captures
-  - Client-side wiring for human choices (`GameContext`, `ChoiceDialog`, `GamePage`) exists but is not yet broadly exercised or polished.
-- [~] Chain captures (mandatory continuation enforced engine-side; capture-direction choices wired via PlayerInteractionManager; broader scenario tests and UI/AI flows still pending)
-
-#### ❌ Not Fully Implemented / Validated:
-- [ ] AI-side handling of PlayerChoice prompts (line order, rewards, eliminations, regions, capture direction)
-- [ ] Scenario + regression tests for mandatory chain captures across all FAQ examples
-- [ ] Explicit coverage of 180° reversal capture patterns
-- [ ] Explicit coverage of cyclic capture patterns
-- [ ] End-to-end validation of timeout/error paths for the async choice system (engine ↔ WebSocket ↔ UI)
-
-### 5. Rule Validation (60%)
-**File:** `src/server/game/RuleEngine.ts`
-
-#### ✅ Completed:
-- [x] Basic move validation
-- [x] Ring placement validation
-- [x] Stack movement validation
-- [x] Minimum distance checking (must move ≥ stack height)
-- [x] Path clearance validation
-- [x] Collapsed space blocking
-- [x] Basic capture validation
-- [x] Cap height comparison for captures
-- [x] Capture direction validation
-- [x] Capture landing validation (beyond target)
-- [x] Game end condition checking
-- [x] Valid move generation (basic implementation)
-
-#### ⚠️ Simplified:
-- [~] getValidMoves() - generates moves but may be incomplete
-- [~] Line formation processing (basic, not graduated rewards)
-- [~] Territory disconnection processing (basic)
-
-#### ❌ Missing:
-- [ ] Comprehensive edge case validation
-- [ ] Chain capture validation
-- [ ] All FAQ scenario validation
-
-### 6. Python AI Service & Integration (55%)
-**Location:** `ai-service/`
-
-#### ✅ Completed:
-- [x] FastAPI service structure
-- [x] Docker container setup
-- [x] RandomAI implementation
-- [x] HeuristicAI implementation
-- [x] Base AI class structure
-- [x] API endpoints defined
-
-#### ⚠️ Partially Integrated:
-- [x] Connection to game engine via `AIEngine`/`AIServiceClient` and `WebSocketServer.maybePerformAITurn` (AI players can select and apply moves in backend games)
-- [x] Difficulty-aware configuration via `AIProfile` and `AIEngine` presets
-- [~] Use of AI service for PlayerChoice decisions – service-backed today for `line_reward_option`, `ring_elimination`, and `region_order`; other choices (line order, capture direction) still use local heuristics
-- [ ] Scenario and robustness tests around AI failures, timeouts, and high-difficulty play
-- [ ] Telemetry/monitoring for AI latency and error rates
-
-### 7. Client-Local Sandbox Engine (Sandbox / Client)
-
-**Location:** `src/client/sandbox/`
-
-#### ✅ Completed:
-- [x] `ClientSandboxEngine` maintains a browser-local `GameState` and drives a full turn/phase loop in `/sandbox` using shared types from `src/shared/types/game.ts`.
-- [x] Movement, overtaking captures, and mandatory chain captures (including `capture_direction` PlayerChoices) are enforced client-side via `sandboxMovement.ts`, `sandboxCaptures.ts`, and `sandboxElimination.ts`.
-- [x] Line detection and processing for the current player are implemented via `sandboxLines.ts` and `sandboxLinesEngine.ts`, including exact-length vs overlong lines and graduated rewards (Option 1 vs 2) using the same cap/marker semantics as the backend.
-- [x] Territory disconnection (square + hex), border discovery, and region processing (including self-elimination prerequisite) are implemented via `sandboxTerritory.ts` and `sandboxTerritoryEngine.ts`, with `RegionOrderChoice` surfaced through a sandbox interaction handler.
-- [x] Sandbox victory checks (ring-elimination and territory-control) are implemented via `sandboxVictory.ts`, returning a shared `GameResult` that feeds the existing `VictoryModal`.
-- [x] `SandboxInteractionHandler` integrates human and AI players in the sandbox: humans answer PlayerChoices via local React state + `ChoiceDialog`, while AI players select random options from `choice.options` for any PlayerChoice.
-- [x] Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts` cover chain captures, no-dead-placement + forced elimination, line processing, territory disconnection (square + hex), region-order choices, and victory thresholds/GameResult construction for the sandbox engine.
-
-#### ⚠️ Still Limited:
-- [ ] Sandbox still uses default behaviour for `line_order` and `line_reward_option` (no sandbox-specific PlayerChoices yet; only backend games exercise these fully).
-- [ ] Last-player-standing and nuanced stalemate logic remain backend-only; sandbox only implements ring-elimination and territory-control victories.
-- [ ] Sandbox AI currently chooses randomly among legal options; stronger heuristics and/or service-backed sandbox AI are future work.
+**Verdict:** BoardManager is essentially complete and well‑tested; changes here should be made cautiously and under test.
 
 ---
 
-## ❌ Incomplete/Missing Features
+### 4. RuleEngine & GameEngine (Core Rules)
 
-### 1. Testing Infrastructure (5% Complete)
-**Location:** `tests/`
+**Files:**
 
-#### Exists:
-- [x] Jest configuration and shared test setup files
-- [x] A growing suite of unit and integration tests (19 suites, 100+ tests) covering BoardManager, RuleEngine movement/capture, GameEngine chain captures and territory disconnection, PlayerInteractionManager, WebSocketInteractionHandler, AIEngine/AIServiceClient, AIInteractionHandler, and WebSocketServer AI-turn integration
-- [x] Test utilities and fixtures for common board/engine scenarios
+- `src/server/game/RuleEngine.ts`
+- `src/server/game/GameEngine.ts`
+- `src/server/game/rules/{placementHelpers,lineProcessing,captureChainEngine,territoryProcessing}.ts`
 
-#### Missing:
-- [ ] Comprehensive scenario coverage derived systematically from `ringrift_complete_rules.md` and the FAQ (Q1–Q24)
-- [ ] Edge case tests for all documented capture, line, and territory patterns
-- [ ] CI/CD enforcement of per-axis coverage thresholds (rules/state, AI boundary, WebSocket/game loop, UI integration)
-- [ ] Pre-commit hooks that gate on tests, lint, and type checks
+**RuleEngine capabilities:**
 
-**Critical Gap:** Coverage is still low relative to the rules’ complexity; we cannot yet rely on tests alone to verify full rule compliance or prevent regressions
+- Movement validation:
+  - Distance ≥ stack height.
+  - Path clearance (no stacks/collapsed spaces blocking; markers may be traversed).
+  - Legal landing positions (empty, own marker/stack; opponent markers blocked).
+- Capture validation:
+  - Overtaking capture segments with cap height constraint.
+  - Mandatory continuation for chain captures at the rule level.
+- Helper routines for capture enumeration, line and territory detection used by GameEngine.
 
-### 2. Frontend Implementation (30% Complete)
-**Location:** `src/client/`
+**GameEngine capabilities:**
 
-#### Exists:
-- [x] Basic React app structure
-- [x] Vite build configuration
-- [x] Tailwind CSS setup
-- [x] LoadingSpinner component
-- [x] AuthContext (basic)
-- [x] GameContext with WebSocket-driven `game_state` hydration
-- [x] API service client
-- [x] `BoardView` component rendering 8x8, 19x19, and hex boards from `BoardState`, with:
-  - [x] Improved square-board contrast and larger, more legible cell sizes.
-  - [x] A reusable, geometry-driven movement grid overlay (`showMovementGrid` prop) that uses
-        `computeBoardMovementGrid(board: BoardState)` to draw faint movement lines and
-        node dots based on normalized cell centers for all board types.
-- [x] `GamePage` with:
-  - Local sandbox mode: pre-game setup for number of players, human vs AI flags, and board type (8x8, 19x19, hex), followed by board rendering (overlay enabled by default).
-  - Read-only backend game mode that displays server-provided board state and uses the same
-    BoardView + movement grid overlay for consistent geometry.
-- [x] `ChoiceDialog` scaffold for all PlayerChoice variants (line order, line reward, ring elimination, region order, capture direction)
-- [x] index.html template
+- Turn/phase orchestration using shared `GameState`:
+  - `ring_placement` → `movement` → `capture` → `line_processing` → `territory_processing` → next player.
+  - Forced elimination when players are blocked but still have stacks.
+- Marker behaviour and forced elimination semantics.
+- Chain capture engine:
+  - Maintains internal chain state.
+  - Integrates `CaptureDirectionChoice` via PlayerInteractionManager.
+- Line processing:
+  - Detects all lines for the current player.
+  - Supports graduated rewards (Option 1 vs 2) and multi-line processing order via PlayerChoices.
+- Territory processing:
+  - Detects disconnected regions (square + hex).
+  - Enforces self-elimination prerequisites.
+  - Applies territory elimination and updates player territory/ring counts.
+- Victory conditions:
+  - Ring-elimination victory.
+  - Territory-control / last-player-standing.
 
-#### Missing / Incomplete UI pieces:
-- [ ] Rich ring stack visualization (distinct ring graphics per player)
-- [ ] Marker display and polished collapsed space styling
-- [ ] Additional valid-move highlighting and hover/selection affordances
-- [ ] Broader use of `ChoiceDialog` across all PlayerChoice variants and phases
-- [ ] Full game state panel (phase, timers, ring/territory counts, move history)
-- [ ] Timer display and time control UI
-- [ ] Victory screen and post-game summary
-- [ ] Game setup & lobby system backed by server routes (beyond the current minimal backend game flow)
+**Choice system integration:**
 
-**Critical Gap:** UI is still minimal and unpolished; basic backend play is possible but not yet a good user experience
+- Uses `PlayerInteractionManager` to request/resolve:
+  - Line order, line reward option.
+  - Ring/cap elimination target.
+  - Region order.
+  - Capture direction during chains.
 
-### 3. Player Interaction System (75% Complete)
+**Tests:** Numerous focused suites:
 
-**Engine-level interaction implemented; WebSocket + basic UI + local AI handler integration in place. AI-service-backed decisions and broad scenario coverage are still pending.**
+- GameEngine: chain capture, capture-direction, line rewards, territory disconnection, AI simulation.
+- RuleEngine: movement/capture, multi-ring placement, reachability parity vs sandbox.
+- Capture enumeration parity and backend↔sandbox AI parity.
 
-**Exists:**
-- [x] Shared `PlayerChoice` and `PlayerChoiceResponse` types in `src/shared/types/game.ts`.
-- [x] `PlayerInteractionManager` abstraction in `src/server/game/PlayerInteractionManager.ts` with a typed `requestChoice` API.
-- [x] GameEngine integration for:
-  - [x] Line processing order (when multiple lines form for the current player).
-  - [x] Graduated line rewards (Option 1 vs Option 2 on overlong lines).
-  - [x] Ring/cap elimination target choice when multiple stacks are eligible.
-  - [x] Disconnected region processing order when multiple regions are available.
-  - [x] Capture direction selection during chain captures.
-- [x] Concrete `PlayerInteractionHandler` implementations for:
-  - [x] Human players via `WebSocketInteractionHandler` (`src/server/game/WebSocketInteractionHandler.ts`) using `player_choice_required` / `player_choice_response` events with server-side option validation and timeouts.
-  - [x] AI players via `AIInteractionHandler` (`src/server/game/ai/AIInteractionHandler.ts`) using lightweight, rules-respecting heuristics.
-  - [x] `DelegatingInteractionHandler` (`src/server/game/DelegatingInteractionHandler.ts`) to route each `PlayerChoice` to the appropriate human or AI handler based on `PlayerType`.
-- [x] Client-side wiring for human choices:
-  - [x] `GameContext` exposes `pendingChoice`, `choiceDeadline`, and `respondToChoice` for backend games.
-  - [x] `ChoiceDialog` renders all PlayerChoice variants and submits responses back over WebSockets.
-  - [x] `GamePage` integrates `ChoiceDialog` into the backend game flow so humans can answer at least line reward and ring elimination choices.
-- [x] Tests:
-  - [x] Unit tests for `PlayerInteractionManager`.
-  - [x] Unit tests for `WebSocketInteractionHandler`, including validation and timeout behaviour.
-  - [x] Unit tests for `AIInteractionHandler` heuristics.
-  - [x] Integration tests for GameEngine + WebSocket-backed line reward and ring elimination choices.
-
-**Remaining gaps:**
-- [ ] AIServiceClient-backed decision-making for choices (beyond local heuristics) once the core AI move loop is integrated.
-- [ ] Broader scenario and regression tests that exercise all choice types (line order, region order, capture direction) under complex board states.
-- [ ] UX polish around timeouts, error states, and concurrent choices in the React client.
-
-**Impact:** Strategic choices for lines, eliminations, regions, and capture directions are now requested and answered end-to-end for both humans (via WebSockets + UI) and AI players (via local heuristics). The system is functionally complete for early play and testing but still needs AI-service integration and high-coverage scenario tests to be considered production-hardened.
-
-### 4. Chain Capture Implementation (70% Complete)
-
-#### Exists:
-- [x] Basic capture structure
-- [x] Single capture works
-- [x] Cap height validation
-- [x] Engine-level mandatory chain continuation (once a capture starts, GameEngine drives additional captures until no valid options remain)
-- [x] Engine-level capture direction choice via `PlayerInteractionManager` + `CaptureDirectionChoice` when multiple follow-up captures are available
-
-#### Missing:
-- [ ] Scenario and regression tests for chain captures
-- [ ] Explicit coverage of 180° reversal patterns (FAQ Q15.3.1)
-- [ ] Explicit coverage of cyclic patterns (FAQ Q15.3.2)
-- [ ] End-to-end wiring of capture-direction choices through WebSockets and UI
-- [ ] AI decision logic for capture-direction choices
-- [ ] Performance/robustness testing for long chain sequences
-
-
-### 5. Multiplayer Functionality (30% Complete)
-
-#### Infrastructure Exists:
-- [x] WebSocket server setup
-- [x] Socket.IO configuration
-- [x] Room management structure
-- [x] Event definitions
-
-#### Not Functional:
-- [ ] Game synchronization
-- [ ] Move broadcasting
-- [ ] Player connection handling
-- [ ] Reconnection logic
-- [ ] Spectator mode implementation
-- [ ] Lobby system
-- [ ] Matchmaking
-
-### 6. Database Integration (20% Complete)
-
-#### Exists:
-- [x] Prisma schema defined
-- [x] Database connection utility
-- [x] User model
-- [x] Game model
-- [x] Move model
-
-#### Not Connected:
-- [ ] Game persistence
-- [ ] Move history storage
-- [ ] User statistics
-- [ ] Rating calculations
-- [ ] Replay storage
-- [ ] Leaderboards
+**Verdict:** Core rules are well implemented and test‑covered for many critical scenarios, but not yet exhaustively mapped to every example in the rules/FAQ.
 
 ---
 
-## 🔍 Code Quality Assessment
+### 5. AI Integration
 
-### Strengths
-✅ **Clean Architecture:** Well-separated concerns (Engine, Rules, Board)  
-✅ **Type Safety:** Comprehensive TypeScript types  
-✅ **Documentation:** Excellent rule references in comments  
-✅ **Code Style:** Consistent, readable code  
-✅ **Modularity:** Well-organized file structure  
-✅ **File Sizes:** All under 700 lines (follows custom rules)
+**Files:**
 
-### Technical Debt
-⚠️ **TODO Comments:** Multiple critical TODOs in game flow  
-⚠️ **Incomplete Features:** Many features have structure but not logic  
-⚠️ **Sparse Tests:** Core mechanics and interaction flows have some unit/integration tests, but overall coverage is still low  
-⚠️ **Underused Infrastructure:** Database and multiplayer/lobby flows are only partially wired; AI service is used for moves but not yet for PlayerChoices or analytics  
-⚠️ **Simplified Implementations:** Many defaults instead of full logic
+- `ai-service/app/main.py`, `ai-service/app/ai/*.py`
+- `src/server/game/ai/AIEngine.ts`
+- `src/server/services/AIServiceClient.ts`
+- `src/server/game/ai/AIInteractionHandler.ts`
 
-### Code Examples of Incompleteness
+**Current capabilities:**
 
-**GameEngine.ts - Line 459:**
-```typescript
-// TODO: In full implementation, player should choose which line to process first
-// For now, process in order found
-const line = lines[0];
-```
+- Python FastAPI service with Random and Heuristic AI implementations.
+- TypeScript `AIServiceClient` with endpoints for:
+  - Move selection (`getAIMove`).
+  - Several PlayerChoices (`line_reward_option`, `ring_elimination`, `region_order`).
+- `AIEngine`/`globalAIEngine` to:
+  - Configure per-player AI profiles from lobby/gameState (`AIProfile`, difficulty, mode, aiType).
+  - Request moves or PlayerChoice decisions from the service with fallbacks to local heuristics on error.
+- `AIInteractionHandler` and `DelegatingInteractionHandler` integrate AI decisions into the same PlayerInteractionManager path used by humans.
 
-**GameEngine.ts - Line 484:**
-```typescript
-// TODO: In full implementation, player should choose Option 1 or Option 2
-// For now, always use Option 2 to preserve rings
-```
+**Key integration tests:**
 
-**GameEngine.ts - Line 516:**
-```typescript
-// TODO: In full implementation, player should choose which stack
-// For now, eliminate from first stack
-```
+- `tests/unit/AIEngine.serviceClient.test.ts`
+- `tests/unit/AIInteractionHandler.test.ts`
+- `tests/unit/GameEngine.lineRewardChoiceAIService.integration.test.ts`
+- `tests/unit/WebSocketServer.aiTurn.integration.test.ts`
+- `tests/integration/FullGameFlow.test.ts` (AI fallback flow)
+
+**Verdict:** AI service boundary is solid, with robust fallbacks and tests around failures. AI playing strength is still limited to heuristic/random; advanced tactics are future work.
 
 ---
 
-## 📊 Feature Completeness Matrix
+### 6. WebSocket Game Loop
 
-| Component | Design | Implementation | Testing | Documentation | Overall |
-|-----------|--------|----------------|---------|---------------|---------|
-| Board Manager | 100% | 90% | 5% | 95% | **72%** |
-| Game Engine | 100% | 75% | 5% | 90% | **68%** |
-| Rule Engine | 100% | 60% | 5% | 85% | **62%** |
-| Type System | 100% | 100% | N/A | 95% | **98%** |
-| Frontend UI | 100% | 10% | 0% | 80% | **48%** |
-| AI Integration | 100% | 40% | 0% | 70% | **53%** |
-| Multiplayer | 100% | 30% | 0% | 85% | **54%** |
-| Testing | 100% | 5% | 5% | 60% | **43%** |
-| Database | 100% | 20% | 0% | 80% | **50%** |
-| **OVERALL** | **100%** | **48%** | **3%** | **82%** | **58%** |
+**File:** `src/server/websocket/server.ts`
 
----
+- Authenticates sockets via JWT and DB user lookup.
+- Manages game rooms and per‑user socket mappings.
+- Creates `GameEngine` instances per game with:
+  - Players (human + AI profiles constructed from DB `gameState.aiOpponents`).
+  - Time control derived from stored JSON.
+  - `PlayerInteractionManager` wired to `WebSocketInteractionHandler` (for humans) and `AIInteractionHandler` (for AIs).
+- Replays historical moves from DB into GameEngine on first join.
+- Auto‑start logic: marks DB game `ACTIVE` when all players are ready.
+- On `player_move`:
+  - Validates participation and active status.
+  - Parses client move payload, converts to `Move`, calls `GameEngine.makeMove`.
+  - Persists move to DB.
+  - If `gameResult` is returned, updates DB (`COMPLETED`, `winnerId`, `endedAt`) and emits `game_over`.
+  - Otherwise emits updated `game_state` and, if the next player is AI, calls `maybePerformAITurn`.
+- `maybePerformAITurn`:
+  - Uses `globalAIEngine` to obtain AI moves, applies them via `GameEngine`, persists AI moves, and similarly emits `game_over` or `game_state`.
+- Chat support: `chat_message` broadcasts to room; currently no dedicated client UI beyond basic wiring.
 
-## 🎯 What Actually Works Today
-
-### Can Do:
-1. ✅ Create a game programmatically via TypeScript and via the HTTP API
-2. ✅ Place rings on the board
-3. ✅ Move rings with markers left behind
-4. ✅ Flip opponent markers, collapse own markers
-5. ✅ Perform single and chained captures (with engine-enforced mandatory continuation)
-6. ✅ Detect lines and collapse them
-7. ✅ Detect disconnected regions
-8. ✅ Process territory disconnection
-9. ✅ Track phase transitions
-10. ✅ Check victory conditions
-11. ✅ Play backend-driven games through the React client (BoardView + GamePage) with click-to-move and server-validated moves
-12. ✅ Have AI opponents select moves in backend games via the Python AI service
-13. ✅ Request and answer PlayerChoices for both humans (via WebSockets + UI) and AI players (via local heuristics)
-14. ✅ Run a rules-complete client-local sandbox game in `/sandbox` via `ClientSandboxEngine` with movement, chain captures, line and territory processing, and ring/territory victories, validated by dedicated Jest suites.
-
-### Cannot Do (Yet):
-1. ❌ Offer a polished visual experience (UI is minimal and lacks full HUD, timers, and post-game flows)
-2. ❌ Rely on tests for full rule coverage (scenario/edge-case tests and coverage are still incomplete)
-3. ❌ Guarantee all chain capture edge cases from the rules/FAQ are covered by automated tests
-4. ❌ Use the AI service for most PlayerChoice decisions (only `line_reward_option` is service-backed; other choices still use local heuristics)
-5. ❌ Support full multiplayer UX (lobbies, matchmaking, reconnection, and spectator mode are not complete)
-6. ❌ Persist and expose rich game statistics, ratings, and replays
-7. ❌ Claim production readiness (observability, hardening, and broad test coverage are still in progress)
+**Verdict:** Core loop (join, play, AI turns, victory) works; lobby connectivity and choice flows are integrated. UX on top of this can still be improved.
 
 ---
 
-## 🔬 Verification Methodology
+### 7. Frontend: Lobby, GamePage, HUD, Sandbox
 
-This assessment was created by:
-1. **Code Analysis:** Reading all source files line-by-line
-2. **TODO Tracking:** Identifying all TODO comments
-3. **Feature Testing:** Checking for complete implementations vs stubs
-4. **Documentation Review:** Comparing docs to actual code
-5. **Dependency Tracing:** Following feature dependencies
-6. **Gap Analysis:** Identifying missing components
+**Files:**
 
-### Files Analyzed:
-- ✅ `src/server/game/GameEngine.ts` (681 lines)
-- ✅ `src/server/game/RuleEngine.ts` (721 lines)
-- ✅ `src/server/game/BoardManager.ts` (extensive)
-- ✅ `src/shared/types/game.ts`
-- ✅ `src/client/` (all files)
-- ✅ `ai-service/` (all files)
-- ✅ `tests/` (all files)
-- ✅ `package.json`
-- ✅ All documentation files
+- `src/client/pages/LobbyPage.tsx`
+- `src/client/pages/GamePage.tsx`
+- `src/client/components/{BoardView,ChoiceDialog,VictoryModal,GameHUD}.tsx`
+- `src/client/contexts/{GameContext,AuthContext}.tsx`
+- `src/client/sandbox/*`
 
----
+**LobbyPage:**
 
-## 📈 Progress Since Project Start
+- Fetches and displays available games from backend.
+- Allows creating games with board type, max players, rated/private, time control, and AI config.
+- Provides a Join button to join and navigate into a game.
 
-### Completed Major Milestones:
-1. ✅ Project architecture designed
-2. ✅ Development environment setup
-3. ✅ Type system fully defined
-4. ✅ Core game logic (~75% implemented)
-5. ✅ Board management system completed
-6. ✅ Infrastructure deployed (Docker, DB, Redis)
+**GamePage (backend mode):**
 
-### Still Needed for MVP:
-1. ⏳ Complete player choice mechanisms
-2. ⏳ Finish chain captures
-3. ⏳ Build minimal UI
-4. ⏳ Integrate AI service
-5. ⏳ Write comprehensive tests
-6. ⏳ Achieve playable game state
+- Uses `useGame` (GameContext) to connect to a backend game (`/game/:gameId`).
+- Renders `BoardView` for all board types.
+- Uses backend `validMoves` to:
+  - Highlight legal moves from selected stacks.
+  - Submit the exact `Move` chosen (source + destination passing through server validation).
+- Renders `ChoiceDialog` for pending PlayerChoices and sends responses.
+- Uses `VictoryModal` to display `gameResult` on `game_over` and allows returning to lobby.
+- Shows a simple HUD + event log (phase, current player, choice events) and uses `GameHUD` to display per-player state and turn instructions.
+
+**GamePage (local sandbox mode):**
+
+- Setup screen lets you choose board type, 2–4 players, and human vs AI per seat.
+- Attempts to create a backend game first (Stage 1 harness). On failure, falls back to a pure client-local game.
+- Uses `ClientSandboxEngine` and sandbox helpers to run a rules-complete local game, reusing `BoardView`, `ChoiceDialog`, and `VictoryModal`.
+- Supports AI‑vs‑AI and human‑vs‑AI local games via a simple random-choice AI in the sandbox.
+
+**Verdict:** Backend and sandbox UIs are fully usable for development and playtesting, though still lacking some polish (e.g., full history views, richer HUD, tutorial flows).
 
 ---
 
-## 🎯 Reality Check: TODO.md vs Actual Code
+### 8. Testing & Parity Infrastructure
 
-### TODO.md Claims vs Reality
+**Configuration:** `jest.config.js`, `tests/README.md`
 
-| Task | TODO.md Status | Actual Status | Gap |
-|------|---------------|---------------|-----|
-| 1.1 BoardState | 100% ✅ | 100% ✅ | ✅ Accurate |
-| 1.2 Marker System | 87% ✅ | 90% ✅ | ✅ Accurate |
-| 1.3 Movement Validation | 69% ✅ | 75% ✅ | ✅ Close |
-| 1.4 Phase Transitions | 83% ✅ | 85% ✅ | ✅ Accurate |
-| 1.5 Capture System | 68% ✅ | 40% ⚠️ | ⚠️ **OVERSTATED** |
-| 1.6 Line Formation | 77% ✅ | 70% ⚠️ | ⚠️ **OVERSTATED** |
-| 1.7 Territory | 65% ✅ | 70% ✅ | ✅ Accurate |
-| 1.8 Forced Elimination | 77% ✅ | 80% ✅ | ✅ Accurate |
-| 1.9 Player State | 57% ✅ | 90% ✅ | ✅ Better than stated |
-| 1.10 Hex Validation | 82% ✅ | 85% ✅ | ✅ Accurate |
+**Key test areas:**
 
-**Key Finding:** Capture system and line formation are less complete than documented due to missing player choice mechanisms.
+- BoardManager / RuleEngine / GameEngine unit tests for movement, captures, lines, territory, forced elimination.
+- ClientSandboxEngine tests for parity with backend rules and for local victory conditions.
+- PlayerInteractionManager, WebSocketInteractionHandler, AIInteractionHandler tests for choice flows.
+- AIEngine/AIServiceClient tests for success/failure/fallback paths.
+- WebSocketServer integration tests for AI turns and choice integration.
+- Trace and parity harnesses using `GameTrace` and `tests/utils/traces.ts`.
+- `tests/integration/FullGameFlow.test.ts`: full AI‑vs‑AI game using GameEngine with service mocked as failing.
+
+**Verdict:** The test suite is strong where it exists, but coverage is still sparse relative to the full ruleset.
 
 ---
 
-## 💡 Most Critical Gaps for Playability
+## ❌ Major Gaps & Risks
 
-### Tier 1 - Blocks Confident Production Play:
-1. **No Comprehensive Tests** (cannot verify everything works under all rule/FAQ scenarios)
-2. **Player Choice & Chain Capture Systems Not Fully Battle-Tested** (implemented but still missing exhaustive automated coverage and polished UX)
+### P0 – Confidence in Exhaustive Rules Coverage
 
-### Tier 2 - Limits Functionality:
-3. **UI Incomplete** (minimal HUD, no timers/victory screen, rough flows)
-4. **AI Service Used Only for Moves** (choices and higher-level tactics still local-only)
-5. **Multiplayer Not Fully Functional** (infrastructure present but no full lobby/matchmaking/reconnection)
+- There is no **systematic scenario matrix** for all examples from `ringrift_complete_rules.md` and FAQ Q1–Q24.
+- Some complex capture + line + territory combinations are not yet encoded as tests.
+- Backend↔sandbox semantic parity is still being improved; some seeded traces reveal differences that must be treated as engine bugs, not test artefacts.
 
-### Tier 3 - Polish & Features:
-6. **Database Integration Partial** (persistence exists but many higher-level features are not wired end-to-end)
-7. **Edge Cases and FAQ Scenarios Under-tested** (rule compliance not fully provable yet)
+**Impact:** Refactors and new features can still introduce subtle rule regressions without immediate detection.
 
----
+### P1 – Multiplayer UX & Lifecycle Polish
 
-## 🎓 Alignment with Development Goals
+- Spectator mode exists at the server layer but not as a full client UX.
+- Chat is transport-level only; UX is minimal.
+- No automated matchmaking or game discovery beyond a simple lobby list.
+- Reconnection behaviour is basic; UX for reconnecting/resyncing state is not fleshed out.
 
-### Custom Rules Compliance:
-✅ **Architecture:** Clean, modular, well-separated  
-✅ **File Sizes:** All under 700 lines  
-✅ **Documentation:** Extensive and high-quality  
-✅ **Type Safety:** Comprehensive TypeScript usage  
+### P1 – AI Depth and Observability
 
-⚠️ **Testing:** Severely lacking (violates "permanent solutions" principle)  
-⚠️ **Completeness:** Many TODOs (violates "no temporary patches")  
-⚠️ **Integration:** Unused components (technical debt)  
+- AI strength is limited to random + heuristic strategies (no deep search/ML yet).
+- Metrics and observability around AI latency/error/fallback usage are minimal.
 
 ---
 
-## 📝 Recommendations for Documentation Updates
+## 🎯 Recommended Immediate Focus
 
-### 1. README.md Status Section
-Keep the README status section aligned with the **current, code-verified reality** (and avoid letting older summaries drift out of date). As of the latest assessment, the README should reflect that:
+Given the implementation and test suite as of November 18, 2025, the most valuable immediate steps are:
 
-```markdown
-### ⚠️ What Needs Work
-- ❌ **Limited testing** – Cannot yet rely on automated tests for full rule/FAQ coverage
-- ⚠️ **UI still incomplete** – Core board and choice UI exist, but HUD/timers/post‑game flows are minimal
-- ⚠️ **Chain captures & PlayerChoices under-tested** – Engine and transport are implemented, but not all complex scenarios are covered by tests
-- ⚠️ **AI choices partly heuristic** – Moves (and some choices) are service-backed; other choices still use local heuristics only
-- ⚠️ **Multiplayer UX & persistence incomplete** – Lobby/matchmaking, reconnection, spectators, rich stats, and replays are still in progress
-```
+1. **Rules/FAQ scenario suites**
+   - Build a Jest suite matrix keyed to `ringrift_complete_rules.md` + FAQ, especially:
+     - Complex chain captures (180° reversals, cycles).
+     - Multi-line + territory turns with multiple PlayerChoices.
+     - Hex-board line/territory edge cases.
+   - Link each scenario to specific rule/FAQ IDs for traceability.
 
-### 2. TODO.md Updates
-- Mark capture system as 40% (not 68%)
-- Mark line formation as 70% (not 77%)
-- Add explicit "Player Choice System" task
-- Update overall Phase 1 to 75% (not 100%)
+2. **Backend ↔ sandbox parity hardening**
+   - Use the existing trace/parity harnesses to close remaining semantic gaps.
+   - Treat any sandbox‑vs‑backend divergence on legal moves/phase transitions as a P0 engine issue.
 
-### 3. KNOWN_ISSUES.md Updates
-- Add "Player Choice Mechanism Not Implemented" as P0
-- Add "Chain Captures Not Mandatory" as P0
-- Update status of existing issues based on verification
+3. **Frontend lifecycle polish**
+   - Tighten HUD (current player, phase, timers, progress indicators) for both backend and sandbox views.
+   - Improve reconnection UX and spectator views, building on the existing WebSocket and GameContext foundations.
 
-### 4. New Document Needed
-- **STRATEGIC_ROADMAP.md** - Practical path forward keeping Python AI
-
----
-
-## ✅ Conclusion
-
-**The Good News:**
-- Solid architectural foundation
-- Clean, maintainable code
-- Excellent documentation
-- Core mechanics ~75% functional
-
-**The Reality:**
-- You can play backend-driven games end-to-end via the React client (LobbyPage + GamePage + BoardView + ChoiceDialog), including AI opponents, but the UX is still developer-focused and not yet suitable for a broad, non-technical audience (HUD/timers/post-game flows are minimal).
-- You cannot yet rely on automated tests for full rules/FAQ coverage; many complex scenarios remain untested, so refactors still carry risk.
-- Multiplayer lifecycle features (rich lobby/matchmaking, reconnection, spectators) and long-term persistence/analytics (ratings, replays, leaderboards) are only partially implemented.
-- AI opponents are integrated and can play full games, but tactical strength is still limited and many PlayerChoice decisions rely on relatively simple heuristics; stronger AI will require additional Python-side work and tests.
-- Observability, CI/CD hardening, and broad coverage across the four refactoring axes (rules/state, AI boundary, WebSocket/game loop, testing/quality) are still in progress.
-
-**Path Forward:**
-Focus on **playability** before **scalability**:
-1. Complete player choice mechanism
-2. Build minimal UI  
-3. Write comprehensive tests
-4. Integrate AI service
-5. Then expand features
-
-**Near-Term Focus (next 1–2 weeks):**
-- **Scenario-driven tests:** Start encoding specific examples from `ringrift_complete_rules.md` and the FAQ (Q1–Q24) as Jest tests, with an initial emphasis on:
-  - Complex chain capture patterns (including 180° reversals and cycles) on square boards.
-  - Combined line + territory scenarios that exercise multiple PlayerChoices in one turn.
-  - Hex-board line/territory edge cases, using the existing sandbox and backend tests as references.
-- **HUD & lifecycle polish:** Flesh out `GameHUD`/`GamePage` so backend and sandbox games both show:
-  - Clear current player + phase indicators.
-  - Ring/territory counts per player, driven directly from `GameState` and `board.collapsedSpaces`.
-  - A minimal, consistent victory overlay (via `VictoryModal`) wired to the backend `game_over` event and the sandbox victory state.
-- **AI boundary hardening:** Extend `AIEngine`/`AIServiceClient` and `AIInteractionHandler` tests to cover service failures/timeouts and verify fallbacks, so AI decisions remain robust even when the Python service is unavailable or slow.
-
-**Timeline to Playable Game:** 6-8 weeks of focused work
-
----
-
-**Assessment Version:** 1.0  
-**Next Review:** After Phase 1 completion (player choices + chain captures)  
-**Maintainer:** Development Team
+These themes are elaborated and broken into concrete tasks in `TODO.md` and `STRATEGIC_ROADMAP.md`.

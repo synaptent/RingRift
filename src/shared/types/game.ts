@@ -1,5 +1,10 @@
 export type BoardType = 'square8' | 'square19' | 'hexagonal';
-export type GamePhase = 'ring_placement' | 'movement' | 'capture' | 'line_processing' | 'territory_processing';
+export type GamePhase =
+  | 'ring_placement'
+  | 'movement'
+  | 'capture'
+  | 'line_processing'
+  | 'territory_processing';
 export type GameStatus = 'waiting' | 'active' | 'finished' | 'paused' | 'abandoned' | 'completed';
 export type MarkerType = 'regular' | 'collapsed';
 export type MoveType =
@@ -133,33 +138,33 @@ export interface Move {
   from?: Position;
   to: Position;
   buildAmount?: number; // For build_stack moves
-  
+
   // Ring placement specific
   placedOnStack?: boolean;
   placementCount?: number; // Number of rings placed in this action (defaults to 1 when omitted)
-  
+
   // Movement specific
   stackMoved?: RingStack;
   minimumDistance?: number;
   actualDistance?: number;
   markerLeft?: Position; // Where marker was left
-  
+
   // Capture specific
   captureType?: CaptureType;
   captureTarget?: Position; // Position of the stack being captured (for overtaking)
   capturedStacks?: RingStack[];
   captureChain?: Position[]; // Sequence of capture positions
   overtakenRings?: number[]; // Player numbers of overtaken rings
-  
+
   // Line formation specific
   formedLines?: LineInfo[];
   collapsedMarkers?: Position[];
-  
+
   // Territory specific
   claimedTerritory?: Territory[];
   disconnectedRegions?: Territory[];
   eliminatedRings?: { player: number; count: number }[];
-  
+
   timestamp: Date;
   thinkTime: number;
   moveNumber: number;
@@ -294,7 +299,7 @@ export interface GameState {
   lastMoveAt: Date;
   isRated: boolean;
   maxPlayers: number;
-  
+
   // RingRift specific state
   totalRingsInPlay: number; // Total rings placed on board
   totalRingsEliminated: number; // Total rings eliminated from game
@@ -304,7 +309,15 @@ export interface GameState {
 
 export interface GameResult {
   winner?: number;
-  reason: 'ring_elimination' | 'territory_control' | 'last_player_standing' | 'timeout' | 'resignation' | 'draw' | 'abandonment' | 'game_completed';
+  reason:
+    | 'ring_elimination'
+    | 'territory_control'
+    | 'last_player_standing'
+    | 'timeout'
+    | 'resignation'
+    | 'draw'
+    | 'abandonment'
+    | 'game_completed';
   finalScore: {
     ringsEliminated: { [playerNumber: number]: number };
     territorySpaces: { [playerNumber: number]: number };
@@ -337,16 +350,22 @@ export interface Game {
   allowSpectators: boolean;
   status: GameStatus;
   gameState: GameState;
-  
+
   // Players
   player1Id?: string;
   player2Id?: string;
   player3Id?: string;
   player4Id?: string;
-  
+
+  // Player relations (populated by API)
+  player1?: { id: string; username: string; rating?: number };
+  player2?: { id: string; username: string; rating?: number };
+  player3?: { id: string; username: string; rating?: number };
+  player4?: { id: string; username: string; rating?: number };
+
   // Game result
   winnerId?: string;
-  
+
   // Timestamps
   createdAt: Date;
   updatedAt: Date;
@@ -361,7 +380,7 @@ export const positionToString = (pos: Position): string => {
 
 export const stringToPosition = (str: string): Position => {
   const parts = str.split(',').map(Number);
-  return parts.length === 3 
+  return parts.length === 3
     ? { x: parts[0], y: parts[1], z: parts[2] }
     : { x: parts[0], y: parts[1] };
 };
@@ -380,7 +399,7 @@ export const BOARD_CONFIGS = {
     movementAdjacency: 'moore' as AdjacencyType, // 8-direction movement
     lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
     territoryAdjacency: 'von_neumann' as AdjacencyType, // 4-direction territory
-    type: 'square' as const
+    type: 'square' as const,
   },
   square19: {
     size: 19,
@@ -390,7 +409,7 @@ export const BOARD_CONFIGS = {
     movementAdjacency: 'moore' as AdjacencyType, // 8-direction movement
     lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
     territoryAdjacency: 'von_neumann' as AdjacencyType, // 4-direction territory
-    type: 'square' as const
+    type: 'square' as const,
   },
   hexagonal: {
     size: 11, // Radius of hexagonal board
@@ -400,11 +419,11 @@ export const BOARD_CONFIGS = {
     movementAdjacency: 'hexagonal' as AdjacencyType, // 6-direction movement
     lineAdjacency: 'hexagonal' as AdjacencyType, // 6-direction line formation
     territoryAdjacency: 'hexagonal' as AdjacencyType, // 6-direction territory
-    type: 'hexagonal' as const
-  }
+    type: 'hexagonal' as const,
+  },
 } as const;
 
-export type BoardConfig = typeof BOARD_CONFIGS[keyof typeof BOARD_CONFIGS];
+export type BoardConfig = (typeof BOARD_CONFIGS)[keyof typeof BOARD_CONFIGS];
 
 // --- Player choice system types ---
 

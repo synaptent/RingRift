@@ -14,7 +14,7 @@ Those statements are now obsolete:
 - BoardState, markers, collapsed spaces, and stack data structures are fully
   implemented and used throughout the engine.
 - Movement, overtaking captures, line formation/collapse, territory
-disconnection, forced elimination, and hex boards are all implemented and
+  disconnection, forced elimination, and hex boards are all implemented and
   generally aligned with `ringrift_complete_rules.md`.
 - The PlayerChoice layer (shared types + PlayerInteractionManager +
   WebSocketInteractionHandler + AIInteractionHandler + DelegatingInteractionHandler)
@@ -158,7 +158,7 @@ mismatches** remain between backend and sandbox traces:
     used by `applyCanonicalMove`, instead of using bespoke mutation logic.
 - Harden backend replay helpers:
   - Introduce a generic `replayMovesOnBackend(initialConfig, moves: Move[]):
-    GameTrace` helper that builds a backend `GameEngine`, finds matching
+GameTrace` helper that builds a backend `GameEngine`, finds matching
     backend moves via `findMatchingBackendMove`, and produces a backend
     `GameTrace` suitable for parity analysis.
   - Treat `replayTraceOnBackend` / `replayMovesOnBackend` as canonical
@@ -334,6 +334,63 @@ work (stronger heuristics, search/ML) plus potentially additional endpoints.
   to guide future improvements.
 - Incrementally introduce deeper search or ML-based agents on the Python side
   behind the existing endpoints.
+
+---
+
+### P1.4 – Sandbox aiSimulation S-invariant expectations
+
+**Component(s):** [`ClientSandboxEngine`](src/client/sandbox/ClientSandboxEngine.ts), sandbox AI (`maybeRunAITurn`), S-invariant tests
+**Severity:** Medium for test signalling; low for core rules correctness
+**Status:** Behaviour understood and intentional; tests need modernization
+
+**Context:**
+
+- The sandbox and backend share a canonical **S-invariant** via [`computeProgressSnapshot()`](src/shared/engine/core.ts:498):
+  `S = markers + collapsed + eliminated`
+- The **aiSimulation** suite [`tests/unit/ClientSandboxEngine.aiSimulation.test.ts`](tests/unit/ClientSandboxEngine.aiSimulation.test.ts:1) runs many seeded AI-vs-AI games entirely in the sandbox and currently asserts:
+
+  ```ts
+  const beforeProgress = computeProgressSnapshot(stateBefore);
+  await engine.maybeRunAITurn();
+  const afterProgress = computeProgressSnapshot(engine.getGameState());
+  expect(afterProgress.S).toBeGreaterThan(beforeProgress.S);
+  ```
+
+- These tests **fail** in scenarios where the sandbox AI performs a canonical `skip_placement` action during the `ring_placement` phase:
+  - `skip_placement` is emitted when a player has rings in hand but **no legal placements** that satisfy the sandbox no-dead-placement rule (using [`hasAnyLegalMoveOrCaptureFromOnBoard`](src/shared/engine/core.ts:323)).
+  - The action transitions the player into `movement` but **does not change the board** (no rings placed, no markers added/removed, no territory collapsed, no rings eliminated).
+
+**Observed behaviour (current implementation):**
+
+- For a pure `skip_placement` step in the sandbox:
+  - `markers` is unchanged.
+  - `collapsedSpaces` is unchanged.
+  - `totalRingsEliminated` is unchanged.
+  - Therefore `afterProgress.S === beforeProgress.S`.
+
+- This is the **expected** behaviour given the rules interpretation:
+  S is a progress measure over _board changes_, and a phase-only transition that leaves the board intact should preserve S.
+
+**Impact:**
+
+- The **aiSimulation** suite currently reports **9 failing tests** (across board types and player counts) with messages of the form:
+
+  > Expected: > 1
+  > Received: 1
+
+- These failures indicate a **test expectation mismatch**, not a rules bug:
+  - The engine correctly treats `skip_placement` as a phase change with no board delta.
+  - The tests currently require **strict S increase on every AI tick**, which is stronger than intended.
+
+**Planned direction:**
+
+- Treat the current engine behaviour as **authoritative** for `skip_placement`:
+  - S should be **non-decreasing** across canonical actions, but not strictly increasing for phase-only transitions that do not alter the board.
+- Update or replace the aiSimulation assertions to reflect this:
+  - Either weaken the expectation to `afterProgress.S >= beforeProgress.S`, or
+  - Restrict strict-increase checks to actions that actually mutate the board (placements, moves, captures, lines, territory, forced elimination).
+
+- Until those tests are updated, the failing **aiSimulation** cases should be interpreted as a **known, expected discrepancy in test semantics**, not as an engine correctness failure.
 
 ---
 
