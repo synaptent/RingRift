@@ -87,32 +87,36 @@ describe('Scenario: Line and Territory Interactions (FAQ 7, 20, 22, 23; backend)
     boardManager.setStack(position, stack, gameState.board);
   }
 
-  test('Q7_Q20_combined_line_and_territory_processing_order_backend', async () => {
-    // Rules reference:
-    // - Section 11.2 / FAQ Q7, Q22: line formation & graduated rewards.
-    // - Section 12.2 / 12.3 / FAQ Q20, Q23: territory disconnection with
-    //   self-elimination prerequisite and chain reactions.
-    //
-    // Scenario shape (square8 backend, no PlayerInteractionManager wired):
-    // - A single overlong line (length 5 with requiredLength=4) for Player 1
-    //   exists on the board. With no interaction handler, backend defaults
-    //   to Option 2: collapse exactly requiredLength markers and perform
-    //   NO ring elimination (see GameEngine.lines.scenarios.test).
-    // - A disconnected region for Player 1 also exists, containing a single
-    //   Player 2 stack and satisfying the self-elimination prerequisite
-    //   (Player 1 has a stack outside the region).
-    // - We invoke the same internal helpers that the engine uses for
-    //   automatic post-move processing: first processLineFormations, then
-    //   processDisconnectedRegions.
-    // - Expected:
-    //   * Line collapse happens first, creating requiredLength collapsed
-    //     spaces for Player 1 and NO ring elimination.
-    //   * Territory processing then collapses the disconnected region,
-    //     eliminates all rings inside it (Player 2), and forces a single
-    //     self-elimination from Player 1, with all eliminations credited
-    //     to Player 1.
+  const boardTypesUnderTest: BoardType[] = ['square8', 'square19', 'hexagonal'];
 
-    const { engine, gameState, boardManager } = createEngine('square8');
+  test.each<BoardType>(boardTypesUnderTest)(
+    'Q7_Q20_combined_line_and_territory_processing_order_backend_%s',
+    async (boardType) => {
+      // Rules reference:
+      // - Section 11.2 / FAQ Q7, Q22: line formation & graduated rewards.
+      // - Section 12.2 / 12.3 / FAQ Q20, Q23: territory disconnection with
+      //   self-elimination prerequisite and chain reactions.
+      //
+      // Scenario shape (backend GameEngine, no PlayerInteractionManager wired):
+      // - A single overlong line (length = requiredLength + 1) for Player 1
+      //   exists on the board. With no interaction handler, backend defaults
+      //   to Option 2: collapse exactly requiredLength markers and perform
+      //   NO ring elimination (see GameEngine.lines.scenarios.test).
+      // - A disconnected region for Player 1 also exists, containing a single
+      //   Player 2 stack and satisfying the self-elimination prerequisite
+      //   (Player 1 has a stack outside the region).
+      // - We invoke the same internal helpers that the engine uses for
+      //   automatic post-move processing: first processLineFormations, then
+      //   processDisconnectedRegions.
+      // - Expected on all board types (square8, square19, hexagonal):
+      //   * Line collapse happens first, creating requiredLength collapsed
+      //     spaces for Player 1 and NO ring elimination.
+      //   * Territory processing then collapses the disconnected region,
+      //     eliminates all rings inside it (Player 2), and forces a single
+      //     self-elimination from Player 1, with all eliminations credited
+      //     to Player 1.
+ 
+    const { engine, gameState, boardManager } = createEngine(boardType);
     const engineAny: any = engine;
     const board = gameState.board;
     const requiredLength = BOARD_CONFIGS[gameState.boardType].lineLength;

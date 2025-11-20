@@ -1491,36 +1491,52 @@ The square grid with orthogonal and diagonal movement enables several patterns f
 
 #### 15.3.1 180° Reversal Pattern
 
-Captures back and forth over the target ring stack. Here's a detailed example:
+Captures back and forth over the same target ring stack. Here’s a detailed example that focuses on the structure of the pattern rather than specific coordinates:
 
-Initial Position:
+**Initial Position**
 
-- Blue has a stack of height 4 (all blue) at position A
-- Red has a stack of height 3 (all red) at position B two spaces away
-- Numerous consecutive empty spaces exist in each direction from each marker on the line drawn between the Blue ring stack and Red ring stack, with no intervening markers
+- Blue has a stack of height 4 (all blue) at position **A**.
+- Red has a stack of height 3 (all red) at position **B** along the same straight line.
+- There are enough empty spaces in both directions along that line so that Blue can:
+  - First jump from **A** over **B** to a legal landing space **C** further along the line, and
+  - Then jump back from **C** over **B** to a different legal landing space **D** on the opposite side of **B**.
+- Each jump segment must obey the normal capture rules:
+  - The move is in a straight line (orthogonal/diagonal on square boards, along a main axis on hex).
+  - The total distance from the starting space, over the target stack at **B**, to the landing space (**C** or **D**) is at least the current stack height.
+  - Other than the target stack itself, the path contains no additional stacks or collapsed spaces.
+  - The landing space is a valid, non‑collapsed destination according to the standard capture rules.
 
-Capture Sequence:
-a. First Jump:
+**Capture Sequence**
 
-- Blue jumps from A over B to the empty space C 5 spaces away from position A on the line of travel (travelling over 4 empty spaces equalling initial Blue stack height of 4)
-- Leaves a blue marker on position A
-- Captures top red ring
-- Red's stack at position B now has stack height of 2
-- Blue's stack now has a stack height of 5 (4 blue, 1 red)
+1. **First Jump (A → over B → C)**
+   - Blue jumps from **A** over Red’s stack at **B** to some legal landing space **C** further along the same line, satisfying the minimum‑distance rule for Blue’s current stack height (4).
+   - Blue leaves a blue marker on **A**.
+   - Blue overtakes (captures) the **top red ring** from **B** and adds it to the **bottom** of the Blue stack.
+   - Red’s stack at **B** now has stack height 2.
+   - Blue’s stack at **C** now has stack height 5 (4 blue + 1 red).
 
-b. Second Jump:
+2. **Second Jump (C → over B → D, 180° reversal)**
+   - From **C**, Blue performs a second capture segment by reversing direction 180°, jumping back over the same Red stack at **B** and landing on a different legal space **D** on the far side of **B**.
+   - This second capture also satisfies the minimum‑distance rule for the new Blue stack height (now 5), uses a clear path (other than the target at **B**), and lands on a valid destination.
+   - Blue leaves a blue marker on **D**.
+   - Any blue marker left earlier on **A** may later be traversed and converted to collapsed blue territory according to the standard marker and territory rules (Sections 8.2 and 10.2); this is an implementation detail rather than the core point of the pattern.
+   - Blue again overtakes the **top red ring** from **B** and adds it to the **bottom** of the Blue stack.
+   - Red’s stack at **B** now has stack height 1.
+   - Blue’s stack at **D** now has stack height 6 (4 blue + 2 red).
 
-- From C, Blue jumps back over B to D, 6 spaces away from C in the opposite direction of travel (travelling over 5 empty spaces equalling the Blue stack height of 5 at the start of the jump segment)
-- D is 1 space behind space A (one space further from position B than space A was from position B, in the direction going from B to A)
-- Leaves a blue marker on position D
-- Collapses position A, blue marker flips to collapsed blue space on position A, claiming position A as blue territory
-- Captures new top red ring
-- Red's stack at position B now has stack height of 1
-- Blue's stack at position D now has a stack height of 6 (4 blue, 2 red)
+3. **Third Jump Not Allowed**
 
-c. Third Jump Not Allowed:
+- After these two captures, any additional attempt to jump back over **B** in the same line is illegal in this example, because either:
+  - The path would be blocked by collapsed spaces created by earlier movement and marker collapses, or
+  - No landing space remains that both satisfies the minimum‑distance rule for the now‑taller Blue stack and is legally reachable without crossing other stacks or collapsed territory.
 
-- From D, Blue cannot jump back over B a third time because it would require travelling over the collapsed blue space on position A
+**Resulting State (Key Takeaways)**
+
+- Blue has performed two legal overtaking captures against the **same** Red stack at **B** by reversing direction 180° between capture segments.
+- The final board state has:
+  - Exactly one Blue‑controlled stack resulting from the sequence, with **stack height 6** (4 original Blue rings + 2 captured Red rings).
+  - Red’s original stack at **B** reduced to **height 1** (one remaining red ring).
+- This illustrates the 180° reversal pattern: as long as each individual capture segment satisfies the standard movement and capture requirements, a player may reverse direction and jump over the **same** target stack more than once in a chain, until the geometry or the minimum‑distance rule makes further captures impossible.
 
 ```mermaid
 graph LR

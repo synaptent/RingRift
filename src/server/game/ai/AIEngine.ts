@@ -18,12 +18,17 @@ import { getAIServiceClient, AIType as ServiceAIType } from '../../services/AISe
 import { logger } from '../../utils/logger';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
+import {
+  chooseLocalMoveFromCandidates as chooseSharedLocalMoveFromCandidates,
+  LocalAIRng,
+} from '../../../shared/engine/localAIMoveSelection';
 
 export enum AIType {
   RANDOM = 'random',
   HEURISTIC = 'heuristic',
   MINIMAX = 'minimax',
   MCTS = 'mcts',
+  DESCENT = 'descent',
 }
 
 export interface AIConfig {
@@ -165,9 +170,15 @@ export class AIEngine {
 
   /**
    * Generate a move using local heuristics when the AI service is unavailable.
-   * Uses RuleEngine to find valid moves and selects one randomly.
+   * Uses RuleEngine to find valid moves and selects one randomly. The
+   * optional rng parameter allows test harnesses and parity tools to share
+   * a deterministic RNG stream with other AI callers (e.g. sandbox AI).
    */
-  private getLocalAIMove(playerNumber: number, gameState: GameState): Move | null {
+  private getLocalAIMove(
+    playerNumber: number,
+    gameState: GameState,
+    rng: LocalAIRng = Math.random
+  ): Move | null {
     try {
       const boardManager = new BoardManager(gameState.boardType);
       const ruleEngine = new RuleEngine(boardManager, gameState.boardType);
@@ -194,7 +205,8 @@ export class AIEngine {
               m.type === 'move_stack' ||
               m.type === 'move_ring' ||
               m.type === 'overtaking_capture' ||
-              m.type === 'build_stack'
+              m.type === 'build_stack' ||
+              m.type === 'continue_capture_segment'
             ) {
               return m.from && positionToString(m.from) === placedKey;
             }
@@ -207,16 +219,11 @@ export class AIEngine {
         return null;
       }
 
-      // Simple random selection for fallback
-      const randomIndex = Math.floor(Math.random() * validMoves.length);
-      const selectedMove = validMoves[randomIndex];
-
-      logger.info('Local AI fallback move generated', {
-        playerNumber,
-        moveType: selectedMove.type,
-      });
-
-      return selectedMove;
+      // Delegate to the shared selection policy so that local fallback and
+      // any external harnesses can share the same move preferences. When
+      // an explicit rng is provided, it is threaded through so parity
+      // harnesses can keep backend and sandbox AI on the same RNG stream.
+      return this.chooseLocalMoveFromCandidates(playerNumber, gameState, validMoves, rng);
     } catch (error) {
       logger.error('Failed to generate local AI move', {
         playerNumber,
@@ -224,6 +231,36 @@ export class AIEngine {
       });
       return null;
     }
+  }
+
+  /**
+   * Shared local-selection policy used by the fallback path and test
+   * harnesses. Given a set of already-legal moves (typically from
+   * GameEngine.getValidMoves or RuleEngine.getValidMoves), prefer moves
+   * that are more likely to make structural progress before falling back
+   * to a pure random choice.
+   */
+  public chooseLocalMoveFromCandidates(
+    playerNumber: number,
+    gameState: GameState,
+    candidates: Move[],
+    rng: LocalAIRng = Math.random
+  ): Move | null {
+    const selectedMove = chooseSharedLocalMoveFromCandidates(
+      playerNumber,
+      gameState,
+      candidates,
+      rng
+    );
+
+    if (selectedMove) {
+      logger.info('Local AI fallback move generated', {
+        playerNumber,
+        moveType: selectedMove.type,
+      });
+    }
+
+    return selectedMove;
   }
 
   /**
@@ -550,6 +587,8 @@ export class AIEngine {
         return AIType.MINIMAX;
       case 'mcts':
         return AIType.MCTS;
+      case 'descent':
+        return AIType.DESCENT;
       default:
         return AIType.HEURISTIC;
     }
@@ -566,6 +605,8 @@ export class AIEngine {
         return 'minimax';
       case AIType.MCTS:
         return 'mcts';
+      case AIType.DESCENT:
+        return 'descent';
       default:
         return 'heuristic';
     }

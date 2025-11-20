@@ -125,12 +125,12 @@ describe('ClientSandboxEngine chain capture parity', () => {
     // Simulate user selecting the attacking stack, then choosing the first
     // capture landing at (2,4). The sandbox engine will drive the rest of
     // the chain internally using the interaction handler.
-    engine.handleHumanCellClick(redPos);
-    engine.handleHumanCellClick({ x: 2, y: 4 });
+    await engine.handleHumanCellClick(redPos);
+    await engine.handleHumanCellClick({ x: 2, y: 4 });
 
-    // Allow any async chain-capture continuation to resolve (for the
-    // capture_direction choice case) before asserting on final state.
-    await Promise.resolve();
+    // At this point, handleHumanCellClick has awaited the full chain
+    // resolution (including any capture_direction choices), so we can
+    // safely inspect the final state.
 
     const finalState = engine.getGameState();
     const finalBoard = finalState.board;
@@ -249,12 +249,12 @@ describe('ClientSandboxEngine chain capture parity', () => {
 
     // Human performs the initial capture: select Red at (3,3), then click a
     // landing beyond Blue. We choose (3,5) to mirror the Rust/backend tests.
-    engine.handleHumanCellClick(redPos);
-    engine.handleHumanCellClick({ x: 3, y: 5 });
+    await engine.handleHumanCellClick(redPos);
+    await engine.handleHumanCellClick({ x: 3, y: 5 });
 
-    // Allow the async capture_direction choice(s) and chain continuation to
-    // resolve before inspecting final state.
-    await Promise.resolve();
+    // By awaiting both clicks, we ensure that any capture_direction choices
+    // and mandatory chain continuation have fully resolved before we
+    // inspect the final state.
 
     const finalState = engine.getGameState();
     const finalBoard = finalState.board;

@@ -90,9 +90,10 @@ class BaseAI(ABC):
             min_ms: Minimum thinking time in milliseconds
             max_ms: Maximum thinking time in milliseconds
         """
-        if self.config.think_time:
+        if self.config.think_time is not None:
             # Use configured think time
-            time.sleep(self.config.think_time / 1000.0)
+            if self.config.think_time > 0:
+                time.sleep(self.config.think_time / 1000.0)
         else:
             # Random think time for more natural feel
             think_time = random.randint(min_ms, max_ms)

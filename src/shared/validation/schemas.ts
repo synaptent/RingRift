@@ -19,6 +19,8 @@ export const MoveSchema = z.object({
     'build_stack',
     'move_stack',
     'overtaking_capture',
+    'continue_capture_segment',
+    'skip_placement',
     'line_formation',
     'territory_claim'
   ]),
@@ -205,7 +207,14 @@ export const GameStateSchema = z.object({
     timeRemaining: z.number(),
     aiDifficulty: z.number().min(1).max(10).optional()
   })),
-  currentPhase: z.enum(['ring_placement', 'movement', 'capture', 'line_processing', 'territory_processing']),
+  currentPhase: z.enum([
+    'ring_placement',
+    'movement',
+    'capture',
+    'chain_capture',
+    'line_processing',
+    'territory_processing'
+  ]),
   currentPlayer: z.number().int().min(1).max(4),
   gameStatus: z.enum(['waiting', 'active', 'finished', 'paused', 'abandoned', 'completed']),
   winner: z.number().int().min(1).max(4).optional(),

@@ -131,6 +131,19 @@ describe('Trace parity first-divergence helper: square8 / 2p / seed=5', () => {
       if (sandboxHashAfter && backendHashAfter && backendHashAfter !== sandboxHashAfter) {
         firstMismatchIndex = i;
         console.log('FIRST HASH DIVERGENCE at index', i, 'moveNumber', move.moveNumber);
+
+        // Log the canonical sandbox move that produced this divergence so we can
+        // reason about which rule/phase it exercises.
+        console.log('Sandbox Move at divergence:', JSON.stringify(move, null, 2));
+
+        // Also log the sandbox-side board summary from the trace BEFORE this move so
+        // we can compare the exact delta against the backend's pre-move state.
+        console.log(
+          'Sandbox State Summary BEFORE move (from trace entry):',
+          JSON.stringify(entry.boardBeforeSummary, null, 2)
+        );
+        console.log('Sandbox State Hash (before move):', entry.stateHashBefore);
+
         console.log(
           'Sandbox State Summary AFTER move:',
           JSON.stringify(entry.boardAfterSummary, null, 2)
@@ -157,11 +170,14 @@ describe('Trace parity first-divergence helper: square8 / 2p / seed=5', () => {
 
     if (firstMismatchIndex === -1) {
       console.log('No hash/phase divergence found for seed 5 up to maxSteps', MAX_STEPS);
+    } else {
+      throw new Error(
+        `Backend vs Sandbox trace parity divergence for seed 5 at index ${firstMismatchIndex}. ` +
+          'See earlier console diagnostics for phase/hash mismatch details.'
+      );
     }
 
-    // This is a diagnostic helper: we do not fail the test based on the
-    // mismatch index yet. Once we know the correct behaviour, we can
-    // tighten this to an expectation.
+    // Sanity check: we still expect a non-empty trace for this scenario.
     expect(trace.entries.length).toBeGreaterThan(0);
   });
 });

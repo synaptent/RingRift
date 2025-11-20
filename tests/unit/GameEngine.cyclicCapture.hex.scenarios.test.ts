@@ -59,7 +59,7 @@ import { applyMarkerEffectsAlongPathOnBoard, MarkerPathHelpers } from '../../src
  * via the sandbox helpers.
  */
 
-describe('GameEngine cyclic capture scenarios (hexagonal)', () => {
+describe('GameEngine cyclic capture scenarios (hexagonal; FAQ 15.3.x)', () => {
   const timeControl: TimeControl = {
     initialTime: 600,
     increment: 0,
@@ -91,7 +91,52 @@ describe('GameEngine cyclic capture scenarios (hexagonal)', () => {
     },
   ];
 
-  test('supports a hex cyclic chain capture around an inner triangle and terminates when distance < height', async () => {
+  /**
+   * Resolve any active capture chain for the current player by repeatedly
+   * selecting a continue_capture_segment move from GameEngine.getValidMoves
+   * while the game remains in the 'chain_capture' phase. This mirrors the
+   * unified Move-based chain-capture model used in other scenario suites.
+   */
+  async function resolveChainIfPresent(engine: GameEngine): Promise<void> {
+    const engineAny: any = engine;
+    const gameState = engineAny.gameState as any;
+
+    if (gameState.currentPhase !== 'chain_capture') {
+      return;
+    }
+
+    const MAX_STEPS = 32;
+    let steps = 0;
+
+    while (gameState.currentPhase === 'chain_capture') {
+      steps++;
+      if (steps > MAX_STEPS) {
+        throw new Error('resolveChainIfPresent: exceeded maximum chain-capture steps');
+      }
+
+      const currentPlayer = gameState.currentPlayer;
+      const moves = engine.getValidMoves(currentPlayer);
+      const chainMoves = moves.filter((m: any) => m.type === 'continue_capture_segment');
+
+      if (chainMoves.length === 0) {
+        break;
+      }
+
+      const next = chainMoves[0];
+
+      const result = await engine.makeMove({
+        player: next.player,
+        type: 'continue_capture_segment',
+        from: next.from,
+        captureTarget: next.captureTarget,
+        to: next.to,
+      } as any);
+
+      expect(result.success).toBe(true);
+    }
+  }
+
+  test('FAQ_15_3_x_hex_cyclic_chain_capture_around_inner_triangle', async () => {
     const engine = new GameEngine('cyclic-hex', 'hexagonal', players, timeControl, false) as any;
     const gameState = engine.gameState as any;
     const boardManager = engine.boardManager as any;
@@ -149,6 +194,12 @@ describe('GameEngine cyclic capture scenarios (hexagonal)', () => {
 
     expect(result.success).toBe(true);
 
+    // After the initial capture, explicitly resolve any mandatory chain
+    // continuations via the unified chain_capture phase so that the final
+    // board state reflects all legal segments before we make assertions
+    // about stacks and internal chain state.
+    await resolveChainIfPresent(engine as GameEngine);
+
     const board = gameState.board as any;
     const stacks: Map<string, RingStack> = board.stacks;
 
@@ -200,7 +251,7 @@ describe('GameEngine cyclic capture scenarios (hexagonal)', () => {
   /**
    * Sandbox-based maximal chain search for the fixed hex triangle geometry.
    */
-  test('sandbox search finds maximal overtaking chains for a hex triangular geometry', () => {
+  test('FAQ_15_3_x_hex_cyclic_chain_maximal_search_sandbox', () => {
     const config = BOARD_CONFIGS.hexagonal;
     const radius = config.size - 1; // cube radius (size 11 -> radius 10)
 

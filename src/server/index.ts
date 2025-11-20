@@ -1,6 +1,5 @@
 import express from 'express';
 import { createServer } from 'http';
-import { Server } from 'socket.io';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -14,20 +13,12 @@ import { logger } from './utils/logger';
 import { connectDatabase } from './database/connection';
 import { connectRedis } from './cache/redis';
 
+
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:5173",
-    methods: ["GET", "POST"],
-    credentials: true
-  },
-  transports: ['websocket', 'polling']
-});
-
 // Middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -91,17 +82,25 @@ async function startServer() {
     await connectDatabase();
     logger.info('Database connected successfully');
 
-    // Connect to Redis
-    await connectRedis();
-    logger.info('Redis connected successfully');
+    // Connect to Redis (optional in local development). Failure should not
+    // prevent the HTTP server from starting so that developers can run
+    // without a local Redis instance.
+    try {
+      await connectRedis();
+      logger.info('Redis connected successfully');
+    } catch (redisError) {
+      logger.warn('Redis connection failed; continuing without Redis', {
+        error:
+          redisError instanceof Error ? redisError.message : String(redisError),
+      });
+    }
 
     // Start server
     const PORT = process.env.PORT || 3000;
-    const SOCKET_PORT = process.env.SOCKET_PORT || 3001;
 
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
-      logger.info(`WebSocket server running on port ${SOCKET_PORT}`);
+      logger.info(`WebSocket server attached to HTTP server on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
     });
 
@@ -146,4 +145,4 @@ process.on('unhandledRejection', (reason, promise) => {
 // Start the server
 startServer();
 
-export { app, server, io };
+export { app, server };

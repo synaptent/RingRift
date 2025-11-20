@@ -11,14 +11,16 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    port: 3000,
+    // Use the standard Vite dev port (5173) to match .env.example, CORS_ORIGIN,
+    // and documentation. The backend API + WebSockets run on 3000 in dev.
+    port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
       '/socket.io': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         ws: true,
       },

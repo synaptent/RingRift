@@ -10,6 +10,7 @@ import { createTestBoard, addStack, pos, createTestGameState, createTestPlayer }
 import { getMovementDirectionsForBoardType } from '../../src/shared/engine/core';
 import { BoardManager } from '../../src/server/game/BoardManager';
 import { RuleEngine } from '../../src/server/game/RuleEngine';
+import { getCaptureOptionsFromPosition as getBackendCaptureOptions } from '../../src/server/game/rules/captureChainEngine';
 
 interface CaptureSequence {
   segments: { from: Position; target: Position; landing: Position }[];
@@ -18,7 +19,7 @@ interface CaptureSequence {
 
 type CaptureTestCase = { boardType: BoardType; board: BoardState; from: Position; player: number };
 
-const MAX_SEQUENCES = 100_000;
+/* MAX_SEQUENCES limit removed; enumeration now explores the full search space. */
 
 function cloneBoard(board: BoardState): BoardState {
   return {
@@ -120,8 +121,7 @@ function logCaseSummary(
       maxChainLenForCase = seq.segments.length;
     }
   }
-  const numSequencesText = numSequences >= MAX_SEQUENCES ? `>${MAX_SEQUENCES}` : `${numSequences}`;
-  console.log(`  number of distinct capture sequences: ${numSequencesText}`);
+  console.log(`  number of distinct capture sequences: ${numSequences}`);
   console.log(`  longest capture chain length in this case: ${maxChainLenForCase}`);
 
   if (maxChainLenForCase > 0) {
@@ -168,8 +168,7 @@ function enumerateAllCaptureSequencesSandbox(
   boardType: BoardType,
   initialBoard: BoardState,
   from: Position,
-  player: number,
-  maxSequences: number = MAX_SEQUENCES
+  player: number
 ): CaptureSequence[] {
   const sequences: CaptureSequence[] = [];
 
@@ -206,7 +205,7 @@ function enumerateAllCaptureSequencesSandbox(
     }
   ];
 
-  while (stack.length > 0 && sequences.length < maxSequences) {
+  while (stack.length > 0) {
     const frame = stack.pop()!;
     const { board, currentPos, segments } = frame;
 
@@ -226,10 +225,6 @@ function enumerateAllCaptureSequencesSandbox(
     }
 
     for (const seg of nextSegments) {
-      if (sequences.length >= maxSequences) {
-        break;
-      }
-
       const boardClone = cloneBoard(board);
 
       const markerHelpers: MarkerPathHelpers = {
@@ -298,8 +293,7 @@ function enumerateAllCaptureSequencesBackend(
   boardType: BoardType,
   initialBoard: BoardState,
   from: Position,
-  player: number,
-  maxSequences: number = MAX_SEQUENCES
+  player: number
 ): CaptureSequence[] {
   const sequences: CaptureSequence[] = [];
   const bm = new BoardManager(boardType);
@@ -319,7 +313,7 @@ function enumerateAllCaptureSequencesBackend(
     }
   ];
 
-  while (stack.length > 0 && sequences.length < maxSequences) {
+  while (stack.length > 0) {
     const frame = stack.pop()!;
     const { board, currentPos, segments } = frame;
 
@@ -332,12 +326,9 @@ function enumerateAllCaptureSequencesBackend(
       moveHistory: []
     });
 
-    const moves = engine.getValidMoves(gameState).filter(m => {
-      return (
-        m.type === 'overtaking_capture' &&
-        m.from &&
-        positionToString(m.from) === positionToString(currentPos)
-      );
+    const moves = getBackendCaptureOptions(currentPos, player, gameState, {
+      boardManager: bm,
+      ruleEngine: engine
     });
 
     if (moves.length === 0) {
@@ -348,9 +339,6 @@ function enumerateAllCaptureSequencesBackend(
     }
 
     for (const move of moves) {
-      if (sequences.length >= maxSequences) {
-        break;
-      }
       if (!move.from || !move.captureTarget) continue;
       const boardClone = cloneBoard(board);
 
@@ -645,15 +633,13 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         c.boardType,
         c.board,
         c.from,
-        c.player,
-        MAX_SEQUENCES
+        c.player
       );
       const backendSeqs = enumerateAllCaptureSequencesBackend(
         c.boardType,
         c.board,
         c.from,
-        c.player,
-        MAX_SEQUENCES
+        c.player
       );
 
       const sandboxKeys = sandboxSeqs.map(seq =>
@@ -782,15 +768,13 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         c.boardType,
         c.board,
         c.from,
-        c.player,
-        MAX_SEQUENCES
+        c.player
       );
       const backendSeqs = enumerateAllCaptureSequencesBackend(
         c.boardType,
         c.board,
         c.from,
-        c.player,
-        MAX_SEQUENCES
+        c.player
       );
 
       const sandboxKeys = sandboxSeqs.map(seq =>
@@ -917,15 +901,13 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         c.boardType,
         c.board,
         c.from,
-        c.player,
-        MAX_SEQUENCES
+        c.player
       );
       const backendSeqs = enumerateAllCaptureSequencesBackend(
         c.boardType,
         c.board,
         c.from,
-        c.player,
-        MAX_SEQUENCES
+        c.player
       );
 
       const sandboxKeys = sandboxSeqs.map(seq =>

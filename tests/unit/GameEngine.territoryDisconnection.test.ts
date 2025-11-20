@@ -292,7 +292,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     expect(gameState.totalRingsEliminated).toBe(expectedEliminatedForP1);
   });
 
-  test('collapses territory correctly via makeMove using real BoardManager detection (no spies)', async () => {
+  test('Q15_Q20_territory_disconnection_real_detection_backend', async () => {
     const players = createPlayers();
     const engine = new GameEngine('territory-move-e2e-real', boardType, players, timeControl, false);
     const engineAny: any = engine;

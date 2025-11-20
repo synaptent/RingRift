@@ -135,12 +135,26 @@ export function enumerateCaptureSegmentsFromBoard(
 }
 
 export interface CaptureApplyAdapters {
-  applyMarkerEffectsAlongPath(from: Position, to: Position, playerNumber: number): void;
+  applyMarkerEffectsAlongPath(
+    from: Position,
+    to: Position,
+    playerNumber: number,
+    options?: { leaveDepartureMarker?: boolean }
+  ): void;
 }
 
 /**
  * Apply a single overtaking capture segment, including marker processing and
  * top-ring-only overtaking semantics, mutating the provided board.
+ *
+ * Marker behaviour mirrors backend GameEngine.performOvertakingCapture:
+ *   - Leave a marker on the true departure space (`from`).
+ *   - Process markers along the path from `from` to `target`.
+ *   - Process markers along the path from `target` to `landing` WITHOUT
+ *     placing a new departure marker on `target`.
+ *   - Markers on the capture target and landing cells themselves are not
+ *     treated as intermediate path markers here; landing-on-own-marker
+ *     elimination is handled by the caller.
  */
 export function applyCaptureSegmentOnBoard(
   board: BoardState,
@@ -159,7 +173,19 @@ export function applyCaptureSegmentOnBoard(
     return;
   }
 
-  adapters.applyMarkerEffectsAlongPath(from, landing, playerNumber);
+  // First process markers along the path from the true departure space to the
+  // capture target, leaving a departure marker at `from`.
+  adapters.applyMarkerEffectsAlongPath(from, target, playerNumber, {
+    leaveDepartureMarker: true,
+  });
+
+  // Then process markers along the path from the capture target to the landing
+  // cell without placing a new departure marker on `target`. This keeps
+  // marker-path semantics aligned with the backend's two-leg processing while
+  // still handling intermediate flips/collapses on the second leg.
+  adapters.applyMarkerEffectsAlongPath(target, landing, playerNumber, {
+    leaveDepartureMarker: false,
+  });
 
   if (targetStack.rings.length === 0) {
     return;
@@ -173,7 +199,7 @@ export function applyCaptureSegmentOnBoard(
       rings: remaining,
       stackHeight: remaining.length,
       capHeight: calculateCapHeight(remaining),
-      controllingPlayer: remaining[0]
+      controllingPlayer: remaining[0],
     };
     board.stacks.set(targetKey, newTarget);
   } else {
@@ -187,7 +213,7 @@ export function applyCaptureSegmentOnBoard(
     rings: newRings,
     stackHeight: newRings.length,
     capHeight: calculateCapHeight(newRings),
-    controllingPlayer: newRings[0]
+    controllingPlayer: newRings[0],
   };
 
   board.stacks.delete(fromKey);

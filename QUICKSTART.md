@@ -80,6 +80,11 @@ Once running, you should have:
 - **Backend API & WebSocket**: `http://localhost:3000` (`/api`, `/health`, Socket.IO)
 - **React client**: `http://localhost:5173`
 
+> **Important:** In local development there should be exactly **one** Node.js backend process listening on port `3000`:
+>
+> - Use `npm run dev:server` (or the `app` service in `docker compose up`) as the canonical backend entrypoint.
+> - Avoid starting additional ad-hoc scripts that also bind `3000` (for example, older WebSocket test harnesses or `ts-node src/server/index.ts` in a second terminal), as they can cause confusing WebSocket and `/game/:gameId` behaviour.
+
 You can:
 
 - Register/login via the client (Auth routes: `/api/auth/*`).
@@ -188,7 +193,7 @@ Or visit `http://localhost:8001/docs` in a browser and use the interactive Swagg
 
 The root `docker-compose.yml` currently defines the **main application stack**:
 
-- `app` – Node.js backend (builds from `Dockerfile` and exposes ports 3000 & 3001)
+- `app` – Node.js backend (builds from `Dockerfile` and exposes port 3000; HTTP API and Socket.IO WebSockets share this port)
 - `nginx` – Reverse proxy (80/443) using `nginx.conf`
 - `postgres` – PostgreSQL database
 - `redis` – Redis instance

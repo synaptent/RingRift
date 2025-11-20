@@ -31,6 +31,9 @@ class HeuristicAI(BaseAI):
     WEIGHT_VULNERABILITY = 8.0
     WEIGHT_OVERTAKE_POTENTIAL = 8.0
     WEIGHT_TERRITORY_CLOSURE = 10.0
+    WEIGHT_LINE_CONNECTIVITY = 6.0
+    WEIGHT_TERRITORY_SAFETY = 5.0
+    WEIGHT_STACK_MOBILITY = 4.0
     
     def select_move(self, game_state: GameState) -> Optional[Move]:
         """
@@ -84,6 +87,15 @@ class HeuristicAI(BaseAI):
         Returns:
             Evaluation score (positive = good for this AI)
         """
+        # Check for game over first
+        if game_state.game_status == "finished":
+            if game_state.winner == self.player_number:
+                return 100000.0
+            elif game_state.winner is not None:
+                return -100000.0
+            else:
+                return 0.0
+
         score = 0.0
         
         # Stack control evaluation
@@ -124,6 +136,18 @@ class HeuristicAI(BaseAI):
 
         # Territory closure evaluation
         score += self._evaluate_territory_closure(game_state)
+
+        # Influence evaluation
+        score += self._evaluate_influence(game_state)
+
+        # Line connectivity evaluation
+        score += self._evaluate_line_connectivity(game_state)
+
+        # Territory safety evaluation
+        score += self._evaluate_territory_safety(game_state)
+
+        # Stack mobility evaluation
+        score += self._evaluate_stack_mobility(game_state)
         
         return score
     
@@ -151,7 +175,10 @@ class HeuristicAI(BaseAI):
             "marker_count": self._evaluate_marker_count(game_state),
             "vulnerability": self._evaluate_vulnerability(game_state),
             "overtake_potential": self._evaluate_overtake_potential(game_state),
-            "territory_closure": self._evaluate_territory_closure(game_state)
+            "territory_closure": self._evaluate_territory_closure(game_state),
+            "line_connectivity": self._evaluate_line_connectivity(game_state),
+            "territory_safety": self._evaluate_territory_safety(game_state),
+            "stack_mobility": self._evaluate_stack_mobility(game_state)
         }
     
     def _evaluate_stack_control(self, game_state: GameState) -> float:
@@ -249,24 +276,84 @@ class HeuristicAI(BaseAI):
     
     def _evaluate_mobility(self, game_state: GameState) -> float:
         """Evaluate mobility (number of valid moves)"""
-        # This is computationally expensive, so we approximate it
-        # by counting stacks that are not blocked
-        score = 0.0
-        my_stacks = [s for s in game_state.board.stacks.values()
-                     if s.controlling_player == self.player_number]
+        # Use true mobility check via GameEngine
+        from ..game_engine import GameEngine
         
-        for stack in my_stacks:
-            adjacent = self._get_adjacent_positions(stack.position, game_state)
-            valid_moves = 0
-            for adj_pos in adjacent:
-                adj_key = adj_pos.to_key()
-                # Check if position is blocked by collapsed space or stack
-                if adj_key not in game_state.board.collapsed_spaces and adj_key not in game_state.board.stacks:
-                    valid_moves += 1
+        # Only calculate for self to save time, or calculate relative mobility?
+        # Relative mobility is better.
+        
+        my_moves = GameEngine.get_valid_moves(game_state, self.player_number)
+        
+        # For opponent, we need to temporarily switch current player if it's not their turn
+        # But get_valid_moves checks current_player.
+        # So we can only easily check for the current player.
+        
+        if game_state.current_player == self.player_number:
+            my_mobility = len(my_moves)
+            # Approximate opponent mobility or skip
+            opponent_mobility = 0
+        else:
+            opponent_mobility = len(GameEngine.get_valid_moves(game_state, game_state.current_player))
+            my_mobility = 0 # Can't easily check my moves if not my turn without hacking state
             
-            score += valid_moves * 0.5
+        # Fallback to approximation if we can't get true count for both
+        # Or just use what we have.
+        
+        # Let's stick to the approximation for the non-active player to avoid state hacking overhead
+        # and use true count for active player.
+        
+        score = 0.0
+        if game_state.current_player == self.player_number:
+            score += len(my_moves)
+        else:
+            # Approximate my mobility
+            my_stacks = [s for s in game_state.board.stacks.values() if s.controlling_player == self.player_number]
+            approx = 0
+            for stack in my_stacks:
+                adjacent = self._get_adjacent_positions(stack.position, game_state)
+                for adj_pos in adjacent:
+                    adj_key = adj_pos.to_key()
+                    if adj_key not in game_state.board.collapsed_spaces and adj_key not in game_state.board.stacks:
+                        approx += 1
+            score += approx
             
         return score * self.WEIGHT_MOBILITY
+
+    def _evaluate_influence(self, game_state: GameState) -> float:
+        """Evaluate board influence"""
+        score = 0.0
+        board = game_state.board
+        
+        # Influence map: +1 for my stack, -1 for opponent stack
+        # Decay by distance
+        
+        # Get all valid positions
+        from ..board_manager import BoardManager
+        # We don't have a direct method to get all positions in BoardManager exposed here easily
+        # without re-implementing.
+        # Let's iterate over stacks and project influence.
+        
+        influence_map = {}
+        
+        for stack in board.stacks.values():
+            value = 1.0 if stack.controlling_player == self.player_number else -1.0
+            # Base influence at stack position
+            pos_key = stack.position.to_key()
+            influence_map[pos_key] = influence_map.get(pos_key, 0) + value * 2.0
+            
+            # Project to neighbors (distance 1)
+            neighbors = self._get_adjacent_positions(stack.position, game_state)
+            for n in neighbors:
+                n_key = n.to_key()
+                influence_map[n_key] = influence_map.get(n_key, 0) + value * 1.0
+                
+                # Project to distance 2 (simplified, only for hex or if needed)
+                # For now distance 1 is enough for "control"
+        
+        # Sum up positive influence (my control) vs negative (opponent control)
+        total_influence = sum(influence_map.values())
+        
+        return total_influence * 2.0 # Weight for influence
 
     def _evaluate_eliminated_rings(self, game_state: GameState) -> float:
         """Evaluate eliminated rings"""
@@ -278,10 +365,44 @@ class HeuristicAI(BaseAI):
 
     def _evaluate_line_potential(self, game_state: GameState) -> float:
         """Evaluate potential to form lines"""
-        # Simplified check for markers in a row
         score = 0.0
-        # TODO: Implement proper line detection logic
-        # For now, just count markers as a proxy
+        board = game_state.board
+        
+        # Use BoardManager logic to find directions
+        from ..board_manager import BoardManager
+        directions = BoardManager._get_all_directions(board.type)
+        
+        # Iterate through all markers of the player
+        my_markers = [m for m in board.markers.values() if m.player == self.player_number]
+        
+        for marker in my_markers:
+            start_pos = marker.position
+            
+            for direction in directions:
+                # Check for 2 or 3 markers in a row
+                # We only check forward to avoid double counting (mostly)
+                
+                # Check length 2
+                pos2 = BoardManager._add_direction(start_pos, direction, 1)
+                key2 = pos2.to_key()
+                
+                if key2 in board.markers and board.markers[key2].player == self.player_number:
+                    score += 1.0 # 2 in a row
+                    
+                    # Check length 3
+                    pos3 = BoardManager._add_direction(start_pos, direction, 2)
+                    key3 = pos3.to_key()
+                    
+                    if key3 in board.markers and board.markers[key3].player == self.player_number:
+                        score += 2.0 # 3 in a row (cumulative with 2)
+                        
+                        # Check length 4 (almost a line)
+                        pos4 = BoardManager._add_direction(start_pos, direction, 3)
+                        key4 = pos4.to_key()
+                        
+                        if key4 in board.markers and board.markers[key4].player == self.player_number:
+                            score += 5.0 # 4 in a row
+        
         return score * self.WEIGHT_LINE_POTENTIAL
 
     def _evaluate_victory_proximity(self, game_state: GameState) -> float:
@@ -439,6 +560,107 @@ class HeuristicAI(BaseAI):
         
         return center
     
+    def _evaluate_line_connectivity(self, game_state: GameState) -> float:
+        """
+        Evaluate connectivity of markers for potential lines.
+        Rewards markers that are close to each other in line-forming directions.
+        """
+        score = 0.0
+        board = game_state.board
+        from ..board_manager import BoardManager
+        directions = BoardManager._get_all_directions(board.type)
+        
+        my_markers = [m for m in board.markers.values() if m.player == self.player_number]
+        
+        for marker in my_markers:
+            start_pos = marker.position
+            for direction in directions:
+                # Check distance 1 and 2 in each direction
+                # If we have a marker at dist 2 but not 1, it's a "gap" that can be filled
+                pos1 = BoardManager._add_direction(start_pos, direction, 1)
+                key1 = pos1.to_key()
+                pos2 = BoardManager._add_direction(start_pos, direction, 2)
+                key2 = pos2.to_key()
+                
+                has_m1 = key1 in board.markers and board.markers[key1].player == self.player_number
+                has_m2 = key2 in board.markers and board.markers[key2].player == self.player_number
+                
+                if has_m1:
+                    score += 1.0 # Connected neighbor
+                if has_m2 and not has_m1:
+                    # Gap of 1, potential to connect
+                    # Check if gap is empty or has opponent marker (flippable)
+                    if key1 not in board.collapsed_spaces and key1 not in board.stacks:
+                        score += 0.5
+                        
+        return score * self.WEIGHT_LINE_CONNECTIVITY
+
+    def _evaluate_territory_safety(self, game_state: GameState) -> float:
+        """
+        Evaluate safety of potential territories.
+        Penalizes if opponent has stacks near our marker clusters.
+        """
+        score = 0.0
+        board = game_state.board
+        
+        # Identify clusters of markers (simplified)
+        # For each of my markers, check distance to nearest opponent stack
+        my_markers = [m for m in board.markers.values() if m.player == self.player_number]
+        opponent_stacks = [s for s in board.stacks.values() if s.controlling_player != self.player_number]
+        
+        if not my_markers or not opponent_stacks:
+            return 0.0
+            
+        for marker in my_markers:
+            min_dist = float('inf')
+            for stack in opponent_stacks:
+                # Manhattan distance approximation
+                dist = abs(marker.position.x - stack.position.x) + abs(marker.position.y - stack.position.y)
+                if marker.position.z is not None and stack.position.z is not None:
+                     dist += abs(marker.position.z - stack.position.z)
+                min_dist = min(min_dist, dist)
+            
+            # If opponent is very close (dist 1 or 2), penalty
+            if min_dist <= 2:
+                score -= (3.0 - min_dist) # -2 for dist 1, -1 for dist 2
+                
+        return score * self.WEIGHT_TERRITORY_SAFETY
+
+    def _evaluate_stack_mobility(self, game_state: GameState) -> float:
+        """
+        Evaluate mobility of individual stacks.
+        A stack that is surrounded by collapsed spaces or board edges has low mobility.
+        """
+        score = 0.0
+        my_stacks = [s for s in game_state.board.stacks.values() if s.controlling_player == self.player_number]
+        
+        for stack in my_stacks:
+            adjacent = self._get_adjacent_positions(stack.position, game_state)
+            valid_moves_from_here = 0
+            for adj_pos in adjacent:
+                adj_key = adj_pos.to_key()
+                # Check if blocked by collapsed space
+                if adj_key in game_state.board.collapsed_spaces:
+                    continue
+                # Check if blocked by stack (unless capture possible)
+                if adj_key in game_state.board.stacks:
+                    target = game_state.board.stacks[adj_key]
+                    if target.controlling_player != self.player_number:
+                        if stack.stack_height > target.stack_height:
+                            valid_moves_from_here += 1
+                    continue
+                
+                valid_moves_from_here += 1
+            
+            # Reward stacks with more freedom
+            score += valid_moves_from_here
+            
+            # Penalty for completely blocked stacks (dead weight)
+            if valid_moves_from_here == 0:
+                score -= 5.0
+                
+        return score * self.WEIGHT_STACK_MOBILITY
+
     def _get_adjacent_positions(self, position: Position, game_state: GameState) -> List[Position]:
         """Get adjacent positions (simplified version from RandomAI)"""
         from .random_ai import RandomAI

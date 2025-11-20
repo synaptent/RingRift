@@ -61,9 +61,9 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 
 ---
 
-## 📚 Documentation Map
+## 📚 Documentation Map & Canonical Sources
 
-To understand the project, use these documents:
+To understand the project and know which documents are authoritative for each area, use these documents. When information in older planning or analysis docs conflicts with the files listed below, these **canonical sources win**.
 
 - **Rules & engine spec**
   - `ringrift_complete_rules.md` – full, narrative rules for players and designers.
@@ -227,6 +227,14 @@ npm run dev:server  # Backend on :3000 (configurable via PORT)
 npm run dev:client  # Frontend on :5173 by default (Vite)
 ```
 
+#### Dev environment (ports & processes)
+
+- **Backend API + WebSocket server**: `npm run dev:server` → http://localhost:3000 (or `PORT` from `.env`).
+- **Frontend (Vite dev server)**: `npm run dev:client` → http://localhost:5173.
+- **Python AI service**: From the project root, `cd ai-service && ./run.sh` → http://localhost:8001.
+
+To avoid flaky behaviour in `/game/:gameId` and WebSocket tests, ensure that you only have **one** Node.js backend process listening on port `3000` at a time. Use `npm run dev:server` (or `docker compose up` for the `app` service) as the canonical entrypoint, and avoid starting additional ad‑hoc servers that also bind `3000`.
+
 ### Production Deployment
 
 ```bash
@@ -263,6 +271,30 @@ Use the sandbox when:
 - You’re iterating on rules-related code and want a local harness that won’t affect backend persistence.
 
 For backend-driven games, continue to use `/game/:gameId` via the lobby/API; both backend and sandbox views share the same BoardView/ChoiceDialog/VictoryModal stack so improvements to one benefit the other.
+
+### 🧪 Sandbox AI debugging & stall diagnostics
+
+The local sandbox also has **AI stall diagnostics** that are useful when investigating AI-only games that appear to stop making progress:
+
+- Engine-level diagnostics live in [`sandboxAI.maybeRunAITurnSandbox`](src/client/sandbox/sandboxAI.ts:118). When enabled, they:
+  - Detect repeated no-op AI turns (unchanged `GameState` hash while the same AI player remains to move in an active game).
+  - Emit `[Sandbox AI Stall Diagnostic]` and `[Sandbox AI Stall Detector]` warnings to the console.
+  - Append structured entries to `window.__RINGRIFT_SANDBOX_TRACE__` describing each AI turn and any detected stall.
+
+- The `/sandbox` UI includes a **local stall watchdog** (in [`GamePage`](src/client/pages/GamePage.tsx:1585)):
+  - When an AI player is to move and the sandbox `GameState` has not advanced for several seconds, a banner appears indicating a potential stall.
+  - The banner exposes a “Copy AI trace” action, which serialises `window.__RINGRIFT_SANDBOX_TRACE__` to JSON and copies it to the clipboard (or logs it to the console as a fallback). This trace can then be pasted into a file and used to construct or refine Jest repro tests.
+
+To enable the most detailed sandbox AI stall diagnostics when running tests or a dev server, use:
+
+```bash
+# Targeted stall-repro test for a known problematic seed:
+RINGRIFT_ENABLE_SANDBOX_AI_STALL_REPRO=1 \
+RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS=1 \
+npm test -- ClientSandboxEngine.aiStall.seed1
+```
+
+The `RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS` flag also activates the engine-level stall detector used by the `/sandbox` UI for deeper analysis of long-running AI-vs-AI games.
 
 ## 🗺️ Near-Term Focus (High-Level)
 

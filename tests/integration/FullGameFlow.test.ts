@@ -1,6 +1,8 @@
 import { GameEngine } from '../../src/server/game/GameEngine';
 import { GameState, Player, TimeControl, BOARD_CONFIGS } from '../../src/shared/types/game';
+import { computeProgressSnapshot } from '../../src/shared/engine/core';
 import { globalAIEngine } from '../../src/server/game/ai/AIEngine';
+import { logAiDiagnostic } from '../utils/aiTestLogger';
 
 // Mock the AI service client to simulate downtime/failure
 jest.mock('../../src/server/services/AIServiceClient', () => ({
@@ -14,7 +16,11 @@ jest.mock('../../src/server/services/AIServiceClient', () => ({
 
 describe('Full Game Flow Integration (AI Fallback)', () => {
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
-  const MAX_MOVES = 500;
+  // Allow for long AI-vs-AI sequences; moves here are individual actions rather
+  // than full turns, so a realistic game may require well over 500 moves.
+  // We keep a hard cap to avoid pathological infinite loops in case of
+  // regressions.
+  const MAX_MOVES = 4000;
 
   it('completes a full game using local AI fallback when service is down', async () => {
     // Setup 2 AI players
@@ -50,30 +56,183 @@ describe('Full Game Flow Integration (AI Fallback)', () => {
     const engine = new GameEngine('integration-test', 'square8', players, timeControl);
     engine.startGame();
 
+    // Diagnostic S-invariant and stall tracking. This mirrors the AI simulation
+    // harness: we track the progress snapshot S = markers + collapsedSpaces +
+    // eliminated and log periodic summaries so long-running games can be
+    // understood when they approach the MAX_MOVES cap.
+    const initialState: GameState = engine.getGameState();
+    let lastProgress = computeProgressSnapshot(initialState);
+    let lastSChangeMove = 0;
+    const STALL_WINDOW = 200;
+    const LOG_INTERVAL = 5;
+    let stalled = false;
+
     let moves = 0;
     while (engine.getGameState().gameStatus === 'active' && moves < MAX_MOVES) {
       const state = engine.getGameState();
+      const progress = computeProgressSnapshot(state);
 
-      // If it's an interactive phase, the AI engine should generate a move
+      const diagnosticBase = {
+        moves,
+        currentPlayer: state.currentPlayer,
+        currentPhase: state.currentPhase,
+        gameStatus: state.gameStatus,
+        S: progress.S,
+        markers: progress.markers,
+        collapsed: progress.collapsed,
+        eliminated: progress.eliminated,
+      };
+
+      if (moves % LOG_INTERVAL === 0) {
+        logAiDiagnostic(
+          'full-game-flow-summary',
+          {
+            ...diagnosticBase,
+            players: state.players.map((p) => ({
+              playerNumber: p.playerNumber,
+              type: p.type,
+              ringsInHand: p.ringsInHand,
+              eliminatedRings: p.eliminatedRings,
+              territorySpaces: p.territorySpaces,
+              stacks: Array.from(state.board.stacks.values()).filter(
+                (s) => s.controllingPlayer === p.playerNumber
+              ).length,
+            })),
+          },
+          'full-game-flow'
+        );
+      }
+
+      if (progress.S !== lastProgress.S) {
+        // Log every S-invariant change so plateaus and regressions can be
+        // correlated with concrete moves in the saved diagnostic logs.
+        logAiDiagnostic(
+          'S-invariant-change',
+          {
+            ...diagnosticBase,
+            lastProgress,
+            delta: {
+              dS: progress.S - lastProgress.S,
+              dMarkers: progress.markers - lastProgress.markers,
+              dCollapsed: progress.collapsed - lastProgress.collapsed,
+              dEliminated: progress.eliminated - lastProgress.eliminated,
+            },
+          },
+          'full-game-flow'
+        );
+
+        // Defensive check: S should never decrease under the compact rules.
+        if (progress.S < lastProgress.S) {
+          logAiDiagnostic(
+            'S-invariant-decreased',
+            {
+              ...diagnosticBase,
+              lastProgress,
+            },
+            'full-game-flow'
+          );
+          throw new Error(
+            `[FullGameFlow] S-invariant decreased from ${lastProgress.S} to ${progress.S} at move ${moves}`
+          );
+        }
+
+        lastProgress = progress;
+        lastSChangeMove = moves;
+      } else {
+        // Log every plateau step so long stalls can be reconstructed from
+        // the diagnostic log without relying on console output.
+        let validMovesSummary:
+          | {
+              count: number;
+              types: Record<string, number>;
+            }
+          | null = null;
+
+        if (
+          state.currentPhase === 'ring_placement' ||
+          state.currentPhase === 'movement' ||
+          state.currentPhase === 'capture' ||
+          state.currentPhase === 'chain_capture'
+        ) {
+          const validMovesForCurrentPlayer = engine.getValidMoves(state.currentPlayer);
+          const typeCounts: Record<string, number> = {};
+          for (const m of validMovesForCurrentPlayer) {
+            typeCounts[m.type] = (typeCounts[m.type] ?? 0) + 1;
+          }
+          validMovesSummary = {
+            count: validMovesForCurrentPlayer.length,
+            types: typeCounts,
+          };
+        }
+
+        logAiDiagnostic(
+          'S-invariant-plateau-step',
+          {
+            ...diagnosticBase,
+            lastSChangeMove,
+            plateauLength: moves - lastSChangeMove,
+            validMovesSummary,
+          },
+          'full-game-flow'
+        );
+
+        if (moves - lastSChangeMove >= STALL_WINDOW) {
+          stalled = true;
+          logAiDiagnostic(
+            'S-invariant-stalled',
+            {
+              ...diagnosticBase,
+              lastSChangeMove,
+              plateauLength: moves - lastSChangeMove,
+            },
+            'full-game-flow'
+          );
+          break;
+        }
+      }
+
+      // If it's an interactive phase, the AI engine should generate a move.
+      // This includes the dedicated 'chain_capture' phase, where only
+      // continue_capture_segment moves are legal and must be chosen until
+      // no further captures remain.
       if (
         state.currentPhase === 'ring_placement' ||
         state.currentPhase === 'movement' ||
-        state.currentPhase === 'capture'
+        state.currentPhase === 'capture' ||
+        state.currentPhase === 'chain_capture'
       ) {
-        // Simulate the WebSocketServer's role: ask AI for a move
-        const move = await globalAIEngine.getAIMove(state.currentPlayer, state);
+        // In fallback mode we deliberately drive move selection from
+        // GameEngine.getValidMoves so that termination behaviour matches the
+        // dedicated backend AI simulation harness. AIEngine is still used for
+        // local prioritisation among candidates.
+        const validMoves = engine.getValidMoves(state.currentPlayer);
 
-        if (move) {
-          const result = await engine.makeMove(move);
-          if (!result.success) {
-            console.error('Move failed:', result, move);
+        if (validMoves.length > 0) {
+          const move = globalAIEngine.chooseLocalMoveFromCandidates(
+            state.currentPlayer,
+            state,
+            validMoves
+          );
+
+          if (!move) {
+            // Extremely defensive: if the selector returns null despite having
+            // candidates, treat this as a blocked state and fall through to
+            // the same resolver used when there are no valid moves.
+            engine.resolveBlockedStateForCurrentPlayerForTesting();
+          } else {
+            const { id, timestamp, moveNumber, ...payload } = move as any;
+            const result = await engine.makeMove(payload);
+            if (!result.success) {
+              console.error('Move failed:', result, move);
+            }
+            expect(result.success).toBe(true);
           }
-          expect(result.success).toBe(true);
         } else {
-          // If no move returned (e.g. no valid moves), the engine might be stuck
-          // or waiting for a timeout. In this test, we expect valid moves.
-          // However, if the game is actually over but status hasn't updated yet, break.
-          break;
+          // No legal moves for the current player in an interactive phase:
+          // attempt to resolve a blocked state using the same safety net the
+          // AI simulation harness uses. This can apply forced elimination /
+          // structural stalemate resolution before we give up on the loop.
+          engine.resolveBlockedStateForCurrentPlayerForTesting();
         }
       } else {
         // Automatic phases
@@ -84,7 +243,25 @@ describe('Full Game Flow Integration (AI Fallback)', () => {
     }
 
     const finalState = engine.getGameState();
-    console.log(`Game ended after ${moves} moves. Status: ${finalState.gameStatus}`);
+    logAiDiagnostic(
+      'full-game-flow-final-state',
+      {
+        moves,
+        finalStatus: finalState.gameStatus,
+        finalPhase: finalState.currentPhase,
+        finalPlayer: finalState.currentPlayer,
+        finalProgress: computeProgressSnapshot(finalState),
+      },
+      'full-game-flow'
+    );
+
+    if (stalled) {
+      throw new Error(
+        `[FullGameFlow] S-invariant stalled for ${moves - lastSChangeMove} moves ` +
+          `(S=${lastProgress.S}, status=${finalState.gameStatus}, ` +
+          `phase=${finalState.currentPhase}, currentPlayer=${finalState.currentPlayer})`
+      );
+    }
 
     // Assert game finished naturally
     expect(finalState.gameStatus).not.toBe('active');

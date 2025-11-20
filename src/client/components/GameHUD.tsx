@@ -1,5 +1,5 @@
 import React from 'react';
-import { GameState, Player, GamePhase } from '../../shared/types/game';
+import { GameState, Player, GamePhase, BOARD_CONFIGS } from '../../shared/types/game';
 import { ConnectionStatus } from '../contexts/GameContext';
 
 interface GameHUDProps {
@@ -29,6 +29,8 @@ export function GameHUD({
         return 'Movement';
       case 'capture':
         return 'Capture';
+      case 'chain_capture':
+        return 'Chain Capture';
       case 'line_processing':
         return 'Line Processing';
       case 'territory_processing':
@@ -103,6 +105,8 @@ export function GameHUD({
         ? 'text-amber-300'
         : 'text-rose-300';
 
+  const boardConfig = BOARD_CONFIGS[gameState.boardType];
+
   return (
     <div className="w-full max-w-4xl mx-auto mb-4">
       <div className="flex items-center justify-between text-xs text-slate-300 mb-3">
@@ -150,11 +154,40 @@ export function GameHUD({
         </div>
       )}
 
+      {/* Compact per-player summary row */}
+      <div className="flex flex-wrap gap-2 mb-3 text-[11px] text-slate-200">
+        {gameState.players.map((p) => {
+          const ringsPerPlayer = boardConfig.ringsPerPlayer;
+          const ringsOnBoard = Math.max(0, ringsPerPlayer - p.ringsInHand - p.eliminatedRings);
+          const ringsInPlay = p.ringsInHand + ringsOnBoard;
+          const isCurrent = p.playerNumber === gameState.currentPlayer;
+
+          return (
+            <div
+              key={`summary-${p.playerNumber}`}
+              className={`px-2 py-1 rounded-full border bg-slate-900/60 ${
+                isCurrent
+                  ? 'border-emerald-400 text-emerald-200'
+                  : 'border-slate-600 text-slate-200'
+              }`}
+            >
+              <span className="font-semibold mr-1">P{p.playerNumber}</span>
+              <span className="mr-1">
+                R {ringsInPlay}/{ringsPerPlayer}
+              </span>
+              <span>• T {p.territorySpaces}</span>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Player Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {gameState.players.map((p) => {
           const isCurrent = p.playerNumber === gameState.currentPlayer;
           const colorClass = getPlayerColorClass(p.playerNumber);
+          const ringsPerPlayer = boardConfig.ringsPerPlayer;
+          const ringsOnBoard = Math.max(0, ringsPerPlayer - p.ringsInHand - p.eliminatedRings);
 
           return (
             <div
@@ -181,6 +214,11 @@ export function GameHUD({
               <div className="flex justify-between text-sm text-slate-300">
                 <span>Hand:</span>
                 <span className="font-mono font-bold text-white">{p.ringsInHand}</span>
+              </div>
+
+              <div className="flex justify-between text-sm text-slate-300">
+                <span>On board:</span>
+                <span className="font-mono font-bold text-white">{ringsOnBoard}</span>
               </div>
 
               <div className="flex justify-between text-sm text-slate-300">

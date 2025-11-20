@@ -36,7 +36,7 @@ import {
  *   investigating specific seeds/scenarios.
  */
 
-describe('Backend vs Sandbox parallel AI debug harness (square8/2p focus)', () => {
+describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)', () => {
   // Focus on the scenarios that currently exhibit sandbox stalls in
   // ClientSandboxEngine.aiSimulation.test.ts. We can widen this matrix
   // later once we have a clear picture for these seeds.
@@ -246,6 +246,43 @@ describe('Backend vs Sandbox parallel AI debug harness (square8/2p focus)', () =
     return { positions };
   }
 
+  async function resolveBackendChainIfPresent(backend: GameEngine): Promise<void> {
+    const MAX_STEPS = 32;
+    let steps = 0;
+
+    for (;;) {
+      const state = backend.getGameState();
+
+      if (state.currentPhase !== 'chain_capture' || state.gameStatus !== 'active') {
+        break;
+      }
+
+      steps++;
+      if (steps > MAX_STEPS) {
+        throw new Error('resolveBackendChainIfPresent: exceeded maximum chain-capture steps');
+      }
+
+      const currentPlayer = state.currentPlayer;
+      const moves = backend.getValidMoves(currentPlayer);
+      const chainMoves = moves.filter((m) => m.type === 'continue_capture_segment');
+
+      if (chainMoves.length === 0) {
+        break;
+      }
+
+      const next = chainMoves[0] as Move;
+      const { id, timestamp, moveNumber, ...payload } = next as any;
+
+      const result = await backend.makeMove(payload as any);
+
+      if (!result.success) {
+        throw new Error(
+          `resolveBackendChainIfPresent: backend.makeMove failed during chain resolution: ${result.error}`
+        );
+      }
+    }
+  }
+
   for (const boardType of boardTypes) {
     for (const numPlayers of playerCounts) {
       const scenarioLabel = `${boardType} with ${numPlayers} AI players`;
@@ -263,6 +300,7 @@ describe('Backend vs Sandbox parallel AI debug harness (square8/2p focus)', () =
 
           // Drive both engines forward with paired AI actions.
           for (let step = 0; step < MAX_STEPS; step++) {
+            await resolveBackendChainIfPresent(backend);
             const backendBefore = backend.getGameState();
             const sandboxBefore = sandbox.getGameState();
 

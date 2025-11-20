@@ -46,6 +46,47 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
     return new GameEngine('test-game-chain', boardType, basePlayers, timeControl, false);
   }
 
+  /**
+   * Drive any active chain_capture phase to completion by repeatedly applying
+   * continue_capture_segment moves from GameEngine.getValidMoves.
+   */
+  async function resolveChainIfPresent(engine: GameEngine): Promise<void> {
+    const engineAny: any = engine;
+    const gameState = engineAny.gameState as any;
+
+    if (gameState.currentPhase !== 'chain_capture') {
+      return;
+    }
+
+    const MAX_STEPS = 16;
+    let steps = 0;
+
+    while (gameState.currentPhase === 'chain_capture') {
+      steps++;
+      if (steps > MAX_STEPS) {
+        throw new Error('resolveChainIfPresent: exceeded maximum chain-capture steps');
+      }
+
+      const currentPlayer = gameState.currentPlayer;
+      const moves = engine.getValidMoves(currentPlayer);
+      const chainMoves = moves.filter((m: any) => m.type === 'continue_capture_segment');
+
+      expect(chainMoves.length).toBeGreaterThan(0);
+
+      const next = chainMoves[0];
+
+      const result = await engine.makeMove({
+        player: next.player,
+        type: 'continue_capture_segment',
+        from: next.from,
+        captureTarget: next.captureTarget,
+        to: next.to
+      } as any);
+
+      expect(result.success).toBe(true);
+    }
+  }
+
   test('rejects moves from a different player while a chain capture is in progress', async () => {
     const engine = createEngine();
 
@@ -193,24 +234,28 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       captureTarget: bluePos,
       to: { x: 2, y: 4 }
     } as any);
-
+ 
     expect(result.success).toBe(true);
-
-    // After the engine-driven chain, the original red stack and both targets
+ 
+    // Resolve the mandatory continuation segment(s) via the explicit
+    // chain_capture phase so that the full two-step chain is applied.
+    await resolveChainIfPresent(engine);
+ 
+    // After the chain resolves, the original red stack and both targets
     // should be gone, and the capturing stack should be at (2,7) with height 4.
     const board = gameState.board;
     const stackAtRed = board.stacks.get('2,2');
     const stackAtBlue = board.stacks.get('2,3');
     const stackAtGreen = board.stacks.get('2,5');
     const stackAtFinal = board.stacks.get('2,7');
-
+ 
     expect(stackAtRed).toBeUndefined();
     expect(stackAtBlue).toBeUndefined();
     expect(stackAtGreen).toBeUndefined();
     expect(stackAtFinal).toBeDefined();
     expect(stackAtFinal!.stackHeight).toBe(4);
     expect(stackAtFinal!.controllingPlayer).toBe(1);
-
+ 
     // Internal chain state should be cleared once no further captures exist.
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
@@ -292,26 +337,30 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       captureTarget: bluePos,
       to: { x: 2, y: 4 }
     } as any);
-
+ 
     expect(result.success).toBe(true);
-
+ 
+    // Resolve the forced 180° reversal continuation via chain_capture so that
+    // the full sequence (to 2,1) is applied.
+    await resolveChainIfPresent(engine);
+ 
     const board = gameState.board;
     const stackAtInitial = board.stacks.get('2,2');
     const stackAtBlue = board.stacks.get('2,3');
     const stackAtIntermediate = board.stacks.get('2,4');
     const stackAtFinal = board.stacks.get('2,1');
-
+ 
     // Original positions and intermediate landing should be empty after the
-    // engine-driven chain completes.
+    // chain completes.
     expect(stackAtInitial).toBeUndefined();
     expect(stackAtBlue).toBeUndefined();
     expect(stackAtIntermediate).toBeUndefined();
-
+ 
     // Final stack at (2,1) should contain all rings from the sequence: R2 + B2.
     expect(stackAtFinal).toBeDefined();
     expect(stackAtFinal!.stackHeight).toBe(4);
     expect(stackAtFinal!.controllingPlayer).toBe(1);
-
+ 
     // Chain state should be cleared once no further captures exist.
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
@@ -757,13 +806,18 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       captureTarget: bluePos,
       to: { x: 2, y: 4 }
     } as any);
-
+ 
     expect(result.success).toBe(true);
-
+ 
+    // Resolve the remaining chain-capture segment(s). The engine should only
+    // invoke processAutomaticConsequences once, after the final segment for
+    // this turn has been applied.
+    await resolveChainIfPresent(engine);
+ 
     // processAutomaticConsequences should have been called exactly once for
-    // this turn, after the internal chain-capture loop concluded.
+    // this turn, after chain-capture resolution concluded.
     expect(processSpy).toHaveBeenCalledTimes(1);
-
+ 
     // For sanity, the final chain state and board geometry should mirror the
     // expectations from the earlier full two-step chain test.
     const board = gameState.board;
@@ -771,14 +825,14 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
     const stackAtBlue = board.stacks.get('2,3');
     const stackAtGreen = board.stacks.get('2,5');
     const stackAtFinal = board.stacks.get('2,7');
-
+ 
     expect(stackAtRed).toBeUndefined();
     expect(stackAtBlue).toBeUndefined();
     expect(stackAtGreen).toBeUndefined();
     expect(stackAtFinal).toBeDefined();
     expect(stackAtFinal!.stackHeight).toBe(4);
     expect(stackAtFinal!.controllingPlayer).toBe(1);
-
+ 
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
 });

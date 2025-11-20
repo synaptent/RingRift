@@ -117,8 +117,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       if (choice.options.includes(selected)) {
         return selected;
       }
-    } catch {
+    } catch (error) {
       // Ignore and fall back to heuristic behaviour.
+      console.warn('AI Service unavailable for line_reward_option, falling back to heuristic', { error });
     }
 
     const hasOption2 = choice.options.includes('option_2_min_collapse_no_elimination');
@@ -165,8 +166,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       if (choice.options.includes(selected)) {
         return selected;
       }
-    } catch {
+    } catch (error) {
       // Ignore and fall back to heuristic behaviour.
+      console.warn('AI Service unavailable for ring_elimination, falling back to heuristic', { error });
     }
 
     let best = choice.options[0];
@@ -219,8 +221,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       if (choice.options.includes(selected)) {
         return selected;
       }
-    } catch {
+    } catch (error) {
       // Ignore and fall back to heuristic behaviour.
+      console.warn('AI Service unavailable for region_order, falling back to heuristic', { error });
     }
 
     let best = choice.options[0];

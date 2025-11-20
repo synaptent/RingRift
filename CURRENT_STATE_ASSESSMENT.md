@@ -192,7 +192,7 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
   - Otherwise emits updated `game_state` and, if the next player is AI, calls `maybePerformAITurn`.
 - `maybePerformAITurn`:
   - Uses `globalAIEngine` to obtain AI moves, applies them via `GameEngine`, persists AI moves, and similarly emits `game_over` or `game_state`.
-- Chat support: `chat_message` broadcasts to room; currently no dedicated client UI beyond basic wiring.
+- Chat support: `chat_message` broadcasts to room, and the React `GamePage` now includes a basic in-game chat panel wired through `GameContext` (messages are ephemeral and not yet persisted server-side).
 
 **Verdict:** Core loop (join, play, AI turns, victory) works; lobby connectivity and choice flows are integrated. UX on top of this can still be improved.
 
@@ -268,10 +268,10 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
 
 ### P1 – Multiplayer UX & Lifecycle Polish
 
-- Spectator mode exists at the server layer but not as a full client UX.
-- Chat is transport-level only; UX is minimal.
+- Spectator mode exists at the server layer with a basic client UX (read-only board, "Spectating" badge, and input disabled), but there is no dedicated spectator browser or discovery view yet.
+- Chat is wired end-to-end via `chat_message` events and a simple in-game chat panel, but remains minimal (no persistence, moderation, or rich history UI).
 - No automated matchmaking or game discovery beyond a simple lobby list.
-- Reconnection behaviour is basic; UX for reconnecting/resyncing state is not fleshed out.
+- Reconnection behaviour is functional with banners and status indicators, but the UX for more complex reconnect/resync situations (multiple tabs, long disconnects) is still limited.
 
 ### P1 – AI Depth and Observability
 
@@ -299,4 +299,16 @@ Given the implementation and test suite as of November 18, 2025, the most valuab
    - Tighten HUD (current player, phase, timers, progress indicators) for both backend and sandbox views.
    - Improve reconnection UX and spectator views, building on the existing WebSocket and GameContext foundations.
 
-These themes are elaborated and broken into concrete tasks in `TODO.md` and `STRATEGIC_ROADMAP.md`.
+These themes are elaborated and broken into concrete tasks in `TODO.md` and
+`STRATEGIC_ROADMAP.md`. In particular, see the "Consolidated Execution Tracks
+& Plan" section in `TODO.md`, which organizes the work into:
+
+- Track 1 – Rules/FAQ Scenario Matrix & Parity Hardening (P0)
+- Track 2 – Multiplayer Lifecycle & HUD/UX (P1)
+- Track 3 – Sandbox as a First-Class Rules Lab (P0–P1)
+- Track 4 – Incremental AI Improvements & Observability (P1–P2)
+- Track 5 – Persistence, Replays, and Stats (P2)
+
+For an execution-ready, prioritized checklist that ties these tracks back to
+specific files and failing tests, see the **"Recommended Next Steps
+(Prioritized)"** section in `STRATEGIC_ROADMAP.md`.

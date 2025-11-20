@@ -1,26 +1,22 @@
 import { GameEngine } from '../../src/server/game/GameEngine';
-import { PlayerInteractionManager } from '../../src/server/game/PlayerInteractionManager';
 import {
   BoardType,
   Move,
   Player,
   Position,
   TimeControl,
-  PlayerChoice,
-  PlayerChoiceResponse
 } from '../../src/shared/types/game';
 
 /**
- * Tests for wiring CaptureDirectionChoice into GameEngine via
- * chainCaptureState.availableMoves and PlayerInteractionManager.
+ * Tests for the unified chain_capture + continue_capture_segment model.
  *
- * These tests focus on ensuring that when multiple follow-up capture
- * options exist in chainCaptureState.availableMoves, GameEngine
- * constructs a CaptureDirectionChoice and returns the Move that
- * matches the player's selected option.
+ * These tests validate that when a chain capture is in progress,
+ * GameEngine.getValidMoves exposes continuation segments as
+ * `continue_capture_segment` moves for the capturing player, using the
+ * internal chainCaptureState and getCaptureOptionsFromPosition helper.
  */
 
-describe('GameEngine capture direction choice wiring', () => {
+describe('GameEngine chain_capture getValidMoves integration', () => {
   const boardType: BoardType = 'square8';
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
@@ -34,7 +30,7 @@ describe('GameEngine capture direction choice wiring', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
+      territorySpaces: 0,
     },
     {
       id: 'p2',
@@ -45,83 +41,124 @@ describe('GameEngine capture direction choice wiring', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
-    }
+      territorySpaces: 0,
+    },
   ];
 
-  function createEngineWithInteraction(
-    handler: { requestChoice: (choice: PlayerChoice) => Promise<PlayerChoiceResponse<unknown>> }
-  ): GameEngine {
-    const interactionManager = new PlayerInteractionManager(handler as any);
-    return new GameEngine('test-game-capture-dir', boardType, basePlayers, timeControl, false, interactionManager);
+  function createEngine(): GameEngine {
+    return new GameEngine('test-game-chain-capture', boardType, basePlayers, timeControl, false);
   }
 
-  test('uses CaptureDirectionChoice to select among multiple chain capture options', async () => {
-    const mockHandler = {
-      requestChoice: jest.fn(async (choice: PlayerChoice): Promise<PlayerChoiceResponse<any>> => {
-        expect(choice.type).toBe('capture_direction');
-        expect(choice.options.length).toBe(2);
+  it('exposes continue_capture_segment moves for an active chain from currentPosition', () => {
+    const engine = createEngine();
+    const engineAny: any = engine;
 
-        // Choose the second option to verify mapping back to Move
-        const selectedOption = choice.options[1];
-
-        return {
-          choiceId: choice.id,
-          playerNumber: choice.playerNumber,
-          selectedOption
-        };
-      })
-    };
-
-    const engine = createEngineWithInteraction(mockHandler);
-
-    // Simulate a chain in progress for player 1 from position (5,5)
+    // Seed chain state and phase so getValidMoves treats this as an
+    // interactive chain_capture decision point for player 1.
     const currentPos: Position = { x: 5, y: 5 };
-    const targetA: Position = { x: 6, y: 6 };
-    const landingA: Position = { x: 7, y: 7 };
-    const targetB: Position = { x: 4, y: 6 };
-    const landingB: Position = { x: 3, y: 7 };
-
-    const optionA: Move = {
-      id: 'opt-a',
-      type: 'overtaking_capture',
-      player: 1,
-      from: currentPos,
-      captureTarget: targetA,
-      to: landingA,
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: 1
-    };
-
-    const optionB: Move = {
-      id: 'opt-b',
-      type: 'overtaking_capture',
-      player: 1,
-      from: currentPos,
-      captureTarget: targetB,
-      to: landingB,
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: 1
-    };
-
-    // Force the internal chain capture state with two available options
-    (engine as any).chainCaptureState = {
+    engineAny.chainCaptureState = {
       playerNumber: 1,
       startPosition: { x: 3, y: 3 },
       currentPosition: currentPos,
       segments: [],
-      availableMoves: [optionA, optionB],
-      visitedPositions: new Set<string>(['3,3', '5,5'])
+      availableMoves: [],
+      visitedPositions: new Set<string>(['3,3', '5,5']),
     };
 
-    // Call the internal helper via `any` to avoid changing visibility
-    const chosen: Move | undefined = await (engine as any).chooseCaptureDirectionFromState();
+    const gameState = engineAny.gameState as any;
+    gameState.currentPhase = 'chain_capture';
+    gameState.currentPlayer = 1;
 
-    expect(mockHandler.requestChoice).toHaveBeenCalledTimes(1);
-    // Because the mock handler selected the second option, we expect
-    // the helper to return optionB.
-    expect(chosen).toBe(optionB);
+    const baseMoveA: Move = {
+      id: 'capture-a',
+      type: 'overtaking_capture',
+      player: 1,
+      from: currentPos,
+      captureTarget: { x: 6, y: 6 },
+      to: { x: 7, y: 7 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    const baseMoveB: Move = {
+      id: 'capture-b',
+      type: 'overtaking_capture',
+      player: 1,
+      from: currentPos,
+      captureTarget: { x: 4, y: 6 },
+      to: { x: 3, y: 7 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    // Stub out the internal capture enumeration helper so we can focus
+    // this test purely on how GameEngine.getValidMoves re-labels
+    // overtaking_capture candidates as continue_capture_segment moves.
+    const spy = jest
+      .spyOn(engineAny, 'getCaptureOptionsFromPosition')
+      .mockReturnValue([baseMoveA, baseMoveB]);
+
+    const moves = engine.getValidMoves(1);
+
+    expect(spy).toHaveBeenCalledWith(currentPos, 1);
+    expect(moves).toHaveLength(2);
+
+    // All returned moves should be relabelled as continue_capture_segment
+    // for the capturing player, preserving geometry.
+    for (const m of moves) {
+      expect(m.type).toBe('continue_capture_segment');
+      expect(m.player).toBe(1);
+      expect(m.from).toEqual(currentPos);
+    }
+
+    const segmentTargets = moves.map((m) => `${m.captureTarget!.x},${m.captureTarget!.y}`);
+    const segmentLandings = moves.map((m) => `${m.to!.x},${m.to!.y}`);
+
+    expect(segmentTargets).toEqual(
+      expect.arrayContaining([
+        '6,6',
+        '4,6',
+      ])
+    );
+    expect(segmentLandings).toEqual(
+      expect.arrayContaining([
+        '7,7',
+        '3,7',
+      ])
+    );
+  });
+
+  it('returns no moves and clears chain state when no further capture options exist', () => {
+    const engine = createEngine();
+    const engineAny: any = engine;
+
+    const currentPos: Position = { x: 2, y: 2 };
+    engineAny.chainCaptureState = {
+      playerNumber: 1,
+      startPosition: { x: 2, y: 0 },
+      currentPosition: currentPos,
+      segments: [],
+      availableMoves: [],
+      visitedPositions: new Set<string>(['2,0', '2,2']),
+    };
+
+    const gameState = engineAny.gameState as any;
+    gameState.currentPhase = 'chain_capture';
+    gameState.currentPlayer = 1;
+
+    const spy = jest
+      .spyOn(engineAny, 'getCaptureOptionsFromPosition')
+      .mockReturnValue([]);
+
+    const moves = engine.getValidMoves(1);
+
+    expect(spy).toHaveBeenCalledWith(currentPos, 1);
+    expect(moves).toHaveLength(0);
+    // When there are no available continuations, the engine clears
+    // internal chain state so callers do not see a stuck interactive
+    // phase with no legal actions.
+    expect(engineAny.chainCaptureState).toBeUndefined();
   });
 });

@@ -1,7 +1,6 @@
 import {
   GameState,
   Territory,
-  Position,
   positionToString,
   PlayerChoiceResponseFor,
   RegionOrderChoice

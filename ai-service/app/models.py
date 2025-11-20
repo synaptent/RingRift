@@ -4,7 +4,7 @@ Mirrors TypeScript types from src/shared/types/game.ts
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from enum import Enum
 from datetime import datetime
 
@@ -49,11 +49,35 @@ class Position(BaseModel):
     y: int
     z: Optional[int] = None
     
+    class Config:
+        frozen = True
+
     def to_key(self) -> str:
         """Convert position to string key"""
         if self.z is not None:
             return f"{self.x},{self.y},{self.z}"
         return f"{self.x},{self.y}"
+
+
+class LineInfo(BaseModel):
+    """Information about a formed line"""
+    positions: List[Position]
+    player: int
+    length: int
+    direction: Position  # Direction vector
+
+    class Config:
+        populate_by_name = True
+
+
+class Territory(BaseModel):
+    """Information about a territory region"""
+    spaces: List[Position]
+    controlling_player: int = Field(alias="controllingPlayer")
+    is_disconnected: bool = Field(alias="isDisconnected")
+
+    class Config:
+        populate_by_name = True
 
 
 class RingStack(BaseModel):
@@ -119,6 +143,8 @@ class Move(BaseModel):
     player: int
     from_pos: Optional[Position] = Field(None, alias="from")
     to: Position
+    # Capture metadata
+    capture_target: Optional[Position] = Field(None, alias="captureTarget")
     # Ring placement specific metadata (optional for non-placement moves)
     placed_on_stack: Optional[bool] = Field(None, alias="placedOnStack")
     placement_count: Optional[int] = Field(None, alias="placementCount")
@@ -128,6 +154,7 @@ class Move(BaseModel):
     
     class Config:
         populate_by_name = True
+        frozen = True
 
 
 class BoardState(BaseModel):
@@ -136,9 +163,19 @@ class BoardState(BaseModel):
     size: int
     stacks: Dict[str, RingStack] = {}
     markers: Dict[str, MarkerInfo] = {}
-    collapsed_spaces: Dict[str, int] = Field(default_factory=dict, alias="collapsedSpaces")
-    eliminated_rings: Dict[str, int] = Field(default_factory=dict, alias="eliminatedRings")
-    
+    collapsed_spaces: Dict[str, int] = Field(
+        default_factory=dict, alias="collapsedSpaces"
+    )
+    eliminated_rings: Dict[str, int] = Field(
+        default_factory=dict, alias="eliminatedRings"
+    )
+    formed_lines: List[LineInfo] = Field(
+        default_factory=list, alias="formedLines"
+    )
+    territories: Dict[str, Territory] = Field(
+        default_factory=dict, alias="territories"
+    )
+
     class Config:
         populate_by_name = True
 
@@ -180,7 +217,7 @@ class AIConfig(BaseModel):
 
 
 class LineRewardChoiceOption(str, Enum):
-    """Line reward choice options, mirroring the TypeScript union for LineRewardChoice."""
+    """Line reward choice options, mirroring TypeScript LineRewardChoice."""
     OPTION_1 = "option_1_collapse_all_and_eliminate"
     OPTION_2 = "option_2_min_collapse_no_elimination"
 
@@ -201,7 +238,7 @@ class LineRewardChoiceRequest(BaseModel):
     options: List[LineRewardChoiceOption]
 
     class Config:
-      populate_by_name = True
+        populate_by_name = True
 
 
 class LineRewardChoiceResponse(BaseModel):
@@ -212,7 +249,7 @@ class LineRewardChoiceResponse(BaseModel):
     difficulty: int
 
     class Config:
-      populate_by_name = True
+        populate_by_name = True
 
 
 class RingEliminationChoiceOption(BaseModel):
@@ -250,7 +287,9 @@ class RingEliminationChoiceRequest(BaseModel):
 class RingEliminationChoiceResponse(BaseModel):
     """Response model for AI-backed ring elimination choices."""
 
-    selected_option: RingEliminationChoiceOption = Field(alias="selectedOption")
+    selected_option: RingEliminationChoiceOption = Field(
+        alias="selectedOption"
+    )
     ai_type: str = Field(alias="aiType")
     difficulty: int
 
@@ -268,6 +307,41 @@ class RegionOrderChoiceOption(BaseModel):
     region_id: str = Field(alias="regionId")
     size: int
     representative_position: Position = Field(alias="representativePosition")
+
+    class Config:
+        populate_by_name = True
+
+
+class ProgressSnapshot(BaseModel):
+    """
+    Canonical, engine-agnostic progress snapshot used for invariant checks
+    and history entries. S is defined as markers + collapsed + eliminated.
+    """
+    markers: int
+    collapsed: int
+    eliminated: int
+    S: int
+
+
+class ChainCaptureSegment(BaseModel):
+    """Segment of a chain capture"""
+    from_pos: Position = Field(alias="from")
+    target: Position
+    landing: Position
+    captured_cap_height: int = Field(alias="capturedCapHeight")
+
+    class Config:
+        populate_by_name = True
+
+
+class ChainCaptureState(BaseModel):
+    """State of an ongoing chain capture"""
+    player_number: int = Field(alias="playerNumber")
+    start_position: Position = Field(alias="startPosition")
+    current_position: Position = Field(alias="currentPosition")
+    segments: List[ChainCaptureSegment]
+    available_moves: List[Move] = Field(alias="availableMoves")
+    visited_positions: List[str] = Field(alias="visitedPositions")
 
     class Config:
         populate_by_name = True

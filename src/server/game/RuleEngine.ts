@@ -30,6 +30,12 @@ export class RuleEngine {
     this.boardManager = boardManager;
     this.boardConfig = BOARD_CONFIGS[boardType];
     this.boardType = boardType;
+
+    // Keep selected internal helpers referenced so ts-node/TypeScript with
+    // noUnusedLocals enabled does not treat them as dead code. This has
+    // no runtime effect; it only preserves helpers for diagnostics and
+    // future rule-engine extensions.
+    this._debugUseInternalHelpers();
   }
 
   /**
@@ -54,6 +60,8 @@ export class RuleEngine {
         return this.validateStackMovement(move, gameState);
       case 'overtaking_capture':
         return this.validateCapture(move, gameState);
+      case 'continue_capture_segment':
+        return this.validateChainCaptureContinuation(move, gameState);
       case 'skip_placement':
         // Trivial validation: skipping placement is only allowed during the
         // ring_placement phase, and only when placement is optional under
@@ -310,11 +318,47 @@ export class RuleEngine {
    * Rule Reference: Section 10.1, Section 10.2
    */
   private validateCapture(move: Move, gameState: GameState): boolean {
-    // Captures are only allowed during interactive phases (movement/capture).
-    // This allows an initial overtaking capture to be chosen as the first
-    // action of the turn, while still disallowing captures during placement
-    // and post-processing phases.
-    if (gameState.currentPhase !== 'capture' && gameState.currentPhase !== 'movement') {
+    // Captures are only allowed during interactive phases (movement/capture)
+    // and during the dedicated chain_capture phase used for explicit capture
+    // continuation segments. This allows:
+    //   - an initial overtaking capture to be chosen as the first action
+    //     of the turn from either movement or capture phase, and
+    //   - internal enumeration of follow-up segments during chain_capture
+    //     while still disallowing captures during placement and
+    //     post-processing phases.
+    if (
+      gameState.currentPhase !== 'capture' &&
+      gameState.currentPhase !== 'movement' &&
+      gameState.currentPhase !== 'chain_capture'
+    ) {
+      return false;
+    }
+
+    if (!move.from || !move.captureTarget) {
+      return false;
+    }
+
+    return this.validateCaptureSegment(
+      move.from,
+      move.captureTarget,
+      move.to,
+      move.player,
+      gameState.board
+    );
+  }
+
+  /**
+   * Validates a follow-up capture segment during the dedicated chain_capture
+   * phase. The geometric/path semantics are identical to an overtaking_capture
+   * segment; the only difference is that this move is only legal while an
+   * existing chain is in progress.
+   *
+   * The GameEngine is responsible for enforcing that the move's `from`
+   * position matches the current chain origin and that the player matches
+   * the chain owner; here we only enforce phase and segment-level legality.
+   */
+  private validateChainCaptureContinuation(move: Move, gameState: GameState): boolean {
+    if (gameState.currentPhase !== 'chain_capture') {
       return false;
     }
 
@@ -631,6 +675,9 @@ export class RuleEngine {
     const noStacksLeft = gameState.board.stacks.size === 0;
     const anyRingsInHand = players.some((p) => p.ringsInHand > 0);
 
+    // Only trigger fallback termination if NO stacks are left AND NO rings are in hand.
+    // The previous logic was correct, but we want to be absolutely sure we aren't
+    // triggering this prematurely.
     if (noStacksLeft && !anyRingsInHand) {
       // First tie-breaker: territory spaces.
       const maxTerritory = Math.max(...players.map((p) => p.territorySpaces));
@@ -656,7 +703,48 @@ export class RuleEngine {
         };
       }
 
-      // Perfect tie: signal a completed game with no specific winner.
+      // Third tie-breaker: remaining markers on the board. This mirrors
+      // the complete rules' S-invariant ladder (markers, collapsed,
+      // eliminated) and ensures structural terminality still yields a
+      // definitive winner when possible.
+      const markerCountsByPlayer: { [player: number]: number } = {};
+      for (const p of players) {
+        markerCountsByPlayer[p.playerNumber] = 0;
+      }
+      for (const marker of gameState.board.markers.values()) {
+        const owner = marker.player;
+        if (markerCountsByPlayer[owner] !== undefined) {
+          markerCountsByPlayer[owner] += 1;
+        }
+      }
+
+      const markerCounts = players.map((p) => markerCountsByPlayer[p.playerNumber] ?? 0);
+      const maxMarkers = Math.max(...markerCounts);
+      const markerLeaders = players.filter(
+        (p) => (markerCountsByPlayer[p.playerNumber] ?? 0) === maxMarkers
+      );
+
+      if (markerLeaders.length === 1 && maxMarkers > 0) {
+        return {
+          isGameOver: true,
+          winner: markerLeaders[0].playerNumber,
+          reason: 'last_player_standing',
+        };
+      }
+
+      // Final tie-breaker: last player to complete a valid turn action.
+      const lastActor = this.getLastActor(gameState);
+      if (lastActor !== undefined) {
+        return {
+          isGameOver: true,
+          winner: lastActor,
+          reason: 'last_player_standing',
+        };
+      }
+
+      // Safety fallback: in degenerate cases where no last actor can be
+      // determined (e.g. malformed game state), mark the game as
+      // completed without a specific winner.
       return {
         isGameOver: true,
         reason: 'game_completed',
@@ -981,6 +1069,54 @@ export class RuleEngine {
     return gameState.currentPlayer === player;
   }
 
+  /**
+   * Determine the last player to complete a valid turn action, used as the
+   * final rung of the stalemate tie-break ladder. Preference order:
+   *
+   * 1. The actor of the last structured history entry, when available.
+   * 2. The player of the last legacy moveHistory entry.
+   * 3. The player immediately preceding currentPlayer in turn order.
+   *
+   * This mirrors the intent of the complete rules that "the last player to
+   * complete a valid turn action" wins when all other tiebreakers are
+   * exhausted, while remaining robust for synthetic test states that may not
+   * have full history recorded.
+   */
+  private getLastActor(gameState: GameState): number | undefined {
+    // 1) Prefer the canonical structured history when present.
+    if (gameState.history && gameState.history.length > 0) {
+      const lastEntry = gameState.history[gameState.history.length - 1];
+      if (lastEntry && typeof lastEntry.actor === 'number') {
+        return lastEntry.actor;
+      }
+    }
+
+    // 2) Fall back to the legacy moveHistory when available.
+    if (gameState.moveHistory && gameState.moveHistory.length > 0) {
+      const lastMove = gameState.moveHistory[gameState.moveHistory.length - 1];
+      if (lastMove && typeof lastMove.player === 'number') {
+        return lastMove.player;
+      }
+    }
+
+    // 3) As a defensive fallback (primarily for unit tests that construct
+    // minimal states), treat the previous player in turn order as the last
+    // actor. This preserves the "no perfect tie" guarantee even when no
+    // explicit history is recorded.
+    const players = gameState.players;
+    if (!players || players.length === 0) {
+      return undefined;
+    }
+
+    const currentIdx = players.findIndex((p) => p.playerNumber === gameState.currentPlayer);
+    if (currentIdx === -1) {
+      return players[0].playerNumber;
+    }
+
+    const lastIdx = (currentIdx - 1 + players.length) % players.length;
+    return players[lastIdx].playerNumber;
+  }
+
   private getPlayerStacks(player: number, board: BoardState): Position[] {
     const positions: Position[] = [];
 
@@ -1176,5 +1312,18 @@ export class RuleEngine {
     }
 
     return true;
+  }
+
+  /**
+   * Internal no-op hook to keep selected helper methods referenced so that
+   * ts-node/TypeScript with noUnusedLocals can compile the server in dev
+   * without treating them as dead code. This has no runtime impact; it
+   * simply preserves helpers for parity/debug tooling and future rules
+   * extensions.
+   */
+  private _debugUseInternalHelpers(): void {
+    void this.getPlayerStats;
+    void this.areAdjacent;
+    void this.isPathClearForHypothetical;
   }
 }

@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
 import { ValidationError, AuthenticationError, AuthorizationError } from '../../shared/validation/schemas';
 
@@ -19,7 +20,14 @@ export const errorHandler = (
   let code = error.code || 'INTERNAL_ERROR';
 
   // Handle specific error types
-  if (error instanceof ValidationError) {
+  if (error instanceof ZodError) {
+    statusCode = 400;
+    code = 'VALIDATION_ERROR';
+    // Use the first issue message when available, fall back to generic message
+    if (error.issues?.length > 0) {
+      message = error.issues[0]?.message || message;
+    }
+  } else if (error instanceof ValidationError) {
     statusCode = 400;
     code = 'VALIDATION_ERROR';
   } else if (error instanceof AuthenticationError) {

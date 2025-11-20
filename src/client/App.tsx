@@ -41,6 +41,8 @@ function App() {
         <Route path="/register" element={!user ? <RegisterPage /> : <Navigate to="/" />} />
         {/* Public sandbox route (no auth required) */}
         <Route path="/sandbox" element={<GamePage />} />
+        {/* Public spectator route (read-only, reuses GamePage HUD + log) */}
+        <Route path="/spectate/:gameId" element={<GamePage />} />
 
         {/* Protected routes */}
         <Route path="/" element={user ? <Layout /> : <Navigate to="/login" />}>

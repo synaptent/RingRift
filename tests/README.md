@@ -431,6 +431,14 @@ These helpers are used by suites like:
 - `RINGRIFT_AI_DEBUG`
   - When set to `1`/`true`, AI-heavy suites mirror detailed diagnostics to the console in addition to writing `logs/ai/*.log`.
   - Also enables extra sandbox AI debug logs inside [`ClientSandboxEngine`](src/client/sandbox/ClientSandboxEngine.ts) for “no landingCandidates” and “no-op movement” situations.
+- `RINGRIFT_SANDBOX_AI_TRACE_MODE`
+  - When set to `1`/`true`, parity-focused tests construct `ClientSandboxEngine` instances with a `traceMode` option enabled.
+  - In trace mode, sandbox AI still uses the full proportional policy (`chooseLocalMoveFromCandidates`), but the sandbox engine:
+    - Applies moves exclusively via canonical `Move` shapes (`place_ring`, `skip_placement`, `move_stack`/`move_ring`, `overtaking_capture`, `continue_capture_segment`).
+    - Records history entries so that backend `GameEngine` can replay the same canonical move list in lockstep for trace parity.
+    - Aligns chain-capture phase transitions and continuation semantics with the backend (`chain_capture` phase, explicit `continue_capture_segment` moves).
+
+Trace mode is wired through the trace utilities in `tests/utils/traces.ts` (see `runSandboxAITrace`, `replayTraceOnBackend`, and `replayTraceOnSandbox`), and is only used by tests – normal `/sandbox` gameplay does **not** enable it by default.
 
 **Sandbox AI determinism (capture selection):**
 
@@ -459,7 +467,15 @@ The harness:
 
 Some seeded configurations (including `square8` with 2 AI players and seed `1`) are currently expected to exceed `MAX_AI_ACTIONS`; they are tracked as **diagnostic failures** under P1.4 in `KNOWN_ISSUES.md` rather than as hard CI blockers.
 
-For a targeted regression test of a previously observed sandbox stall on `square8` with 2 AI players and seed `1`, use:
+## Sandbox AI stall diagnostics (engine parity and repro)
+
+In addition to the general aiSimulation harness above, there is a focused regression test for a previously observed sandbox AI stall:
+
+- File: `tests/unit/ClientSandboxEngine.aiStall.seed1.test.ts`
+- Scenario: `square8`, 2 AI players, deterministic seed `1`
+- Behaviour: Asserts that the sandbox engine does **not** get stuck in a long run of consecutive AI turns with no state change for this seed.
+
+This suite is intentionally **opt-in** and gated by environment flags so that it does not run in normal CI:
 
 ```bash
 RINGRIFT_ENABLE_SANDBOX_AI_STALL_REPRO=1 \
@@ -467,7 +483,15 @@ RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS=1 \
 npm test -- ClientSandboxEngine.aiStall.seed1
 ```
 
-This test asserts that the engine **does not** get stuck in a long run of consecutive AI turns with no state change for that seed and emits `[Sandbox AI Stall Diagnostic]` warnings when it encounters “no captures/moves and no forced elimination” situations while debugging.
+- `RINGRIFT_ENABLE_SANDBOX_AI_STALL_REPRO=1`
+  Enables the stall-repro suite itself (the test will be skipped when this flag is unset).
+- `RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS=1`
+  Turns on additional sandbox AI stall diagnostics inside `sandboxAI.maybeRunAITurnSandbox`, including:
+  - Hash-based detection of repeated no-op AI turns (unchanged `GameState` hash with the same AI player to move).
+  - Emission of `[Sandbox AI Stall Diagnostic]` and `[Sandbox AI Stall Detector]` warnings to the console.
+  - Structured per-turn/stall entries appended to `window.__RINGRIFT_SANDBOX_TRACE__` for later analysis or replay.
+
+These diagnostics are especially useful when combined with the browser-based `/sandbox` UI, which can surface potential stalls and export `__RINGRIFT_SANDBOX_TRACE__` snapshots via the local stall watchdog.
 
 ## Scenario Matrix (Rules/FAQ → Jest suites)
 

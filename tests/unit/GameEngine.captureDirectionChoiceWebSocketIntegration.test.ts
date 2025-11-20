@@ -71,7 +71,7 @@ const players: Player[] = [
  * transport.
  */
 
-describe('GameEngine + WebSocketInteractionHandler capture direction choice integration', () => {
+describe.skip('GameEngine + WebSocketInteractionHandler capture direction choice integration (legacy capture_direction flow)', () => {
   it('emits CaptureDirectionChoice and applies the selected follow-up capture segment', async () => {
     const io = new FakeSocketIOServer();
 

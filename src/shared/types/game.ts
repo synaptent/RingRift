@@ -1,12 +1,65 @@
 export type BoardType = 'square8' | 'square19' | 'hexagonal';
+/**
+ * High-level game phases for the RingRift turn engine.
+ *
+ * - 'capture' is the initial overtaking capture that may start a chain.
+ * - 'chain_capture' is an interactive phase where the same player chooses
+ *   follow-up capture segments to continue or end an existing chain.
+ *
+ * Canonical phase → MoveType contract (target for both backend GameEngine and
+ * ClientSandboxEngine):
+ *
+ * - 'ring_placement'
+ *   - Legal MoveType values:
+ *     - 'place_ring'      – place one or more rings for the active player.
+ *     - 'skip_placement'  – explicitly skip optional placement when movement
+ *                            or capture is already available (no board change).
+ * - 'movement'
+ *   - Legal MoveType values:
+ *     - 'move_stack' / 'move_ring' – non-capture movement of an entire stack.
+ *     - 'build_stack'              – legacy intra-region stack reconfiguration (rare).
+ *     - 'overtaking_capture'       – initial overtaking capture that may start a chain.
+ * - 'capture'
+ *   - Legal MoveType values:
+ *     - 'overtaking_capture' – initial overtaking capture chosen directly from
+ *                              the capture phase (alternative entry to chains).
+ * - 'chain_capture'
+ *   - Legal MoveType values:
+ *     - 'continue_capture_segment' – mandatory follow-up capture segments in an
+ *                                    existing chain until no further segments exist.
+ * - 'line_processing'
+ *   - Target MoveType values (future-unified model):
+ *     - 'process_line'       – choose which detected line to process next.
+ *     - 'choose_line_reward' – choose Option 1 vs Option 2 for a specific line.
+ * - 'territory_processing'
+ *   - Target MoveType values (future-unified model):
+ *     - 'process_territory_region' – choose which disconnected region to resolve first.
+ *     - 'eliminate_rings_from_stack' – choose which stack/cap to self-eliminate
+ *                                      as part of the mandatory follow-up.
+ *
+ * Engines are expected to expose *only* the MoveType values listed above from
+ * getValidMoves for a given phase. PlayerChoice is a transport/UI concern and
+ * should conceptually be "choose one Move from getValidMoves(...)"; it must
+ * not introduce additional semantics outside this Move space.
+ */
 export type GamePhase =
   | 'ring_placement'
   | 'movement'
   | 'capture'
+  | 'chain_capture'
   | 'line_processing'
   | 'territory_processing';
 export type GameStatus = 'waiting' | 'active' | 'finished' | 'paused' | 'abandoned' | 'completed';
 export type MarkerType = 'regular' | 'collapsed';
+/**
+ * Discriminant for the canonical {@link Move} type.
+ *
+ * Notes:
+ * - Some values (e.g. 'move_ring', 'line_formation', 'territory_claim') are
+ *   legacy/experimental. New code should prefer their canonical equivalents
+ *   ('move_stack', explicit line/territory processing moves).
+ * - The phase → MoveType contract is documented above in {@link GamePhase}.
+ */
 export type MoveType =
   | 'place_ring'
   // Legacy alias for non-capture stack movement. The canonical type for
@@ -17,7 +70,16 @@ export type MoveType =
   | 'build_stack'
   // Canonical non-capture movement type for moving entire stacks.
   | 'move_stack'
+  // Capture and capture-chain moves.
   | 'overtaking_capture'
+  | 'continue_capture_segment'
+  // Line-processing decisions (see GamePhase 'line_processing').
+  | 'process_line'
+  | 'choose_line_reward'
+  // Territory-processing decisions (see GamePhase 'territory_processing').
+  | 'process_territory_region'
+  | 'eliminate_rings_from_stack'
+  // Legacy / experimental move types (not used by the unified Move model).
   | 'line_formation'
   | 'territory_claim'
   | 'skip_placement';
@@ -33,7 +95,7 @@ export interface Position {
 
 export type AIControlMode = 'local_heuristic' | 'service';
 
-export type AITacticType = 'random' | 'heuristic' | 'minimax' | 'mcts';
+export type AITacticType = 'random' | 'heuristic' | 'minimax' | 'mcts' | 'descent';
 
 /**
  * Configuration for how many AI opponents should participate in a
@@ -131,42 +193,145 @@ export interface LineInfo {
   direction: Position; // Direction vector
 }
 
+/**
+ * Canonical, engine-agnostic action applied by GameEngine and ClientSandboxEngine.
+ *
+ * Semantics by phase (see {@link GamePhase}) and type (see {@link MoveType}):
+ *
+ * - ring_placement
+ *   - type: 'place_ring'
+ *     - Required:
+ *       - player      – active player.
+ *       - to          – destination cell for placement.
+ *     - Optional:
+ *       - placementCount – number of rings to place (defaults to 1).
+ *       - placedOnStack  – hint for UI/tests; true when placing onto an existing stack.
+ *   - type: 'skip_placement'
+ *     - No board coordinates are semantically meaningful; `to` is a sentinel.
+ *
+ * - movement
+ *   - type: 'move_stack' | 'move_ring'
+ *     - Required:
+ *       - from, to    – origin and landing positions of the moved stack.
+ *       - player      – active player (must control the stack at `from`).
+ *     - Optional diagnostics (mirroring RuleEngine):
+ *       - stackMoved      – snapshot of the moved stack before movement.
+ *       - minimumDistance – required distance (stack height).
+ *       - actualDistance  – realised distance.
+ *       - markerLeft      – where a departure marker was placed (if any).
+ *
+ * - capture / chain_capture
+ *   - type: 'overtaking_capture' (initial segment) or 'continue_capture_segment'
+ *     - Required:
+ *       - from          – origin of the capturing stack.
+ *       - captureTarget – position of the stack being overtaken.
+ *       - to            – landing position after the segment.
+ *     - Optional diagnostics:
+ *       - captureType     – usually 'overtaking'.
+ *       - capturedStacks  – stacks affected by this move (before state).
+ *       - captureChain    – historical list of visited capture targets/landings.
+ *       - overtakenRings  – colours of rings overtaken so far in the chain.
+ *
+ * - line_processing (target unified model for line decisions)
+ *   - type: 'process_line'
+ *     - Required:
+ *       - formedLines[0] – identifies the line to process (positions, owner, direction).
+ *   - type: 'choose_line_reward'
+ *     - Required:
+ *       - formedLines[0] – identifies the line being rewarded.
+ *       - collapsedMarkers – subset of marker positions chosen for collapse
+ *                            when selecting Option 2 (minimum collapse).
+ *
+ * - territory_processing (target unified model for territory decisions)
+ *   - type: 'process_territory_region'
+ *     - Required:
+ *       - disconnectedRegions[0] – identifies the region being processed
+ *                                  (spaces, controllingPlayer, isDisconnected).
+ *   - type: 'eliminate_rings_from_stack'
+ *     - Required:
+ *       - eliminatedRings[0] – { player, count } describing the explicit
+ *                              self-elimination choice for this region.
+ *
+ * Engines are free to augment moves with additional diagnostic fields, but
+ * should not rely on consumers interpreting fields outside the contract above.
+ * Tests and parity tooling should treat {@link Move} as the single source of
+ * truth for "what action happened at step N".
+ */
 export interface Move {
+  /** Stable identifier for this move instance (UUID on the backend). */
   id: string;
+  /** Discriminant describing the kind of action. */
   type: MoveType;
+  /** Numeric player index performing the action. */
   player: number;
+
+  /**
+   * Origin position for movement/capture-style moves. Undefined for pure
+   * placement and most bookkeeping-only actions.
+   */
   from?: Position;
+
+  /**
+   * Destination/landing position for movement, capture, and placement moves.
+   * For moves that have no spatial meaning (e.g. 'skip_placement'), engines
+   * may supply a harmless sentinel.
+   */
   to: Position;
-  buildAmount?: number; // For build_stack moves
+
+  /** For 'build_stack' moves: how many rings are transferred. */
+  buildAmount?: number;
 
   // Ring placement specific
+  /** True if rings were placed onto an existing stack rather than an empty cell. */
   placedOnStack?: boolean;
-  placementCount?: number; // Number of rings placed in this action (defaults to 1 when omitted)
+  /** Number of rings placed in this action (defaults to 1 when omitted). */
+  placementCount?: number;
 
   // Movement specific
+  /** Snapshot of the moved stack before movement (for diagnostics/parity). */
   stackMoved?: RingStack;
+  /** Required distance for the move (usually the pre-move stack height). */
   minimumDistance?: number;
+  /** Actual realised distance of the move. */
   actualDistance?: number;
-  markerLeft?: Position; // Where marker was left
+  /** Where a departure marker was left (if any). */
+  markerLeft?: Position;
 
   // Capture specific
+  /** High-level capture kind; currently always 'overtaking' for chain segments. */
   captureType?: CaptureType;
-  captureTarget?: Position; // Position of the stack being captured (for overtaking)
+  /** Position of the stack being captured/overtaken (for overtaking captures). */
+  captureTarget?: Position;
+  /** Snapshot(s) of stacks captured by this action (before state). */
   capturedStacks?: RingStack[];
-  captureChain?: Position[]; // Sequence of capture positions
-  overtakenRings?: number[]; // Player numbers of overtaken rings
+  /** Sequence of capture positions visited so far in the chain. */
+  captureChain?: Position[];
+  /** Player numbers of overtaken rings added to the capturing stack. */
+  overtakenRings?: number[];
 
   // Line formation specific
+  /** Lines detected/processed as part of this action (if any). */
   formedLines?: LineInfo[];
+  /** Marker positions collapsed to territory as a consequence of this action. */
   collapsedMarkers?: Position[];
 
   // Territory specific
+  /** Newly claimed territories as a result of this action. */
   claimedTerritory?: Territory[];
+  /** Disconnected regions processed by this action (if any). */
   disconnectedRegions?: Territory[];
+  /**
+   * Summary of rings eliminated by this action, grouped per player. For
+   * territory/self-elimination decisions, this is the canonical record of
+   * which player lost how many rings.
+   */
   eliminatedRings?: { player: number; count: number }[];
 
+  /** Wall-clock timestamp when the move was created/applied. */
   timestamp: Date;
+  /** Think time in milliseconds for the player/AI before this action. */
   thinkTime: number;
+  /** Global, 1-based action index within the game history. */
   moveNumber: number;
 }
 

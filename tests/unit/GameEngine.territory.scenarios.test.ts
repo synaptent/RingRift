@@ -148,4 +148,84 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
     expect(finalTotalEliminated).toBe(initialTotalEliminated);
     expect(finalP1Eliminated).toBe(initialP1Eliminated);
   });
+
+  test('Q23_disconnected_region_processed_when_self_elimination_available_backend', async () => {
+    // Complementary scenario for Section 12.2 / FAQ Q23:
+    //
+    // When the moving player DOES have at least one ring/stack cap outside a
+    // disconnected region, the region should be processed:
+    // - All spaces in the region collapse to the moving player's colour.
+    // - All rings inside the region are eliminated.
+    // - Exactly one of the moving player's rings/caps outside the region is
+    //   eliminated to pay the self-elimination cost.
+
+    const players = createPlayers();
+    const engine = new GameEngine('territory-q23-process', boardType, players, timeControl, false);
+    const engineAny: any = engine;
+    const gameState: GameState = (engineAny as any).gameState;
+    const board = gameState.board;
+    const boardManager: any = (engineAny as any).boardManager;
+
+    gameState.currentPlayer = 1;
+
+    // Synthetic 3x3 interior region as before.
+    const interiorCoords: Position[] = [];
+    for (let x = 5; x <= 7; x++) {
+      for (let y = 5; y <= 7; y++) {
+        interiorCoords.push(pos(x, y));
+      }
+    }
+
+    // Place stacks for another player (2) inside the region so that the
+    // region is semantically meaningful as a disconnection once surfaced by
+    // BoardManager.findDisconnectedRegions.
+    for (const p of interiorCoords) {
+      addStack(board, p, 2, 1);
+    }
+
+    // Give player 1 a single stack OUTSIDE the region so they can satisfy the
+    // self-elimination prerequisite.
+    const p1Outside = pos(0, 1);
+    addStack(board, p1Outside, 1, 2);
+
+    const p1StacksOutside = boardManager.getPlayerStacks(board, 1);
+    expect(p1StacksOutside.length).toBeGreaterThan(0);
+
+    // Stub disconnected-region detection exactly as in the previous test so
+    // we isolate GameEngine.processDisconnectedRegions behaviour.
+    const regionTerritory = {
+      spaces: interiorCoords,
+      controllingPlayer: 1,
+      isDisconnected: true
+    };
+
+    const findDisconnectedRegionsSpy = jest
+      .spyOn(boardManager, 'findDisconnectedRegions')
+      .mockImplementationOnce(() => [regionTerritory])
+      .mockImplementation(() => []);
+
+    const initialCollapsedCount = board.collapsedSpaces.size;
+    const initialTotalEliminated = gameState.totalRingsEliminated;
+    const initialP1Eliminated = gameState.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+
+    await (engineAny as any).processDisconnectedRegions();
+
+    expect(findDisconnectedRegionsSpy).toHaveBeenCalled();
+
+    // Region MUST be processed:
+    // - All interior spaces collapsed for player 1.
+    // - No stacks remain on those spaces.
+    for (const p of interiorCoords) {
+      const key = positionToString(p);
+      expect(board.collapsedSpaces.get(key)).toBe(1);
+      expect(board.stacks.has(key)).toBe(false);
+    }
+
+    const finalTotalEliminated = gameState.totalRingsEliminated;
+    const finalP1Eliminated = gameState.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+
+    expect(board.collapsedSpaces.size).toBeGreaterThan(initialCollapsedCount);
+    expect(finalTotalEliminated).toBeGreaterThan(initialTotalEliminated);
+    expect(finalP1Eliminated).toBeGreaterThan(initialP1Eliminated);
+  });
 });

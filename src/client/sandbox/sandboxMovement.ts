@@ -121,23 +121,34 @@ export interface MarkerPathHelpers {
 
 /**
  * Apply marker effects for a move or capture segment from `from` to `to` on
- * the given board, using the provided helper callbacks. This mirrors the
- * backend marker-path behaviour and is used by ClientSandboxEngine for both
- * movement and capture paths.
+ * the given board, using the provided helper callbacks.
+ *
+ * By default this mirrors the backend movement behaviour:
+ *   - Leave a marker on the true departure space.
+ *   - Process intermediate markers (collapse/flip).
+ *   - Remove a same-colour marker on the landing space.
+ *
+ * Callers that need finer-grained control (e.g. capture segments that want
+ * to avoid placing a departure marker on an intermediate stack such as the
+ * capture target) can pass options to disable the departure marker while
+ * still reusing the intermediate/landing semantics.
  */
 export function applyMarkerEffectsAlongPathOnBoard(
   board: BoardState,
   from: Position,
   to: Position,
   playerNumber: number,
-  helpers: MarkerPathHelpers
+  helpers: MarkerPathHelpers,
+  options?: { leaveDepartureMarker?: boolean }
 ): void {
   const path = getPathPositions(from, to);
   if (path.length === 0) return;
 
+  const leaveDepartureMarker = options?.leaveDepartureMarker !== false;
+
   const fromKey = positionToString(from);
   // Leave a marker on the departure space if it isn't already collapsed.
-  if (!board.collapsedSpaces.has(fromKey)) {
+  if (leaveDepartureMarker && !board.collapsedSpaces.has(fromKey)) {
     const existing = board.markers.get(fromKey);
     if (!existing) {
       helpers.setMarker(from, playerNumber, board);

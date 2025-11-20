@@ -104,4 +104,85 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
     expect(finalState.gameStatus).toBe('completed');
     expect(finalState.winner).toBe(1);
   });
+
+  test('stalemate tiebreaker uses markers before last-actor in sandbox', () => {
+    const engine = createEngine();
+    const engineAny = engine as any;
+    const state: GameState = engineAny.gameState as GameState;
+
+    // Structural terminality: no stacks, no rings in hand.
+    state.board.stacks.clear();
+    state.board.markers.clear();
+
+    state.players.forEach(p => {
+      p.ringsInHand = 0;
+      p.territorySpaces = 0;
+      p.eliminatedRings = 2;
+    });
+
+    // Player 1: two markers; Player 2: one marker.
+    (state.board.markers as any).set('0,0', {
+      player: 1,
+      position: { x: 0, y: 0 },
+      type: 'regular'
+    });
+    (state.board.markers as any).set('1,0', {
+      player: 1,
+      position: { x: 1, y: 0 },
+      type: 'regular'
+    });
+    (state.board.markers as any).set('0,1', {
+      player: 2,
+      position: { x: 0, y: 1 },
+      type: 'regular'
+    });
+
+    // Ensure victoryResult is clear.
+    engineAny.victoryResult = null;
+
+    engineAny.checkAndApplyVictory();
+
+    const result: GameResult | null = engine.getVictoryResult();
+    const finalState = engine.getGameState();
+
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe('last_player_standing');
+    expect(result!.winner).toBe(1);
+    expect(finalState.gameStatus).toBe('completed');
+    expect(finalState.winner).toBe(1);
+  });
+
+  test('stalemate final rung uses last-actor in sandbox when fully tied', () => {
+    const engine = createEngine();
+    const engineAny = engine as any;
+    const state: GameState = engineAny.gameState as GameState;
+
+    // Structural terminality: no stacks, no rings in hand, no markers.
+    state.board.stacks.clear();
+    state.board.markers.clear();
+
+    state.players.forEach(p => {
+      p.ringsInHand = 0;
+      p.territorySpaces = 0;
+      p.eliminatedRings = 0;
+    });
+
+    // With players [1,2] and currentPlayer = 1, the sandbox
+    // getLastActorFromState fallback will treat Player 2 as the
+    // last actor in absence of history.
+    state.currentPlayer = 1;
+
+    engineAny.victoryResult = null;
+
+    engineAny.checkAndApplyVictory();
+
+    const result: GameResult | null = engine.getVictoryResult();
+    const finalState = engine.getGameState();
+
+    expect(result).not.toBeNull();
+    expect(result!.reason).toBe('last_player_standing');
+    expect(result!.winner).toBe(2);
+    expect(finalState.gameStatus).toBe('completed');
+    expect(finalState.winner).toBe(2);
+  });
 });

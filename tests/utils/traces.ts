@@ -120,17 +120,24 @@ export async function runSandboxAITrace(
     const initialState = engine.getGameState();
 
     for (let step = 0; step < maxSteps; step++) {
-      console.log(`[runSandboxAITrace] Step ${step} start`);
+      if (TRACE_DEBUG_ENABLED) {
+        // eslint-disable-next-line no-console
+        console.log(`[runSandboxAITrace] Step ${step} start`);
+      }
       const state = engine.getGameState();
       // DIAGNOSTIC: trace harness view of current player/phase before AI turn
-      console.log('[runSandboxAITrace] State before maybeRunAITurn', {
-        step,
-        currentPlayer: state.currentPlayer,
-        currentPhase: state.currentPhase,
-        gameStatus: state.gameStatus,
-        ringsInHand: state.players.find((p) => p.playerNumber === state.currentPlayer)?.ringsInHand,
-        stacksOnBoard: state.board.stacks.size,
-      });
+      if (TRACE_DEBUG_ENABLED) {
+        // eslint-disable-next-line no-console
+        console.log('[runSandboxAITrace] State before maybeRunAITurn', {
+          step,
+          currentPlayer: state.currentPlayer,
+          currentPhase: state.currentPhase,
+          gameStatus: state.gameStatus,
+          ringsInHand:
+            state.players.find((p) => p.playerNumber === state.currentPlayer)?.ringsInHand,
+          stacksOnBoard: state.board.stacks.size,
+        });
+      }
       if (state.gameStatus !== 'active') {
         break;
       }
@@ -142,7 +149,9 @@ export async function runSandboxAITrace(
         break;
       }
 
-      await engine.maybeRunAITurn();
+      // Use the same seeded RNG for sandbox AI decisions that the harness
+      // uses for any global Math.random-based behaviour.
+      await engine.maybeRunAITurn(rng);
     }
 
     const finalState = engine.getGameState();
@@ -247,7 +256,10 @@ export async function replayMovesOnBackend(
   const engine = createBackendEngineFromInitialState(initialState);
   const backendInitialState = engine.getGameState();
 
-  for (const move of moves) {
+  for (let i = 0; i < moves.length; i++) {
+    const move = moves[i];
+    const nextMove: Move | undefined = moves[i + 1];
+
     // Before attempting to match this move, advance the backend through any
     // automatic bookkeeping phases so that we only ever compare against
     // interactive phases (placement, movement, capture) where getValidMoves
@@ -313,12 +325,21 @@ export async function replayMovesOnBackend(
     }
 
     const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
-    const result = await engine.makeMove(payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>);
+    const result = await engine.makeMove(
+      payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+    );
     if (!result.success) {
       throw new Error(
         `replayMovesOnBackend: makeMove failed at backend moveNumber=${matchingBackendMove.moveNumber}: ${result.error}`
       );
     }
+
+    // NOTE: Earlier versions of the trace harness automatically resolved
+    // backend chain_capture continuations here when sandbox traces collapsed
+    // entire chains into a single overtaking_capture move. Now that sandbox
+    // traces emit one canonical move per capture segment (including explicit
+    // continue_capture_segment actions), we rely solely on the explicit move
+    // list and no longer auto-resolve backend continuations.
   }
 
   const finalState = engine.getGameState();
@@ -326,6 +347,93 @@ export async function replayMovesOnBackend(
     initialState: backendInitialState,
     entries: finalState.history,
   };
+}
+
+/**
+ * When the backend GameEngine is in the chain_capture phase with at least
+ * one legal continuation segment, automatically apply follow-up capture
+ * segments until the chain is exhausted.
+ *
+ * This mirrors the deterministic capture_direction behaviour used by the
+ * sandbox trace harness: when multiple options are available, always pick
+ * the lexicographically smallest landing position (x,y,z). If the next
+ * sandbox move is already a continue_capture_segment for the active player,
+ * we skip auto-resolution and rely on the explicit trace entry instead.
+ */
+async function autoResolveChainCaptureIfNeeded(
+  engine: GameEngine,
+  nextSandboxMove: Move | undefined
+): Promise<void> {
+  // First step through any internal bookkeeping phases so we only ever
+  // inspect interactive phases.
+  engine.stepAutomaticPhasesForTesting();
+
+  // Resolve at most a bounded number of segments defensively; in
+  // well-formed states the chain must eventually terminate.
+  const MAX_SEGMENTS = 32;
+
+  for (let i = 0; i < MAX_SEGMENTS; i++) {
+    const state = engine.getGameState();
+    if (state.gameStatus !== 'active' || state.currentPhase !== 'chain_capture') {
+      return;
+    }
+
+    const player = state.currentPlayer;
+
+    // If the sandbox trace already provides an explicit
+    // continue_capture_segment from this chain position for this player,
+    // do not auto-resolve; the next replay loop iteration will apply it.
+    if (
+      nextSandboxMove &&
+      nextSandboxMove.type === 'continue_capture_segment' &&
+      nextSandboxMove.player === player
+    ) {
+      return;
+    }
+
+    const moves = engine.getValidMoves(player);
+    const continuations = moves.filter((m) => m.type === 'continue_capture_segment');
+
+    if (continuations.length === 0) {
+      // Defensive: clear any stale chain state by advancing through
+      // automatic phases; callers will observe the resolved state.
+      engine.stepAutomaticPhasesForTesting();
+      return;
+    }
+
+    // Deterministically select the continuation with the lexicographically
+    // smallest landing position. This keeps behaviour in sync with the
+    // sandbox capture_direction handler used during trace generation.
+    const chosen = continuations.reduce((best, current) => {
+      const bz = (best.to.z ?? 0) as number;
+      const cz = (current.to.z ?? 0) as number;
+
+      if (current.to.x < best.to.x) return current;
+      if (current.to.x > best.to.x) return best;
+      if (current.to.y < best.to.y) return current;
+      if (current.to.y > best.to.y) return best;
+      if (cz < bz) return current;
+      if (cz > bz) return best;
+      return best;
+    }, continuations[0]);
+
+    const { id, timestamp, moveNumber, ...payload } = chosen;
+    const result = await engine.makeMove(
+      payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+    );
+    if (!result.success) {
+      throw new Error(
+        `autoResolveChainCaptureIfNeeded: makeMove failed at backend moveNumber=${chosen.moveNumber}: ${result.error}`
+      );
+    }
+
+    // Loop to see if additional chain_capture segments remain.
+    engine.stepAutomaticPhasesForTesting();
+  }
+
+  // Safety net: if we somehow performed MAX_SEGMENTS continuations and are
+  // still in an active chain_capture phase, leave further resolution to the
+  // caller rather than risk an infinite loop.
 }
 
 /**
@@ -360,7 +468,13 @@ function createSandboxEngineFromInitialState(initial: GameState): ClientSandboxE
   };
 
   const handler = createDeterministicSandboxHandler();
-  return new ClientSandboxEngine({ config, interactionHandler: handler });
+  return new ClientSandboxEngine({
+    config,
+    interactionHandler: handler,
+    // Trace replays are always run under the parity-focused trace
+    // harness, so enable traceMode explicitly here as well.
+    traceMode: true,
+  });
 }
 
 /**

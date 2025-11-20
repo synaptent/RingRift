@@ -18,7 +18,7 @@ echo "🔌 Activating virtual environment..."
 source venv/bin/activate
 
 # Check if uvicorn is installed
-if ! command -v uvicorn &> /dev/null; then
+if ! python -c "import uvicorn" &> /dev/null; then
     echo "❌ uvicorn not found in virtual environment!"
     echo "Please run ./setup.sh to install dependencies."
     exit 1

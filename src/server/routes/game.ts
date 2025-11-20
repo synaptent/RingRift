@@ -1,5 +1,4 @@
 import { Router, Response } from 'express';
-import { GameStatus } from '@prisma/client';
 import { getDatabaseClient } from '../database/connection';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
@@ -139,14 +138,14 @@ router.post('/', asyncHandler(async (req: AuthenticatedRequest, res: Response) =
   // Create game in database
   const game = await prisma.game.create({
     data: {
-      boardType: gameData.boardType,
+      boardType: gameData.boardType as any,
       maxPlayers: gameData.maxPlayers,
       timeControl: gameData.timeControl,
       isRated: gameData.isRated,
       allowSpectators: !gameData.isPrivate,
       player1Id: userId,
-      status: GameStatus.waiting,
-      gameState: initialGameState,
+      status: 'waiting' as any,
+      gameState: initialGameState as any,
       createdAt: new Date(),
       updatedAt: new Date()
     },
@@ -193,7 +192,7 @@ router.post('/:gameId/join', asyncHandler(async (req: AuthenticatedRequest, res:
     throw createError('Game not found', 404, 'GAME_NOT_FOUND');
   }
 
-  if (game.status !== GameStatus.waiting) {
+  if (game.status !== ('waiting' as any)) {
     throw createError('Game is not accepting players', 400, 'GAME_NOT_JOINABLE');
   }
 
@@ -243,7 +242,7 @@ router.post('/:gameId/join', asyncHandler(async (req: AuthenticatedRequest, res:
       await prisma.game.update({
         where: { id: gameId },
         data: {
-          status: GameStatus.active,
+          status: 'active' as any,
           startedAt: new Date(),
           updatedAt: new Date()
         }
@@ -286,7 +285,7 @@ router.post('/:gameId/leave', asyncHandler(async (req: AuthenticatedRequest, res
     throw createError('Not a player in this game', 400, 'NOT_A_PLAYER');
   }
 
-  if (game.status === GameStatus.active) {
+  if (game.status === ('active' as any)) {
     // If game is active, this is a resignation
     const gameEngine = activeGames.get(gameId);
     if (gameEngine) {
@@ -297,7 +296,7 @@ router.post('/:gameId/leave', asyncHandler(async (req: AuthenticatedRequest, res
     await prisma.game.update({
       where: { id: gameId },
       data: {
-        status: GameStatus.completed,
+        status: 'completed' as any,
         endedAt: new Date(),
         updatedAt: new Date()
       }
@@ -398,7 +397,7 @@ router.get('/lobby/available', asyncHandler(async (req: AuthenticatedRequest, re
   const userId = req.user!.id;
 
   const whereClause: any = {
-    status: GameStatus.waiting,
+    status: 'waiting' as any,
     // Exclude games where user is already a player
     NOT: {
       OR: [

@@ -132,7 +132,8 @@ router.get('/stats', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         { player3Id: userId },
         { player4Id: userId }
       ],
-      status: 'completed'
+      // Cast to any so we don't depend on the exact Prisma GameStatus TS enum
+      status: 'completed' as any
     },
     orderBy: { endedAt: 'desc' },
     take: 10,

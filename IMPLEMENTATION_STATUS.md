@@ -1,6 +1,6 @@
 # Implementation Status
 
-**Last Updated:** November 19, 2025
+**Last Updated:** November 20, 2025
 
 This file is a **short summary** of the current, code‑verified status. For full detail, see:
 
@@ -37,10 +37,10 @@ This is best described as an **engine/AI and playtest-focused beta**, not a poli
   - Capture validation, including overtaking and mandatory chains
   - Line formation helpers and territory helpers (full logic shared with GameEngine)
 - **GameEngine**
-  - Turn/phase loop: `ring_placement → movement → capture → line_processing → territory_processing → next player`
-  - Marker system, forced elimination, chain captures, graduated line rewards, territory disconnection
-  - Victory checks for ring-elimination and territory-control
-  - PlayerChoice integration for line order/rewards, ring/cap elimination, region order, capture direction via `PlayerInteractionManager`
+  - Turn/phase loop: `ring_placement → movement → capture → chain_capture → line_processing → territory_processing → next player` on the backend; sandbox migration to this explicit `chain_capture` phase is in progress.
+  - Marker system, forced elimination, chain captures, graduated line rewards, territory disconnection.
+  - Victory checks for ring-elimination and territory-control.
+  - PlayerChoice integration for line order/rewards, ring/cap elimination, region order, and (in sandbox/legacy flows) capture direction via `PlayerInteractionManager`; on the backend, capture direction is now expressed as `continue_capture_segment` moves in `chain_capture` (see [`TODO.md`](TODO.md:73)).
 
 ### Backend Infrastructure
 
@@ -63,9 +63,10 @@ This is best described as an **engine/AI and playtest-focused beta**, not a poli
 - TypeScript boundary:
   - `AIServiceClient` and `AIEngine`/`globalAIEngine`
   - Service-backed move selection and several PlayerChoices (`line_reward_option`, `ring_elimination`, `region_order`) with tested fallbacks to local heuristics
-- **FullGameFlow integration test** (`tests/integration/FullGameFlow.test.ts`):
-  - Runs a 2‑AI game fully in `GameEngine` with the AI service mocked as failing
-  - Confirms AI falls back to local heuristics and the game reaches a terminal state via engine rules
+- **FullGameFlow integration test** (`tests/integration/FullGameFlow.test.ts`) exists and now acts as a regression harness for the unified chain-capture / Move model and the S‑invariant:
+  - Runs a 2‑AI game fully in `GameEngine` with the AI service mocked as failing and local AI fallback selecting moves from `GameEngine.getValidMoves` in all interactive phases (including `chain_capture`).
+  - Enforces that the global progress metric `S = markers + collapsed + eliminated` never decreases and fails fast on long S‑plateaus (potential stalls).
+  - Currently **passing**; regressions here are tracked as part of P0.4 in [`TODO.md`](TODO.md:73) since this test exercises end-to-end termination and chain-capture semantics.
 
 ### Frontend Client
 
@@ -97,6 +98,7 @@ This is best described as an **engine/AI and playtest-focused beta**, not a poli
   - AIEngine/AIServiceClient (including failure/fallback behaviour)
   - WebSocketServer AI-turn and choice integration
 - Trace and parity harnesses compare backend vs sandbox behaviour via `GameTrace` utilities.
+- Backend FAQ-style chain-capture scenario suites (triangle loops, 180° reversals, zig‑zag patterns, and hex cyclic captures) now pass under the unified `chain_capture` + `continue_capture_segment` model. However, several backend↔sandbox parity and AI-trace harnesses remain **red** until the sandbox engine and `sandboxAI` are migrated to the same model (see the updated P0.4 section of [`TODO.md`](TODO.md:73) for the current failing-suite list and remediation plan).
 
 Overall, **core logic is well covered by carefully chosen tests**, though not yet by a complete rules/FAQ scenario matrix.
 
@@ -121,7 +123,7 @@ The following items are **not complete**, even though some docs previously claim
 ### Testing & Rules Coverage
 
 - **Scenario Matrix:** Initial scenario-driven tests (`tests/scenarios/`) are now in place for complex chain captures (180° reversals, cycles) and line/territory interactions, keyed to FAQ examples.
-- Backend↔sandbox semantic parity is strong but not perfect; some complex AI‑generated traces still reveal differences that are being iteratively resolved.
+- Backend↔sandbox semantic parity is strong for basic movement/placement, but currently **broken** in several chain‑capture and AI-trace harnesses because the unified Move model (`chain_capture` + `continue_capture_segment` on the backend) has not yet been fully mirrored in the sandbox engine and `sandboxAI`; see P0.4 in [`TODO.md`](TODO.md:73).
 
 For details and specific P0/P1 items, see `KNOWN_ISSUES.md`.
 
@@ -136,3 +138,11 @@ For advancing toward the documented MVP (playable single‑player games with con
 3. **Frontend lifecycle polish** around reconnection, spectator views, and clearer HUD/timer displays for both backend and sandbox games.
 
 These priorities are expanded and tracked in `TODO.md` and `STRATEGIC_ROADMAP.md`.
+In particular, see the "Consolidated Execution Tracks & Plan" section in
+`TODO.md`, which groups the work into:
+
+- Track 1 – Rules/FAQ Scenario Matrix & Parity Hardening (P0)
+- Track 2 – Multiplayer Lifecycle & HUD/UX (P1)
+- Track 3 – Sandbox as a First-Class Rules Lab (P0–P1)
+- Track 4 – Incremental AI Improvements & Observability (P1–P2)
+- Track 5 – Persistence, Replays, and Stats (P2)

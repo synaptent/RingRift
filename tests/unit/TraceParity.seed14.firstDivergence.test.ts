@@ -157,11 +157,14 @@ describe('Trace parity first-divergence helper: square8 / 2p / seed=14', () => {
 
     if (firstMismatchIndex === -1) {
       console.log('No hash/phase divergence found for seed 14 up to maxSteps', MAX_STEPS);
+    } else {
+      throw new Error(
+        `Backend vs Sandbox trace parity divergence for seed 14 at index ${firstMismatchIndex}. ` +
+          'See earlier console diagnostics for phase/hash mismatch details.'
+      );
     }
 
-    // This is a diagnostic helper: we do not fail the test based on the
-    // mismatch index yet. Once we know the correct behaviour, we can
-    // tighten this to an expectation.
+    // Sanity check: we still expect a non-empty trace for this scenario.
     expect(trace.entries.length).toBeGreaterThan(0);
   });
 });

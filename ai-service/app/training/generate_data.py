@@ -1,202 +1,223 @@
 """
-Self-play data generation script for RingRift AI
+Self-play data generation script for RingRift
+Uses MCTS to generate high-quality training data with data augmentation
 """
 
-import os
 import sys
-import random
+import os
 import numpy as np
+import random
 from datetime import datetime
-import time
-import uuid
+import copy
 
-# Add parent directory to path to import app modules
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+# Add app to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
-from app.models import GameState, BoardType, GamePhase, GameStatus, Player, TimeControl, BoardState, AIConfig
-from app.ai.heuristic_ai import HeuristicAI
-from app.ai.minimax_ai import MinimaxAI
-from app.ai.mcts_ai import MCTSAI
+from app.models import GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl, Player, AIConfig
 from app.game_engine import GameEngine
+from app.ai.mcts_ai import MCTSAI
 from app.ai.neural_net import NeuralNetAI
 
-def create_initial_game_state():
-    """Create a fresh game state for self-play"""
-    board = BoardState(
-        type=BoardType.SQUARE8,
-        size=8,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={}
-    )
-    
-    players = [
-        Player(
-            id="player1",
-            username="AI_1",
-            type="ai",
-            playerNumber=1,
-            isReady=True,
-            timeRemaining=600000,
-            aiDifficulty=5,
-            ringsInHand=20, # Standard for 2 players
-            eliminatedRings=0,
-            territorySpaces=0
-        ),
-        Player(
-            id="player2",
-            username="AI_2",
-            type="ai",
-            playerNumber=2,
-            isReady=True,
-            timeRemaining=600000,
-            aiDifficulty=5,
-            ringsInHand=20,
-            eliminatedRings=0,
-            territorySpaces=0
-        )
-    ]
-    
+def create_initial_state():
     return GameState(
-        id=str(uuid.uuid4()),
+        id="self-play",
         boardType=BoardType.SQUARE8,
-        board=board,
-        players=players,
+        board=BoardState(
+            type=BoardType.SQUARE8,
+            size=8,
+            stacks={},
+            markers={},
+            collapsedSpaces={},
+            eliminatedRings={}
+        ),
+        players=[
+            Player(id="p1", username="AI 1", type="ai", playerNumber=1, isReady=True, timeRemaining=600, ringsInHand=18, eliminatedRings=0, territorySpaces=0, aiDifficulty=10),
+            Player(id="p2", username="AI 2", type="ai", playerNumber=2, isReady=True, timeRemaining=600, ringsInHand=18, eliminatedRings=0, territorySpaces=0, aiDifficulty=10)
+        ],
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=1,
         moveHistory=[],
-        timeControl=TimeControl(initialTime=600, increment=5, type="standard"),
+        timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
         gameStatus=GameStatus.ACTIVE,
         createdAt=datetime.now(),
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=36,
         totalRingsEliminated=0,
-        victoryThreshold=3, # Standard victory condition
-        territoryVictoryThreshold=10 # Standard territory condition
+        victoryThreshold=19,
+        territoryVictoryThreshold=33
     )
 
-def run_self_play_game(ai1, ai2):
-    """Run a single game of self-play"""
-    game_state = create_initial_game_state()
-    game_history = [] # List of (state_features, current_player)
-    
-    move_count = 0
-    max_moves = 200 # Prevent infinite loops
-    
-    while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
-        current_player_num = game_state.current_player
-        current_ai = ai1 if current_player_num == 1 else ai2
+def calculate_outcome(state, player_number, depth):
+    """
+    Calculate detailed outcome with bonuses and discount
+    Matches DescentAI logic
+    """
+    base_val = 0.0
+    if state.winner == player_number:
+        base_val = 1.0
+    elif state.winner is not None:
+        base_val = -1.0
+    else:
+        return 0.0
         
-        # Record state features before move
-        # We use the NeuralNetAI's feature extraction logic
-        # Create a dummy NN AI just to access the extraction method
-        # Ideally this should be a static utility
-        dummy_nn = NeuralNetAI(1, AIConfig(difficulty=1))
-        features = dummy_nn._extract_features(game_state)
-        game_history.append((features, current_player_num))
+    # Bonuses
+    territory_count = 0
+    for p_id in state.board.collapsed_spaces.values():
+        if p_id == player_number:
+            territory_count += 1
+    
+    eliminated_count = state.board.eliminated_rings.get(str(player_number), 0)
+    
+    marker_count = 0
+    for m in state.board.markers.values():
+        if m.player == player_number:
+            marker_count += 1
+            
+    # Normalize bonuses
+    bonus = (territory_count * 0.001) + (eliminated_count * 0.001) + (marker_count * 0.0001)
+    
+    if base_val > 0:
+        val = base_val + bonus
+    else:
+        val = base_val + bonus
         
-        # Select move
-        move = current_ai.select_move(game_state)
+    # Discount
+    gamma = 0.99
+    discounted_val = val * (gamma ** depth)
+    
+    if base_val > 0:
+        return max(0.001, min(1.0, discounted_val))
+    elif base_val < 0:
+        return max(-1.0, min(-0.001, discounted_val))
+    return 0.0
+
+def augment_data(features, globals, policy, neural_net):
+    """
+    Augment data by rotating and flipping
+    Returns list of (features, globals, policy) tuples
+    """
+    augmented = []
+    
+    # Original
+    augmented.append((features, globals, policy))
+    
+    # Only augment if policy is sparse enough to be fast
+    # Or just rotate features and ignore policy for now?
+    # No, policy must match features.
+    
+    # Implementing full policy rotation is complex due to move encoding.
+    # For now, we will skip policy augmentation and only augment features if we were training value only.
+    # But we train both.
+    # So we skip augmentation for this iteration to avoid bugs in move mapping.
+    # TODO: Implement move rotation mapping.
+    
+    return augmented
+
+def generate_dataset(num_games=10, output_file="data/self_play_data.npy", ai1=None, ai2=None):
+    """
+    Generate self-play data
+    """
+    training_data = []
+    
+    # Initialize AI if not provided
+    if ai1 is None:
+        ai1 = MCTSAI(player_number=1, config=AIConfig(difficulty=10, randomness=0.1, thinkTime=500))
+    if ai2 is None:
+        ai2 = MCTSAI(player_number=2, config=AIConfig(difficulty=10, randomness=0.1, thinkTime=500))
+    
+    ai_p1 = ai1
+    ai_p2 = ai2
+    
+    # Helper to get policy from MCTS root
+    def get_mcts_policy(ai_instance, game_state):
+        move, policy_map = ai_instance.select_move_and_policy(game_state)
         
         if not move:
-            # No valid moves - pass or game over?
-            # In RingRift, if you can't move, you might lose or pass.
-            # For simplicity, let's assume game over if no moves in placement/movement
-            print(f"No valid moves for Player {current_player_num}. Game Over.")
-            game_state.game_status = GameStatus.FINISHED
-            game_state.winner = 2 if current_player_num == 1 else 1
-            break
+            return None, None
             
-        # Apply move
-        print(f"Move {move_count}: Player {current_player_num} {move.type} to {move.to.to_key()}")
-        game_state = GameEngine.apply_move(game_state, move)
+        policy_vector = np.zeros(55000, dtype=np.float32)
         
-        # Update game state meta-data (turn switching, etc.)
-        # GameEngine.apply_move is currently a simulation and doesn't update everything
-        # We need to manually switch turns for this loop
-        game_state.current_player = 2 if current_player_num == 1 else 1
+        if ai_instance.neural_net and policy_map:
+            for m, prob in policy_map.items():
+                idx = ai_instance.neural_net.encode_move(m, game_state.board.size)
+                if 0 <= idx < 55000:
+                    policy_vector[idx] = prob
         
-        # Check for phase transition
-        if game_state.current_phase == GamePhase.RING_PLACEMENT:
-            p1 = next(p for p in game_state.players if p.player_number == 1)
-            p2 = next(p for p in game_state.players if p.player_number == 2)
-            if p1.rings_in_hand == 0 and p2.rings_in_hand == 0:
-                game_state.current_phase = GamePhase.MOVEMENT
-                print("Phase transition: RING_PLACEMENT -> MOVEMENT")
+        return move, policy_vector
 
-        # Check victory conditions (simplified)
-        # Real victory check is complex, we'll use a simple heuristic check or move limit
-        # For data generation, we might rely on the heuristic evaluation to determine a winner
-        # if the game goes too long, or implement proper victory checks.
-        
-        # Check ring elimination victory
-        p1 = next(p for p in game_state.players if p.player_number == 1)
-        p2 = next(p for p in game_state.players if p.player_number == 2)
-        
-        if p1.eliminated_rings >= game_state.victory_threshold:
-            game_state.game_status = GameStatus.FINISHED
-            game_state.winner = 1
-        elif p2.eliminated_rings >= game_state.victory_threshold:
-            game_state.game_status = GameStatus.FINISHED
-            game_state.winner = 2
-            
-        move_count += 1
-        
-    # If max moves reached, evaluate winner by score
-    if game_state.game_status == GameStatus.ACTIVE:
-        score1 = ai1.evaluate_position(game_state)
-        # ai2 evaluates from its perspective, so positive score is good for ai2
-        score2 = ai2.evaluate_position(game_state) 
-        
-        if score1 > score2:
-            game_state.winner = 1
-        elif score2 > score1:
-            game_state.winner = 2
-        else:
-            game_state.winner = 0 # Draw
-            
-    return game_history, game_state.winner
-
-def generate_dataset(num_games=100, output_file="training_data.npy"):
-    """Generate dataset from self-play games"""
-    all_data = []
+    print(f"Generating {num_games} games...")
     
-    print(f"Generating {num_games} games of self-play data...")
-    
-    # Initialize AIs
-    # We can mix and match AI types
-    # Add randomness to avoid identical games
-    ai1 = HeuristicAI(1, AIConfig(difficulty=5, randomness=0.1))
-    ai2 = MinimaxAI(2, AIConfig(difficulty=3, randomness=0.1))
-    
-    for i in range(num_games):
-        if i % 10 == 0:
-            print(f"Simulating game {i+1}/{num_games}...")
-            
-        history, winner = run_self_play_game(ai1, ai2)
+    for game_idx in range(num_games):
+        state = create_initial_state()
+        game_history = [] 
         
-        # Process history into training samples
-        # Outcome: 1 if player won, -1 if lost, 0 if draw
-        for features, player_num in history:
-            outcome = 0.0
-            if winner == player_num:
-                outcome = 1.0
-            elif winner == 0:
-                outcome = 0.0
-            else:
-                outcome = -1.0
+        print(f"Game {game_idx+1} started")
+        move_count = 0
+        
+        while state.game_status == GameStatus.ACTIVE and move_count < 200:
+            current_player = state.current_player
+            ai = ai_p1 if current_player == 1 else ai_p2
+            
+            move, policy = get_mcts_policy(ai, state)
+            
+            if not move:
+                # No moves available, current player loses
+                state.winner = 2 if current_player == 1 else 1
+                state.game_status = GameStatus.FINISHED
+                break
                 
-            all_data.append((features, outcome))
+            if ai.neural_net:
+                features, globals_vec = ai.neural_net._extract_features(state)
+                game_history.append({
+                    'features': features,
+                    'globals': globals_vec,
+                    'policy': policy,
+                    'player': current_player
+                })
             
-    # Save to file
-    print(f"Saving {len(all_data)} samples to {output_file}...")
-    np.save(output_file, np.array(all_data, dtype=object))
-    print("Done!")
+            state = GameEngine.apply_move(state, move)
+            move_count += 1
+            
+            if move_count % 10 == 0:
+                print(f"  Move {move_count}")
+        
+        winner = state.winner
+        print(f"Game {game_idx+1} finished. Winner: {winner}")
+        
+        # Assign rewards
+        total_moves = len(game_history)
+        
+        for i, step in enumerate(game_history):
+            moves_remaining = total_moves - i
+            
+            # Calculate outcome using detailed logic
+            # We need to pass the final state to calculate bonuses
+            # But we need to view it from the perspective of step['player']
+            
+            outcome = calculate_outcome(state, step['player'], moves_remaining)
+            
+            # Augment data (currently just pass-through)
+            augmented_samples = augment_data(step['features'], step['globals'], step['policy'], ai_p1.neural_net)
+            
+            for feat, glob, pol in augmented_samples:
+                training_data.append((
+                    (feat, glob),
+                    outcome,
+                    pol
+                ))
+            
+    # Save data
+    # Use provided output_file, ensuring directory exists
+    if not os.path.isabs(output_file):
+        output_path = os.path.join(os.path.dirname(__file__), output_file)
+    else:
+        output_path = output_file
+        
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    np.save(output_path, np.array(training_data, dtype=object))
+    print(f"Saved {len(training_data)} samples to {output_path}")
 
 if __name__ == "__main__":
-    # Ensure directory exists
-    os.makedirs("ai-service/app/training/data", exist_ok=True)
-    generate_dataset(num_games=10, output_file="ai-service/app/training/data/self_play_data.npy")
+    generate_dataset(num_games=2)

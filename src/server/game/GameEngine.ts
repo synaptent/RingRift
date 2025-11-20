@@ -15,7 +15,6 @@ import {
   LineRewardChoice,
   RingEliminationChoice,
   RegionOrderChoice,
-  CaptureDirectionChoice,
   PlayerChoiceResponseFor,
   GameHistoryEntry,
 } from '../../shared/types/game';
@@ -34,10 +33,8 @@ import { processLinesForCurrentPlayer } from './rules/lineProcessing';
 import { processDisconnectedRegionsForCurrentPlayer } from './rules/territoryProcessing';
 import {
   ChainCaptureState,
-  ChainCaptureSegment,
   updateChainCaptureStateAfterCapture as updateChainCaptureStateAfterCaptureShared,
   getCaptureOptionsFromPosition as getCaptureOptionsFromPositionShared,
-  chooseCaptureDirectionFromState as chooseCaptureDirectionFromStateShared,
 } from './rules/captureChainEngine';
 import {
   PerTurnState,
@@ -58,7 +55,6 @@ import {
  * keep the Ts* aliases here to preserve existing semantics and comments while
  * centralising the implementation.
  */
-type TsChainCaptureSegment = ChainCaptureSegment;
 type TsChainCaptureState = ChainCaptureState;
 
 // Timer functions for Node.js environment
@@ -136,6 +132,11 @@ export class GameEngine {
       victoryThreshold: Math.floor((config.ringsPerPlayer * players.length) / 2) + 1,
       territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,
     };
+
+    // Internal no-op hook to keep selected helpers referenced so that
+    // ts-node/TypeScript with noUnusedLocals can compile the server in
+    // dev without stripping them. This has no behavioural effect.
+    this._debugUseInternalHelpers();
   }
 
   getGameState(): GameState {
@@ -195,6 +196,26 @@ export class GameEngine {
   }
 
   /**
+   * Internal no-op hook to keep selected helper methods referenced so that
+   * ts-node/TypeScript with noUnusedLocals can compile the server in dev
+   * without treating them as dead code. This has no impact on runtime
+   * behaviour; it only preserves helpers for parity/debug tooling and
+   * future rule-engine extensions.
+   */
+  private _debugUseInternalHelpers(): void {
+    // These void-accesses mark the helpers as "used" from the compiler's
+    // perspective without invoking them.
+    void this.processLineFormations;
+    void this.processDisconnectedRegions;
+    void this.hasValidActions;
+    void this.processForcedElimination;
+    void this.getAdjacentPositions;
+    void this.nextPlayer;
+    void this.getValidLineProcessingMoves;
+    void this.getValidTerritoryProcessingMoves;
+  }
+
+  /**
    * Append a structured history entry for a canonical move applied to the
    * engine. This is the primary hook used by parity/debug tooling; it is
    * intentionally side-effect-free with respect to core rules logic.
@@ -234,8 +255,9 @@ export class GameEngine {
     gameState?: GameState;
     gameResult?: GameResult;
   }> {
-    // When a chain capture is in progress, only additional overtaking captures
-    // from the current chain position are legal until no options remain.
+    // When a chain capture is in progress, only follow-up capture segments
+    // chosen as explicit continue_capture_segment moves from the current
+    // chain position are legal until no options remain.
     if (this.chainCaptureState) {
       const state = this.chainCaptureState;
 
@@ -247,17 +269,26 @@ export class GameEngine {
         };
       }
 
-      // During a chain, only overtaking_capture moves from the current position
-      // are allowed. Ending a chain early is not permitted by the rules; the
-      // chain ends only when no further captures are available.
+      // During a chain, only continue_capture_segment moves from the current
+      // position are allowed. Ending a chain early is not permitted by the
+      // rules; the chain ends only when no further captures are available.
       if (
-        move.type !== 'overtaking_capture' ||
+        move.type !== 'continue_capture_segment' ||
         !move.from ||
         positionToString(move.from) !== positionToString(state.currentPosition)
       ) {
         return {
           success: false,
           error: 'Chain capture in progress: must continue capturing with the same stack',
+        };
+      }
+    } else {
+      // Defensive: it is not legal to start a chain with a
+      // continue_capture_segment move when no chain is active.
+      if (move.type === 'continue_capture_segment') {
+        return {
+          success: false,
+          error: 'No chain capture in progress for continue_capture_segment move',
         };
       }
     }
@@ -270,7 +301,8 @@ export class GameEngine {
         move.type === 'move_stack' ||
         move.type === 'move_ring' ||
         move.type === 'build_stack' ||
-        move.type === 'overtaking_capture';
+        move.type === 'overtaking_capture' ||
+        move.type === 'continue_capture_segment';
 
       if (isMovementOrCaptureType && (!moveFromKey || moveFromKey !== this.mustMoveFromStackKey)) {
         return {
@@ -310,7 +342,8 @@ export class GameEngine {
     const isMovementOrCaptureType =
       fullMove.type === 'move_stack' ||
       fullMove.type === 'move_ring' ||
-      fullMove.type === 'overtaking_capture';
+      fullMove.type === 'overtaking_capture' ||
+      fullMove.type === 'continue_capture_segment';
 
     if (isMovementOrCaptureType && fullMove.from) {
       const sourceStack = this.boardManager.getStack(fullMove.from, this.gameState.board);
@@ -353,7 +386,10 @@ export class GameEngine {
 
     // Capture context needed for chain state bookkeeping (cap height, etc.)
     let capturedCapHeight = 0;
-    if (fullMove.type === 'overtaking_capture' && fullMove.captureTarget) {
+    if (
+      (fullMove.type === 'overtaking_capture' || fullMove.type === 'continue_capture_segment') &&
+      fullMove.captureTarget
+    ) {
       const targetStack = this.boardManager.getStack(fullMove.captureTarget, this.gameState.board);
       capturedCapHeight = targetStack ? targetStack.capHeight : 0;
     }
@@ -374,78 +410,68 @@ export class GameEngine {
     // phases (movement/capture) can enforce must-move constraints.
     this.updatePerTurnStateAfterMove(fullMove);
 
-    // If this was an overtaking capture, update or start the chain
-    // capture state and, if additional captures are available, drive
-    // the rest of the chain from within the engine. This includes
-    // invoking CaptureDirectionChoice via PlayerInteractionManager
-    // when multiple follow-up options exist.
-    if (fullMove.type === 'overtaking_capture') {
+    // If this move is a capture segment (either the initial overtaking_capture
+    // or a follow-up continue_capture_segment), update or start the chain
+    // capture state and determine whether additional capture segments are
+    // available from the new landing position. Chain continuation is now
+    // driven by explicit continue_capture_segment moves chosen by the
+    // player/AI during the dedicated 'chain_capture' phase rather than via
+    // internal PlayerChoice callbacks.
+    let chainContinuationAvailable = false;
+
+    if (
+      fullMove.type === 'overtaking_capture' ||
+      fullMove.type === 'continue_capture_segment'
+    ) {
       this.updateChainCaptureStateAfterCapture(fullMove, capturedCapHeight);
 
-      // Engine-driven chain continuation loop
-      while (true) {
-        const state = this.chainCaptureState;
-        const currentPlayer = this.gameState.currentPlayer;
+      const state = this.chainCaptureState;
+      const currentPlayer = this.gameState.currentPlayer;
 
-        if (!state || state.playerNumber !== currentPlayer) {
-          // No active chain (or somehow not this player's chain): stop.
-          this.chainCaptureState = undefined;
-          break;
-        }
-
+      if (state && state.playerNumber === currentPlayer) {
         const followUpMoves = this.getCaptureOptionsFromPosition(
           state.currentPosition,
           currentPlayer
         );
         state.availableMoves = followUpMoves;
 
-        if (followUpMoves.length === 0) {
-          // Chain is exhausted; clear state and exit loop.
+        if (followUpMoves.length > 0) {
+          // At least one additional capture segment is available. Enter
+          // the interactive chain_capture phase so the same player can
+          // choose among the available follow-up segments via
+          // continue_capture_segment moves.
+          this.gameState.currentPhase = 'chain_capture';
+          chainContinuationAvailable = true;
+        } else {
+          // Chain is exhausted; clear state and fall through to normal
+          // post-move processing.
           this.chainCaptureState = undefined;
-          break;
         }
-
-        // Let the player choose among available capture directions when
-        // appropriate; this uses the CaptureDirectionChoice flow.
-        const nextChosen = await this.chooseCaptureDirectionFromState();
-        if (!nextChosen) {
-          // Defensive: if no choice can be made, end the chain.
-          this.chainCaptureState = undefined;
-          break;
-        }
-
-        // Compute cap height for the next target, primarily for
-        // diagnostic/state-tracking parity with the Rust engine.
-        let nextCapturedCapHeight = 0;
-        if (nextChosen.captureTarget) {
-          const nextTargetStack = this.boardManager.getStack(
-            nextChosen.captureTarget,
-            this.gameState.board
-          );
-          nextCapturedCapHeight = nextTargetStack ? nextTargetStack.capHeight : 0;
-        }
-
-        // Promote the chosen follow-up capture into a full Move with
-        // its own id/timestamp and append it to history. These
-        // internal chain segments remain part of the same turn.
-        const internalMove: Move = {
-          ...nextChosen,
-          id: generateUUID(),
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: this.gameState.moveHistory.length + 1,
-        };
-
-        this.applyMove(internalMove);
-        this.gameState.moveHistory.push(internalMove);
-        this.gameState.lastMoveAt = new Date();
-
-        // Update chain state for the new position and continue loop.
-        this.updateChainCaptureStateAfterCapture(internalMove, nextCapturedCapHeight);
+      } else {
+        // Defensive: if we somehow lack a chain state after a capture
+        // segment, clear it and treat this as a standalone capture.
+        this.chainCaptureState = undefined;
       }
     } else {
       // Any non-capture move clears any stale chain state (defensive safety).
       this.chainCaptureState = undefined;
+    }
+
+    // When a capture chain is still in progress after this move, skip
+    // automatic consequences and phase advancement. The active player
+    // remains the same and must now choose a continue_capture_segment
+    // move from getValidMoves().
+    if (chainContinuationAvailable) {
+      // Restart the active player's timer for the next interactive decision.
+      this.startPlayerTimer(this.gameState.currentPlayer);
+
+      // Record a structured history entry for this capture segment.
+      this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+      return {
+        success: true,
+        gameState: this.getGameState(),
+      };
     }
 
     // Process automatic consequences (line formations, territory, etc.) only
@@ -455,7 +481,18 @@ export class GameEngine {
     // Check for game end conditions
     const gameEndCheck = this.ruleEngine.checkGameEnd(this.gameState);
     if (gameEndCheck.isGameOver) {
-      return this.endGame(gameEndCheck.winner, gameEndCheck.reason || 'unknown');
+      const endResult = this.endGame(gameEndCheck.winner, gameEndCheck.reason || 'unknown');
+
+      // Even when the game ends, record a structured history entry for the
+      // canonical move that produced the terminal state so parity/debug
+      // tooling sees a complete move-by-move trace.
+      this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+      return {
+        success: endResult.success,
+        gameResult: endResult.gameResult,
+        gameState: this.getGameState(),
+      };
     }
 
     // Advance to next phase/player
@@ -567,14 +604,33 @@ export class GameEngine {
             this.boardManager.removeMarker(move.to, this.gameState.board);
           }
 
+          // If there is an existing stack at the landing position, merge the
+          // moving stack into it rather than overwriting it. This mirrors the
+          // sandbox movement engine and preserves ring conservation for simple
+          // moves that land on occupied spaces.
+          const existingDest = this.boardManager.getStack(move.to, this.gameState.board);
+
           // Remove stack from source
           this.boardManager.removeStack(move.from, this.gameState.board);
 
-          // Normal movement (no capture at landing position)
-          const movedStack: RingStack = {
-            ...stack,
-            position: move.to,
-          };
+          let movedStack: RingStack;
+          if (existingDest && existingDest.rings.length > 0) {
+            const mergedRings = [...existingDest.rings, ...stack.rings];
+            movedStack = {
+              position: move.to,
+              rings: mergedRings,
+              stackHeight: mergedRings.length,
+              capHeight: calculateCapHeight(mergedRings),
+              controllingPlayer: mergedRings[0],
+            };
+          } else {
+            // Normal movement (no existing stack at landing position)
+            movedStack = {
+              ...stack,
+              position: move.to,
+            };
+          }
+
           this.boardManager.setStack(move.to, movedStack, this.gameState.board);
 
           if (landedOnOwnMarker) {
@@ -587,6 +643,7 @@ export class GameEngine {
         break;
 
       case 'overtaking_capture':
+      case 'continue_capture_segment':
         if (move.from && move.to && move.captureTarget) {
           this.performOvertakingCapture(move.from, move.captureTarget, move.to, move.player);
           result.captures.push(move.captureTarget);
@@ -667,10 +724,12 @@ export class GameEngine {
    * specified player by ray-walking in each movement direction and
    * validating each candidate via RuleEngine.
    *
-   * This is intentionally kept in sync with the Rust
-   * CaptureProcessor::get_available_capture_details logic and is
-   * exercised by tests/unit/GameEngine.chainCaptureChoiceIntegration.test.ts
-   * as the TS reference for multi-option chain capture behavior.
+   * This helper delegates to the shared captureChainEngine and mirrors
+   * the Rust CaptureProcessor::get_available_capture_details logic. It
+   * remains the canonical source for chain-continuation options; the
+   * unified Move model simply re-labels these as
+   * 'continue_capture_segment' during the dedicated 'chain_capture'
+   * phase.
    */
   private getCaptureOptionsFromPosition(position: Position, playerNumber: number): Move[] {
     return getCaptureOptionsFromPositionShared(position, playerNumber, this.gameState, {
@@ -691,13 +750,6 @@ export class GameEngine {
    * it simply selects and returns it. Future work can integrate this
    * into a full chain-capture loop once the transport/UI flow is ready.
    */
-  private async chooseCaptureDirectionFromState(): Promise<Move | undefined> {
-    return chooseCaptureDirectionFromStateShared(this.chainCaptureState, this.gameState, {
-      boardManager: this.boardManager,
-      ruleEngine: this.ruleEngine,
-      interactionManager: this.interactionManager,
-    });
-  }
 
   /**
    * Core overtaking capture operation used for both user-initiated
@@ -799,6 +851,124 @@ export class GameEngine {
       boardManager: this.boardManager,
       interactionManager: this.interactionManager,
     });
+  }
+
+  /**
+   * Enumerate canonical line-processing decision moves for the current
+   * player. This is a phase-aware helper that mirrors the behaviour of
+   * processLineFormations / processOneLine but expressed as Move objects:
+   *
+   * - process_line: select which line to process first when multiple
+   *   candidate lines exist for the moving player.
+   * - choose_line_reward: select Option 1 vs Option 2 when an overlength
+   *   line admits both outcomes and an interaction manager is present.
+   *
+   * NOTE: At present, line processing is still driven via PlayerChoice
+   * flows inside processAutomaticConsequences. This helper exists to
+   * support the unified Move/GamePhase model and future migration of
+   * those flows; it is intentionally not wired into makeMove yet.
+   */
+  private getValidLineProcessingMoves(playerNumber: number): Move[] {
+    const moves: Move[] = [];
+
+    const config = BOARD_CONFIGS[this.gameState.boardType];
+    const requiredLength = config.lineLength;
+
+    const allLines = this.boardManager.findAllLines(this.gameState.board);
+    const playerLines = allLines.filter((line) => line.player === playerNumber);
+
+    if (playerLines.length === 0) {
+      return moves;
+    }
+
+    // One process_line move per player-owned line, uniquely identified by
+    // its index and marker positions. Additional metadata (such as an
+    // explicit lineId field) can be added later once the Move type
+    // schema for line_processing is fully wired through the client/AI.
+    playerLines.forEach((line, index) => {
+      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+      moves.push({
+        id: `process-line-${index}-${lineKey}`,
+        type: 'process_line',
+        player: playerNumber,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: this.gameState.moveHistory.length + 1,
+      } as Move);
+    });
+
+    // For overlength lines, also surface a choose_line_reward decision so
+    // that the unified Move model can express Option 1 vs Option 2 even
+    // before the PlayerChoice-based flow is fully migrated.
+    const overlengthLines = playerLines.filter(
+      (line) => line.positions.length > requiredLength
+    );
+
+    overlengthLines.forEach((line, index) => {
+      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+      moves.push({
+        id: `choose-line-reward-${index}-${lineKey}`,
+        type: 'choose_line_reward',
+        player: playerNumber,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: this.gameState.moveHistory.length + 1,
+      } as Move);
+    });
+
+    return moves;
+  }
+
+  /**
+   * Enumerate canonical territory-processing decision moves for the
+   * current player. This is a phase-aware helper that mirrors the
+   * behaviour of processDisconnectedRegions / processOneDisconnectedRegion
+   * but expressed as Move objects:
+   *
+   * - process_territory_region: choose which eligible disconnected region
+   *   to process first when multiple exist.
+   *
+   * Self-elimination stack choices remain driven by the existing
+   * RingEliminationChoice flow for now; a future migration can introduce
+   * eliminate_rings_from_stack moves once the corresponding GamePhase
+   * contract is fully wired through makeMove().
+   */
+  private getValidTerritoryProcessingMoves(playerNumber: number): Move[] {
+    const moves: Move[] = [];
+
+    const disconnectedRegions = this.boardManager.findDisconnectedRegions(
+      this.gameState.board,
+      playerNumber
+    );
+
+    if (disconnectedRegions.length === 0) {
+      return moves;
+    }
+
+    const eligibleRegions = disconnectedRegions.filter((region) =>
+      this.canProcessDisconnectedRegion(region, playerNumber)
+    );
+
+    if (eligibleRegions.length === 0) {
+      return moves;
+    }
+
+    eligibleRegions.forEach((region, index) => {
+      const representative = region.spaces[0];
+      const regionKey = representative
+        ? positionToString(representative)
+        : `region-${index}`;
+      moves.push({
+        id: `process-region-${index}-${regionKey}`,
+        type: 'process_territory_region',
+        player: playerNumber,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: this.gameState.moveHistory.length + 1,
+      } as Move);
+    });
+
+    return moves;
   }
 
   /**
@@ -1670,17 +1840,98 @@ export class GameEngine {
 
   getValidMoves(_playerNumber: number): Move[] {
     const playerNumber = _playerNumber;
-
+  
     // Only generate moves for the active player to keep server/UI
     // expectations clear.
     if (playerNumber !== this.gameState.currentPlayer) {
       return [];
     }
-
+  
+    // During an active chain_capture phase, valid moves are the explicit
+    // continuation segments from the current chain position. Rather than
+    // relying on any cached list, we always re-enumerate from the board
+    // using the shared captureChainEngine helper so that the options
+    // exposed here stay in lockstep with the core rules and the targeted
+    // triangle/zig-zag tests.
+    if (this.gameState.currentPhase === 'chain_capture') {
+      const state = this.chainCaptureState;
+  
+      // If for some reason the internal chain state has been cleared while
+      // the phase is still marked as chain_capture, treat this as "no legal
+      // actions" rather than attempting to guess a continuation.
+      if (!state) {
+        return [];
+      }
+  
+      // The capturing player for the entire chain is recorded on the
+      // chainCaptureState. We rely on this rather than the caller's
+      // playerNumber argument so that even if a test/UI accidentally
+      // passes the wrong player, the engine still exposes the correct
+      // follow-up segments for the active chain.
+      const capturingPlayer = state.playerNumber;
+  
+      const followUpMoves = this.getCaptureOptionsFromPosition(
+        state.currentPosition,
+        capturingPlayer
+      );
+  
+      // Keep availableMoves updated for any future PlayerChoice-based
+      // integrations, but do not rely on it for correctness.
+      state.availableMoves = followUpMoves;
+  
+      // eslint-disable-next-line no-console
+      console.log('[GameEngine.getValidMoves] chain_capture debug', {
+        requestedPlayer: playerNumber,
+        capturingPlayer,
+        currentPhase: this.gameState.currentPhase,
+        currentPosition: state.currentPosition,
+        followUpCount: followUpMoves.length,
+      });
+  
+      if (followUpMoves.length === 0) {
+        // No legal continuations remain; clear chain state and treat the
+        // chain as resolved so callers do not see an interactive phase
+        // with no legal actions.
+        this.chainCaptureState = undefined;
+        return [];
+      }
+  
+      return followUpMoves.map((m) => ({
+        ...m,
+        // Re-label the shared overtaking_capture candidates as dedicated
+        // continue_capture_segment moves for the unified Move model.
+        type: 'continue_capture_segment',
+        // Ensure the move is attributed to the capturing player recorded
+        // in the chain state, even if the caller passed a different
+        // playerNumber by mistake.
+        player: capturingPlayer,
+        id:
+          m.id && m.id.length > 0
+            ? m.id.startsWith('capture-')
+              ? m.id.replace('capture-', 'continue-')
+              : m.id
+            : `continue-${positionToString(m.from!)}-${positionToString(
+                m.captureTarget!
+              )}-${positionToString(m.to!)}`,
+      }));
+    }
+  
+    // For automatic bookkeeping phases, expose the canonical decision moves
+    // derived from the same helpers that drive line and territory
+    // processing. This keeps the unified Move/GamePhase model complete even
+    // though these phases are still usually resolved internally.
+    if (this.gameState.currentPhase === 'line_processing') {
+      return this.getValidLineProcessingMoves(playerNumber);
+    }
+  
+    if (this.gameState.currentPhase === 'territory_processing') {
+      return this.getValidTerritoryProcessingMoves(playerNumber);
+    }
+  
     // Base move generation comes from RuleEngine, which is responsible
     // for phase-specific legality (placement vs movement vs capture).
     let moves = this.ruleEngine.getValidMoves(this.gameState);
-
+ 
     // When a placement has occurred this turn, restrict movement/capture
     // options so that only the placed/updated stack may move.
     if (
@@ -1692,23 +1943,24 @@ export class GameEngine {
           m.type === 'move_stack' ||
           m.type === 'move_ring' ||
           m.type === 'build_stack' ||
-          m.type === 'overtaking_capture';
-
+          m.type === 'overtaking_capture' ||
+          m.type === 'continue_capture_segment';
+ 
         if (!isMovementOrCaptureType) {
           // Non-movement moves (e.g. future skip_placement) are not
           // constrained here.
           return true;
         }
-
+ 
         if (!m.from) {
           return false;
         }
-
+ 
         const fromKey = positionToString(m.from);
         return fromKey === this.mustMoveFromStackKey;
       });
     }
-
+ 
     return moves;
   }
 

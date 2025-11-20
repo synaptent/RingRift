@@ -13,6 +13,7 @@ interface PlayerVictoryStats {
   ringsRemaining: number;
   territorySpaces: number;
   ringsEliminated: number;
+  markers: number;
 }
 
 function computePlayerVictoryStats(state: GameState): PlayerVictoryStats[] {
@@ -24,7 +25,8 @@ function computePlayerVictoryStats(state: GameState): PlayerVictoryStats[] {
       playerNumber: p.playerNumber,
       ringsRemaining: 0,
       territorySpaces: p.territorySpaces,
-      ringsEliminated: p.eliminatedRings
+      ringsEliminated: p.eliminatedRings,
+      markers: 0,
     };
   }
 
@@ -34,6 +36,15 @@ function computePlayerVictoryStats(state: GameState): PlayerVictoryStats[] {
     const entry = byPlayer[owner];
     if (entry) {
       entry.ringsRemaining += stack.stackHeight;
+    }
+  }
+
+  // Count markers remaining on the board for each player.
+  for (const marker of board.markers.values()) {
+    const owner = marker.player;
+    const entry = byPlayer[owner];
+    if (entry) {
+      entry.markers += 1;
     }
   }
 
@@ -67,10 +78,10 @@ export function checkSandboxVictory(state: GameState): GameResult | null {
 
   // 3. Fallback: no stacks and no rings in hand for any player. In this
   // situation, the game cannot progress further, even if nobody reached
-  // the strict elimination/territory thresholds. Mirror the backend's
-  // endGame final-score semantics by declaring the game completed using
-  // territory (then eliminated rings) as tie-breakers, and allowing for
-  // a draw when all scores are equal.
+  // the strict elimination/territory thresholds. Apply the same stalemate
+  // ladder as the backend: territory → eliminated rings → markers →
+  // last-actor. This ensures there is always a definitive winner under
+  // normal RingRift rules.
   const noStacksLeft = state.board.stacks.size === 0;
   const anyRingsInHand = state.players.some(p => p.ringsInHand > 0);
 
@@ -89,12 +100,55 @@ export function checkSandboxVictory(state: GameState): GameResult | null {
       return buildGameResult(state, stats, eliminationLeaders[0].playerNumber, 'ring_elimination');
     }
 
-    // Perfect tie: mark the game as completed with no winner, leaving
-    // finalScore populated for UI/debug consumers.
+    // Third rung: remaining markers on the board.
+    const maxMarkers = Math.max(...stats.map(s => s.markers));
+    const markerLeaders = stats.filter(s => s.markers === maxMarkers);
+
+    if (markerLeaders.length === 1 && maxMarkers > 0) {
+      return buildGameResult(state, stats, markerLeaders[0].playerNumber, 'last_player_standing');
+    }
+
+    // Final rung: last player to complete a valid turn action.
+    const lastActor = getLastActorFromState(state);
+    if (lastActor !== undefined) {
+      return buildGameResult(state, stats, lastActor, 'last_player_standing');
+    }
+
+    // Safety fallback: in degenerate cases where no last actor can be
+    // determined, mark the game as completed without a specific winner.
     return buildGameResult(state, stats, undefined, 'game_completed' as any);
   }
 
   return null;
+}
+
+function getLastActorFromState(state: GameState): number | undefined {
+  if (state.history && state.history.length > 0) {
+    const lastEntry = state.history[state.history.length - 1];
+    if (lastEntry && typeof lastEntry.actor === 'number') {
+      return lastEntry.actor;
+    }
+  }
+
+  if (state.moveHistory && state.moveHistory.length > 0) {
+    const lastMove = state.moveHistory[state.moveHistory.length - 1];
+    if (lastMove && typeof lastMove.player === 'number') {
+      return lastMove.player;
+    }
+  }
+
+  const players = state.players;
+  if (!players || players.length === 0) {
+    return undefined;
+  }
+
+  const currentIdx = players.findIndex(p => p.playerNumber === state.currentPlayer);
+  if (currentIdx === -1) {
+    return players[0].playerNumber;
+  }
+
+  const lastIdx = (currentIdx - 1 + players.length) % players.length;
+  return players[lastIdx].playerNumber;
 }
 
 function buildGameResult(

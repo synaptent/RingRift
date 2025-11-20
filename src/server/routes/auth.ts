@@ -48,7 +48,8 @@ router.post('/register', asyncHandler(async (req: Request, res: Response) => {
     data: {
       email,
       username,
-      password: hashedPassword,
+      // Persist hashed password into the schema's passwordHash field
+      passwordHash: hashedPassword,
       role: 'USER',
       isActive: true,
       emailVerified: false
@@ -65,15 +66,33 @@ router.post('/register', asyncHandler(async (req: Request, res: Response) => {
   // Generate tokens
   const accessToken = generateToken({ id: user.id, email: user.email });
   const refreshToken = generateRefreshToken({ id: user.id, email: user.email });
-
-  // Store refresh token in database
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+ 
+  // Store refresh token in database if the model is available. In some
+  // dev setups the RefreshToken model/table may not exist; in that case
+  // we log and continue rather than throwing a hard runtime error.
+  try {
+    const refreshTokenModel = (prisma as any).refreshToken;
+    if (refreshTokenModel && typeof refreshTokenModel.create === 'function') {
+      await refreshTokenModel.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+        }
+      });
+    } else {
+      logger.warn('RefreshToken model not available; skipping refresh token persistence on register', {
+        userId: user.id,
+        email: user.email
+      });
     }
-  });
+  } catch (tokenError) {
+    logger.warn('Failed to persist refresh token on register; continuing without DB-stored refresh token', {
+      userId: user.id,
+      email: user.email,
+      error: tokenError instanceof Error ? tokenError.message : String(tokenError)
+    });
+  }
 
   logger.info('User registered successfully', { userId: user.id, email: user.email });
 
@@ -104,7 +123,8 @@ router.post('/login', asyncHandler(async (req: Request, res: Response) => {
       id: true,
       email: true,
       username: true,
-      password: true,
+      // Load the hashed password from passwordHash for verification
+      passwordHash: true,
       role: true,
       isActive: true,
       emailVerified: true
@@ -119,8 +139,29 @@ router.post('/login', asyncHandler(async (req: Request, res: Response) => {
     throw createError('Account is deactivated', 401, 'ACCOUNT_DEACTIVATED');
   }
 
-  // Verify password
-  const isValidPassword = await bcrypt.compare(password, user.password);
+  // Verify password with defensive guards so legacy/invalid hashes are treated
+  // as invalid credentials rather than 500-level server errors.
+  let isValidPassword = false;
+  try {
+    const hash = (user as any).passwordHash;
+    if (typeof hash === 'string' && hash.length > 0) {
+      isValidPassword = await bcrypt.compare(password, hash);
+    } else {
+      logger.warn('User record missing valid passwordHash; treating as invalid credentials', {
+        userId: user.id,
+        email: user.email,
+      });
+      isValidPassword = false;
+    }
+  } catch (err) {
+    logger.warn('Password verification failed; treating as invalid credentials', {
+      userId: user.id,
+      email: user.email,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    isValidPassword = false;
+  }
+
   if (!isValidPassword) {
     throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
   }
@@ -128,15 +169,33 @@ router.post('/login', asyncHandler(async (req: Request, res: Response) => {
   // Generate tokens
   const accessToken = generateToken({ id: user.id, email: user.email });
   const refreshToken = generateRefreshToken({ id: user.id, email: user.email });
-
-  // Store refresh token in database
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshToken,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+ 
+  // Store refresh token in database if the model is available. In some
+  // dev setups the RefreshToken model/table may not exist; in that case
+  // we log and continue rather than throwing a hard runtime error.
+  try {
+    const refreshTokenModel = (prisma as any).refreshToken;
+    if (refreshTokenModel && typeof refreshTokenModel.create === 'function') {
+      await refreshTokenModel.create({
+        data: {
+          token: refreshToken,
+          userId: user.id,
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+        }
+      });
+    } else {
+      logger.warn('RefreshToken model not available; skipping refresh token persistence on login', {
+        userId: user.id,
+        email: user.email
+      });
     }
-  });
+  } catch (tokenError) {
+    logger.warn('Failed to persist refresh token on login; continuing without DB-stored refresh token', {
+      userId: user.id,
+      email: user.email,
+      error: tokenError instanceof Error ? tokenError.message : String(tokenError)
+    });
+  }
 
   // Update last login
   await prisma.user.update({
@@ -146,7 +205,8 @@ router.post('/login', asyncHandler(async (req: Request, res: Response) => {
 
   logger.info('User logged in successfully', { userId: user.id, email: user.email });
 
-  const { password: _, ...userWithoutPassword } = user;
+  // Strip the passwordHash field before returning the user payload
+  const { passwordHash: _, ...userWithoutPassword } = user;
 
   res.json({
     success: true,
@@ -176,7 +236,7 @@ router.post('/refresh', asyncHandler(async (req: Request, res: Response) => {
   const decoded = verifyRefreshToken(refreshToken);
 
   // Check if refresh token exists in database
-  const storedToken = await prisma.refreshToken.findFirst({
+  const storedToken = await (prisma as any).refreshToken.findFirst({
     where: {
       token: refreshToken,
       userId: decoded.userId,
@@ -211,10 +271,10 @@ router.post('/refresh', asyncHandler(async (req: Request, res: Response) => {
 
   // Delete old refresh token and create new one
   await prisma.$transaction([
-    prisma.refreshToken.delete({
+    (prisma as any).refreshToken.delete({
       where: { id: storedToken.id }
     }),
-    prisma.refreshToken.create({
+    (prisma as any).refreshToken.create({
       data: {
         token: newRefreshToken,
         userId: storedToken.user.id,
@@ -250,7 +310,7 @@ router.post('/logout', asyncHandler(async (req: Request, res: Response) => {
   }
 
   // Delete refresh token from database
-  await prisma.refreshToken.deleteMany({
+  await (prisma as any).refreshToken.deleteMany({
     where: { token: refreshToken }
   });
 
@@ -277,7 +337,7 @@ router.post('/logout-all', asyncHandler(async (req: Request, res: Response) => {
   const decoded = verifyRefreshToken(refreshToken);
 
   // Delete all refresh tokens for this user
-  await prisma.refreshToken.deleteMany({
+  await (prisma as any).refreshToken.deleteMany({
     where: { userId: decoded.userId }
   });
 

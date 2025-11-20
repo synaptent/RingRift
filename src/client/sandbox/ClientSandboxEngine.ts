@@ -17,19 +17,18 @@ import {
   RegionOrderChoice,
   GameHistoryEntry,
 } from '../../shared/types/game';
+import { isSandboxAiTraceModeEnabled } from '../../shared/utils/envFlags';
 import {
   calculateCapHeight,
   calculateDistance,
-  getMovementDirectionsForBoardType,
   getPathPositions,
   validateCaptureSegmentOnBoard,
   CaptureSegmentBoardView,
-  MovementBoardView,
-  hasAnyLegalMoveOrCaptureFromOnBoard,
   computeProgressSnapshot,
   summarizeBoard,
   hashGameState,
 } from '../../shared/engine/core';
+import { LocalAIRng } from '../../shared/engine/localAIMoveSelection';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { processLinesForCurrentPlayer as processLinesForCurrentPlayerHelper } from './sandboxLinesEngine';
 import {
@@ -43,29 +42,42 @@ import {
   CaptureBoardAdapters,
   CaptureApplyAdapters,
 } from './sandboxCaptures';
-import { forceEliminateCapOnBoard } from './sandboxElimination';
 import {
-  findDisconnectedRegionsOnBoard,
-  processDisconnectedRegionOnBoard,
-} from './sandboxTerritory';
+  SandboxMovementEngineHooks,
+  handleMovementClickSandbox,
+  performCaptureChainSandbox,
+  enumerateCaptureSegmentsFromSandbox,
+} from './sandboxMovementEngine';
+import { forceEliminateCapOnBoard } from './sandboxElimination';
 import {
   processDisconnectedRegionsForCurrentPlayerEngine,
   TerritoryInteractionHandler,
 } from './sandboxTerritoryEngine';
-import { checkSandboxVictory } from './sandboxVictory';
+import {
+  SandboxGameEndHooks,
+  checkAndApplyVictorySandbox,
+  resolveGlobalStalemateIfNeededSandbox,
+} from './sandboxGameEnd';
 import {
   SandboxTurnState,
   SandboxTurnHooks,
   startTurnForCurrentPlayerSandbox,
   maybeProcessForcedEliminationForCurrentPlayerSandbox,
 } from './sandboxTurnEngine';
+import {
+  createHypotheticalBoardWithPlacement,
+  enumerateLegalRingPlacements,
+  hasAnyLegalMoveOrCaptureFrom,
+  PlacementBoardView,
+} from './sandboxPlacement';
+import { maybeRunAITurnSandbox, SandboxAIHooks } from './sandboxAI';
 
 /**
  * Client-local engine harness for the /sandbox route.
  *
  * Scope (current):
  * - Ring placement on non-collapsed, empty cells with no-dead-placement.
- * - Non-capturing movement with distance ≥ stack height and path/marker rules.
+ * - Non-capturing movement with distance \u001e stack height and path/marker rules.
  * - Overtaking captures with mandatory chain continuation, using
  *   validateCaptureSegmentOnBoard for legality and a SandboxInteractionHandler
  *   for capture_direction choices when multiple options exist.
@@ -100,11 +112,20 @@ export interface SandboxInteractionHandler {
 export interface ClientSandboxEngineOptions {
   config: SandboxConfig;
   interactionHandler: SandboxInteractionHandler;
+  /** Optional test-only flag: when true, the engine may enable additional
+   *  trace/replay behaviours for parity harnesses without affecting normal
+   *  sandbox UX.
+   */
+  traceMode?: boolean;
 }
 
 export class ClientSandboxEngine {
   private gameState: GameState;
   private interactionHandler: SandboxInteractionHandler;
+  // When true, the engine is running under a trace/replay harness. This
+  // is currently reserved for future parity-specific behaviour and does
+  // not alter normal sandbox rules or AI policy.
+  private readonly traceMode: boolean;
 
   // When non-null, the sandbox game has ended with this result.
   private victoryResult: GameResult | null = null;
@@ -117,10 +138,91 @@ export class ClientSandboxEngine {
   // GameState to avoid diverging the shared type.
   private _selectedStackKey: string | undefined;
 
+  // Internal flag used to distinguish between human-initiated movement
+  // (click-driven) and canonical replay via applyCanonicalMove. This lets
+  // us reuse the same movement engine while avoiding double history
+  // entries for canonical moves.
+  private _movementInvocationContext: 'human' | 'canonical' | null = null;
+
   // Test-only: last logical AI move chosen by maybeRunAITurn. This is used
   // by backend-vs-sandbox debug harnesses to map sandbox actions into a
   // canonical Move shape for comparison against backend getValidMoves.
   private _lastAIMove: Move | null = null;
+
+  /**
+   * Internal helper to record a single capture segment as a canonical
+   * Move + GameHistoryEntry, mirroring backend GameEngine semantics.
+   * The initial segment in a chain is represented as an
+   * 'overtaking_capture' move; all follow-up segments use
+   * 'continue_capture_segment'. For the final segment in a chain, the
+   * "after" snapshot observed by history includes post-movement
+   * automatic consequences (lines, territory, victory, next-player),
+   * just like the backend's structured history.
+   */
+  private async handleCaptureSegmentApplied(info: {
+    before: GameState;
+    after: GameState;
+    from: Position;
+    target: Position;
+    landing: Position;
+    playerNumber: number;
+    segmentIndex: number;
+    isFinal: boolean;
+  }): Promise<void> {
+    const moveType: Move['type'] =
+      info.segmentIndex === 0 ? 'overtaking_capture' : 'continue_capture_segment';
+
+    const moveNumber = this.gameState.history.length + 1;
+
+    const move: Move = {
+      id: '',
+      type: moveType,
+      player: info.playerNumber,
+      from: info.from,
+      to: info.landing,
+      captureTarget: info.target,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber,
+    } as Move;
+
+    // For intermediate segments, the GameState snapshot observed by
+    // appendHistoryEntry will reflect board state immediately after the
+    // segment is applied. For the final segment, performCaptureChainSandbox
+    // ensures that onMovementComplete has already run before this callback
+    // is invoked, so getGameState() includes post-movement consequences
+    // (lines, territory, victory, next-player), matching backend history.
+    this.appendHistoryEntry(info.before, move);
+  }
+
+  /**
+   * Internal helper to record a simple non-capturing movement as a canonical
+   * move + history entry, mirroring backend GameEngine semantics for
+   * move_stack. This is currently used for human-driven movement clicks;
+   * canonical replays continue to record history via applyCanonicalMove.
+   */
+  private async handleSimpleMoveApplied(info: {
+    before: GameState;
+    after: GameState;
+    from: Position;
+    landing: Position;
+    playerNumber: number;
+  }): Promise<void> {
+    const moveNumber = this.gameState.history.length + 1;
+
+    const move: Move = {
+      id: '',
+      type: 'move_stack',
+      player: info.playerNumber,
+      from: info.from,
+      to: info.landing,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber,
+    } as Move;
+
+    this.appendHistoryEntry(info.before, move);
+  }
 
   /**
    * Append a structured history entry for a canonical move applied to the
@@ -156,8 +258,9 @@ export class ClientSandboxEngine {
   }
 
   constructor(opts: ClientSandboxEngineOptions) {
-    const { config, interactionHandler } = opts;
+    const { config, interactionHandler, traceMode } = opts;
     this.interactionHandler = interactionHandler;
+    this.traceMode = traceMode ?? isSandboxAiTraceModeEnabled();
 
     const board = this.createEmptyBoard(config.boardType);
     const players: Player[] = Array.from({ length: config.numPlayers }, (_, idx) => {
@@ -208,12 +311,36 @@ export class ClientSandboxEngine {
   }
 
   /**
-   * Returns a shallow clone of the current GameState for use in React
-   * components. BoardState retains its Map instances; callers should not
-   * mutate them directly.
+   * Return a defensive snapshot of the current GameState.
+   *
+   * Unlike the earliest sandbox version, this now deep-clones the board's
+   * Map/array fields so that parity/debug tooling (and any callers holding
+   * onto past snapshots) see stable pre/post views rather than aliases that
+   * are mutated by subsequent moves. This mirrors the backend
+   * GameEngine.getGameState semantics.
    */
   public getGameState(): GameState {
-    return { ...this.gameState, history: [...this.gameState.history] };
+    const state = this.gameState;
+    const board = state.board;
+
+    const clonedBoard: BoardState = {
+      ...board,
+      stacks: new Map(board.stacks),
+      markers: new Map(board.markers),
+      collapsedSpaces: new Map(board.collapsedSpaces),
+      territories: new Map(board.territories),
+      formedLines: [...board.formedLines],
+      eliminatedRings: { ...board.eliminatedRings },
+    };
+
+    return {
+      ...state,
+      board: clonedBoard,
+      moveHistory: [...state.moveHistory],
+      history: [...state.history],
+      players: state.players.map((p) => ({ ...p })),
+      spectators: [...state.spectators],
+    };
   }
 
   /**
@@ -265,9 +392,51 @@ export class ClientSandboxEngine {
       // The sandbox UI is responsible for following up with a movement click
       // when required; after a successful placement, tryPlaceRings will
       // transition the turn into the movement phase for this player.
-      this.tryPlaceRings(pos, 1);
+      const beforeState = this.getGameState();
+      const playerNumber = beforeState.currentPlayer;
+      const beforePlayer = beforeState.players.find((p) => p.playerNumber === playerNumber);
+      const beforeRingsInHand = beforePlayer?.ringsInHand ?? 0;
+      const key = positionToString(pos);
+      const existingBefore = beforeState.board.stacks.get(key);
+      const placedOnStack = !!existingBefore && existingBefore.rings.length > 0;
+
+      const placed = this.tryPlaceRings(pos, 1);
+
+      if (!placed) {
+        return;
+      }
+
+      const afterState = this.getGameState();
+      const afterPlayer = afterState.players.find((p) => p.playerNumber === playerNumber);
+      const afterRingsInHand = afterPlayer?.ringsInHand ?? beforeRingsInHand;
+
+      const delta = Math.max(0, beforeRingsInHand - afterRingsInHand);
+      const placementCount = delta > 0 ? delta : 1;
+
+      const moveNumber = this.gameState.history.length + 1;
+
+      const move: Move = {
+        id: '',
+        type: 'place_ring',
+        player: playerNumber,
+        to: pos,
+        placementCount,
+        placedOnStack,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber,
+      } as Move;
+
+      this.appendHistoryEntry(beforeState, move);
     } else if (this.gameState.currentPhase === 'movement') {
-      await this.handleMovementClick(pos);
+      // Human-driven movement click. Record canonical history via the
+      // movement engine hooks without interfering with canonical replays.
+      this._movementInvocationContext = 'human';
+      try {
+        await this.handleMovementClick(pos);
+      } finally {
+        this._movementInvocationContext = null;
+      }
     }
   }
 
@@ -285,314 +454,40 @@ export class ClientSandboxEngine {
    * This keeps local games progressing while remaining aligned with the
    * backend RuleEngine semantics (movement reachability + capture chains).
    */
-  public async maybeRunAITurn(): Promise<void> {
-    // Capture a pre-turn snapshot for history/event-sourcing. We rely on
-    // the shared hashGameState helper so that backend and sandbox traces
-    // are directly comparable.
-    const beforeStateForHistory = this.getGameState();
-    const beforeHashForHistory = hashGameState(beforeStateForHistory);
+  public async maybeRunAITurn(rng?: LocalAIRng): Promise<void> {
+    const hooks: SandboxAIHooks = {
+      getPlayerStacks: (playerNumber: number, board: BoardState) =>
+        this.getPlayerStacks(playerNumber, board),
+      hasAnyLegalMoveOrCaptureFrom: (from: Position, playerNumber: number, board: BoardState) =>
+        this.hasAnyLegalMoveOrCaptureFrom(from, playerNumber, board),
+      enumerateLegalRingPlacements: (playerNumber: number) =>
+        this.enumerateLegalRingPlacements(playerNumber),
+      tryPlaceRings: (position: Position, count: number) =>
+        this.tryPlaceRings(position, count),
+      enumerateCaptureSegmentsFrom: (from: Position, playerNumber: number) =>
+        this.enumerateCaptureSegmentsFrom(from, playerNumber),
+      enumerateSimpleMovementLandings: (playerNumber: number) =>
+        this.enumerateSimpleMovementLandings(playerNumber),
+      maybeProcessForcedEliminationForCurrentPlayer: () =>
+        this.maybeProcessForcedEliminationForCurrentPlayer(),
+      handleMovementClick: (position: Position) => this.handleMovementClick(position),
+      appendHistoryEntry: (before: GameState, action: Move) =>
+        this.appendHistoryEntry(before, action),
+      getGameState: () => this.getGameState(),
+      setGameState: (state: GameState) => {
+        this.gameState = state;
+      },
+      setLastAIMove: (move: Move | null) => {
+        this._lastAIMove = move;
+      },
+      setSelectedStackKey: (key: string | undefined) => {
+        this._selectedStackKey = key;
+      },
+      getMustMoveFromStackKey: () => this._mustMoveFromStackKey,
+      applyCanonicalMove: (move: Move) => this.applyCanonicalMove(move),
+    };
 
-    // Reset last-move tracker at the start of each AI turn.
-    this._lastAIMove = null;
-
-    try {
-      const current = this.gameState.players.find(
-        (p) => p.playerNumber === this.gameState.currentPlayer
-      );
-      if (!current || current.type !== 'ai' || this.gameState.gameStatus !== 'active') {
-        return;
-      }
-
-      // Ring placement phase: try to place a ring if any legal placements exist.
-      if (this.gameState.currentPhase === 'ring_placement') {
-        if (current.ringsInHand <= 0) {
-          return;
-        }
-
-        const placementCandidates = this.enumerateLegalRingPlacements(current.playerNumber);
-
-        if (placementCandidates.length === 0) {
-          // No legal placement: transition this player directly into movement so
-          // a subsequent AI tick can attempt movement or forced elimination
-          // instead of stalling in placement.
-          this.gameState = {
-            ...this.gameState,
-            currentPhase: 'movement',
-          };
-
-          // Record an explicit skip_placement action so GameTrace entries
-          // capture this canonical phase transition.
-          this._lastAIMove = {
-            id: '',
-            type: 'skip_placement',
-            player: current.playerNumber,
-            from: undefined,
-            // Backend uses a sentinel { x: 0, y: 0 } position for
-            // skip_placement; the position is never inspected by
-            // skip-specific logic, but keeping it stable simplifies
-            // parity tooling.
-            to: { x: 0, y: 0 },
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: this.gameState.history.length + 1,
-          } as Move;
-
-          return;
-        }
-
-        const choice = placementCandidates[Math.floor(Math.random() * placementCandidates.length)];
-
-        // Simple heuristic: on empty cells, occasionally attempt a
-        // multi-ring placement; on existing stacks, always place one.
-        const board = this.gameState.board;
-        const key = positionToString(choice);
-        const existing = board.stacks.get(key);
-        const isOccupied = !!existing && existing.rings.length > 0;
-        const maxFromHand = current.ringsInHand;
-        const maxPerPlacement = isOccupied ? 1 : maxFromHand;
-
-        let requestedCount = 1;
-        if (!isOccupied && maxPerPlacement > 1) {
-          // Randomly choose a count in [1, maxPerPlacement], biased
-          // slightly toward smaller stacks for mobility.
-          requestedCount = 1 + Math.floor(Math.random() * Math.min(3, maxPerPlacement));
-        }
-
-        // To avoid AI stalls when the initially requested multi-ring
-        // placement is illegal under no-dead-placement, degrade through
-        // smaller counts down to 1. enumerateLegalRingPlacements
-        // guarantees that at least a single-ring placement at this
-        // position is legal when it includes this position.
-        let placed = false;
-        let effectiveCount = requestedCount;
-        while (!placed && effectiveCount >= 1) {
-          placed = this.tryPlaceRings(choice, effectiveCount);
-          if (!placed) {
-            effectiveCount -= 1;
-          }
-        }
-
-        // Record a canonical placement summary for debug harnesses when
-        // we successfully placed rings.
-        if (placed) {
-          this._lastAIMove = {
-            id: '',
-            type: 'place_ring',
-            player: current.playerNumber,
-            from: undefined,
-            to: choice,
-            placementCount: effectiveCount,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: this.gameState.history.length + 1,
-          } as Move;
-          return;
-        }
-
-        // Defensive fallback: if, despite enumerateLegalRingPlacements
-        // including this position, all attempts to place rings here fail,
-        // treat this as a skip_placement to avoid repeated no-op AI
-        // ticks. This should be rare, but keeps the AI simulation
-        // harness from stalling indefinitely.
-        this.gameState = {
-          ...this.gameState,
-          currentPhase: 'movement',
-        };
-
-        this._lastAIMove = {
-          id: '',
-          type: 'skip_placement',
-          player: current.playerNumber,
-          from: undefined,
-          to: { x: 0, y: 0 },
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: this.gameState.history.length + 1,
-        } as Move;
-
-        return;
-      }
-
-      // Movement phase: choose between captures and simple non-capturing moves.
-      if (this.gameState.currentPhase !== 'movement') {
-        return;
-      }
-
-      const playerNumber = current.playerNumber;
-
-      // Enumerate all available overtaking capture segments for this player.
-      const captureSegments: Array<{
-        from: Position;
-        target: Position;
-        landing: Position;
-      }> = [];
-
-      let stacks = this.getPlayerStacks(playerNumber, this.gameState.board);
-
-      // If a placement occurred this turn, we must move the placed stack.
-      if (this._mustMoveFromStackKey) {
-        stacks = stacks.filter((s) => positionToString(s.position) === this._mustMoveFromStackKey);
-      }
-
-      for (const stack of stacks) {
-        const segmentsFromStack = this.enumerateCaptureSegmentsFrom(stack.position, playerNumber);
-        for (const seg of segmentsFromStack) {
-          console.log(
-            `Sandbox AI found capture: ${positionToString(seg.from)} -> ${positionToString(
-              seg.landing
-            )}`
-          );
-          captureSegments.push(seg);
-        }
-      }
-
-      // Enumerate simple non-capturing movement candidates.
-      let landingCandidates = this.enumerateSimpleMovementLandings(playerNumber);
-
-      // Enforce must-move semantics for simple movement as well: when a
-      // placement has occurred this turn, only moves originating from the
-      // placed/updated stack are eligible.
-      if (this._mustMoveFromStackKey) {
-        landingCandidates = landingCandidates.filter(
-          (m) => m.fromKey === this._mustMoveFromStackKey
-        );
-      }
-
-      const hasCaptures = captureSegments.length > 0;
-      const hasMoves = landingCandidates.length > 0;
-
-      if (!hasCaptures && !hasMoves) {
-        // When no moves or captures are available, attempt forced elimination
-        // if the rules require it (no legal actions of any kind remain).
-        const beforeElimState = this.getGameState();
-        const beforeElimHash = hashGameState(beforeElimState);
-
-        const eliminated = this.maybeProcessForcedEliminationForCurrentPlayer();
-
-        const afterElimState = this.getGameState();
-        const afterElimHash = hashGameState(afterElimState);
-
-        // Optional diagnostic hook: when enabled via env, log cases where the
-        // AI turn had no legal actions, forced elimination did not fire, and
-        // the game state hash did not change. These situations are candidates
-        // for "AI stall" behaviour in the aiSimulation harness.
-        if (
-          typeof process !== 'undefined' &&
-          (process as any).env &&
-          (process as any).env.RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS === '1'
-        ) {
-          if (
-            !eliminated &&
-            beforeElimHash === afterElimHash &&
-            afterElimState.gameStatus === 'active'
-          ) {
-            // eslint-disable-next-line no-console
-            console.warn(
-              '[Sandbox AI Stall Diagnostic] No captures/moves, forced elimination did not change state',
-              {
-                boardType: this.gameState.boardType,
-                currentPlayer: this.gameState.currentPlayer,
-                currentPhase: this.gameState.currentPhase,
-                ringsInHand: this.gameState.players.map((p) => ({
-                  playerNumber: p.playerNumber,
-                  type: p.type,
-                  ringsInHand: p.ringsInHand,
-                  stacks: this.getPlayerStacks(p.playerNumber, this.gameState.board).length,
-                })),
-              }
-            );
-          }
-        }
-
-        return;
-      }
-
-      // When both captures and simple moves exist, choose between them in
-      // proportion to their counts. Degenerates to always-capture or
-      // always-move when only one type is present.
-      let chooseCapture = false;
-      if (hasCaptures && hasMoves) {
-        const captureCount = captureSegments.length;
-        const moveCount = landingCandidates.length;
-        const total = captureCount + moveCount;
-        const r = Math.random() * total;
-        chooseCapture = r < captureCount;
-      } else if (hasCaptures) {
-        chooseCapture = true;
-      } else {
-        chooseCapture = false;
-      }
-
-      if (chooseCapture && hasCaptures) {
-        // Choose a deterministic capture segment by lexicographically smallest
-        // landing position. This mirrors the capture_direction test handler
-        // and keeps AI traces reproducible for parity/debug tooling.
-        const seg = captureSegments.reduce((best, current) => {
-          const bx = best.landing.x;
-          const by = best.landing.y;
-          const bz = best.landing.z !== undefined ? best.landing.z : 0;
-          const cx = current.landing.x;
-          const cy = current.landing.y;
-          const cz = current.landing.z !== undefined ? current.landing.z : 0;
-
-          if (cx < bx) return current;
-          if (cx > bx) return best;
-          if (cy < by) return current;
-          if (cy > by) return best;
-          if (cz < bz) return current;
-          if (cz > bz) return best;
-          return best;
-        }, captureSegments[0]);
-
-        await this.performCaptureChain(seg.from, seg.target, seg.landing, playerNumber);
-
-        // Record the initial capture segment for debug harnesses.
-        this._lastAIMove = {
-          id: '',
-          type: 'overtaking_capture',
-          player: playerNumber,
-          from: seg.from,
-          captureTarget: seg.target,
-          to: seg.landing,
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: this.gameState.history.length + 1,
-        } as Move;
-
-        return;
-      }
-
-      // Fall back to simple non-capturing movement.
-      const choice = landingCandidates[Math.floor(Math.random() * landingCandidates.length)];
-      const fromPos = this.stringToPositionLocal(choice.fromKey);
-
-      // Simulate the two-click interaction: select source, then click destination.
-      this._selectedStackKey = choice.fromKey;
-      await this.handleMovementClick(choice.to);
-
-      // Record a canonical movement summary for debug harnesses.
-      this._lastAIMove = {
-        id: '',
-        type: 'move_stack',
-        player: playerNumber,
-        from: fromPos,
-        to: choice.to,
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.history.length + 1,
-      } as Move;
-    } finally {
-      const afterStateForHistory = this.getGameState();
-      const afterHashForHistory = hashGameState(afterStateForHistory);
-
-      // Only record a history entry when the AI actually produced a
-      // canonical action and the sandbox state changed. This keeps
-      // parity traces aligned with backend makeMove semantics and
-      // avoids clutter from pure pass/diagnostic ticks.
-      if (this._lastAIMove && beforeHashForHistory !== afterHashForHistory) {
-        this.appendHistoryEntry(beforeStateForHistory, this._lastAIMove);
-      }
-    }
+    await maybeRunAITurnSandbox(hooks, rng ?? Math.random);
   }
   /**
    * Get all valid landing positions for the current player from the given
@@ -622,55 +517,18 @@ export class ClientSandboxEngine {
    * same semantics as createHypotheticalBoardWithPlacement.
    */
   private enumerateLegalRingPlacements(playerNumber: number): Position[] {
-    const boardType = this.gameState.boardType;
-    const config = BOARD_CONFIGS[boardType];
-    const board = this.gameState.board;
-    const results: Position[] = [];
+    const view: PlacementBoardView = {
+      isValidPosition: (pos) => this.isValidPosition(pos),
+      isCollapsedSpace: (pos, board) => this.isCollapsedSpace(pos, board),
+      getMarkerOwner: (pos, board) => this.getMarkerOwner(pos, board),
+    };
 
-    if (boardType === 'hexagonal') {
-      const radius = config.size - 1;
-      for (let x = -radius; x <= radius; x++) {
-        for (let y = -radius; y <= radius; y++) {
-          const z = -x - y;
-          const pos: Position = { x, y, z };
-
-          if (!this.isValidPosition(pos)) continue;
-
-          const key = positionToString(pos);
-
-          // Do not allow placement on collapsed territory, but allow
-          // placement on existing stacks.
-          if (board.collapsedSpaces.has(key)) continue;
-
-          const hypothetical = this.createHypotheticalBoardWithPlacement(board, pos, playerNumber);
-
-          if (this.hasAnyLegalMoveOrCaptureFrom(pos, playerNumber, hypothetical)) {
-            results.push(pos);
-          }
-        }
-      }
-    } else {
-      // square boards: 0..size-1 grid
-      for (let x = 0; x < config.size; x++) {
-        for (let y = 0; y < config.size; y++) {
-          const pos: Position = { x, y };
-
-          if (!this.isValidPosition(pos)) continue;
-
-          const key = positionToString(pos);
-
-          if (board.collapsedSpaces.has(key)) continue;
-
-          const hypothetical = this.createHypotheticalBoardWithPlacement(board, pos, playerNumber);
-
-          if (this.hasAnyLegalMoveOrCaptureFrom(pos, playerNumber, hypothetical)) {
-            results.push(pos);
-          }
-        }
-      }
-    }
-
-    return results;
+    return enumerateLegalRingPlacements(
+      this.gameState.boardType,
+      this.gameState.board,
+      playerNumber,
+      view
+    );
   }
 
   /**
@@ -801,6 +659,11 @@ export class ClientSandboxEngine {
    * Find all marker lines on the board for all players. Mirrors
    * BoardManager.findAllLines; only returns lines of at least the
    * configured minimum length.
+   *
+   * This is primarily used by test-only harnesses (e.g.
+   * ClientSandboxEngine.lines.test.ts) via an `any`-cast of the engine
+   * instance, so it intentionally remains a private helper rather than
+   * part of the public API surface.
    */
   private findAllLines(board: BoardState): LineInfo[] {
     return findAllLinesOnBoard(
@@ -854,8 +717,20 @@ export class ClientSandboxEngine {
    *   - Opponent markers flip to the mover's color.
    *   - Own markers collapse into territory.
    * - On landing, remove same-color marker (cannot coexist with a stack).
+   *
+   * The optional `options` parameter is forwarded to the shared
+   * applyMarkerEffectsAlongPathOnBoard helper so that callers (notably
+   * overtaking captures) can opt out of placing a departure marker on
+   * intermediate stacks such as the capture target. This keeps sandbox
+   * marker-path semantics aligned with the backend GameEngine for both
+   * movement and capture legs.
    */
-  private applyMarkerEffectsAlongPath(from: Position, to: Position, playerNumber: number): void {
+  private applyMarkerEffectsAlongPath(
+    from: Position,
+    to: Position,
+    playerNumber: number,
+    options?: { leaveDepartureMarker?: boolean }
+  ): void {
     const board = this.gameState.board;
 
     const helpers: MarkerPathHelpers = {
@@ -864,23 +739,18 @@ export class ClientSandboxEngine {
       flipMarker: (pos, player, b) => this.flipMarker(pos, player, b),
     };
 
-    applyMarkerEffectsAlongPathOnBoard(board, from, to, playerNumber, helpers);
+    applyMarkerEffectsAlongPathOnBoard(board, from, to, playerNumber, helpers, options);
   }
 
-  /**
-   * Legacy ring-placement helper retained for backward compatibility. All new
-   * sandbox placement paths should call tryPlaceRings directly so that
-   * no-dead-placement and per-turn semantics remain unified.
-   */
-  private handleRingPlacementClick(position: Position): void {
-    this.tryPlaceRings(position, 1);
-  }
+  // Removed unused handleRingPlacementClick helper to fix TS6133
 
   private async handleMovementClick(position: Position): Promise<void> {
     const board = this.gameState.board;
     const key = positionToString(position);
     const stackAtPos = board.stacks.get(key);
 
+    // Synchronous selection / deselection logic to preserve existing
+    // click-to-select semantics used by tests and the UI.
     if (!this.isValidPosition(position)) {
       this._selectedStackKey = undefined;
       return;
@@ -900,198 +770,78 @@ export class ClientSandboxEngine {
       return;
     }
 
-    const fromKey = this._selectedStackKey;
-    const movingStack = board.stacks.get(fromKey);
-    if (!movingStack || movingStack.controllingPlayer !== this.gameState.currentPlayer) {
-      this._selectedStackKey = undefined;
-      return;
-    }
+    const isCanonicalReplay = this._movementInvocationContext === 'canonical';
 
-    const fromPos = movingStack.position;
-
-    // Disallow landing on collapsed spaces.
-    if (this.isCollapsedSpace(position, board)) {
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    // Determine whether this click represents a capture or a simple move.
-    const fullPath = getPathPositions(fromPos, position);
-    if (fullPath.length <= 1) {
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    const intermediate = fullPath.slice(1, -1);
-    let targetPos: Position | undefined;
-    for (const pos of intermediate) {
-      const posKey = positionToString(pos);
-      const stack = board.stacks.get(posKey);
-      if (stack) {
-        targetPos = pos;
-        break;
-      }
-    }
-
-    // If there is an intermediate stack, attempt an overtaking capture.
-    if (targetPos) {
-      const view: CaptureSegmentBoardView = {
-        isValidPosition: (pos: Position) => this.isValidPosition(pos),
-        isCollapsedSpace: (pos: Position) => this.isCollapsedSpace(pos, board),
-        getStackAt: (pos: Position) => {
-          const sKey = positionToString(pos);
-          const stack = board.stacks.get(sKey);
-          if (!stack) return undefined;
-          return {
-            controllingPlayer: stack.controllingPlayer,
-            capHeight: stack.capHeight,
-            stackHeight: stack.stackHeight,
-          };
-        },
-        getMarkerOwner: (pos: Position) => this.getMarkerOwner(pos, board),
-      };
-
-      const isValid = validateCaptureSegmentOnBoard(
-        this.gameState.boardType,
-        fromPos,
-        targetPos,
-        position,
-        movingStack.controllingPlayer,
-        view
-      );
-
-      if (!isValid) {
-        this._selectedStackKey = undefined;
-        return;
-      }
-
-      // Start a mandatory capture chain beginning with this segment.
-      void this.performCaptureChain(fromPos, targetPos, position, movingStack.controllingPlayer);
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    // No intermediate stack: treat as a simple non-capturing move.
-    for (const pos of intermediate) {
-      const pathKey = positionToString(pos);
-      if (this.isCollapsedSpace(pos, board) || board.stacks.has(pathKey)) {
-        this._selectedStackKey = undefined;
-        return;
-      }
-    }
-
-    const distance = calculateDistance(this.gameState.boardType, fromPos, position);
-    if (distance < movingStack.stackHeight) {
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    const nextStacks = new Map(board.stacks);
-    nextStacks.delete(fromKey);
-
-    const existingDest = nextStacks.get(key);
-    if (existingDest && existingDest.rings.length > 0) {
-      // Merge stacks when landing on an existing stack. The resulting
-      // cap height is recalculated from the combined rings so that
-      // same-color stacks (e.g. H2 C2) are represented correctly in
-      // both sandbox logic and BoardView.
-      const mergedRings = [...existingDest.rings, ...movingStack.rings];
-      const mergedStack: RingStack = {
-        position,
-        rings: mergedRings,
-        stackHeight: mergedRings.length,
-        capHeight: calculateCapHeight(mergedRings),
-        controllingPlayer: mergedRings[0],
-      };
-      nextStacks.set(key, mergedStack);
-    } else {
-      // Move to an empty position.
-      nextStacks.set(key, {
-        ...movingStack,
-        position,
-      });
-    }
-
-    // Remember whether this movement lands on an existing same-color marker
-    // before marker processing removes it. This mirrors the backend
-    // GameEngine behaviour where landing on your own marker immediately
-    // eliminates your top ring (Section 8.2 / 8.3.1).
-    const landingMarkerOwner = this.getMarkerOwner(position, board);
-    const landedOnOwnMarker = landingMarkerOwner === movingStack.controllingPlayer;
-
-    this.applyMarkerEffectsAlongPath(fromPos, position, movingStack.controllingPlayer);
-
-    let stacksAfterMove: Map<string, RingStack> = nextStacks;
-    let eliminatedRingsMap = this.gameState.board.eliminatedRings;
-    let playersAfterMove = this.gameState.players;
-    let totalRingsEliminatedDelta = 0;
-
-    if (landedOnOwnMarker) {
-      const stackAtLanding = stacksAfterMove.get(key);
-      if (stackAtLanding && stackAtLanding.stackHeight > 0) {
-        const [, ...remainingRings] = stackAtLanding.rings;
-
-        stacksAfterMove = new Map(stacksAfterMove);
-
-        if (remainingRings.length > 0) {
-          const newStack: RingStack = {
-            ...stackAtLanding,
-            rings: remainingRings,
-            stackHeight: remainingRings.length,
-            capHeight: calculateCapHeight(remainingRings),
-            controllingPlayer: remainingRings[0],
-          };
-          stacksAfterMove.set(key, newStack);
-        } else {
-          stacksAfterMove.delete(key);
+    // Delegate actual movement / capture application to the shared
+    // sandboxMovementEngine, wiring hooks back into this engine.
+    const hooks: SandboxMovementEngineHooks = {
+      getGameState: () => this.gameState,
+      setGameState: (state: GameState) => {
+        this.gameState = state;
+      },
+      isValidPosition: (pos: Position) => this.isValidPosition(pos),
+      isCollapsedSpace: (pos: Position, board?: BoardState) => this.isCollapsedSpace(pos, board),
+      getMarkerOwner: (pos: Position, board?: BoardState) => this.getMarkerOwner(pos, board),
+      getPlayerStacks: (playerNumber: number, board: BoardState) =>
+        this.getPlayerStacks(playerNumber, board),
+      setMarker: (pos: Position, playerNumber: number, board: BoardState) =>
+        this.setMarker(pos, playerNumber, board),
+      collapseMarker: (pos: Position, playerNumber: number, board: BoardState) =>
+        this.collapseMarker(pos, playerNumber, board),
+      flipMarker: (pos: Position, playerNumber: number, board: BoardState) =>
+        this.flipMarker(pos, playerNumber, board),
+      chooseCaptureSegment: async (
+        options: Array<{ from: Position; target: Position; landing: Position }>
+      ) => {
+        if (options.length <= 1) {
+          return options[0];
         }
 
-        const creditedPlayer = movingStack.controllingPlayer;
-        eliminatedRingsMap = {
-          ...eliminatedRingsMap,
-          [creditedPlayer]: (eliminatedRingsMap[creditedPlayer] || 0) + 1,
+        const playerNumber = this.gameState.currentPlayer;
+        const choice = {
+          id: `sandbox-capture-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          gameId: this.gameState.id,
+          playerNumber,
+          type: 'capture_direction' as const,
+          prompt: 'Select capture direction',
+          options: options.map((opt) => ({
+            targetPosition: opt.target,
+            landingPosition: opt.landing,
+            capturedCapHeight:
+              this.gameState.board.stacks.get(positionToString(opt.target))?.capHeight ?? 0,
+          })),
         };
-        playersAfterMove = playersAfterMove.map((p) =>
-          p.playerNumber === creditedPlayer ? { ...p, eliminatedRings: p.eliminatedRings + 1 } : p
-        );
-        totalRingsEliminatedDelta = 1;
-      }
-    }
 
-    this.gameState = {
-      ...this.gameState,
-      board: {
-        ...board,
-        stacks: stacksAfterMove,
-        eliminatedRings: eliminatedRingsMap,
+        const response = await this.interactionHandler.requestChoice(choice as any);
+        const selected = options.find((opt) => {
+          const o = (response as any).selectedOption;
+          return (
+            o &&
+            positionToString(o.targetPosition) === positionToString(opt.target) &&
+            positionToString(o.landingPosition) === positionToString(opt.landing)
+          );
+        });
+
+        return selected ?? options[0];
       },
-      players: playersAfterMove,
-      totalRingsEliminated: this.gameState.totalRingsEliminated + totalRingsEliminatedDelta,
+      // For human-driven movement, record canonical history for both
+      // capture segments and simple moves via the movement engine hooks.
+      ...(isCanonicalReplay
+        ? {}
+        : {
+            onCaptureSegmentApplied: (info: any) => this.handleCaptureSegmentApplied(info),
+            onSimpleMoveApplied: (info: any) => this.handleSimpleMoveApplied(info),
+          }),
+      onMovementComplete: async () => {
+        await this.advanceAfterMovement();
+      },
     };
 
-    this._selectedStackKey = undefined;
-    await this.advanceAfterMovement();
+    const result = await handleMovementClickSandbox(hooks, this._selectedStackKey, position);
+    this._selectedStackKey = result.nextSelectedFromKey;
   }
 
-  /**
-   * Advance to the next player or phase after a ring placement. For now this
-   * mirrors the LocalSandboxState behaviour: cycle players until all rings in
-   * hand are exhausted, then move to the movement phase.
-   */
-  private advanceAfterPlacement(): void {
-    const allRingsExhausted = this.gameState.players.every((p) => p.ringsInHand <= 0);
-    const nextPlayer = this.getNextPlayerNumber(this.gameState.currentPlayer);
-
-    this.gameState = {
-      ...this.gameState,
-      currentPlayer: nextPlayer,
-      currentPhase: allRingsExhausted ? 'movement' : 'ring_placement',
-    };
-
-    // At the start of the next player's turn, if they are completely blocked,
-    // apply forced elimination.
-    this.maybeProcessForcedEliminationForCurrentPlayer();
-  }
+  // Removed unused advanceAfterPlacement helper to fix TS6133
 
   private async advanceAfterMovement(): Promise<void> {
     // Post-movement consequences for the player who just moved: lines,
@@ -1163,21 +913,23 @@ export class ClientSandboxEngine {
    * is marked as completed and subsequent moves are ignored.
    */
   private checkAndApplyVictory(): void {
-    if (this.gameState.gameStatus !== 'active') {
-      return;
-    }
+    const hooks: SandboxGameEndHooks = {
+      enumerateLegalRingPlacements: (playerNumber: number) =>
+        this.enumerateLegalRingPlacements(playerNumber),
+    };
 
-    const result = checkSandboxVictory(this.gameState);
+    // Delegate stalemate resolution + victory detection to the shared
+    // sandbox game-end helpers so that semantics stay aligned across
+    // hosts. This mirrors the backend GameEngine.checkGameEnd flow.
+    const { state, result } = checkAndApplyVictorySandbox(this.gameState, hooks);
+
+    this.gameState = state;
+
     if (!result) {
       return;
     }
 
     this.victoryResult = result;
-    this.gameState = {
-      ...this.gameState,
-      gameStatus: 'completed',
-      winner: result.winner,
-    };
   }
 
   /**
@@ -1203,50 +955,7 @@ export class ClientSandboxEngine {
     playerNumber: number,
     count: number = 1
   ): BoardState {
-    const hypothetical: BoardState = {
-      ...board,
-      stacks: new Map(board.stacks),
-      markers: new Map(board.markers),
-      collapsedSpaces: new Map(board.collapsedSpaces),
-      territories: new Map(board.territories),
-      formedLines: [...board.formedLines],
-      eliminatedRings: { ...board.eliminatedRings },
-    };
-
-    const key = positionToString(position);
-
-    // Placement semantics: a stack cannot coexist with a marker. When we
-    // model a placement on a cell that currently has a marker, clear the
-    // marker so the hypothetical board matches real placement behaviour.
-    hypothetical.markers.delete(key);
-
-    const existing = hypothetical.stacks.get(key);
-    const effectiveCount = Math.max(1, count);
-
-    if (existing && existing.rings.length > 0) {
-      const addedRings = Array(effectiveCount).fill(playerNumber);
-      const rings = [...addedRings, ...existing.rings];
-      const newStack: RingStack = {
-        ...existing,
-        rings,
-        stackHeight: rings.length,
-        capHeight: calculateCapHeight(rings),
-        controllingPlayer: playerNumber,
-      };
-      hypothetical.stacks.set(key, newStack);
-    } else {
-      const rings = Array(effectiveCount).fill(playerNumber);
-      const newStack: RingStack = {
-        position,
-        rings,
-        stackHeight: rings.length,
-        capHeight: calculateCapHeight(rings),
-        controllingPlayer: playerNumber,
-      };
-      hypothetical.stacks.set(key, newStack);
-    }
-
-    return hypothetical;
+    return createHypotheticalBoardWithPlacement(board, position, playerNumber, count);
   }
 
   /**
@@ -1258,23 +967,19 @@ export class ClientSandboxEngine {
     playerNumber: number,
     board: BoardState
   ): boolean {
-    const view: MovementBoardView = {
-      isValidPosition: (pos: Position) => this.isValidPosition(pos),
-      isCollapsedSpace: (pos: Position) => this.isCollapsedSpace(pos, board),
-      getStackAt: (pos: Position) => {
-        const key = positionToString(pos);
-        const stack = board.stacks.get(key);
-        if (!stack) return undefined;
-        return {
-          controllingPlayer: stack.controllingPlayer,
-          capHeight: stack.capHeight,
-          stackHeight: stack.stackHeight,
-        };
-      },
-      getMarkerOwner: (pos: Position) => this.getMarkerOwner(pos, board),
+    const view: PlacementBoardView = {
+      isValidPosition: (pos) => this.isValidPosition(pos),
+      isCollapsedSpace: (pos, b) => this.isCollapsedSpace(pos, b),
+      getMarkerOwner: (pos, b) => this.getMarkerOwner(pos, b),
     };
 
-    return hasAnyLegalMoveOrCaptureFromOnBoard(this.gameState.boardType, from, playerNumber, view);
+    return hasAnyLegalMoveOrCaptureFrom(
+      this.gameState.boardType,
+      board,
+      from,
+      playerNumber,
+      view
+    );
   }
 
   /**
@@ -1415,31 +1120,31 @@ export class ClientSandboxEngine {
     initialLanding: Position,
     playerNumber: number
   ): Promise<void> {
-    let currentPosition = initialLanding;
-    let from = initialFrom;
-    let target = initialTarget;
-    let landing = initialLanding;
+    const hooks: SandboxMovementEngineHooks = {
+      getGameState: () => this.gameState,
+      setGameState: (state: GameState) => {
+        this.gameState = state;
+      },
+      isValidPosition: (pos: Position) => this.isValidPosition(pos),
+      isCollapsedSpace: (pos: Position, board?: BoardState) => this.isCollapsedSpace(pos, board),
+      getMarkerOwner: (pos: Position, board?: BoardState) => this.getMarkerOwner(pos, board),
+      getPlayerStacks: (playerNumberInner: number, board: BoardState) =>
+        this.getPlayerStacks(playerNumberInner, board),
+      setMarker: (pos: Position, playerNumberInner: number, board: BoardState) =>
+        this.setMarker(pos, playerNumberInner, board),
+      collapseMarker: (pos: Position, playerNumberInner: number, board: BoardState) =>
+        this.collapseMarker(pos, playerNumberInner, board),
+      flipMarker: (pos: Position, playerNumberInner: number, board: BoardState) =>
+        this.flipMarker(pos, playerNumberInner, board),
+      onCaptureSegmentApplied: (info) => this.handleCaptureSegmentApplied(info),
+      chooseCaptureSegment: async (
+        options: Array<{ from: Position; target: Position; landing: Position }>
+      ) => {
 
-    this.applyCaptureSegment(from, target, landing, playerNumber);
+        if (options.length <= 1) {
+          return options[0];
+        }
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const options = this.enumerateCaptureSegmentsFrom(currentPosition, playerNumber);
-      if (options.length === 0) {
-        break;
-      }
-
-      let nextSegment:
-        | {
-            from: Position;
-            target: Position;
-            landing: Position;
-          }
-        | undefined;
-
-      if (options.length === 1) {
-        nextSegment = options[0];
-      } else {
         const choice = {
           id: `sandbox-capture-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           gameId: this.gameState.id,
@@ -1454,7 +1159,7 @@ export class ClientSandboxEngine {
           })),
         };
 
-        const response = await this.interactionHandler.requestChoice(choice);
+        const response = await this.interactionHandler.requestChoice(choice as any);
         const selected = options.find((opt) => {
           const o = (response as any).selectedOption;
           return (
@@ -1464,21 +1169,20 @@ export class ClientSandboxEngine {
           );
         });
 
-        nextSegment = selected ?? options[0];
-      }
+        return selected ?? options[0];
+      },
+      onMovementComplete: async () => {
+        await this.advanceAfterMovement();
+      },
+    };
 
-      if (!nextSegment) {
-        break;
-      }
-
-      from = currentPosition;
-      target = nextSegment.target;
-      landing = nextSegment.landing;
-      this.applyCaptureSegment(from, target, landing, playerNumber);
-      currentPosition = landing;
-    }
-
-    this.advanceAfterMovement();
+    await performCaptureChainSandbox(
+      hooks,
+      initialFrom,
+      initialTarget,
+      initialLanding,
+      playerNumber
+    );
   }
 
   /**
@@ -1491,19 +1195,28 @@ export class ClientSandboxEngine {
   ): Array<{ from: Position; target: Position; landing: Position }> {
     const board = this.gameState.board;
 
-    const adapters: CaptureBoardAdapters = {
+    const hooks: SandboxMovementEngineHooks = {
+      getGameState: () => this.gameState,
+      setGameState: (state: GameState) => {
+        this.gameState = state;
+      },
       isValidPosition: (pos: Position) => this.isValidPosition(pos),
-      isCollapsedSpace: (pos: Position, b: BoardState) => this.isCollapsedSpace(pos, b),
-      getMarkerOwner: (pos: Position, b: BoardState) => this.getMarkerOwner(pos, b),
+      isCollapsedSpace: (pos: Position, board?: BoardState) => this.isCollapsedSpace(pos, board),
+      getMarkerOwner: (pos: Position, board?: BoardState) => this.getMarkerOwner(pos, board),
+      getPlayerStacks: (playerNumberInner: number, boardInner: BoardState) =>
+        this.getPlayerStacks(playerNumberInner, boardInner),
+      setMarker: (pos: Position, playerNumberInner: number, boardInner: BoardState) =>
+        this.setMarker(pos, playerNumberInner, boardInner),
+      collapseMarker: (pos: Position, playerNumberInner: number, boardInner: BoardState) =>
+        this.collapseMarker(pos, playerNumberInner, boardInner),
+      flipMarker: (pos: Position, playerNumberInner: number, boardInner: BoardState) =>
+        this.flipMarker(pos, playerNumberInner, boardInner),
+      onMovementComplete: async () => {
+        // No-op for pure enumeration.
+      },
     };
 
-    return enumerateCaptureSegmentsFromBoard(
-      this.gameState.boardType,
-      board,
-      from,
-      playerNumber,
-      adapters
-    );
+    return enumerateCaptureSegmentsFromSandbox(hooks, from, playerNumber, board);
   }
 
   /**
@@ -1527,7 +1240,8 @@ export class ClientSandboxEngine {
     const landedOnOwnMarker = landingMarkerOwner === playerNumber;
 
     const adapters: CaptureApplyAdapters = {
-      applyMarkerEffectsAlongPath: (f, t, player) => this.applyMarkerEffectsAlongPath(f, t, player),
+      applyMarkerEffectsAlongPath: (f, t, player, options) =>
+        this.applyMarkerEffectsAlongPath(f, t, player, options),
     };
 
     applyCaptureSegmentOnBoard(board, from, target, landing, playerNumber, adapters);
@@ -1580,6 +1294,53 @@ export class ClientSandboxEngine {
       players: playersAfterCapture,
       totalRingsEliminated: this.gameState.totalRingsEliminated + totalRingsEliminatedDelta,
     };
+  }
+
+  /**
+   * Canonical replay helper for a single overtaking capture segment.
+   *
+   * This mirrors backend GameEngine semantics for both the initial
+   * 'overtaking_capture' segment and any 'continue_capture_segment'
+   * follow-ups:
+   *   - Apply exactly one capture segment on the board.
+   *   - If additional segments are available from the landing position
+   *     for the same player, enter the dedicated 'chain_capture' phase
+   *     and defer post-movement consequences.
+   *   - If no continuations remain, run advanceAfterMovement() once so
+   *     automatic consequences and turn advancement are processed just
+   *     as they were after the original chain completed.
+   */
+  private async applyCanonicalCaptureSegment(
+    from: Position,
+    target: Position,
+    landing: Position,
+    playerNumber: number
+  ): Promise<void> {
+    // Apply the segment using the same helper used by sandbox-driven chains.
+    this.applyCaptureSegment(from, target, landing, playerNumber);
+
+    // After applying the segment, determine whether the chain can continue
+    // from the new landing position under the current board state.
+    const continuationOptions = this.enumerateCaptureSegmentsFrom(landing, playerNumber);
+
+    if (continuationOptions.length > 0) {
+      // At least one follow-up capture segment is available. Mirror backend
+      // behaviour by entering the interactive 'chain_capture' phase while
+      // deferring automatic post-movement consequences until the chain
+      // eventually terminates.
+      if (this.gameState.currentPhase !== 'chain_capture') {
+        this.gameState = {
+          ...this.gameState,
+          currentPhase: 'chain_capture',
+        };
+      }
+      return;
+    }
+
+    // No legal continuations remain; the capture chain is complete. Run
+    // the same post-movement processing used for normal movement so
+    // history snapshots observe the next-player interactive phase.
+    await this.advanceAfterMovement();
   }
 
   /**
@@ -1689,18 +1450,6 @@ export class ClientSandboxEngine {
         : p
     );
 
-    // Placement semantics: a stack cannot coexist with a marker. If there is
-    // a marker at this key, clear it so the real board matches the invariant
-    // and movement/capture semantics (landing on a marker removes it).
-    board.markers.delete(key);
-
-    // After a successful placement, always advance into the movement phase
-    // for this player. This matches the intended per-turn flow of "place
-    // then move" for both humans and AIs; the sandbox UI drives the
-    // subsequent move for humans, while maybeRunAITurn continues the turn
-    // for AI players.
-    const nextPhase: GamePhase = 'movement';
-
     this.gameState = {
       ...this.gameState,
       board: {
@@ -1708,13 +1457,9 @@ export class ClientSandboxEngine {
         stacks: nextStacks,
       },
       players: updatedPlayers,
-      currentPhase: nextPhase,
+      currentPhase: 'movement',
     };
 
-    // Record per-turn placement state so movement (when it happens) is
-    // forced from this stack, and treat the newly placed/updated stack as
-    // selected so that the next click on a valid landing square can perform
-    // the move.
     this._hasPlacedThisTurn = true;
     this._mustMoveFromStackKey = key;
     this._selectedStackKey = key;
@@ -1826,9 +1571,15 @@ export class ClientSandboxEngine {
           break;
         }
         // Reuse existing movement handler by simulating a source
-        // selection followed by a destination click.
-        this._selectedStackKey = positionToString(move.from);
-        await this.handleMovementClick(move.to);
+        // selection followed by a destination click. Mark this invocation
+        // as canonical so movement hooks do not emit duplicate history.
+        this._movementInvocationContext = 'canonical';
+        try {
+          this._selectedStackKey = positionToString(move.from);
+          await this.handleMovementClick(move.to);
+        } finally {
+          this._movementInvocationContext = null;
+        }
         applied = true;
         break;
       }
@@ -1837,10 +1588,33 @@ export class ClientSandboxEngine {
         if (!move.from || !move.to || !move.captureTarget) {
           break;
         }
-        // Drive a single-segment capture chain corresponding to the
-        // canonical move. Subsequent segments (if any) will be handled by
-        // performCaptureChain's own continuation logic.
-        await this.performCaptureChain(move.from, move.captureTarget, move.to, move.player);
+        // Canonical capture replay applies exactly one segment and then
+        // either enters 'chain_capture' (when continuations exist) or
+        // runs full post-movement processing when the chain is complete.
+        await this.applyCanonicalCaptureSegment(
+          move.from,
+          move.captureTarget,
+          move.to,
+          move.player
+        );
+        applied = true;
+        break;
+      }
+
+      case 'continue_capture_segment': {
+        if (!move.from || !move.to || !move.captureTarget) {
+          break;
+        }
+        // Continuation segments share the same replay semantics as the
+        // initial overtaking_capture segment: apply one step, then either
+        // remain in 'chain_capture' or process automatic consequences
+        // when the chain terminates.
+        await this.applyCanonicalCaptureSegment(
+          move.from,
+          move.captureTarget,
+          move.to,
+          move.player
+        );
         applied = true;
         break;
       }
@@ -1882,6 +1656,7 @@ export class ClientSandboxEngine {
       'move_ring',
       'move_stack',
       'overtaking_capture',
+      'continue_capture_segment',
     ];
 
     if (!supportedTypes.includes(move.type)) {

@@ -189,4 +189,100 @@ describe('GameEngine victory scenarios (Section 13.1–13.2; FAQ 11, 18, 21)', (
     expect(endCheck.winner).toBe(1);
     expect(endCheck.reason).toBe('ring_elimination');
   });
+
+  it('Rules_13_5_stalemate_tiebreak_markers_backend', () => {
+    // Rules reference (§13.4 / 16.9.4.5): when structural terminality is
+    // reached and both territory and eliminated rings are tied, remaining
+    // markers act as the next tiebreaker in the stalemate ladder.
+    //
+    // Scenario:
+    // - No stacks and no rings in hand for any player.
+    // - Territory is tied (0 for both players).
+    // - Eliminated rings are tied.
+    // - Player 1 has more markers on the board than Player 2.
+    // - RuleEngine.checkGameEnd should award victory to Player 1 with
+    //   reason 'last_player_standing'.
+
+    const engine = new GameEngine(
+      'victory-stalemate-markers',
+      boardType,
+      createPlayers(),
+      timeControl,
+      false
+    );
+    const engineAny: any = engine;
+    const gameState: GameState = engineAny.gameState as GameState;
+
+    gameState.board.stacks.clear();
+    gameState.board.markers.clear();
+
+    gameState.players.forEach((p) => {
+      p.ringsInHand = 0;
+      p.territorySpaces = 0;
+      p.eliminatedRings = 2;
+    });
+
+    // Player 1: two markers; Player 2: one marker.
+    gameState.board.markers.set('0,0', {
+      player: 1,
+      position: { x: 0, y: 0 },
+      type: 'regular',
+    });
+    gameState.board.markers.set('1,0', {
+      player: 1,
+      position: { x: 1, y: 0 },
+      type: 'regular',
+    });
+    gameState.board.markers.set('0,1', {
+      player: 2,
+      position: { x: 0, y: 1 },
+      type: 'regular',
+    });
+
+    const endCheck = engineAny.ruleEngine.checkGameEnd(gameState);
+
+    expect(endCheck.isGameOver).toBe(true);
+    expect(endCheck.winner).toBe(1);
+    expect(endCheck.reason).toBe('last_player_standing');
+  });
+
+  it('Rules_13_6_stalemate_last_actor_backend', () => {
+    // Rules reference (§13.4 / 16.9.4.5): if territory, eliminated rings,
+    // and markers are all tied at structural terminality, the last player
+    // to complete a valid turn action wins as the final tiebreaker.
+    //
+    // Scenario:
+    // - No stacks and no rings in hand for any player.
+    // - Territory, eliminated rings, and markers are all tied at 0.
+    // - With players [1,2] and currentPlayer = 1, the previous player in
+    //   turn order (Player 2) is treated as the last actor.
+
+    const engine = new GameEngine(
+      'victory-stalemate-last-actor',
+      boardType,
+      createPlayers(),
+      timeControl,
+      false
+    );
+    const engineAny: any = engine;
+    const gameState: GameState = engineAny.gameState as GameState;
+
+    gameState.board.stacks.clear();
+    gameState.board.markers.clear();
+
+    gameState.players.forEach((p) => {
+      p.ringsInHand = 0;
+      p.territorySpaces = 0;
+      p.eliminatedRings = 0;
+    });
+
+    // Ensure canonical ordering and currentPlayer for the fallback.
+    gameState.currentPlayer = 1;
+
+    const endCheck = engineAny.ruleEngine.checkGameEnd(gameState);
+
+    expect(endCheck.isGameOver).toBe(true);
+    expect(endCheck.winner).toBe(2);
+    expect(endCheck.reason).toBe('last_player_standing');
+  });
 });

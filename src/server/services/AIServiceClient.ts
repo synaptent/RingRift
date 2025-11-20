@@ -134,6 +134,7 @@ export class AIServiceClient {
     difficulty: number = 5,
     aiType?: AIType
   ): Promise<MoveResponse> {
+    const startTime = performance.now();
     try {
       const request: MoveRequest = {
         game_state: gameState,
@@ -150,16 +151,24 @@ export class AIServiceClient {
       });
 
       const response = await this.client.post<MoveResponse>('/ai/move', request);
+      const duration = performance.now() - startTime;
 
       logger.info('AI move received', {
         aiType: response.data.ai_type,
         thinkingTime: response.data.thinking_time_ms,
-        evaluation: response.data.evaluation
+        evaluation: response.data.evaluation,
+        latencyMs: Math.round(duration)
       });
 
       return response.data;
     } catch (error) {
-      logger.error('Failed to get AI move', { error });
+      const duration = performance.now() - startTime;
+      logger.error('Failed to get AI move', {
+        error,
+        latencyMs: Math.round(duration),
+        playerNumber,
+        difficulty
+      });
       throw new Error(
         `AI Service failed to generate move: ${
           error instanceof Error ? error.message : 'Unknown error'
@@ -175,6 +184,7 @@ export class AIServiceClient {
     gameState: GameState,
     playerNumber: number
   ): Promise<EvaluationResponse> {
+    const startTime = performance.now();
     try {
       const request: EvaluationRequest = {
         game_state: gameState,
@@ -185,16 +195,22 @@ export class AIServiceClient {
         '/ai/evaluate',
         request
       );
+      const duration = performance.now() - startTime;
 
       logger.debug('Position evaluated', {
         playerNumber,
         score: response.data.score,
-        breakdown: response.data.breakdown
+        breakdown: response.data.breakdown,
+        latencyMs: Math.round(duration)
       });
 
       return response.data;
     } catch (error) {
-      logger.error('Failed to evaluate position', { error });
+      const duration = performance.now() - startTime;
+      logger.error('Failed to evaluate position', {
+        error,
+        latencyMs: Math.round(duration)
+      });
       throw new Error(
         `AI Service failed to evaluate position: ${
           error instanceof Error ? error.message : 'Unknown error'

@@ -46,18 +46,45 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | null>(null);
 
-// Derive the WebSocket base URL from the API URL, falling back to localhost:5000.
-function getSocketBaseUrl(): string {
-  // Access Vite env via a loose import.meta cast so this file stays portable
-  // even if bundler-specific typings are not present in tsconfig.
-  const apiUrl = (import.meta as any).env?.VITE_API_URL as string | undefined;
-  if (apiUrl) {
-    // Strip trailing "/api" if present
-    const base = apiUrl.replace(/\/?api\/?$/, '');
-    return base;
+  // Derive the WebSocket base URL from environment configuration, falling back
+  // to a sensible dev default. In local development:
+  //   - Vite runs on http://localhost:5173
+  //   - The backend (Express + Socket.IO) runs on http://localhost:3000
+  // We therefore prefer talking to the backend origin directly rather than
+  // relying on the Vite proxy for WebSocket connections.
+  function getSocketBaseUrl(): string {
+    const env = (import.meta as any).env ?? {};
+ 
+    // Prefer an explicit WebSocket URL when provided.
+    const wsUrl = env.VITE_WS_URL as string | undefined;
+    if (wsUrl) {
+      return wsUrl.replace(/\/$/, '');
+    }
+ 
+    // Next, derive from an API URL by stripping any trailing "/api".
+    const apiUrl = env.VITE_API_URL as string | undefined;
+    if (apiUrl) {
+      const base = apiUrl.replace(/\/?api\/?$/, '');
+      return base.replace(/\/$/, '');
+    }
+ 
+    // In the browser (Vite dev, built client), detect the common local dev
+    // case (frontend on :5173, backend on :3000) and talk to the backend
+    // origin directly. For any other origin, just reuse window.location.origin.
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      const origin = window.location.origin;
+      if (
+        origin.startsWith('http://localhost:5173') ||
+        origin.startsWith('https://localhost:5173')
+      ) {
+        return 'http://localhost:3000';
+      }
+      return origin;
+    }
+ 
+    // Fallback for tests/SSR when no window is available.
+    return 'http://localhost:3000';
   }
-  return 'http://localhost:5000';
-}
 
 // Hydrate a BoardState coming over the wire, where Maps have been
 // serialized to plain objects.

@@ -37,34 +37,41 @@ class TestMinimaxAI(unittest.TestCase):
         )
 
     def test_select_move_returns_move(self):
-        # Mock _get_valid_moves_for_phase to return some dummy moves
-        self.ai._get_valid_moves_for_phase = MagicMock(return_value=[
-            {"type": "move", "from": None, "to": {"x": 0, "y": 0}},
-            {"type": "move", "from": None, "to": {"x": 1, "y": 1}}
-        ])
+        # Mock GameEngine.get_valid_moves
+        from app.game_engine import GameEngine
         
-        # Mock _evaluate_move to return scores
-        self.ai._evaluate_move = MagicMock(side_effect=[10, 5])
+        mock_move1 = MagicMock()
+        mock_move1.type = "move_stack"
+        mock_move2 = MagicMock()
+        mock_move2.type = "move_stack"
         
-        # Mock _create_move_object
-        self.ai._create_move_object = MagicMock(return_value="mock_move_object")
+        GameEngine.get_valid_moves = MagicMock(return_value=[mock_move1, mock_move2])
+        
+        # Mock GameEngine.apply_move to return a valid state
+        GameEngine.apply_move = MagicMock(return_value=self.game_state)
+        
+        # Mock evaluate_position
+        # We need to provide enough side effects for the recursive calls
+        # The minimax algorithm will call evaluate_position multiple times
+        # 1. Initial sort (2 calls)
+        # 2. Minimax recursion (depth 2) -> Quiescence search -> evaluate_position
+        # Let's just return a constant value or a simple function to avoid StopIteration
+        self.ai.evaluate_position = MagicMock(return_value=10)
         
         # Mock simulate_thinking to avoid delay
         self.ai.simulate_thinking = MagicMock()
+        
+        # Mock should_pick_random_move to False
+        self.ai.should_pick_random_move = MagicMock(return_value=False)
 
         move = self.ai.select_move(self.game_state)
         
         self.assertIsNotNone(move)
-        self.assertEqual(move, "mock_move_object")
-        
-        # Verify that the move with the higher score (first one) was selected
-        # Note: This assumes the implementation picks the best move deterministically when randomness is low/off
-        # or that we mocked randomness to be deterministic.
-        # Since we didn't mock randomness, this test might be flaky if randomness is high.
-        # However, default randomness for difficulty 5 is low (0.05).
+        self.assertEqual(move, mock_move1)
 
     def test_select_move_no_valid_moves(self):
-        self.ai._get_valid_moves_for_phase = MagicMock(return_value=[])
+        from app.game_engine import GameEngine
+        GameEngine.get_valid_moves = MagicMock(return_value=[])
         self.ai.simulate_thinking = MagicMock()
         
         move = self.ai.select_move(self.game_state)

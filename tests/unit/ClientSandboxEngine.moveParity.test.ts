@@ -17,6 +17,7 @@ import {
   addStack,
   addMarker
 } from '../utils/fixtures';
+import { movementRuleScenarios } from '../scenarios/rulesMatrix';
 
 /**
  * Parity test: sandbox movement landings vs backend RuleEngine.getValidMoves.
@@ -146,5 +147,96 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
     for (const key of sandboxLandingKeys) {
       expect(backendTargetSet.has(key)).toBe(true);
     }
+  });
+
+  test('sandbox vs backend parity for marker-landing scenario (Rules_8_2_Q2_marker_landing_own_vs_opponent_square8)', () => {
+    const scenarioId = 'Rules_8_2_Q2_marker_landing_own_vs_opponent_square8';
+    const scenario = movementRuleScenarios.find((s) => s.ref.id === scenarioId);
+    if (!scenario) {
+      throw new Error(`MovementRuleScenario not found: ${scenarioId}`);
+    }
+
+    expect(scenario.boardType).toBe(boardType);
+
+    const engine = createSandboxEngine();
+    const engineAny = engine as any;
+    const sandboxState: GameState = engineAny.gameState as GameState;
+
+    sandboxState.currentPlayer = 1;
+    sandboxState.currentPhase = 'movement';
+
+    const board = sandboxState.board;
+
+    board.stacks.clear();
+    board.markers.clear();
+    board.collapsedSpaces.clear();
+
+    const from: Position = { x: scenario.origin.x, y: scenario.origin.y };
+    addStack(board, from, 1, scenario.stackHeight);
+
+    const ownMarker: Position = { x: from.x + 2, y: from.y };
+    const oppMarker: Position = { x: from.x, y: from.y + 2 };
+
+    addMarker(board, ownMarker, 1);
+    addMarker(board, oppMarker, 2);
+
+    const simpleLandings: Array<{ fromKey: string; to: Position }> = (engine as any)
+      .enumerateSimpleMovementLandings(1);
+    const sandboxLandingKeys = simpleLandings
+      .filter((m) => m.fromKey === positionToString(from))
+      .map((m) => positionToString(m.to))
+      .sort();
+
+    const backendBoard = createTestBoard(boardType);
+
+    for (const [key, stack] of board.stacks.entries()) {
+      backendBoard.stacks.set(key, { ...stack });
+    }
+    for (const [key, marker] of board.markers.entries()) {
+      backendBoard.markers.set(key, { ...marker });
+    }
+    for (const [key, owner] of board.collapsedSpaces.entries()) {
+      backendBoard.collapsedSpaces.set(key, owner);
+    }
+
+    const backendGameState = createTestGameState({
+      boardType,
+      board: backendBoard,
+      players: [
+        createTestPlayer(1, { type: 'human', ringsInHand: 0 }),
+        createTestPlayer(2, { type: 'human', ringsInHand: 0 })
+      ],
+      currentPlayer: 1,
+      currentPhase: 'movement'
+    });
+
+    const boardManager = new BoardManager(boardType);
+    const ruleEngine = new RuleEngine(boardManager, boardType as any);
+
+    const backendMoves: Move[] = ruleEngine.getValidMoves(backendGameState);
+    const backendMovementTargets = backendMoves
+      .filter(
+        (m) =>
+          m.type === 'move_stack' &&
+          m.from &&
+          positionToString(m.from) === positionToString(from)
+      )
+      .map((m) => positionToString(m.to))
+      .sort();
+
+    const backendTargetSet = new Set(backendMovementTargets);
+
+    for (const key of sandboxLandingKeys) {
+      expect(backendTargetSet.has(key)).toBe(true);
+    }
+
+    const ownKey = positionToString(ownMarker);
+    const oppKey = positionToString(oppMarker);
+
+    expect(backendTargetSet.has(ownKey)).toBe(true);
+    expect(backendTargetSet.has(oppKey)).toBe(false);
+
+    expect(sandboxLandingKeys).toContain(ownKey);
+    expect(sandboxLandingKeys).not.toContain(oppKey);
   });
 });

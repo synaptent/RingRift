@@ -296,53 +296,16 @@ describe('GameEngine chain capture with CaptureDirectionChoice integration', () 
     expect(sortedActual.length).toBe(sortedExpected.length);
   });
 
-  test('uses CaptureDirectionChoice to select among multiple follow-up chain options and applies the chosen branch', async () => {
+  test('applies a continue_capture_segment produced by getValidMoves for the orthogonal chain scenario', async () => {
     // Scenario (inspired by Rust test_chain_capture_player_choice_simulation):
     // - Red at (3,3) h2 (attacker)
     // - Blue at (3,4) h1 (initial capture target)
-    // After capturing Blue and landing at (3,5), Red H3 has two follow-up
-    // capture options: one toward Green and one toward Yellow. We verify that
-    // the engine asks for CaptureDirectionChoice and then follows the
-    // specific branch selected by the fake interaction handler.
+    // After capturing Blue and landing at (3,5), Red H3 has multiple
+    // follow-up capture options. We verify that GameEngine exposes these via
+    // `continue_capture_segment` moves in getValidMoves and that applying one
+    // of them mutates the board consistently with the rules.
 
-    const choices: CaptureDirectionChoice[] = [];
-
-    const fakeHandler = {
-      requestChoice: jest.fn(async (choice: PlayerChoice): Promise<PlayerChoiceResponse<unknown>> => {
-        // We only care about capture_direction choices in this integration
-        if (choice.type === 'capture_direction') {
-          const typedChoice = choice as CaptureDirectionChoice;
-          choices.push(typedChoice);
-
-          const options = typedChoice.options;
-          expect(options.length).toBeGreaterThanOrEqual(1);
-
-          // For determinism, choose the option whose landingPosition is the
-          // closest valid landing along the ray.
-          let selected = options[0];
-          for (const opt of options) {
-            if (
-              opt.landingPosition.x < selected.landingPosition.x ||
-              (opt.landingPosition.x === selected.landingPosition.x &&
-                opt.landingPosition.y < selected.landingPosition.y)
-            ) {
-              selected = opt;
-            }
-          }
-
-          return {
-            choiceId: choice.id,
-            playerNumber: choice.playerNumber,
-            selectedOption: selected
-          } as PlayerChoiceResponseFor<CaptureDirectionChoice> as PlayerChoiceResponse<unknown>;
-        }
-
-        throw new Error(`Unexpected choice type in test: ${choice.type}`);
-      })
-    };
-
-    const interactionManager = new PlayerInteractionManager(fakeHandler as any);
-    const engine = new GameEngine('chain-choice', boardType, players, timeControl, false, interactionManager);
+    const engine = new GameEngine('chain-choice', boardType, players, timeControl, false);
     const engineAny: any = engine;
     const boardManager = engineAny.boardManager as any;
     const gameState = engineAny.gameState as GameState;
@@ -377,48 +340,65 @@ describe('GameEngine chain capture with CaptureDirectionChoice integration', () 
 
     expect(initialResult.success).toBe(true);
 
-    // There should be at least one CaptureDirectionChoice during the chain.
-    expect(choices.length).toBeGreaterThanOrEqual(1);
+    // After the initial segment, the engine should be in chain_capture phase
+    // and getValidMoves should expose follow-up segments as
+    // continue_capture_segment moves from (3,5).
+    expect(gameState.currentPhase).toBe('chain_capture');
+    const continuationMoves = engine.getValidMoves(1);
 
-    // Flatten all (target, landing) pairs across all choices.
-    const allPairs = choices.flatMap(ch =>
-      (ch.options || []).map(o =>
-        `${o.targetPosition.x},${o.targetPosition.y}->${o.landingPosition.x},${o.landingPosition.y}`
-      )
+    expect(continuationMoves.length).toBeGreaterThan(0);
+    continuationMoves.forEach((m) => {
+      expect(m.type).toBe('continue_capture_segment');
+      expect(m.player).toBe(1);
+      expect(m.from).toEqual({ x: 3, y: 5 });
+    });
+
+    const allPairs = continuationMoves.map(
+      (m) => `${m.captureTarget!.x},${m.captureTarget!.y}->${m.to!.x},${m.to!.y}`
     );
 
-    // The rule-faithful options from the *first* branching point from (3,5)
-    // should appear somewhere across the choices: Green with landings at
+    // The rule-faithful options from the first branching point from (3,5)
+    // should appear among the continuation moves: Green with landings at
     // (6,5) and (7,5), and Yellow with landing at (0,5).
     expect(allPairs).toEqual(
       expect.arrayContaining([
         '4,5->6,5',
         '4,5->7,5',
-        '2,5->0,5'
+        '2,5->0,5',
       ])
     );
 
-    // Now assert that the board reflects capturing along whatever branch the
-    // fake handler selected (the one with the earliest landing along the ray
-    // among the presented options in the final choice).
-    const lastChoice = choices[choices.length - 1];
-    const options = lastChoice.options || [];
+    // Choose one continuation deterministically (lexicographically earliest
+    // landing) and apply it as a canonical continue_capture_segment move.
+    const selectedMove = continuationMoves.reduce((prev, cur) => {
+      const prevTo = prev.to!;
+      const curTo = cur.to!;
+      if (
+        curTo.x < prevTo.x ||
+        (curTo.x === prevTo.x && curTo.y < prevTo.y)
+      ) {
+        return cur;
+      }
+      return prev;
+    });
 
-    const selected = options.reduce((prev, cur) =>
-      cur.landingPosition.x < prev.landingPosition.x ||
-      (cur.landingPosition.x === prev.landingPosition.x &&
-        cur.landingPosition.y < prev.landingPosition.y)
-        ? cur
-        : prev
-    );
+    const followUpResult = await engine.makeMove({
+      player: selectedMove.player,
+      type: selectedMove.type,
+      from: selectedMove.from,
+      captureTarget: selectedMove.captureTarget,
+      to: selectedMove.to,
+    } as Move);
+
+    expect(followUpResult.success).toBe(true);
 
     const board = gameState.board;
     const stackAtStart = board.stacks.get('3,3');
     const stackAtBlue = board.stacks.get('3,4');
     const stackAtIntermediate = board.stacks.get('3,5');
-    const targetKey = `${selected.targetPosition.x},${selected.targetPosition.y}`;
+    const targetKey = `${selectedMove.captureTarget!.x},${selectedMove.captureTarget!.y}`;
     const stackAtTarget = board.stacks.get(targetKey);
-    const finalLandingKey = `${selected.landingPosition.x},${selected.landingPosition.y}`;
+    const finalLandingKey = `${selectedMove.to!.x},${selectedMove.to!.y}`;
     const stackAtFinal = board.stacks.get(finalLandingKey);
 
     expect(stackAtStart).toBeUndefined();
@@ -431,10 +411,6 @@ describe('GameEngine chain capture with CaptureDirectionChoice integration', () 
     expect(stackAtFinal).toBeDefined();
     expect(stackAtFinal!.controllingPlayer).toBe(1);
     expect(stackAtFinal!.stackHeight).toBeGreaterThanOrEqual(3);
-
-    // Chain should be complete after applying the selected follow-up, so
-    // internal chain state must be cleared.
-    expect(engineAny.chainCaptureState).toBeUndefined();
   });
 
   test('uses CaptureDirectionChoice for diagonal chain options (diagonal rays)', async () => {

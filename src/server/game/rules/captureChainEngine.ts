@@ -6,6 +6,11 @@ import {
   CaptureDirectionChoice,
   PlayerChoiceResponseFor
 } from '../../../shared/types/game';
+import {
+  validateCaptureSegmentOnBoard,
+  CaptureSegmentBoardView,
+  getMovementDirectionsForBoardType
+} from '../../../shared/engine/core';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
 import { PlayerInteractionManager } from '../PlayerInteractionManager';
@@ -88,7 +93,7 @@ export function getCaptureOptionsFromPosition(
   gameState: GameState,
   deps: CaptureChainDeps
 ): Move[] {
-  const { boardManager, ruleEngine } = deps;
+  const { boardManager } = deps;
   const board = gameState.board;
   const attackerStack = boardManager.getStack(position, board);
 
@@ -97,9 +102,22 @@ export function getCaptureOptionsFromPosition(
   }
 
   const moves: Move[] = [];
-  const directions = boardManager.getConfig()
-    ? getAllDirectionsForBoardType(gameState.boardType, boardManager)
-    : [];
+  const directions = getMovementDirectionsForBoardType(gameState.boardType);
+
+  const view: CaptureSegmentBoardView = {
+    isValidPosition: (pos: Position) => boardManager.isValidPosition(pos),
+    isCollapsedSpace: (pos: Position) => boardManager.isCollapsedSpace(pos, board),
+    getStackAt: (pos: Position) => {
+      const stack = boardManager.getStack(pos, board);
+      if (!stack) return undefined;
+      return {
+        controllingPlayer: stack.controllingPlayer,
+        capHeight: stack.capHeight,
+        stackHeight: stack.stackHeight
+      };
+    },
+    getMarkerOwner: (pos: Position) => boardManager.getMarker(pos, board)
+  };
 
   for (const dir of directions) {
     // Step outward from the attacker to find the first potential target
@@ -125,11 +143,9 @@ export function getCaptureOptionsFromPosition(
       const stackAtPos = boardManager.getStack(pos, board);
       if (stackAtPos && stackAtPos.rings.length > 0) {
         // First stack encountered along this ray is the only possible
-        // capture target in this direction.
-        if (
-          stackAtPos.controllingPlayer !== playerNumber &&
-          attackerStack.capHeight >= stackAtPos.capHeight
-        ) {
+        // capture target in this direction. Rule fix: players can
+        // overtake their own stacks; only cap-height comparison matters.
+        if (attackerStack.capHeight >= stackAtPos.capHeight) {
           targetPos = pos;
         }
         break;
@@ -141,9 +157,9 @@ export function getCaptureOptionsFromPosition(
     if (!targetPos) continue;
 
     // From the target, walk further along the same ray to find candidate
-    // landing positions. Each candidate is validated via validateMove to
-    // ensure consistency with the RuleEngine's rules (distance, path,
-    // landing legality, etc.).
+    // landing positions. Each candidate is validated via the shared
+    // validateCaptureSegmentOnBoard helper so that backend chain-capture
+    // enumeration stays in lock-step with the sandbox and core rules.
     let landingStep = 1;
     for (;;) {
       const landingPos: Position = {
@@ -167,19 +183,28 @@ export function getCaptureOptionsFromPosition(
         break;
       }
 
-      const candidate: Move = {
-        id: '',
-        type: 'overtaking_capture',
-        player: playerNumber,
-        from: position,
-        captureTarget: targetPos,
-        to: landingPos,
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: gameState.moveHistory.length + 1
-      };
+      if (
+        validateCaptureSegmentOnBoard(
+          gameState.boardType,
+          position,
+          targetPos,
+          landingPos,
+          playerNumber,
+          view
+        )
+      ) {
+        const candidate: Move = {
+          id: '',
+          type: 'overtaking_capture',
+          player: playerNumber,
+          from: position,
+          captureTarget: targetPos,
+          to: landingPos,
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: gameState.moveHistory.length + 1
+        };
 
-      if (ruleEngine.validateMove(candidate, gameState)) {
         moves.push(candidate);
       }
 

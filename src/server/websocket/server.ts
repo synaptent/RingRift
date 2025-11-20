@@ -2,7 +2,6 @@ import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import { GameStatus } from '@prisma/client';
 import { getDatabaseClient } from '../database/connection';
 import { logger } from '../utils/logger';
 import { GameEngine } from '../game/GameEngine';
@@ -37,9 +36,21 @@ export class WebSocketServer {
   private interactionHandlers: Map<string, WebSocketInteractionHandler> = new Map();
 
   constructor(httpServer: HTTPServer) {
+    // Align WebSocket CORS with the HTTP API CORS configuration. Prefer an
+    // explicit CLIENT_URL, then fall back to CORS_ORIGIN (used by Express),
+    // then the first entry in ALLOWED_ORIGINS, and finally the Vite dev
+    // origin http://localhost:5173. This avoids local dev failures where the
+    // Socket.IO layer only allowed http://localhost:3000.
+    const allowedOrigin =
+      process.env.CLIENT_URL ||
+      process.env.CORS_ORIGIN ||
+      (process.env.ALLOWED_ORIGINS
+        ? process.env.ALLOWED_ORIGINS.split(',')[0]
+        : 'http://localhost:5173');
+
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.CLIENT_URL || 'http://localhost:3000',
+        origin: allowedOrigin,
         methods: ['GET', 'POST'],
         credentials: true,
       },
@@ -420,34 +431,34 @@ export class WebSocketServer {
     this.interactionManagers.set(gameId, interactionManager);
     this.interactionHandlers.set(gameId, wsHandler);
 
-    // Auto-start logic: If all players are present (human or AI) and the game
-    // is still in 'waiting' status, mark it as ACTIVE in the database.
-    // Note: GameEngine initializes with 'waiting' status but doesn't strictly
-    // enforce a start transition, so we handle the DB sync here.
-    if (game.status === GameStatus.WAITING && players.length >= (game.maxPlayers ?? 2)) {
-      // Check if all players are ready (AI are always ready, humans might need explicit ready)
-      // For now, we assume presence in the players array implies readiness for this check.
-      const allReady = players.every((p) => p.isReady);
-
-      if (allReady) {
-        try {
-          await prisma.game.update({
-            where: { id: gameId },
-            data: {
-              status: GameStatus.ACTIVE,
-              startedAt: new Date(),
-            },
-          });
-
-          // Update the engine's internal state to match
-          // (GameEngine.gameState is public-ish via getGameState, but we can't set it directly.
-          // However, GameEngine doesn't block moves based on 'waiting' status, so this is mostly for DB sync).
-          logger.info('Auto-started game', { gameId, playerCount: players.length });
-        } catch (err) {
-          logger.error('Failed to auto-start game', { gameId, error: (err as Error).message });
-        }
-      }
-    }
+     // Auto-start logic: If all players are present (human or AI) and the game
+     // is still in 'waiting' status, mark it as ACTIVE in the database.
+     // Note: GameEngine initializes with 'waiting' status but doesn't strictly
+     // enforce a start transition, so we handle the DB sync here.
+     if ((game.status as any) === 'waiting' && players.length >= (game.maxPlayers ?? 2)) {
+       // Check if all players are ready (AI are always ready, humans might need explicit ready)
+       // For now, we assume presence in the players array implies readiness for this check.
+       const allReady = players.every((p) => p.isReady);
+    
+       if (allReady) {
+         try {
+           await prisma.game.update({
+             where: { id: gameId },
+             data: {
+               status: 'active' as any,
+               startedAt: new Date(),
+             },
+           });
+    
+           // Update the engine's internal state to match
+           // (GameEngine.gameState is public-ish via getGameState, but we can't set it directly.
+           // However, GameEngine doesn't block moves based on 'waiting' status, so this is mostly for DB sync).
+           logger.info('Auto-started game', { gameId, playerCount: players.length });
+         } catch (err) {
+           logger.error('Failed to auto-start game', { gameId, error: (err as Error).message });
+         }
+       }
+     }
 
     return gameEngine;
   }
@@ -586,7 +597,7 @@ export class WebSocketServer {
       throw new Error('Game not found');
     }
 
-    if (game.status !== GameStatus.ACTIVE) {
+    if ((game.status as any) !== 'active') {
       throw new Error('Game is not active');
     }
 
@@ -683,7 +694,7 @@ export class WebSocketServer {
       await prisma.game.update({
         where: { id: gameId },
         data: {
-          status: GameStatus.COMPLETED,
+          status: 'completed' as any,
           winnerId: winnerId ?? null,
           endedAt: new Date(),
           updatedAt: new Date(),
@@ -822,7 +833,7 @@ export class WebSocketServer {
             await prisma.game.update({
               where: { id: gameId },
               data: {
-                status: GameStatus.COMPLETED,
+                status: 'completed' as any,
                 winnerId: winnerId ?? null,
                 endedAt: new Date(),
                 updatedAt: new Date(),

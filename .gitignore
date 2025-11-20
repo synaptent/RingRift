@@ -54,3 +54,33 @@ Thumbs.db
 __pycache__/
 *.py[cod]
 *.$py.class
+
+# Python virtual environments
+.venv/
+**/.venv/
+venv/
+ai-service/venv/
+
+# Python test caches
+.pytest_cache/
+**/.pytest_cache/
+
+# AI service training data / generated artifacts
+ai-service/app/training/data/
+ai-service/app/training/**/data/
+ai-service/app/models/
+
+# Local debug artifacts
+debug_output.txt
+
+# Python virtual environments
+.venv/
+**/.venv/
+
+# Python test caches
+.pytest_cache/
+**/.pytest_cache/
+
+# AI service training data / generated artifacts
+ai-service/app/training/data/
+ai-service/app/training/**/data/

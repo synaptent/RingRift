@@ -96,6 +96,50 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
     boardManager.setStack(position, stack, gameState.board);
   }
 
+  // Resolve any active capture chain for the current player by repeatedly
+  // selecting a continue_capture_segment move from GameEngine.getValidMoves
+  // while the game remains in the 'chain_capture' phase. This explicit loop
+  // mirrors the unified Move-based chain-capture model used in other
+  // scenario tests.
+  async function resolveChainIfPresent(engine: GameEngine): Promise<void> {
+    const engineAny: any = engine;
+    const gameState = engineAny.gameState as any;
+
+    if (gameState.currentPhase !== 'chain_capture') {
+      return;
+    }
+
+    const MAX_STEPS = 32;
+    let steps = 0;
+
+    while (gameState.currentPhase === 'chain_capture') {
+      steps++;
+      if (steps > MAX_STEPS) {
+        throw new Error('resolveChainIfPresent: exceeded maximum chain-capture steps');
+      }
+
+      const currentPlayer = gameState.currentPlayer;
+      const moves = engine.getValidMoves(currentPlayer);
+      const chainMoves = moves.filter((m: any) => m.type === 'continue_capture_segment');
+
+      if (chainMoves.length === 0) {
+        break;
+      }
+
+      const next = chainMoves[0];
+
+      const result = await engine.makeMove({
+        player: next.player,
+        type: 'continue_capture_segment',
+        from: next.from,
+        captureTarget: next.captureTarget,
+        to: next.to,
+      } as any);
+
+      expect(result.success).toBe(true);
+    }
+  }
+
   test('supports a cyclic chain capture around an inner square and terminates when distance < height', async () => {
     const engine = new GameEngine('cyclic-square19', 'square19', players, timeControl, false) as any;
     const gameState = engine.gameState as any;
@@ -141,8 +185,11 @@ describe('GameEngine cyclic capture scenarios (square19)', () => {
 
     expect(result.success).toBe(true);
 
-    // After the initial capture, the engine should drive any mandatory
-    // follow-up captures (chain capture) until no legal captures remain.
+    // After the initial capture, explicitly resolve any mandatory chain
+    // continuations via the unified chain_capture phase so that the final
+    // board state reflects all legal segments.
+    await resolveChainIfPresent(engine as GameEngine);
+
     const board = gameState.board as any;
     const stacks: Map<string, RingStack> = board.stacks;
 
