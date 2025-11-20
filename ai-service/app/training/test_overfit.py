@@ -32,7 +32,8 @@ def test_overfit():
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     
     value_criterion = nn.MSELoss()
-    policy_criterion = nn.CrossEntropyLoss()
+    # Use KLDivLoss for distribution matching
+    policy_criterion = nn.KLDivLoss(reduction='batchmean')
     
     # Train loop
     for epoch in range(100):
@@ -40,8 +41,11 @@ def test_overfit():
         
         value_pred, policy_pred = model(features, globals_vec)
         
+        # Apply log_softmax for KLDivLoss
+        policy_log_probs = torch.log_softmax(policy_pred, dim=1)
+        
         value_loss = value_criterion(value_pred, value_targets)
-        policy_loss = policy_criterion(policy_pred, policy_targets)
+        policy_loss = policy_criterion(policy_log_probs, policy_targets)
         loss = value_loss + policy_loss
         
         loss.backward()

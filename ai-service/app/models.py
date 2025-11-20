@@ -21,6 +21,7 @@ class GamePhase(str, Enum):
     RING_PLACEMENT = "ring_placement"
     MOVEMENT = "movement"
     CAPTURE = "capture"
+    CHAIN_CAPTURE = "chain_capture"
     LINE_PROCESSING = "line_processing"
     TERRITORY_PROCESSING = "territory_processing"
 
@@ -35,12 +36,49 @@ class GameStatus(str, Enum):
     COMPLETED = "completed"
 
 
+class MoveType(str, Enum):
+    """
+    Canonical MoveType enumeration mirroring src/shared/types/game.ts.
+    """
+    # Ring Placement
+    PLACE_RING = "place_ring"
+    SKIP_PLACEMENT = "skip_placement"
+    
+    # Movement
+    MOVE_STACK = "move_stack"
+    MOVE_RING = "move_ring"  # Legacy alias
+    BUILD_STACK = "build_stack"
+    
+    # Capture
+    OVERTAKING_CAPTURE = "overtaking_capture"
+    CONTINUE_CAPTURE_SEGMENT = "continue_capture_segment"
+    
+    # Line Processing
+    PROCESS_LINE = "process_line"
+    CHOOSE_LINE_REWARD = "choose_line_reward"
+    
+    # Territory Processing
+    PROCESS_TERRITORY_REGION = "process_territory_region"
+    ELIMINATE_RINGS_FROM_STACK = "eliminate_rings_from_stack"
+    
+    # Legacy / Experimental (to be phased out or kept for compatibility)
+    LINE_FORMATION = "line_formation"
+    TERRITORY_CLAIM = "territory_claim"
+    CHAIN_CAPTURE = "chain_capture"  # Python-specific legacy
+    FORCED_ELIMINATION = "forced_elimination"  # Python-specific legacy
+    
+    # Canonical choice moves
+    CHOOSE_LINE_OPTION = "choose_line_option"
+    CHOOSE_TERRITORY_OPTION = "choose_territory_option"
+
+
 class AIType(str, Enum):
     """AI type enumeration"""
     RANDOM = "random"
     HEURISTIC = "heuristic"
     MINIMAX = "minimax"
     MCTS = "mcts"
+    DESCENT = "descent"
 
 
 class Position(BaseModel):
@@ -130,28 +168,67 @@ class Move(BaseModel):
     """Move representation.
 
     This mirrors the TypeScript Move type closely enough for the AI
-    service to participate in both movement and ring placement:
-    - `type` is a string MoveType (e.g. 'place_ring', 'move_ring',
-      'move_stack', 'overtaking_capture').
+    service to participate in placement, movement, capture, and the
+    newer line/territory decision phases:
+
+    - `type` is a MoveType enum.
     - For placement moves, `placement_count` and `placed_on_stack`
       carry the multi-ring and stacking metadata introduced on the
       backend.
+    - For capture moves, `capture_target` identifies the overtaken stack.
+    - For line/territory decision moves, `formed_lines` and
+      `disconnected_regions` allow the Python parity harness to
+      construct canonical `process_line` and `process_territory_region`
+      Moves that match the TS engines.
     """
 
     id: str
-    type: str
+    type: MoveType
     player: int
+
+    # Spatial metadata
     from_pos: Optional[Position] = Field(None, alias="from")
     to: Position
+
     # Capture metadata
     capture_target: Optional[Position] = Field(None, alias="captureTarget")
+    captured_stacks: Optional[List[RingStack]] = Field(None, alias="capturedStacks")
+    capture_chain: Optional[List[Position]] = Field(None, alias="captureChain")
+    overtaken_rings: Optional[List[int]] = Field(None, alias="overtakenRings")
+
     # Ring placement specific metadata (optional for non-placement moves)
     placed_on_stack: Optional[bool] = Field(None, alias="placedOnStack")
     placement_count: Optional[int] = Field(None, alias="placementCount")
+
+    # Movement specific
+    stack_moved: Optional[RingStack] = Field(None, alias="stackMoved")
+    minimum_distance: Optional[int] = Field(None, alias="minimumDistance")
+    actual_distance: Optional[int] = Field(None, alias="actualDistance")
+    marker_left: Optional[Position] = Field(None, alias="markerLeft")
+
+    # Line / territory metadata for decision phases
+    formed_lines: Optional[List[LineInfo]] = Field(
+        default=None, alias="formedLines"
+    )
+    collapsed_markers: Optional[List[Position]] = Field(
+        default=None, alias="collapsedMarkers"
+    )
+    claimed_territory: Optional[List[Territory]] = Field(
+        default=None, alias="claimedTerritory"
+    )
+    disconnected_regions: Optional[List[Territory]] = Field(
+        default=None, alias="disconnectedRegions"
+    )
+    # Summary of rings eliminated by this action, grouped per player.
+    eliminated_rings: Optional[List[Dict[str, int]]] = Field(
+        default=None, alias="eliminatedRings"
+    )
+
+    # Timing / ordering
     timestamp: datetime
     think_time: int = Field(alias="thinkTime")
     move_number: int = Field(alias="moveNumber")
-    
+
     class Config:
         populate_by_name = True
         frozen = True
@@ -180,6 +257,30 @@ class BoardState(BaseModel):
         populate_by_name = True
 
 
+class ChainCaptureSegment(BaseModel):
+    """Segment of a chain capture"""
+    from_pos: Position = Field(alias="from")
+    target: Position
+    landing: Position
+    captured_cap_height: int = Field(alias="capturedCapHeight")
+
+    class Config:
+        populate_by_name = True
+
+
+class ChainCaptureState(BaseModel):
+    """State of an ongoing chain capture"""
+    player_number: int = Field(alias="playerNumber")
+    start_position: Position = Field(alias="startPosition")
+    current_position: Position = Field(alias="currentPosition")
+    segments: List[ChainCaptureSegment]
+    available_moves: List[Move] = Field(alias="availableMoves")
+    visited_positions: List[str] = Field(alias="visitedPositions")
+
+    class Config:
+        populate_by_name = True
+
+
 class GameState(BaseModel):
     """Complete game state"""
     id: str
@@ -201,15 +302,23 @@ class GameState(BaseModel):
     total_rings_eliminated: int = Field(alias="totalRingsEliminated")
     victory_threshold: int = Field(alias="victoryThreshold")
     territory_victory_threshold: int = Field(alias="territoryVictoryThreshold")
+    chain_capture_state: Optional[ChainCaptureState] = Field(
+        None, alias="chainCaptureState"
+    )
     
     class Config:
         populate_by_name = True
 
 
 class AIConfig(BaseModel):
-    """AI configuration"""
+    """AI configuration.
+    
+    This is an internal configuration model for Python AIs and is not part of
+    the TS/JSON wire contract, so we keep field names Pythonic and avoid
+    aliases that confuse static analysis.
+    """
     difficulty: int = Field(ge=1, le=10)
-    think_time: Optional[int] = Field(None, alias="thinkTime")
+    think_time: Optional[int] = None
     randomness: Optional[float] = Field(None, ge=0, le=1)
     
     class Config:
@@ -321,30 +430,6 @@ class ProgressSnapshot(BaseModel):
     collapsed: int
     eliminated: int
     S: int
-
-
-class ChainCaptureSegment(BaseModel):
-    """Segment of a chain capture"""
-    from_pos: Position = Field(alias="from")
-    target: Position
-    landing: Position
-    captured_cap_height: int = Field(alias="capturedCapHeight")
-
-    class Config:
-        populate_by_name = True
-
-
-class ChainCaptureState(BaseModel):
-    """State of an ongoing chain capture"""
-    player_number: int = Field(alias="playerNumber")
-    start_position: Position = Field(alias="startPosition")
-    current_position: Position = Field(alias="currentPosition")
-    segments: List[ChainCaptureSegment]
-    available_moves: List[Move] = Field(alias="availableMoves")
-    visited_positions: List[str] = Field(alias="visitedPositions")
-
-    class Config:
-        populate_by_name = True
 
 
 class RegionOrderChoiceRequest(BaseModel):

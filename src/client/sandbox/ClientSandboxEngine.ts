@@ -31,6 +31,7 @@ import {
 import { LocalAIRng } from '../../shared/engine/localAIMoveSelection';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { processLinesForCurrentPlayer as processLinesForCurrentPlayerHelper } from './sandboxLinesEngine';
+import { processDisconnectedRegionOnBoard } from './sandboxTerritory';
 import {
   enumerateSimpleMovementLandings,
   applyMarkerEffectsAlongPathOnBoard,
@@ -1344,6 +1345,125 @@ export class ClientSandboxEngine {
   }
 
   /**
+   * Canonical replay helper for a single line-processing decision,
+   * expressed as a 'process_line' Move. This mirrors the sandbox
+   * line engine semantics:
+   *   - Exact-length lines: collapse all markers and eliminate a cap.
+   *   - Overlength lines: collapse only the minimum required markers.
+   *
+   * Unlike processLinesForCurrentPlayer, this helper processes exactly
+   * one line chosen by the Move (via formedLines[0]) so that backend
+   * decision Moves can be replayed one-for-one into the sandbox.
+   */
+  private async applyCanonicalProcessLine(move: Move): Promise<boolean> {
+    const playerNumber = move.player;
+    const board = this.gameState.board;
+    const allLines = this.findAllLines(board);
+    const playerLines = allLines.filter((line) => line.player === playerNumber);
+
+    if (playerLines.length === 0) {
+      return false;
+    }
+
+    let targetLine: LineInfo | undefined;
+
+    if (move.formedLines && move.formedLines.length > 0) {
+      const target = move.formedLines[0];
+      const targetKey = target.positions.map((p) => positionToString(p)).join('|');
+
+      targetLine = playerLines.find((line) => {
+        const lineKey = line.positions.map((pos) => positionToString(pos)).join('|');
+        return lineKey === targetKey;
+      });
+    }
+
+    if (!targetLine) {
+      // Fallback: preserve historic sandbox behaviour by defaulting to
+      // the first line for this player when metadata is missing or the
+      // exact line cannot be found.
+      targetLine = playerLines[0];
+    }
+
+    const requiredLength = BOARD_CONFIGS[this.gameState.boardType].lineLength;
+    const lineLength = targetLine.positions.length;
+
+    if (lineLength === requiredLength) {
+      // Exact required length: collapse all markers and eliminate a cap,
+      // mirroring sandboxLinesEngine.processLinesForCurrentPlayer.
+      this.collapseLineMarkers(targetLine.positions, playerNumber);
+      this.forceEliminateCap(playerNumber);
+      return true;
+    }
+
+    if (lineLength > requiredLength) {
+      // Overlength line: collapse only the minimum required markers; no
+      // elimination. This matches the current sandbox line engine, which
+      // does not yet surface line_reward_option choices.
+      const markersToCollapse = targetLine.positions.slice(0, requiredLength);
+      this.collapseLineMarkers(markersToCollapse, playerNumber);
+      return true;
+    }
+
+    // Defensive: ignore undersized lines.
+    return false;
+  }
+
+  /**
+   * Canonical replay helper for a single territory-processing decision,
+   * expressed as a 'process_territory_region' Move.
+   *
+   * This mirrors the core behaviour of processDisconnectedRegionOnBoard
+   * and the sandboxTerritoryEngine, but applies exactly one region's
+   * processing per Move, chosen via disconnectedRegions[0].spaces.
+   */
+  private async applyCanonicalProcessTerritoryRegion(move: Move): Promise<boolean> {
+    const playerNumber = move.player;
+
+    if (!move.disconnectedRegions || move.disconnectedRegions.length === 0) {
+      return false;
+    }
+
+    const region = move.disconnectedRegions[0];
+    const regionSpaces = region.spaces;
+
+    if (!regionSpaces || regionSpaces.length === 0) {
+      return false;
+    }
+
+    // Respect the same self-elimination prerequisite used by the normal
+    // sandbox territory engine before processing a region.
+    if (!this.canProcessDisconnectedRegion(regionSpaces, playerNumber)) {
+      return false;
+    }
+
+    const beforeCollapsed = this.gameState.board.collapsedSpaces.size;
+    const beforeTotalElim = this.gameState.totalRingsEliminated;
+
+    const result = processDisconnectedRegionOnBoard(
+      this.gameState.board,
+      this.gameState.players,
+      playerNumber,
+      regionSpaces
+    );
+
+    this.gameState = {
+      ...this.gameState,
+      board: result.board,
+      players: result.players,
+      totalRingsEliminated:
+        this.gameState.totalRingsEliminated + result.totalRingsEliminatedDelta,
+    };
+
+    const afterCollapsed = this.gameState.board.collapsedSpaces.size;
+    const afterTotalElim = this.gameState.totalRingsEliminated;
+
+    // Treat the move as applied when the S-invariant components moved
+    // forward in a non-decreasing fashion, mirroring the monotonicity
+    // checks used in the dedicated territory engine.
+    return afterCollapsed >= beforeCollapsed && afterTotalElim >= beforeTotalElim;
+  }
+
+  /**
    * Attempt to place one or more rings for the current player at the given
    * position during the ring_placement phase.
    *
@@ -1619,6 +1739,18 @@ export class ClientSandboxEngine {
         break;
       }
 
+      case 'process_line': {
+        const didApply = await this.applyCanonicalProcessLine(move);
+        applied = didApply;
+        break;
+      }
+
+      case 'process_territory_region': {
+        const didApply = await this.applyCanonicalProcessTerritoryRegion(move);
+        applied = didApply;
+        break;
+      }
+  
       default: {
         // Unsupported move types are treated as no-ops here; callers that
         // care about strictness (e.g. applyCanonicalMove) can enforce
@@ -1657,6 +1789,8 @@ export class ClientSandboxEngine {
       'move_stack',
       'overtaking_capture',
       'continue_capture_segment',
+      'process_line',
+      'process_territory_region',
     ];
 
     if (!supportedTypes.includes(move.type)) {

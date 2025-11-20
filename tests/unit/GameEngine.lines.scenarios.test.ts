@@ -6,7 +6,7 @@ import {
   Position,
   TimeControl,
   BOARD_CONFIGS,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 
 /**
@@ -33,7 +33,7 @@ describe('GameEngine line formation scenarios (square8)', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
+      territorySpaces: 0,
     },
     {
       id: 'p2',
@@ -44,8 +44,8 @@ describe('GameEngine line formation scenarios (square8)', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
-    }
+      territorySpaces: 0,
+    },
   ];
 
   function createEngine(): {
@@ -65,7 +65,7 @@ describe('GameEngine line formation scenarios (square8)', () => {
     gameState: GameState,
     playerNumber: number,
     height: number,
-    position: Position
+    position: Position,
   ) {
     const rings = Array(height).fill(playerNumber);
     const stack = {
@@ -73,7 +73,7 @@ describe('GameEngine line formation scenarios (square8)', () => {
       rings,
       stackHeight: rings.length,
       capHeight: rings.length,
-      controllingPlayer: playerNumber
+      controllingPlayer: playerNumber,
     };
     boardManager.setStack(position, stack, gameState.board);
   }
@@ -97,7 +97,7 @@ describe('GameEngine line formation scenarios (square8)', () => {
     board.stacks.clear();
     board.collapsedSpaces.clear();
 
-    // Synthetic exact-length line for player 1 at y=1.
+    // Synthetic exact-length line for player 1 at y = 1.
     const linePositions: Position[] = [];
     for (let i = 0; i < requiredLength; i++) {
       linePositions.push({ x: i, y: 1 });
@@ -110,8 +110,8 @@ describe('GameEngine line formation scenarios (square8)', () => {
           player: 1,
           positions: linePositions,
           length: linePositions.length,
-          direction: { x: 1, y: 0 }
-        }
+          direction: { x: 1, y: 0 },
+        },
       ])
       .mockImplementation(() => []);
 
@@ -119,7 +119,7 @@ describe('GameEngine line formation scenarios (square8)', () => {
     const stackPos: Position = { x: 7, y: 7 };
     makeStack(boardManager, gameState, 1, 2, stackPos);
 
-    const player1Before = gameState.players.find(p => p.playerNumber === 1)!;
+    const player1Before = gameState.players.find((p) => p.playerNumber === 1)!;
     const initialTerritory = player1Before.territorySpaces;
     const initialEliminated = player1Before.eliminatedRings;
     const initialTotalEliminated = gameState.totalRingsEliminated;
@@ -127,9 +127,9 @@ describe('GameEngine line formation scenarios (square8)', () => {
     // Invoke backend line processing.
     await engineAny.processLineFormations();
 
-    const player1After = gameState.players.find(p => p.playerNumber === 1)!;
+    const player1After = gameState.players.find((p) => p.playerNumber === 1)!;
 
-    // All line positions should now be collapsed spaces for p1.
+    // All line positions should now be collapsed spaces for player 1.
     for (const pos of linePositions) {
       const key = positionToString(pos);
       expect(board.collapsedSpaces.get(key)).toBe(1);
@@ -180,8 +180,8 @@ describe('GameEngine line formation scenarios (square8)', () => {
           player: 1,
           positions: linePositions,
           length: linePositions.length,
-          direction: { x: 1, y: 0 }
-        }
+          direction: { x: 1, y: 0 },
+        },
       ])
       .mockImplementation(() => []);
 
@@ -190,14 +190,14 @@ describe('GameEngine line formation scenarios (square8)', () => {
     const stackPos: Position = { x: 7, y: 7 };
     makeStack(boardManager, gameState, 1, 2, stackPos);
 
-    const player1Before = gameState.players.find(p => p.playerNumber === 1)!;
+    const player1Before = gameState.players.find((p) => p.playerNumber === 1)!;
     const initialEliminated = player1Before.eliminatedRings;
     const initialTotalEliminated = gameState.totalRingsEliminated;
     const initialTerritory = player1Before.territorySpaces;
 
     await engineAny.processLineFormations();
 
-    const player1After = gameState.players.find(p => p.playerNumber === 1)!;
+    const player1After = gameState.players.find((p) => p.playerNumber === 1)!;
     const collapsedKeys = new Set<string>();
     for (const [key, owner] of board.collapsedSpaces) {
       if (owner === 1) collapsedKeys.add(key);
@@ -220,5 +220,71 @@ describe('GameEngine line formation scenarios (square8)', () => {
 
     // The stack used for potential elimination should still exist.
     expect(board.stacks.get(positionToString(stackPos))).toBeDefined();
+  });
+
+  test('line_processing_getValidMoves_exposes_process_line_and_choose_line_reward_moves', () => {
+    // Rules reference:
+    // - Section 11.2–11.3: when multiple lines exist for the moving player,
+    //   line_processing should surface one process_line move per line.
+    // - Overlength lines should additionally expose a choose_line_reward
+    //   decision so the unified Move model can express Option 1 vs Option 2.
+    const { engine, gameState, boardManager } = createEngine();
+    const board = gameState.board;
+
+    gameState.currentPlayer = 1;
+    (gameState as any).currentPhase = 'line_processing';
+
+    // Clear any existing markers/stacks/collapsed spaces.
+    board.markers.clear();
+    board.stacks.clear();
+    board.collapsedSpaces.clear();
+
+    // Synthetic exact-length and overlength lines for player 1.
+    const exactLine: Position[] = [];
+    for (let i = 0; i < requiredLength; i++) {
+      exactLine.push({ x: i, y: 0 });
+    }
+
+    const overlengthLine: Position[] = [];
+    for (let i = 0; i < requiredLength + 1; i++) {
+      overlengthLine.push({ x: i, y: 2 });
+    }
+
+    const findAllLinesSpy = jest.spyOn(boardManager, 'findAllLines');
+    findAllLinesSpy.mockImplementation(() => [
+      {
+        player: 1,
+        positions: exactLine,
+        length: exactLine.length,
+        direction: { x: 1, y: 0 },
+      },
+      {
+        player: 1,
+        positions: overlengthLine,
+        length: overlengthLine.length,
+        direction: { x: 1, y: 0 },
+      },
+    ]);
+
+    const moves = engine.getValidMoves(1);
+
+    const processLineMoves = moves.filter((m) => m.type === 'process_line');
+    const rewardMoves = moves.filter((m) => m.type === 'choose_line_reward');
+
+    // One process_line per player-owned line.
+    expect(processLineMoves).toHaveLength(2);
+    expect(processLineMoves.every((m) => m.player === 1)).toBe(true);
+
+    // One choose_line_reward move for the single overlength line.
+    expect(rewardMoves).toHaveLength(1);
+    expect(rewardMoves[0].player).toBe(1);
+
+    // The reward move id should embed the overlength line key so tests and
+    // tooling can associate it back to a concrete line.
+    const overlengthKey = overlengthLine.map((p) => positionToString(p)).join('|');
+    const rewardIds = rewardMoves.map((m) => m.id);
+    expect(rewardIds.some((id) => id.includes(overlengthKey))).toBe(true);
+
+    expect(findAllLinesSpy).toHaveBeenCalled();
   });
 });

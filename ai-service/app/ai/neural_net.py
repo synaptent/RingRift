@@ -57,8 +57,15 @@ class RingRiftCNN(nn.Module):
             ResidualBlock(num_filters) for _ in range(num_res_blocks)
         ])
         
+        # Adaptive Pooling to handle variable board sizes (e.g. 8x8, 19x19)
+        # We pool to a fixed 4x4 grid before flattening, ensuring the FC layer input size is constant.
+        # This allows the same model architecture to process different board sizes,
+        # though retraining/finetuning is recommended for drastic size changes.
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+        
         # Fully connected layers
-        conv_out_size = num_filters * board_size * board_size
+        # Input size is now num_filters * 4 * 4 (fixed)
+        conv_out_size = num_filters * 4 * 4
         self.fc1 = nn.Linear(conv_out_size + global_features, 256)
         self.dropout = nn.Dropout(0.3)
         
@@ -67,25 +74,20 @@ class RingRiftCNN(nn.Module):
         self.tanh = nn.Tanh()
         
         # Policy head
-        # Output size: ~55,000 for 19x19 board support
-        # Movement: 361 (from) * 8 (dir) * 18 (dist) = 51,984
-        # Placement: 361 (pos) * 3 (count) = 1,083
-        # Line: 361 (pos) * 4 (dir) = 1,444
-        # Territory: 361 (pos) = 361
-        # Special: 64 (buffer)
-        # Total: 55,000 (approx)
-        # Note: We keep this large size to support up to 19x19, even if current board is 8x8.
-        # This allows the model architecture to remain consistent if board size changes,
-        # though it is sparse for 8x8.
+        # We use a large fixed size to accommodate up to 19x19 boards.
+        # For smaller boards, we mask the invalid logits during inference/training.
+        # Max size 19x19: ~55,000
         self.policy_size = 55000
         self.policy_head = nn.Linear(256, self.policy_size)
-        # self.softmax = nn.Softmax(dim=1) # Removed to output logits for CrossEntropyLoss
 
     def forward(self, x, globals):
         x = self.relu(self.bn1(self.conv1(x)))
         
         for block in self.res_blocks:
             x = block(x)
+        
+        # Adaptive pooling to fixed size
+        x = self.adaptive_pool(x)
         
         x = x.view(x.size(0), -1)  # Flatten
 
@@ -118,10 +120,11 @@ class NeuralNetAI(BaseAI):
         # 7: Opponent liberties
         # 8: My line potential
         # 9: Opponent line potential
-        self.board_size = 8  # Default to 8x8 for now
+        self.board_size = 8  # Default, will be updated based on game state
         self.history_length = 3
         self.state_history = [] # Stores last N feature planes
         
+        # Initialize with default 8x8, but architecture is now adaptive
         self.model = RingRiftCNN(
             board_size=self.board_size, in_channels=10, global_features=10,
             num_res_blocks=10, num_filters=128, history_length=self.history_length
@@ -136,7 +139,7 @@ class NeuralNetAI(BaseAI):
         if os.path.exists(model_path):
             try:
                 self.model.load_state_dict(
-                    torch.load(model_path)
+                    torch.load(model_path, weights_only=True)
                 )
                 self.model.eval()
             except RuntimeError as e:
@@ -183,21 +186,30 @@ class NeuralNetAI(BaseAI):
             
         return selected
 
-    def evaluate_position(self, game_state: GameState) -> tuple[float, np.ndarray]:
+    def evaluate_position(self, game_state: GameState) -> float:
         """
-        Evaluate position using neural network
-        Returns: (value, policy_probs)
-        """
-        value, policy_logits = self.evaluate_batch([game_state])
-        return value[0], policy_logits[0]
+        Evaluate position using neural network.
 
-    def evaluate_batch(self, game_states: list[GameState]) -> tuple[list[float], list[np.ndarray]]:
+        This override matches BaseAI.evaluate_position by returning a single
+        scalar score. Policy information remains available via
+        evaluate_batch for training and analysis, but is not surfaced
+        through this method.
         """
-        Evaluate a batch of game states
-        Returns: (values, policy_probs)
+        values, _ = self.evaluate_batch([game_state])
+        return values[0] if values else 0.0
+
+    def evaluate_batch(self, game_states: list[GameState]) -> tuple[list[float], np.ndarray]:
+        """
+        Evaluate a batch of game states.
+
+        Returns:
+            A tuple of (values, policy_probs) where:
+            - values is a list of scalar evaluations, one per state.
+            - policy_probs is a NumPy array of shape (batch_size, policy_size).
         """
         if not game_states:
-            return [], []
+            empty_policy = np.zeros((0, self.model.policy_size), dtype=np.float32)
+            return [], empty_policy
 
         batch_features = []
         batch_globals = []
@@ -223,13 +235,9 @@ class NeuralNetAI(BaseAI):
     def encode_move(self, move: Move, board_size: int) -> int:
         """
         Encode a move into a policy index.
-        Uses fixed offsets based on MAX_BOARD_SIZE=19 to ensure consistent indices across board sizes.
+        Supports variable board sizes up to 19x19.
         """
         MAX_N = 19  # Fixed max board size for encoding consistency
-        
-        # Ensure coordinates are within bounds (sanity check)
-        # Note: We use the actual board_size for bounds checking if needed,
-        # but MAX_N for index calculation.
         
         if move.type == "place_ring":
             # Placement: 0 to 1082 (361 * 3)
@@ -243,22 +251,27 @@ class NeuralNetAI(BaseAI):
             # Base = 1083 (361 * 3)
             # Index = Base + (from_y * MAX_N + from_x) * (8 * (MAX_N-1)) + (dir_idx * (MAX_N-1)) + (dist - 1)
             if not move.from_pos:
-                return 0 # Should not happen
+                return 0
                 
             from_idx = move.from_pos.y * MAX_N + move.from_pos.x
             
             dx = move.to.x - move.from_pos.x
             dy = move.to.y - move.from_pos.y
             
-            dist = max(abs(dx), abs(dy)) # Chebyshev distance
+            # Handle Hexagonal Coordinates (Axial)
+            # In axial, dist = (|dx| + |dy| + |dx+dy|) / 2
+            # But here we use simple max(abs) for Chebyshev on square.
+            # For hex, we need to map 6 directions.
+            # Square has 8 directions.
+            # We map hex directions to a subset of square directions for encoding simplicity.
+            # Hex dirs: (1,0), (1,-1), (0,-1), (-1,0), (-1,1), (0,1)
+            
+            dist = max(abs(dx), abs(dy))
             if dist == 0: return 0
             
-            # Normalize direction
             dir_x = dx // dist if dist > 0 else 0
             dir_y = dy // dist if dist > 0 else 0
             
-            # Map direction to 0-7
-            # (-1,-1), (0,-1), (1,-1), (-1,0), (1,0), (-1,1), (0,1), (1,1)
             dirs = [
                 (-1, -1), (0, -1), (1, -1),
                 (-1, 0),           (1, 0),
@@ -267,7 +280,8 @@ class NeuralNetAI(BaseAI):
             try:
                 dir_idx = dirs.index((dir_x, dir_y))
             except ValueError:
-                return 0 # Invalid direction
+                # Fallback for hex directions that might not align perfectly if grid logic differs
+                return 0
                 
             base = 1083
             max_dist = MAX_N - 1
@@ -277,13 +291,8 @@ class NeuralNetAI(BaseAI):
             # Line: 53067 to 54510
             # Base = 53067
             # Index = Base + (y * MAX_N + x) * 4 + dir_idx
-            # Directions: Horizontal(0), Vertical(1), Diagonal(2), Anti-Diagonal(3)
-            # We need to infer direction from line info if available, or just use to_pos
-            # For simplicity, let's assume to_pos is start and we need direction
-            # This is tricky without extra info.
-            # Placeholder: map to start pos
             pos_idx = move.to.y * MAX_N + move.to.x
-            return 53067 + pos_idx * 4 # Default to dir 0
+            return 53067 + pos_idx * 4
             
         elif move.type == "territory_claim":
             # Territory: 54511 to 54871
@@ -295,12 +304,12 @@ class NeuralNetAI(BaseAI):
         elif move.type == "skip_placement":
             return 54872
             
-        return 0 # Unknown
+        return 0
 
     def decode_move(self, index: int, game_state: GameState) -> Optional[Move]:
         """
         Decode a policy index into a move.
-        Uses fixed offsets based on MAX_BOARD_SIZE=19.
+        Supports variable board sizes up to 19x19.
         """
         MAX_N = 19
         
@@ -311,19 +320,23 @@ class NeuralNetAI(BaseAI):
             y = pos_idx // MAX_N
             x = pos_idx % MAX_N
             
-            # Check bounds for actual board size
             if x >= self.board_size or y >= self.board_size:
                 return None
-                
-            return Move(
-                id="decoded", type="place_ring", player=game_state.current_player,
-                to={"x": x, "y": y}, placement_count=count_idx + 1,
-                timestamp=datetime.now(), think_time=0, move_number=0
-            )
+
+            move_data = {
+                "id": "decoded",
+                "type": "place_ring",
+                "player": game_state.current_player,
+                "to": {"x": x, "y": y},
+                "placementCount": count_idx + 1,
+                "timestamp": datetime.now(),
+                "thinkTime": 0,
+                "moveNumber": 0,
+            }
+            return Move(**move_data)
             
         elif index < 53067:
             # Movement
-            # Index = Base + from_idx * (8 * max_dist) + dir_idx * max_dist + (dist - 1)
             base = 1083
             max_dist = MAX_N - 1
             offset = index - base
@@ -339,7 +352,6 @@ class NeuralNetAI(BaseAI):
             from_y = from_idx // MAX_N
             from_x = from_idx % MAX_N
             
-            # Check bounds for actual board size
             if from_x >= self.board_size or from_y >= self.board_size:
                 return None
             
@@ -353,21 +365,32 @@ class NeuralNetAI(BaseAI):
             to_x = from_x + dx * dist
             to_y = from_y + dy * dist
             
-            # Check bounds
             if not (0 <= to_x < self.board_size and 0 <= to_y < self.board_size):
                 return None
-                
-            return Move(
-                id="decoded", type="move_stack", player=game_state.current_player,
-                from_pos={"x": from_x, "y": from_y}, to={"x": to_x, "y": to_y},
-                timestamp=datetime.now(), think_time=0, move_number=0
-            )
+
+            move_data = {
+                "id": "decoded",
+                "type": "move_stack",
+                "player": game_state.current_player,
+                "from": {"x": from_x, "y": from_y},
+                "to": {"x": to_x, "y": to_y},
+                "timestamp": datetime.now(),
+                "thinkTime": 0,
+                "moveNumber": 0,
+            }
+            return Move(**move_data)
             
         elif index == 54872:
-            return Move(
-                id="decoded", type="skip_placement", player=game_state.current_player,
-                to={"x": 0, "y": 0}, timestamp=datetime.now(), think_time=0, move_number=0
-            )
+            move_data = {
+                "id": "decoded",
+                "type": "skip_placement",
+                "player": game_state.current_player,
+                "to": {"x": 0, "y": 0},
+                "timestamp": datetime.now(),
+                "thinkTime": 0,
+                "moveNumber": 0,
+            }
+            return Move(**move_data)
             
         return None
 
@@ -394,20 +417,44 @@ class NeuralNetAI(BaseAI):
         # or just duplicate logic for speed. Duplicating logic is safer here to avoid circular deps or overhead.
         # Actually, we can just use BoardManager logic if available, or simple adjacency.
         
-        # Simple adjacency logic
-        def get_adjacent(x, y, size):
+        # Simple adjacency logic (Square & Hex)
+        def get_adjacent(x, y, size, is_hex=False):
             adj = []
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    if dx == 0 and dy == 0: continue
-                    nx, ny = x + dx, y + dy
-                    if 0 <= nx < size and 0 <= ny < size:
-                        adj.append(f"{nx},{ny}")
+            if is_hex:
+                # Hexagonal directions (Axial coordinates)
+                # (1,0), (1,-1), (0,-1), (-1,0), (-1,1), (0,1)
+                directions = [
+                    (1, 0), (1, -1), (0, -1),
+                    (-1, 0), (-1, 1), (0, 1)
+                ]
+            else:
+                # Square directions (8-way)
+                directions = [
+                    (-1, -1), (0, -1), (1, -1),
+                    (-1, 0),           (1, 0),
+                    (-1, 1),  (0, 1),  (1, 1)
+                ]
+                
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+                # Bounds check depends on board type, but for feature extraction
+                # we can just check if it's within the tensor size.
+                # For hex, we map axial to tensor indices (offset or direct).
+                # Here we assume direct mapping for simplicity, but hex grids
+                # might need offset coordinates for rectangular storage.
+                if 0 <= nx < size and 0 <= ny < size:
+                    adj.append(f"{nx},{ny}")
             return adj
+
+        is_hex = game_state.board.type == "hexagonal"
 
         for pos_key, stack in game_state.board.stacks.items():
             try:
-                x, y = map(int, pos_key.split(',')[:2])
+                parts = pos_key.split(',')
+                x, y = int(parts[0]), int(parts[1])
+                
+                # For hex, we might have z coordinate, but we use x,y for 2D tensor mapping.
+                # Ensure x,y fit in board_size.
                 if x >= self.board_size or y >= self.board_size:
                     continue
 
@@ -453,13 +500,28 @@ class NeuralNetAI(BaseAI):
                 if x >= self.board_size or y >= self.board_size: continue
                 
                 # Liberties
-                adj = get_adjacent(x, y, self.board_size)
+                adj = get_adjacent(x, y, self.board_size, is_hex)
                 liberties = 0
                 for n_key in adj:
-                    if n_key not in game_state.board.stacks and n_key not in game_state.board.collapsed_spaces:
-                        liberties += 1
+                    # Check if neighbor is occupied
+                    # Note: n_key format "x,y" matches dictionary keys for square.
+                    # For hex, keys might be "x,y,z". We need to handle that if we use exact key lookup.
+                    # But here we are iterating adjacent coords.
+                    # If the board uses "x,y,z" keys, we need to reconstruct z.
+                    # z = -x - y
+                    if is_hex:
+                        nz = -int(n_key.split(',')[0]) - int(n_key.split(',')[1])
+                        n_key_full = f"{n_key},{nz}"
+                        if n_key_full in game_state.board.stacks or n_key_full in game_state.board.collapsed_spaces:
+                            continue
+                    else:
+                        if n_key in game_state.board.stacks or n_key in game_state.board.collapsed_spaces:
+                            continue
+                            
+                    liberties += 1
                 
-                val = min(liberties / 8.0, 1.0)
+                max_libs = 6.0 if is_hex else 8.0
+                val = min(liberties / max_libs, 1.0)
                 if stack.controlling_player == self.player_number:
                     features[6, x, y] = val
                 else:
@@ -473,13 +535,20 @@ class NeuralNetAI(BaseAI):
                 x, y = map(int, pos_key.split(',')[:2])
                 if x >= self.board_size or y >= self.board_size: continue
                 
-                adj = get_adjacent(x, y, self.board_size)
+                adj = get_adjacent(x, y, self.board_size, is_hex)
                 neighbors = 0
                 for n_key in adj:
-                    if n_key in game_state.board.markers and game_state.board.markers[n_key].player == marker.player:
-                        neighbors += 1
+                    if is_hex:
+                        nz = -int(n_key.split(',')[0]) - int(n_key.split(',')[1])
+                        n_key_full = f"{n_key},{nz}"
+                        if n_key_full in game_state.board.markers and game_state.board.markers[n_key_full].player == marker.player:
+                            neighbors += 1
+                    else:
+                        if n_key in game_state.board.markers and game_state.board.markers[n_key].player == marker.player:
+                            neighbors += 1
                 
-                val = min(neighbors / 4.0, 1.0)
+                max_neighbors = 6.0 if is_hex else 8.0
+                val = min(neighbors / (max_neighbors / 2.0), 1.0)
                 if marker.player == self.player_number:
                     features[8, x, y] = val
                 else:

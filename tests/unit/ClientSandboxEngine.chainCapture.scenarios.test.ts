@@ -10,7 +10,8 @@ import {
   RingStack,
   PlayerChoice,
   PlayerChoiceResponseFor,
-  positionToString
+  positionToString,
+  GameHistoryEntry
 } from '../../src/shared/types/game';
 
 /**
@@ -140,5 +141,30 @@ describe('ClientSandboxEngine chain capture scenarios (FAQ 15.3.1)', () => {
 
     expect(redStacksAtB).toBeDefined();
     expect(redStacksAtB!.stackHeight).toBe(1);
+
+    // --- Canonical history + phase semantics for the capture chain ---
+    const history = finalState.history as GameHistoryEntry[];
+
+    const captureEntries = history.filter(
+      (entry) =>
+        entry.action.type === 'overtaking_capture' ||
+        entry.action.type === 'continue_capture_segment'
+    );
+
+    // In this FAQ 15.3.1 scenario, Blue performs a two-segment chain:
+    // one overtaking_capture followed by one continue_capture_segment.
+    expect(captureEntries.length).toBe(2);
+
+    const [firstSegment, secondSegment] = captureEntries;
+
+    expect(firstSegment.action.type).toBe('overtaking_capture');
+    expect(firstSegment.action.player).toBe(1);
+    expect(firstSegment.phaseBefore).toBe('movement');
+    expect(firstSegment.phaseAfter).toBe('chain_capture');
+
+    expect(secondSegment.action.type).toBe('continue_capture_segment');
+    expect(secondSegment.action.player).toBe(1);
+    expect(secondSegment.phaseBefore).toBe('chain_capture');
+    expect(secondSegment.phaseAfter).not.toBe('chain_capture');
   });
 });

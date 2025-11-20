@@ -375,7 +375,12 @@ Fixed by using custom test environment (`tests/test-environment.js`). If you enc
 
 ### TypeScript Errors
 
-Ensure your test files are included in `tsconfig.json` or create a separate `tsconfig.test.json` if needed.
+Tests are compiled using `tsconfig.jest.json` via **ts-jest**. If you add new
+TypeScript/TSX test files and see unexpected TypeScript errors:
+
+- Confirm they live under `tests/**/*` so they are included by `tsconfig.jest.json`.
+- If you introduce new path aliases, keep `tsconfig.jest.json` and the main
+  `tsconfig*.json` files in sync so Jest and your build agree on module resolution.
 
 ### Coverage Not Collecting
 
@@ -546,6 +551,8 @@ This matrix links key sections of `ringrift_complete_rules.md` and FAQ entries t
   - (existing) `tests/unit/ClientSandboxEngine.territoryDisconnection.test.ts` / `.hex.test.ts` — sandbox parity
   - (existing) `tests/unit/ClientSandboxEngine.regionOrderChoice.test.ts` — region-order PlayerChoice in sandbox
   - (existing) `tests/unit/GameEngine.territory.scenarios.test.ts` — explicit self‑elimination prerequisite and multi‑region chain reactions mapped to Q15, Q20, Q23
+  - (existing) `tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts` — backend↔sandbox Q23 parity on `square19` (shared initial state covering positive, negative, and two-region multi-region territory-disconnection cases)
+  - (existing) `tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts` — direct backend↔sandbox parity for a canonical Q23‑positive disconnected region scenario (3×3 block + border, shared initial state)
 
 ### Victory conditions & stalemate
 
@@ -575,5 +582,67 @@ For a rule-centric view of test coverage, see:
 
 When you add or modify scenario-style tests, update that matrix so it remains the single source of truth for how rules map to executable tests.
 
-**Last Updated**: November 18, 2025  
+## RNG hooks and AI parity tests
+
+To support trace-mode debugging and backend↔sandbox AI comparisons under a **shared RNG policy**, the local AI selector and AI entrypoints accept an injectable RNG:
+
+- `src/shared/engine/localAIMoveSelection.ts`:
+  - `export type LocalAIRng = () => number;`
+  - `chooseLocalMoveFromCandidates(player, gameState, candidates, rng = Math.random)`
+  - All random draws inside this helper (placement vs skip, capture vs move, within-bucket choice) now call `rng()` instead of `Math.random()`.
+
+- Sandbox AI:
+  - `maybeRunAITurnSandbox(hooks, rng = Math.random)` in `src/client/sandbox/sandboxAI.ts`.
+  - `ClientSandboxEngine.maybeRunAITurn(rng?: LocalAIRng)` in `src/client/sandbox/ClientSandboxEngine.ts` forwards `rng` into `maybeRunAITurnSandbox`.
+
+- Backend local AI:
+  - `AIEngine.chooseLocalMoveFromCandidates(player, gameState, candidates, rng = Math.random)` in `src/server/game/ai/AIEngine.ts` delegates to the shared selector with the provided RNG.
+  - `AIEngine.getLocalAIMove(player, gameState, rng = Math.random)` uses the same RNG when falling back to local heuristics.
+
+**Trace harness RNG wiring (`tests/utils/traces.ts`):**
+
+- `runSandboxAITrace(boardType, numPlayers, seed, maxSteps)`:
+  - Builds a deterministic LCG via `makePrng(seed)`.
+  - Temporarily overrides `Math.random` for compatibility.
+  - **Also** passes the same RNG instance into the sandbox engine: `await engine.maybeRunAITurn(rng);`.
+  - This guarantees that sandbox AI decisions in trace-mode are driven by an explicit seeded RNG, not implicit global randomness.
+
+**RNG-focused Jest suites:**
+
+- `tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts` (new)
+  - Verifies that, when a RNG is provided:
+    - `ClientSandboxEngine.maybeRunAITurn(rng)` uses the injected RNG and never calls `Math.random`.
+    - `AIEngine.chooseLocalMoveFromCandidates(..., rng)` uses the injected RNG and never calls `Math.random`.
+
+- `tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts` (new, **diagnostic**, `describe.skip`)
+  - Builds backend and sandbox engines from the same initial state on `square8` with 2 AI players.
+  - For seeds like `1`, `5`, and `14`, and a small number of early steps, drives:
+    - Backend via `GameEngine.getValidMoves` + `AIEngine.chooseLocalMoveFromCandidates(..., rngBackend)`.
+    - Sandbox via `ClientSandboxEngine.maybeRunAITurn(rngSandbox)`.
+  - Uses identically seeded RNG instances (`rngBackend`, `rngSandbox`) and the same loose move‑matching semantics as the heuristic coverage harness to assert that sandbox vs backend AI choose equivalent canonical moves while states remain structurally aligned.
+  - Intended for **manual debugging** and deeper parity investigations; enable locally by removing `describe.skip` if needed.
+
+## Canonical sandbox chain‑capture history
+
+The client‑local sandbox engine (`ClientSandboxEngine`) now emits canonical capture‑chain history for **human** flows that aligns with backend semantics:
+
+- Human clicks go through `ClientSandboxEngine.handleHumanCellClick`, which delegates capture/movement to `sandboxMovementEngine` with history‑aware hooks.
+- Each capture chain is recorded as:
+  - One `overtaking_capture` `Move` for the first segment.
+  - One or more `continue_capture_segment` `Move`s for follow‑up segments while `currentPhase === 'chain_capture'`.
+- `GameHistoryEntry.phaseBefore/phaseAfter` track entry into and exit from the `chain_capture` phase so history can be replayed or compared directly with backend traces.
+
+Key scenario test:
+
+- `tests/unit/ClientSandboxEngine.chainCapture.scenarios.test.ts`
+  - Mirrors FAQ 15.3.1 (180° reversal pattern) on `square19` in the sandbox.
+  - Drives the capture chain entirely via `handleHumanCellClick` (selecting the attacking stack, then the landing cell).
+  - Asserts **board outcome** and **canonical history**:
+    - Exactly two capture history entries: one `overtaking_capture` followed by one `continue_capture_segment`.
+    - First entry transitions `phase: movement → chain_capture`.
+    - Second entry transitions `phase: chain_capture → <non-chain phase>`.
+
+These guarantees, together with the trace/parity helpers above, ensure that both AI‑driven and human‑driven capture chains in the sandbox can be compared directly to backend `GameEngine` behaviour via canonical `Move` history.
+
+**Last Updated**: November 20, 2025  
 **Framework**: Jest 29.7.0 + ts-jest 29.1.1

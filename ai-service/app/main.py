@@ -404,8 +404,9 @@ def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
         return HeuristicAI(player_number, config)
     # elif ai_type == AIType.MINIMAX:
     #     return MinimaxAI(player_number, config)
-    elif ai_type == AIType.MCTS: # Using MCTS enum for NeuralNetAI temporarily or add NEURAL_NET enum
-         return NeuralNetAI(player_number, config)
+    elif ai_type == AIType.MCTS:
+         from .ai.mcts_ai import MCTSAI
+         return MCTSAI(player_number, config)
     elif ai_type == AIType.DESCENT:
         return DescentAI(player_number, config)
     else:

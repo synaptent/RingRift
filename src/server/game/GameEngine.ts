@@ -334,6 +334,26 @@ export class GameEngine {
       };
     }
 
+    // Decision-phase moves (line_processing / territory_processing) are
+    // applied directly via internal helpers and do not go through the
+    // normal placement/movement/capture pipeline.
+    if (
+      fullMove.type === 'process_line' ||
+      fullMove.type === 'choose_line_reward' ||
+      fullMove.type === 'process_territory_region'
+    ) {
+      await this.applyDecisionMove(fullMove);
+
+      // Record a structured history entry for the decision so parity/debug
+      // tooling sees the same trace format as for other canonical moves.
+      this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+      return {
+        success: true,
+        gameState: this.getGameState(),
+      };
+    }
+
     // Defensive runtime check: for movement and capture moves, verify that
     // the source stack actually exists and is controlled by this player.
     // This catches stale moves where validation passed on an earlier state
@@ -882,15 +902,16 @@ export class GameEngine {
     }
 
     // One process_line move per player-owned line, uniquely identified by
-    // its index and marker positions. Additional metadata (such as an
-    // explicit lineId field) can be added later once the Move type
-    // schema for line_processing is fully wired through the client/AI.
+    // its index and marker positions. In addition to a stable id, we
+    // attach the concrete LineInfo in formedLines[0] so that the Move
+    // object by itself fully describes which line is being processed.
     playerLines.forEach((line, index) => {
       const lineKey = line.positions.map((p) => positionToString(p)).join('|');
       moves.push({
         id: `process-line-${index}-${lineKey}`,
         type: 'process_line',
         player: playerNumber,
+        formedLines: [line],
         timestamp: new Date(),
         thinkTime: 0,
         moveNumber: this.gameState.moveHistory.length + 1,
@@ -899,7 +920,10 @@ export class GameEngine {
 
     // For overlength lines, also surface a choose_line_reward decision so
     // that the unified Move model can express Option 1 vs Option 2 even
-    // before the PlayerChoice-based flow is fully migrated.
+    // before the PlayerChoice-based flow is fully migrated. As with
+    // process_line, we attach the concrete LineInfo so that tests and
+    // parity tooling can identify the target line without re-deriving it
+    // from ids.
     const overlengthLines = playerLines.filter(
       (line) => line.positions.length > requiredLength
     );
@@ -910,6 +934,7 @@ export class GameEngine {
         id: `choose-line-reward-${index}-${lineKey}`,
         type: 'choose_line_reward',
         player: playerNumber,
+        formedLines: [line],
         timestamp: new Date(),
         thinkTime: 0,
         moveNumber: this.gameState.moveHistory.length + 1,
@@ -953,6 +978,9 @@ export class GameEngine {
       return moves;
     }
 
+    // One process_territory_region move per eligible disconnected region,
+    // with the concrete Territory attached in disconnectedRegions[0] so
+    // that the Move fully identifies the region to be processed.
     eligibleRegions.forEach((region, index) => {
       const representative = region.spaces[0];
       const regionKey = representative
@@ -962,6 +990,7 @@ export class GameEngine {
         id: `process-region-${index}-${regionKey}`,
         type: 'process_territory_region',
         player: playerNumber,
+        disconnectedRegions: [region],
         timestamp: new Date(),
         thinkTime: 0,
         moveNumber: this.gameState.moveHistory.length + 1,
@@ -983,6 +1012,114 @@ export class GameEngine {
    *   - Option 1: Collapse all + eliminate ring/cap
    *   - Option 2: Collapse required markers only, no elimination
    */
+  /**
+   * Apply a single line- or territory-processing decision expressed as a
+   * canonical Move. This is the entry point for the unified Move model
+   * for the 'line_processing' and 'territory_processing' phases; it
+   * mirrors the semantics of processOneLine/processOneDisconnectedRegion
+   * but processes exactly one line or region selected by the Move.
+   */
+  private async applyDecisionMove(move: Move): Promise<void> {
+    if (move.type === 'process_line' || move.type === 'choose_line_reward') {
+      const config = BOARD_CONFIGS[this.gameState.boardType];
+
+      const allLines = this.boardManager.findAllLines(this.gameState.board);
+      const playerLines = allLines.filter((line) => line.player === move.player);
+
+      if (playerLines.length === 0) {
+        return;
+      }
+
+      let targetLine: LineInfo | undefined;
+
+      if (move.formedLines && move.formedLines.length > 0) {
+        const target = move.formedLines[0];
+        const targetKey = target.positions.map((p) => positionToString(p)).join('|');
+
+        targetLine = playerLines.find((line) => {
+          const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+          return lineKey === targetKey;
+        });
+      }
+
+      if (!targetLine) {
+        // Fallback: when no formedLines metadata is present or matching
+        // fails, default to the first line for this player, preserving
+        // previous "first line wins" behaviour.
+        targetLine = playerLines[0];
+      }
+
+      // For both process_line and choose_line_reward we currently delegate
+      // to processOneLine, which will in turn use the interaction manager
+      // (when present) to choose Option 1 vs Option 2 for overlength lines.
+      await this.processOneLine(targetLine, config.lineLength);
+    } else if (move.type === 'process_territory_region') {
+      const movingPlayer = move.player;
+
+      const disconnectedRegions = this.boardManager.findDisconnectedRegions(
+        this.gameState.board,
+        movingPlayer
+      );
+
+      if (!disconnectedRegions || disconnectedRegions.length === 0) {
+        return;
+      }
+
+      let targetRegion: Territory | undefined;
+
+      if (move.disconnectedRegions && move.disconnectedRegions.length > 0) {
+        const target = move.disconnectedRegions[0];
+        const targetKeys = new Set(
+          target.spaces.map((pos) => positionToString(pos))
+        );
+
+        targetRegion = disconnectedRegions.find((region) => {
+          if (region.spaces.length !== target.spaces.length) {
+            return false;
+          }
+
+          const regionKeys = new Set(
+            region.spaces.map((pos) => positionToString(pos))
+          );
+
+          if (regionKeys.size !== targetKeys.size) {
+            return false;
+          }
+
+          for (const key of targetKeys) {
+            if (!regionKeys.has(key)) {
+              return false;
+            }
+          }
+
+          return true;
+        });
+      }
+
+      if (!targetRegion) {
+        // Fallback: choose the first region that satisfies the
+        // self-elimination prerequisite; if none do, leave the state
+        // unchanged.
+        targetRegion =
+          disconnectedRegions.find((region) =>
+            this.canProcessDisconnectedRegion(region, movingPlayer)
+          ) ?? undefined;
+      }
+
+      if (!targetRegion) {
+        return;
+      }
+
+      // Respect the self-elimination prerequisite defensively even if the
+      // caller attempted to target an ineligible region.
+      if (!this.canProcessDisconnectedRegion(targetRegion, movingPlayer)) {
+        return;
+      }
+
+      await this.processOneDisconnectedRegion(targetRegion, movingPlayer);
+    }
+  }
+
   private async processLineFormations(): Promise<void> {
     const config = BOARD_CONFIGS[this.gameState.boardType];
 
@@ -1009,10 +1146,20 @@ export class GameEngine {
           playerNumber: this.gameState.currentPlayer,
           type: 'line_order',
           prompt: 'Choose which line to process first',
-          options: playerLines.map((line, index) => ({
-            lineId: String(index),
-            markerPositions: line.positions,
-          })),
+          options: playerLines.map((line, index) => {
+            const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+            return {
+              lineId: String(index),
+              markerPositions: line.positions,
+              /**
+               * Stable identifier for the canonical 'process_line' Move that
+               * would process this line when enumerated via
+               * getValidLineProcessingMoves. This lets transports/AI map this
+               * choice option directly onto a Move.id.
+               */
+              moveId: `process-line-${index}-${lineKey}`,
+            };
+          }),
         };
 
         const response: PlayerChoiceResponseFor<LineOrderChoice> =
@@ -1313,11 +1460,24 @@ export class GameEngine {
           playerNumber: movingPlayer,
           type: 'region_order',
           prompt: 'Choose which disconnected region to process first',
-          options: eligibleRegions.map((r, index) => ({
-            regionId: String(index),
-            size: r.spaces.length,
-            representativePosition: r.spaces[0],
-          })),
+          options: eligibleRegions.map((r, index) => {
+            const representative = r.spaces[0];
+            const regionKey = representative
+              ? positionToString(representative)
+              : `region-${index}`;
+            return {
+              regionId: String(index),
+              size: r.spaces.length,
+              representativePosition: representative,
+              /**
+               * Stable identifier for the canonical 'process_territory_region'
+               * Move that would process this region when enumerated via
+               * getValidTerritoryProcessingMoves. This lets transports/AI map
+               * this choice option directly onto a Move.id.
+               */
+              moveId: `process-region-${index}-${regionKey}`,
+            };
+          }),
         };
 
         const response: PlayerChoiceResponseFor<RegionOrderChoice> =

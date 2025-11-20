@@ -1,0 +1,35 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Use CommonJS modules for Jest runtime
+    "module": "commonjs",
+
+    // Enable JSX/TSX transpilation for React components under test
+    "jsx": "react-jsx",
+
+    // Include both ES and DOM libs so React + JSDOM types are available
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    // Do not emit build output when running tests
+    "noEmit": true,
+
+    // Preserve the same path aliases used in the main project
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["*"],
+      "@server/*": ["server/*"],
+      "@shared/*": ["shared/*"],
+      "@client/*": ["client/*"]
+    }
+  },
+  "include": [
+    "src/server/**/*",
+    "src/client/**/*",
+    "src/shared/**/*",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

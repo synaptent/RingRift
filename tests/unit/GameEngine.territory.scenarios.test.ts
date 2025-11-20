@@ -228,4 +228,69 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
     expect(finalTotalEliminated).toBeGreaterThan(initialTotalEliminated);
     expect(finalP1Eliminated).toBeGreaterThan(initialP1Eliminated);
   });
+
+  test('territory_processing_getValidMoves_exposes_process_territory_region_moves', () => {
+    // Rules reference:
+    // - Section 12.2–12.3 / FAQ Q23: when disconnected regions exist and the
+    //   self-elimination prerequisite is satisfied, the engine should surface
+    //   explicit territory-processing decisions for the moving player.
+    //
+    // This test exercises the territory_processing branch of GameEngine.getValidMoves:
+    // - We stub BoardManager.findDisconnectedRegions to return two regions for
+    //   the moving player.
+    // - We ensure the moving player has at least one stack outside those regions
+    //   so canProcessDisconnectedRegion returns true.
+    // - getValidMoves(currentPlayer) must then return one process_territory_region
+    //   Move per eligible region when currentPhase === 'territory_processing'.
+    const players = createPlayers();
+    const engine = new GameEngine('territory-q23-enumeration', boardType, players, timeControl, false);
+    const engineAny: any = engine;
+    const gameState: GameState = (engineAny as any).gameState;
+    const board = gameState.board;
+    const boardManager: any = (engineAny as any).boardManager;
+
+    gameState.currentPlayer = 1;
+    (gameState as any).currentPhase = 'territory_processing';
+
+    // Clear any existing board state for a clean scenario.
+    board.stacks.clear();
+    board.collapsedSpaces.clear();
+
+    // Create a single outside stack for player 1 so the self-elimination
+    // prerequisite is satisfied for any region that does not include this pos.
+    const p1Outside: Position = pos(0, 1);
+    addStack(board, p1Outside, 1, 2);
+
+    // Define two synthetic disconnected regions for the moving player. We do
+    // not rely on BoardManager's geometry here; instead we stub the return
+    // value of findDisconnectedRegions directly.
+    const region1Spaces: Position[] = [pos(5, 5)];
+    const region2Spaces: Position[] = [pos(10, 10)];
+
+    const region1 = {
+      spaces: region1Spaces,
+      controllingPlayer: 1,
+      isDisconnected: true,
+    };
+
+    const region2 = {
+      spaces: region2Spaces,
+      controllingPlayer: 1,
+      isDisconnected: true,
+    };
+
+    const findDisconnectedRegionsSpy = jest
+      .spyOn(boardManager, 'findDisconnectedRegions')
+      .mockImplementation(() => [region1, region2]);
+
+    const moves = engine.getValidMoves(1);
+
+    const territoryMoves = moves.filter((m) => m.type === 'process_territory_region');
+
+    // One process_territory_region per eligible disconnected region.
+    expect(territoryMoves).toHaveLength(2);
+    expect(territoryMoves.every((m) => m.player === 1)).toBe(true);
+
+    expect(findDisconnectedRegionsSpy).toHaveBeenCalled();
+  });
 });

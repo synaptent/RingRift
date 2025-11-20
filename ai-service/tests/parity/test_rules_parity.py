@@ -9,11 +9,11 @@ from datetime import datetime
 # Add app directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
 
-from app.models import (
+from app.models import (  # noqa: E402
     GameState, BoardState, BoardType, GamePhase, Player, TimeControl,
-    GameStatus, Move, RingStack, Position, LineInfo, Territory,
+    GameStatus, Move, RingStack, Position, LineInfo, Territory, MoveType
 )
-from app.game_engine import GameEngine
+from app.game_engine import GameEngine  # noqa: E402
 
 
 def create_initial_state() -> GameState:
@@ -50,7 +50,9 @@ def create_initial_state() -> GameState:
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=1,
         moveHistory=[],
-        timeControl=TimeControl(initialTime=600, increment=5, type="standard"),
+        timeControl=TimeControl(
+            initialTime=600, increment=5, type="standard"
+        ),
         gameStatus=GameStatus.ACTIVE,
         createdAt=datetime.now(),
         lastMoveAt=datetime.now(),
@@ -60,6 +62,7 @@ def create_initial_state() -> GameState:
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,
+        chainCaptureState=None,
     )
 
 
@@ -84,14 +87,20 @@ def validate_move_parity(state: GameState, move: Move, test_id: str) -> None:
 
     # Prepare input JSON
     input_data = {
-        "gameState": state.dict(by_alias=True),
-        "move": move.dict(by_alias=True),
+        "gameState": state.model_dump(by_alias=True),
+        "move": move.model_dump(by_alias=True),
     }
 
     # Convert datetime objects to strings
-    input_data["gameState"]["createdAt"] = input_data["gameState"]["createdAt"].isoformat()
-    input_data["gameState"]["lastMoveAt"] = input_data["gameState"]["lastMoveAt"].isoformat()
-    input_data["move"]["timestamp"] = input_data["move"]["timestamp"].isoformat()
+    input_data["gameState"]["createdAt"] = (
+        input_data["gameState"]["createdAt"].isoformat()
+    )
+    input_data["gameState"]["lastMoveAt"] = (
+        input_data["gameState"]["lastMoveAt"].isoformat()
+    )
+    input_data["move"]["timestamp"] = (
+        input_data["move"]["timestamp"].isoformat()
+    )
 
     input_file = f"parity_test_input_{test_id}.json"
     with open(input_file, "w") as f:
@@ -102,7 +111,12 @@ def validate_move_parity(state: GameState, move: Move, test_id: str) -> None:
         # Line formation and territory processing are handled by dedicated
         # TS modules (lineProcessing, territoryProcessing) invoked from
         # GameEngine/TurnEngine, not by RuleEngine.validateMove.
-        check_rule_engine = move.type not in ("line_formation", "territory_claim")
+        # Forced elimination is also a high-level engine move.
+        check_rule_engine = move.type not in (
+            MoveType.LINE_FORMATION,
+            MoveType.TERRITORY_CLAIM,
+            MoveType.FORCED_ELIMINATION
+        )
 
         if check_rule_engine:
             # Run TypeScript CLI (RuleEngine)
@@ -112,9 +126,13 @@ def validate_move_parity(state: GameState, move: Move, test_id: str) -> None:
                     "../../../src/server/game/test-parity-cli.ts",
                 )
             )
-            cmd = ["npx", "ts-node", "--transpile-only", ts_script, input_file]
+            cmd = [
+                "npx", "ts-node", "--transpile-only", ts_script, input_file
+            ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, check=True
+            )
             output = json.loads(result.stdout)
 
             assert output["status"] == "success", "TypeScript script failed"
@@ -126,7 +144,8 @@ def validate_move_parity(state: GameState, move: Move, test_id: str) -> None:
                 print(f"State: {state}")
 
             assert output["isValid"], (
-                f"Move {move} is valid in Python but invalid in TypeScript (RuleEngine)"
+                f"Move {move} is valid in Python but invalid in TypeScript "
+                "(RuleEngine)"
             )
 
             # Check state transition parity if available
@@ -134,7 +153,8 @@ def validate_move_parity(state: GameState, move: Move, test_id: str) -> None:
                 # Note: Python does not yet implement a hashGameState that is
                 # guaranteed to match TS. For now we just assert that TS
                 # returns some non-empty hash when validation succeeds.
-                assert output["stateHash"], "RuleEngine did not return a state hash"
+                assert output["stateHash"], \
+                    "RuleEngine did not return a state hash"
 
         # Run TypeScript CLI (ClientSandboxEngine) for *all* move types.
         sandbox_script = os.path.abspath(
@@ -143,27 +163,38 @@ def validate_move_parity(state: GameState, move: Move, test_id: str) -> None:
                 "../../../src/client/sandbox/test-sandbox-parity-cli.ts",
             )
         )
-        cmd_sandbox = ["npx", "ts-node", "--transpile-only", sandbox_script, input_file]
+        cmd_sandbox = [
+            "npx", "ts-node", "--transpile-only", sandbox_script, input_file
+        ]
 
-        result_sandbox = subprocess.run(cmd_sandbox, capture_output=True, text=True, check=True)
+        result_sandbox = subprocess.run(
+            cmd_sandbox, capture_output=True, text=True, check=True
+        )
 
         # Parse output - handle potential TS errors in stdout
         try:
             output_sandbox = json.loads(result_sandbox.stdout)
         except json.JSONDecodeError:
-            pytest.fail(f"Failed to parse Sandbox CLI output: {result_sandbox.stdout}")
+            pytest.fail(
+                f"Failed to parse Sandbox CLI output: {result_sandbox.stdout}"
+            )
 
-        assert output_sandbox["status"] == "success", "TypeScript script failed (Sandbox)"
+        assert output_sandbox["status"] == "success", \
+            "TypeScript script failed (Sandbox)"
 
         if not output_sandbox["isValid"]:
             print(f"ClientSandboxEngine validation failed for move: {move}")
 
         assert output_sandbox["isValid"], (
-            f"Move {move} is valid in Python but invalid in TypeScript (ClientSandboxEngine)"
+            f"Move {move} is valid in Python but invalid in TypeScript "
+            "(ClientSandboxEngine)"
         )
 
     except subprocess.CalledProcessError as e:
-        pytest.fail(f"Error running TypeScript script: {e}\nStdout: {e.stdout}\nStderr: {e.stderr}")
+        pytest.fail(
+            f"Error running TypeScript script: {e}\n"
+            f"Stdout: {e.stdout}\nStderr: {e.stderr}"
+        )
     finally:
         if os.path.exists(input_file):
             os.remove(input_file)
@@ -239,23 +270,25 @@ def test_chain_capture_parity() -> None:
 
     # Sanity-check that Python thinks there are some moves from this state.
     python_moves = GameEngine.get_valid_moves(state, 1)
-    assert python_moves, "Python engine produced no moves for chain capture scenario"
+    assert python_moves, \
+        "Python engine produced no moves for chain capture scenario"
 
     # Construct a canonical TS-style overtaking capture segment over (2,3)
     # landing on empty (2,4).
-    canonical_capture = Move(
-        id="simulated",
-        type="overtaking_capture",
-        player=1,
-        from_pos=Position(x=2, y=2),
-        to=Position(x=2, y=4),
-        capture_target=Position(x=2, y=3),
-        placed_on_stack=None,
-        placement_count=None,
-        timestamp=state.last_move_at,
-        thinkTime=0,
-        moveNumber=1,
-    )
+    canonical_capture_data = {
+        "id": "simulated",
+        "type": MoveType.OVERTAKING_CAPTURE,
+        "player": 1,
+        "from": Position(x=2, y=2),
+        "to": Position(x=2, y=4),
+        "captureTarget": Position(x=2, y=3),
+        "placedOnStack": None,
+        "placementCount": None,
+        "timestamp": state.last_move_at,
+        "thinkTime": 0,
+        "moveNumber": 1,
+    }
+    canonical_capture = Move(**canonical_capture_data)
 
     validate_move_parity(state, canonical_capture, "chain_capture_segment")
 
@@ -281,19 +314,20 @@ def test_line_formation_parity() -> None:
     )
     state.board.formed_lines = [line]
 
-    canonical_line_move = Move(
-        id="simulated",
-        type="line_formation",
-        player=1,
-        from_pos=None,
-        to=positions[0],
-        capture_target=None,
-        placed_on_stack=None,
-        placement_count=None,
-        timestamp=state.last_move_at,
-        thinkTime=0,
-        moveNumber=1,
-    )
+    canonical_line_move_data = {
+        "id": "simulated",
+        "type": MoveType.LINE_FORMATION,
+        "player": 1,
+        "from": None,
+        "to": positions[0],
+        "captureTarget": None,
+        "placedOnStack": None,
+        "placementCount": None,
+        "timestamp": state.last_move_at,
+        "thinkTime": 0,
+        "moveNumber": 1,
+    }
+    canonical_line_move = Move(**canonical_line_move_data)
 
     validate_move_parity(state, canonical_line_move, "line_formation_0")
 
@@ -327,21 +361,131 @@ def test_territory_collapse_parity() -> None:
     )
     state.board.stacks["0,0"] = p1_stack
 
-    canonical_territory_move = Move(
-        id="simulated",
-        type="territory_claim",
-        player=1,
-        from_pos=None,
-        to=Position(x=7, y=7),
-        capture_target=None,
-        placed_on_stack=None,
-        placement_count=None,
-        timestamp=state.last_move_at,
-        thinkTime=0,
-        moveNumber=1,
-    )
+    canonical_territory_move_data = {
+        "id": "simulated",
+        "type": MoveType.TERRITORY_CLAIM,
+        "player": 1,
+        "from": None,
+        "to": Position(x=7, y=7),
+        "captureTarget": None,
+        "placedOnStack": None,
+        "placementCount": None,
+        "timestamp": state.last_move_at,
+        "thinkTime": 0,
+        "moveNumber": 1,
+    }
+    canonical_territory_move = Move(**canonical_territory_move_data)
 
     validate_move_parity(state, canonical_territory_move, "territory_0")
+
+
+def test_cyclic_capture_parity() -> None:
+    """Test parity for cyclic capture scenarios.
+
+    Constructs a scenario where a cyclic capture is possible and validates
+    that the TS engine accepts the capture segments.
+    """
+    state = create_initial_state()
+    state.current_phase = GamePhase.CAPTURE
+    state.current_player = 1
+
+    # Setup cyclic scenario (simplified triangle)
+    # P1 at (2,2) height 2
+    # P2 at (2,3) height 1
+    # P2 at (3,2) height 1
+    # Empty at (2,4) and (4,2)
+
+    p1_stack = RingStack(
+        position=Position(x=2, y=2),
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+    state.board.stacks["2,2"] = p1_stack
+
+    p2_stack1 = RingStack(
+        position=Position(x=2, y=3),
+        rings=[2],
+        stackHeight=1,
+        capHeight=1,
+        controllingPlayer=2,
+    )
+    state.board.stacks["2,3"] = p2_stack1
+
+    p2_stack2 = RingStack(
+        position=Position(x=3, y=2),
+        rings=[2],
+        stackHeight=1,
+        capHeight=1,
+        controllingPlayer=2,
+    )
+    state.board.stacks["3,2"] = p2_stack2
+
+    # Move 1: (2,2) -> over (2,3) -> (2,4)
+    move1_data = {
+        "id": "simulated_cyclic_1",
+        "type": MoveType.OVERTAKING_CAPTURE,
+        "player": 1,
+        "from": Position(x=2, y=2),
+        "to": Position(x=2, y=4),
+        "captureTarget": Position(x=2, y=3),
+        "placedOnStack": None,
+        "placementCount": None,
+        "timestamp": state.last_move_at,
+        "thinkTime": 0,
+        "moveNumber": 1,
+    }
+    move1 = Move(**move1_data)
+
+    validate_move_parity(state, move1, "cyclic_capture_1")
+
+
+def test_forced_elimination_parity() -> None:
+    """Test parity for forced elimination scenarios.
+
+    Constructs a scenario where a player is blocked and has no rings in hand,
+    forcing an elimination move.
+    """
+    state = create_initial_state()
+    state.current_phase = GamePhase.RING_PLACEMENT
+    state.current_player = 1
+
+    # Player 1 has no rings in hand
+    state.players[0].rings_in_hand = 0
+
+    # Player 1 has a stack at (0,0)
+    p1_stack = RingStack(
+        position=Position(x=0, y=0),
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+    state.board.stacks["0,0"] = p1_stack
+
+    # Block (0,0) with collapsed spaces
+    state.board.collapsed_spaces["1,0"] = 0
+    state.board.collapsed_spaces["0,1"] = 0
+    state.board.collapsed_spaces["1,1"] = 0
+
+    # Forced elimination move
+    forced_elim_move_data = {
+        "id": "simulated_forced_elim",
+        "type": MoveType.FORCED_ELIMINATION,
+        "player": 1,
+        "from": None,
+        "to": Position(x=0, y=0),  # Target stack
+        "captureTarget": None,
+        "placedOnStack": None,
+        "placementCount": None,
+        "timestamp": state.last_move_at,
+        "thinkTime": 0,
+        "moveNumber": 1,
+    }
+    move = Move(**forced_elim_move_data)
+
+    validate_move_parity(state, move, "forced_elimination_1")
 
 
 if __name__ == "__main__":

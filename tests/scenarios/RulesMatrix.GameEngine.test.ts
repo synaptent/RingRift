@@ -80,7 +80,9 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
   }
 
   const scenarios: LineRewardRuleScenario[] = lineRewardRuleScenarios.filter(
-    (s) => s.boardType === 'square8'
+    (s) =>
+      s.ref.id === 'Rules_11_2_Q7_exact_length_line' ||
+      s.ref.id === 'Rules_11_3_Q22_overlength_line_option2_default'
   );
 
   test.each<LineRewardRuleScenario>(scenarios)(
@@ -142,8 +144,16 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
       const eliminatedDeltaPlayer1 = player1After.eliminatedRings - initialEliminated;
       const totalEliminatedDelta = engineState.totalRingsEliminated - initialTotalEliminated;
       const stackKey = positionToString(stackPos);
+      const id = scenario.ref.id;
 
-      if (scenario.overlengthBy === 0) {
+      const isExact =
+        scenario.overlengthBy === 0 && id === 'Rules_11_2_Q7_exact_length_line';
+      const isOption2Default =
+        id === 'Rules_11_3_Q22_overlength_line_option2_default';
+      const isOption1FullCollapse =
+        id === 'Rules_11_3_Q22_overlength_line_option1_full_collapse_square19';
+
+      if (isExact) {
         // Rules_11_2_Q7_exact_length_line: all markers in the line are
         // collapsed, one cap/ring is eliminated, and territory increases by
         // exactly the required line length.
@@ -152,7 +162,7 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
         expect(totalEliminatedDelta).toBeGreaterThan(0);
         expect(player1After.territorySpaces).toBe(initialTerritory + requiredLength);
         expect(board.stacks.get(stackKey)).toBeUndefined();
-      } else {
+      } else if (isOption2Default) {
         // Rules_11_3_Q22_overlength_line_option2_default: overlength line
         // with no PlayerInteractionManager defaults to Option 2 - collapse the
         // minimum required markers, preserve one marker segment, and perform
@@ -162,6 +172,17 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
         expect(totalEliminatedDelta).toBe(0);
         expect(player1After.territorySpaces).toBe(initialTerritory + requiredLength);
         expect(board.stacks.get(stackKey)).toBeDefined();
+      } else if (isOption1FullCollapse) {
+        // Rules_11_3_Q22_overlength_line_option1_full_collapse_square19:
+        // overlength line where the moving player explicitly chooses Option 1,
+        // collapsing the entire line and eliminating one of their rings/caps.
+        expect(collapsedDelta).toBe(totalLength);
+        expect(eliminatedDeltaPlayer1).toBeGreaterThan(0);
+        expect(totalEliminatedDelta).toBeGreaterThan(0);
+        expect(player1After.territorySpaces).toBe(initialTerritory + totalLength);
+        expect(board.stacks.get(stackKey)).toBeUndefined();
+      } else {
+        throw new Error(`Unhandled line-reward scenario: ${id}`);
       }
 
       expect(findAllLinesSpy).toHaveBeenCalled();

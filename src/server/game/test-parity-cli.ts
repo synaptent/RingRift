@@ -27,6 +27,34 @@ async function main() {
       delete (move.captureTarget as any).z;
     }
 
+    // Map legacy/Python MoveTypes to canonical TS MoveTypes if needed
+    // (Though Python should now be emitting canonical types)
+    // But we might need to handle 'chain_capture' -> 'continue_capture_segment' mapping if Python uses it
+    // Python now uses MoveType enum which matches TS strings mostly.
+    // Except:
+    // CHAIN_CAPTURE -> 'chain_capture' (legacy in TS? No, TS uses 'continue_capture_segment')
+    // FORCED_ELIMINATION -> 'forced_elimination' (legacy in TS? No, TS doesn't have this in MoveType enum?)
+    // Let's check TS MoveType definition.
+    // TS MoveType: 'place_ring', 'move_stack', 'overtaking_capture', 'continue_capture_segment', 'process_line', 'choose_line_reward', 'process_territory_region', 'eliminate_rings_from_stack', 'line_formation', 'territory_claim', 'skip_placement'
+    
+    // Python uses:
+    // CHAIN_CAPTURE -> 'chain_capture'
+    // FORCED_ELIMINATION -> 'forced_elimination'
+    
+    // If Python sends 'chain_capture', we might need to map it or ensure TS accepts it.
+    // TS MoveType doesn't include 'chain_capture' or 'forced_elimination'.
+    // So we need to cast or map.
+    
+    // For parity testing, we can cast to any to bypass TS check if we just want to pass it through
+    // to RuleEngine/Sandbox.
+    // But RuleEngine might reject unknown types.
+    
+    // Actually, RuleEngine.validateMove checks specific types.
+    // If we pass 'forced_elimination', RuleEngine will likely return false or throw.
+    // But test_rules_parity.py skips RuleEngine for 'forced_elimination'.
+    
+    // So we just need to ensure the type cast works.
+
     // Convert plain objects to Maps for board state, since the shared
     // engine helpers and RuleEngine expect Map-based collections.
     if (gameState.board) {

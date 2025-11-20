@@ -122,7 +122,7 @@ async function main() {
                     c.target.x === move.captureTarget?.x && c.target.y === move.captureTarget?.y && (c.target.z || 0) === (move.captureTarget?.z || 0)
                 );
             }
-        } else if (move.type === 'line_formation') {
+        } else if (move.type === 'line_formation' || move.type === 'process_line') {
             // Validate line formation directly against canonical formedLines on the board.
             // A line_formation move is considered valid if there exists a formed line
             // owned by the moving player whose positions include the target square.
@@ -137,13 +137,19 @@ async function main() {
                     (p.z ?? null) === (target.z ?? null)
                 )
             );
-        } else if (move.type === 'territory_claim') {
+        } else if (move.type === 'territory_claim' || move.type === 'process_territory_region') {
             // Territory claim is automatic/interactive
             // Check if disconnected regions exist
             // We can use findDisconnectedRegionsOnBoard (imported internally)
             // Or rely on processDisconnectedRegionsForCurrentPlayer logic
             // For now, assume valid if phase matches
             isValid = gameState.currentPhase === 'territory_processing';
+        } else if ((move.type as any) === 'forced_elimination') {
+             // Forced elimination is valid if player has no other moves
+             // Sandbox doesn't explicitly validate this yet via a public method,
+             // but we can assume it's valid if we are in a state where it's generated.
+             // For parity testing, we trust the generator unless we want to implement full check here.
+             isValid = true;
         } else {
             // Other move types not fully supported for validation in this CLI yet
             isValid = true;

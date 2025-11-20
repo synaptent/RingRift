@@ -18,6 +18,13 @@ module.exports = {
   // Module paths
   modulePaths: ['<rootDir>/src'],
   
+  // Configure ts-jest to use a Jest-specific TS config that understands React TSX
+  globals: {
+    'ts-jest': {
+      tsconfig: '<rootDir>/tsconfig.jest.json',
+    },
+  },
+
   // Transform files with ts-jest
   transform: {
     '^.+\\.(ts|tsx)$': 'ts-jest',

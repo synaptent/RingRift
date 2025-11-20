@@ -453,6 +453,29 @@ loop and tests are further stabilised.
 
 ---
 
+### P2.3 – Jest TSX snapshot transform for React snapshot tests
+
+**Component(s):** Jest configuration, React snapshot tests (`tests/unit/*.snapshot.test.tsx`)
+**Status:** One known suite currently fails due to JSX transformation
+
+- At least one React snapshot suite, `tests/unit/GameEventLog.snapshot.test.tsx`,
+  currently fails with `SyntaxError: Unexpected token '<'` because Jest is not
+  transforming the TSX/JSX in that test file.
+- This is a **tooling/configuration issue**: the runtime game/client code does
+  not depend on this test, but the failure prevents a clean "all green" Jest
+  run without additional flags.
+
+**Planned:**
+
+- Update `jest.config.js` (or the relevant project-level Jest setup) so that
+  TSX/JSX test files are transformed, either via `ts-jest` or a Babel
+  transform, consistent with how the rest of the React code is handled.
+- Once the transform is in place, regenerate the `GameEventLog` (and
+  `GameHUD`, if applicable) snapshots and re-enable the suite as part of the
+  normal Jest pass.
+
+---
+
 ## 🕰️ Historical Issues (Resolved)
 
 These issues have been addressed but are kept here for context:

@@ -142,6 +142,43 @@ describe('RulesMatrix → RuleEngine movement scenarios (Section 8.2–8.3; FAQ 
           position: oppMarker,
           type: 'regular'
         });
+      } else if (
+        scenario.ref.id === 'Rules_8_2_Q2_marker_landing_own_vs_opponent_hexagonal'
+      ) {
+        // Hexagonal analogue of the marker-landing scenario: place one same-colour
+        // marker and one opponent marker at equal cube-distance radius 2 from the
+        // origin so we can assert that landing on own marker is allowed but landing
+        // on opponent marker is not.
+        if (scenario.boardType !== 'hexagonal') {
+          throw new Error(
+            'Rules_8_2_Q2_marker_landing_own_vs_opponent_hexagonal must use hexagonal'
+          );
+        }
+        const originPos: Position =
+          scenario.origin.z != null
+            ? pos(scenario.origin.x, scenario.origin.y, scenario.origin.z)
+            : pos(scenario.origin.x, scenario.origin.y);
+        const ownMarker: Position = {
+          x: originPos.x + 2,
+          y: originPos.y - 2,
+          z: originPos.z != null ? originPos.z : 0
+        };
+        const oppMarker: Position = {
+          x: originPos.x - 2,
+          y: originPos.y + 2,
+          z: originPos.z != null ? originPos.z : 0
+        };
+
+        gameState.board.markers.set(positionToString(ownMarker), {
+          player: 1,
+          position: ownMarker,
+          type: 'regular'
+        });
+        gameState.board.markers.set(positionToString(oppMarker), {
+          player: 2,
+          position: oppMarker,
+          type: 'regular'
+        });
       }
  
       const moves = ruleEngine.getValidMoves(gameState);

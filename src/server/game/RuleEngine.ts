@@ -7,6 +7,7 @@ import {
   positionToString,
   positionsEqual,
   BOARD_CONFIGS,
+  Territory,
 } from '../../shared/types/game';
 import { BoardManager } from './BoardManager';
 import {
@@ -62,6 +63,11 @@ export class RuleEngine {
         return this.validateCapture(move, gameState);
       case 'continue_capture_segment':
         return this.validateChainCaptureContinuation(move, gameState);
+      case 'process_line':
+      case 'choose_line_reward':
+        return this.validateLineProcessingMove(move, gameState);
+      case 'process_territory_region':
+        return this.validateTerritoryProcessingMove(move, gameState);
       case 'skip_placement':
         // Trivial validation: skipping placement is only allowed during the
         // ring_placement phase, and only when placement is optional under
@@ -1321,6 +1327,127 @@ export class RuleEngine {
    * simply preserves helpers for parity/debug tooling and future rules
    * extensions.
    */
+  /**
+   * Validate line-processing decision moves (process_line / choose_line_reward)
+   * during the dedicated 'line_processing' phase.
+   *
+   * For now we treat these as structurally valid when:
+   * - The game is in line_processing phase,
+   * - The move is made by the current player, and
+   * - When formedLines[0] is provided, it matches one of the currently
+   *   detected lines for that player according to BoardManager.findAllLines.
+   *
+   * This keeps decision moves aligned with the same line view used for
+   * enumeration in GameEngine.getValidLineProcessingMoves.
+   */
+  private validateLineProcessingMove(move: Move, gameState: GameState): boolean {
+    if (gameState.currentPhase !== 'line_processing') {
+      return false;
+    }
+
+    if (move.player !== gameState.currentPlayer) {
+      return false;
+    }
+
+    const allLines = this.boardManager.findAllLines(gameState.board);
+    const playerLines = allLines.filter((line) => line.player === move.player);
+
+    if (playerLines.length === 0) {
+      return false;
+    }
+
+    // When the Move carries a concrete line in formedLines[0], ensure it
+    // corresponds to one of the currently-detected lines by comparing
+    // ordered marker positions.
+    if (move.formedLines && move.formedLines.length > 0) {
+      const target = move.formedLines[0];
+
+      const matchesExisting = playerLines.some((line) => {
+        if (line.positions.length !== target.positions.length) {
+          return false;
+        }
+        return line.positions.every((pos, idx) =>
+          positionsEqual(pos, target.positions[idx])
+        );
+      });
+
+      if (!matchesExisting) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Validate territory-processing decision moves (process_territory_region)
+   * during the dedicated 'territory_processing' phase.
+   *
+   * A move is considered valid when:
+   * - The game is in territory_processing phase,
+   * - The move is made by the current player, and
+   * - When disconnectedRegions[0] is provided, its space set matches one of
+   *   the regions currently reported by BoardManager.findDisconnectedRegions
+   *   for the moving player.
+   *
+   * The stricter self-elimination prerequisite (having an outside stack) is
+   * enforced by GameEngine.canProcessDisconnectedRegion when enumerating
+   * these moves; here we focus on structural identity.
+   */
+  private validateTerritoryProcessingMove(move: Move, gameState: GameState): boolean {
+    if (gameState.currentPhase !== 'territory_processing') {
+      return false;
+    }
+
+    if (move.player !== gameState.currentPlayer) {
+      return false;
+    }
+
+    const disconnectedRegions = this.boardManager.findDisconnectedRegions(
+      gameState.board,
+      move.player
+    );
+
+    if (!disconnectedRegions || disconnectedRegions.length === 0) {
+      return false;
+    }
+
+    if (move.disconnectedRegions && move.disconnectedRegions.length > 0) {
+      const target = move.disconnectedRegions[0];
+      const targetKeySet = new Set(
+        target.spaces.map((pos: Position) => positionToString(pos))
+      );
+
+      const matchesExisting = disconnectedRegions.some((region: Territory) => {
+        if (region.spaces.length !== target.spaces.length) {
+          return false;
+        }
+
+        const regionKeySet = new Set(
+          region.spaces.map((pos: Position) => positionToString(pos))
+        );
+
+        if (regionKeySet.size !== targetKeySet.size) {
+          return false;
+        }
+
+        for (const key of targetKeySet) {
+          if (!regionKeySet.has(key)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      if (!matchesExisting) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   private _debugUseInternalHelpers(): void {
     void this.getPlayerStats;
     void this.areAdjacent;

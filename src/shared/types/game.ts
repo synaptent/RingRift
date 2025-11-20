@@ -613,6 +613,13 @@ export interface LineOrderChoice extends PlayerChoiceBase {
   options: Array<{
     lineId: string;
     markerPositions: Position[];
+    /**
+     * Optional identifier of the canonical 'process_line' Move that this
+     * option corresponds to. When present, engines and AI clients can
+     * treat this choice as "select Move with id === moveId" rather than
+     * relying on implicit index/position matching.
+     */
+    moveId?: string;
   }>;
 }
 
@@ -636,6 +643,13 @@ export interface RegionOrderChoice extends PlayerChoiceBase {
     regionId: string;
     size: number;
     representativePosition: Position;
+    /**
+     * Optional identifier of the canonical 'process_territory_region' Move
+     * that this option corresponds to. When present, engines and AI clients
+     * can treat this choice as "select Move with id === moveId" rather than
+     * relying solely on implicit regionId/position matching.
+     */
+    moveId?: string;
   }>;
 }
 

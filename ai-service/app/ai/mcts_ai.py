@@ -150,10 +150,27 @@ class MCTSAI(HeuristicAI):
                 time_limit = 1.0 + (self.config.difficulty * 0.5) # 1.5s to 6.0s
             
             # Tree Reuse: Check if we have a subtree for the current state
-            # For now, we just create a new root.
-            # TODO: Implement tree reuse by hashing game state or tracking moves
-            root = MCTSNode(game_state)
-            root.untried_moves = valid_moves
+            root = None
+            if hasattr(self, 'last_root') and self.last_root is not None:
+                # Try to find the child corresponding to the opponent's move
+                # We need to know what move led to the current state from the previous state
+                # But we don't track opponent moves explicitly here.
+                # However, we can check if any child of last_root matches the current state.
+                # This is expensive if we do full state comparison.
+                # A better way is to just reset for now, or implement move tracking in the AI instance.
+                # Given the stateless nature of the API request, we can't easily reuse the tree
+                # unless we cache it by game ID.
+                # The current architecture instantiates a new AI for each request (or retrieves from cache).
+                # If retrieved from cache, 'self' is persistent.
+                
+                # Let's assume we can find the child.
+                # But we don't know the opponent's move.
+                # We can try to match the board state.
+                pass
+                
+            if root is None:
+                root = MCTSNode(game_state)
+                root.untried_moves = valid_moves
             
             end_time = time.time() + time_limit
             
@@ -236,10 +253,21 @@ class MCTSAI(HeuristicAI):
                                     node.policy_map[move] = uniform
                         
                         # Backpropagation
-                        result = value
-                        while node is not None:
-                            node.update(result, played_moves)
-                            node = node.parent
+                        # Value is from perspective of state.current_player (who is about to move in 'state')
+                        # But 'state' is the result of the move leading to 'node'.
+                        # So state.current_player is the opponent of the player who made the move.
+                        
+                        # Standard AlphaZero:
+                        # v is value for state.current_player.
+                        # Parent node (who made the move) should receive -v.
+                        
+                        current_val = value
+                        curr_node = node
+                        
+                        while curr_node is not None:
+                            curr_node.update(current_val, played_moves)
+                            current_val = -current_val
+                            curr_node = curr_node.parent
                             
                 else:
                     # Fallback to Heuristic Rollout (Sequential)
@@ -272,9 +300,42 @@ class MCTSAI(HeuristicAI):
                         result = self.evaluate_position(rollout_state)
                         
                         # Backpropagation
-                        while node is not None:
-                            node.update(result, played_moves)
-                            node = node.parent
+                        # Heuristic evaluation is usually from perspective of player who just moved?
+                        # Or absolute?
+                        # evaluate_position returns score for self.player_number (the AI instance)
+                        # But rollout_state.current_player might be different.
+                        
+                        # Let's assume evaluate_position returns score for the player whose turn it is in rollout_state?
+                        # No, HeuristicAI.evaluate_position(state) usually returns score for 'self.player_number'.
+                        # This is problematic for MCTS if we don't know who 'self' is relative to the node.
+                        
+                        # We need a perspective-neutral evaluation or flip it.
+                        # For now, let's assume result is from perspective of root player (self.player_number).
+                        
+                        # If result is for root player:
+                        # Root node: update(result)
+                        # Child of root (opponent moved): update(-result)?
+                        # This depends on how MCTSNode.update works.
+                        # If MCTSNode stores "wins for the player who moved to get here", then:
+                        # If root player moved to get to Root (conceptually), then result.
+                        # If opponent moved to get to Child, then -result.
+                        
+                        # Let's stick to the alternating sign convention which is robust for zero-sum.
+                        # We need 'result' to be from the perspective of the leaf node's player-to-move.
+                        
+                        # If evaluate_position returns score for self.player_number (Root Player):
+                        # And leaf node state has current_player = P.
+                        # If P == Root Player, val = result.
+                        # If P != Root Player, val = -result.
+                        
+                        val_for_leaf_player = result if rollout_state.current_player == self.player_number else -result
+                        
+                        current_val = val_for_leaf_player
+                        curr_node = node
+                        while curr_node is not None:
+                            curr_node.update(current_val, played_moves)
+                            current_val = -current_val
+                            curr_node = curr_node.parent
             
             # Select best move based on visits
             if root.children:
@@ -288,7 +349,13 @@ class MCTSAI(HeuristicAI):
                     for child in root.children:
                         policy[child.move] = uniform
                 
-                selected = sorted(root.children, key=lambda c: c.visits)[-1].move
+                # Robust child selection
+                best_child = max(root.children, key=lambda c: c.visits)
+                selected = best_child.move
+                
+                # Save subtree for reuse (if we were to implement persistent tree)
+                # self.last_root = best_child
+                # self.last_root.parent = None # Detach to allow GC of old tree
             else:
                 selected = random.choice(valid_moves)
                 policy = {m: (1.0 if m == selected else 0.0) for m in valid_moves}

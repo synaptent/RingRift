@@ -4,10 +4,9 @@ Provides move generation and state simulation logic
 """
 
 from typing import List
-import copy
 from .models import (
     GameState, Move, Position, BoardType, GamePhase, RingStack, MarkerInfo,
-    GameStatus
+    GameStatus, MoveType
 )
 from .board_manager import BoardManager
 
@@ -34,9 +33,6 @@ class GameEngine:
         if game_state.current_player != player_number:
             return []
             
-        # DEBUG: Print phase and player
-        # print(f"DEBUG: get_valid_moves phase={game_state.current_phase} player={player_number}")
-
         # Check cache
         state_hash = BoardManager.hash_game_state(game_state)
         cache_key = f"{state_hash}:{player_number}"
@@ -56,7 +52,9 @@ class GameEngine:
             )
             if not moves:
                 # If no placement possible (or no rings), try movement
-                moves = GameEngine._get_movement_moves(game_state, player_number)
+                moves = GameEngine._get_movement_moves(
+                    game_state, player_number
+                )
                 if not moves:
                     # If no movement, check forced elimination
                     player_stacks = BoardManager.get_player_stacks(
@@ -80,6 +78,9 @@ class GameEngine:
                     )
         elif phase == GamePhase.CAPTURE:
             moves = GameEngine._get_capture_moves(game_state, player_number)
+        elif phase == GamePhase.CHAIN_CAPTURE:
+            # Support for canonical chain capture phase
+            moves = GameEngine._get_capture_moves(game_state, player_number)
         elif phase == GamePhase.LINE_PROCESSING:
             moves = GameEngine._get_line_processing_moves(
                 game_state, player_number
@@ -101,7 +102,6 @@ class GameEngine:
         GameEngine._cache_misses = 0
 
     @staticmethod
-    @staticmethod
     def apply_move(game_state: GameState, move: Move) -> GameState:
         """
         Apply a move to a game state and return the new state
@@ -114,7 +114,8 @@ class GameEngine:
         new_board = game_state.board.model_copy()
         
         # 2. Deep copy mutable dictionaries in board that we might modify
-        # Note: We can optimize further by only copying what we need based on move type
+        # Note: We can optimize further by only copying what we need based on
+        # move type
         new_board.stacks = game_state.board.stacks.copy()
         new_board.markers = game_state.board.markers.copy()
         new_board.collapsed_spaces = game_state.board.collapsed_spaces.copy()
@@ -133,19 +134,22 @@ class GameEngine:
         # Capture S-invariant before move
         before_snapshot = BoardManager.compute_progress_snapshot(new_state)
 
-        if move.type == "place_ring":
+        if move.type == MoveType.PLACE_RING:
             GameEngine._apply_place_ring(new_state, move)
-        elif move.type == "move_stack":
+        elif move.type == MoveType.MOVE_STACK:
             GameEngine._apply_move_stack(new_state, move)
-        elif move.type == "overtaking_capture":
+        elif move.type == MoveType.OVERTAKING_CAPTURE:
             GameEngine._apply_overtaking_capture(new_state, move)
-        elif move.type == "chain_capture":
+        elif (move.type == MoveType.CHAIN_CAPTURE or
+              move.type == MoveType.CONTINUE_CAPTURE_SEGMENT):
             GameEngine._apply_chain_capture(new_state, move)
-        elif move.type == "line_formation":
+        elif (move.type == MoveType.LINE_FORMATION or
+              move.type == MoveType.CHOOSE_LINE_OPTION):
             GameEngine._apply_line_formation(new_state, move)
-        elif move.type == "territory_claim":
+        elif (move.type == MoveType.TERRITORY_CLAIM or
+              move.type == MoveType.CHOOSE_TERRITORY_OPTION):
             GameEngine._apply_territory_claim(new_state, move)
-        elif move.type == "forced_elimination":
+        elif move.type == MoveType.FORCED_ELIMINATION:
             GameEngine._apply_forced_elimination(new_state, move)
 
         # Update move history
@@ -160,8 +164,8 @@ class GameEngine:
         # S must be non-decreasing
         after_snapshot = BoardManager.compute_progress_snapshot(new_state)
         if after_snapshot.S < before_snapshot.S:
-            # In a real engine we might throw, but for AI simulation we log/warn
-            # or just accept it if it's a known deviation.
+            # In a real engine we might throw, but for AI simulation we
+            # log/warn or just accept it if it's a known deviation.
             # For now, we'll assume correctness of logic but this hook is here.
             pass
 
@@ -175,8 +179,9 @@ class GameEngine:
         """Check for victory conditions"""
         # 1. Ring Elimination Victory
         # Check total eliminated rings for each player
-        # Note: game_state.players might not be up to date with board.eliminated_rings
-        # We should sync them or check board.eliminated_rings directly
+        # Note: game_state.players might not be up to date with
+        # board.eliminated_rings. We should sync them or check
+        # board.eliminated_rings directly
         
         for p_id_str, count in game_state.board.eliminated_rings.items():
             if count >= game_state.victory_threshold:
@@ -197,28 +202,136 @@ class GameEngine:
                 game_state.winner = p_id
                 return
 
+        # 3. Global Stalemate (No stacks remain)
+        # If no stacks remain on the board, the game ends in a stalemate
+        # which is resolved by tie-breakers.
+        # 3. Global Stalemate (No stacks remain)
+        # If no stacks remain on the board, the game ends in a stalemate
+        # which is resolved by tie-breakers.
+        if not game_state.board.stacks:
+            game_state.game_status = GameStatus.FINISHED
+            
+            # Tie-breaker logic:
+            # 1. Most collapsed spaces
+            # 2. Most eliminated rings (including rings in hand converted)
+            # 3. Most markers
+            # 4. Last player to complete a valid turn action
+            
+            # Calculate scores for each player
+            scores = {}
+            for player in game_state.players:
+                pid = player.player_number
+                
+                # 1. Collapsed spaces
+                collapsed = territory_counts.get(pid, 0)
+                
+                # 2. Eliminated rings + Rings in hand
+                eliminated = game_state.board.eliminated_rings.get(str(pid), 0)
+                eliminated += player.rings_in_hand
+                
+                # 3. Markers
+                markers = 0
+                for m in game_state.board.markers.values():
+                    if m.player == pid:
+                        markers += 1
+                        
+                scores[pid] = {
+                    "collapsed": collapsed,
+                    "eliminated": eliminated,
+                    "markers": markers
+                }
+                
+            # Determine winner
+            # Assuming 2 players for simplicity, but logic holds for N
+            # Sort players by criteria
+            sorted_players = sorted(
+                game_state.players,
+                key=lambda p: (
+                    scores[p.player_number]["collapsed"],
+                    scores[p.player_number]["eliminated"],
+                    scores[p.player_number]["markers"],
+                    # 4. Last player to move wins?
+                    # Rules say: "4. If still tied, the last player to complete a valid turn action."
+                    # This means the current player (who just moved) or the previous?
+                    # Usually "last player to complete" means the one who just finished their turn.
+                    # Since we check victory after a move, the current_player (who made the move)
+                    # is the one who completed the action.
+                    # So we prefer the one who matches game_state.current_player?
+                    # Wait, game_state.current_player is updated AFTER check_victory?
+                    # In apply_move:
+                    #   ...
+                    #   GameEngine._update_phase(new_state, move)
+                    #   ...
+                    #   GameEngine._check_victory(new_state)
+                    #
+                    # _update_phase might switch player if turn ended.
+                    # If turn ended, current_player is the NEXT player.
+                    # So the LAST player is the one who just moved.
+                    # We can check move_history[-1].player
+                    1 if game_state.move_history and game_state.move_history[-1].player == p.player_number else 0
+                ),
+                reverse=True
+            )
+            
+            game_state.winner = sorted_players[0].player_number
+            return
+        
+        # 4. No legal moves for ANY player (Global Stalemate with stacks)
+        # This is computationally expensive to check every move.
+        # However, the rules say: "In any situation where no player has any legal placement,
+        # movement, or capture but at least one stack still exists on the board, the controlling
+        # player of some stack on their turn must satisfy the condition above and perform a forced elimination."
+        # So technically, global stalemate with stacks is impossible if forced elimination is implemented correctly.
+        # The only true stalemate is when no stacks remain.
+        # But we should check if the current player has no moves AND no forced elimination is possible?
+        # No, forced elimination is always possible if you have a stack.
+        # So if you have a stack, you have a move (forced elim).
+        # If you have no stack, you might have placement.
+        # If you have no stack and no placement (no rings), you are eliminated/inactive.
+        # If ALL players are eliminated/inactive, then game ends.
+        
+        active_players = 0
+        for p in game_state.players:
+            # Check if player can potentially move
+            has_stacks = any(s.controlling_player == p.player_number for s in game_state.board.stacks.values())
+            can_place = p.rings_in_hand > 0
+            if has_stacks or can_place:
+                active_players += 1
+                
+        if active_players == 0:
+             # Should have been caught by "no stacks" check if no stacks,
+             # but if stacks exist but belong to no one (impossible?) or
+             # some edge case, we treat as stalemate.
+             # But stacks always have a controller.
+             # So if stacks exist, someone is active.
+             pass
+
     @staticmethod
     def _update_phase(game_state: GameState, last_move: Move):
         current_player = game_state.current_player
 
-        if last_move.type == "forced_elimination":
+        if last_move.type == MoveType.FORCED_ELIMINATION:
             # After forced elimination, turn ends?
-            # "If after this elimination P still has no legal action, their turn ends."
-            # "Successive forced eliminations continue... until no stacks remain"
-            # For simplicity, we'll end turn and let next turn handle it if needed.
+            # "If after this elimination P still has no legal action, their
+            # turn ends."
+            # "Successive forced eliminations continue... until no stacks
+            # remain"
+            # For simplicity, we'll end turn and let next turn handle it if
+            # needed.
             # Or we should check if they have moves now?
             # Usually forced elimination opens up space.
-            # But the rule says "If after this elimination P still has no legal action, their turn ends."
+            # But the rule says "If after this elimination P still has no
+            # legal action, their turn ends."
             # This implies we should check for moves again.
             # But that would require a phase loop.
             # For now, let's end turn.
             GameEngine._end_turn(game_state)
 
-        elif last_move.type == "place_ring":
+        elif last_move.type == MoveType.PLACE_RING:
             # After placement, must move the placed stack
             game_state.current_phase = GamePhase.MOVEMENT
 
-        elif last_move.type == "move_stack":
+        elif last_move.type == MoveType.MOVE_STACK:
             # After movement, check for captures
             capture_moves = GameEngine._get_capture_moves(
                 game_state, current_player
@@ -229,8 +342,9 @@ class GameEngine:
                 # No captures, go to line processing
                 GameEngine._advance_to_line_processing(game_state)
 
-        elif (last_move.type == "overtaking_capture" or
-              last_move.type == "chain_capture"):
+        elif (last_move.type == MoveType.OVERTAKING_CAPTURE or
+              last_move.type == MoveType.CHAIN_CAPTURE or
+              last_move.type == MoveType.CONTINUE_CAPTURE_SEGMENT):
             # Check for more captures (chain)
             capture_moves = GameEngine._get_capture_moves(
                 game_state, current_player
@@ -241,7 +355,8 @@ class GameEngine:
                 # End of chain
                 GameEngine._advance_to_line_processing(game_state)
 
-        elif last_move.type == "line_formation":
+        elif (last_move.type == MoveType.LINE_FORMATION or
+              last_move.type == MoveType.CHOOSE_LINE_OPTION):
             # Check for more lines
             line_moves = GameEngine._get_line_processing_moves(
                 game_state, current_player
@@ -251,7 +366,8 @@ class GameEngine:
             else:
                 GameEngine._advance_to_territory_processing(game_state)
 
-        elif last_move.type == "territory_claim":
+        elif (last_move.type == MoveType.TERRITORY_CLAIM or
+              last_move.type == MoveType.CHOOSE_TERRITORY_OPTION):
             # Check for more regions
             territory_moves = GameEngine._get_territory_processing_moves(
                 game_state, current_player
@@ -364,7 +480,9 @@ class GameEngine:
                 has_legal_move = False
                 
                 # Check movement
-                adjacent = GameEngine._get_adjacent_positions(pos, board.type, board.size)
+                adjacent = GameEngine._get_adjacent_positions(
+                    pos, board.type, board.size
+                )
                 for adj in adjacent:
                     adj_key = adj.to_key()
                     if adj_key in board.collapsed_spaces:
@@ -375,39 +493,50 @@ class GameEngine:
                     else:
                         target_stack = board.stacks[adj_key]
                         if target_stack.controlling_player != player_number:
-                            if hypothetical_stack.stack_height > target_stack.stack_height:
+                            if (hypothetical_stack.stack_height >
+                                    target_stack.stack_height):
                                 has_legal_move = True
                                 break
                 
                 # Check capture (if movement didn't yield any)
                 if not has_legal_move:
                     # Check for capture opportunities
-                    # We need to check if any capture is possible from this position
-                    # This is a simplified check: if we can reach any enemy stack that we can capture
-                    # and land beyond it.
+                    # We need to check if any capture is possible from this
+                    # position. This is a simplified check: if we can reach
+                    # any enemy stack that we can capture and land beyond it.
                     
-                    # Reuse _get_capture_moves logic but scoped to this position
-                    # We need to temporarily set phase to CAPTURE to use _get_capture_moves?
-                    # No, that's too invasive.
+                    # Reuse _get_capture_moves logic but scoped to this
+                    # position. We need to temporarily set phase to CAPTURE
+                    # to use _get_capture_moves? No, that's too invasive.
                     # Let's implement a helper for single-stack capture check.
                     
-                    # For now, we can iterate directions and check for capture patterns
+                    # For now, we can iterate directions and check for capture
+                    # patterns
                     directions = BoardManager._get_all_directions(board.type)
                     for direction in directions:
                         # Find target
                         step = 1
                         target_pos = None
                         while True:
-                            check_pos = BoardManager._add_direction(pos, direction, step)
-                            if not BoardManager.is_valid_position(check_pos, board.type, board.size):
+                            check_pos = BoardManager._add_direction(
+                                pos, direction, step
+                            )
+                            if not BoardManager.is_valid_position(
+                                check_pos, board.type, board.size
+                            ):
                                 break
-                            if BoardManager.is_collapsed_space(check_pos, board):
+                            if BoardManager.is_collapsed_space(
+                                check_pos, board
+                            ):
                                 break
                             
-                            stack_at_pos = BoardManager.get_stack(check_pos, board)
+                            stack_at_pos = BoardManager.get_stack(
+                                check_pos, board
+                            )
                             if stack_at_pos:
                                 if stack_at_pos.stack_height > 0:
-                                    if hypothetical_stack.cap_height >= stack_at_pos.cap_height:
+                                    if (hypothetical_stack.cap_height >=
+                                            stack_at_pos.cap_height):
                                         target_pos = check_pos
                                     break
                             
@@ -416,20 +545,32 @@ class GameEngine:
                         if target_pos:
                             # Check landing
                             landing_step = 1
-                            while landing_step <= 5: # Max landing distance
-                                landing_pos = BoardManager._add_direction(target_pos, direction, landing_step)
-                                if not BoardManager.is_valid_position(landing_pos, board.type, board.size):
+                            while landing_step <= 5:  # Max landing distance
+                                landing_pos = BoardManager._add_direction(
+                                    target_pos, direction, landing_step
+                                )
+                                if not BoardManager.is_valid_position(
+                                    landing_pos, board.type, board.size
+                                ):
                                     break
-                                if BoardManager.is_collapsed_space(landing_pos, board):
+                                if BoardManager.is_collapsed_space(
+                                    landing_pos, board
+                                ):
                                     break
                                 
-                                landing_stack = BoardManager.get_stack(landing_pos, board)
-                                if landing_stack and landing_stack.stack_height > 0:
+                                landing_stack = BoardManager.get_stack(
+                                    landing_pos, board
+                                )
+                                if (landing_stack and
+                                        landing_stack.stack_height > 0):
                                     break
                                 
                                 # Check marker at landing
-                                marker = board.markers.get(landing_pos.to_key())
-                                if marker is not None and marker.player != player_number:
+                                marker = board.markers.get(
+                                    landing_pos.to_key()
+                                )
+                                if (marker is not None and
+                                        marker.player != player_number):
                                     break
 
                                 # Valid capture found
@@ -445,7 +586,7 @@ class GameEngine:
                 if has_legal_move:
                     moves.append(Move(
                         id="simulated",
-                        type="place_ring",
+                        type=MoveType.PLACE_RING,
                         player=player_number,
                         to=pos,
                         timestamp=game_state.last_move_at,  # Placeholder
@@ -453,7 +594,7 @@ class GameEngine:
                         moveNumber=len(game_state.move_history) + 1,
                         placementCount=1,  # Default to 1 for simulation
                         placedOnStack=False
-                    ))
+                    ))  # type: ignore
             else:
                 # Can place on existing stack (stacking)
                 # But only if it's not a marker? (Rules check needed)
@@ -474,7 +615,9 @@ class GameEngine:
                 stack.controlling_player = player_number
                 
                 has_legal_move = False
-                adjacent = GameEngine._get_adjacent_positions(pos, board.type, board.size)
+                adjacent = GameEngine._get_adjacent_positions(
+                    pos, board.type, board.size
+                )
                 for adj in adjacent:
                     adj_key = adj.to_key()
                     if adj_key in board.collapsed_spaces:
@@ -501,7 +644,7 @@ class GameEngine:
                 if has_legal_move:
                     moves.append(Move(
                         id="simulated",
-                        type="place_ring",
+                        type=MoveType.PLACE_RING,
                         player=player_number,
                         to=pos,
                         timestamp=game_state.last_move_at,
@@ -509,7 +652,7 @@ class GameEngine:
                         moveNumber=len(game_state.move_history) + 1,
                         placementCount=1,
                         placedOnStack=True
-                    ))
+                    ))  # type: ignore
 
         return moves
 
@@ -517,15 +660,26 @@ class GameEngine:
     def _get_capture_moves(
         game_state: GameState, player_number: int
     ) -> List[Move]:
-        # In CAPTURE phase, we must continue the chain from the last moved
-        # stack
-        last_move = (
-            game_state.move_history[-1] if game_state.move_history else None
-        )
-        if not last_move or not last_move.to:
-            return []
+        # Check if we are in a chain capture sequence
+        if game_state.chain_capture_state:
+            # Use state to determine attacker position
+            attacker_pos = game_state.chain_capture_state.current_position
+            visited = set(game_state.chain_capture_state.visited_positions)
+        else:
+            # Initial capture or legacy fallback
+            last_move = (
+                game_state.move_history[-1]
+                if game_state.move_history else None
+            )
+            if not last_move or not last_move.to:
+                return []
+            attacker_pos = last_move.to
+            visited = set()
+            # Add current position to visited to prevent immediate reversal?
+            # No, standard rules handle direction.
+            # But for cyclic prevention, we should track visited.
+            # For initial capture, visited is empty (except maybe start).
 
-        attacker_pos = last_move.to
         attacker_stack = BoardManager.get_stack(attacker_pos, game_state.board)
 
         if (not attacker_stack or
@@ -563,6 +717,10 @@ class GameEngine:
                 step += 1
 
             if target_pos:
+                # Check if target has been visited (cyclic capture prevention)
+                if target_pos.to_key() in visited:
+                    continue
+
                 # Found target, check landing spots beyond
                 landing_step = 1
                 while True:
@@ -583,6 +741,15 @@ class GameEngine:
                     if BoardManager.get_stack(landing_pos, game_state.board):
                         break  # Blocked by stack
 
+                    # Check if landing has been visited
+                    if landing_pos.to_key() in visited:
+                        # Landing on a visited spot is generally allowed?
+                        # Rules say: "A stack may not land on a space it has
+                        # already occupied in the current turn."
+                        # So yes, we must check landing against visited.
+                        landing_step += 1
+                        continue
+
                     # Valid landing (empty space)
                     # Check minimum distance (stack height)
                     # Distance is from attacker_pos to landing_pos
@@ -590,13 +757,20 @@ class GameEngine:
                     # landing_step (to landing)
                     total_dist = step + landing_step
                     if total_dist >= attacker_stack.stack_height:
+                        # Determine move type based on phase
+                        move_type = (
+                            MoveType.CONTINUE_CAPTURE_SEGMENT
+                            if game_state.chain_capture_state
+                            else MoveType.CHAIN_CAPTURE  # Legacy/Initial
+                        )
+                        
                         moves.append(Move(
                             id="simulated",
-                            type="chain_capture",
+                            type=move_type,
                             player=player_number,
-                            from_pos=attacker_pos,
+                            from_pos=attacker_pos,  # type: ignore
                             to=landing_pos,
-                            capture_target=target_pos,
+                            capture_target=target_pos,  # type: ignore
                             timestamp=game_state.last_move_at,
                             thinkTime=0,
                             moveNumber=len(game_state.move_history) + 1
@@ -628,15 +802,15 @@ class GameEngine:
                 
                 moves.append(Move(
                     id="simulated",
-                    type="forced_elimination",
+                    type=MoveType.FORCED_ELIMINATION,
                     player=player_number,
-                    to=pos, # Target stack position
+                    to=pos,  # Target stack position
                     timestamp=game_state.last_move_at,
                     thinkTime=0,
                     moveNumber=len(game_state.move_history) + 1,
                     placementCount=0,
                     placedOnStack=False
-                ))
+                ))  # type: ignore
         return moves
 
     @staticmethod
@@ -652,15 +826,39 @@ class GameEngine:
 
         moves = []
         for i, line in enumerate(player_lines):
+            # Option 1: Collapse all and eliminate
             moves.append(Move(
                 id="simulated",
-                type="line_formation",
+                type=MoveType.CHOOSE_LINE_OPTION,
                 player=player_number,
                 to=line.positions[0],  # Use first position as identifier
                 timestamp=game_state.last_move_at,
                 thinkTime=0,
-                moveNumber=len(game_state.move_history) + 1
-            ))
+                moveNumber=len(game_state.move_history) + 1,
+                # We use 'placement_count' as a hack to encode the option
+                # 1 = Option 1 (Collapse All + Eliminate)
+                # 2 = Option 2 (Min Collapse + No Eliminate)
+                placementCount=1
+            ))  # type: ignore
+            
+            # Option 2: Min collapse, no elimination
+            # Generate moves for all possible segments of required length
+            required_len = 4 if game_state.board.type == BoardType.SQUARE8 else 5
+            if len(line.positions) > required_len:
+                # Generate all contiguous segments of required_len
+                for start_idx in range(len(line.positions) - required_len + 1):
+                    segment = line.positions[start_idx : start_idx + required_len]
+                    moves.append(Move(
+                        id="simulated",
+                        type=MoveType.CHOOSE_LINE_OPTION,
+                        player=player_number,
+                        to=line.positions[0],
+                        timestamp=game_state.last_move_at,
+                        thinkTime=0,
+                        moveNumber=len(game_state.move_history) + 1,
+                        placementCount=2,
+                        collapsed_markers=segment
+                    ))  # type: ignore
         return moves
 
     @staticmethod
@@ -697,13 +895,13 @@ class GameEngine:
         for i, region in enumerate(valid_regions):
             moves.append(Move(
                 id="simulated",
-                type="territory_claim",
+                type=MoveType.CHOOSE_TERRITORY_OPTION,
                 player=player_number,
                 to=region.spaces[0],  # Use first space as identifier
                 timestamp=game_state.last_move_at,
                 thinkTime=0,
                 moveNumber=len(game_state.move_history) + 1
-            ))
+            ))  # type: ignore
         return moves
 
     @staticmethod
@@ -721,7 +919,7 @@ class GameEngine:
         must_move_pos = None
         if (last_move and
                 last_move.player == player_number and
-                last_move.type == "place_ring"):
+                last_move.type == MoveType.PLACE_RING):
             must_move_pos = last_move.to
 
         # Iterate through all stacks controlled by the player
@@ -758,9 +956,9 @@ class GameEngine:
                         # Move to empty space -> Move Stack
                         moves.append(Move(
                             id="simulated",
-                            type="move_stack",
+                            type=MoveType.MOVE_STACK,
                             player=player_number,
-                            **{"from": from_pos},
+                            from_pos=from_pos,  # type: ignore
                             to=to_pos,
                             timestamp=game_state.last_move_at,
                             thinkTime=0,
@@ -776,9 +974,9 @@ class GameEngine:
                             if stack.stack_height > target_stack.stack_height:
                                 moves.append(Move(
                                     id="simulated",
-                                    type="overtaking_capture",
+                                    type=MoveType.OVERTAKING_CAPTURE,
                                     player=player_number,
-                                    **{"from": from_pos},
+                                    from_pos=from_pos,  # type: ignore
                                     to=to_pos,
                                     timestamp=game_state.last_move_at,
                                     thinkTime=0,
@@ -890,6 +1088,34 @@ class GameEngine:
             # This is complex to simulate perfectly without full rule engine.
             pass
 
+            # Check for chain capture continuation
+            # If we can capture again from the new position, we enter
+            # CHAIN_CAPTURE phase. But only if the move type was
+            # OVERTAKING_CAPTURE (initial capture).
+            
+            # In TS, ChainCaptureState tracks visited positions to prevent
+            # cycles. We should initialize it here.
+            
+            from .models import ChainCaptureState
+            
+            # Initialize state
+            game_state.chain_capture_state = ChainCaptureState(
+                playerNumber=move.player,
+                startPosition=move.from_pos,  # type: ignore
+                currentPosition=move.to,
+                segments=[],
+                availableMoves=[],
+                visitedPositions=[
+                    move.from_pos.to_key(),  # type: ignore
+                    move.to.to_key()
+                ]
+            )
+            # Add target to visited?
+            if move.capture_target:
+                game_state.chain_capture_state.visited_positions.append(
+                    move.capture_target.to_key()
+                )
+
     @staticmethod
     def _apply_chain_capture(game_state: GameState, move: Move):
         """Apply chain capture move"""
@@ -931,7 +1157,9 @@ class GameEngine:
             # Find target
             step = 1
             while step < steps:
-                pos = BoardManager._add_direction(move.from_pos, direction, step)
+                pos = BoardManager._add_direction(
+                    move.from_pos, direction, step
+                )
                 pos_key = pos.to_key()
                 if pos_key in board.stacks:
                     target_pos = pos
@@ -1005,15 +1233,30 @@ class GameEngine:
                 else:
                     # Flip opponent marker
                     marker.player = move.player
+
+            # Update chain capture state
+            from .models import ChainCaptureSegment
+            
+            segment = ChainCaptureSegment(
+                from_pos=move.from_pos,  # type: ignore
+                target=target_pos,
+                landing=move.to,
+                capturedCapHeight=0  # Placeholder
+            )
+            
+            if game_state.chain_capture_state:
+                game_state.chain_capture_state.current_position = move.to
+                game_state.chain_capture_state.segments.append(segment)
+                game_state.chain_capture_state.visited_positions.append(
+                    target_pos.to_key()
+                )
+                game_state.chain_capture_state.visited_positions.append(
+                    move.to.to_key()
+                )
+
     @staticmethod
     def _apply_line_formation(game_state: GameState, move: Move):
-        """Apply line formation move"""
-        # Simplified: Collapse line and eliminate ring
-        # In full rules, we need to handle choices (collapse all vs min)
-        # and elimination choices.
-        # For AI simulation, we'll assume collapse all and eliminate from
-        # largest stack.
-        
+        """Apply line formation move (handles both legacy and canonical types)"""
         # Find the line associated with this move (by start pos)
         lines = BoardManager.find_all_lines(game_state.board)
         target_line = None
@@ -1025,57 +1268,81 @@ class GameEngine:
         if not target_line:
             return
 
-        # Collapse markers
-        for pos in target_line.positions:
-            BoardManager.set_collapsed_space(
-                pos, move.player, game_state.board
+        # Check option
+        # 1 = Option 1 (Collapse All + Eliminate)
+        # 2 = Option 2 (Min Collapse + No Eliminate)
+        option = move.placement_count or 1
+        
+        if option == 1:
+            # Option 1: Collapse all markers
+            for pos in target_line.positions:
+                BoardManager.set_collapsed_space(
+                    pos, move.player, game_state.board
+                )
+                
+            # Eliminate ring from largest stack
+            player_stacks = BoardManager.get_player_stacks(
+                game_state.board, move.player
             )
+            if player_stacks:
+                # Sort by cap height desc
+                player_stacks.sort(key=lambda s: s.cap_height, reverse=True)
+                stack = player_stacks[0]
+                
+                # Copy stack before modification
+                key = stack.position.to_key()
+                stack = stack.model_copy(deep=True)
+                game_state.board.stacks[key] = stack
+                
+                # Eliminate cap
+                cap_height = stack.cap_height
+                stack.rings = stack.rings[:-cap_height]
+                stack.stack_height -= cap_height
+                stack.cap_height = 0  # Recalculate if needed
+                
+                # Update eliminated count
+                game_state.total_rings_eliminated += cap_height
+                if str(move.player) not in game_state.board.eliminated_rings:
+                    game_state.board.eliminated_rings[str(move.player)] = 0
+                game_state.board.eliminated_rings[str(move.player)] += \
+                    cap_height
+                
+                if not stack.rings:
+                    BoardManager.remove_stack(stack.position, game_state.board)
+                else:
+                    # Update controlling player
+                    stack.controlling_player = stack.rings[-1]
+                    # Recalculate cap height
+                    h = 0
+                    for r in reversed(stack.rings):
+                        if r == stack.controlling_player:
+                            h += 1
+                        else:
+                            break
+                    stack.cap_height = h
+                    BoardManager.set_stack(
+                        stack.position, stack, game_state.board
+                    )
+        elif option == 2:
+            # Option 2: Minimum collapse (required_len markers), no elimination
+            # Use collapsed_markers from move if available, otherwise default to first N
+            required_len = 4 if game_state.board.type == BoardType.SQUARE8 else 5
             
-        # Eliminate ring
-        # Find largest stack for player
-        player_stacks = BoardManager.get_player_stacks(
-            game_state.board, move.player
-        )
-        if player_stacks:
-            # Sort by cap height desc
-            player_stacks.sort(key=lambda s: s.cap_height, reverse=True)
-            stack = player_stacks[0]
+            markers_to_collapse = move.collapsed_markers
+            if not markers_to_collapse:
+                # Fallback for legacy/simulated moves without explicit segment
+                markers_to_collapse = target_line.positions[:required_len]
+                
+            for pos in markers_to_collapse:
+                BoardManager.set_collapsed_space(
+                    pos, move.player, game_state.board
+                )
             
-            # Copy stack before modification
-            key = stack.position.to_key()
-            stack = stack.model_copy(deep=True)
-            game_state.board.stacks[key] = stack
-            
-            # Eliminate cap
-            cap_height = stack.cap_height
-            stack.rings = stack.rings[:-cap_height]
-            stack.stack_height -= cap_height
-            stack.cap_height = 0  # Recalculate if needed
-            
-            # Update eliminated count
-            game_state.total_rings_eliminated += cap_height
-            if str(move.player) not in game_state.board.eliminated_rings:
-                game_state.board.eliminated_rings[str(move.player)] = 0
-            game_state.board.eliminated_rings[str(move.player)] += cap_height
-            
-            if not stack.rings:
-                BoardManager.remove_stack(stack.position, game_state.board)
-            else:
-                # Update controlling player
-                stack.controlling_player = stack.rings[-1]
-                # Recalculate cap height
-                h = 0
-                for r in reversed(stack.rings):
-                    if r == stack.controlling_player:
-                        h += 1
-                    else:
-                        break
-                stack.cap_height = h
-                BoardManager.set_stack(stack.position, stack, game_state.board)
+            # No elimination
 
     @staticmethod
     def _apply_territory_claim(game_state: GameState, move: Move):
-        """Apply territory claim move"""
+        """Apply territory claim move (handles both legacy and canonical types)"""
         # Find region
         regions = BoardManager.find_disconnected_regions(
             game_state.board, move.player
@@ -1287,6 +1554,7 @@ class GameEngine:
                 # stack visibility for now, or if they do, add check here.)
                 
         return visible_stacks
+
     @staticmethod
     def _apply_forced_elimination(game_state: GameState, move: Move):
         """Apply forced elimination move"""

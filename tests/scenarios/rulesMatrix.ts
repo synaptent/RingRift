@@ -265,6 +265,19 @@ export const lineRewardRuleScenarios: LineRewardRuleScenario[] = [
     },
     description:
       'Overlength line on square8: default backend behaviour with no PlayerChoice is Option 2 (minimum collapse, no elimination), preserving one marker.'
+  },
+  {
+    kind: 'line-reward',
+    boardType: 'square19',
+    rowIndex: 3,
+    overlengthBy: 2,
+    ref: {
+      id: 'Rules_11_3_Q22_overlength_line_option1_full_collapse_square19',
+      rulesSections: ['§11.2', '§11.3'],
+      faqRefs: ['Q22']
+    },
+    description:
+      'Overlength line on square19: explicit Option 1 case where the moving player collapses the entire line and eliminates one of their rings or a full cap from a controlled stack, trading rings for maximum territory.'
   }
 ];
 

@@ -42,6 +42,23 @@ This is best described as an **engine/AI and playtest-focused beta**, not a poli
   - Victory checks for ring-elimination and territory-control.
   - PlayerChoice integration for line order/rewards, ring/cap elimination, region order, and (in sandbox/legacy flows) capture direction via `PlayerInteractionManager`; on the backend, capture direction is now expressed as `continue_capture_segment` moves in `chain_capture` (see [`TODO.md`](TODO.md:73)).
 
+- **ClientSandboxEngine & sandbox canonicalization**
+  - Client-local sandbox engine mirrors backend rules for movement, chain capture, lines, territory, and victory, and now emits **canonical `Move` history** for both AI and human flows:
+    - Ring placement: human placements through `handleHumanCellClick` are recorded as canonical `place_ring` moves with `placementCount` and `placedOnStack` inferred from `ringsInHand` deltas and pre-move stack state.
+    - Movement & captures: human movement and capture chains initiated via `handleHumanCellClick` are converted into canonical `move_stack` / `move_ring` and `overtaking_capture` + `continue_capture_segment` sequences using sandbox movement hooks.
+    - Line and territory consequences run as **consequences of a single canonical move**; no extra history entries are emitted for lines/territory, matching backend semantics.
+  - Sandbox **chain-capture semantics** for human flows are now explicitly tested via FAQ 15.3.1 scenario parity:
+    - Each chain begins with an `overtaking_capture` entry where `phaseBefore === 'movement'` and `phaseAfter === 'chain_capture'`.
+    - Follow-up segments are emitted as `continue_capture_segment` entries while `phaseBefore === 'chain_capture'`, with the final segment transitioning out of the `chain_capture` phase.
+  - Shared RNG hooks have been threaded through local AI selection for both sandbox and backend:
+    - `chooseLocalMoveFromCandidates(player, gameState, candidates, rng = Math.random)` in `src/shared/engine/localAIMoveSelection.ts` uses the injected RNG for all policy decisions.
+    - Sandbox AI (`maybeRunAITurnSandbox(hooks, rng)`) and `ClientSandboxEngine.maybeRunAITurn(rng)` accept a `LocalAIRng` and forward it into the shared selector.
+    - Backend local AI (`AIEngine.chooseLocalMoveFromCandidates(..., rng)` / `getLocalAIMove(..., rng)`) also accepts a `LocalAIRng`, enabling trace harnesses to drive both engines from aligned RNG streams.
+  - Dedicated Jest suites verify these guarantees:
+    - `Sandbox_vs_Backend.aiRngParity.test.ts` ensures sandbox and backend local AI use injected RNGs and never fall back to `Math.random` when one is provided.
+    - `Sandbox_vs_Backend.aiRngFullParity.test.ts` (diagnostic, skipped by default) runs early-step AI decisions for sandbox and backend under identically seeded RNGs and asserts loose move parity while states remain structurally aligned.
+    - `ClientSandboxEngine.chainCapture.scenarios.test.ts` (FAQ 15.3.1 sandbox scenario) asserts both board outcome and canonical capture-chain history (`overtaking_capture` + `continue_capture_segment` with correct `phaseBefore/After`).
+
 ### Backend Infrastructure
 
 - **HTTP API**
