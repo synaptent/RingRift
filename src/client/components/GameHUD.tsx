@@ -21,6 +21,8 @@ export function GameHUD({
 }: GameHUDProps) {
   if (!currentPlayer) return null;
 
+  const spectatorCount = gameState.spectators.length;
+
   const getPhaseLabel = (phase: GamePhase) => {
     switch (phase) {
       case 'ring_placement':
@@ -116,31 +118,57 @@ export function GameHUD({
             <span className="ml-1 text-[11px] text-amber-200">(awaiting update…)</span>
           )}
         </div>
-        {isSpectator && (
-          <span className="px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/40 text-purple-100 uppercase tracking-wide font-semibold">
-            Spectator
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {spectatorCount > 0 && (
+            <span className="text-[11px] text-slate-400 flex items-center gap-1">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-3 h-3"
+              >
+                <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+                <path
+                  fillRule="evenodd"
+                  d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              {spectatorCount}
+            </span>
+          )}
+          {isSpectator && (
+            <span className="px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/40 text-purple-100 uppercase tracking-wide font-semibold">
+              Spectator
+            </span>
+          )}
+        </div>
       </div>
       {/* Current Turn Banner */}
       <div
         className={`
-        flex items-center justify-between px-6 py-4 rounded-xl border-2 shadow-lg mb-4
+        flex items-center justify-between px-6 py-4 rounded-xl border-2 shadow-lg mb-4 transition-all duration-300
         ${getPlayerBgClass(currentPlayer.playerNumber)}
         ${getPlayerColorClass(currentPlayer.playerNumber)}
+        ${isSpectator ? 'opacity-90' : 'opacity-100'}
       `}
       >
         <div className="flex flex-col">
-          <span className="text-sm font-medium opacity-80 uppercase tracking-wider">
+          <span className="text-xs font-bold opacity-70 uppercase tracking-widest mb-1">
             Current Turn
           </span>
-          <span className="text-2xl font-bold text-white">
-            {currentPlayer.username || `Player ${currentPlayer.playerNumber}`}
-          </span>
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-3 h-3 rounded-full ${getPlayerColorClass(currentPlayer.playerNumber).replace('text-', 'bg-').replace('border-', '')} animate-pulse`}
+            />
+            <span className="text-3xl font-black text-white tracking-tight">
+              {currentPlayer.username || `Player ${currentPlayer.playerNumber}`}
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-col items-end">
-          <span className="text-sm font-medium opacity-80 uppercase tracking-wider">Phase</span>
+          <span className="text-xs font-bold opacity-70 uppercase tracking-widest mb-1">Phase</span>
           <span className="text-xl font-bold text-white">
             {getPhaseLabel(gameState.currentPhase)}
           </span>

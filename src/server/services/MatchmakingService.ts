@@ -1,5 +1,4 @@
 import { MatchmakingPreferences, MatchmakingStatus } from '../../shared/types/websocket';
-import { BoardType } from '../../shared/types/game';
 import { GameStatus } from '@prisma/client';
 import { getDatabaseClient } from '../database/connection';
 import { WebSocketServer } from '../websocket/server';
@@ -99,8 +98,13 @@ export class MatchmakingService {
     const now = Date.now();
     const waitTime = now - player.joinedAt.getTime();
 
-    // Calculate expanded rating range based on wait time
-    const expansionFactor = Math.floor(waitTime / this.MATCH_CHECK_INTERVAL_MS);
+    // Calculate expanded rating range based on wait time, capped by a
+    // maximum window so expansion does not grow without bound.
+    const cappedWait = Math.min(
+      waitTime,
+      this.MATCH_CHECK_INTERVAL_MS * Math.ceil(this.MAX_WAIT_TIME_MS / this.MATCH_CHECK_INTERVAL_MS)
+    );
+    const expansionFactor = Math.floor(cappedWait / this.MATCH_CHECK_INTERVAL_MS);
     const ratingBuffer = this.RATING_EXPANSION_RATE * expansionFactor;
 
     const minRating = player.preferences.ratingRange.min - ratingBuffer;
@@ -165,7 +169,7 @@ export class MatchmakingService {
           allowSpectators: true,
           player1Id: player1.userId,
           player2Id: player2.userId,
-          status: GameStatus.ACTIVE, // Start immediately
+          status: GameStatus.active, // Start immediately
           startedAt: new Date(),
           gameState: {}, // Initial empty state
         },
@@ -197,9 +201,15 @@ export class MatchmakingService {
     const waitTime = now - entry.joinedAt.getTime();
     const position = this.queue.indexOf(entry) + 1;
 
+    // Simple heuristic: decrease the remaining estimated wait time as the
+    // player waits longer, but never drop below a small floor to avoid
+    // reporting negative or unrealistically low values.
+    const baseEstimate = 30000; // 30s baseline
+    const estimatedWaitTime = Math.max(5000, baseEstimate - waitTime);
+
     const status: MatchmakingStatus = {
       inQueue: true,
-      estimatedWaitTime: 30000, // Placeholder
+      estimatedWaitTime,
       queuePosition: position,
       searchCriteria: entry.preferences,
     };

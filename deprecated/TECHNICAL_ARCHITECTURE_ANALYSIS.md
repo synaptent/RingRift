@@ -1,8 +1,15 @@
-# RingRift Technical Architecture Analysis & Recommendations
+# ⚠️ DEPRECATED: RingRift Technical Architecture Analysis & Recommendations
+
+> **This is a historical document preserved for context.**
+>
+> **For current architecture and plans, see:**
+>
+> - [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)
+> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
 
 ⚠️ **UPDATED:** November 13, 2025 - **Implementation Status Assessment Added**
 
-> **Critical Update:** After comprehensive codebase analysis, significant implementation gaps have been identified. While the architecture and infrastructure are sound, the core game logic requires substantial work. See **Implementation Status** section below and [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for complete details.
+> **Critical Update:** After comprehensive codebase analysis, significant implementation gaps have been identified. While the architecture and infrastructure are sound, the core game logic requires substantial work. See **Implementation Status** section below and [CURRENT_STATE_ASSESSMENT.md](../CURRENT_STATE_ASSESSMENT.md) for complete details.
 
 ## Executive Summary
 
@@ -13,6 +20,7 @@ Based on comprehensive analysis of the RingRift game rules and requirements, thi
 ## 🎯 System Requirements Analysis
 
 ### Core Functional Requirements
+
 - **Multi-board Support**: 8x8 square, 19x19 square, and hexagonal layouts
 - **Player Flexibility**: 2-4 players with any combination of human/AI participants
 - **Real-time Multiplayer**: Synchronous gameplay with instant move updates
@@ -21,6 +29,7 @@ Based on comprehensive analysis of the RingRift game rules and requirements, thi
 - **Performance**: Sub-100ms response times for optimal user experience
 
 ### Non-Functional Requirements
+
 - **Scalability**: Support for 1000+ concurrent games
 - **Reliability**: 99.9% uptime with graceful failure handling
 - **Security**: Comprehensive protection against cheating and data breaches
@@ -30,7 +39,9 @@ Based on comprehensive analysis of the RingRift game rules and requirements, thi
 ## 🏗️ Recommended Technology Stack
 
 ### Frontend Architecture
+
 **Primary Framework: React 18 with TypeScript**
+
 - **Rationale**: Mature ecosystem, excellent TypeScript support, component reusability
 - **State Management**: React Query for server state, Context API for client state
 - **Routing**: React Router v6 for SPA navigation
@@ -38,12 +49,15 @@ Based on comprehensive analysis of the RingRift game rules and requirements, thi
 - **Build Tool**: Vite for fast development and optimized production builds
 
 **Alternative Considerations**:
+
 - Vue.js 3: Simpler learning curve but smaller ecosystem
 - Angular: More opinionated but heavier for game applications
 - Svelte: Excellent performance but smaller community
 
 ### Backend Architecture
+
 **Primary Framework: Node.js with Express.js and TypeScript**
+
 - **Rationale**: JavaScript ecosystem consistency, excellent WebSocket support, rapid development
 - **API Design**: RESTful endpoints with OpenAPI documentation
 - **Real-time**: Socket.IO for WebSocket communication with fallback support
@@ -51,43 +65,53 @@ Based on comprehensive analysis of the RingRift game rules and requirements, thi
 - **Security**: Helmet, CORS, rate limiting, JWT authentication
 
 **Alternative Considerations**:
+
 - Python/FastAPI: Excellent for AI integration but different language stack
 - Go/Gin: Superior performance but steeper learning curve
 - Rust/Actix: Maximum performance but complex development
 
 ### Database Solutions
+
 **Primary: PostgreSQL with Prisma ORM**
+
 - **Rationale**: ACID compliance, complex query support, excellent TypeScript integration
 - **Schema Management**: Prisma migrations for version control
 - **Connection Pooling**: Built-in connection management
 - **Performance**: Optimized indexes for game queries
 
 **Caching Layer: Redis**
+
 - **Game State Caching**: Fast access to active game data
 - **Session Management**: JWT token blacklisting and user sessions
 - **Rate Limiting**: Distributed rate limiting across instances
 - **Pub/Sub**: Real-time event broadcasting
 
 ### WebSocket Implementation
+
 **Socket.IO with Redis Adapter**
+
 - **Real-time Communication**: Bidirectional event-based communication
 - **Room Management**: Automatic game room creation and management
 - **Scalability**: Redis adapter for multi-instance deployment
 - **Fallback Support**: Automatic fallback to HTTP long-polling
 
 ### AI Engine Integration
+
 **Modular AI Architecture**
+
 - **Interface Design**: Standardized AI player interface
 - **Difficulty Scaling**: Configurable AI strength levels (1-10)
-- **Algorithm Options**: 
+- **Algorithm Options**:
   - Minimax with alpha-beta pruning for deterministic play
   - Monte Carlo Tree Search for advanced strategic play
   - Neural networks for learning-based opponents
 - **Performance**: Asynchronous AI processing to prevent blocking
+- **Python Rules Engine**: A dedicated `ai-service/app/rules/` module mirrors the TypeScript engine's architecture (Validators, Mutators, Actions). This allows the AI to perform high-performance state simulation and validation natively in Python without round-tripping to Node.js.
 
 ## 🔧 System Architecture Design
 
 ### Microservices Architecture
+
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   Web Client    │    │   API Gateway   │    │   Game Service  │
@@ -117,6 +141,7 @@ Based on comprehensive analysis of the RingRift game rules and requirements, thi
 ### Component Architecture
 
 #### Frontend Components
+
 ```
 src/client/
 ├── components/
@@ -157,6 +182,7 @@ src/client/
 ```
 
 #### Backend Services
+
 ```
 src/server/
 ├── game/
@@ -189,26 +215,27 @@ src/server/
 ## 🎮 Game State Management
 
 ### State Architecture
+
 ```typescript
 interface GameState {
   // Game metadata
   id: string;
   boardType: BoardType;
   status: GameStatus;
-  
+
   // Player information
   players: Player[];
   currentPlayer: number;
   spectators: string[];
-  
+
   // Game board state
   board: BoardState;
   moveHistory: Move[];
-  
+
   // Game timing
   timeControl: TimeControl;
   playerTimes: number[];
-  
+
   // Game progression
   phase: GamePhase;
   winner?: number;
@@ -217,6 +244,7 @@ interface GameState {
 ```
 
 ### State Synchronization Strategy
+
 1. **Authoritative Server**: All game state maintained on server
 2. **Optimistic Updates**: Client predictions for responsive UI
 3. **Delta Synchronization**: Only changed state transmitted
@@ -226,14 +254,16 @@ interface GameState {
 ## 🔐 Security Architecture
 
 ### Authentication & Authorization
+
 - **JWT Tokens**: Stateless authentication with refresh token rotation
 - **Role-Based Access**: Player, spectator, and admin role separation
 - **Session Management**: Redis-based session tracking with expiration
 - **Password Security**: bcrypt hashing with salt rounds
 
 ### Game Security
+
 - **Server-Side Validation**: All moves validated on server
-- **Anti-Cheat Measures**: 
+- **Anti-Cheat Measures**:
   - Move timing analysis
   - Pattern detection for automated play
   - Rate limiting for move frequency
@@ -241,6 +271,7 @@ interface GameState {
 - **Audit Logging**: Comprehensive game action logging
 
 ### Network Security
+
 - **HTTPS Enforcement**: TLS 1.3 for all communications
 - **CORS Configuration**: Strict origin validation
 - **Rate Limiting**: Per-user and per-IP request limiting
@@ -249,6 +280,7 @@ interface GameState {
 ## 📈 Performance Optimization
 
 ### Frontend Optimizations
+
 - **Code Splitting**: Route-based and component-based splitting
 - **Lazy Loading**: On-demand component loading
 - **Memoization**: React.memo and useMemo for expensive calculations
@@ -256,6 +288,7 @@ interface GameState {
 - **Service Worker**: Offline capability and caching
 
 ### Backend Optimizations
+
 - **Database Indexing**: Optimized indexes for common queries
 - **Connection Pooling**: Efficient database connection management
 - **Caching Strategy**: Multi-layer caching (Redis, application, CDN)
@@ -263,6 +296,7 @@ interface GameState {
 - **Background Processing**: Async processing for non-critical operations
 
 ### Real-time Performance
+
 - **WebSocket Optimization**: Connection pooling and efficient broadcasting
 - **Message Compression**: Gzip compression for large payloads
 - **Delta Updates**: Minimal state change transmission
@@ -272,6 +306,7 @@ interface GameState {
 ## 🚀 Scalability Considerations
 
 ### Horizontal Scaling
+
 - **Stateless Services**: Enable easy horizontal scaling
 - **Load Balancing**: Nginx or cloud load balancer configuration
 - **Database Sharding**: Partition strategy for large user bases
@@ -279,12 +314,14 @@ interface GameState {
 - **Microservices**: Independent service scaling
 
 ### Vertical Scaling
+
 - **Resource Monitoring**: CPU, memory, and I/O optimization
 - **Database Tuning**: Query optimization and index management
 - **Caching Layers**: Multiple cache levels for performance
 - **Connection Limits**: Optimal connection pool sizing
 
 ### Cloud Architecture
+
 ```
 ┌───────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   CDN/CloudFlare  │    │  Load Balancer  │    │   App Servers   │
@@ -305,6 +342,7 @@ interface GameState {
 ## 🧪 Testing Strategy
 
 ### Testing Pyramid
+
 1. **Unit Tests (70%)**
    - Game logic validation
    - Utility function testing
@@ -324,6 +362,7 @@ interface GameState {
    - Performance testing
 
 ### Testing Tools
+
 - **Backend**: Jest, Supertest for API testing
 - **Frontend**: Vitest, React Testing Library
 - **E2E**: Playwright for cross-browser testing
@@ -333,31 +372,33 @@ interface GameState {
 ## 🚢 Deployment Strategy
 
 ### Development Environment
+
 ```yaml
 # docker-compose.dev.yml
 version: '3.8'
 services:
   app:
     build: .
-    ports: ["3000:3000", "5000:5000"]
+    ports: ['3000:3000', '5000:5000']
     environment:
       - NODE_ENV=development
     volumes:
       - ./src:/app/src
-  
+
   postgres:
     image: postgres:15
     environment:
       POSTGRES_DB: ringrift_dev
     volumes:
       - postgres_data:/var/lib/postgresql/data
-  
+
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
+    ports: ['6379:6379']
 ```
 
 ### Production Deployment
+
 - **Container Orchestration**: Kubernetes or Docker Swarm
 - **CI/CD Pipeline**: GitHub Actions or GitLab CI
 - **Database Migration**: Automated schema updates
@@ -365,6 +406,7 @@ services:
 - **Monitoring**: Prometheus, Grafana, and alerting
 
 ### Infrastructure as Code
+
 ```yaml
 # kubernetes/deployment.yaml
 apiVersion: apps/v1
@@ -382,21 +424,22 @@ spec:
         app: ringrift
     spec:
       containers:
-      - name: app
-        image: ringrift:latest
-        ports:
-        - containerPort: 5000
-        env:
-        - name: DATABASE_URL
-          valueFrom:
-            secretKeyRef:
-              name: db-secret
-              key: url
+        - name: app
+          image: ringrift:latest
+          ports:
+            - containerPort: 5000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: url
 ```
 
 ## 📊 Monitoring & Analytics
 
 ### Application Monitoring
+
 - **Metrics Collection**: Prometheus for system metrics
 - **Log Aggregation**: ELK stack or cloud logging
 - **Error Tracking**: Sentry for error monitoring
@@ -404,6 +447,7 @@ spec:
 - **Uptime Monitoring**: External service monitoring
 
 ### Game Analytics
+
 - **Player Behavior**: Game duration, move patterns, abandonment rates
 - **Performance Metrics**: Response times, error rates, throughput
 - **Business Metrics**: User retention, game completion rates
@@ -412,6 +456,7 @@ spec:
 ## 🔮 Future Extensibility
 
 ### Planned Extensions
+
 1. **Additional Board Types**: Triangular, custom board editor
 2. **Tournament System**: Bracket-style competitions
 3. **Advanced AI**: Machine learning opponents
@@ -419,6 +464,7 @@ spec:
 5. **VR/AR Support**: Immersive game experiences
 
 ### Architecture Flexibility
+
 - **Plugin System**: Modular game rule extensions
 - **API Versioning**: Backward compatibility maintenance
 - **Feature Flags**: Runtime feature toggling
@@ -428,18 +474,21 @@ spec:
 ## 💰 Development Cost Analysis
 
 ### Development Timeline (Estimated)
+
 - **MVP (Core Features)**: 3-4 months
 - **Beta Release**: 5-6 months
 - **Production Release**: 7-8 months
 - **Advanced Features**: 9-12 months
 
 ### Resource Requirements
+
 - **Team Size**: 4-6 developers (2 frontend, 2 backend, 1 DevOps, 1 QA)
 - **Infrastructure Costs**: $500-2000/month (depending on scale)
 - **Third-party Services**: $200-500/month
 - **Development Tools**: $100-300/month per developer
 
 ### Risk Mitigation
+
 - **Technical Risks**: Proof of concept for complex features
 - **Performance Risks**: Load testing from early stages
 - **Security Risks**: Security audit before production
@@ -466,6 +515,7 @@ spec:
 ### What's Actually Complete
 
 ✅ **Infrastructure (90% Complete)**
+
 - Docker configuration
 - Database schema (Prisma)
 - Redis caching setup
@@ -474,12 +524,14 @@ spec:
 - Build tooling
 
 ✅ **Architecture (100% Complete)**
+
 - Comprehensive planning documents
 - Type system design
 - System architecture design
 - Technology stack selection
 
 ✅ **Documentation (100% Complete)**
+
 - Detailed game rules
 - Architecture plans
 - Technical analysis
@@ -488,18 +540,21 @@ spec:
 ### Critical Gaps Identified
 
 ❌ **Core Game Logic (20% Complete)**
+
 - GameEngine: Placeholder logic only
 - RuleEngine: Basic validation, missing complex rules
 - BoardManager: Structure exists, missing key methods
 - **Missing:** Marker system, line formation, territory disconnection, proper captures
 
 ❌ **Game State (40% Complete)**
+
 - Types defined but not properly used
 - Marker state not integrated
 - Player state not updated correctly
 - Phase transitions incorrect
 
 ❌ **Features (0% Complete)**
+
 - No AI implementation
 - No frontend UI
 - No game board rendering
@@ -510,6 +565,7 @@ spec:
 **See `CURRENT_STATE_ASSESSMENT.md`, `CODEBASE_EVALUATION.md`, and `TODO.md` for the up-to-date, code-verified implementation status; this section is preserved only as a historical snapshot.**
 
 **Immediate Priorities:**
+
 1. Fix BoardState data structure
 2. Implement marker system
 3. Fix movement validation
@@ -523,6 +579,7 @@ spec:
 ## 📋 Implementation Roadmap
 
 ### Phase 1: Foundation (Months 1-2) ⚠️ **PARTIALLY COMPLETE**
+
 - [x] Project setup and tooling
 - [x] Database schema design
 - [x] Authentication system
@@ -530,7 +587,8 @@ spec:
 - [ ] Simple UI framework **← NOT STARTED**
 
 ### Phase 2: Core Features (Months 3-4) ⚠️ **BLOCKED - AWAITING PHASE 1**
-- [ ] Complete game logic implementation **← CRITICAL - SEE IMPLEMENTATION_STATUS.md**
+
+- [ ] Complete game logic implementation **← CRITICAL - SEE CURRENT_STATE_ASSESSMENT.md**
   - [ ] Marker system (not started)
   - [ ] Line formation (partial)
   - [ ] Territory disconnection (stub only)
@@ -541,6 +599,7 @@ spec:
 - [ ] Game lobby system **← NOT STARTED**
 
 ### Phase 3: Advanced Features (Months 5-6) ⚠️ **BLOCKED**
+
 - [ ] Spectator mode **← NOT STARTED**
 - [ ] Rating system **← STUB ONLY**
 - [ ] Advanced AI difficulty levels **← BLOCKED BY NO AI**
@@ -548,6 +607,7 @@ spec:
 - [ ] Comprehensive testing **← NO TESTS WRITTEN**
 
 ### Phase 4: Production Ready (Months 7-8) ⚠️ **BLOCKED**
+
 - [ ] Security hardening **← BASIC MIDDLEWARE ONLY**
 - [ ] Monitoring and analytics **← LOGGING SETUP ONLY**
 - [ ] Documentation completion **← ARCHITECTURE DOCS COMPLETE, CODE DOCS MISSING**
@@ -561,6 +621,7 @@ The recommended architecture provides a robust, scalable foundation for the Ring
 ### Current Reality vs. Vision
 
 **Vision (Original Plan):**
+
 - Complete, working game engine
 - Real-time multiplayer gameplay
 - AI opponents
@@ -568,6 +629,7 @@ The recommended architecture provides a robust, scalable foundation for the Ring
 - Production-ready deployment
 
 **Reality (Current State):**
+
 - ✅ Excellent architecture and planning
 - ✅ Solid infrastructure foundation
 - ⚠️ **Core game logic incomplete** (20% implemented)
@@ -578,6 +640,7 @@ The recommended architecture provides a robust, scalable foundation for the Ring
 ### Path Forward
 
 **Critical Success Factors (Updated):**
+
 1. **Fix core game logic FIRST**: Nothing else matters until game rules are correctly implemented
 2. **Test driven development**: Write tests for each rule as implemented
 3. **Follow the rules document**: `ringrift_complete_rules.md` is the source of truth
@@ -593,8 +656,8 @@ The recommended architecture provides a robust, scalable foundation for the Ring
 
 ### Documentation for Developers
 
-- **[IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md)** - Detailed gap analysis and roadmap
-- **[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)** - Specific bugs and missing features
+- **[CURRENT_STATE_ASSESSMENT.md](../CURRENT_STATE_ASSESSMENT.md)** - Detailed gap analysis and roadmap
+- **[KNOWN_ISSUES.md](../KNOWN_ISSUES.md)** - Specific bugs and missing features
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Development guidelines and priorities
 - **[TODO.md](./TODO.md)** - Task tracking and sprint planning
 - **[ringrift_complete_rules.md](./ringrift_complete_rules.md)** - Complete game rules (source of truth)
@@ -605,6 +668,7 @@ The recommended architecture provides a robust, scalable foundation for the Ring
 **Revised Estimate:** 12-18 months
 
 **Breakdown:**
+
 - Infrastructure setup: COMPLETE
 - Core game logic: 3-5 weeks (CURRENT PRIORITY)
 - Testing & validation: 2-3 weeks
@@ -618,6 +682,7 @@ The recommended architecture provides a robust, scalable foundation for the Ring
 ---
 
 **Document Status:**
+
 - **Version:** 2.0 (Updated with implementation assessment)
 - **Original Date:** [Original date]
 - **Assessment Date:** November 13, 2025

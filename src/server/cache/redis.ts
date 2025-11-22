@@ -17,8 +17,8 @@ export const connectRedis = async (): Promise<RedisClient> => {
             return false;
           }
           return Math.min(retries * 50, 1000);
-        }
-      }
+        },
+      },
     };
 
     if (process.env.REDIS_PASSWORD) {
@@ -276,6 +276,32 @@ export class CacheService {
       return false;
     }
   }
+
+  // Locking operations
+  async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      // SET key value NX EX ttlSeconds
+      // Returns 'OK' if set, null if not set (already exists)
+      const result = await this.client.set(key, 'locked', {
+        NX: true,
+        EX: ttlSeconds,
+      });
+      return result === 'OK';
+    } catch (error) {
+      logger.error(`Cache acquireLock error for key ${key}:`, error);
+      return false;
+    }
+  }
+
+  async releaseLock(key: string): Promise<boolean> {
+    try {
+      await this.client.del(key);
+      return true;
+    } catch (error) {
+      logger.error(`Cache releaseLock error for key ${key}:`, error);
+      return false;
+    }
+  }
 }
 
 // Global cache service instance
@@ -285,11 +311,11 @@ export const getCacheService = (): CacheService | null => {
   if (!redisClient) {
     return null;
   }
-  
+
   if (!cacheService) {
     cacheService = new CacheService(redisClient);
   }
-  
+
   return cacheService;
 };
 
@@ -305,5 +331,5 @@ export const CacheKeys = {
   userStats: (userId: string) => `user:${userId}:stats`,
   leaderboard: (boardType: string) => `leaderboard:${boardType}`,
   tournament: (tournamentId: string) => `tournament:${tournamentId}`,
-  chatHistory: (gameId: string) => `chat:${gameId}:history`
+  chatHistory: (gameId: string) => `chat:${gameId}:history`,
 };

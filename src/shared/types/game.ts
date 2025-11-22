@@ -28,14 +28,20 @@ export type BoardType = 'square8' | 'square19' | 'hexagonal';
  *     - 'continue_capture_segment' – mandatory follow-up capture segments in an
  *                                    existing chain until no further segments exist.
  * - 'line_processing'
- *   - Target MoveType values (future-unified model):
+ *   - Canonical MoveType values (unified model used by both backend GameEngine
+ *     and ClientSandboxEngine):
  *     - 'process_line'       – choose which detected line to process next.
  *     - 'choose_line_reward' – choose Option 1 vs Option 2 for a specific line.
  * - 'territory_processing'
- *   - Target MoveType values (future-unified model):
+ *   - Canonical MoveType values (unified model used by both engines):
  *     - 'process_territory_region' – choose which disconnected region to resolve first.
- *     - 'eliminate_rings_from_stack' – choose which stack/cap to self-eliminate
- *                                      as part of the mandatory follow-up.
+ *     - 'eliminate_rings_from_stack' – explicit self-elimination decision where the
+ *                                      moving player chooses an on-board stack to
+ *                                      sacrifice rings from as part of the mandatory
+ *                                      follow-up after processing a region. When no
+ *                                      eligible stacks exist, engines may eliminate
+ *                                      from hand automatically without an explicit
+ *                                      Move.
  *
  * Engines are expected to expose *only* the MoveType values listed above from
  * getValidMoves for a given phase. PlayerChoice is a transport/UI concern and
@@ -242,15 +248,29 @@ export interface LineInfo {
  *       - collapsedMarkers – subset of marker positions chosen for collapse
  *                            when selecting Option 2 (minimum collapse).
  *
- * - territory_processing (target unified model for territory decisions)
+ * - territory_processing (unified model for territory decisions)
  *   - type: 'process_territory_region'
  *     - Required:
  *       - disconnectedRegions[0] – identifies the region being processed
  *                                  (spaces, controllingPlayer, isDisconnected).
  *   - type: 'eliminate_rings_from_stack'
  *     - Required:
- *       - eliminatedRings[0] – { player, count } describing the explicit
- *                              self-elimination choice for this region.
+ *       - to                    – position of the on-board stack the moving
+ *                                  player is eliminating rings from.
+ *       - eliminatedRings[0]    – { player, count } describing the explicit
+ *                                  self-elimination choice credited to this
+ *                                  player.
+ *     - Optional diagnostics:
+ *       - eliminationFromStack  – { position, capHeight, totalHeight }
+ *                                  snapshot of the chosen stack before
+ *                                  elimination, used by parity/training
+ *                                  tooling.
+ *     - Notes:
+ *       - Engines only emit this Move when there is an actual stack-choice
+ *         to be made. When no eligible stacks exist, mandatory
+ *         self-elimination is applied automatically from hand without
+ *         emitting a separate Move; the effect is still visible via
+ *         eliminatedRings and ProgressSnapshot.
  *
  * Engines are free to augment moves with additional diagnostic fields, but
  * should not rely on consumers interpreting fields outside the contract above.
@@ -326,6 +346,16 @@ export interface Move {
    * which player lost how many rings.
    */
   eliminatedRings?: { player: number; count: number }[];
+  /**
+   * For explicit elimination moves, records the chosen stack and its
+   * pre-elimination geometry. This is primarily used by parity and
+   * training tooling to understand where self-elimination occurred.
+   */
+  eliminationFromStack?: {
+    position: Position;
+    capHeight: number;
+    totalHeight: number;
+  };
 
   /** Wall-clock timestamp when the move was created/applied. */
   timestamp: Date;
@@ -443,6 +473,16 @@ export interface GameState {
   players: Player[];
   currentPhase: GamePhase;
   currentPlayer: number;
+  /**
+   * When present, restricts movement / capture / chain_capture so that only
+   * actions originating from the keyed stack are legal for the remainder of
+   * the current turn. This is maintained by the backend GameEngine /
+   * TurnEngine and mirrored by the Python GameEngine for TS↔Python parity.
+   *
+   * Older fixtures and tests may omit this field, in which case callers
+   * should fall back to inferring the must-move origin from moveHistory.
+   */
+  mustMoveFromStackKey?: string | undefined;
   /**
    * Legacy linear move log preserved for backward compatibility with
    * existing clients/tests. New tooling should prefer the richer
@@ -626,6 +666,14 @@ export interface LineOrderChoice extends PlayerChoiceBase {
 export interface LineRewardChoice extends PlayerChoiceBase {
   type: 'line_reward_option';
   options: Array<'option_1_collapse_all_and_eliminate' | 'option_2_min_collapse_no_elimination'>;
+  /**
+   * Optional map of option strings to canonical 'choose_line_reward' Move IDs.
+   * This allows transports/AI to map the selected option directly to a Move.id.
+   */
+  moveIds?: {
+    option_1_collapse_all_and_eliminate?: string;
+    option_2_min_collapse_no_elimination?: string;
+  };
 }
 
 export interface RingEliminationChoice extends PlayerChoiceBase {
@@ -634,6 +682,13 @@ export interface RingEliminationChoice extends PlayerChoiceBase {
     stackPosition: Position;
     capHeight: number;
     totalHeight: number;
+    /**
+     * Optional identifier of the canonical 'eliminate_rings_from_stack'
+     * Move that this option corresponds to. When present, engines and AI
+     * clients can treat this choice as "select Move with id === moveId"
+     * rather than re-deriving the target solely from the geometry.
+     */
+    moveId?: string;
   }>;
 }
 

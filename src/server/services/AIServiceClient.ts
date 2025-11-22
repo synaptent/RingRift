@@ -4,7 +4,13 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
-import { GameState, Move, LineRewardChoice, RingEliminationChoice, RegionOrderChoice } from '../../shared/types/game';
+import {
+  GameState,
+  Move,
+  LineRewardChoice,
+  RingEliminationChoice,
+  RegionOrderChoice,
+} from '../../shared/types/game';
 import { logger } from '../utils/logger';
 
 export interface AIConfig {
@@ -17,7 +23,8 @@ export enum AIType {
   RANDOM = 'random',
   HEURISTIC = 'heuristic',
   MINIMAX = 'minimax',
-  MCTS = 'mcts'
+  MCTS = 'mcts',
+  DESCENT = 'descent',
 }
 
 export interface MoveRequest {
@@ -107,18 +114,18 @@ export class AIServiceClient {
       baseURL: this.baseURL,
       timeout: 30000, // 30 second timeout for AI computation
       headers: {
-        'Content-Type': 'application/json'
-      }
+        'Content-Type': 'application/json',
+      },
     });
 
     // Add response interceptor for error handling
     this.client.interceptors.response.use(
-      response => response,
-      error => {
+      (response) => response,
+      (error) => {
         logger.error('AI Service error:', {
           message: error.message,
           response: error.response?.data,
-          status: error.response?.status
+          status: error.response?.status,
         });
         throw error;
       }
@@ -140,14 +147,14 @@ export class AIServiceClient {
         game_state: gameState,
         player_number: playerNumber,
         difficulty,
-        ...(aiType && { ai_type: aiType })
+        ...(aiType && { ai_type: aiType }),
       };
 
       logger.info('Requesting AI move', {
         playerNumber,
         difficulty,
         aiType,
-        phase: gameState.currentPhase
+        phase: gameState.currentPhase,
       });
 
       const response = await this.client.post<MoveResponse>('/ai/move', request);
@@ -157,7 +164,7 @@ export class AIServiceClient {
         aiType: response.data.ai_type,
         thinkingTime: response.data.thinking_time_ms,
         evaluation: response.data.evaluation,
-        latencyMs: Math.round(duration)
+        latencyMs: Math.round(duration),
       });
 
       return response.data;
@@ -167,7 +174,7 @@ export class AIServiceClient {
         error,
         latencyMs: Math.round(duration),
         playerNumber,
-        difficulty
+        difficulty,
       });
       throw new Error(
         `AI Service failed to generate move: ${
@@ -180,28 +187,22 @@ export class AIServiceClient {
   /**
    * Evaluate current position from a player's perspective.
    */
-  async evaluatePosition(
-    gameState: GameState,
-    playerNumber: number
-  ): Promise<EvaluationResponse> {
+  async evaluatePosition(gameState: GameState, playerNumber: number): Promise<EvaluationResponse> {
     const startTime = performance.now();
     try {
       const request: EvaluationRequest = {
         game_state: gameState,
-        player_number: playerNumber
+        player_number: playerNumber,
       };
 
-      const response = await this.client.post<EvaluationResponse>(
-        '/ai/evaluate',
-        request
-      );
+      const response = await this.client.post<EvaluationResponse>('/ai/evaluate', request);
       const duration = performance.now() - startTime;
 
       logger.debug('Position evaluated', {
         playerNumber,
         score: response.data.score,
         breakdown: response.data.breakdown,
-        latencyMs: Math.round(duration)
+        latencyMs: Math.round(duration),
       });
 
       return response.data;
@@ -209,7 +210,7 @@ export class AIServiceClient {
       const duration = performance.now() - startTime;
       logger.error('Failed to evaluate position', {
         error,
-        latencyMs: Math.round(duration)
+        latencyMs: Math.round(duration),
       });
       throw new Error(
         `AI Service failed to evaluate position: ${
@@ -239,14 +240,14 @@ export class AIServiceClient {
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),
-        options
+        options,
       };
 
       logger.info('Requesting AI line_reward_option choice', {
         playerNumber,
         difficulty,
         aiType,
-        options
+        options,
       });
 
       const response = await this.client.post<LineRewardChoiceResponsePayload>(
@@ -258,14 +259,14 @@ export class AIServiceClient {
         playerNumber,
         difficulty: response.data.difficulty,
         aiType: response.data.aiType,
-        selectedOption: response.data.selectedOption
+        selectedOption: response.data.selectedOption,
       });
 
       return response.data;
     } catch (error) {
       logger.error('Failed to get line_reward_option choice from AI service', {
         playerNumber,
-        error
+        error,
       });
       throw new Error(
         `AI Service failed to choose line_reward_option: ${
@@ -291,14 +292,14 @@ export class AIServiceClient {
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),
-        options
+        options,
       };
 
       logger.info('Requesting AI ring_elimination choice', {
         playerNumber,
         difficulty,
         aiType,
-        options
+        options,
       });
 
       const response = await this.client.post<RingEliminationChoiceResponsePayload>(
@@ -310,14 +311,14 @@ export class AIServiceClient {
         playerNumber,
         difficulty: response.data.difficulty,
         aiType: response.data.aiType,
-        selectedOption: response.data.selectedOption
+        selectedOption: response.data.selectedOption,
       });
 
       return response.data;
     } catch (error) {
       logger.error('Failed to get ring_elimination choice from AI service', {
         playerNumber,
-        error
+        error,
       });
       throw new Error(
         `AI Service failed to choose ring_elimination: ${
@@ -343,14 +344,14 @@ export class AIServiceClient {
         player_number: playerNumber,
         difficulty,
         ...(aiType && { ai_type: aiType }),
-        options
+        options,
       };
 
       logger.info('Requesting AI region_order choice', {
         playerNumber,
         difficulty,
         aiType,
-        options
+        options,
       });
 
       const response = await this.client.post<RegionOrderChoiceResponsePayload>(
@@ -362,14 +363,14 @@ export class AIServiceClient {
         playerNumber,
         difficulty: response.data.difficulty,
         aiType: response.data.aiType,
-        selectedOption: response.data.selectedOption
+        selectedOption: response.data.selectedOption,
       });
 
       return response.data;
     } catch (error) {
       logger.error('Failed to get region_order choice from AI service', {
         playerNumber,
-        error
+        error,
       });
       throw new Error(
         `AI Service failed to choose region_order: ${

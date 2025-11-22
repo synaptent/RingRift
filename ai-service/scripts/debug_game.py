@@ -9,9 +9,6 @@ import random
 from datetime import datetime
 import json
 
-# Add app to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
-
 from app.models import GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl, Player, AIConfig
 from app.game_engine import GameEngine
 from app.ai.mcts_ai import MCTSAI

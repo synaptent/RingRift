@@ -5,6 +5,7 @@ import {
   isSandboxCaptureDebugEnabled,
   isSandboxAiCaptureDebugEnabled,
   isSandboxAiTraceModeEnabled,
+  isSandboxAiParityModeEnabled,
 } from '../../src/shared/utils/envFlags';
 
 describe('envFlags helpers', () => {
@@ -76,5 +77,16 @@ describe('envFlags helpers', () => {
 
     (process.env as any).RINGRIFT_SANDBOX_AI_TRACE_MODE = '0';
     expect(isSandboxAiTraceModeEnabled()).toBe(false);
+  });
+
+  it('isSandboxAiParityModeEnabled proxies the correct env name', () => {
+    (process.env as any).RINGRIFT_SANDBOX_AI_PARITY_MODE = '1';
+    expect(isSandboxAiParityModeEnabled()).toBe(true);
+
+    (process.env as any).RINGRIFT_SANDBOX_AI_PARITY_MODE = '0';
+    expect(isSandboxAiParityModeEnabled()).toBe(false);
+
+    delete (process.env as any).RINGRIFT_SANDBOX_AI_PARITY_MODE;
+    expect(isSandboxAiParityModeEnabled()).toBe(false);
   });
 });

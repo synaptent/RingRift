@@ -10,7 +10,7 @@ import {
   Territory,
   TimeControl,
   RegionOrderChoice,
-  PlayerChoiceResponse
+  PlayerChoiceResponse,
 } from '../../src/shared/types/game';
 
 // Minimal Socket.IO Server stub for testing end-to-end choice plumbing
@@ -22,7 +22,7 @@ class FakeSocketIOServer extends EventEmitter {
       emit: (event: string, payload: any) => {
         this.toCalls.push({ target, event, payload });
         this.emit(event, payload);
-      }
+      },
     };
   }
 }
@@ -40,7 +40,7 @@ const players: Player[] = [
     timeRemaining: timeControl.initialTime * 1000,
     ringsInHand: 18,
     eliminatedRings: 0,
-    territorySpaces: 0
+    territorySpaces: 0,
   },
   {
     id: 'p2',
@@ -51,8 +51,8 @@ const players: Player[] = [
     timeRemaining: timeControl.initialTime * 1000,
     ringsInHand: 18,
     eliminatedRings: 0,
-    territorySpaces: 0
-  }
+    territorySpaces: 0,
+  },
 ];
 
 /**
@@ -101,24 +101,32 @@ describe('GameEngine + WebSocketInteractionHandler region order choice integrati
     const regionA: Territory = {
       spaces: [
         { x: 1, y: 1 },
-        { x: 1, y: 2 }
+        { x: 1, y: 2 },
       ],
       controllingPlayer: 0,
-      isDisconnected: true
+      isDisconnected: true,
     };
 
     const regionB: Territory = {
       spaces: [
         { x: 5, y: 5 },
-        { x: 5, y: 6 }
+        { x: 5, y: 6 },
       ],
       controllingPlayer: 0,
-      isDisconnected: true
+      isDisconnected: true,
     };
 
     const findDisconnectedRegionsSpy = jest
       .spyOn(boardManager, 'findDisconnectedRegions')
+      // First call: main processDisconnectedRegions loop
       .mockImplementationOnce(() => [regionA, regionB])
+      // Second call: getValidTerritoryProcessingMoves inside the same
+      // iteration, used to build canonical process_territory_region
+      // decision Moves whose ids are echoed into RegionOrderChoice
+      // options as moveId.
+      .mockImplementationOnce(() => [regionA, regionB])
+      // Subsequent calls: no more disconnected regions so the loop
+      // terminates after processing the selected region.
       .mockImplementation(() => []);
 
     // For this integration test we are interested in the ordering
@@ -144,6 +152,23 @@ describe('GameEngine + WebSocketInteractionHandler region order choice integrati
     expect(choice.playerNumber).toBe(1);
     expect(choice.options.length).toBe(2);
 
+    // Each region-order option should expose a canonical moveId that
+    // identifies the corresponding 'process_territory_region' Move
+    // enumerated during the territory_processing phase.
+    for (const opt of choice.options) {
+      expect(typeof (opt as any).moveId === 'string').toBe(true);
+    }
+
+    const optionForRegionA = choice.options[0] as any;
+    expect(optionForRegionA.size).toBe(regionA.spaces.length);
+    expect(optionForRegionA.representativePosition).toEqual(regionA.spaces[0]);
+    expect(optionForRegionA.moveId).toBe('process-region-0-1,1');
+
+    const optionForRegionB = choice.options[1] as any;
+    expect(optionForRegionB.size).toBe(regionB.spaces.length);
+    expect(optionForRegionB.representativePosition).toEqual(regionB.spaces[0]);
+    expect(optionForRegionB.moveId).toBe('process-region-1-5,5');
+
     // The RegionOrderChoice options are ordered according to the
     // disconnectedRegions array. We want to select the SECOND region
     // (regionB) and ensure it is processed first.
@@ -152,7 +177,7 @@ describe('GameEngine + WebSocketInteractionHandler region order choice integrati
     const response: PlayerChoiceResponse<(typeof choice.options)[number]> = {
       choiceId: choice.id,
       playerNumber: choice.playerNumber,
-      selectedOption
+      selectedOption,
     };
 
     handler.handleChoiceResponse(response as any);
@@ -167,7 +192,7 @@ describe('GameEngine + WebSocketInteractionHandler region order choice integrati
     const firstCallArgs = processRegionSpy.mock.calls[0] as [Territory, number];
     const firstRegion = firstCallArgs[0];
 
-    const toKeySet = (spaces: Position[]) => new Set(spaces.map(p => `${p.x},${p.y}`));
+    const toKeySet = (spaces: Position[]) => new Set(spaces.map((p) => `${p.x},${p.y}`));
     const regionBKeys = toKeySet(regionB.spaces);
     const firstRegionKeys = toKeySet(firstRegion.spaces);
 

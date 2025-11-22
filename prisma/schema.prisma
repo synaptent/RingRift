@@ -25,6 +25,12 @@ model User {
   updatedAt     DateTime  @updatedAt
   lastLoginAt   DateTime?
 
+  // Auth tokens
+  verificationToken        String?
+  verificationTokenExpires DateTime?
+  passwordResetToken       String?
+  passwordResetExpires     DateTime?
+
   // Game relationships
   gamesAsPlayer1 Game[] @relation("Player1")
   gamesAsPlayer2 Game[] @relation("Player2")
@@ -32,6 +38,7 @@ model User {
   gamesAsPlayer4 Game[] @relation("Player4")
   gamesWonGames  Game[] @relation("Winner")
   moves          Move[]
+  refreshTokens  RefreshToken[]
 
   @@map("users")
 }
@@ -117,4 +124,15 @@ enum MoveType {
   overtaking_capture
   line_formation
   territory_claim
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
 }

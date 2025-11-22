@@ -3,15 +3,21 @@ Descent AI implementation for RingRift
 Based on "A Simple AlphaZero" (arXiv:2008.01188v4)
 """
 
-from typing import Optional, List, Dict, Any, Tuple, Set
+from typing import Optional, List, Dict, Any, Tuple
 import time
-import copy
 import random
-from datetime import datetime
+from enum import Enum
+import numpy as np
 
 from .base import BaseAI
-from .neural_net import NeuralNetAI
+from .neural_net import NeuralNetAI, INVALID_MOVE_INDEX
 from ..models import GameState, Move, AIConfig
+
+class NodeStatus(Enum):
+    HEURISTIC = 0
+    PROVEN_WIN = 1
+    PROVEN_LOSS = 2
+    DRAW = 3
 
 class DescentAI(BaseAI):
     """
@@ -29,18 +35,27 @@ class DescentAI(BaseAI):
             self.neural_net = None
             
         # Transposition table to store values
-        # Key: state_hash, Value: (value, children_values)
+        # Key: state_hash, Value: (value, children_values, status)
         self.transposition_table = {}
+        
+        # Search log for Tree Learning
+        # List of (features, value)
+        self.search_log = []
+
+    def get_search_data(self) -> List[Tuple[Any, float]]:
+        """Retrieve and clear the search log"""
+        data = self.search_log
+        self.search_log = []
+        return data
         
     def select_move(self, game_state: GameState) -> Optional[Move]:
         """
-        Select the best move using Descent search
+        Select the best move using Descent search.
         """
-        # No simulated thinking for Descent, we use the time for search
+        # No simulated thinking for Descent, we use the time for search.
         
-        from ..game_engine import GameEngine
-        
-        valid_moves = GameEngine.get_valid_moves(game_state, self.player_number)
+        # Get all valid moves for this AI player via the rules engine
+        valid_moves = self.get_valid_moves(game_state)
         if not valid_moves:
             return None
             
@@ -57,62 +72,227 @@ class DescentAI(BaseAI):
             
         end_time = time.time() + time_limit
         
-        # Run Descent iterations
+        # Run Descent iterations until the deadline or until the root is
+        # proven solved.
         iterations = 0
         while time.time() < end_time:
-            root_val = self._descent_iteration(game_state)
+            self._descent_iteration(
+                game_state,
+                depth=0,
+                deadline=end_time,
+            )
             iterations += 1
             
             # Completion: Stop if root is solved
-            if root_val == 1.0: # Proven win
-                break
-            if root_val == -1.0: # Proven loss (best we can do)
-                break
+            state_key = self._get_state_key(game_state)
+            if state_key in self.transposition_table:
+                entry = self.transposition_table[state_key]
+                if len(entry) == 3:
+                    _, _, status = entry
+                    if status == NodeStatus.PROVEN_WIN or status == NodeStatus.PROVEN_LOSS:
+                        break
             
         # Select best move from root
         state_key = self._get_state_key(game_state)
         if state_key in self.transposition_table:
-            _, children_values = self.transposition_table[state_key]
+            entry = self.transposition_table[state_key]
+            if len(entry) == 3:
+                _, children_values, _ = entry
+            else:
+                _, children_values = entry
+                
             if children_values:
                 if game_state.current_player == self.player_number:
-                    best_move = max(children_values.items(), key=lambda x: x[1])[0]
+                    best_move_key = max(children_values.items(), key=lambda x: x[1][1])[0]
                 else:
-                    best_move = min(children_values.items(), key=lambda x: x[1])[0]
-                return best_move
+                    best_move_key = min(children_values.items(), key=lambda x: x[1][1])[0]
+                return children_values[best_move_key][0]
         
         # Fallback if something went wrong or no search happened
         return random.choice(valid_moves)
 
-    def _descent_iteration(self, state: GameState, depth: int = 0) -> float:
+    def _descent_iteration(
+        self,
+        state: GameState,
+        depth: int = 0,
+        deadline: Optional[float] = None,
+    ) -> float:
         """
-        Perform one iteration of Descent search
-        Recursively selects best child until terminal, then backpropagates
+        Perform one iteration of Descent search.
+
+        Recursively selects the best child until a terminal position or
+        timeout is reached, then backpropagates values to the root.
         """
+        # Global time budget: if we have reached or exceeded the deadline,
+        # return a heuristic value for the current node without further
+        # descent or expansion.
+        if deadline is not None and time.time() >= deadline:
+            if state.game_status == "finished":
+                return self._calculate_terminal_value(state, depth)
+            return self.evaluate_position(state)
+
         # Check if terminal
         if state.game_status == "finished":
             return self._calculate_terminal_value(state, depth)
                 
-        # Check if state is in transposition table
-        # We need a hashable representation of state
-        # For now, we'll use a simplified string key based on board state
-        # Ideally, we should use Zobrist hashing or similar
         state_key = self._get_state_key(state)
         
-        if state_key not in self.transposition_table:
+        # Check if state is in transposition table
+        if state_key in self.transposition_table:
+            entry = self.transposition_table[state_key]
+            if len(entry) == 3:
+                current_val, children_values, status = entry
+            else:
+                current_val, children_values = entry
+                status = NodeStatus.HEURISTIC
+
+            # If proven, stop searching this branch
+            if status != NodeStatus.HEURISTIC:
+                return current_val
+
+            # Select best child to descend
+            if not children_values:
+                return current_val
+
+            # Use value + policy tie-breaking
+            # children_values stores (move, val, prob) or (move, val)
+            def get_sort_key(item):
+                move_key, data = item
+                val = data[1]
+                prob = data[2] if len(data) > 2 else 0.0
+                # Primary: Value, Secondary: Policy prob
+                return (val, prob)
+
+            if state.current_player == self.player_number:
+                best_move_key = max(
+                    children_values.items(),
+                    key=get_sort_key,
+                )[0]
+            else:
+                # Opponent minimizes value. If values are equal we could
+                # break ties by policy, but for now we simply minimise val.
+                best_move_key = min(
+                    children_values.items(),
+                    key=lambda x: x[1][1],
+                )[0]
+             
+            best_move = children_values[best_move_key][0]
+                
+            # Descend using the canonical rules engine
+            next_state = self.rules_engine.apply_move(state, best_move)
+            val = self._descent_iteration(
+                next_state,
+                depth + 1,
+                deadline=deadline,
+            )
+            
+            # Update child value
+            # Preserve existing data (move, old_val, prob)
+            old_data = children_values[best_move_key]
+            if len(old_data) == 3:
+                children_values[best_move_key] = (best_move, val, old_data[2])
+            else:
+                children_values[best_move_key] = (best_move, val)
+            
+            # Update current node value and status
+            if state.current_player == self.player_number:
+                new_best_val = max(v[1] for v in children_values.values())
+                
+                # Check for proven status
+                # If any child is PROVEN_WIN (1.0), we are PROVEN_WIN
+                # If ALL children are PROVEN_LOSS (-1.0), we are PROVEN_LOSS
+                # Note: This assumes 1.0/-1.0 are strictly reserved for proven outcomes
+                if any(v[1] == 1.0 for v in children_values.values()):
+                    new_status = NodeStatus.PROVEN_WIN
+                elif all(v[1] == -1.0 for v in children_values.values()):
+                    new_status = NodeStatus.PROVEN_LOSS
+                else:
+                    new_status = NodeStatus.HEURISTIC
+            else:
+                new_best_val = min(v[1] for v in children_values.values())
+                
+                # If any child is PROVEN_LOSS (-1.0), we are PROVEN_LOSS (opponent wins)
+                # If ALL children are PROVEN_WIN (1.0), we are PROVEN_WIN (opponent loses)
+                if any(v[1] == -1.0 for v in children_values.values()):
+                    new_status = NodeStatus.PROVEN_LOSS
+                elif all(v[1] == 1.0 for v in children_values.values()):
+                    new_status = NodeStatus.PROVEN_WIN
+                else:
+                    new_status = NodeStatus.HEURISTIC
+                
+            self.transposition_table[state_key] = (new_best_val, children_values, new_status)
+            
+            # Log update
+            if self.neural_net:
+                features, _ = self.neural_net._extract_features(state)
+                self.search_log.append((features, new_best_val))
+                
+            return new_best_val
+
+        else:
             # Expand node
-            from ..game_engine import GameEngine
-            valid_moves = GameEngine.get_valid_moves(state, state.current_player)
+            valid_moves = self.rules_engine.get_valid_moves(
+                state,
+                state.current_player,
+            )
             
             if not valid_moves:
-                # Should be terminal, but just in case
                 return 0.0
                 
+            # Get policy if available
+            move_probs: Dict[str, float] = {}
+            if self.neural_net:
+                try:
+                    features, globals_vec = self.neural_net._extract_features(
+                        state
+                    )
+                    _, policy_logits = self.neural_net.forward_single(
+                        features, globals_vec
+                    )
+
+                    valid_indices: List[int] = []
+                    valid_moves_list: List[Move] = []
+                    for m in valid_moves:
+                        # Encode using canonical coordinates derived from the
+                        # current board geometry. Moves that fall outside the
+                        # fixed 19×19 policy grid return INVALID_MOVE_INDEX and
+                        # are skipped.
+                        idx = self.neural_net.encode_move(m, state.board)
+                        if idx != INVALID_MOVE_INDEX:
+                            valid_indices.append(idx)
+                            valid_moves_list.append(m)
+
+                    if valid_indices:
+                        logits = policy_logits[valid_indices]
+                        # Stable softmax
+                        logits = logits - np.max(logits)
+                        exps = np.exp(logits)
+                        probs = exps / np.sum(exps)
+
+                        for m, p in zip(valid_moves_list, probs):
+                            move_probs[str(m)] = float(p)
+                    else:
+                        # If all legal moves are outside the canonical policy
+                        # grid (e.g. board larger than 19×19), fall back to a
+                        # uniform prior over legal moves.
+                        uniform = 1.0 / len(valid_moves)
+                        for m in valid_moves:
+                            move_probs[str(m)] = uniform
+                except Exception:
+                    # Fallback if NN fails entirely (e.g. missing weights)
+                    pass
+
             # Evaluate children
             children_values = {}
             best_val = float('-inf') if state.current_player == self.player_number else float('inf')
             
             for move in valid_moves:
-                next_state = GameEngine.apply_move(state, move)
+                next_state = self.rules_engine.apply_move(state, move)
+
+                # If we are out of time, stop expanding and return the
+                # current best_val so far.
+                if deadline is not None and time.time() >= deadline:
+                    break
                 
                 # Evaluate leaf
                 if next_state.game_status == "finished":
@@ -124,50 +304,39 @@ class DescentAI(BaseAI):
                         val = 0.0
                 else:
                     val = self.evaluate_position(next_state)
-                    
-                children_values[move] = val
+                
+                move_key = str(move)
+                prob = move_probs.get(move_key, 0.0)
+                children_values[move_key] = (move, val, prob)
                 
                 if state.current_player == self.player_number:
                     best_val = max(best_val, val)
                 else:
                     best_val = min(best_val, val)
             
-            self.transposition_table[state_key] = (best_val, children_values)
+            # Determine status
+            status = NodeStatus.HEURISTIC
+            if best_val == 1.0 and state.current_player == self.player_number:
+                status = NodeStatus.PROVEN_WIN
+            elif best_val == -1.0 and state.current_player != self.player_number:
+                status = NodeStatus.PROVEN_LOSS
+            
+            self.transposition_table[state_key] = (best_val, children_values, status)
+            
+            # Log initial visit
+            if self.neural_net:
+                features, _ = self.neural_net._extract_features(state)
+                self.search_log.append((features, best_val))
+                
             return best_val
-            
-        else:
-            # Node already expanded, select best child to descend
-            current_val, children_values = self.transposition_table[state_key]
-            
-            # Select best move
-            best_move = None
-            if state.current_player == self.player_number:
-                best_move = max(children_values.items(), key=lambda x: x[1])[0]
-            else:
-                best_move = min(children_values.items(), key=lambda x: x[1])[0]
-                
-            # Descend
-            from ..game_engine import GameEngine
-            next_state = GameEngine.apply_move(state, best_move)
-            val = self._descent_iteration(next_state, depth + 1)
-            
-            # Update value
-            children_values[best_move] = val
-            
-            if state.current_player == self.player_number:
-                new_best_val = max(children_values.values())
-            else:
-                new_best_val = min(children_values.values())
-                
-            self.transposition_table[state_key] = (new_best_val, children_values)
-            return new_best_val
 
-    def _get_state_key(self, state: GameState) -> str:
-        """Generate a unique key for the game state"""
-        # Simplified key: board representation + current player
-        # This is slow but functional for prototype
-        board_str = str(state.board.stacks) + str(state.board.markers) + str(state.board.collapsed_spaces)
-        return f"{board_str}_{state.current_player}"
+    def _get_state_key(self, state: GameState) -> int:
+        """Generate a unique key for the game state using Zobrist hashing"""
+        if state.zobrist_hash is not None:
+            return state.zobrist_hash
+        # Fallback if hash is missing (shouldn't happen with updated engine)
+        from .zobrist import ZobristHash
+        return ZobristHash().compute_initial_hash(state)
         
     def _calculate_terminal_value(self, state: GameState, depth: int) -> float:
         """Calculate terminal value with bonuses and discount"""
@@ -223,7 +392,7 @@ class DescentAI(BaseAI):
         """Evaluate position using neural net or heuristic"""
         val = 0.0
         if self.neural_net:
-            val, _ = self.neural_net.evaluate_position(game_state)
+            val = self.neural_net.evaluate_position(game_state)
         else:
             # Heuristic fallback
             # Simple material difference

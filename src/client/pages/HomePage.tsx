@@ -8,8 +8,8 @@ export default function HomePage() {
           Welcome to RingRift
         </h1>
         <p className="text-sm text-slate-400 max-w-2xl">
-          You're signed in. From here you can join the lobby to create backend games,
-          explore the rules in the local sandbox, or inspect your profile and the leaderboard.
+          You’re signed in. From here you can join the lobby to create backend games, explore the
+          rules in the local sandbox, or inspect your profile and the leaderboard.
         </p>
       </header>
 
@@ -43,8 +43,8 @@ export default function HomePage() {
             lines, and territory without touching the backend.
           </p>
           <p className="mt-2 text-xs text-slate-500">
-            From the sandbox you can also attempt a backend-backed sandbox game via
-            &nbsp;<span className="font-mono">Launch Game</span>.
+            From the sandbox you can also attempt a backend-backed sandbox game via &nbsp;
+            <span className="font-mono">Launch Game</span>.
           </p>
         </Link>
 
@@ -64,8 +64,8 @@ export default function HomePage() {
         >
           <h2 className="text-lg font-semibold text-slate-100">Profile & Settings</h2>
           <p className="mt-1 text-sm text-slate-300">
-            View your account details and (as implemented) tweak preferences and inspect your
-            game history.
+            View your account details and (as implemented) tweak preferences and inspect your game
+            history.
           </p>
         </Link>
 
@@ -75,12 +75,12 @@ export default function HomePage() {
         >
           <h2 className="text-lg font-semibold text-slate-100">Rules & Diagnostics</h2>
           <p className="mt-1 text-sm text-slate-300">
-            Combine <code className="font-mono text-xs">/sandbox</code> with the parity and
-            scenario tests in the repo to validate rules behaviour against the backend GameEngine.
+            Combine <code className="font-mono text-xs">/sandbox</code> with the parity and scenario
+            tests in the repo to validate rules behaviour against the backend GameEngine.
           </p>
           <p className="mt-2 text-xs text-slate-500">
-            See <code className="font-mono">tests/scenarios</code> and
-            &nbsp;<code className="font-mono">tests/unit</code> for the full matrix.
+            See <code className="font-mono">tests/scenarios</code> and &nbsp;
+            <code className="font-mono">tests/unit</code> for the full matrix.
           </p>
         </a>
       </section>
@@ -97,8 +97,8 @@ export default function HomePage() {
               Backend HTTP API is served under <code className="font-mono">/api</code>.
             </p>
             <p className="text-xs text-slate-500">
-              Try <code className="font-mono">GET /api</code> or run the health tests in
-              &nbsp;<code className="font-mono">tests/unit/server.health-and-routes.test.ts</code>.
+              Try <code className="font-mono">GET /api</code> or run the health tests in &nbsp;
+              <code className="font-mono">tests/unit/server.health-and-routes.test.ts</code>.
             </p>
           </div>
 
@@ -108,8 +108,8 @@ export default function HomePage() {
               Lobby and game creation use <code className="font-mono">/api/games</code>.
             </p>
             <p className="text-xs text-slate-500">
-              Creating or joining games here will route you to
-              &nbsp;<code className="font-mono">/game/:gameId</code> with WebSocket updates.
+              Creating or joining games here will route you to &nbsp;
+              <code className="font-mono">/game/:gameId</code> with WebSocket updates.
             </p>
           </div>
 
@@ -120,8 +120,11 @@ export default function HomePage() {
             </p>
             <p className="text-xs text-slate-500">
               See <code className="font-mono">src/server/websocket/server.ts</code> and the
-              integration tests in
-              &nbsp;<code className="font-mono">tests/unit/WebSocketServer.aiTurn.integration.test.ts</code>.
+              integration tests in &nbsp;
+              <code className="font-mono">
+                tests/unit/WebSocketServer.aiTurn.integration.test.ts
+              </code>
+              .
             </p>
           </div>
         </div>

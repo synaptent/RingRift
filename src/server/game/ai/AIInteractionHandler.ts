@@ -5,10 +5,11 @@ import {
   LineRewardChoice,
   RingEliminationChoice,
   RegionOrderChoice,
-  CaptureDirectionChoice
+  CaptureDirectionChoice,
 } from '../../../shared/types/game';
 import { PlayerInteractionHandler } from '../PlayerInteractionManager';
 import { globalAIEngine } from './AIEngine';
+import { logger } from '../../utils/logger';
 
 /**
  * AIInteractionHandler
@@ -29,7 +30,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     return {
       choiceId: choice.id,
       playerNumber: choice.playerNumber,
-      selectedOption
+      selectedOption,
     };
   }
 
@@ -67,12 +68,17 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
 
   /**
    * Line order heuristic: prefer the line with the greatest number of
-   * markers (longest line), falling back to the first option.
+   * markers (longest line). A line_order choice with no options is a
+   * protocol violation and is treated as a hard error.
    */
   private selectLineOrderOption(choice: LineOrderChoice): LineOrderChoice['options'][number] {
     if (!choice.options.length) {
-      // Should not happen in practice, but keep behaviour well-defined.
-      return { lineId: '0', markerPositions: [] };
+      logger.error('AIInteractionHandler received line_order choice with no options', {
+        choiceId: choice.id,
+        choiceType: choice.type,
+        playerNumber: choice.playerNumber,
+      });
+      throw new Error('PlayerChoice[line_order] must have at least one option');
     }
 
     let best = choice.options[0];
@@ -96,8 +102,12 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     choice: LineRewardChoice
   ): Promise<LineRewardChoice['options'][number]> {
     if (!choice.options.length) {
-      // Fallback to Option 2 semantics when nothing is provided.
-      return 'option_2_min_collapse_no_elimination';
+      logger.error('AIInteractionHandler received line_reward_option choice with no options', {
+        choiceId: choice.id,
+        choiceType: choice.type,
+        playerNumber: choice.playerNumber,
+      });
+      throw new Error('PlayerChoice[line_reward_option] must have at least one option');
     }
 
     // First, attempt to delegate to the Python AI service via the
@@ -119,7 +129,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       }
     } catch (error) {
       // Ignore and fall back to heuristic behaviour.
-      console.warn('AI Service unavailable for line_reward_option, falling back to heuristic', { error });
+      console.warn('AI Service unavailable for line_reward_option, falling back to heuristic', {
+        error,
+      });
     }
 
     const hasOption2 = choice.options.includes('option_2_min_collapse_no_elimination');
@@ -141,12 +153,12 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     choice: RingEliminationChoice
   ): Promise<RingEliminationChoice['options'][number]> {
     if (!choice.options.length) {
-      // Synthetic, never used directly by engine; keeps type safety.
-      return {
-        stackPosition: { x: 0, y: 0 },
-        capHeight: 0,
-        totalHeight: 0
-      };
+      logger.error('AIInteractionHandler received ring_elimination choice with no options', {
+        choiceId: choice.id,
+        choiceType: choice.type,
+        playerNumber: choice.playerNumber,
+      });
+      throw new Error('PlayerChoice[ring_elimination] must have at least one option');
     }
 
     // First, attempt to delegate to the Python AI service via the
@@ -168,7 +180,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       }
     } catch (error) {
       // Ignore and fall back to heuristic behaviour.
-      console.warn('AI Service unavailable for ring_elimination, falling back to heuristic', { error });
+      console.warn('AI Service unavailable for ring_elimination, falling back to heuristic', {
+        error,
+      });
     }
 
     let best = choice.options[0];
@@ -197,11 +211,12 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     choice: RegionOrderChoice
   ): Promise<RegionOrderChoice['options'][number]> {
     if (!choice.options.length) {
-      return {
-        regionId: '0',
-        size: 0,
-        representativePosition: { x: 0, y: 0 }
-      };
+      logger.error('AIInteractionHandler received region_order choice with no options', {
+        choiceId: choice.id,
+        choiceType: choice.type,
+        playerNumber: choice.playerNumber,
+      });
+      throw new Error('PlayerChoice[region_order] must have at least one option');
     }
 
     // First, attempt to delegate to the Python AI service via the
@@ -249,11 +264,12 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     choice: CaptureDirectionChoice
   ): CaptureDirectionChoice['options'][number] {
     if (!choice.options.length) {
-      return {
-        targetPosition: { x: 0, y: 0 },
-        landingPosition: { x: 0, y: 0 },
-        capturedCapHeight: 0
-      };
+      logger.error('AIInteractionHandler received capture_direction choice with no options', {
+        choiceId: choice.id,
+        choiceType: choice.type,
+        playerNumber: choice.playerNumber,
+      });
+      throw new Error('PlayerChoice[capture_direction] must have at least one option');
     }
 
     // If only one option, no need to compute distances.
@@ -299,7 +315,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     // mostly to provide a consistent Manhattan metric between options.
     const centre: { x: number; y: number; z?: number } = {
       x: reference.x,
-      y: reference.y
+      y: reference.y,
     };
 
     if (reference.z !== undefined) {
@@ -309,7 +325,10 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     return centre;
   }
 
-  private manhattanDistance(a: { x: number; y: number; z?: number }, b: { x: number; y: number; z?: number }): number {
+  private manhattanDistance(
+    a: { x: number; y: number; z?: number },
+    b: { x: number; y: number; z?: number }
+  ): number {
     const dzA = a.z ?? 0;
     const dzB = b.z ?? 0;
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(dzA - dzB);

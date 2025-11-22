@@ -1,7 +1,7 @@
 import {
   ClientSandboxEngine,
   SandboxConfig,
-  SandboxInteractionHandler
+  SandboxInteractionHandler,
 } from '../../src/client/sandbox/ClientSandboxEngine';
 import {
   BoardType,
@@ -10,7 +10,7 @@ import {
   RingStack,
   PlayerChoiceResponseFor,
   CaptureDirectionChoice,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 
 /**
@@ -28,13 +28,13 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
     const config: SandboxConfig = {
       boardType,
       numPlayers: 2,
-      playerKinds: ['human', 'human']
+      playerKinds: ['human', 'human'],
     };
 
     const handler: SandboxInteractionHandler = {
       // For these tests we never actually trigger PlayerChoices, but we
       // provide a trivial handler to satisfy the constructor.
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
         const anyChoice = choice as CaptureDirectionChoice;
         const selectedOption = (anyChoice as any).options
           ? (anyChoice as any).options[0]
@@ -44,9 +44,9 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
           choiceId: (choice as any).id,
           playerNumber: (choice as any).playerNumber,
           choiceType: (choice as any).type,
-          selectedOption
+          selectedOption,
         } as PlayerChoiceResponseFor<any>;
-      }
+      },
     };
 
     return new ClientSandboxEngine({ config, interactionHandler: handler });
@@ -69,13 +69,13 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
     const blockPositions: Position[] = [
       { x: 1, y: 0 },
       { x: 0, y: 1 },
-      { x: 1, y: 1 }
+      { x: 1, y: 1 },
     ];
     for (const pos of blockPositions) {
       board.collapsedSpaces.set(positionToString(pos), 0);
     }
 
-    const player1 = state.players.find(p => p.playerNumber === 1)!;
+    const player1 = state.players.find((p) => p.playerNumber === 1)!;
     const initialRingsInHand = player1.ringsInHand;
 
     // Attempt to place a ring at (0,0). The sandbox no-dead-placement check
@@ -87,7 +87,7 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
     const finalBoard = finalState.board;
 
     expect(finalBoard.stacks.size).toBe(0);
-    const updatedPlayer1 = finalState.players.find(p => p.playerNumber === 1)!;
+    const updatedPlayer1 = finalState.players.find((p) => p.playerNumber === 1)!;
     expect(updatedPlayer1.ringsInHand).toBe(initialRingsInHand);
   });
 
@@ -102,7 +102,7 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
     // no legal moves or captures because all outward rays are blocked by
     // collapsed spaces as in the previous test.
     state.currentPlayer = 2;
-    const player2 = state.players.find(p => p.playerNumber === 2)!;
+    const player2 = state.players.find((p) => p.playerNumber === 2)!;
     player2.ringsInHand = 0;
 
     const stackPos: Position = { x: 0, y: 0 };
@@ -112,14 +112,14 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
       rings,
       stackHeight: rings.length,
       capHeight: rings.length,
-      controllingPlayer: 2
+      controllingPlayer: 2,
     };
     board.stacks.set(positionToString(stackPos), stack);
 
     const blockPositions: Position[] = [
       { x: 1, y: 0 },
       { x: 0, y: 1 },
-      { x: 1, y: 1 }
+      { x: 1, y: 1 },
     ];
     for (const pos of blockPositions) {
       board.collapsedSpaces.set(positionToString(pos), 0);
@@ -135,11 +135,9 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
 
     // Both rings from the (0,0) stack should have been eliminated.
     expect(finalBoard.stacks.get(positionToString(stackPos))).toBeUndefined();
-    const finalPlayer2 = finalState.players.find(p => p.playerNumber === 2)!;
+    const finalPlayer2 = finalState.players.find((p) => p.playerNumber === 2)!;
     expect(finalPlayer2.eliminatedRings).toBeGreaterThanOrEqual(2);
-    expect(finalState.totalRingsEliminated).toBeGreaterThanOrEqual(
-      initialTotalEliminated + 2
-    );
+    expect(finalState.totalRingsEliminated).toBeGreaterThanOrEqual(initialTotalEliminated + 2);
 
     // Turn should have passed to the next player (player 1 in this config).
     expect(finalState.currentPlayer).toBe(1);

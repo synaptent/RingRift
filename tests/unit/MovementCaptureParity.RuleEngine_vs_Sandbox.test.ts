@@ -31,7 +31,10 @@ import {
 describe('Movement/capture parity: stack at (4,7) over intermediate stack at (4,6)', () => {
   const boardType: BoardType = 'square8';
 
-  function createBackendEngine(boardType: BoardType, players: Player[]): {
+  function createBackendEngine(
+    boardType: BoardType,
+    players: Player[]
+  ): {
     engine: GameEngine;
     ruleEngine: RuleEngine;
     boardManager: BoardManager;
@@ -54,7 +57,7 @@ describe('Movement/capture parity: stack at (4,7) over intermediate stack at (4,
       playerKinds: Array.from({ length: numPlayers }, () => 'human'),
     };
     const handler: SandboxInteractionHandler = {
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<any> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<any> {
         return {
           choiceId: (choice as any).id,
           playerNumber: (choice as any).playerNumber,
@@ -72,8 +75,9 @@ describe('Movement/capture parity: stack at (4,7) over intermediate stack at (4,
     const from: Position = { x: 4, y: 7 };
     const target: Position = { x: 4, y: 6 };
 
-    // Attacker: player 1, height 2; Target: player 2, height 1.
-    addStack(board, from, 1, 2);
+    // Attacker: player 1, height 3; Target: player 2, height 1.
+    // Distance 4,7 -> 4,4 is 3. So stack height must be 3.
+    addStack(board, from, 1, 3);
     addStack(board, target, 2, 1);
 
     const players = [
@@ -133,11 +137,8 @@ describe('Movement/capture parity: stack at (4,7) over intermediate stack at (4,
     expect(backendCaptures.length).toBeGreaterThan(0);
 
     const board = state.board;
-    const sandboxLandings = enumerateSimpleMovementLandings(
-      boardType,
-      board,
-      1,
-      (pos) => manager.isValidPosition(pos)
+    const sandboxLandings = enumerateSimpleMovementLandings(boardType, board, 1, (pos) =>
+      manager.isValidPosition(pos)
     );
 
     const sandboxHasIllegalSimpleMove = sandboxLandings.some(
@@ -175,9 +176,9 @@ describe('Movement/capture parity: stack at (4,7) over intermediate stack at (4,
       attackerPos,
       {
         position: attackerPos,
-        rings: [1, 1, 1],
-        stackHeight: 3,
-        capHeight: 3,
+        rings: [1, 1, 1, 1],
+        stackHeight: 4,
+        capHeight: 4,
         controllingPlayer: 1,
       },
       gameState.board
@@ -223,9 +224,9 @@ describe('Movement/capture parity: stack at (4,7) over intermediate stack at (4,
     // Mirror the board
     sandboxBoard.stacks.set(positionToString(attackerPos), {
       position: attackerPos,
-      rings: [1, 1, 1],
-      stackHeight: 3,
-      capHeight: 3,
+      rings: [1, 1, 1, 1],
+      stackHeight: 4,
+      capHeight: 4,
       controllingPlayer: 1,
     });
     sandboxBoard.stacks.set(positionToString(targetPos), {

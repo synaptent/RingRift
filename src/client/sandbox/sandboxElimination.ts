@@ -1,11 +1,10 @@
-import {
-  BoardState,
-  Player,
-  Position,
-  RingStack,
-  positionToString
-} from '../../shared/types/game';
+import { BoardState, Player, Position, RingStack, positionToString } from '../../shared/types/game';
 import { calculateCapHeight } from '../../shared/engine/core';
+
+const TERRITORY_TRACE_DEBUG =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
 
 export interface ForcedEliminationResult {
   board: BoardState;
@@ -62,8 +61,7 @@ function assertForcedEliminationConsistency(
     return;
   }
 
-  const message =
-    `sandboxElimination invariant violation (${context}):` + '\n' + errors.join('\n');
+  const message = `sandboxElimination invariant violation (${context}):` + '\n' + errors.join('\n');
 
   // eslint-disable-next-line no-console
   console.error(message);
@@ -85,7 +83,7 @@ export function forceEliminateCapOnBoard(
   playerNumber: number,
   stacks: RingStack[]
 ): ForcedEliminationResult {
-  const player = players.find(p => p.playerNumber === playerNumber);
+  const player = players.find((p) => p.playerNumber === playerNumber);
   if (!player) {
     return { board, players, totalRingsEliminatedDelta: 0 };
   }
@@ -94,22 +92,29 @@ export function forceEliminateCapOnBoard(
     return { board, players, totalRingsEliminatedDelta: 0 };
   }
 
-  const stack = stacks.find(s => s.capHeight > 0) ?? stacks[0];
+  const stack = stacks.find((s) => s.capHeight > 0) ?? stacks[0];
   const capHeight = calculateCapHeight(stack.rings);
   if (capHeight <= 0) {
     return { board, players, totalRingsEliminatedDelta: 0 };
   }
 
+  if (TERRITORY_TRACE_DEBUG) {
+    // eslint-disable-next-line no-console
+    console.log('[sandboxElimination.forceEliminateCapOnBoard]', {
+      playerNumber,
+      stackPosition: stack.position,
+      capHeight,
+      stackHeight: stack.stackHeight,
+    });
+  }
+
   const remainingRings = stack.rings.slice(capHeight);
 
   const updatedEliminatedRings = { ...board.eliminatedRings };
-  updatedEliminatedRings[playerNumber] =
-    (updatedEliminatedRings[playerNumber] || 0) + capHeight;
+  updatedEliminatedRings[playerNumber] = (updatedEliminatedRings[playerNumber] || 0) + capHeight;
 
-  const updatedPlayers = players.map(p =>
-    p.playerNumber === playerNumber
-      ? { ...p, eliminatedRings: p.eliminatedRings + capHeight }
-      : p
+  const updatedPlayers = players.map((p) =>
+    p.playerNumber === playerNumber ? { ...p, eliminatedRings: p.eliminatedRings + capHeight } : p
   );
 
   const nextBoard: BoardState = {
@@ -119,7 +124,7 @@ export function forceEliminateCapOnBoard(
     collapsedSpaces: new Map(board.collapsedSpaces),
     territories: new Map(board.territories),
     formedLines: [...board.formedLines],
-    eliminatedRings: updatedEliminatedRings
+    eliminatedRings: updatedEliminatedRings,
   };
 
   if (remainingRings.length > 0) {
@@ -128,7 +133,7 @@ export function forceEliminateCapOnBoard(
       rings: remainingRings,
       stackHeight: remainingRings.length,
       capHeight: calculateCapHeight(remainingRings),
-      controllingPlayer: remainingRings[0]
+      controllingPlayer: remainingRings[0],
     };
     const key = positionToString(stack.position);
     nextBoard.stacks.set(key, newStack);
@@ -140,7 +145,7 @@ export function forceEliminateCapOnBoard(
   const result: ForcedEliminationResult = {
     board: nextBoard,
     players: updatedPlayers,
-    totalRingsEliminatedDelta: capHeight
+    totalRingsEliminatedDelta: capHeight,
   };
 
   assertForcedEliminationConsistency(

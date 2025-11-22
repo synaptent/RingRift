@@ -1,4 +1,11 @@
-# RingRift Web-Based Multiplayer Game Architecture
+# ⚠️ DEPRECATED: RingRift Web-Based Multiplayer Game Architecture
+
+> **This is a historical document preserved for context.**
+>
+> **For current architecture and plans, see:**
+>
+> - [`ARCHITECTURE_ASSESSMENT.md`](../ARCHITECTURE_ASSESSMENT.md)
+> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
 
 ## Executive Summary
 
@@ -12,34 +19,34 @@ graph TB
         WEB[Web Frontend<br/>React + TypeScript]
         MOBILE[Mobile PWA<br/>Same Codebase]
     end
-    
+
     subgraph "API Gateway"
         NGINX[Nginx Reverse Proxy<br/>Load Balancer]
     end
-    
+
     subgraph "Application Layer"
         API[REST API Server<br/>Node.js + Express]
         WS[WebSocket Server<br/>Socket.io]
         GAME[Game Engine<br/>TypeScript]
     end
-    
+
     subgraph "AI Layer"
         AI_SIMPLE[Simple AI<br/>Rule-based]
         AI_ADVANCED[Advanced AI<br/>MCTS/Neural]
         AI_MANAGER[AI Manager<br/>Difficulty Scaling]
     end
-    
+
     subgraph "Data Layer"
         REDIS[Redis<br/>Game State Cache]
         POSTGRES[PostgreSQL<br/>Persistent Data]
         FILES[File Storage<br/>Game Replays]
     end
-    
+
     subgraph "Infrastructure"
         DOCKER[Docker Containers]
         MONITOR[Monitoring<br/>Prometheus + Grafana]
     end
-    
+
     WEB --> NGINX
     MOBILE --> NGINX
     NGINX --> API
@@ -57,9 +64,11 @@ graph TB
 ## Technology Stack Recommendations
 
 ### Frontend Framework
+
 **Primary Choice: React 18 + TypeScript + Vite**
 
 **Rationale:**
+
 - **Component Architecture**: Perfect for modular board rendering (square vs hexagonal)
 - **State Management**: React Context + Zustand for complex game state
 - **Real-time Updates**: Seamless WebSocket integration
@@ -68,15 +77,18 @@ graph TB
 - **PWA Support**: Single codebase for web and mobile
 
 **Supporting Libraries:**
+
 - **Konva.js/Fabric.js**: Canvas-based board rendering for smooth animations
 - **React Query**: Server state management and caching
 - **Framer Motion**: Smooth piece movement animations
 - **Tailwind CSS**: Rapid UI development with consistent design
 
 ### Backend Services
+
 **Primary Choice: Node.js + Express + TypeScript**
 
 **Rationale:**
+
 - **Shared Language**: TypeScript across frontend/backend reduces complexity
 - **Real-time Performance**: Excellent WebSocket support with Socket.io
 - **JSON Handling**: Native JSON processing for game state
@@ -84,6 +96,7 @@ graph TB
 - **Development Speed**: Rapid prototyping and iteration
 
 **Alternative Consideration: Rust + Actix-web**
+
 - **Performance**: Superior for CPU-intensive AI calculations
 - **Memory Safety**: Critical for long-running game servers
 - **Concurrency**: Excellent for handling multiple simultaneous games
@@ -92,6 +105,7 @@ graph TB
 ### Database Solutions
 
 **Primary Database: PostgreSQL 15+**
+
 ```sql
 -- Core tables structure
 CREATE TABLE users (
@@ -153,6 +167,7 @@ CREATE TABLE tournaments (
 ```
 
 **Caching Layer: Redis 7+**
+
 ```javascript
 // Game state caching structure
 game:{gameId} = {
@@ -176,17 +191,19 @@ matchmaking:{boardType}:{rating} = [userId1, userId2, ...]
 ```
 
 **File Storage: Local filesystem with backup**
+
 - Game replays in compressed JSON format
 - User avatars and assets
 - AI training data
 
 ### WebSocket Implementation
+
 **Socket.io with Redis Adapter**
 
 ```typescript
 // Real-time event structure
 interface GameEvents {
-  'move': (move: Move) => void;
+  move: (move: Move) => void;
   'game-state': (state: GameState) => void;
   'player-joined': (player: Player) => void;
   'player-left': (player: Player) => void;
@@ -199,6 +216,7 @@ interface GameEvents {
 ```
 
 **Benefits:**
+
 - Automatic fallback to HTTP long-polling
 - Built-in room management for games
 - Redis adapter enables horizontal scaling
@@ -257,12 +275,11 @@ GameEngine
   - The engine therefore only ever sees valid, rule-respecting `selectedOption` values or an explicit error, never malformed choices.
 
 This architecture ensures that:
+
 - The GameEngine is independent of UI and network concerns.
 - Humans and AI share the same high-level interaction interface.
 - New transport mechanisms (e.g. HTTP polling, test harnesses) can be added by implementing `PlayerInteractionHandler` and/or extending `DelegatingInteractionHandler`.
 - AI choice behaviour can evolve (e.g. move from heuristics to AIService-backed decisions) without changing engine code.
-
-
 
 ### Core Game Engine Design
 
@@ -276,7 +293,7 @@ classDiagram
         +getValidMoves(): Move[]
         +undoMove(): GameState
     }
-    
+
     class BoardManager {
         +createBoard(type: BoardType): Board
         +getNeighbors(position: Position): Position[]
@@ -284,7 +301,7 @@ classDiagram
         +calculateDistances(): DistanceMap
         +findPaths(from: Position, to: Position): Path[]
     }
-    
+
     class RuleEngine {
         +validateRingPlacement(): boolean
         +validateRingMovement(): boolean
@@ -293,14 +310,14 @@ classDiagram
         +processRowRemoval(): GameState
         +checkGameEnd(): boolean
     }
-    
+
     class StateManager {
         +saveState(state: GameState): void
         +loadState(gameId: string): GameState
         +createSnapshot(): StateSnapshot
         +restoreSnapshot(snapshot: StateSnapshot): void
     }
-    
+
     GameEngine --> BoardManager
     GameEngine --> RuleEngine
     GameEngine --> StateManager
@@ -360,39 +377,39 @@ graph TD
         CACHE[Move Cache]
         BOOK[Opening Book]
     end
-    
+
     subgraph "AI Engines"
         RANDOM[Random AI<br/>Difficulty 1]
         HEURISTIC[Heuristic AI<br/>Difficulty 2-4]
         MINIMAX[Minimax AI<br/>Difficulty 5-7]
         MCTS[MCTS AI<br/>Difficulty 8-10]
     end
-    
+
     subgraph "AI Support"
         EVAL[Position Evaluator]
         PATTERN[Pattern Recognition]
         ENDGAME[Endgame Database]
     end
-    
+
     DIFFICULTY --> SELECTOR
     SELECTOR --> RANDOM
     SELECTOR --> HEURISTIC
     SELECTOR --> MINIMAX
     SELECTOR --> MCTS
-    
+
     HEURISTIC --> EVAL
     MINIMAX --> EVAL
     MCTS --> EVAL
-    
+
     RANDOM --> CACHE
     HEURISTIC --> CACHE
     MINIMAX --> CACHE
     MCTS --> CACHE
-    
+
     HEURISTIC --> PATTERN
     MINIMAX --> PATTERN
     MCTS --> PATTERN
-    
+
     MINIMAX --> ENDGAME
     MCTS --> ENDGAME
 ```
@@ -406,41 +423,41 @@ graph TB
     subgraph "Load Balancer"
         LB[Nginx + Redis Session Store]
     end
-    
+
     subgraph "Application Instances"
         APP1[Game Server 1]
         APP2[Game Server 2]
         APP3[Game Server N]
     end
-    
+
     subgraph "Shared Services"
         REDIS_CLUSTER[Redis Cluster<br/>Game State]
         PG_MASTER[PostgreSQL Master]
         PG_REPLICA[PostgreSQL Replica]
     end
-    
+
     subgraph "AI Services"
         AI1[AI Engine 1]
         AI2[AI Engine 2]
         AI_LB[AI Load Balancer]
     end
-    
+
     LB --> APP1
     LB --> APP2
     LB --> APP3
-    
+
     APP1 --> REDIS_CLUSTER
     APP2 --> REDIS_CLUSTER
     APP3 --> REDIS_CLUSTER
-    
+
     APP1 --> PG_MASTER
     APP2 --> PG_REPLICA
     APP3 --> PG_REPLICA
-    
+
     APP1 --> AI_LB
     APP2 --> AI_LB
     APP3 --> AI_LB
-    
+
     AI_LB --> AI1
     AI_LB --> AI2
 ```
@@ -448,10 +465,11 @@ graph TB
 ## Security Measures
 
 ### Authentication & Authorization
+
 ```typescript
 // JWT-based authentication with refresh tokens
 interface AuthTokens {
-  accessToken: string;  // 15 minutes
+  accessToken: string; // 15 minutes
   refreshToken: string; // 7 days
 }
 
@@ -466,11 +484,12 @@ interface JWTPayload {
 enum UserRole {
   PLAYER = 'player',
   MODERATOR = 'moderator',
-  ADMIN = 'admin'
+  ADMIN = 'admin',
 }
 ```
 
 ### Anti-Cheat Measures
+
 - Move timing analysis for suspiciously fast moves
 - Pattern recognition for AI assistance detection
 - Server-side move validation and sequence checking
@@ -478,6 +497,7 @@ enum UserRole {
 - Comprehensive logging of suspicious activities
 
 ### Input Validation & Sanitization
+
 - Zod schemas for all API inputs
 - Position validation for board coordinates
 - Move validation with type checking
@@ -486,6 +506,7 @@ enum UserRole {
 ## Deployment Strategy
 
 ### Docker Container Architecture
+
 ```dockerfile
 # Multi-stage build for production optimization
 FROM node:18-alpine AS builder
@@ -502,14 +523,15 @@ CMD ["npm", "start"]
 ```
 
 ### Docker Compose Configuration
+
 ```yaml
 version: '3.8'
 services:
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
@@ -550,12 +572,14 @@ volumes:
 ## Cross-Platform Compatibility
 
 ### Progressive Web App (PWA) Features
+
 - Service worker for offline capability
 - Web app manifest for mobile installation
 - Responsive design for all screen sizes
 - Touch-friendly interface for mobile devices
 
 ### Responsive Design Strategy
+
 - Adaptive board rendering based on screen size
 - Touch-friendly piece selection with larger hit areas
 - Optimized UI layouts for mobile, tablet, and desktop
@@ -565,24 +589,28 @@ volumes:
 ### Implementation Phases
 
 **Phase 1: Core Foundation (8-10 weeks)**
+
 - Basic game engine with 8x8 board
 - Simple multiplayer functionality
 - Basic AI (levels 1-3)
 - Essential UI components
 
 **Phase 2: Full Game Implementation (6-8 weeks)**
+
 - All three board configurations
 - Complete rule implementation
 - Advanced AI (levels 4-7)
 - Spectator mode
 
 **Phase 3: Advanced Features (4-6 weeks)**
+
 - Tournament system
 - Replay functionality
 - Advanced AI (levels 8-10)
 - Performance optimizations
 
 **Phase 4: Polish & Deployment (3-4 weeks)**
+
 - Security hardening
 - Monitoring setup
 - Documentation
@@ -591,16 +619,19 @@ volumes:
 ### Maintenance Overhead
 
 **Low Maintenance Components:**
+
 - Core game rules (stable once implemented)
 - Database schema (minimal changes expected)
 - Basic UI components
 
 **Medium Maintenance Components:**
+
 - AI algorithms (periodic improvements)
 - WebSocket handling (occasional updates)
 - Security measures (regular updates)
 
 **High Maintenance Components:**
+
 - Matchmaking algorithms (continuous tuning)
 - Performance monitoring (ongoing optimization)
 - User experience features (frequent iterations)
@@ -608,6 +639,7 @@ volumes:
 ## Future Extensibility
 
 ### Modular Architecture Benefits
+
 ```typescript
 // Plugin-based game mode system
 interface GameMode {
@@ -619,11 +651,11 @@ interface GameMode {
 
 class GameModeManager {
   private modes = new Map<string, GameMode>();
-  
+
   registerMode(mode: GameMode): void {
     this.modes.set(mode.name, mode);
   }
-  
+
   // Easy addition of new game variants
   createGame(modeId: string, players: Player[]): Game {
     const mode = this.modes.get(modeId);
@@ -633,6 +665,7 @@ class GameModeManager {
 ```
 
 ### Extension Points
+
 - **New Board Configurations**: Triangular, 3D boards
 - **Game Variants**: Team play, simultaneous turns
 - **AI Enhancements**: Neural network training, opening books
@@ -644,6 +677,7 @@ class GameModeManager {
 This architecture provides a solid foundation for RingRift that balances immediate functionality with long-term scalability and maintainability. The modular design ensures that individual components can be enhanced or replaced without affecting the entire system.
 
 Key strengths of this approach:
+
 - **Scalable**: Designed to grow from 10-50 to hundreds of concurrent players
 - **Maintainable**: Clear separation of concerns and modular architecture
 - **Secure**: Comprehensive security measures and anti-cheat systems

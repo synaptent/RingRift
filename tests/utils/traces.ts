@@ -133,8 +133,8 @@ export async function runSandboxAITrace(
           currentPlayer: state.currentPlayer,
           currentPhase: state.currentPhase,
           gameStatus: state.gameStatus,
-          ringsInHand:
-            state.players.find((p) => p.playerNumber === state.currentPlayer)?.ringsInHand,
+          ringsInHand: state.players.find((p) => p.playerNumber === state.currentPlayer)
+            ?.ringsInHand,
           stacksOnBoard: state.board.stacks.size,
         });
       }
@@ -239,6 +239,16 @@ export function createBackendEngineFromInitialState(initial: GameState): GameEng
   if (!started) {
     throw new Error('Failed to start GameEngine for trace replay');
   }
+
+  // For trace/parity harnesses, enable Move-driven decision phases so that
+  // line and territory processing are expressed as explicit canonical Moves
+  // (process_line, choose_line_reward, process_territory_region,
+  // eliminate_rings_from_stack) instead of being resolved purely via
+  // processAutomaticConsequences. This keeps backend behaviour aligned with
+  // the sandbox trace model, which records these decisions as distinct
+  // GameHistoryEntry actions.
+  engine.enableMoveDrivenDecisionPhases();
+
   return engine;
 }
 
@@ -259,12 +269,6 @@ export async function replayMovesOnBackend(
   for (let i = 0; i < moves.length; i++) {
     const move = moves[i];
     const nextMove: Move | undefined = moves[i + 1];
-
-    // Before attempting to match this move, advance the backend through any
-    // automatic bookkeeping phases so that we only ever compare against
-    // interactive phases (placement, movement, capture) where getValidMoves
-    // is meaningful.
-    engine.stepAutomaticPhasesForTesting();
 
     // For backend replay we always advance from the backend's current
     // state.
@@ -325,9 +329,7 @@ export async function replayMovesOnBackend(
     }
 
     const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
-    const result = await engine.makeMove(
-      payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-    );
+    const result = await engine.makeMove(payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>);
     if (!result.success) {
       throw new Error(
         `replayMovesOnBackend: makeMove failed at backend moveNumber=${matchingBackendMove.moveNumber}: ${result.error}`
@@ -418,9 +420,7 @@ async function autoResolveChainCaptureIfNeeded(
     }, continuations[0]);
 
     const { id, timestamp, moveNumber, ...payload } = chosen;
-    const result = await engine.makeMove(
-      payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-    );
+    const result = await engine.makeMove(payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>);
     if (!result.success) {
       throw new Error(
         `autoResolveChainCaptureIfNeeded: makeMove failed at backend moveNumber=${chosen.moveNumber}: ${result.error}`

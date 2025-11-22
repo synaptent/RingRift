@@ -3,13 +3,14 @@
 Thank you for your interest in contributing to RingRift! This document provides guidelines and priorities for development work.
 
 **Related Documents (single source of truth):**
+
 - [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) - Factual, code-verified status snapshot
 - [TODO.md](./TODO.md) - Task tracking and detailed implementation checklist
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs and issues
 - [ARCHITECTURE_ASSESSMENT.md](./ARCHITECTURE_ASSESSMENT.md) - Architecture and refactoring axes
 - [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) - Phased strategic plan and milestones
-- [PLAYABLE_GAME_IMPLEMENTATION_PLAN.md](./PLAYABLE_GAME_IMPLEMENTATION_PLAN.md) - End-to-end playable lifecycle plan (lobby → game → AI → victory)
-- [deprecated/CODEBASE_EVALUATION.md](./deprecated/CODEBASE_EVALUATION.md) - Historical code-level evaluation (kept for context only)
+- [deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md](./deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md) - Historical end-to-end playable lifecycle plan (lobby → game → AI → victory); for current, code-verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
+- [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md) - Current code-level evaluation (kept in sync with `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `KNOWN_ISSUES.md`, and `TODO.md`)
 
 ---
 
@@ -19,6 +20,7 @@ Thank you for your interest in contributing to RingRift! This document provides 
 **Priority Focus:** Phase 1 / Phase 0 – Core Game Logic finishing + Testing Foundation
 
 Before contributing, please review:
+
 1. The comprehensive game rules in `ringrift_complete_rules.md`
 2. Current factual status in `CURRENT_STATE_ASSESSMENT.md`
 3. Tasks and priorities in `TODO.md`
@@ -30,13 +32,24 @@ Before contributing, please review:
 
 ### **PHASE 1: Core Game Logic** (Historical Plan)
 
-> **Note:** The detailed Phase 1 task list below reflects an earlier snapshot of the project. For the canonical, up-to-date task list and statuses, always consult `TODO.md` and `CURRENT_STATE_ASSESSMENT.md`. Use the sections below as background/context only.
+> **⚠️ DEPRECATED / HISTORICAL CONTEXT ONLY**
+>
+> The detailed Phase 1-4 task lists below reflect an earlier snapshot of the project. Many of these items are now complete or have evolved.
+>
+> **For the canonical, up-to-date task list and statuses, ALWAYS consult:**
+>
+> - `TODO.md` (Active task tracker)
+> - `CURRENT_STATE_ASSESSMENT.md` (Verified status)
+> - `STRATEGIC_ROADMAP.md` (Future direction)
+>
+> Use the sections below only for historical context on the original implementation plan.
 
 **Goal:** Make the game engine correctly implement RingRift rules
 
 **Priority Tasks:**
 
 #### 1.1 Fix BoardState Data Structure (CRITICAL)
+
 **Estimated Time:** 1-2 days  
 **Files:** `src/shared/types/game.ts`, `src/server/game/BoardManager.ts`
 
@@ -48,6 +61,7 @@ Before contributing, please review:
 **Why First:** All other fixes depend on proper state management
 
 #### 1.2 Implement Marker System (CRITICAL)
+
 **Estimated Time:** 2-3 days  
 **Files:** `src/server/game/GameEngine.ts`, `src/server/game/BoardManager.ts`
 
@@ -60,6 +74,7 @@ Before contributing, please review:
 **Reference:** Section 8.3 of rules document
 
 #### 1.3 Fix Movement Validation (CRITICAL)
+
 **Estimated Time:** 2-3 days  
 **Files:** `src/server/game/RuleEngine.ts`
 
@@ -72,6 +87,7 @@ Before contributing, please review:
 **Reference:** Section 8.2, FAQ Q2
 
 #### 1.4 Fix Game Phase Transitions (HIGH)
+
 **Estimated Time:** 1-2 days  
 **Files:** `src/shared/types/game.ts`, `src/server/game/GameEngine.ts`
 
@@ -83,6 +99,7 @@ Before contributing, please review:
 **Reference:** Section 4, Section 15.2
 
 #### 1.5 Complete Capture System (HIGH)
+
 **Estimated Time:** 3-4 days  
 **Files:** `src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`
 
@@ -96,6 +113,7 @@ Before contributing, please review:
 **Reference:** Sections 9-10
 
 #### 1.6 Implement Line Formation (HIGH)
+
 **Estimated Time:** 3-4 days  
 **Files:** `src/server/game/GameEngine.ts`, `src/server/game/BoardManager.ts`
 
@@ -109,6 +127,7 @@ Before contributing, please review:
 **Reference:** Section 11
 
 #### 1.7 Implement Territory Disconnection (HIGH)
+
 **Estimated Time:** 4-5 days  
 **Files:** `src/server/game/RuleEngine.ts`, `src/server/game/BoardManager.ts`
 
@@ -122,6 +141,7 @@ Before contributing, please review:
 **Reference:** Section 12, FAQ Q15
 
 #### 1.8 Add Forced Elimination (MEDIUM)
+
 **Estimated Time:** 1 day  
 **Files:** `src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`
 
@@ -132,6 +152,7 @@ Before contributing, please review:
 **Reference:** Section 4.4, FAQ Q24
 
 #### 1.9 Fix Player State Updates (MEDIUM)
+
 **Estimated Time:** 1 day  
 **Files:** `src/server/game/GameEngine.ts`
 
@@ -151,6 +172,7 @@ Before contributing, please review:
 **Tasks:**
 
 #### 2.1 Unit Tests
+
 **Estimated Time:** 1 week
 
 - [ ] Test BoardManager position utilities
@@ -163,6 +185,7 @@ Before contributing, please review:
 - [ ] Test GameEngine state transitions
 
 #### 2.2 Integration Tests
+
 **Estimated Time:** 3-5 days
 
 - [ ] Test complete turn sequence
@@ -173,6 +196,7 @@ Before contributing, please review:
 - [ ] Test forced elimination scenarios
 
 #### 2.3 Scenario Tests
+
 **Estimated Time:** 3-5 days
 
 - [ ] Test 180° reversal capture pattern (FAQ example)
@@ -193,6 +217,7 @@ Before contributing, please review:
 **Tasks:**
 
 #### 3.1 Board Rendering
+
 - [ ] Square board (8x8 and 19x19)
 - [ ] Hexagonal board
 - [ ] Cell/space components
@@ -200,6 +225,7 @@ Before contributing, please review:
 - [ ] Responsive sizing
 
 #### 3.2 Game Pieces
+
 - [ ] Ring stack visualization
 - [ ] Marker display
 - [ ] Collapsed space display
@@ -207,6 +233,7 @@ Before contributing, please review:
 - [ ] Stack height indicators
 
 #### 3.3 Controls & Interaction
+
 - [ ] Ring placement interface
 - [ ] Move selection (click source/destination)
 - [ ] Valid move highlighting
@@ -214,6 +241,7 @@ Before contributing, please review:
 - [ ] Undo/redo (if supported)
 
 #### 3.4 Game State Display
+
 - [ ] Current player indicator
 - [ ] Ring counts display
 - [ ] Territory statistics
@@ -227,6 +255,7 @@ Before contributing, please review:
 ### **PHASE 4: Advanced Features** (After Phase 3)
 
 **Tasks:**
+
 - AI implementation (difficulty levels 1-10)
 - WebSocket event completion
 - Database integration
@@ -242,18 +271,21 @@ Before contributing, please review:
 ### Code Style
 
 **TypeScript:**
+
 - Use explicit types (avoid `any`)
 - Prefer interfaces over type aliases for objects
 - Use const assertions where appropriate
 - Follow existing naming conventions
 
 **Naming Conventions:**
+
 - Classes: PascalCase (`GameEngine`, `BoardManager`)
 - Methods: camelCase (`validateMove`, `findAllLines`)
 - Constants: UPPER_SNAKE_CASE (`BOARD_CONFIGS`)
 - Interfaces: PascalCase with descriptive names
 
 **Comments:**
+
 - Add JSDoc comments for public methods
 - Include rule references for game logic
 - Explain non-obvious implementation choices
@@ -261,22 +293,24 @@ Before contributing, please review:
 ### Testing Requirements
 
 **All new code must include tests:**
+
 - Unit tests for individual functions
 - Integration tests for complex workflows
 - Scenario tests from rules document
 
 **Test Structure:**
+
 ```typescript
 describe('ComponentName', () => {
   describe('methodName', () => {
     it('should handle normal case', () => {
       // Test implementation
     });
-    
+
     it('should handle edge case', () => {
       // Test implementation
     });
-    
+
     it('should match rule X from section Y', () => {
       // Reference: ringrift_complete_rules.md Section Y
       // Test implementation
@@ -297,16 +331,17 @@ When implementing game rules:
 6. **Test edge cases** from FAQ
 
 **Example:**
+
 ```typescript
 /**
  * Validates ring movement according to RingRift rules
- * 
+ *
  * Rule Reference: Section 8.2 - Minimum Distance Requirements
  * Rules:
  * - Must move at least stack height spaces
  * - Can land on any valid space beyond markers meeting distance
  * - Cannot pass through collapsed spaces or other rings
- * 
+ *
  * @param move - The move to validate
  * @param gameState - Current game state
  * @returns true if move is valid
@@ -331,6 +366,7 @@ validateMovement(move: Move, gameState: GameState): boolean {
 ### PR Title Format
 
 Use conventional commits:
+
 ```
 <type>(<scope>): <description>
 
@@ -342,6 +378,7 @@ docs(readme): update installation instructions
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `test`: Adding tests
@@ -354,23 +391,28 @@ docs(readme): update installation instructions
 
 ```markdown
 ## Changes
+
 Brief description of what this PR accomplishes
 
 ## Related Issues
+
 Fixes #issue-number
 Relates to #issue-number
 
 ## Rule References
+
 - Section X.Y: [Rule name]
 - FAQ QZ: [Question]
 
 ## Testing
+
 - [ ] Unit tests added/updated
 - [ ] Integration tests added/updated
 - [ ] Manual testing completed
 - [ ] All tests pass
 
 ## Checklist
+
 - [ ] Code follows style guidelines
 - [ ] Self-review completed
 - [ ] Comments added to complex logic
@@ -398,6 +440,7 @@ What actually happens
 Section/FAQ from ringrift_complete_rules.md
 
 **Steps to Reproduce:**
+
 1. Step one
 2. Step two
 3. Step three
@@ -418,11 +461,13 @@ Description of how to fix
 ### Essential Reading
 
 **Must Read (in order):**
+
 1. `ringrift_complete_rules.md` - Complete game rules
 2. `CURRENT_STATE_ASSESSMENT.md` - Current, code-verified state analysis
 3. `KNOWN_ISSUES.md` - Specific bugs and gaps to fix
 
 **Architecture & Planning Reference:**
+
 1. `ARCHITECTURE_ASSESSMENT.md` - Current architecture, refactoring axes, and deep improvement plan
 2. `STRATEGIC_ROADMAP.md` - Phased roadmap from core logic to UI, AI, and multiplayer
 3. `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Practical plan for a fully playable experience (lobby → game → AI → victory)
@@ -432,17 +477,20 @@ Description of how to fix
 ### Understanding the Game
 
 **Start Here:**
+
 - Section 1.3: Quick Start Guide (rules doc)
 - Section 2: Simplified 8×8 Version (rules doc)
 - Section 15.4: FAQ (rules doc)
 
 **Core Mechanics:**
+
 - Section 8: Movement
 - Section 9-10: Captures
 - Section 11: Line Formation
 - Section 12: Territory Disconnection
 
 **Complex Scenarios:**
+
 - Section 15.3: Common Capture Patterns
 - Section 16.8.6: Territory Disconnection Example
 - FAQ Q1-Q24: Edge cases and clarifications
@@ -462,6 +510,7 @@ Description of how to fix
 ### Common Pitfalls
 
 **Avoid:**
+
 - ❌ Implementing without reading full rule description
 - ❌ Mixing overtaking and elimination captures
 - ❌ Forgetting marker interactions
@@ -469,6 +518,7 @@ Description of how to fix
 - ❌ Missing mandatory vs optional actions
 
 **Do:**
+
 - ✅ Read entire rule section before coding
 - ✅ Check FAQ for clarifications
 - ✅ Test with examples from rules document
@@ -508,29 +558,37 @@ Description of how to fix
 ## 📅 Milestones
 
 ### Milestone 1: Core Logic Complete
+
 **Target:** 4-6 weeks from start  
 **Criteria:**
+
 - All Phase 1 tasks completed
 - Unit tests for all game rules
 - No critical bugs (P0 issues resolved)
 
 ### Milestone 2: Tested & Validated
+
 **Target:** 8-10 weeks from start  
 **Criteria:**
+
 - All Phase 2 tasks completed
 - 80%+ test coverage
 - All scenario tests passing
 
 ### Milestone 3: Playable Game
+
 **Target:** 12-15 weeks from start  
 **Criteria:**
+
 - All Phase 3 tasks completed
 - Functional UI for all board types
 - Multiplayer working
 
 ### Milestone 4: Feature Complete
+
 **Target:** 18-24 weeks from start  
 **Criteria:**
+
 - All phases completed
 - AI opponents working
 - Database integration complete

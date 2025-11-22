@@ -1,10 +1,18 @@
-# Using VS Code Docker Extension for RingRift
+# ⚠️ DEPRECATED: Using VS Code Docker Extension for RingRift
+
+> **This is a historical document preserved for context.**
+>
+> **For current setup instructions, see:**
+>
+> - [`QUICKSTART.md`](../QUICKSTART.md)
+> - [`README.md`](../README.md)
 
 Great news! The Docker extension in VS Code provides a user-friendly graphical interface for managing Docker containers, making it much easier to set up and run the RingRift environment.
 
 ## What the Docker Extension Provides
 
 The VS Code Docker extension gives you:
+
 - ✅ **Visual container management** - No command-line needed
 - ✅ **One-click builds and runs** - Right-click to build/start/stop
 - ✅ **Log viewing** - See container output in VS Code
@@ -21,12 +29,14 @@ You still need Docker installed on your system. The Docker extension uses Docker
 Choose **ONE** of these options:
 
 1. **OrbStack** (Recommended - Lightweight & Fast):
+
    ```bash
    brew install orbstack
    open -a OrbStack
    ```
 
 2. **Colima** (Command-line friendly):
+
    ```bash
    brew install colima docker docker-compose
    colima start
@@ -37,6 +47,7 @@ Choose **ONE** of these options:
    - Install and launch
 
 Once installed, verify Docker is running:
+
 ```bash
 docker --version
 ```
@@ -159,25 +170,30 @@ Right-click on containers for these options:
 ## Troubleshooting
 
 ### "Docker not running"
+
 - Make sure OrbStack, Colima, or Docker Desktop is running
 - Check: `docker ps` should work in terminal
 
 ### "Cannot find docker-compose.yml"
+
 - Make sure you opened VS Code in the `/Users/armand/code/RingRift` directory
 - Reload VS Code: `Cmd+Shift+P` → "Developer: Reload Window"
 
 ### "Build fails"
+
 - Check Dockerfile syntax
 - View build output in Docker extension logs
 - Try building from terminal: `docker build -t ringrift-ai-service ./ai-service`
 
 ### "Port 8001 already in use"
+
 - Stop any local Python service: Check if `./run.sh` is running
 - Or change port in docker-compose.yml
 
 ## Advantages of Using Docker Extension
 
 ### Compared to Command Line:
+
 ✅ **Visual feedback** - See what's running at a glance  
 ✅ **Easier management** - Right-click instead of remembering commands  
 ✅ **Integrated logs** - View logs in VS Code instead of separate terminal  
@@ -185,6 +201,7 @@ Right-click on containers for these options:
 ✅ **No memorization** - Don't need to remember Docker commands
 
 ### Compared to Local Python:
+
 ✅ **Isolated environment** - Doesn't affect your system Python  
 ✅ **Consistent setup** - Same environment for all developers  
 ✅ **Easy cleanup** - Remove containers without trace  
@@ -196,11 +213,13 @@ Right-click on containers for these options:
 For **development**:
 
 1. **Start AI Service via Docker Extension**
+
    ```
    Right-click docker-compose.yml → Compose Up → ai-service
    ```
 
 2. **View Logs in VS Code**
+
    ```
    Right-click ai-service container → View Logs
    ```
@@ -220,6 +239,7 @@ For **development**:
 For **production testing**:
 
 1. Build all services:
+
    ```
    Right-click docker-compose.yml → Compose Up (select all)
    ```
@@ -262,6 +282,7 @@ Recommended settings for VS Code:
 **Yes, the VS Code Docker Extension makes it MUCH easier to set up the environment!**
 
 Instead of typing Docker commands, you can:
+
 - Build and run containers with right-clicks
 - View logs directly in VS Code
 - Start/stop services visually

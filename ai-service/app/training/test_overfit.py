@@ -9,9 +9,6 @@ import numpy as np
 import os
 import sys
 
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 from app.ai.neural_net import RingRiftCNN
 
 def test_overfit():

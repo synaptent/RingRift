@@ -15,6 +15,7 @@ export interface BoardViewProps {
   selectedPosition?: Position;
   validTargets?: Position[];
   onCellClick?: (position: Position) => void;
+  isSpectator?: boolean;
   /**
    * Optional double-click handler, primarily used by the local sandbox
    * to distinguish between selection (single click) and stacked ring
@@ -182,6 +183,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onCellContextMenu,
   showMovementGrid = false,
   showCoordinateLabels = false,
+  isSpectator = false,
 }) => {
   // Square boards: simple grid using (x, y) coordinates.
   // Hex board: rendered using the same cube/axial coordinate system
@@ -358,13 +360,14 @@ export const BoardView: React.FC<BoardViewProps> = ({
           <button
             key={key}
             type="button"
-            onClick={() => onCellClick?.(pos)}
-            onDoubleClick={() => onCellDoubleClick?.(pos)}
+            onClick={() => !isSpectator && onCellClick?.(pos)}
+            onDoubleClick={() => !isSpectator && onCellDoubleClick?.(pos)}
             onContextMenu={(e) => {
               e.preventDefault();
-              onCellContextMenu?.(pos);
+              !isSpectator && onCellContextMenu?.(pos);
             }}
-            className={cellClasses}
+            className={`${cellClasses} ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
+            disabled={isSpectator}
           >
             {stack ? <StackWidget stack={stack} boardType={boardType} /> : null}
 
@@ -471,13 +474,14 @@ export const BoardView: React.FC<BoardViewProps> = ({
           <button
             key={key}
             type="button"
-            onClick={() => onCellClick?.(pos)}
-            onDoubleClick={() => onCellDoubleClick?.(pos)}
+            onClick={() => !isSpectator && onCellClick?.(pos)}
+            onDoubleClick={() => !isSpectator && onCellDoubleClick?.(pos)}
             onContextMenu={(e) => {
               e.preventDefault();
-              onCellContextMenu?.(pos);
+              !isSpectator && onCellContextMenu?.(pos);
             }}
-            className={cellClasses}
+            className={`${cellClasses} ${isSpectator ? 'cursor-default' : 'cursor-pointer'}`}
+            disabled={isSpectator}
           >
             {stack ? <StackWidget stack={stack} boardType={boardType} /> : null}
 

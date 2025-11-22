@@ -1,4 +1,8 @@
-import { ClientSandboxEngine, SandboxConfig, SandboxInteractionHandler } from '../../src/client/sandbox/ClientSandboxEngine';
+import {
+  ClientSandboxEngine,
+  SandboxConfig,
+  SandboxInteractionHandler,
+} from '../../src/client/sandbox/ClientSandboxEngine';
 import { BoardManager } from '../../src/server/game/BoardManager';
 import { RuleEngine } from '../../src/server/game/RuleEngine';
 import {
@@ -8,14 +12,14 @@ import {
   Move,
   PlayerChoiceResponseFor,
   CaptureDirectionChoice,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 import {
   createTestGameState,
   createTestBoard,
   createTestPlayer,
   addStack,
-  addMarker
+  addMarker,
 } from '../utils/fixtures';
 import { movementRuleScenarios } from '../scenarios/rulesMatrix';
 
@@ -38,23 +42,25 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
     const config: SandboxConfig = {
       boardType,
       numPlayers: 2,
-      playerKinds: ['human', 'human']
+      playerKinds: ['human', 'human'],
     };
 
     const handler: SandboxInteractionHandler = {
       // Movement parity tests dont depend on PlayerChoices; provide a
       // trivial handler that always picks the first option when invoked.
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
         const anyChoice = choice as CaptureDirectionChoice;
-        const selectedOption = (anyChoice as any).options ? (anyChoice as any).options[0] : undefined;
+        const selectedOption = (anyChoice as any).options
+          ? (anyChoice as any).options[0]
+          : undefined;
 
         return {
           choiceId: (choice as any).id,
           playerNumber: (choice as any).playerNumber,
           choiceType: (choice as any).type,
-          selectedOption
+          selectedOption,
         } as PlayerChoiceResponseFor<any>;
-      }
+      },
     };
 
     return new ClientSandboxEngine({ config, interactionHandler: handler });
@@ -97,11 +103,12 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
     // from the source stack using the same helper the AI uses. This mirrors
     // the backend movement phase semantics (captures are handled in a
     // separate phase in the backend engine).
-    const simpleLandings: Array<{ fromKey: string; to: Position }> = (engine as any)
-      .enumerateSimpleMovementLandings(1);
+    const simpleLandings: Array<{ fromKey: string; to: Position }> = (
+      engine as any
+    ).enumerateSimpleMovementLandings(1);
     const sandboxLandingKeys = simpleLandings
-      .filter(m => m.fromKey === positionToString(from))
-      .map(m => positionToString(m.to))
+      .filter((m) => m.fromKey === positionToString(from))
+      .map((m) => positionToString(m.to))
       .sort();
 
     // --- Backend side: mirror board into a GameState and ask RuleEngine ---
@@ -122,10 +129,10 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
       board: backendBoard,
       players: [
         createTestPlayer(1, { type: 'human', ringsInHand: 0 }),
-        createTestPlayer(2, { type: 'human', ringsInHand: 0 })
+        createTestPlayer(2, { type: 'human', ringsInHand: 0 }),
       ],
       currentPlayer: 1,
-      currentPhase: 'movement'
+      currentPhase: 'movement',
     });
 
     const boardManager = new BoardManager(boardType);
@@ -133,8 +140,11 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
 
     const backendMoves: Move[] = ruleEngine.getValidMoves(backendGameState);
     const backendMovementTargets = backendMoves
-      .filter(m => m.type === 'move_stack' && m.from && positionToString(m.from) === positionToString(from))
-      .map(m => positionToString(m.to))
+      .filter(
+        (m) =>
+          m.type === 'move_stack' && m.from && positionToString(m.from) === positionToString(from)
+      )
+      .map((m) => positionToString(m.to))
       .sort();
 
     const backendTargetSet = new Set(backendMovementTargets);
@@ -180,8 +190,9 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
     addMarker(board, ownMarker, 1);
     addMarker(board, oppMarker, 2);
 
-    const simpleLandings: Array<{ fromKey: string; to: Position }> = (engine as any)
-      .enumerateSimpleMovementLandings(1);
+    const simpleLandings: Array<{ fromKey: string; to: Position }> = (
+      engine as any
+    ).enumerateSimpleMovementLandings(1);
     const sandboxLandingKeys = simpleLandings
       .filter((m) => m.fromKey === positionToString(from))
       .map((m) => positionToString(m.to))
@@ -204,10 +215,10 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
       board: backendBoard,
       players: [
         createTestPlayer(1, { type: 'human', ringsInHand: 0 }),
-        createTestPlayer(2, { type: 'human', ringsInHand: 0 })
+        createTestPlayer(2, { type: 'human', ringsInHand: 0 }),
       ],
       currentPlayer: 1,
-      currentPhase: 'movement'
+      currentPhase: 'movement',
     });
 
     const boardManager = new BoardManager(boardType);
@@ -217,9 +228,7 @@ describe('ClientSandboxEngine movement parity with RuleEngine', () => {
     const backendMovementTargets = backendMoves
       .filter(
         (m) =>
-          m.type === 'move_stack' &&
-          m.from &&
-          positionToString(m.from) === positionToString(from)
+          m.type === 'move_stack' && m.from && positionToString(m.from) === positionToString(from)
       )
       .map((m) => positionToString(m.to))
       .sort();

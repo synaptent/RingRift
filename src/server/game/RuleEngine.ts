@@ -19,7 +19,10 @@ import {
   CaptureSegmentBoardView,
   MovementBoardView,
   hasAnyLegalMoveOrCaptureFromOnBoard,
+  applyMarkerEffectsAlongPathOnBoard,
+  MarkerPathHelpers,
 } from '../../shared/engine/core';
+import { enumerateCaptureMoves, CaptureBoardAdapters } from '../../shared/engine/captureLogic';
 import { createHypotheticalBoardWithPlacement as createHypotheticalBoardWithPlacementHelper } from './rules/placementHelpers';
 
 export class RuleEngine {
@@ -68,6 +71,8 @@ export class RuleEngine {
         return this.validateLineProcessingMove(move, gameState);
       case 'process_territory_region':
         return this.validateTerritoryProcessingMove(move, gameState);
+      case 'eliminate_rings_from_stack':
+        return this.validateEliminationMove(move, gameState);
       case 'skip_placement':
         // Trivial validation: skipping placement is only allowed during the
         // ring_placement phase, and only when placement is optional under
@@ -258,7 +263,16 @@ export class RuleEngine {
     const minDistance = sourceStack.stackHeight;
 
     if (distance < minDistance) {
+      // if (positionToString(move.from) === '2,7') {
+      //    console.log(`[RuleEngine] validateStackMovement: 2,7 -> ${positionToString(move.to)} distance=${distance} min=${minDistance} (height=${sourceStack.stackHeight})`);
+      // }
       return false;
+    } else {
+      if (positionToString(move.from) === '2,7') {
+        console.log(
+          `[RuleEngine] validateStackMovement ALLOWED: 2,7 -> ${positionToString(move.to)} distance=${distance} min=${minDistance} (height=${sourceStack.stackHeight})`
+        );
+      }
     }
 
     // Validate landing position
@@ -475,6 +489,25 @@ export class RuleEngine {
 
     const destinationStack = gameState.board.stacks.get(toKey);
 
+    // Apply marker effects along the path (leave departure marker, flip/collapse intermediate)
+    const markerHelpers: MarkerPathHelpers = {
+      setMarker: (pos, player, b) => this.boardManager.setMarker(pos, player, b),
+      collapseMarker: (pos, player, b) => this.boardManager.collapseMarker(pos, player, b),
+      flipMarker: (pos, player, b) => this.boardManager.flipMarker(pos, player, b),
+    };
+
+    // Check if landing on own marker before applying effects (which might remove it)
+    const landingMarker = this.boardManager.getMarker(move.to, gameState.board);
+    const landedOnOwnMarker = landingMarker === move.player;
+
+    applyMarkerEffectsAlongPathOnBoard(
+      gameState.board,
+      move.from,
+      move.to,
+      move.player,
+      markerHelpers
+    );
+
     if (destinationStack && destinationStack.rings.length > 0) {
       // Merge stacks
       const mergedStack: RingStack = {
@@ -486,7 +519,7 @@ export class RuleEngine {
       };
       gameState.board.stacks.set(toKey, mergedStack);
     } else {
-      // Move to empty position
+      // Move to empty position (or position that had a marker which is now removed)
       const movedStack: RingStack = {
         ...sourceStack,
         position: move.to,
@@ -496,19 +529,90 @@ export class RuleEngine {
 
     // Remove from source
     gameState.board.stacks.delete(fromKey);
+
+    // Handle landing on own marker: eliminate top ring
+    if (landedOnOwnMarker) {
+      const stackAtLanding = gameState.board.stacks.get(toKey);
+      if (stackAtLanding && stackAtLanding.stackHeight > 0) {
+        const [topRing, ...remainingRings] = stackAtLanding.rings;
+
+        if (remainingRings.length > 0) {
+          const newStack: RingStack = {
+            ...stackAtLanding,
+            rings: remainingRings,
+            stackHeight: remainingRings.length,
+            capHeight: calculateCapHeight(remainingRings),
+            controllingPlayer: remainingRings[0],
+          };
+          gameState.board.stacks.set(toKey, newStack);
+        } else {
+          gameState.board.stacks.delete(toKey);
+        }
+
+        // Update elimination counts
+        const player = move.player; // The mover is the one who gets credited/penalized?
+        // Rules say: "If you land on your own marker... remove the top ring of your stack... This counts as an eliminated ring."
+        // It counts towards the player's eliminated rings total.
+
+        gameState.totalRingsEliminated += 1;
+        if (!gameState.board.eliminatedRings[player]) {
+          gameState.board.eliminatedRings[player] = 0;
+        }
+        gameState.board.eliminatedRings[player] += 1;
+
+        const playerState = gameState.players.find((p) => p.playerNumber === player);
+        if (playerState) {
+          playerState.eliminatedRings += 1;
+        }
+      }
+    }
   }
 
   /**
    * Processes capture with chain reactions
    */
   private processCapture(move: Move, gameState: GameState): void {
-    if (!move.from || !move.capturedStacks) return;
+    if (!move.from || !move.capturedStacks || !move.captureTarget) return;
 
     const fromKey = positionToString(move.from);
     const attackerStack = gameState.board.stacks.get(fromKey);
     if (!attackerStack) return;
 
     const capturedStacks: RingStack[] = move.capturedStacks;
+
+    // Apply marker effects along the path.
+    // For capture, we must handle the path from `from` to `captureTarget` (leaving departure marker)
+    // and from `captureTarget` to `to` (NOT leaving departure marker on target).
+
+    const markerHelpers: MarkerPathHelpers = {
+      setMarker: (pos, player, b) => this.boardManager.setMarker(pos, player, b),
+      collapseMarker: (pos, player, b) => this.boardManager.collapseMarker(pos, player, b),
+      flipMarker: (pos, player, b) => this.boardManager.flipMarker(pos, player, b),
+    };
+
+    // Check if landing on own marker before applying effects
+    const landingMarker = this.boardManager.getMarker(move.to, gameState.board);
+    const landedOnOwnMarker = landingMarker === move.player;
+
+    // 1. Path from start to target
+    applyMarkerEffectsAlongPathOnBoard(
+      gameState.board,
+      move.from,
+      move.captureTarget,
+      move.player,
+      markerHelpers,
+      { leaveDepartureMarker: true }
+    );
+
+    // 2. Path from target to landing
+    applyMarkerEffectsAlongPathOnBoard(
+      gameState.board,
+      move.captureTarget,
+      move.to,
+      move.player,
+      markerHelpers,
+      { leaveDepartureMarker: false }
+    );
 
     // Apply overtaking one ring at a time, mirroring the GameEngine and
     // Rust behaviour: each capture segment takes only the top ring of the
@@ -548,7 +652,48 @@ export class RuleEngine {
       };
     }
 
-    gameState.board.stacks.set(fromKey, updatedAttacker);
+    // Move the updated attacker stack to the destination
+    const toKey = positionToString(move.to);
+    const movedStack: RingStack = {
+      ...updatedAttacker,
+      position: move.to,
+    };
+    gameState.board.stacks.set(toKey, movedStack);
+    gameState.board.stacks.delete(fromKey);
+
+    // Handle landing on own marker: eliminate top ring
+    if (landedOnOwnMarker) {
+      const stackAtLanding = gameState.board.stacks.get(toKey);
+      if (stackAtLanding && stackAtLanding.stackHeight > 0) {
+        const [topRing, ...remainingRings] = stackAtLanding.rings;
+
+        if (remainingRings.length > 0) {
+          const newStack: RingStack = {
+            ...stackAtLanding,
+            rings: remainingRings,
+            stackHeight: remainingRings.length,
+            capHeight: calculateCapHeight(remainingRings),
+            controllingPlayer: remainingRings[0],
+          };
+          gameState.board.stacks.set(toKey, newStack);
+        } else {
+          gameState.board.stacks.delete(toKey);
+        }
+
+        // Update elimination counts
+        const player = move.player;
+        gameState.totalRingsEliminated += 1;
+        if (!gameState.board.eliminatedRings[player]) {
+          gameState.board.eliminatedRings[player] = 0;
+        }
+        gameState.board.eliminatedRings[player] += 1;
+
+        const playerState = gameState.players.find((p) => p.playerNumber === player);
+        if (playerState) {
+          playerState.eliminatedRings += 1;
+        }
+      }
+    }
 
     // Check for chain reactions (legacy behaviour; GameEngine now drives
     // chain captures via chainCaptureState and CaptureDirectionChoice).
@@ -806,6 +951,35 @@ export class RuleEngine {
       case 'capture':
         moves.push(...this.getValidCaptures(currentPlayer, gameState));
         break;
+      case 'line_processing':
+        // Enumerate canonical line-processing decision moves (process_line
+        // and choose_line_reward) for the current player based on the
+        // current board state. This mirrors the GameEngine helper but is
+        // stateless and suitable for unit tests that operate directly on
+        // RuleEngine and GameState.
+        moves.push(...this.getValidLineProcessingDecisionMoves(gameState));
+        break;
+      case 'territory_processing': {
+        // Enumerate canonical territory-processing decision moves
+        // (process_territory_region) for the current player, subject to
+        // the self-elimination prerequisite from §12.2 / FAQ Q23. Only
+        // when no such regions remain do we surface explicit
+        // self-elimination decisions via eliminate_rings_from_stack
+        // moves.
+        const regionMoves = this.getValidTerritoryProcessingDecisionMoves(gameState);
+        moves.push(...regionMoves);
+
+        if (regionMoves.length === 0) {
+          moves.push(...this.getValidEliminationDecisionMoves(gameState));
+        }
+        break;
+      }
+      case 'chain_capture':
+        // Advanced-phase enumeration for chain_capture is handled by
+        // GameEngine.getValidMoves, which has access to the internal
+        // chainCaptureState. RuleEngine remains focused on segment-level
+        // validation for overtaking_capture / continue_capture_segment.
+        break;
     }
 
     return moves;
@@ -945,112 +1119,307 @@ export class RuleEngine {
    * Rule Reference: Section 10.1, 10.2 - Overtaking capture requirements
    */
   private getValidCaptures(player: number, gameState: GameState): Move[] {
-    const moves: Move[] = [];
     const board = gameState.board;
     const playerStacks = this.getPlayerStacks(player, board);
 
-    const directions = this.getCaptureDirections();
+    if (playerStacks.length === 0) {
+      return [];
+    }
+
+    // Adapt the current board view to the shared capture enumerator so that
+    // backend capture enumeration stays in lock-step with the sandbox and
+    // shared core rules.
+    const adapters: CaptureBoardAdapters = {
+      isValidPosition: (pos: Position) => this.boardManager.isValidPosition(pos),
+      isCollapsedSpace: (pos: Position) => this.boardManager.isCollapsedSpace(pos, board),
+      getStackAt: (pos: Position) => {
+        const key = positionToString(pos);
+        const stack = board.stacks.get(key);
+        if (!stack) return undefined;
+        return {
+          controllingPlayer: stack.controllingPlayer,
+          capHeight: stack.capHeight,
+          stackHeight: stack.stackHeight,
+        };
+      },
+      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, board),
+    };
+
+    const TRACE_DEBUG_ENABLED =
+      typeof process !== 'undefined' &&
+      !!(process as any).env &&
+      ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
+
+    const baseMoveNumber = gameState.moveHistory.length + 1;
+    const moves: Move[] = [];
 
     for (const stackPos of playerStacks) {
       const fromKey = positionToString(stackPos);
       const attackerStack = board.stacks.get(fromKey);
-      if (!attackerStack) continue;
-
-      for (const dir of directions) {
-        // Step outward from the attacker to find the first potential target
-        let step = 1;
-        let targetPos: Position | undefined;
-
-        while (true) {
-          const pos: Position = {
-            x: stackPos.x + dir.x * step,
-            y: stackPos.y + dir.y * step,
-            ...(dir.z !== undefined && { z: (stackPos.z || 0) + dir.z * step }),
-          };
-
-          if (!this.boardManager.isValidPosition(pos)) {
-            break; // Off-board
-          }
-
-          // Collapsed spaces block both target search and landing beyond
-          if (this.boardManager.isCollapsedSpace(pos, board)) {
-            break;
-          }
-
-          const posKey = positionToString(pos);
-          const stackAtPos = board.stacks.get(posKey);
-
-          if (stackAtPos && stackAtPos.rings.length > 0) {
-            // First stack encountered along this ray is the only possible
-            // capture target in this direction.
-            // Rule fix: Can overtake own stacks (no same-player restriction)
-            if (attackerStack.capHeight >= stackAtPos.capHeight) {
-              targetPos = pos;
-            }
-            break;
-          }
-
-          step++;
-        }
-
-        if (!targetPos) continue;
-
-        // From the target, walk further along the same ray to find candidate
-        // landing positions. Each candidate is validated via
-        // validateCaptureSegment to ensure consistency with validateMove.
-        let landingStep = 1;
-        while (true) {
-          const landingPos: Position = {
-            x: targetPos.x + dir.x * landingStep,
-            y: targetPos.y + dir.y * landingStep,
-            ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep }),
-          };
-
-          if (!this.boardManager.isValidPosition(landingPos)) {
-            break;
-          }
-
-          // Collapsed spaces and stacks at the landing position block further
-          // landings along this ray (Section 10.2).
-          if (this.boardManager.isCollapsedSpace(landingPos, board)) {
-            break;
-          }
-
-          const landingKey = positionToString(landingPos);
-          const landingStack = board.stacks.get(landingKey);
-          if (landingStack && landingStack.rings.length > 0) {
-            break;
-          }
-
-          const testMove: Move = {
-            id: '',
-            type: 'overtaking_capture',
-            player,
-            from: stackPos,
-            captureTarget: targetPos,
-            to: landingPos,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: 0,
-          };
-
-          if (this.validateCaptureSegment(stackPos, targetPos, landingPos, player, board)) {
-            moves.push({
-              ...testMove,
-              id: `capture-${positionToString(stackPos)}-${positionToString(targetPos)}-${positionToString(landingPos)}`,
-              moveNumber: gameState.moveHistory.length + 1,
-            });
-          }
-
-          // Continue stepping to allow landing further along the ray, as the
-          // rules permit landing on any valid space beyond the target
-          // provided distance and path constraints are satisfied.
-          landingStep++;
-        }
+      if (!attackerStack || attackerStack.controllingPlayer !== player) {
+        continue;
       }
+
+      const rawMoves = enumerateCaptureMoves(
+        this.boardConfig.type as any,
+        stackPos,
+        player,
+        adapters,
+        baseMoveNumber
+      );
+
+      if (
+        TRACE_DEBUG_ENABLED &&
+        this.boardType === 'square8' &&
+        stackPos.x === 2 &&
+        stackPos.y === 0 &&
+        player === 2
+      ) {
+        const attackerKey = positionToString(stackPos);
+        const attackerDebug = board.stacks.get(attackerKey);
+        const targetKey = positionToString({ x: 3, y: 1 } as Position);
+        const targetDebug = board.stacks.get(targetKey);
+        // eslint-disable-next-line no-console
+        console.log('[RuleEngine.getValidCaptures debug seed17]', {
+          from: attackerKey,
+          player,
+          attackerStack: attackerDebug,
+          targetKey,
+          targetStack: targetDebug,
+          rawMoves: rawMoves.map((m) => ({
+            type: m.type,
+            from: m.from ? positionToString(m.from) : undefined,
+            captureTarget: m.captureTarget ? positionToString(m.captureTarget) : undefined,
+            to: m.to ? positionToString(m.to) : undefined,
+          })),
+        });
+      }
+
+      rawMoves.forEach((m, index) => {
+        moves.push({
+          ...m,
+          id:
+            m.id && m.id.length > 0
+              ? m.id
+              : `capture-${positionToString(m.from!)}-${positionToString(
+                  m.captureTarget!
+                )}-${positionToString(m.to!)}-${index}`,
+          moveNumber: baseMoveNumber,
+        });
+      });
     }
 
     return moves;
+  }
+
+  /**
+   * Enumerate canonical line-processing decision moves (process_line and
+   * choose_line_reward) for the current state. This mirrors the backend
+   * GameEngine.getValidLineProcessingMoves helper but is stateless and
+   * operates directly on the provided GameState.
+   */
+  private getValidLineProcessingDecisionMoves(gameState: GameState): Move[] {
+    const moves: Move[] = [];
+
+    if (gameState.currentPhase !== 'line_processing') {
+      return moves;
+    }
+
+    const playerNumber = gameState.currentPlayer;
+
+    const allLines = this.boardManager.findAllLines(gameState.board);
+    const playerLines = allLines.filter((line) => line.player === playerNumber);
+
+    if (playerLines.length === 0) {
+      return moves;
+    }
+
+    const requiredLength = this.boardConfig.lineLength;
+
+    // One process_line move per player-owned line, including the concrete
+    // LineInfo in formedLines[0] so that the Move fully identifies the
+    // line being processed.
+    playerLines.forEach((line, index) => {
+      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+      moves.push({
+        id: `process-line-${index}-${lineKey}`,
+        type: 'process_line',
+        player: playerNumber,
+        formedLines: [line],
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: gameState.moveHistory.length + 1,
+      } as Move);
+    });
+
+    // For overlength lines, also expose a choose_line_reward decision so that
+    // tests and tools can express Option 1 vs Option 2 in the unified Move
+    // space, even though GameEngine still uses PlayerChoice internally when
+    // an interaction manager is wired.
+    const overlengthLines = playerLines.filter((line) => line.positions.length > requiredLength);
+
+    overlengthLines.forEach((line, index) => {
+      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+      moves.push({
+        id: `choose-line-reward-${index}-${lineKey}`,
+        type: 'choose_line_reward',
+        player: playerNumber,
+        formedLines: [line],
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: gameState.moveHistory.length + 1,
+      } as Move);
+    });
+
+    return moves;
+  }
+
+  /**
+   * Enumerate canonical territory-processing decision moves
+   * (process_territory_region) for the current state. This mirrors the
+   * GameEngine.getValidTerritoryProcessingMoves helper but is stateless
+   * and uses a local self-elimination prerequisite check.
+   */
+  private getValidTerritoryProcessingDecisionMoves(gameState: GameState): Move[] {
+    const moves: Move[] = [];
+
+    if (gameState.currentPhase !== 'territory_processing') {
+      return moves;
+    }
+
+    const movingPlayer = gameState.currentPlayer;
+
+    const disconnectedRegions = this.boardManager.findDisconnectedRegions(
+      gameState.board,
+      movingPlayer
+    );
+
+    if (!disconnectedRegions || disconnectedRegions.length === 0) {
+      return moves;
+    }
+
+    const eligibleRegions = disconnectedRegions.filter((region: Territory) =>
+      this.canProcessDisconnectedRegionForRules(gameState, region, movingPlayer)
+    );
+
+    if (eligibleRegions.length === 0) {
+      return moves;
+    }
+
+    eligibleRegions.forEach((region, index) => {
+      const representative = region.spaces[0];
+      const regionKey = representative ? positionToString(representative) : `region-${index}`;
+      moves.push({
+        id: `process-region-${index}-${regionKey}`,
+        type: 'process_territory_region',
+        player: movingPlayer,
+        disconnectedRegions: [region],
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: gameState.moveHistory.length + 1,
+      } as Move);
+    });
+
+    return moves;
+  }
+
+  /**
+   * Enumerate explicit self-elimination decisions for the current player
+   * as 'eliminate_rings_from_stack' Moves during the territory_processing
+   * phase. These are only exposed once no eligible disconnected regions
+   * remain for the moving player, mirroring the "region first, then
+   * self-elimination" ordering from §12.2 / FAQ Q23.
+   */
+  private getValidEliminationDecisionMoves(gameState: GameState): Move[] {
+    const moves: Move[] = [];
+
+    if (gameState.currentPhase !== 'territory_processing') {
+      return moves;
+    }
+
+    const movingPlayer = gameState.currentPlayer;
+
+    // If any disconnected region is still eligible for processing under
+    // the self-elimination prerequisite, defer elimination decisions
+    // until those regions have been processed.
+    const disconnectedRegions = this.boardManager.findDisconnectedRegions(
+      gameState.board,
+      movingPlayer
+    );
+
+    if (
+      disconnectedRegions &&
+      disconnectedRegions.some((region: Territory) =>
+        this.canProcessDisconnectedRegionForRules(gameState, region, movingPlayer)
+      )
+    ) {
+      return moves;
+    }
+
+    // Enumerate one elimination Move per controlled stack whose cap is
+    // non-empty. We attach diagnostic fields so tests can validate that
+    // the move geometry matches the underlying stack configuration.
+    const board = gameState.board;
+    const playerStacks = this.getPlayerStacks(movingPlayer, board);
+
+    if (playerStacks.length === 0) {
+      return moves;
+    }
+
+    playerStacks.forEach((pos) => {
+      const key = positionToString(pos);
+      const stack = board.stacks.get(key);
+      if (!stack || stack.controllingPlayer !== movingPlayer) {
+        return;
+      }
+
+      const capHeight = calculateCapHeight(stack.rings);
+      if (capHeight <= 0) {
+        return;
+      }
+
+      moves.push({
+        id: `eliminate-${key}`,
+        type: 'eliminate_rings_from_stack',
+        player: movingPlayer,
+        to: stack.position,
+        eliminatedRings: [{ player: movingPlayer, count: capHeight }],
+        eliminationFromStack: {
+          position: stack.position,
+          capHeight,
+          totalHeight: stack.stackHeight,
+        },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: gameState.moveHistory.length + 1,
+      } as Move);
+    });
+
+    return moves;
+  }
+
+  /**
+   * Local self-elimination prerequisite check for RulesEngine-based
+   * territory-processing enumeration: the moving player must control at
+   * least one stack/cap outside the disconnected region.
+   */
+  private canProcessDisconnectedRegionForRules(
+    gameState: GameState,
+    region: Territory,
+    player: number
+  ): boolean {
+    const regionPositionSet = new Set(region.spaces.map((pos: Position) => positionToString(pos)));
+
+    const playerStacks = this.getPlayerStacks(player, gameState.board);
+
+    for (const pos of playerStacks) {
+      const stackPosKey = positionToString(pos);
+      if (!regionPositionSet.has(stackPosKey)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -1366,9 +1735,7 @@ export class RuleEngine {
         if (line.positions.length !== target.positions.length) {
           return false;
         }
-        return line.positions.every((pos, idx) =>
-          positionsEqual(pos, target.positions[idx])
-        );
+        return line.positions.every((pos, idx) => positionsEqual(pos, target.positions[idx]));
       });
 
       if (!matchesExisting) {
@@ -1414,18 +1781,14 @@ export class RuleEngine {
 
     if (move.disconnectedRegions && move.disconnectedRegions.length > 0) {
       const target = move.disconnectedRegions[0];
-      const targetKeySet = new Set(
-        target.spaces.map((pos: Position) => positionToString(pos))
-      );
+      const targetKeySet = new Set(target.spaces.map((pos: Position) => positionToString(pos)));
 
       const matchesExisting = disconnectedRegions.some((region: Territory) => {
         if (region.spaces.length !== target.spaces.length) {
           return false;
         }
 
-        const regionKeySet = new Set(
-          region.spaces.map((pos: Position) => positionToString(pos))
-        );
+        const regionKeySet = new Set(region.spaces.map((pos: Position) => positionToString(pos)));
 
         if (regionKeySet.size !== targetKeySet.size) {
           return false;
@@ -1448,9 +1811,57 @@ export class RuleEngine {
     return true;
   }
 
+  /**
+   * Validate explicit elimination decision moves ('eliminate_rings_from_stack').
+   *
+   * Currently scoped to the territory_processing phase where the moving
+   * player is required to self-eliminate from one of their controlled
+   * stacks (or hand) after processing a disconnected region. The Move
+   * identifies the target stack via `to`; eliminatedRings, when present,
+   * is treated as diagnostic and checked for consistency with the cap
+   * geometry.
+   */
+  private validateEliminationMove(move: Move, gameState: GameState): boolean {
+    if (gameState.currentPhase !== 'territory_processing') {
+      return false;
+    }
+
+    if (move.player !== gameState.currentPlayer) {
+      return false;
+    }
+
+    if (!move.to) {
+      return false;
+    }
+
+    const toKey = positionToString(move.to);
+    const stack = gameState.board.stacks.get(toKey);
+    if (!stack || stack.controllingPlayer !== move.player) {
+      return false;
+    }
+
+    const capHeight = calculateCapHeight(stack.rings);
+    if (capHeight <= 0) {
+      return false;
+    }
+
+    // Optional diagnostic consistency: when eliminatedRings carries an
+    // entry for the moving player, ensure it does not exceed the current
+    // cap height and is strictly positive.
+    if (move.eliminatedRings && move.eliminatedRings.length > 0) {
+      const entry = move.eliminatedRings.find((e) => e.player === move.player);
+      if (entry && (entry.count <= 0 || entry.count > capHeight)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
   private _debugUseInternalHelpers(): void {
     void this.getPlayerStats;
     void this.areAdjacent;
     void this.isPathClearForHypothetical;
+    void this.getCaptureDirections;
   }
 }

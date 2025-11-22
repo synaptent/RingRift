@@ -4,6 +4,14 @@ import { computeProgressSnapshot } from '../../src/shared/engine/core';
 import { globalAIEngine } from '../../src/server/game/ai/AIEngine';
 import { logAiDiagnostic } from '../utils/aiTestLogger';
 
+// Simple LCG for deterministic testing without external dependencies
+function createLCG(seed: number) {
+  return function () {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+}
+
 // Mock the AI service client to simulate downtime/failure
 jest.mock('../../src/server/services/AIServiceClient', () => ({
   getAIServiceClient: () => ({
@@ -23,6 +31,10 @@ describe('Full Game Flow Integration (AI Fallback)', () => {
   const MAX_MOVES = 4000;
 
   it('completes a full game using local AI fallback when service is down', async () => {
+    // Use a fixed seed for reproducibility
+    // Using a numeric seed derived from the string 'ringrift-fallback-test-seed'
+    const rng = createLCG(123456789);
+
     // Setup 2 AI players
     const players: Player[] = [
       {
@@ -54,6 +66,7 @@ describe('Full Game Flow Integration (AI Fallback)', () => {
     globalAIEngine.createAI(2, 5);
 
     const engine = new GameEngine('integration-test', 'square8', players, timeControl);
+
     engine.startGame();
 
     // Diagnostic S-invariant and stall tracking. This mirrors the AI simulation
@@ -141,12 +154,10 @@ describe('Full Game Flow Integration (AI Fallback)', () => {
       } else {
         // Log every plateau step so long stalls can be reconstructed from
         // the diagnostic log without relying on console output.
-        let validMovesSummary:
-          | {
-              count: number;
-              types: Record<string, number>;
-            }
-          | null = null;
+        let validMovesSummary: {
+          count: number;
+          types: Record<string, number>;
+        } | null = null;
 
         if (
           state.currentPhase === 'ring_placement' ||
@@ -192,26 +203,34 @@ describe('Full Game Flow Integration (AI Fallback)', () => {
       }
 
       // If it's an interactive phase, the AI engine should generate a move.
-      // This includes the dedicated 'chain_capture' phase, where only
-      // continue_capture_segment moves are legal and must be chosen until
-      // no further captures remain.
-      if (
+      // This now includes:
+      //   - Core phases: ring_placement, movement, capture, chain_capture
+      //   - Advanced decision phases: line_processing, territory_processing
+      // In all of these, legal actions are exposed as canonical Move objects
+      // via GameEngine.getValidMoves and must be chosen explicitly rather than
+      // relying on bespoke PlayerChoice-only flows.
+      const isInteractivePhase =
         state.currentPhase === 'ring_placement' ||
         state.currentPhase === 'movement' ||
         state.currentPhase === 'capture' ||
-        state.currentPhase === 'chain_capture'
-      ) {
+        state.currentPhase === 'chain_capture' ||
+        state.currentPhase === 'line_processing' ||
+        state.currentPhase === 'territory_processing';
+
+      if (isInteractivePhase) {
         // In fallback mode we deliberately drive move selection from
         // GameEngine.getValidMoves so that termination behaviour matches the
         // dedicated backend AI simulation harness. AIEngine is still used for
-        // local prioritisation among candidates.
+        // local prioritisation among candidates across all interactive phases,
+        // including advanced decision phases.
         const validMoves = engine.getValidMoves(state.currentPlayer);
 
         if (validMoves.length > 0) {
           const move = globalAIEngine.chooseLocalMoveFromCandidates(
             state.currentPlayer,
             state,
-            validMoves
+            validMoves,
+            rng
           );
 
           if (!move) {
@@ -235,7 +254,8 @@ describe('Full Game Flow Integration (AI Fallback)', () => {
           engine.resolveBlockedStateForCurrentPlayerForTesting();
         }
       } else {
-        // Automatic phases
+        // Non-interactive bookkeeping phases (if any) are advanced without
+        // explicit Move selection.
         engine.stepAutomaticPhasesForTesting();
       }
 

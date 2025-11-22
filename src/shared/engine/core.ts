@@ -1,4 +1,12 @@
-import { BoardType, Position, BoardState, GameState, ProgressSnapshot, BoardSummary } from '../types/game';
+import {
+  BoardType,
+  Position,
+  BoardState,
+  GameState,
+  ProgressSnapshot,
+  BoardSummary,
+  positionToString,
+} from '../types/game';
 
 /**
  * Shared, browser-safe core helpers for RingRift engine logic.
@@ -22,26 +30,26 @@ export interface Direction {
  * Canonical 8-direction Moore neighborhood for square boards.
  */
 export const SQUARE_MOORE_DIRECTIONS: Direction[] = [
-  { x: 1, y: 0 },   // E
-  { x: 1, y: 1 },   // SE
-  { x: 0, y: 1 },   // S
-  { x: -1, y: 1 },  // SW
-  { x: -1, y: 0 },  // W
+  { x: 1, y: 0 }, // E
+  { x: 1, y: 1 }, // SE
+  { x: 0, y: 1 }, // S
+  { x: -1, y: 1 }, // SW
+  { x: -1, y: 0 }, // W
   { x: -1, y: -1 }, // NW
-  { x: 0, y: -1 },  // N
-  { x: 1, y: -1 }   // NE
+  { x: 0, y: -1 }, // N
+  { x: 1, y: -1 }, // NE
 ];
 
 /**
  * Canonical 6-direction set for hexagonal boards in cube coordinates.
  */
 export const HEX_DIRECTIONS: Direction[] = [
-  { x: 1, y: 0, z: -1 },  // East
-  { x: 0, y: 1, z: -1 },  // Southeast
-  { x: -1, y: 1, z: 0 },  // Southwest
-  { x: -1, y: 0, z: 1 },  // West
-  { x: 0, y: -1, z: 1 },  // Northwest
-  { x: 1, y: -1, z: 0 }   // Northeast
+  { x: 1, y: 0, z: -1 }, // East
+  { x: 0, y: 1, z: -1 }, // Southeast
+  { x: -1, y: 1, z: 0 }, // Southwest
+  { x: -1, y: 0, z: 1 }, // West
+  { x: 0, y: -1, z: 1 }, // Northwest
+  { x: 1, y: -1, z: 0 }, // Northeast
 ];
 
 /**
@@ -100,7 +108,7 @@ export function getPathPositions(from: Position, to: Position): Position[] {
   for (let i = 1; i <= steps; i++) {
     const pos: Position = {
       x: Math.round(from.x + stepX * i),
-      y: Math.round(from.y + stepY * i)
+      y: Math.round(from.y + stepY * i),
     };
     if (to.z !== undefined) {
       pos.z = Math.round((from.z || 0) + stepZ * i);
@@ -127,7 +135,8 @@ export function calculateDistance(boardType: BoardType, from: Position, to: Posi
   const dx = Math.abs(to.x - from.x);
   const dy = Math.abs(to.y - from.y);
   // Chebyshev distance aligns with 8-direction movement: one step per king move.
-  return Math.max(dx, dy);
+  const dist = Math.max(dx, dy);
+  return dist;
 }
 
 /**
@@ -198,22 +207,32 @@ export function validateCaptureSegmentOnBoard(
   player: number,
   board: CaptureSegmentBoardView
 ): boolean {
-  if (!board.isValidPosition(from) || !board.isValidPosition(target) || !board.isValidPosition(landing)) {
+  const debug = typeof process !== 'undefined' && !!process.env.RINGRIFT_DEBUG_CAPTURE;
+
+  if (
+    !board.isValidPosition(from) ||
+    !board.isValidPosition(target) ||
+    !board.isValidPosition(landing)
+  ) {
+    if (debug) console.log('Invalid position(s)');
     return false;
   }
 
   const attacker = board.getStackAt(from);
   if (!attacker || attacker.controllingPlayer !== player) {
+    if (debug) console.log('Invalid attacker', attacker, player);
     return false;
   }
 
   const targetStack = board.getStackAt(target);
   if (!targetStack) {
+    if (debug) console.log('No target stack');
     return false;
   }
 
   // Cap height must be >= target's cap height (Section 10.1)
   if (attacker.capHeight < targetStack.capHeight) {
+    if (debug) console.log('Insufficient cap height', attacker.capHeight, targetStack.capHeight);
     return false;
   }
 
@@ -230,14 +249,17 @@ export function validateCaptureSegmentOnBoard(
     // coordinates change (the third is implied by x + y + z = 0).
     const coordChanges = [dx !== 0, dy !== 0, dz !== 0].filter(Boolean).length;
     if (coordChanges !== 2) {
+      if (debug) console.log('Invalid hex direction');
       return false;
     }
   } else {
     // Square boards: orthogonal or diagonal only.
     if (dx === 0 && dy === 0) {
+      if (debug) console.log('Zero movement');
       return false;
     }
     if (dx !== 0 && dy !== 0 && Math.abs(dx) !== Math.abs(dy)) {
+      if (debug) console.log('Invalid square direction');
       return false;
     }
   }
@@ -247,13 +269,16 @@ export function validateCaptureSegmentOnBoard(
   const pathToTarget = getPathPositions(from, target).slice(1, -1);
   for (const pos of pathToTarget) {
     if (!board.isValidPosition(pos)) {
+      if (debug) console.log('Invalid path pos', pos);
       return false;
     }
     if (board.isCollapsedSpace(pos)) {
+      if (debug) console.log('Path blocked by collapsed', pos);
       return false;
     }
     const stack = board.getStackAt(pos);
     if (stack) {
+      if (debug) console.log('Path blocked by stack', pos);
       return false;
     }
   }
@@ -263,19 +288,39 @@ export function validateCaptureSegmentOnBoard(
   const dy2 = landing.y - from.y;
   const dz2 = (landing.z || 0) - (from.z || 0);
 
-  if (dx !== 0 && Math.sign(dx) !== Math.sign(dx2)) return false;
-  if (dy !== 0 && Math.sign(dy) !== Math.sign(dy2)) return false;
-  if (dz !== 0 && Math.sign(dz) !== Math.sign(dz2)) return false;
+  if (dx !== 0 && Math.sign(dx) !== Math.sign(dx2)) {
+    if (debug) console.log('Direction mismatch X');
+    return false;
+  }
+  if (dy !== 0 && Math.sign(dy) !== Math.sign(dy2)) {
+    if (debug) console.log('Direction mismatch Y');
+    return false;
+  }
+  if (dz !== 0 && Math.sign(dz) !== Math.sign(dz2)) {
+    if (debug) console.log('Direction mismatch Z');
+    return false;
+  }
 
   const distToTarget = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
   const distToLanding = Math.abs(dx2) + Math.abs(dy2) + Math.abs(dz2);
   if (distToLanding <= distToTarget) {
+    if (debug) console.log('Landing not beyond target');
     return false;
   }
 
   // Total distance must be at least stack height (Section 10.2).
+  // "The capturing stack must move a distance equal to or greater than its height (H)."
+  // This allows extended landings beyond the target as long as the path is clear.
   const segmentDistance = calculateDistance(boardType, from, landing);
   if (segmentDistance < attacker.stackHeight) {
+    if (debug)
+      console.log(
+        'Distance < stackHeight',
+        segmentDistance,
+        typeof segmentDistance,
+        attacker.stackHeight,
+        typeof attacker.stackHeight
+      );
     return false;
   }
 
@@ -283,29 +328,28 @@ export function validateCaptureSegmentOnBoard(
   const pathFromTarget = getPathPositions(target, landing).slice(1, -1);
   for (const pos of pathFromTarget) {
     if (!board.isValidPosition(pos)) {
+      if (debug) console.log('Invalid landing path pos', pos);
       return false;
     }
     if (board.isCollapsedSpace(pos)) {
+      if (debug) console.log('Landing path blocked by collapsed', pos);
       return false;
     }
     const stack = board.getStackAt(pos);
     if (stack) {
+      if (debug) console.log('Landing path blocked by stack', pos);
       return false;
     }
   }
 
   // Landing space must be empty (no stack) and not collapsed.
   if (board.isCollapsedSpace(landing)) {
+    if (debug) console.log('Landing is collapsed');
     return false;
   }
   const landingStack = board.getStackAt(landing);
   if (landingStack) {
-    return false;
-  }
-
-  // If there's a marker at landing, it must belong to the attacker.
-  const markerOwner = board.getMarkerOwner?.(landing);
-  if (markerOwner !== undefined && markerOwner !== attacker.controllingPlayer) {
+    if (debug) console.log('Landing occupied by stack');
     return false;
   }
 
@@ -339,17 +383,15 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
 
   const directions = getMovementDirectionsForBoardType(boardType);
 
-  const defaultMaxNonCapture =
-    options?.maxNonCaptureDistance ?? stack.stackHeight + 5;
-  const defaultMaxCaptureLanding =
-    options?.maxCaptureLandingDistance ?? stack.stackHeight + 5;
+  const defaultMaxNonCapture = options?.maxNonCaptureDistance ?? stack.stackHeight + 5;
+  const defaultMaxCaptureLanding = options?.maxCaptureLandingDistance ?? stack.stackHeight + 5;
 
   // === Non-capture movement ===
   for (const dir of directions) {
     for (let distance = stack.stackHeight; distance <= defaultMaxNonCapture; distance++) {
       const target: Position = {
         x: from.x + dir.x * distance,
-        y: from.y + dir.y * distance
+        y: from.y + dir.y * distance,
       };
       if (dir.z !== undefined) {
         target.z = (from.z || 0) + dir.z * distance;
@@ -408,7 +450,7 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
     while (true) {
       const pos: Position = {
         x: from.x + dir.x * step,
-        y: from.y + dir.y * step
+        y: from.y + dir.y * step,
       };
       if (dir.z !== undefined) {
         pos.z = (from.z || 0) + dir.z * step;
@@ -440,7 +482,7 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
     for (let landingStep = 1; landingStep <= defaultMaxCaptureLanding; landingStep++) {
       const landing: Position = {
         x: targetPos.x + dir.x * landingStep,
-        y: targetPos.y + dir.y * landingStep
+        y: targetPos.y + dir.y * landingStep,
       };
       if (dir.z !== undefined) {
         landing.z = (targetPos.z || 0) + dir.z * landingStep;
@@ -465,19 +507,10 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
         isValidPosition: (pos: Position) => board.isValidPosition(pos),
         isCollapsedSpace: (pos: Position) => board.isCollapsedSpace(pos),
         getStackAt: (pos: Position) => board.getStackAt(pos),
-        getMarkerOwner: (pos: Position) => board.getMarkerOwner?.(pos)
+        getMarkerOwner: (pos: Position) => board.getMarkerOwner?.(pos),
       };
 
-      if (
-        validateCaptureSegmentOnBoard(
-          boardType,
-          from,
-          targetPos,
-          landing,
-          player,
-          view
-        )
-      ) {
+      if (validateCaptureSegmentOnBoard(boardType, from, targetPos, landing, player, view)) {
         return true;
       }
     }
@@ -548,7 +581,7 @@ export function hashGameState(state: GameState): string {
   const boardSummary = summarizeBoard(state.board);
 
   const playersMeta = state.players
-    .map(p => `${p.playerNumber}:${p.ringsInHand}:${p.eliminatedRings}:${p.territorySpaces}`)
+    .map((p) => `${p.playerNumber}:${p.ringsInHand}:${p.eliminatedRings}:${p.territorySpaces}`)
     .sort()
     .join('|');
 
@@ -559,6 +592,76 @@ export function hashGameState(state: GameState): string {
     playersMeta,
     boardSummary.stacks.join('|'),
     boardSummary.markers.join('|'),
-    boardSummary.collapsedSpaces.join('|')
+    boardSummary.collapsedSpaces.join('|'),
   ].join('#');
+}
+
+export interface MarkerPathHelpers {
+  setMarker(position: Position, playerNumber: number, board: BoardState): void;
+  collapseMarker(position: Position, playerNumber: number, board: BoardState): void;
+  flipMarker(position: Position, playerNumber: number, board: BoardState): void;
+}
+
+/**
+ * Apply marker effects for a move or capture segment from `from` to `to` on
+ * the given board, using the provided helper callbacks.
+ *
+ * By default this mirrors the backend movement behaviour:
+ *   - Leave a marker on the true departure space.
+ *   - Process intermediate markers (collapse/flip).
+ *   - Remove a same-colour marker on the landing space.
+ *
+ * Callers that need finer-grained control (e.g. capture segments that want
+ * to avoid placing a departure marker on an intermediate stack such as the
+ * capture target) can pass options to disable the departure marker while
+ * still reusing the intermediate/landing semantics.
+ */
+export function applyMarkerEffectsAlongPathOnBoard(
+  board: BoardState,
+  from: Position,
+  to: Position,
+  playerNumber: number,
+  helpers: MarkerPathHelpers,
+  options?: { leaveDepartureMarker?: boolean }
+): void {
+  const path = getPathPositions(from, to);
+  if (path.length === 0) return;
+
+  const leaveDepartureMarker = options?.leaveDepartureMarker !== false;
+
+  const fromKey = positionToString(from);
+  // Leave a marker on the departure space if it isn't already collapsed.
+  if (leaveDepartureMarker && !board.collapsedSpaces.has(fromKey)) {
+    const existing = board.markers.get(fromKey);
+    if (!existing) {
+      helpers.setMarker(from, playerNumber, board);
+    }
+  }
+
+  // Process intermediate positions (excluding endpoints)
+  const intermediate = path.slice(1, -1);
+  for (const pos of intermediate) {
+    const key = positionToString(pos);
+    if (board.collapsedSpaces.has(key)) {
+      continue;
+    }
+    const marker = board.markers.get(key);
+    if (!marker) {
+      continue;
+    }
+    if (marker.player === playerNumber) {
+      // Own marker collapses to territory
+      helpers.collapseMarker(pos, playerNumber, board);
+    } else {
+      // Opponent marker flips to mover's color
+      helpers.flipMarker(pos, playerNumber, board);
+    }
+  }
+
+  // Landing: remove own marker if present
+  const landingKey = positionToString(to);
+  const landingMarker = board.markers.get(landingKey);
+  if (landingMarker && landingMarker.player === playerNumber) {
+    board.markers.delete(landingKey);
+  }
 }

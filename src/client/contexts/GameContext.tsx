@@ -46,45 +46,42 @@ interface GameContextType {
 
 const GameContext = createContext<GameContextType | null>(null);
 
-  // Derive the WebSocket base URL from environment configuration, falling back
-  // to a sensible dev default. In local development:
-  //   - Vite runs on http://localhost:5173
-  //   - The backend (Express + Socket.IO) runs on http://localhost:3000
-  // We therefore prefer talking to the backend origin directly rather than
-  // relying on the Vite proxy for WebSocket connections.
-  function getSocketBaseUrl(): string {
-    const env = (import.meta as any).env ?? {};
- 
-    // Prefer an explicit WebSocket URL when provided.
-    const wsUrl = env.VITE_WS_URL as string | undefined;
-    if (wsUrl) {
-      return wsUrl.replace(/\/$/, '');
-    }
- 
-    // Next, derive from an API URL by stripping any trailing "/api".
-    const apiUrl = env.VITE_API_URL as string | undefined;
-    if (apiUrl) {
-      const base = apiUrl.replace(/\/?api\/?$/, '');
-      return base.replace(/\/$/, '');
-    }
- 
-    // In the browser (Vite dev, built client), detect the common local dev
-    // case (frontend on :5173, backend on :3000) and talk to the backend
-    // origin directly. For any other origin, just reuse window.location.origin.
-    if (typeof window !== 'undefined' && window.location?.origin) {
-      const origin = window.location.origin;
-      if (
-        origin.startsWith('http://localhost:5173') ||
-        origin.startsWith('https://localhost:5173')
-      ) {
-        return 'http://localhost:3000';
-      }
-      return origin;
-    }
- 
-    // Fallback for tests/SSR when no window is available.
-    return 'http://localhost:3000';
+// Derive the WebSocket base URL from environment configuration, falling back
+// to a sensible dev default. In local development:
+//   - Vite runs on http://localhost:5173
+//   - The backend (Express + Socket.IO) runs on http://localhost:3000
+// We therefore prefer talking to the backend origin directly rather than
+// relying on the Vite proxy for WebSocket connections.
+function getSocketBaseUrl(): string {
+  const env = (import.meta as any).env ?? {};
+
+  // Prefer an explicit WebSocket URL when provided.
+  const wsUrl = env.VITE_WS_URL as string | undefined;
+  if (wsUrl) {
+    return wsUrl.replace(/\/$/, '');
   }
+
+  // Next, derive from an API URL by stripping any trailing "/api".
+  const apiUrl = env.VITE_API_URL as string | undefined;
+  if (apiUrl) {
+    const base = apiUrl.replace(/\/?api\/?$/, '');
+    return base.replace(/\/$/, '');
+  }
+
+  // In the browser (Vite dev, built client), detect the common local dev
+  // case (frontend on :5173, backend on :3000) and talk to the backend
+  // origin directly. For any other origin, just reuse window.location.origin.
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    const origin = window.location.origin;
+    if (origin.startsWith('http://localhost:5173') || origin.startsWith('https://localhost:5173')) {
+      return 'http://localhost:3000';
+    }
+    return origin;
+  }
+
+  // Fallback for tests/SSR when no window is available.
+  return 'http://localhost:3000';
+}
 
 // Hydrate a BoardState coming over the wire, where Maps have been
 // serialized to plain objects.
@@ -212,6 +209,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setIsConnecting(false);
           setConnectionStatus('connected');
           toast.success('Reconnected!', { id: 'reconnecting' });
+          // Re-join the game room and request latest state
+          socket.emit('join_game', { gameId: targetGameId });
+        });
+
+        // Handle explicit reconnection requests from the server or client logic
+        socket.on('request_reconnect', () => {
+          console.log('Server requested reconnection/resync');
+          socket.emit('join_game', { gameId: targetGameId });
         });
 
         socket.on('game_state', (payload: any) => {
@@ -273,11 +278,24 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setIsConnecting(false);
         });
 
-        socket.on('disconnect', () => {
-          // Keep error state, but clear connection.
-          socketRef.current = null;
+        socket.on('disconnect', (reason) => {
+          console.log('Socket disconnected:', reason);
+          // If the disconnection was initiated by the server or network,
+          // we want to keep the socketRef so auto-reconnect can work.
+          // Only clear socketRef if we explicitly called disconnect().
+          if (reason === 'io client disconnect') {
+            socketRef.current = null;
+          }
+
           setConnectionStatus('disconnected');
           setLastHeartbeatAt(null);
+
+          if (reason !== 'io client disconnect') {
+            // Attempt to reconnect immediately if it wasn't an intentional disconnect
+            // Note: Socket.IO's auto-reconnect will handle the actual connection retry,
+            // but we update UI state here.
+            setConnectionStatus('reconnecting');
+          }
         });
       } catch (err: any) {
         console.error('Failed to connect to game', err);
@@ -306,14 +324,41 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const response = {
-        choiceId: choice.id,
-        playerNumber: choice.playerNumber,
-        choiceType: choice.type,
-        selectedOption,
-      };
+      // When an option carries a canonical moveId, we prefer the Move-driven
+      // decision path by submitting a player_move_by_id request. This ensures
+      // that all decisions are recorded as canonical Moves in the history.
+      let moveId: string | undefined;
 
-      socket.emit('player_choice_response', response);
+      if (
+        choice.type === 'line_order' ||
+        choice.type === 'region_order' ||
+        choice.type === 'ring_elimination'
+      ) {
+        // These types have options as objects which may contain a moveId.
+        moveId =
+          selectedOption && typeof (selectedOption as any).moveId === 'string'
+            ? (selectedOption as any).moveId
+            : undefined;
+      } else if (choice.type === 'line_reward_option') {
+        // This type has options as strings, but the choice object itself
+        // carries a map of option strings to moveIds.
+        const optionKey = selectedOption as string;
+        moveId = choice.moveIds?.[optionKey as keyof typeof choice.moveIds];
+      }
+
+      if (moveId) {
+        socket.emit('player_move_by_id', { gameId, moveId });
+      } else {
+        const response = {
+          choiceId: choice.id,
+          playerNumber: choice.playerNumber,
+          choiceType: choice.type,
+          selectedOption,
+        };
+
+        socket.emit('player_choice_response', response);
+      }
+
       setPendingChoice(null);
       setChoiceDeadline(null);
     },

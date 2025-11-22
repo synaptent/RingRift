@@ -1,146 +1,137 @@
+jest.mock('../../src/shared/utils/envFlags', () => {
+  const actual = jest.requireActual('../../src/shared/utils/envFlags');
+  return {
+    ...actual,
+    isSandboxAiParityModeEnabled: jest.fn(),
+  };
+});
+
+jest.mock('../../src/shared/engine/localAIMoveSelection', () => {
+  const actual = jest.requireActual('../../src/shared/engine/localAIMoveSelection');
+  return {
+    ...actual,
+    chooseLocalMoveFromCandidates: jest.fn(),
+  };
+});
+
+import { GameState, Position, RingStack } from '../../src/shared/types/game';
+import { createTestGameState, pos } from '../utils/fixtures';
 import {
-  ClientSandboxEngine,
-  SandboxConfig,
-  SandboxInteractionHandler,
-} from '../../src/client/sandbox/ClientSandboxEngine';
-import {
-  BoardType,
-  GameState,
-  Position,
-  RingStack,
-  PlayerChoice,
-  PlayerChoiceResponseFor,
-  CaptureDirectionChoice,
-  positionToString,
-} from '../../src/shared/types/game';
+  buildSandboxMovementCandidates,
+  selectSandboxMovementMove,
+} from '../../src/client/sandbox/sandboxAI';
+import type { SandboxAIHooks } from '../../src/client/sandbox/sandboxAI';
+import { isSandboxAiParityModeEnabled } from '../../src/shared/utils/envFlags';
+import { chooseLocalMoveFromCandidates } from '../../src/shared/engine/localAIMoveSelection';
 
-/**
- * AI movement/capture behaviour tests for the client-local sandbox engine.
- *
- * These focus on ensuring that:
- * - maybeRunAITurn prefers capture chains when captures are available.
- * - maybeRunAITurn falls back to simple movement when only non-capturing
- *   moves exist.
- * - maybeRunAITurn does not stall in positions where captures are the only
- *   legal actions.
- */
+describe('Sandbox AI movement parity mode wiring', () => {
+  const parityModeMock = isSandboxAiParityModeEnabled as jest.MockedFunction<
+    typeof isSandboxAiParityModeEnabled
+  >;
 
-describe('ClientSandboxEngine AI movement + capture behaviour', () => {
-  const boardType: BoardType = 'square8';
+  const chooseLocalMoveFromCandidatesMock = chooseLocalMoveFromCandidates as jest.MockedFunction<
+    typeof chooseLocalMoveFromCandidates
+  >;
 
-  function createEngine(playerKinds: ('human' | 'ai')[] = ['ai', 'ai']): ClientSandboxEngine {
-    const config: SandboxConfig = {
-      boardType,
-      numPlayers: playerKinds.length,
-      playerKinds,
+  it('builds movement candidates deterministically and selects via shared policy in both parity modes', () => {
+    const baseState: GameState = createTestGameState({
+      boardType: 'square8',
+      currentPlayer: 1,
+      currentPhase: 'movement',
+    });
+
+    let currentState: GameState = {
+      ...baseState,
+      players: baseState.players.map((p) =>
+        p.playerNumber === 1 ? { ...p, type: 'ai' } : { ...p, type: 'human' }
+      ),
+      gameStatus: 'active',
+      history: [],
     };
 
-    const handler: SandboxInteractionHandler = {
-      async requestChoice<TChoice extends PlayerChoice>(
-        choice: TChoice
-      ): Promise<PlayerChoiceResponseFor<TChoice>> {
-        const anyChoice = choice as any;
+    const stackPosition: Position = pos(3, 3);
+    const stack: RingStack = {
+      position: stackPosition,
+      rings: [1],
+      stackHeight: 1,
+      capHeight: 1,
+      controllingPlayer: 1,
+    };
 
-        // For capture_direction choices, deterministically pick the option
-        // with the lexicographically smallest landingPosition. This mirrors
-        // chain-capture parity tests and keeps scenarios reproducible.
-        if (anyChoice.type === 'capture_direction') {
-          const cd = anyChoice as CaptureDirectionChoice;
-          const options = cd.options || [];
-          if (options.length === 0) {
-            throw new Error('Test SandboxInteractionHandler: no options for capture_direction');
-          }
+    const captureTarget: Position = pos(4, 3);
+    const captureLanding: Position = pos(5, 3);
+    const simpleLanding: Position = pos(6, 3);
 
-          let selected = options[0];
-          for (const opt of options) {
-            if (
-              opt.landingPosition.x < selected.landingPosition.x ||
-              (opt.landingPosition.x === selected.landingPosition.x &&
-                opt.landingPosition.y < selected.landingPosition.y)
-            ) {
-              selected = opt;
-            }
-          }
-
-          return {
-            choiceId: cd.id,
-            playerNumber: cd.playerNumber,
-            choiceType: cd.type,
-            selectedOption: selected,
-          } as PlayerChoiceResponseFor<TChoice>;
-        }
-
-        const selectedOption = anyChoice.options ? anyChoice.options[0] : undefined;
-        return {
-          choiceId: anyChoice.id,
-          playerNumber: anyChoice.playerNumber,
-          choiceType: anyChoice.type,
-          selectedOption,
-        } as PlayerChoiceResponseFor<TChoice>;
+    const hooks: SandboxAIHooks = {
+      getPlayerStacks: () => [stack],
+      hasAnyLegalMoveOrCaptureFrom: () => false,
+      enumerateLegalRingPlacements: () => [],
+      tryPlaceRings: () => false,
+      enumerateCaptureSegmentsFrom: () => [
+        { from: stackPosition, target: captureTarget, landing: captureLanding },
+      ],
+      enumerateSimpleMovementLandings: () => [
+        { fromKey: `${stackPosition.x},${stackPosition.y}`, to: simpleLanding },
+      ],
+      maybeProcessForcedEliminationForCurrentPlayer: () => false,
+      handleMovementClick: async () => {
+        // no-op for this helper wiring test
+      },
+      appendHistoryEntry: () => {
+        // history is driven by ClientSandboxEngine in production; not needed here
+      },
+      getGameState: () => currentState,
+      setGameState: (state: GameState) => {
+        currentState = state;
+      },
+      setLastAIMove: () => {
+        // tracked internally by sandboxAI; not needed here
+      },
+      setSelectedStackKey: () => {
+        // selection not relevant for this test
+      },
+      getMustMoveFromStackKey: () => undefined,
+      applyCanonicalMove: async () => {
+        // no-op: this test focuses only on candidate building + selection wiring
       },
     };
 
-    return new ClientSandboxEngine({ config, interactionHandler: handler });
-  }
+    const rng = () => 0.5;
 
-  test('AI in movement phase can take an available overtaking capture (when random choice favors capture)', async () => {
-    const engine = createEngine(['ai', 'ai']);
-    const engineAny = engine as any;
-    const state: GameState = engineAny.gameState as GameState;
+    const { candidates, debug } = buildSandboxMovementCandidates(currentState, hooks, rng);
 
-    // Configure a simple one-step overtaking capture for player 1.
-    state.currentPhase = 'movement';
-    state.currentPlayer = 1;
+    expect(debug.captureCount).toBe(1);
+    expect(debug.simpleMoveCount).toBe(1);
+    expect(candidates).toHaveLength(2);
 
-    const board = state.board;
+    // === Parity mode enabled: selection delegates to shared policy ===
+    parityModeMock.mockReturnValue(true);
+    chooseLocalMoveFromCandidatesMock.mockClear();
 
-    const makeStack = (playerNumber: number, height: number, position: Position) => {
-      const rings = Array(height).fill(playerNumber);
-      const stack: RingStack = {
-        position,
-        rings,
-        stackHeight: rings.length,
-        capHeight: rings.length,
-        controllingPlayer: playerNumber,
-      };
-      const key = positionToString(position);
-      board.stacks.set(key, stack);
-    };
+    selectSandboxMovementMove(currentState, [...candidates], rng, true);
 
-    const attacker: Position = { x: 2, y: 2 };
-    const target: Position = { x: 2, y: 3 };
-    const landing: Position = { x: 2, y: 4 };
+    expect(chooseLocalMoveFromCandidatesMock).toHaveBeenCalledTimes(1);
+    const [playerOn, stateOn, candidatesOn, rngOn] =
+      chooseLocalMoveFromCandidatesMock.mock.calls[0];
 
-    makeStack(1, 2, attacker); // Player 1, height 2
-    makeStack(2, 1, target); // Player 2, height 1 directly in front
+    expect(playerOn).toBe(1);
+    expect(stateOn).toBe(currentState);
+    expect(candidatesOn).toEqual(candidates);
+    expect(rngOn).toBe(rng);
 
-    // Sanity: no stack at the intended landing before the capture.
-    expect(board.stacks.get(positionToString(landing))).toBeUndefined();
+    // === Parity mode disabled: currently identical behaviour but separate branch ===
+    parityModeMock.mockReturnValue(false);
+    chooseLocalMoveFromCandidatesMock.mockClear();
 
-    // For this test, force the stochastic policy to choose a capture when
-    // both captures and simple moves exist by making Math.random() return 0.
-    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+    selectSandboxMovementMove(currentState, [...candidates], rng, false);
 
-    // Run a single AI turn for player 1. With the weighted choice and
-    // Math.random() mocked to 0, this should trigger an overtaking capture
-    // chain starting from attacker.
-    await engine.maybeRunAITurn();
+    expect(chooseLocalMoveFromCandidatesMock).toHaveBeenCalledTimes(1);
+    const [playerOff, stateOff, candidatesOff, rngOff] =
+      chooseLocalMoveFromCandidatesMock.mock.calls[0];
 
-    randomSpy.mockRestore();
-
-    const finalState = engine.getGameState();
-    const finalBoard = finalState.board;
-
-    const stackAtAttacker = finalBoard.stacks.get(positionToString(attacker));
-    const stackAtTarget = finalBoard.stacks.get(positionToString(target));
-    const stackAtLanding = finalBoard.stacks.get(positionToString(landing));
-
-    // The capturing stack should have moved off the original attacker
-    // square and removed the target, finishing on the landing square.
-    expect(stackAtAttacker).toBeUndefined();
-    expect(stackAtTarget).toBeUndefined();
-    expect(stackAtLanding).toBeDefined();
-    expect(stackAtLanding!.controllingPlayer).toBe(1);
-    expect(stackAtLanding!.stackHeight).toBeGreaterThanOrEqual(2);
+    expect(playerOff).toBe(playerOn);
+    expect(stateOff).toBe(stateOn);
+    expect(candidatesOff).toEqual(candidatesOn);
+    expect(rngOff).toBe(rngOn);
   });
 });

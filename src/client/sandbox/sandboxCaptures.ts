@@ -3,15 +3,19 @@ import {
   BoardType,
   Position,
   RingStack,
-  positionToString
+  positionToString,
 } from '../../shared/types/game';
 import {
   getMovementDirectionsForBoardType,
   validateCaptureSegmentOnBoard,
   CaptureSegmentBoardView,
   calculateCapHeight,
-  getPathPositions
+  getPathPositions,
 } from '../../shared/engine/core';
+import {
+  enumerateCaptureMoves as enumerateCaptureMovesShared,
+  CaptureBoardAdapters as SharedCaptureBoardAdapters,
+} from '../../shared/engine/captureLogic';
 
 export interface CaptureSegment {
   from: Position;
@@ -37,101 +41,36 @@ export function enumerateCaptureSegmentsFromBoard(
   playerNumber: number,
   adapters: CaptureBoardAdapters
 ): CaptureSegment[] {
-  const results: CaptureSegment[] = [];
-  const directions = getMovementDirectionsForBoardType(boardType);
-  const fromKey = positionToString(from);
-  const attacker = board.stacks.get(fromKey);
-  if (!attacker) return results;
-
-  for (const dir of directions) {
-    let step = 1;
-    let targetPos: Position | undefined;
-
-    while (true) {
-      const pos: Position = {
-        x: from.x + dir.x * step,
-        y: from.y + dir.y * step,
-        ...(dir.z !== undefined && { z: (from.z || 0) + dir.z * step })
+  // First, delegate to the shared capture-move helper so that sandbox
+  // enumeration stays aligned with the unified rules geometry.
+  const sharedAdapters: SharedCaptureBoardAdapters = {
+    isValidPosition: (pos: Position) => adapters.isValidPosition(pos),
+    isCollapsedSpace: (pos: Position) => adapters.isCollapsedSpace(pos, board),
+    getStackAt: (pos: Position) => {
+      const key = positionToString(pos);
+      const stack = board.stacks.get(key);
+      if (!stack) return undefined;
+      return {
+        controllingPlayer: stack.controllingPlayer,
+        capHeight: stack.capHeight,
+        stackHeight: stack.stackHeight,
       };
+    },
+    getMarkerOwner: (pos: Position) => adapters.getMarkerOwner(pos, board),
+  };
 
-      if (!adapters.isValidPosition(pos)) {
-        break;
-      }
+  // moveNumber is irrelevant for sandbox enumeration; pass 0.
+  const moves = enumerateCaptureMovesShared(boardType, from, playerNumber, sharedAdapters, 0);
 
-      if (adapters.isCollapsedSpace(pos, board)) {
-        break;
-      }
+  const segments: CaptureSegment[] = moves.map((m) => ({
+    from: m.from as Position,
+    target: m.captureTarget as Position,
+    landing: m.to as Position,
+  }));
 
-      const sKey = positionToString(pos);
-      const stack = board.stacks.get(sKey);
-      if (stack && stack.stackHeight > 0) {
-        if (attacker.capHeight >= stack.capHeight) {
-          targetPos = pos;
-        }
-        break;
-      }
-
-      step++;
-    }
-
-    if (!targetPos) continue;
-
-    let landingStep = 1;
-    while (true) {
-      const landingPos: Position = {
-        x: targetPos.x + dir.x * landingStep,
-        y: targetPos.y + dir.y * landingStep,
-        ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep })
-      };
-
-      if (!adapters.isValidPosition(landingPos)) {
-        break;
-      }
-
-      if (adapters.isCollapsedSpace(landingPos, board)) {
-        break;
-      }
-
-      const landingKey = positionToString(landingPos);
-      const landingStack = board.stacks.get(landingKey);
-      if (landingStack && landingStack.stackHeight > 0) {
-        break;
-      }
-
-      const view: CaptureSegmentBoardView = {
-        isValidPosition: (pos: Position) => adapters.isValidPosition(pos),
-        isCollapsedSpace: (pos: Position) => adapters.isCollapsedSpace(pos, board),
-        getStackAt: (pos: Position) => {
-          const sKey = positionToString(pos);
-          const stack = board.stacks.get(sKey);
-          if (!stack) return undefined;
-          return {
-            controllingPlayer: stack.controllingPlayer,
-            capHeight: stack.capHeight,
-            stackHeight: stack.stackHeight
-          };
-        },
-        getMarkerOwner: (pos: Position) => adapters.getMarkerOwner(pos, board)
-      };
-
-      const ok = validateCaptureSegmentOnBoard(
-        boardType,
-        from,
-        targetPos,
-        landingPos,
-        playerNumber,
-        view
-      );
-
-      if (ok) {
-        results.push({ from, target: targetPos, landing: landingPos });
-      }
-
-      landingStep++;
-    }
-  }
-
-  return results;
+  // The shared helper now correctly enumerates all valid landings (distance >= stackHeight),
+  // so we no longer need the manual extension logic here.
+  return segments;
 }
 
 export interface CaptureApplyAdapters {

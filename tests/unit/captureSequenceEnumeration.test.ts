@@ -3,10 +3,19 @@ import {
   enumerateCaptureSegmentsFromBoard,
   applyCaptureSegmentOnBoard,
   CaptureBoardAdapters,
-  CaptureApplyAdapters
+  CaptureApplyAdapters,
 } from '../../src/client/sandbox/sandboxCaptures';
-import { applyMarkerEffectsAlongPathOnBoard, MarkerPathHelpers } from '../../src/client/sandbox/sandboxMovement';
-import { createTestBoard, addStack, pos, createTestGameState, createTestPlayer } from '../utils/fixtures';
+import {
+  applyMarkerEffectsAlongPathOnBoard,
+  MarkerPathHelpers,
+} from '../../src/client/sandbox/sandboxMovement';
+import {
+  createTestBoard,
+  addStack,
+  pos,
+  createTestGameState,
+  createTestPlayer,
+} from '../utils/fixtures';
 import { getMovementDirectionsForBoardType } from '../../src/shared/engine/core';
 import { BoardManager } from '../../src/server/game/BoardManager';
 import { RuleEngine } from '../../src/server/game/RuleEngine';
@@ -29,7 +38,7 @@ function cloneBoard(board: BoardState): BoardState {
     collapsedSpaces: new Map(board.collapsedSpaces),
     territories: new Map(board.territories),
     formedLines: [...board.formedLines],
-    eliminatedRings: { ...board.eliminatedRings }
+    eliminatedRings: { ...board.eliminatedRings },
   };
 }
 
@@ -59,12 +68,12 @@ function summarizeStacksForBoard(board: BoardState, attackerPlayer: number) {
     capHeight: number;
   }[] = [];
 
-  board.stacks.forEach(stack => {
+  board.stacks.forEach((stack) => {
     const entry = {
       owner: stack.controllingPlayer,
       pos: positionToString(stack.position),
       stackHeight: stack.stackHeight,
-      capHeight: stack.capHeight
+      capHeight: stack.capHeight,
     };
 
     if (stack.controllingPlayer === attackerPlayer) {
@@ -79,7 +88,10 @@ function summarizeStacksForBoard(board: BoardState, attackerPlayer: number) {
 
 function formatCaptureChain(seq: CaptureSequence): string {
   return seq.segments
-    .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+    .map(
+      (s) =>
+        `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+    )
     .join('|');
 }
 
@@ -88,7 +100,7 @@ type SummaryKind = 'max_sequences' | 'max_chain_length';
 function countMarkersAndCollapsed(board: BoardState): { markers: number; collapsed: number } {
   return {
     markers: board.markers.size,
-    collapsed: board.collapsedSpaces.size
+    collapsed: board.collapsedSpaces.size,
   };
 }
 
@@ -104,13 +116,15 @@ function logCaseSummary(
   const { caseData: c, index, sequences } = info;
   const { attackerStacks, targetStacks } = summarizeStacksForBoard(c.board, c.player);
 
-  console.log(`\n[${boardLabel} ${summaryKind} case index=${index}] from=${positionToString(c.from)}`);
+  console.log(
+    `\n[${boardLabel} ${summaryKind} case index=${index}] from=${positionToString(c.from)}`
+  );
   console.log('  attacker stacks:');
-  attackerStacks.forEach(s => {
+  attackerStacks.forEach((s) => {
     console.log(`    owner=${s.owner} at ${s.pos} height=${s.stackHeight} cap=${s.capHeight}`);
   });
   console.log('  target stacks:');
-  targetStacks.forEach(s => {
+  targetStacks.forEach((s) => {
     console.log(`    owner=${s.owner} at ${s.pos} height=${s.stackHeight} cap=${s.capHeight}`);
   });
 
@@ -126,7 +140,7 @@ function logCaseSummary(
 
   if (maxChainLenForCase > 0) {
     const longestSeq =
-      sequences.find(seq => seq.segments.length === maxChainLenForCase) || sequences[0];
+      sequences.find((seq) => seq.segments.length === maxChainLenForCase) || sequences[0];
     console.log(`  example longest chain: ${formatCaptureChain(longestSeq)}`);
   }
 }
@@ -145,13 +159,15 @@ function logOutcomeSummary(
   const { caseData: c, index, sequence, markerCount, collapsedCount } = info;
   const { attackerStacks, targetStacks } = summarizeStacksForBoard(c.board, c.player);
 
-  console.log(`\n[${boardLabel} ${summaryKind} case index=${index}] from=${positionToString(c.from)}`);
+  console.log(
+    `\n[${boardLabel} ${summaryKind} case index=${index}] from=${positionToString(c.from)}`
+  );
   console.log('  attacker stacks:');
-  attackerStacks.forEach(s => {
+  attackerStacks.forEach((s) => {
     console.log(`    owner=${s.owner} at ${s.pos} height=${s.stackHeight} cap=${s.capHeight}`);
   });
   console.log('  target stacks:');
-  targetStacks.forEach(s => {
+  targetStacks.forEach((s) => {
     console.log(`    owner=${s.owner} at ${s.pos} height=${s.stackHeight} cap=${s.capHeight}`);
   });
 
@@ -168,7 +184,8 @@ function enumerateAllCaptureSequencesSandbox(
   boardType: BoardType,
   initialBoard: BoardState,
   from: Position,
-  player: number
+  player: number,
+  limit: number = 10000
 ): CaptureSequence[] {
   const sequences: CaptureSequence[] = [];
 
@@ -188,7 +205,7 @@ function enumerateAllCaptureSequencesSandbox(
       const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
       return b.collapsedSpaces.has(key);
     },
-    getMarkerOwner: (_p: Position, _b: BoardState) => undefined
+    getMarkerOwner: (_p: Position, _b: BoardState) => undefined,
   };
 
   type Frame = {
@@ -201,8 +218,8 @@ function enumerateAllCaptureSequencesSandbox(
     {
       board: cloneBoard(initialBoard),
       currentPos: from,
-      segments: []
-    }
+      segments: [],
+    },
   ];
 
   while (stack.length > 0) {
@@ -221,6 +238,10 @@ function enumerateAllCaptureSequencesSandbox(
       if (segments.length > 0) {
         sequences.push({ segments: [...segments], finalBoard: cloneBoard(board) });
       }
+      continue;
+    }
+
+    if (sequences.length >= limit) {
       continue;
     }
 
@@ -243,13 +264,19 @@ function enumerateAllCaptureSequencesSandbox(
           if (existing && existing.player !== playerNumber) {
             b.markers.set(key, { position, player: playerNumber, type: 'regular' });
           }
-        }
+        },
       };
 
       const applyAdapters: CaptureApplyAdapters = {
         applyMarkerEffectsAlongPath: (fromPos, toPos, playerNumber) => {
-          applyMarkerEffectsAlongPathOnBoard(boardClone, fromPos, toPos, playerNumber, markerHelpers);
-        }
+          applyMarkerEffectsAlongPathOnBoard(
+            boardClone,
+            fromPos,
+            toPos,
+            playerNumber,
+            markerHelpers
+          );
+        },
       };
 
       applyCaptureSegmentOnBoard(
@@ -264,7 +291,7 @@ function enumerateAllCaptureSequencesSandbox(
       stack.push({
         board: boardClone,
         currentPos: seg.landing,
-        segments: [...segments, seg]
+        segments: [...segments, seg],
       });
     }
   }
@@ -273,10 +300,16 @@ function enumerateAllCaptureSequencesSandbox(
   // checks and to ensure deterministic ordering.
   sequences.sort((a, b) => {
     const aKey = a.segments
-      .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+      .map(
+        (s) =>
+          `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+      )
       .join('|');
     const bKey = b.segments
-      .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+      .map(
+        (s) =>
+          `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+      )
       .join('|');
     return aKey.localeCompare(bKey);
   });
@@ -293,7 +326,8 @@ function enumerateAllCaptureSequencesBackend(
   boardType: BoardType,
   initialBoard: BoardState,
   from: Position,
-  player: number
+  player: number,
+  limit: number = 10000
 ): CaptureSequence[] {
   const sequences: CaptureSequence[] = [];
   const bm = new BoardManager(boardType);
@@ -309,8 +343,8 @@ function enumerateAllCaptureSequencesBackend(
     {
       board: cloneBoard(initialBoard),
       currentPos: from,
-      segments: []
-    }
+      segments: [],
+    },
   ];
 
   while (stack.length > 0) {
@@ -323,18 +357,22 @@ function enumerateAllCaptureSequencesBackend(
       currentPlayer: player,
       currentPhase: 'capture',
       players: [createTestPlayer(1), createTestPlayer(2)],
-      moveHistory: []
+      moveHistory: [],
     });
 
     const moves = getBackendCaptureOptions(currentPos, player, gameState, {
       boardManager: bm,
-      ruleEngine: engine
+      ruleEngine: engine,
     });
 
     if (moves.length === 0) {
       if (segments.length > 0) {
         sequences.push({ segments: [...segments], finalBoard: cloneBoard(board) });
       }
+      continue;
+    }
+
+    if (sequences.length >= limit) {
       continue;
     }
 
@@ -345,13 +383,19 @@ function enumerateAllCaptureSequencesBackend(
       const markerHelpers: MarkerPathHelpers = {
         setMarker: (position, playerNumber, b) => bm.setMarker(position, playerNumber, b),
         collapseMarker: (position, playerNumber, b) => bm.collapseMarker(position, playerNumber, b),
-        flipMarker: (position, playerNumber, b) => bm.flipMarker(position, playerNumber, b)
+        flipMarker: (position, playerNumber, b) => bm.flipMarker(position, playerNumber, b),
       };
 
       const applyAdapters: CaptureApplyAdapters = {
         applyMarkerEffectsAlongPath: (fromPos, toPos, playerNumber) => {
-          applyMarkerEffectsAlongPathOnBoard(boardClone, fromPos, toPos, playerNumber, markerHelpers);
-        }
+          applyMarkerEffectsAlongPathOnBoard(
+            boardClone,
+            fromPos,
+            toPos,
+            playerNumber,
+            markerHelpers
+          );
+        },
       };
 
       applyCaptureSegmentOnBoard(
@@ -366,17 +410,23 @@ function enumerateAllCaptureSequencesBackend(
       stack.push({
         board: boardClone,
         currentPos: move.to,
-        segments: [...segments, { from: move.from, target: move.captureTarget, landing: move.to }]
+        segments: [...segments, { from: move.from, target: move.captureTarget, landing: move.to }],
       });
     }
   }
 
   sequences.sort((a, b) => {
     const aKey = a.segments
-      .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+      .map(
+        (s) =>
+          `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+      )
       .join('|');
     const bKey = b.segments
-      .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+      .map(
+        (s) =>
+          `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+      )
       .join('|');
     return aKey.localeCompare(bKey);
   });
@@ -422,7 +472,10 @@ function buildRandomSquareCaptureBoards(
     // collapsed spaces.
     const primaryDir = { x: 1, y: 0 };
     const primaryDistance = 2;
-    const primaryTarget = pos(from.x + primaryDir.x * primaryDistance, from.y + primaryDir.y * primaryDistance);
+    const primaryTarget = pos(
+      from.x + primaryDir.x * primaryDistance,
+      from.y + primaryDir.y * primaryDistance
+    );
     addStack(board, primaryTarget, 2, 2);
     usedPositions.add(positionToString(primaryTarget));
 
@@ -511,7 +564,7 @@ function buildRandomHexCaptureBoards(
     const primaryTarget: Position = {
       x: from.x + primaryDir.x * primaryDistance,
       y: from.y + primaryDir.y * primaryDistance,
-      z: (from.z || 0) + (primaryDir.z || 0) * primaryDistance
+      z: (from.z || 0) + (primaryDir.z || 0) * primaryDistance,
     };
     addStack(board, primaryTarget, 2, 2);
     usedPositions.add(positionToString(primaryTarget));
@@ -551,7 +604,7 @@ function buildRandomHexCaptureBoards(
       const p: Position = {
         x: from.x + primaryDir.x * step,
         y: from.y + primaryDir.y * step,
-        z: (from.z || 0) + (primaryDir.z || 0) * step
+        z: (from.z || 0) + (primaryDir.z || 0) * step,
       };
       forbiddenCollapsed.add(positionToString(p));
     }
@@ -589,44 +642,36 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
     const cases = buildRandomSquareCaptureBoards('square8', 50, 12345, 2, 6);
 
     let maxSeqCount = 0;
-    let maxSeqCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequences: CaptureSequence[];
-        }
-      | null = null;
+    let maxSeqCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequences: CaptureSequence[];
+    } | null = null;
 
     let maxChainLen = 0;
-    let maxChainCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequences: CaptureSequence[];
-        }
-      | null = null;
+    let maxChainCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequences: CaptureSequence[];
+    } | null = null;
 
     let maxMarkersCount = 0;
-    let maxMarkersCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequence: CaptureSequence;
-          markerCount: number;
-          collapsedCount: number;
-        }
-      | null = null;
+    let maxMarkersCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequence: CaptureSequence;
+      markerCount: number;
+      collapsedCount: number;
+    } | null = null;
 
     let maxCollapsedCount = 0;
-    let maxCollapsedCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequence: CaptureSequence;
-          markerCount: number;
-          collapsedCount: number;
-        }
-      | null = null;
+    let maxCollapsedCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequence: CaptureSequence;
+      markerCount: number;
+      collapsedCount: number;
+    } | null = null;
 
     cases.forEach((c, index) => {
       const sandboxSeqs = enumerateAllCaptureSequencesSandbox(
@@ -642,14 +687,20 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         c.player
       );
 
-      const sandboxKeys = sandboxSeqs.map(seq =>
+      const sandboxKeys = sandboxSeqs.map((seq) =>
         seq.segments
-          .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+          .map(
+            (s) =>
+              `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+          )
           .join('|')
       );
-      const backendKeys = backendSeqs.map(seq =>
+      const backendKeys = backendSeqs.map((seq) =>
         seq.segments
-          .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+          .map(
+            (s) =>
+              `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+          )
           .join('|')
       );
 
@@ -679,7 +730,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
 
       // Track positions yielding the most markers and collapsed spaces on the
       // final board after a valid capture sequence.
-      sandboxSeqs.forEach(seq => {
+      sandboxSeqs.forEach((seq) => {
         const { markers, collapsed } = countMarkersAndCollapsed(seq.finalBoard);
 
         if (markers > maxMarkersCount) {
@@ -689,7 +740,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
             caseData: c,
             sequence: seq,
             markerCount: markers,
-            collapsedCount: collapsed
+            collapsedCount: collapsed,
           };
         }
 
@@ -700,7 +751,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
             caseData: c,
             sequence: seq,
             markerCount: markers,
-            collapsedCount: collapsed
+            collapsedCount: collapsed,
           };
         }
       });
@@ -724,44 +775,36 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
     const cases = buildRandomSquareCaptureBoards('square19', 50, 23456, 2, 4);
 
     let maxSeqCount = 0;
-    let maxSeqCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequences: CaptureSequence[];
-        }
-      | null = null;
+    let maxSeqCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequences: CaptureSequence[];
+    } | null = null;
 
     let maxChainLen = 0;
-    let maxChainCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequences: CaptureSequence[];
-        }
-      | null = null;
+    let maxChainCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequences: CaptureSequence[];
+    } | null = null;
 
     let maxMarkersCount = 0;
-    let maxMarkersCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequence: CaptureSequence;
-          markerCount: number;
-          collapsedCount: number;
-        }
-      | null = null;
+    let maxMarkersCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequence: CaptureSequence;
+      markerCount: number;
+      collapsedCount: number;
+    } | null = null;
 
     let maxCollapsedCount = 0;
-    let maxCollapsedCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequence: CaptureSequence;
-          markerCount: number;
-          collapsedCount: number;
-        }
-      | null = null;
+    let maxCollapsedCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequence: CaptureSequence;
+      markerCount: number;
+      collapsedCount: number;
+    } | null = null;
 
     cases.forEach((c, index) => {
       const sandboxSeqs = enumerateAllCaptureSequencesSandbox(
@@ -777,14 +820,20 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         c.player
       );
 
-      const sandboxKeys = sandboxSeqs.map(seq =>
+      const sandboxKeys = sandboxSeqs.map((seq) =>
         seq.segments
-          .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+          .map(
+            (s) =>
+              `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+          )
           .join('|')
       );
-      const backendKeys = backendSeqs.map(seq =>
+      const backendKeys = backendSeqs.map((seq) =>
         seq.segments
-          .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+          .map(
+            (s) =>
+              `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+          )
           .join('|')
       );
 
@@ -812,7 +861,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         maxChainCase = { index, caseData: c, sequences: sandboxSeqs };
       }
 
-      sandboxSeqs.forEach(seq => {
+      sandboxSeqs.forEach((seq) => {
         const { markers, collapsed } = countMarkersAndCollapsed(seq.finalBoard);
 
         if (markers > maxMarkersCount) {
@@ -822,7 +871,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
             caseData: c,
             sequence: seq,
             markerCount: markers,
-            collapsedCount: collapsed
+            collapsedCount: collapsed,
           };
         }
 
@@ -833,7 +882,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
             caseData: c,
             sequence: seq,
             markerCount: markers,
-            collapsedCount: collapsed
+            collapsedCount: collapsed,
           };
         }
       });
@@ -857,44 +906,36 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
     const cases = buildRandomHexCaptureBoards(50, 34567, 2, 4);
 
     let maxSeqCount = 0;
-    let maxSeqCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequences: CaptureSequence[];
-        }
-      | null = null;
+    let maxSeqCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequences: CaptureSequence[];
+    } | null = null;
 
     let maxChainLen = 0;
-    let maxChainCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequences: CaptureSequence[];
-        }
-      | null = null;
+    let maxChainCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequences: CaptureSequence[];
+    } | null = null;
 
     let maxMarkersCount = 0;
-    let maxMarkersCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequence: CaptureSequence;
-          markerCount: number;
-          collapsedCount: number;
-        }
-      | null = null;
+    let maxMarkersCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequence: CaptureSequence;
+      markerCount: number;
+      collapsedCount: number;
+    } | null = null;
 
     let maxCollapsedCount = 0;
-    let maxCollapsedCase:
-      | {
-          index: number;
-          caseData: CaptureTestCase;
-          sequence: CaptureSequence;
-          markerCount: number;
-          collapsedCount: number;
-        }
-      | null = null;
+    let maxCollapsedCase: {
+      index: number;
+      caseData: CaptureTestCase;
+      sequence: CaptureSequence;
+      markerCount: number;
+      collapsedCount: number;
+    } | null = null;
 
     cases.forEach((c, index) => {
       const sandboxSeqs = enumerateAllCaptureSequencesSandbox(
@@ -910,14 +951,20 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         c.player
       );
 
-      const sandboxKeys = sandboxSeqs.map(seq =>
+      const sandboxKeys = sandboxSeqs.map((seq) =>
         seq.segments
-          .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+          .map(
+            (s) =>
+              `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+          )
           .join('|')
       );
-      const backendKeys = backendSeqs.map(seq =>
+      const backendKeys = backendSeqs.map((seq) =>
         seq.segments
-          .map(s => `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`)
+          .map(
+            (s) =>
+              `${positionToString(s.from)}->${positionToString(s.target)}->${positionToString(s.landing)}`
+          )
           .join('|')
       );
 
@@ -945,7 +992,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
         maxChainCase = { index, caseData: c, sequences: sandboxSeqs };
       }
 
-      sandboxSeqs.forEach(seq => {
+      sandboxSeqs.forEach((seq) => {
         const { markers, collapsed } = countMarkersAndCollapsed(seq.finalBoard);
 
         if (markers > maxMarkersCount) {
@@ -955,7 +1002,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
             caseData: c,
             sequence: seq,
             markerCount: markers,
-            collapsedCount: collapsed
+            collapsedCount: collapsed,
           };
         }
 
@@ -966,7 +1013,7 @@ describe('capture sequence enumeration parity (sandbox vs backend)', () => {
             caseData: c,
             sequence: seq,
             markerCount: markers,
-            collapsedCount: collapsed
+            collapsedCount: collapsed,
           };
         }
       });

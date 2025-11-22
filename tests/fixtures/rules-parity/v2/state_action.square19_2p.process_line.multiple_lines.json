@@ -1,0 +1,204 @@
+{
+  "id": "square19_2p.process_line.multiple_lines",
+  "version": "v2",
+  "boardType": "square19",
+  "description": "Multi-line line_processing scenario on square19 board with overlapping and mixed-player lines.",
+  "state": {
+    "boardType": "square19",
+    "id": "rules-parity-square19-2p-v2",
+    "board": {
+      "stacks": {},
+      "markers": {},
+      "collapsedSpaces": {},
+      "territories": {},
+      "formedLines": [
+        {
+          "positions": [
+            {
+              "x": 8,
+              "y": 9
+            },
+            {
+              "x": 9,
+              "y": 9
+            },
+            {
+              "x": 10,
+              "y": 9
+            },
+            {
+              "x": 11,
+              "y": 9
+            }
+          ],
+          "player": 1,
+          "length": 4,
+          "direction": {
+            "x": 1,
+            "y": 0
+          }
+        },
+        {
+          "positions": [
+            {
+              "x": 9,
+              "y": 8
+            },
+            {
+              "x": 9,
+              "y": 9
+            },
+            {
+              "x": 9,
+              "y": 10
+            },
+            {
+              "x": 9,
+              "y": 11
+            }
+          ],
+          "player": 1,
+          "length": 4,
+          "direction": {
+            "x": 0,
+            "y": 1
+          }
+        },
+        {
+          "positions": [
+            {
+              "x": 5,
+              "y": 5
+            },
+            {
+              "x": 6,
+              "y": 6
+            },
+            {
+              "x": 7,
+              "y": 7
+            },
+            {
+              "x": 8,
+              "y": 8
+            }
+          ],
+          "player": 2,
+          "length": 4,
+          "direction": {
+            "x": 1,
+            "y": 1
+          }
+        }
+      ],
+      "eliminatedRings": {
+        "1": 0,
+        "2": 0
+      },
+      "size": 19,
+      "type": "square19"
+    },
+    "players": [
+      {
+        "id": "p1",
+        "username": "Player 1",
+        "type": "human",
+        "playerNumber": 1,
+        "isReady": false,
+        "timeRemaining": 600000,
+        "ringsInHand": 36,
+        "eliminatedRings": 0,
+        "territorySpaces": 0
+      },
+      {
+        "id": "p2",
+        "username": "Player 2",
+        "type": "human",
+        "playerNumber": 2,
+        "isReady": false,
+        "timeRemaining": 600000,
+        "ringsInHand": 36,
+        "eliminatedRings": 0,
+        "territorySpaces": 0
+      }
+    ],
+    "currentPhase": "line_processing",
+    "currentPlayer": 1,
+    "moveHistory": [],
+    "gameStatus": "waiting",
+    "timeControl": {
+      "initialTime": 600,
+      "increment": 5,
+      "type": "blitz"
+    },
+    "createdAt": "2025-11-21T17:41:01.308Z",
+    "lastMoveAt": "2025-11-21T17:41:01.308Z",
+    "isRated": false,
+    "maxPlayers": 2,
+    "totalRingsInPlay": 0,
+    "totalRingsEliminated": 0,
+    "victoryThreshold": 37,
+    "territoryVictoryThreshold": 181
+  },
+  "move": {
+    "id": "fixture-square19-2p-process-line-multiple",
+    "type": "process_line",
+    "player": 1,
+    "to": {
+      "x": 9,
+      "y": 8
+    },
+    "formedLines": [
+      {
+        "positions": [
+          {
+            "x": 9,
+            "y": 8
+          },
+          {
+            "x": 9,
+            "y": 9
+          },
+          {
+            "x": 9,
+            "y": 10
+          },
+          {
+            "x": 9,
+            "y": 11
+          }
+        ],
+        "player": 1,
+        "length": 4,
+        "direction": {
+          "x": 0,
+          "y": 1
+        }
+      }
+    ],
+    "timestamp": "1970-01-01T00:00:00.000Z",
+    "thinkTime": 0,
+    "moveNumber": 1
+  },
+  "expected": {
+    "tsValid": true,
+    "tsValidation": {
+      "valid": true
+    },
+    "tsNext": {
+      "boardType": "square19",
+      "currentPhase": "line_processing",
+      "currentPlayer": 1,
+      "gameStatus": "waiting",
+      "totalRingsInPlay": 0,
+      "totalRingsEliminated": 0,
+      "victoryThreshold": 37,
+      "territoryVictoryThreshold": 181,
+      "markers": 0,
+      "collapsed": 4,
+      "eliminated": 0,
+      "S": 4,
+      "stateHash": "1:line_processing:waiting#1:36:0:0|2:36:0:0###9,10:1|9,11:1|9,8:1|9,9:1"
+    }
+  }
+}

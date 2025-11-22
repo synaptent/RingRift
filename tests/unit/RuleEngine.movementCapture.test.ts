@@ -7,7 +7,7 @@ import {
   Position,
   BoardType,
   TimeControl,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 
 // Minimal fake BoardManager implementation with just the methods RuleEngine
@@ -39,6 +39,10 @@ class FakeBoardManager {
   findAllTerritories(_player: number, _board: BoardState): any[] {
     return [];
   }
+
+  findDisconnectedRegions(_board: BoardState, _player: number): any[] {
+    return [];
+  }
 }
 
 function createBaseGameState(boardType: BoardType = 'square8'): GameState {
@@ -54,7 +58,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
+      territorySpaces: 0,
     },
     {
       id: 'p2',
@@ -65,8 +69,8 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
-    }
+      territorySpaces: 0,
+    },
   ];
 
   const board: BoardState = {
@@ -77,7 +81,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
     formedLines: [],
     eliminatedRings: {},
     size: boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 11,
-    type: boardType
+    type: boardType,
   };
 
   const now = new Date();
@@ -90,6 +94,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
     currentPhase: 'movement',
     currentPlayer: 1,
     moveHistory: [],
+    history: [],
     timeControl,
     spectators: [],
     gameStatus: 'active',
@@ -100,7 +105,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
     totalRingsInPlay: 0,
     totalRingsEliminated: 0,
     victoryThreshold: 0,
-    territoryVictoryThreshold: 0
+    territoryVictoryThreshold: 0,
   };
 }
 
@@ -126,7 +131,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [1, 1],
       stackHeight: 2,
       capHeight: 2,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     const move: Move = {
@@ -137,7 +142,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);
@@ -156,7 +161,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [1, 1],
       stackHeight: 2,
       capHeight: 2,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     const move: Move = {
@@ -167,7 +172,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);
@@ -191,7 +196,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [1, 1],
       stackHeight: 2,
       capHeight: 2,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     const move: Move = {
@@ -202,7 +207,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);
@@ -226,7 +231,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [1, 1],
       stackHeight: 2,
       capHeight: 2,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     state.board.stacks.set(targetKey, {
@@ -234,7 +239,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [2],
       stackHeight: 1,
       capHeight: 1,
-      controllingPlayer: 2
+      controllingPlayer: 2,
     });
 
     const move: Move = {
@@ -246,7 +251,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to: landing,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);
@@ -271,7 +276,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [1],
       stackHeight: 1,
       capHeight: 1,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     // Target capHeight 2
@@ -280,7 +285,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [2, 2],
       stackHeight: 2,
       capHeight: 2,
-      controllingPlayer: 2
+      controllingPlayer: 2,
     });
 
     const move: Move = {
@@ -292,7 +297,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to: landing,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);
@@ -317,7 +322,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [1, 1],
       stackHeight: 2,
       capHeight: 2,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     // Target: Also Player 1 (own stack) with capHeight 1
@@ -326,7 +331,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       rings: [1],
       stackHeight: 1,
       capHeight: 1,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     const move: Move = {
@@ -338,7 +343,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to: landing,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);
@@ -353,12 +358,12 @@ describe('RuleEngine movement and capture validation (square8)', () => {
     // Create a scenario where placing at (0,0) would leave no legal moves
     // Use a custom BoardManager that is restricted to a very small valid area
     const boardManager = new FakeBoardManager(boardType) as any;
-    
+
     // Only positions (0,0) and (1,0) are valid, and (1,0) is collapsed
     boardManager.isValidPosition = jest.fn((pos: Position) => {
       return (pos.x === 0 && pos.y === 0) || (pos.x === 1 && pos.y === 0);
     });
-    
+
     boardManager.isCollapsedSpace = jest.fn((pos: Position) => {
       // Block the only adjacent position
       return pos.x === 1 && pos.y === 0;
@@ -373,7 +378,7 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to: { x: 0, y: 0 },
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = customEngine.validateMove(move, state);
@@ -393,10 +398,122 @@ describe('RuleEngine movement and capture validation (square8)', () => {
       to: { x: 3, y: 3 },
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);
     expect(valid).toBe(true);
+  });
+
+  it('territory_processing enumerates eliminate_rings_from_stack moves when no eligible regions', () => {
+    const { engine, state } = createRuleEngineAndState();
+
+    state.currentPhase = 'territory_processing';
+
+    const board = state.board;
+
+    const stackPos1: Position = { x: 0, y: 0 };
+    const stackPos2: Position = { x: 1, y: 1 };
+
+    const key1 = positionToString(stackPos1);
+    const key2 = positionToString(stackPos2);
+
+    board.stacks.set(key1, {
+      position: stackPos1,
+      rings: [1, 1],
+      stackHeight: 2,
+      capHeight: 2,
+      controllingPlayer: 1,
+    });
+
+    board.stacks.set(key2, {
+      position: stackPos2,
+      rings: [1],
+      stackHeight: 1,
+      capHeight: 1,
+      controllingPlayer: 1,
+    });
+
+    const moves = engine.getValidMoves(state);
+    const elimMoves = moves.filter((m) => m.type === 'eliminate_rings_from_stack');
+
+    expect(elimMoves).toHaveLength(2);
+
+    const ids = elimMoves.map((m) => m.id).sort();
+    expect(ids).toEqual([`eliminate-${key1}`, `eliminate-${key2}`].sort());
+
+    for (const move of elimMoves) {
+      expect(move.player).toBe(1);
+      expect(move.to).toBeDefined();
+
+      const stackKey = positionToString(move.to as Position);
+      const stack = board.stacks.get(stackKey)!;
+      const expectedCap = stack.capHeight;
+
+      expect(move.eliminatedRings && move.eliminatedRings.length).toBeGreaterThan(0);
+      const entry = move.eliminatedRings!.find((e) => e.player === 1)!;
+      expect(entry.count).toBe(expectedCap);
+
+      expect(move.eliminationFromStack).toBeDefined();
+      expect(move.eliminationFromStack!.capHeight).toBe(expectedCap);
+      expect(move.eliminationFromStack!.totalHeight).toBe(stack.stackHeight);
+    }
+  });
+
+  it('territory_processing prefers process_territory_region over elimination when eligible regions exist', () => {
+    const { engine, state } = createRuleEngineAndState();
+
+    state.currentPhase = 'territory_processing';
+
+    const board = state.board;
+
+    const outsidePos: Position = { x: 0, y: 0 };
+    const insidePos: Position = { x: 5, y: 5 };
+
+    const outsideKey = positionToString(outsidePos);
+    const insideKey = positionToString(insidePos);
+
+    board.stacks.set(outsideKey, {
+      position: outsidePos,
+      rings: [1],
+      stackHeight: 1,
+      capHeight: 1,
+      controllingPlayer: 1,
+    });
+
+    board.stacks.set(insideKey, {
+      position: insidePos,
+      rings: [2],
+      stackHeight: 1,
+      capHeight: 1,
+      controllingPlayer: 2,
+    });
+
+    const engineAny: any = engine;
+    const boardManager: any = (engineAny as any).boardManager;
+
+    const regionTerritory = {
+      spaces: [insidePos],
+      controllingPlayer: 1,
+      isDisconnected: true,
+    };
+
+    const findDisconnectedRegionsSpy = jest
+      .spyOn(boardManager, 'findDisconnectedRegions')
+      .mockImplementation(() => [regionTerritory]);
+
+    const moves = engine.getValidMoves(state);
+
+    findDisconnectedRegionsSpy.mockRestore();
+
+    const territoryMoves = moves.filter((m) => m.type === 'process_territory_region');
+    const elimMoves = moves.filter((m) => m.type === 'eliminate_rings_from_stack');
+
+    expect(territoryMoves).toHaveLength(1);
+    expect(elimMoves).toHaveLength(0);
+    expect(territoryMoves[0].player).toBe(1);
+    expect(
+      territoryMoves[0].disconnectedRegions && territoryMoves[0].disconnectedRegions!.length
+    ).toBe(1);
   });
 });

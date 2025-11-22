@@ -1,62 +1,104 @@
 name: RingRift CI/CD
 
+# CI job structure plan (rules vs parity vs integration vs Python)
+#
+# Current state:
+# - lint-and-typecheck: ESLint + TS compilation for server/client.
+# - test: npm run test:coverage (all Jest suites together).
+# - build, security-scan, docker-build: packaging and security.
+#
+# Target state (to be implemented in a future workflow refactor):
+# - ts-rules-engine:
+#     - Run Jest on rules-level suites only (e.g. *.rules.test.ts,
+#       RefactoredEngine*.test.ts, RulesMatrix.*.GameEngine/ClientSandboxEngine
+#       when they are acting as pure rules scenarios).
+#     - Treated as the canonical semantic signal; failures here should
+#       fail CI early.
+# - ts-parity:
+#     - Run Jest on trace/parity suites (Backend_vs_Sandbox.*traceParity*.
+#       test.ts, *Parity.RuleEngine_vs_Sandbox.test.ts,
+#       Python_vs_TS.traceParity.test.ts, RNG parity, etc.).
+#     - Used as smoke/regression coverage; failures are investigated with
+#       the rules-over-traces policy (stale traces may be regenerated or
+#       seeds retired in favour of focused rules tests).
+# - ts-integration:
+#     - Run Jest on integration-level suites (WebSocketServer.*.integration,
+#       GameEngine.*WebSocketIntegration, FullGameFlow, route tests,
+#       snapshot tests, etc.).
+# - python-core:
+#     - Run pytest for non-parity Python tests
+#       (test_engine_correctness, test_env_interface, AI unit tests).
+# - python-rules-parity:
+#     - Run pytest on parity tests marked as rules-parity
+#       (ai-service/tests/parity/* using TS-generated fixtures).
+#     - Depends on TS fixture generation step that calls a small Node
+#       script under tests/scripts/generate_rules_parity_fixtures.ts.
+#
+# When implementing this split, prefer:
+# - rules-level jobs (ts-rules-engine, python-rules-parity) as the
+#   highest-priority signals;
+# - parity jobs as secondary, explicitly documenting when failures
+#   indicate stale traces vs true rules regressions.
+
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
 
 jobs:
   lint-and-typecheck:
     name: Lint and Type Check
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run ESLint
         run: npm run lint
         continue-on-error: true
-      
+
       - name: Run TypeScript type check
         run: npx tsc --noEmit
-      
+
       - name: Run server TypeScript check
         run: npx tsc -p tsconfig.server.json --noEmit
-      
+
       - name: Run client TypeScript check
         run: npx tsc -p tsconfig.client.json --noEmit
 
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    
+    env:
+      RINGRIFT_RULES_MODE: shadow
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
       - name: Run tests with coverage
         run: npm run test:coverage
-      
+
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
@@ -64,7 +106,7 @@ jobs:
           flags: unittests
           name: codecov-umbrella
           fail_ci_if_error: false
-      
+
       - name: Comment coverage on PR
         if: github.event_name == 'pull_request'
         uses: romeovs/lcov-reporter-action@v0.3.1
@@ -73,30 +115,53 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           delete-old-comments: true
 
-  build:
-    name: Build Application
+  ts-rules-engine:
+    name: TS Rules Engine (rules-level)
     runs-on: ubuntu-latest
-    needs: [lint-and-typecheck, test]
-    
+    needs: [lint-and-typecheck]
+    env:
+      RINGRIFT_RULES_MODE: shadow
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-      
+
       - name: Install dependencies
         run: npm ci
-      
+
+      - name: Run TS rules-engine Jest suites
+        run: npm run test:ts-rules-engine
+
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Build server
         run: npm run build:server
-      
+
       - name: Build client
         run: npm run build:client
-      
+
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -107,15 +172,15 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Run npm audit
         run: npm audit --audit-level=moderate
         continue-on-error: true
-      
+
       - name: Run Snyk security scan
         uses: snyk/actions/node@master
         continue-on-error: true
@@ -128,14 +193,14 @@ jobs:
     name: Docker Build Test
     runs-on: ubuntu-latest
     needs: [lint-and-typecheck, test]
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
@@ -144,3 +209,39 @@ jobs:
           tags: ringrift:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  python-rules-parity:
+    name: Python Rules Parity (fixture-based)
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (for TS fixtures)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Generate TS→Python rules parity fixtures
+        run: npx ts-node tests/scripts/generate_rules_parity_fixtures.ts
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Python rules-parity tests (fixture-based)
+        working-directory: ai-service
+        run: python -m pytest tests/parity/test_rules_parity_fixtures.py

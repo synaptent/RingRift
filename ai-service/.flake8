@@ -2,3 +2,4 @@
 # Ignore all blank-line style errors (E3xx) within the ai-service Python package
 # so that linters do not complain about extra/missing blank lines.
 extend-ignore = E3
+max-line-length = 120

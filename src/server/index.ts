@@ -12,30 +12,37 @@ import { rateLimiter } from './middleware/rateLimiter';
 import { logger } from './utils/logger';
 import { connectDatabase } from './database/connection';
 import { connectRedis } from './cache/redis';
-
+import client from 'prom-client';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const server = createServer(app);
-// Middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "ws:", "wss:"],
-    },
-  },
-}));
 
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || "http://localhost:5173",
-  credentials: true
-}));
+// Register default Prometheus metrics for the Node.js process.
+client.collectDefaultMetrics();
+// Middleware
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'", 'ws:', 'wss:'],
+      },
+    },
+  })
+);
+
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    credentials: true,
+  })
+);
 
 app.use(compression());
 app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }));
@@ -51,8 +58,22 @@ app.get('/health', (_req, res) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0'
+    version: process.env.npm_package_version || '1.0.0',
   });
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (_req, res) => {
+  try {
+    res.set('Content-Type', client.register.contentType);
+    const metrics = await client.register.metrics();
+    res.send(metrics);
+  } catch (err) {
+    logger.error('Failed to generate /metrics payload', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    res.status(500).send('metrics_unavailable');
+  }
 });
 
 // API routes
@@ -71,8 +92,8 @@ app.use('*', (_req, res) => {
     error: {
       message: 'Route not found',
       code: 'NOT_FOUND',
-      timestamp: new Date()
-    }
+      timestamp: new Date(),
+    },
   });
 });
 
@@ -90,8 +111,7 @@ async function startServer() {
       logger.info('Redis connected successfully');
     } catch (redisError) {
       logger.warn('Redis connection failed; continuing without Redis', {
-        error:
-          redisError instanceof Error ? redisError.message : String(redisError),
+        error: redisError instanceof Error ? redisError.message : String(redisError),
       });
     }
 
@@ -107,7 +127,6 @@ async function startServer() {
     // Graceful shutdown
     process.on('SIGTERM', gracefulShutdown);
     process.on('SIGINT', gracefulShutdown);
-
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);
@@ -116,10 +135,10 @@ async function startServer() {
 
 function gracefulShutdown(signal: string) {
   logger.info(`Received ${signal}. Starting graceful shutdown...`);
-  
+
   server.close(() => {
     logger.info('HTTP server closed');
-    
+
     // Close database connections, Redis, etc.
     process.exit(0);
   });

@@ -139,11 +139,12 @@ export class AIEngine {
       // Call Python AI service. Prefer any explicit aiType derived from
       // AIProfile, falling back to a difficulty-based default.
       const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const serviceAIType = this.mapInternalTypeToServiceType(aiType);
       const response = await getAIServiceClient().getAIMove(
         gameState,
         playerNumber,
         config.difficulty,
-        aiType as unknown as ServiceAIType
+        serviceAIType
       );
 
       const normalizedMove = this.normalizeServiceMove(response.move, gameState, playerNumber);
@@ -185,33 +186,64 @@ export class AIEngine {
 
       let validMoves = ruleEngine.getValidMoves(gameState);
 
-      // Enforce "must move placed stack" rule if applicable, since RuleEngine
-      // doesn't track per-turn state but GameEngine does. We infer it from history.
-      if (gameState.currentPhase === 'movement' || gameState.currentPhase === 'capture') {
-        const lastMove = gameState.moveHistory[gameState.moveHistory.length - 1];
-        // If the last move was a placement by the current player in the same turn sequence...
-        // Actually, simpler: if we are in movement/capture, and the last move was 'place_ring',
-        // then we must move that stack.
-        if (
-          lastMove &&
-          lastMove.type === 'place_ring' &&
-          lastMove.player === gameState.currentPlayer &&
-          lastMove.to
-        ) {
-          const placedKey = positionToString(lastMove.to);
+      // Enforce the canonical "must move placed stack" rule when available.
+      // GameEngine/TurnEngine track the origin stack via mustMoveFromStackKey;
+      // RuleEngine itself is stateless, so we need to apply this constraint
+      // here before handing moves to the shared local-selection policy.
+      if (
+        gameState.currentPhase === 'movement' ||
+        gameState.currentPhase === 'capture' ||
+        gameState.currentPhase === 'chain_capture'
+      ) {
+        const mustMoveFromStackKey = gameState.mustMoveFromStackKey;
+
+        if (mustMoveFromStackKey) {
           validMoves = validMoves.filter((m) => {
-            // Only filter movement/capture moves
-            if (
+            const isMovementOrCaptureMove =
               m.type === 'move_stack' ||
               m.type === 'move_ring' ||
-              m.type === 'overtaking_capture' ||
               m.type === 'build_stack' ||
-              m.type === 'continue_capture_segment'
-            ) {
-              return m.from && positionToString(m.from) === placedKey;
+              m.type === 'overtaking_capture' ||
+              m.type === 'continue_capture_segment';
+
+            if (!isMovementOrCaptureMove) {
+              return true;
             }
-            return true;
+
+            if (!m.from) {
+              return false;
+            }
+
+            return positionToString(m.from) === mustMoveFromStackKey;
           });
+        } else {
+          // Backwards-compatible fallback for older fixtures/states that do
+          // not populate mustMoveFromStackKey: infer the must-move origin
+          // from the last place_ring move by the current player.
+          const lastMove = gameState.moveHistory[gameState.moveHistory.length - 1];
+
+          if (
+            lastMove &&
+            lastMove.type === 'place_ring' &&
+            lastMove.player === gameState.currentPlayer &&
+            lastMove.to
+          ) {
+            const placedKey = positionToString(lastMove.to);
+            validMoves = validMoves.filter((m) => {
+              const isMovementOrCaptureMove =
+                m.type === 'move_stack' ||
+                m.type === 'move_ring' ||
+                m.type === 'overtaking_capture' ||
+                m.type === 'build_stack' ||
+                m.type === 'continue_capture_segment';
+
+              if (!isMovementOrCaptureMove) {
+                return true;
+              }
+
+              return m.from && positionToString(m.from) === placedKey;
+            });
+          }
         }
       }
 
@@ -396,11 +428,12 @@ export class AIEngine {
 
     try {
       const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const serviceAIType = this.mapInternalTypeToServiceType(aiType);
       const response = await getAIServiceClient().getLineRewardChoice(
         gameState,
         playerNumber,
         config.difficulty,
-        aiType as unknown as ServiceAIType,
+        serviceAIType,
         options
       );
 
@@ -442,11 +475,12 @@ export class AIEngine {
 
     try {
       const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const serviceAIType = this.mapInternalTypeToServiceType(aiType);
       const response = await getAIServiceClient().getRingEliminationChoice(
         gameState,
         playerNumber,
         config.difficulty,
-        aiType as unknown as ServiceAIType,
+        serviceAIType,
         options
       );
 
@@ -488,11 +522,12 @@ export class AIEngine {
 
     try {
       const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const serviceAIType = this.mapInternalTypeToServiceType(aiType);
       const response = await getAIServiceClient().getRegionOrderChoice(
         gameState,
         playerNumber,
         config.difficulty,
-        aiType as unknown as ServiceAIType,
+        serviceAIType,
         options
       );
 
@@ -589,8 +624,12 @@ export class AIEngine {
         return AIType.MCTS;
       case 'descent':
         return AIType.DESCENT;
-      default:
-        return AIType.HEURISTIC;
+      default: {
+        // Exhaustive check so that adding a new AITacticType forces this
+        // mapping to be updated.
+        const exhaustiveCheck: never = tactic;
+        throw new Error(`Unhandled AITacticType in mapAITacticToAIType: ${exhaustiveCheck}`);
+      }
     }
   }
 
@@ -607,8 +646,37 @@ export class AIEngine {
         return 'mcts';
       case AIType.DESCENT:
         return 'descent';
-      default:
-        return 'heuristic';
+      default: {
+        // Exhaustive check so that adding a new AIType forces this mapping
+        // (and downstream service wiring) to be updated.
+        const exhaustiveCheck: never = type;
+        throw new Error(`Unhandled AIType in mapAITypeToTactic: ${exhaustiveCheck}`);
+      }
+    }
+  }
+
+  /**
+   * Map the internal AIType enum used by the server onto the AIType enum
+   * understood by the Python AI service. This indirection keeps the
+   * wire-level contract stable even if the server or service introduce
+   * additional implementation-specific variants in future.
+   */
+  private mapInternalTypeToServiceType(type: AIType): ServiceAIType {
+    switch (type) {
+      case AIType.RANDOM:
+        return ServiceAIType.RANDOM;
+      case AIType.HEURISTIC:
+        return ServiceAIType.HEURISTIC;
+      case AIType.MINIMAX:
+        return ServiceAIType.MINIMAX;
+      case AIType.MCTS:
+        return ServiceAIType.MCTS;
+      case AIType.DESCENT:
+        return ServiceAIType.DESCENT;
+      default: {
+        const exhaustiveCheck: never = type;
+        throw new Error(`Unhandled AIType in mapInternalTypeToServiceType: ${exhaustiveCheck}`);
+      }
     }
   }
 

@@ -1,4 +1,13 @@
-# RingRift Playable Game Implementation Plan
+# ⚠️ DEPRECATED: RingRift Playable Game Implementation Plan
+
+> **This is a historical document preserved for context.**
+>
+> **For current status and plans, see:**
+>
+> - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md)
+> - [`IMPLEMENTATION_STATUS.md`](../IMPLEMENTATION_STATUS.md)
+> - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md)
+> - [`TODO.md`](../TODO.md)
 
 **Created: November 15, 2025 · Status Updated: November 16, 2025**
 

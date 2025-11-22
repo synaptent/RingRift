@@ -3,7 +3,7 @@
  * Defines the contract for AI players and provides base functionality
  */
 
-import { GameState, Move, Position, Player } from '../../../shared/types/game';
+import { GameState, Move } from '../../../shared/types/game';
 
 export interface AIConfig {
   difficulty: number; // 1-10 scale

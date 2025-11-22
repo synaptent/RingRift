@@ -1,0 +1,114 @@
+{
+  "id": "square8_2p.eliminate_stack",
+  "version": "v1",
+  "boardType": "square8",
+  "description": "Player 1 eliminates ring from stack.",
+  "state": {
+    "boardType": "square8",
+    "id": "rules-parity-square8-2p",
+    "board": {
+      "stacks": {
+        "7,7": {
+          "position": {
+            "x": 7,
+            "y": 7
+          },
+          "rings": [1, 1],
+          "stackHeight": 2,
+          "capHeight": 2,
+          "controllingPlayer": 1
+        }
+      },
+      "markers": {},
+      "collapsedSpaces": {},
+      "territories": {},
+      "formedLines": [],
+      "eliminatedRings": {
+        "1": 0,
+        "2": 0
+      },
+      "size": 8,
+      "type": "square8"
+    },
+    "players": [
+      {
+        "id": "p1",
+        "username": "Player 1",
+        "type": "human",
+        "playerNumber": 1,
+        "isReady": false,
+        "timeRemaining": 600000,
+        "ringsInHand": 18,
+        "eliminatedRings": 0,
+        "territorySpaces": 0
+      },
+      {
+        "id": "p2",
+        "username": "Player 2",
+        "type": "human",
+        "playerNumber": 2,
+        "isReady": false,
+        "timeRemaining": 600000,
+        "ringsInHand": 18,
+        "eliminatedRings": 0,
+        "territorySpaces": 0
+      }
+    ],
+    "currentPhase": "territory_processing",
+    "currentPlayer": 1,
+    "moveHistory": [],
+    "gameStatus": "waiting",
+    "timeControl": {
+      "initialTime": 600,
+      "increment": 5,
+      "type": "blitz"
+    },
+    "createdAt": "2025-11-21T17:41:01.298Z",
+    "lastMoveAt": "2025-11-21T17:41:01.298Z",
+    "isRated": false,
+    "maxPlayers": 2,
+    "totalRingsInPlay": 0,
+    "totalRingsEliminated": 0,
+    "victoryThreshold": 19,
+    "territoryVictoryThreshold": 33
+  },
+  "move": {
+    "id": "fixture-square8-2p-eliminate-stack",
+    "type": "eliminate_rings_from_stack",
+    "player": 1,
+    "to": {
+      "x": 7,
+      "y": 7
+    },
+    "eliminatedRings": [
+      {
+        "player": 1,
+        "count": 1
+      }
+    ],
+    "timestamp": "1970-01-01T00:00:00.000Z",
+    "thinkTime": 0,
+    "moveNumber": 1
+  },
+  "expected": {
+    "tsValid": true,
+    "tsValidation": {
+      "valid": true
+    },
+    "tsNext": {
+      "boardType": "square8",
+      "currentPhase": "ring_placement",
+      "currentPlayer": 2,
+      "gameStatus": "waiting",
+      "totalRingsInPlay": 0,
+      "totalRingsEliminated": 2,
+      "victoryThreshold": 19,
+      "territoryVictoryThreshold": 33,
+      "markers": 0,
+      "collapsed": 0,
+      "eliminated": 2,
+      "S": 2,
+      "stateHash": "2:ring_placement:waiting#1:18:2:0|2:18:0:0###"
+    }
+  }
+}

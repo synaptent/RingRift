@@ -1,7 +1,7 @@
 # RingRift Strategic Roadmap
 
 **Version:** 3.0
-**Last Updated:** November 20, 2025
+**Last Updated:** November 21, 2025
 **Status:** Engine/Rules Beta (Playable, not yet fully stable)
 **Philosophy:** Robustness, Parity, and Scale
 
@@ -9,10 +9,18 @@
 
 ## 🎯 Executive Summary
 
-**Current State:** Engine/Rules Beta (Core loop implemented; unified `chain_capture`/`continue_capture_segment` model live on the backend; sandbox + AI parity and end-to-end termination still under active work—see [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md:1) and [`TODO.md`](TODO.md:73) for current P0 gaps).
+**Current State:** Engine/Rules Beta (Core loop implemented; unified `chain_capture`/`continue_capture_segment` model live on the backend; shared TypeScript rules engine under `src/shared/engine/` established as the canonical rules source with an initial backend-vs-shared parity harness in [`RefactoredEngineParity.test.ts`](tests/unit/RefactoredEngineParity.test.ts:1); sandbox + AI parity and end-to-end termination still under active work—see [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md:1) and [`TODO.md`](TODO.md:73) for current P0 gaps).
 **Goal:** Production-Ready Multiplayer Game
 **Timeline:** 4-8 weeks to v1.0 (assuming P0 rules/parity/termination items are resolved first)
 **Strategy:** Harden testing & parity → Polish UX → Expand Multiplayer Features
+
+> Note on rules authority: when there is any question about what the correct
+> behaviour _should_ be (for example, when parity harnesses or engines
+> disagree), the ultimate source of canonical truth is the rules
+> documentation—[`ringrift_complete_rules.md`](ringrift_complete_rules.md)
+> and, where applicable, [`ringrift_compact_rules.md`](ringrift_compact_rules.md).
+> Code, tests, and parity fixtures are expected to converge toward those
+> documents rather than redefine the rules.
 
 ---
 
@@ -33,8 +41,8 @@
 
 #### 2.1 Comprehensive Scenario Testing
 
-- [ ] Build test matrix for all FAQ edge cases
-- [ ] Implement scenario tests for complex chain captures
+- [ ] Build test matrix for all FAQ edge cases (see `RULES_SCENARIO_MATRIX.md`)
+- [ ] Implement scenario tests for complex chain captures (180° reversals, cycles)
 - [ ] Verify all board types (especially Hexagonal edge cases)
 
 #### 2.2 Sandbox Stage 2
@@ -48,6 +56,13 @@
       termination behaviour using the sandbox AI simulation diagnostics
       (`ClientSandboxEngine.aiSimulation` with `RINGRIFT_ENABLE_SANDBOX_AI_SIM=1`),
       as tracked in P0.2 / P1.4 of `KNOWN_ISSUES.md`.
+
+#### 2.3 Rules Engine Parity (Python/TS)
+
+- [x] Implement `RulesBackendFacade` to abstract engine selection.
+- [x] Implement `PythonRulesClient` for AI service communication.
+- [x] Verify core mechanics parity (Movement, Capture, Lines, Territory) in Python engine.
+- [ ] Enable `RINGRIFT_RULES_MODE=shadow` in staging/CI to collect parity metrics.
 
 ### **PHASE 3: Multiplayer Polish**
 
@@ -119,112 +134,51 @@ These are distilled from the code, the failing tests you just ran, and the exist
 
 ### Tier 1 – Rules Confidence & Engine Parity (P0)
 
-1. __Finish P0.4 unified Move model rollout on the backend__
+1. **Finish P0.4 unified Move model rollout on the backend**
+   - Update or replace the remaining **CaptureDirection** tests to target the new `chain_capture` + `continue_capture_segment` API.
+   - Ensure `GameEngine.captureDirectionChoice.test.ts` and related integration tests use the new model.
 
-   - Update or replace the remaining __CaptureDirection__ tests to target the new `chain_capture` + `continue_capture_segment` API instead of `chooseCaptureDirectionFromState`:
+2. **Close sandbox vs backend semantic gaps**
+   - Focus on mismatches in `Sandbox_vs_Backend.aiHeuristicCoverage.test.ts` and `Backend_vs_Sandbox.aiParallelDebug.test.ts`.
+   - Fix underlying engine/sandbox discrepancies to ensure trace-based debugging is trustworthy.
 
-     - `GameEngine.captureDirectionChoice.test.ts`
-     - `GameEngine.captureDirectionChoiceWebSocketIntegration.test.ts`
-     - `GameEngine.chainCaptureChoiceIntegration.test.ts`
-
-   - Once tests express expectations in terms of `getValidMoves` and `Move` types only, you’ll have a single canonical chain-capture model.
-
-2. __Close sandbox vs backend semantic gaps for AI moves__
-
-   - Focus on the concrete mismatches surfaced in:
-
-     - `Sandbox_vs_Backend.aiHeuristicCoverage.test.ts`
-     - `Backend_vs_Sandbox.aiParallelDebug.test.ts`
-     - `Python_vs_TS.traceParity.test.ts`
-
-   - For each mismatch:
-
-     - Use the logged `scenarioLabel`, `seed`, `step`, and `sandboxMove` to reduce to a small deterministic unit test (movement/capture/placement parity) under `tests/unit/`.
-     - Fix whichever engine (backend or sandbox) is incorrect, with a strong bias toward aligning `ClientSandboxEngine` to backend `GameEngine`/`RuleEngine` semantics.
-
-   - This work moves you toward the “one canonical Move space everywhere” goal and will make trace-based debugging trustworthy.
-
-3. __Get `FullGameFlow.test.ts` green__
-
-   - Investigate why `finalState.gameStatus` remains `'active'` under local AI fallback.
-
-   - Ensure that:
-
-     - AI fallback never gets stuck in a loop of legal-but-non-progressing moves.
-     - Termination conditions (ring-elimination and territory-control) are reached under typical AI-vs-AI games.
-
-   - Once this passes, you can credibly say “a full backend game with AI fallback completes without crashing or stalling.”
+3. **Get `FullGameFlow.test.ts` green**
+   - Ensure AI fallback games reach termination (ring-elimination or territory-control) without stalling.
 
 ### Tier 2 – Scenario Matrix & Explicit Rules Coverage (P0/P1)
 
-4. __Expand `RULES_SCENARIO_MATRIX.md` and scenario suites__
+4. **Expand `RULES_SCENARIO_MATRIX.md` and scenario suites**
+   - Systematically cover FAQ and rules examples in Jest (complex chains, mixed line+territory, hex edge cases).
+   - Ensure each scenario is represented in the matrix and covered by backend/sandbox tests.
 
-   - Systematically cover FAQ and rules examples in Jest:
-
-     - Complex chain captures (180° reversals, cycles, zig‑zag) for `square8`, `square19`, and hex.
-     - Mixed line + territory + forced-elimination turns.
-     - Edge/corner territory scenarios on hex.
-
-   - Ensure each scenario is:
-
-     - Represented once in `RULES_SCENARIO_MATRIX.md` with an ID.
-     - Covered by at least one backend `GameEngine` test and, ideally, a sandbox test.
-
-5. __Align sandbox AI and backend Move semantics__
-
-   - Refactor `ClientSandboxEngine` and `sandboxAI` so that *all* sandbox actions are:
-
-     - Expressed as canonical `Move` objects (`place_ring`, `move_stack`, `overtaking_capture`, `continue_capture_segment`, etc.).
-     - Applied through a single canonical `applyCanonicalMoveInternal` path.
-
-   - This makes the sandbox a faithful “frontend shell” over the same decision space as the backend and makes both your parity and heuristic-coverage suites much easier to reason about.
+5. **Align sandbox AI and backend Move semantics**
+   - Refactor `ClientSandboxEngine` to use canonical `Move` objects for all actions.
+   - Ensure `applyCanonicalMoveInternal` is the single path for state mutation.
 
 ### Tier 3 – Multiplayer Lifecycle & UX (P1)
 
-6. __WebSocket lifecycle & reconnection polish__
+6. **WebSocket lifecycle & reconnection polish**
+   - Tighten rejoin flows and spectator semantics.
+   - Add integration tests for `game_over` handling and socket cleanup.
 
-   - Tighten and test:
-
-     - Rejoin flows (client disconnects and reconnects mid-game).
-     - Spectator joins/leaves and enforcing read-only semantics.
-     - `game_over` handling (no lingering pending choices, sockets leave rooms cleanly).
-
-   - Add or extend integration tests under `tests/unit/WebSocketServer.aiTurn.integration.test.ts` and related suites.
-
-7. __HUD and GamePage UX__
-
-   - Enhance `GameHUD` and `GamePage` to display, for both backend and sandbox:
-
-     - Current player + phase.
-     - Rings in hand/on board/eliminated per player.
-     - Territory counts.
-     - Simple timers (`timeControl` and `timeRemaining`) even if initially cosmetic.
-
-   - Add a compact event log for moves and PlayerChoices to aid debugging and teaching.
+7. **HUD and GamePage UX**
+   - Enhance `GameHUD` with phase, ring counts, territory stats, and timers.
+   - Add a compact event log for moves and choices.
 
 ### Tier 4 – AI Observability & Gradual Strengthening (P1–P2)
 
-8. __Add AI telemetry__
+8. **Add AI telemetry**
+   - Log call type, latency, and success/failure in `AIServiceClient`.
+   - Expose basic metrics via Prometheus/Grafana.
 
-   - In `AIServiceClient` and `AIInteractionHandler`, record and/or log:
-
-     - Call type (move vs choice type).
-     - Latency.
-     - Success vs timeout vs error + fallback.
-
-   - Optionally expose these via Prometheus/Grafana later; for now, even structured logs are a big win for debugging.
-
-9. __Targeted heuristic AI improvements (no big bang)__
-
-   - Once parity is solid, apply small, measurable adjustments to `heuristic_ai.py` based on observed weaknesses (e.g., tunnel‑vision on lines, poor territory awareness) using your AI simulation and trace harnesses.
+9. **Targeted heuristic AI improvements**
+   - Apply small adjustments to `heuristic_ai.py` based on observed weaknesses.
 
 ### Tier 5 – Persistence, Replays, and Stats (P2)
 
-10. __Lifecycle persistence and basic replays__
+10. **Lifecycle persistence and basic replays**
+    - Ensure DB game lifecycle is correct (`WAITING` → `ACTIVE` → `COMPLETED`).
+    - Add a move-history panel in the client.
 
-    - Ensure DB game lifecycle (`WAITING` → `ACTIVE` → `COMPLETED`), `startedAt`/`endedAt`, and `winnerId` are always correct.
-    - Add a simple move-history panel in the client (based on `GameHistoryEntry`) and a server-side “replay on GameEngine” helper for offline analysis.
-
-11. __Stats & leaderboards__
-
-    - Once game results are reliable, wire up ELO/ratings and simple leaderboards using existing Prisma models.
+11. **Stats & leaderboards**
+    - Wire up ELO/ratings and simple leaderboards.

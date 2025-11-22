@@ -1,13 +1,59 @@
 import {
   BoardState,
+  BoardType,
   Player,
   Position,
   Territory,
   BOARD_CONFIGS,
   positionToString,
-  RingStack
+  RingStack,
 } from '../../shared/types/game';
 import { forceEliminateCapOnBoard, ForcedEliminationResult } from './sandboxElimination';
+
+const TERRITORY_TRACE_DEBUG =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
+
+const adjacencyCache = new Map<string, Map<string, string[]>>();
+
+function getAdjacencyGraph(boardType: BoardType): Map<string, string[]> {
+  if (!adjacencyCache.has(boardType)) {
+    const graph = new Map<string, string[]>();
+    const config = BOARD_CONFIGS[boardType];
+
+    const positions: Position[] = [];
+    if (boardType === 'hexagonal') {
+      const radius = config.size - 1;
+      for (let q = -radius; q <= radius; q++) {
+        const r1 = Math.max(-radius, -q - radius);
+        const r2 = Math.min(radius, -q + radius);
+        for (let r = r1; r <= r2; r++) {
+          const s = -q - r;
+          positions.push({ x: q, y: r, z: s });
+        }
+      }
+    } else {
+      for (let x = 0; x < config.size; x++) {
+        for (let y = 0; y < config.size; y++) {
+          positions.push({ x, y });
+        }
+      }
+    }
+
+    // Dummy board for isValidPositionOnBoard check inside getTerritoryNeighbors
+    const dummyBoard = { type: boardType } as BoardState;
+
+    for (const pos of positions) {
+      const posStr = positionToString(pos);
+      const neighbors = getTerritoryNeighbors(dummyBoard, pos);
+      graph.set(posStr, neighbors.map(positionToString));
+    }
+
+    adjacencyCache.set(boardType, graph);
+  }
+  return adjacencyCache.get(boardType)!;
+}
 
 /**
  * Sandbox territory helpers
@@ -30,12 +76,7 @@ function isValidPositionOnBoard(board: BoardState, pos: Position): boolean {
     return dist <= radius;
   }
 
-  return (
-    pos.x >= 0 &&
-    pos.x < config.size &&
-    pos.y >= 0 &&
-    pos.y < config.size
-  );
+  return pos.x >= 0 && pos.x < config.size && pos.y >= 0 && pos.y < config.size;
 }
 
 function getTerritoryNeighbors(board: BoardState, pos: Position): Position[] {
@@ -50,14 +91,14 @@ function getTerritoryNeighbors(board: BoardState, pos: Position): Position[] {
       { x: 0, y: 1, z: -1 },
       { x: -1, y: 1, z: 0 },
       { x: -1, y: 0, z: 1 },
-      { x: 0, y: -1, z: 1 }
+      { x: 0, y: -1, z: 1 },
     ];
 
     for (const d of directions) {
       const n: Position = {
         x: pos.x + d.x,
         y: pos.y + d.y,
-        z: (pos.z || 0) + d.z
+        z: (pos.z || 0) + d.z,
       };
       if (isValidPositionOnBoard(board, n)) {
         result.push(n);
@@ -71,7 +112,7 @@ function getTerritoryNeighbors(board: BoardState, pos: Position): Position[] {
       { x: 0, y: 1 },
       { x: 1, y: 0 },
       { x: 0, y: -1 },
-      { x: -1, y: 0 }
+      { x: -1, y: 0 },
     ];
     for (const d of dirs) {
       const n: Position = { x: pos.x + d.x, y: pos.y + d.y };
@@ -156,28 +197,60 @@ function exploreRegionWithBorderColor(
   visitedGlobal: Set<string>
 ): Position[] {
   const region: Position[] = [];
-  const queue: Position[] = [start];
+  const startKey = positionToString(start);
+  const queue: string[] = [startKey];
   const localVisited = new Set<string>();
+  const adjacencyGraph = getAdjacencyGraph(board.type);
 
   while (queue.length > 0) {
-    const current = queue.shift()!;
-    const key = positionToString(current);
-    if (localVisited.has(key)) continue;
-    localVisited.add(key);
-    visitedGlobal.add(key);
+    const currentKey = queue.shift()!;
+    if (localVisited.has(currentKey)) continue;
+    localVisited.add(currentKey);
+    visitedGlobal.add(currentKey);
 
-    if (isCollapsedSpace(board, current)) continue;
+    // Optimization: check directly against board maps using string key
+    if (board.collapsedSpaces.has(currentKey)) continue;
 
-    const marker = getMarkerOwner(board, current);
-    if (marker === borderColor) continue;
+    const marker = board.markers.get(currentKey);
+    if (marker?.player === borderColor) continue;
 
-    region.push(current);
+    // This space is part of the region
+    // Only convert to Position when adding to result
+    // We need to parse it because the result expects Position[]
+    // But we can optimize by parsing only once at the end?
+    // No, we push to region array inside loop.
+    // We can parse here.
+    // Wait, we can use a helper to parse or just stringToPosition if available?
+    // sandboxTerritory doesn't import stringToPosition?
+    // It imports positionToString.
+    // It doesn't import stringToPosition.
+    // I need to check imports.
+    // It imports positionToString from shared/types/game.
+    // I should import stringToPosition too.
+    // But wait, I can just parse it manually or import it.
+    // Let's check imports again.
+    // It imports positionToString.
+    // I'll add stringToPosition to imports.
 
-    const neighbors = getTerritoryNeighbors(board, current);
-    for (const n of neighbors) {
-      const nk = positionToString(n);
-      if (!localVisited.has(nk) && isValidPositionOnBoard(board, n)) {
-        queue.push(n);
+    // For now, I'll assume I can add it.
+    // But wait, I can't change imports in this block easily without another block.
+    // I'll use a local helper or just parse it.
+    // Or I can just use the existing `getAllPositions` logic which returns Positions.
+    // But here I have a key.
+    // I'll add stringToPosition to imports in a separate block first.
+    // Actually, I can just parse it: "x,y" or "x,y,z".
+    const parts = currentKey.split(',').map(Number);
+    const currentPos =
+      parts.length === 3 ? { x: parts[0], y: parts[1], z: parts[2] } : { x: parts[0], y: parts[1] };
+
+    region.push(currentPos);
+
+    const neighbors = adjacencyGraph.get(currentKey);
+    if (neighbors) {
+      for (const neighborKey of neighbors) {
+        if (!localVisited.has(neighborKey)) {
+          queue.push(neighborKey);
+        }
       }
     }
   }
@@ -191,25 +264,31 @@ function exploreRegionWithoutMarkerBorder(
   visitedGlobal: Set<string>
 ): Position[] {
   const region: Position[] = [];
-  const queue: Position[] = [start];
+  const startKey = positionToString(start);
+  const queue: string[] = [startKey];
   const localVisited = new Set<string>();
+  const adjacencyGraph = getAdjacencyGraph(board.type);
 
   while (queue.length > 0) {
-    const current = queue.shift()!;
-    const key = positionToString(current);
-    if (localVisited.has(key)) continue;
-    localVisited.add(key);
-    visitedGlobal.add(key);
+    const currentKey = queue.shift()!;
+    if (localVisited.has(currentKey)) continue;
+    localVisited.add(currentKey);
+    visitedGlobal.add(currentKey);
 
-    if (isCollapsedSpace(board, current)) continue;
+    if (board.collapsedSpaces.has(currentKey)) continue;
 
-    region.push(current);
+    const parts = currentKey.split(',').map(Number);
+    const currentPos =
+      parts.length === 3 ? { x: parts[0], y: parts[1], z: parts[2] } : { x: parts[0], y: parts[1] };
 
-    const neighbors = getTerritoryNeighbors(board, current);
-    for (const n of neighbors) {
-      const nk = positionToString(n);
-      if (!localVisited.has(nk) && isValidPositionOnBoard(board, n)) {
-        queue.push(n);
+    region.push(currentPos);
+
+    const neighbors = adjacencyGraph.get(currentKey);
+    if (neighbors) {
+      for (const neighborKey of neighbors) {
+        if (!localVisited.has(neighborKey)) {
+          queue.push(neighborKey);
+        }
       }
     }
   }
@@ -280,7 +359,7 @@ function findRegionsWithBorderColor(
       disconnected.push({
         spaces: regionSpaces,
         controllingPlayer: 0,
-        isDisconnected: true
+        isDisconnected: true,
       });
     }
   }
@@ -316,7 +395,7 @@ function findRegionsWithoutMarkerBorder(
       disconnected.push({
         spaces: regionSpaces,
         controllingPlayer: 0,
-        isDisconnected: true
+        isDisconnected: true,
       });
     }
   }
@@ -406,7 +485,7 @@ export function getBorderMarkerPositionsForRegion(
     { x: 0, y: 1 },
     { x: 1, y: -1 },
     { x: 1, y: 0 },
-    { x: 1, y: 1 }
+    { x: 1, y: 1 },
   ];
 
   const hexDirs = [
@@ -415,7 +494,7 @@ export function getBorderMarkerPositionsForRegion(
     { x: 0, y: 1, z: -1 },
     { x: -1, y: 1, z: 0 },
     { x: -1, y: 0, z: 1 },
-    { x: 0, y: -1, z: 1 }
+    { x: 0, y: -1, z: 1 },
   ];
 
   while (queue.length > 0) {
@@ -423,9 +502,10 @@ export function getBorderMarkerPositionsForRegion(
     const dirs = config.type === 'hexagonal' ? hexDirs : mooreDirs;
 
     for (const d of dirs) {
-      const n: Position = config.type === 'hexagonal'
-        ? { x: current.x + d.x, y: current.y + d.y, z: (current.z || 0) + (d as any).z }
-        : { x: current.x + (d as any).x, y: current.y + (d as any).y };
+      const n: Position =
+        config.type === 'hexagonal'
+          ? { x: current.x + d.x, y: current.y + d.y, z: (current.z || 0) + (d as any).z }
+          : { x: current.x + (d as any).x, y: current.y + (d as any).y };
 
       const nk = positionToString(n);
       if (visited.has(nk)) continue;
@@ -441,7 +521,35 @@ export function getBorderMarkerPositionsForRegion(
     }
   }
 
-  return Array.from(borderMarkers.values());
+  const borderMarkersArray = Array.from(borderMarkers.values());
+
+  if (TERRITORY_TRACE_DEBUG) {
+    const regionSpacesSample = regionSpaces.slice(0, 12).map(positionToString);
+    const seedMarkersSample = Array.from(borderSeedMap.values()).slice(0, 12).map(positionToString);
+    const borderMarkersSample = borderMarkersArray.slice(0, 12).map(positionToString);
+
+    const containsInRegion = (x: number, y: number) =>
+      regionSpaces.some((p) => p.x === x && p.y === y);
+    const containsInBorder = (x: number, y: number) =>
+      borderMarkersArray.some((p) => p.x === x && p.y === y);
+
+    // eslint-disable-next-line no-console
+    console.log('[sandboxTerritory.getBorderMarkerPositionsForRegion]', {
+      boardType: board.type,
+      regionSize: regionSpaces.length,
+      regionSample: regionSpacesSample,
+      seedCount: borderSeedMap.size,
+      seedSample: seedMarkersSample,
+      borderCount: borderMarkersArray.length,
+      borderSample: borderMarkersSample,
+      region_contains_3_7: containsInRegion(3, 7),
+      region_contains_4_0: containsInRegion(4, 0),
+      border_contains_3_7: containsInBorder(3, 7),
+      border_contains_4_0: containsInBorder(4, 0),
+    });
+  }
+
+  return borderMarkersArray;
 }
 
 /**
@@ -463,10 +571,10 @@ export function processDisconnectedRegionOnBoard(
     collapsedSpaces: new Map(board.collapsedSpaces),
     territories: new Map(board.territories),
     formedLines: [...board.formedLines],
-    eliminatedRings: { ...board.eliminatedRings }
+    eliminatedRings: { ...board.eliminatedRings },
   };
 
-  let nextPlayers: Player[] = players.map(p => ({ ...p }));
+  let nextPlayers: Player[] = players.map((p) => ({ ...p }));
 
   // 1. Determine border markers that participate in this region's boundary.
   const borderMarkers = getBorderMarkerPositionsForRegion(nextBoard, regionSpaces);
@@ -500,7 +608,7 @@ export function processDisconnectedRegionOnBoard(
 
   // Update territorySpaces for moving player.
   const territoryGain = regionSpaces.length + borderMarkers.length;
-  nextPlayers = nextPlayers.map(p =>
+  nextPlayers = nextPlayers.map((p) =>
     p.playerNumber === movingPlayer
       ? { ...p, territorySpaces: p.territorySpaces + territoryGain }
       : p
@@ -509,11 +617,10 @@ export function processDisconnectedRegionOnBoard(
   // 5. Credit all internal eliminations to the moving player.
   if (internalRingsEliminated > 0) {
     const newEliminated = { ...nextBoard.eliminatedRings };
-    newEliminated[movingPlayer] =
-      (newEliminated[movingPlayer] || 0) + internalRingsEliminated;
+    newEliminated[movingPlayer] = (newEliminated[movingPlayer] || 0) + internalRingsEliminated;
     nextBoard = { ...nextBoard, eliminatedRings: newEliminated };
 
-    nextPlayers = nextPlayers.map(p =>
+    nextPlayers = nextPlayers.map((p) =>
       p.playerNumber === movingPlayer
         ? { ...p, eliminatedRings: p.eliminatedRings + internalRingsEliminated }
         : p
@@ -541,6 +648,6 @@ export function processDisconnectedRegionOnBoard(
   return {
     board: elimResult.board,
     players: elimResult.players,
-    totalRingsEliminatedDelta: totalDelta
+    totalRingsEliminatedDelta: totalDelta,
   };
 }

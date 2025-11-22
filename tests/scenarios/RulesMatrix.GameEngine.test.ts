@@ -6,7 +6,7 @@ import {
   Position,
   TimeControl,
   BOARD_CONFIGS,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 import { lineRewardRuleScenarios, LineRewardRuleScenario } from './rulesMatrix';
 
@@ -34,7 +34,7 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
+      territorySpaces: 0,
     },
     {
       id: 'p2',
@@ -45,8 +45,8 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
-    }
+      territorySpaces: 0,
+    },
   ];
 
   function createEngine(boardType: BoardType): {
@@ -74,7 +74,7 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
       rings,
       stackHeight: rings.length,
       capHeight: rings.length,
-      controllingPlayer: playerNumber
+      controllingPlayer: playerNumber,
     };
     boardManager.setStack(position, stack, gameState.board);
   }
@@ -116,8 +116,8 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
             player: 1,
             positions: linePositions,
             length: linePositions.length,
-            direction: { x: 1, y: 0 }
-          }
+            direction: { x: 1, y: 0 },
+          },
         ])
         .mockImplementation(() => []);
 
@@ -146,10 +146,8 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
       const stackKey = positionToString(stackPos);
       const id = scenario.ref.id;
 
-      const isExact =
-        scenario.overlengthBy === 0 && id === 'Rules_11_2_Q7_exact_length_line';
-      const isOption2Default =
-        id === 'Rules_11_3_Q22_overlength_line_option2_default';
+      const isExact = scenario.overlengthBy === 0 && id === 'Rules_11_2_Q7_exact_length_line';
+      const isOption2Default = id === 'Rules_11_3_Q22_overlength_line_option2_default';
       const isOption1FullCollapse =
         id === 'Rules_11_3_Q22_overlength_line_option1_full_collapse_square19';
 
@@ -188,4 +186,116 @@ describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
       expect(findAllLinesSpy).toHaveBeenCalled();
     }
   );
+
+  test('Rules_11_3_Q22_overlength_line_option1_full_collapse_square19 → backend Option 1 via PlayerChoice', async () => {
+    const scenario = lineRewardRuleScenarios.find(
+      (s) => s.ref.id === 'Rules_11_3_Q22_overlength_line_option1_full_collapse_square19'
+    );
+    if (!scenario) {
+      throw new Error(
+        'Missing Rules_11_3_Q22_overlength_line_option1_full_collapse_square19 scenario'
+      );
+    }
+
+    const interactionManagerStub: any = {
+      async requestChoice(choice: any) {
+        if (choice.type === 'line_reward_option') {
+          return {
+            choiceId: choice.id,
+            playerNumber: choice.playerNumber,
+            choiceType: choice.type,
+            selectedOption: 'option_1_collapse_all_and_eliminate',
+          };
+        }
+
+        const selectedOption =
+          Array.isArray(choice.options) && choice.options.length > 0
+            ? choice.options[0]
+            : undefined;
+
+        return {
+          choiceId: choice.id,
+          playerNumber: choice.playerNumber,
+          choiceType: choice.type,
+          selectedOption,
+        };
+      },
+    };
+
+    const { boardType } = scenario;
+    const engine = new GameEngine(
+      'rules-matrix-lines-option1',
+      boardType,
+      basePlayers,
+      timeControl,
+      false,
+      interactionManagerStub
+    );
+    const engineAny: any = engine;
+    const engineState: GameState = engineAny.gameState as GameState;
+    const board = engineState.board;
+
+    const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+    const totalLength = requiredLength + scenario.overlengthBy;
+
+    engineState.currentPlayer = 1;
+
+    // Clear any existing board state for a clean scenario.
+    board.markers.clear();
+    board.stacks.clear();
+    board.collapsedSpaces.clear();
+
+    // Synthetic horizontal line starting at x=0 on the configured row.
+    const linePositions: Position[] = [];
+    for (let i = 0; i < totalLength; i++) {
+      linePositions.push({ x: i, y: scenario.rowIndex });
+    }
+
+    const findAllLinesSpy = jest.spyOn(engineAny.boardManager, 'findAllLines');
+    findAllLinesSpy
+      .mockImplementationOnce(() => [
+        {
+          player: 1,
+          positions: linePositions,
+          length: linePositions.length,
+          direction: { x: 1, y: 0 },
+        },
+      ])
+      .mockImplementation(() => []);
+
+    // Provide a stack for player 1 that will be used for elimination when
+    // Option 1 is chosen.
+    const stackPos: Position = { x: 7, y: 7 };
+    makeStack(engineAny.boardManager, engineState, 1, 2, stackPos);
+
+    const player1Before = engineState.players.find((p) => p.playerNumber === 1)!;
+    const initialTerritory = player1Before.territorySpaces;
+    const initialEliminated = player1Before.eliminatedRings;
+    const initialTotalEliminated = engineState.totalRingsEliminated;
+    const initialCollapsed = board.collapsedSpaces.size;
+
+    await engineAny.processLineFormations();
+
+    const player1After = engineState.players.find((p) => p.playerNumber === 1)!;
+    const collapsedKeysAfter = new Set<string>();
+    for (const [key, owner] of board.collapsedSpaces) {
+      if (owner === 1) collapsedKeysAfter.add(key);
+    }
+
+    const collapsedDelta = collapsedKeysAfter.size - initialCollapsed;
+    const eliminatedDeltaPlayer1 = player1After.eliminatedRings - initialEliminated;
+    const totalEliminatedDelta = engineState.totalRingsEliminated - initialTotalEliminated;
+    const stackKey = positionToString(stackPos);
+
+    // Option 1 expectations: the entire overlength line is collapsed and
+    // one of the moving player's caps/rings is eliminated, with territory
+    // gain equal to the full line length.
+    expect(collapsedDelta).toBe(totalLength);
+    expect(eliminatedDeltaPlayer1).toBeGreaterThan(0);
+    expect(totalEliminatedDelta).toBeGreaterThan(0);
+    expect(player1After.territorySpaces).toBe(initialTerritory + totalLength);
+    expect(board.stacks.get(stackKey)).toBeUndefined();
+
+    expect(findAllLinesSpy).toHaveBeenCalled();
+  });
 });

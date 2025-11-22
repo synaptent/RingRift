@@ -3,9 +3,6 @@ import os
 import time
 import argparse
 
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from app.models import GameState, BoardType, GamePhase, GameStatus, Player, TimeControl, BoardState, AIConfig
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.minimax_ai import MinimaxAI

@@ -7,13 +7,13 @@ import {
   Player,
   Position,
   BoardState,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 import { hashGameState } from '../../src/shared/engine/core';
 import {
   ClientSandboxEngine,
   SandboxConfig,
-  SandboxInteractionHandler
+  SandboxInteractionHandler,
 } from '../../src/client/sandbox/ClientSandboxEngine';
 import {
   enumerateCaptureSegmentsFromBoard,
@@ -77,7 +77,7 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: boardConfig.ringsPerPlayer,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       } as Player;
     });
 
@@ -99,11 +99,11 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
     const config: SandboxConfig = {
       boardType,
       numPlayers,
-      playerKinds: Array.from({ length: numPlayers }, () => 'ai')
+      playerKinds: Array.from({ length: numPlayers }, () => 'ai'),
     };
 
     const handler: SandboxInteractionHandler = {
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<any> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<any> {
         const anyChoice = choice as any;
 
         // For capture_direction choices, deterministically pick the option
@@ -131,7 +131,7 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
             choiceId: anyChoice.id,
             playerNumber: anyChoice.playerNumber,
             choiceType: anyChoice.type,
-            selectedOption: selected
+            selectedOption: selected,
           };
         }
 
@@ -140,9 +140,9 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
           choiceId: anyChoice.id,
           playerNumber: anyChoice.playerNumber,
           choiceType: anyChoice.type,
-          selectedOption
+          selectedOption,
         };
-      }
+      },
     };
 
     return new ClientSandboxEngine({ config, interactionHandler: handler });
@@ -225,17 +225,13 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
       player: marker.player,
     }));
 
-    const collapsed = Array.from(board.collapsedSpaces.entries()).map(
-      ([key, owner]) => ({
-        key,
-        owner,
-      }),
-    );
+    const collapsed = Array.from(board.collapsedSpaces.entries()).map(([key, owner]) => ({
+      key,
+      owner,
+    }));
 
     const lines: string[] = [];
-    lines.push(
-      `boardSlice: from=${positionToString(from)} rowY=${rowY} colX=${colX}`,
-    );
+    lines.push(`boardSlice: from=${positionToString(from)} rowY=${rowY} colX=${colX}`);
     lines.push('  stacksOnRow: ' + JSON.stringify(stacksOnRow));
     lines.push('  stacksOnCol: ' + JSON.stringify(stacksOnCol));
     lines.push('  markers: ' + JSON.stringify(markers));
@@ -302,12 +298,7 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
         const distance = Math.max(Math.abs(x), Math.abs(y), Math.abs(z));
         return distance <= radius;
       }
-      return (
-        pos.x >= 0 &&
-        pos.x < config.size &&
-        pos.y >= 0 &&
-        pos.y < config.size
-      );
+      return pos.x >= 0 && pos.x < config.size && pos.y >= 0 && pos.y < config.size;
     };
 
     const adapters: CaptureBoardAdapters = {
@@ -320,13 +311,7 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
       },
     };
 
-    return enumerateCaptureSegmentsFromBoard(
-      boardType,
-      board,
-      from,
-      playerNumber,
-      adapters
-    );
+    return enumerateCaptureSegmentsFromBoard(boardType, board, from, playerNumber, adapters);
   }
 
   async function resolveBackendChainIfPresent(backend: GameEngine): Promise<void> {
@@ -392,15 +377,12 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
     }
   }
 
-  function buildBackendMovementSummaryForMismatch(
-    sandboxMove: Move,
-    backendMoves: Move[]
-  ): string {
+  function buildBackendMovementSummaryForMismatch(sandboxMove: Move, backendMoves: Move[]): string {
     const movementLikeBackendMoves = backendMoves.filter(
-      m => m.type === 'move_ring' || m.type === 'move_stack'
+      (m) => m.type === 'move_ring' || m.type === 'move_stack'
     );
 
-    const sameFromBackendMoves = movementLikeBackendMoves.filter(m =>
+    const sameFromBackendMoves = movementLikeBackendMoves.filter((m) =>
       positionsEqual(m.from, sandboxMove.from)
     );
 
@@ -445,12 +427,10 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
     // that any discrepancy in landing positions surfaces as a real rules
     // mismatch rather than being masked by loose matching.
     if (a.type === 'overtaking_capture' && b.type === 'overtaking_capture') {
-      const sameOrigin =
-        positionsEqual(a.from, b.from) && !!a.captureTarget && !!b.captureTarget;
+      const sameOrigin = positionsEqual(a.from, b.from) && !!a.captureTarget && !!b.captureTarget;
       const sameTarget =
         sameOrigin && positionsEqual(a.captureTarget as Position, b.captureTarget as Position);
-      const sameLanding =
-        sameTarget && positionsEqual(a.to as Position, b.to as Position);
+      const sameLanding = sameTarget && positionsEqual(a.to as Position, b.to as Position);
 
       return sameLanding;
     }
@@ -516,648 +496,636 @@ describe('Sandbox vs Backend AI heuristic coverage (square8 focus)', () => {
     for (const numPlayers of playerCounts) {
       const scenarioLabel = `${boardType} with ${numPlayers} AI players`;
 
-      test(
-        `${scenarioLabel}: sandbox AI moves are always legal according to backend getValidMoves on early turns`,
-        async () => {
-          const boardIndex = boardTypes.indexOf(boardType);
-          const playerCountIndex = playerCounts.indexOf(numPlayers);
+      test(`${scenarioLabel}: sandbox AI moves are always legal according to backend getValidMoves on early turns`, async () => {
+        const boardIndex = boardTypes.indexOf(boardType);
+        const playerCountIndex = playerCounts.indexOf(numPlayers);
 
-          for (let run = 0; run < RUNS_PER_SCENARIO; run++) {
-            const seed = 1 + run + playerCountIndex * 1000 + boardIndex * 100000;
-            const rng = makePrng(seed);
+        for (let run = 0; run < RUNS_PER_SCENARIO; run++) {
+          const seed = 1 + run + playerCountIndex * 1000 + boardIndex * 100000;
+          const rng = makePrng(seed);
 
-            const backend = createBackendEngine(boardType, numPlayers);
-            const sandbox = createSandboxEngine(boardType, numPlayers);
+          const backend = createBackendEngine(boardType, numPlayers);
+          const sandbox = createSandboxEngine(boardType, numPlayers);
 
-            const originalRandom = Math.random;
-            Math.random = rng;
+          const originalRandom = Math.random;
+          Math.random = rng;
 
-            try {
-             for (let step = 0; step < MAX_STEPS_PER_RUN; step++) {
-               // Advance backend through any automatic line/territory
-               // phases so that getValidMoves reflects a
-               // player-actionable phase, mirroring sandbox integration
-               // of these phases into its movement flow.
-               backend.stepAutomaticPhasesForTesting();
-               await resolveBackendChainIfPresent(backend);
+          try {
+            for (let step = 0; step < MAX_STEPS_PER_RUN; step++) {
+              // Advance backend through any automatic line/territory
+              // phases so that getValidMoves reflects a
+              // player-actionable phase, mirroring sandbox integration
+              // of these phases into its movement flow.
+              backend.stepAutomaticPhasesForTesting();
+              await resolveBackendChainIfPresent(backend);
 
-               const backendBefore = backend.getGameState();
-               const sandboxBefore = sandbox.getGameState();
+              const backendBefore = backend.getGameState();
+              const sandboxBefore = sandbox.getGameState();
 
-               // If either engine is no longer active, stop this run early.
-               if (
-                 backendBefore.gameStatus !== 'active' ||
-                 sandboxBefore.gameStatus !== 'active'
-               ) {
-                 break;
-               }
-
-               // For early-turn heuristic coverage we expect the current
-               // player to be aligned as long as we apply sandbox-chosen
-               // moves back into the backend.
-               if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
-                 throw new Error(
-                   `Pre-step desync in heuristic coverage harness: scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, ` +
-                     `backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
-                     `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
-                 );
-               }
-
-               const backendSummaryBefore = summariseStateLite(backendBefore);
-               const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
-
-               // Once the engines have diverged structurally (different stack /
-               // marker / collapsed-space counts or elimination totals), further
-               // AI-coverage comparisons for this run are no longer meaningful.
-               // Stop early so this harness focuses on the prefix of the game
-               // where both rules engines are still in sync.
-               if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
-                 break;
-               }
-
-               // Known legacy divergence: square8 / 2 AI players / seed=17 at
-               // step=15 exhibits a late stack-height mismatch between backend
-               // and sandbox due to historical placement/capture sequencing
-               // differences. The dedicated trace-parity harness
-               // (Sandbox_vs_Backend.seed17.traceDebug.test.ts) now verifies
-               // full canonical parity for this seed independently, so we skip
-               // this single heuristic-coverage step to keep the harness focused
-               // on the prefix where both engines remain structurally aligned.
-               if (boardType === 'square8' && numPlayers === 2 && seed === 17 && step === 15) {
-                 break;
-               }
-
-               const currentPlayer = sandboxBefore.currentPlayer;
-               const backendMoves = backend.getValidMoves(currentPlayer);
-
-               const sandboxBeforeHash = hashGameState(sandboxBefore);
-
-                await sandbox.maybeRunAITurn();
-
-                const sandboxAfter = sandbox.getGameState();
-                const sandboxAfterHash = hashGameState(sandboxAfter);
-                const sandboxMove = sandbox.getLastAIMoveForTesting();
-
-                // Case 1: sandbox AI produced no logical move this tick.
-                if (!sandboxMove) {
-                  // If the sandbox state did not change and the game remains
-                  // active while backend still reports legal moves, this is a
-                  // pure heuristic under-coverage: sandbox AI failed to act
-                  // where backend believes actions are possible.
-                  if (
-                    sandboxBeforeHash === sandboxAfterHash &&
-                    sandboxAfter.gameStatus === 'active' &&
-                    backendMoves.length > 0
-                  ) {
-                    throw new Error(
-                      `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
-                        `scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, player=${currentPlayer}`
-                    );
-                  }
-
-                  // Otherwise, either the sandbox state changed (e.g. via
-                  // forced elimination or victory) or backend also has no
-                  // legal moves. In both cases, there is nothing further to
-                  // check on this step; continue to the next one.
-                  continue;
-                }
-
-                // Case 2: sandbox AI produced a logical move. It must be
-                // present in backend getValidMoves for the same player.
-                const matchingBackendMove = findMatchingBackendMove(
-                  sandboxMove,
-                  backendMoves
-                );
-
-                if (!matchingBackendMove) {
-                  const debugInfo = buildBackendMovementSummaryForMismatch(
-                    sandboxMove,
-                    backendMoves
-                  );
-
-                  const boardSlice = describeBoardSliceForMismatch(
-                    sandboxBefore,
-                    sandboxMove
-                  );
-
-                  throw new Error(
-                    `Sandbox AI move is not legal according to backend getValidMoves; ` +
-                      `scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
-                      `sandboxMove=${describeMoveForLog(sandboxMove)}, backendMovesCount=${backendMoves.length}` +
-                      `\n${debugInfo}` +
-                      `\n${boardSlice}`
-                  );
-                }
-
-                // Apply the matching backend move so that subsequent steps
-                // continue from aligned states as far as possible.
-                const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
-                const result = await backend.makeMove(
-                  payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-                );
-
-                if (!result.success) {
-                  throw new Error(
-                    `Backend makeMove failed when applying sandbox AI move; ` +
-                      `scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
-                      `sandboxMove=${describeMoveForLog(sandboxMove)}, error=${result.error}`
-                  );
-                }
+              // If either engine is no longer active, stop this run early.
+              if (backendBefore.gameStatus !== 'active' || sandboxBefore.gameStatus !== 'active') {
+                break;
               }
-            } finally {
-              Math.random = originalRandom;
+
+              // For early-turn heuristic coverage we expect the current
+              // player to be aligned as long as we apply sandbox-chosen
+              // moves back into the backend.
+              if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
+                throw new Error(
+                  `Pre-step desync in heuristic coverage harness: scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, ` +
+                    `backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
+                    `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
+                );
+              }
+
+              const backendSummaryBefore = summariseStateLite(backendBefore);
+              const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
+
+              // Once the engines have diverged structurally (different stack /
+              // marker / collapsed-space counts or elimination totals), further
+              // AI-coverage comparisons for this run are no longer meaningful.
+              // Stop early so this harness focuses on the prefix of the game
+              // where both rules engines are still in sync.
+              if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
+                break;
+              }
+
+              // Known legacy divergence: square8 / 2 AI players / seed=17 at
+              // step=15 exhibits a late stack-height mismatch between backend
+              // and sandbox due to historical placement/capture sequencing
+              // differences. The dedicated trace-parity harness
+              // (Sandbox_vs_Backend.seed17.traceDebug.test.ts) now verifies
+              // full canonical parity for this seed independently, so we skip
+              // this single heuristic-coverage step to keep the harness focused
+              // on the prefix where both engines remain structurally aligned.
+              if (boardType === 'square8' && numPlayers === 2 && seed === 17 && step === 15) {
+                break;
+              }
+
+              const currentPlayer = sandboxBefore.currentPlayer;
+              const backendMoves = backend.getValidMoves(currentPlayer);
+
+              const sandboxBeforeHash = hashGameState(sandboxBefore);
+
+              await sandbox.maybeRunAITurn();
+
+              const sandboxAfter = sandbox.getGameState();
+              const sandboxAfterHash = hashGameState(sandboxAfter);
+              const sandboxMove = sandbox.getLastAIMoveForTesting();
+
+              // Case 1: sandbox AI produced no logical move this tick.
+              if (!sandboxMove) {
+                // If the sandbox state did not change and the game remains
+                // active while backend still reports legal moves, this is a
+                // pure heuristic under-coverage: sandbox AI failed to act
+                // where backend believes actions are possible.
+                if (
+                  sandboxBeforeHash === sandboxAfterHash &&
+                  sandboxAfter.gameStatus === 'active' &&
+                  backendMoves.length > 0
+                ) {
+                  throw new Error(
+                    `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
+                      `scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, player=${currentPlayer}`
+                  );
+                }
+
+                // Otherwise, either the sandbox state changed (e.g. via
+                // forced elimination or victory) or backend also has no
+                // legal moves. In both cases, there is nothing further to
+                // check on this step; continue to the next one.
+                continue;
+              }
+
+              // Case 2: sandbox AI produced a logical move. It must be
+              // present in backend getValidMoves for the same player.
+              const matchingBackendMove = findMatchingBackendMove(sandboxMove, backendMoves);
+
+              if (!matchingBackendMove) {
+                const debugInfo = buildBackendMovementSummaryForMismatch(sandboxMove, backendMoves);
+
+                const boardSlice = describeBoardSliceForMismatch(sandboxBefore, sandboxMove);
+
+                throw new Error(
+                  `Sandbox AI move is not legal according to backend getValidMoves; ` +
+                    `scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
+                    `sandboxMove=${describeMoveForLog(sandboxMove)}, backendMovesCount=${backendMoves.length}` +
+                    `\n${debugInfo}` +
+                    `\n${boardSlice}`
+                );
+              }
+
+              // Apply the matching backend move so that subsequent steps
+              // continue from aligned states as far as possible.
+              const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
+              const result = await backend.makeMove(
+                payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+              );
+
+              if (!result.success) {
+                throw new Error(
+                  `Backend makeMove failed when applying sandbox AI move; ` +
+                    `scenario=${scenarioLabel}, run=${run}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
+                    `sandboxMove=${describeMoveForLog(sandboxMove)}, error=${result.error}`
+                );
+              }
             }
+          } finally {
+            Math.random = originalRandom;
           }
         }
-      );
+      });
     }
   }
 
-  test(
-    'DIAGNOSTIC ONLY: shared-core capture enumeration for square8 / 2 AI players / seed=17 at step=15',
-    async () => {
-      const boardType: BoardType = 'square8';
-      const numPlayers = 2;
-      const seed = 17;
-      const targetStep = 15;
-      const rng = makePrng(seed);
+  test('DIAGNOSTIC ONLY: shared-core capture enumeration for square8 / 2 AI players / seed=17 at step=15', async () => {
+    const boardType: BoardType = 'square8';
+    const numPlayers = 2;
+    const seed = 17;
+    const targetStep = 15;
+    const rng = makePrng(seed);
 
-      const backend = createBackendEngine(boardType, numPlayers);
-      const sandbox = createSandboxEngine(boardType, numPlayers);
+    const backend = createBackendEngine(boardType, numPlayers);
+    const sandbox = createSandboxEngine(boardType, numPlayers);
 
-      const originalRandom = Math.random;
-      Math.random = rng;
+    const originalRandom = Math.random;
+    Math.random = rng;
 
-      try {
-        for (let step = 0; step <= targetStep; step++) {
-          // Keep backend in a player-actionable phase.
-          backend.stepAutomaticPhasesForTesting();
-          await resolveBackendChainIfPresent(backend);
+    try {
+      for (let step = 0; step <= targetStep; step++) {
+        // Keep backend in a player-actionable phase.
+        backend.stepAutomaticPhasesForTesting();
+        await resolveBackendChainIfPresent(backend);
 
-          const backendBefore = backend.getGameState();
-          const sandboxBefore = sandbox.getGameState();
+        const backendBefore = backend.getGameState();
+        const sandboxBefore = sandbox.getGameState();
 
+        if (backendBefore.gameStatus !== 'active' || sandboxBefore.gameStatus !== 'active') {
+          throw new Error(
+            `Game ended before reaching target step; step=${step}, backendStatus=${backendBefore.gameStatus}, sandboxStatus=${sandboxBefore.gameStatus}`
+          );
+        }
+
+        if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
+          throw new Error(
+            `Pre-step desync in diagnostic helper: step=${step}, backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
+              `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
+          );
+        }
+
+        const backendSummaryBefore = summariseStateLite(backendBefore);
+        const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
+
+        if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
+          throw new Error(
+            `Structural divergence before target step; step=${step}, backend=${JSON.stringify(
+              backendSummaryBefore
+            )}, sandbox=${JSON.stringify(sandboxSummaryBefore)}`
+          );
+        }
+
+        if (step === targetStep) {
+          const from: Position = { x: 4, y: 5 };
+          const playerNumber = 2;
+
+          const backendSegments = enumerateSharedCoreCaptureSegments(
+            backendBefore,
+            from,
+            playerNumber
+          );
+          const sandboxSegments = enumerateSharedCoreCaptureSegments(
+            sandboxBefore,
+            from,
+            playerNumber
+          );
+
+          const formatSegments = (
+            segs: Array<{ from: Position; target: Position; landing: Position }>
+          ) =>
+            segs.map(
+              (seg) =>
+                `${positionToString(seg.from)}->${positionToString(
+                  seg.target
+                )}->${positionToString(seg.landing)}`
+            );
+
+          // eslint-disable-next-line no-console
+          console.log('[diagnostic seed17] shared-core capture segments from 4,5 for player 2', {
+            backend: formatSegments(backendSegments),
+            sandbox: formatSegments(sandboxSegments),
+          });
+
+          const dummyMove: Move = {
+            id: '',
+            type: 'move_stack',
+            player: playerNumber,
+            from,
+            to: from,
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber: -1,
+          };
+
+          // eslint-disable-next-line no-console
+          console.log(
+            '[diagnostic seed17] backend board slice at 4,5 before target step',
+            '\n' + describeBoardSliceForMismatch(backendBefore, dummyMove)
+          );
+
+          // eslint-disable-next-line no-console
+          console.log(
+            '[diagnostic seed17] sandbox board slice at 4,5 before target step',
+            '\n' + describeBoardSliceForMismatch(sandboxBefore, dummyMove)
+          );
+
+          const targetSignature = '4,5->3,5->0,5';
+          const backendSigSet = new Set(formatSegments(backendSegments));
+          const sandboxSigSet = new Set(formatSegments(sandboxSegments));
+
+          const backendHas = backendSigSet.has(targetSignature);
+          const sandboxHas = sandboxSigSet.has(targetSignature);
+
+          // Historically this assertion required backend and sandbox to
+          // agree on the presence of the specific capture segment
+          // 4,5->3,5->0,5 for the seed-17 scenario. The remaining mismatch
+          // is now understood as a harness-induced board divergence rather
+          // than a shared-core rules bug, and full canonical parity for
+          // this seed is covered by the dedicated trace-debug test.
+          // We keep the formatted segment sets and board-slice diagnostics
+          // for manual inspection but do not fail the suite on this single
+          // legacy discrepancy.
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[diagnostic seed17] target capture presence mismatch (backend vs sandbox)',
+            { backendHas, sandboxHas }
+          );
+
+          break;
+        }
+
+        const currentPlayer = sandboxBefore.currentPlayer;
+        const backendMoves = backend.getValidMoves(currentPlayer);
+        const sandboxBeforeHash = hashGameState(sandboxBefore);
+
+        await sandbox.maybeRunAITurn();
+
+        const sandboxAfter = sandbox.getGameState();
+        const sandboxAfterHash = hashGameState(sandboxAfter);
+        const sandboxMove = sandbox.getLastAIMoveForTesting();
+
+        if (!sandboxMove) {
           if (
-            backendBefore.gameStatus !== 'active' ||
-            sandboxBefore.gameStatus !== 'active'
+            sandboxBeforeHash === sandboxAfterHash &&
+            sandboxAfter.gameStatus === 'active' &&
+            backendMoves.length > 0
           ) {
             throw new Error(
-              `Game ended before reaching target step; step=${step}, backendStatus=${backendBefore.gameStatus}, sandboxStatus=${sandboxBefore.gameStatus}`
+              `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
+                `step=${step}, player=${currentPlayer}`
             );
           }
 
-          if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
-            throw new Error(
-              `Pre-step desync in diagnostic helper: step=${step}, backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
-                `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
-            );
-          }
-
-          const backendSummaryBefore = summariseStateLite(backendBefore);
-          const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
-
-          if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
-            throw new Error(
-              `Structural divergence before target step; step=${step}, backend=${JSON.stringify(
-                backendSummaryBefore
-              )}, sandbox=${JSON.stringify(sandboxSummaryBefore)}`
-            );
-          }
-
-          if (step === targetStep) {
-            const from: Position = { x: 4, y: 5 };
-            const playerNumber = 2;
-
-            const backendSegments = enumerateSharedCoreCaptureSegments(
-              backendBefore,
-              from,
-              playerNumber
-            );
-            const sandboxSegments = enumerateSharedCoreCaptureSegments(
-              sandboxBefore,
-              from,
-              playerNumber
-            );
-
-            const formatSegments = (
-              segs: Array<{ from: Position; target: Position; landing: Position }>
-            ) =>
-              segs.map(
-                (seg) =>
-                  `${positionToString(seg.from)}->${positionToString(
-                    seg.target
-                  )}->${positionToString(seg.landing)}`
-              );
-
-            // eslint-disable-next-line no-console
-            console.log(
-              '[diagnostic seed17] shared-core capture segments from 4,5 for player 2',
-              {
-                backend: formatSegments(backendSegments),
-                sandbox: formatSegments(sandboxSegments),
-              }
-            );
-
-            const dummyMove: Move = {
-              id: '',
-              type: 'move_stack',
-              player: playerNumber,
-              from,
-              to: from,
-              timestamp: new Date(),
-              thinkTime: 0,
-              moveNumber: -1,
-            };
-
-            // eslint-disable-next-line no-console
-            console.log(
-              '[diagnostic seed17] backend board slice at 4,5 before target step',
-              '\n' + describeBoardSliceForMismatch(backendBefore, dummyMove)
-            );
-
-            // eslint-disable-next-line no-console
-            console.log(
-              '[diagnostic seed17] sandbox board slice at 4,5 before target step',
-              '\n' + describeBoardSliceForMismatch(sandboxBefore, dummyMove)
-            );
-
-            const targetSignature = '4,5->3,5->0,5';
-            const backendSigSet = new Set(formatSegments(backendSegments));
-            const sandboxSigSet = new Set(formatSegments(sandboxSegments));
-
-            const backendHas = backendSigSet.has(targetSignature);
-            const sandboxHas = sandboxSigSet.has(targetSignature);
-
-            // Historically this assertion required backend and sandbox to
-            // agree on the presence of the specific capture segment
-            // 4,5->3,5->0,5 for the seed-17 scenario. The remaining mismatch
-            // is now understood as a harness-induced board divergence rather
-            // than a shared-core rules bug, and full canonical parity for
-            // this seed is covered by the dedicated trace-debug test.
-            // We keep the formatted segment sets and board-slice diagnostics
-            // for manual inspection but do not fail the suite on this single
-            // legacy discrepancy.
-            // eslint-disable-next-line no-console
-            console.warn(
-              '[diagnostic seed17] target capture presence mismatch (backend vs sandbox)',
-              { backendHas, sandboxHas }
-            );
-
-            break;
-          }
-
-          const currentPlayer = sandboxBefore.currentPlayer;
-          const backendMoves = backend.getValidMoves(currentPlayer);
-          const sandboxBeforeHash = hashGameState(sandboxBefore);
-
-          await sandbox.maybeRunAITurn();
-
-          const sandboxAfter = sandbox.getGameState();
-          const sandboxAfterHash = hashGameState(sandboxAfter);
-          const sandboxMove = sandbox.getLastAIMoveForTesting();
-
-          if (!sandboxMove) {
-            if (
-              sandboxBeforeHash === sandboxAfterHash &&
-              sandboxAfter.gameStatus === 'active' &&
-              backendMoves.length > 0
-            ) {
-              throw new Error(
-                `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
-                  `step=${step}, player=${currentPlayer}`
-              );
-            }
-
-            continue;
-          }
-
-          const matchingBackendMove = findMatchingBackendMove(
-            sandboxMove,
-            backendMoves
-          );
-
-          if (!matchingBackendMove) {
-            throw new Error(
-              `Unexpected mismatch before target step; step=${step}, ` +
-                `sandboxMove=${describeMoveForLog(
-                  sandboxMove
-                )}, backendMovesCount=${backendMoves.length}`
-            );
-          }
-
-          const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
-          const result = await backend.makeMove(
-            payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-          );
-
-          if (!result.success) {
-            throw new Error(
-              `Backend makeMove failed before target step; step=${step}, error=${result.error}`
-            );
-          }
+          continue;
         }
-      } finally {
-        Math.random = originalRandom;
+
+        const matchingBackendMove = findMatchingBackendMove(sandboxMove, backendMoves);
+
+        if (!matchingBackendMove) {
+          throw new Error(
+            `Unexpected mismatch before target step; step=${step}, ` +
+              `sandboxMove=${describeMoveForLog(
+                sandboxMove
+              )}, backendMovesCount=${backendMoves.length}`
+          );
+        }
+
+        const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
+        const result = await backend.makeMove(
+          payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+        );
+
+        if (!result.success) {
+          throw new Error(
+            `Backend makeMove failed before target step; step=${step}, error=${result.error}`
+          );
+        }
       }
+    } finally {
+      Math.random = originalRandom;
     }
-  );
+  });
 
-  test(
-    'square8 with 2 AI players / seed=14: sandbox AI moves remain legal and not under-covered up to 2000 steps',
-    async () => {
-      const boardType: BoardType = 'square8';
-      const numPlayers = 2;
-      const seed = 14; // Known failing sandbox AI simulation seed (square8 / 2p)
-      const scenarioLabel = `${boardType} with ${numPlayers} AI players (deep seed ${seed})`;
+  test('square8 with 2 AI players / seed=14: sandbox AI moves remain legal and not under-covered up to 2000 steps', async () => {
+    const boardType: BoardType = 'square8';
+    const numPlayers = 2;
+    const seed = 14; // Known failing sandbox AI simulation seed (square8 / 2p)
+    const scenarioLabel = `${boardType} with ${numPlayers} AI players (deep seed ${seed})`;
 
-      const rng = makePrng(seed);
-      const backend = createBackendEngine(boardType, numPlayers);
-      const sandbox = createSandboxEngine(boardType, numPlayers);
+    const rng = makePrng(seed);
+    const backend = createBackendEngine(boardType, numPlayers);
+    const sandbox = createSandboxEngine(boardType, numPlayers);
 
-      const originalRandom = Math.random;
-      Math.random = rng;
+    const originalRandom = Math.random;
+    Math.random = rng;
 
-      try {
-        for (let step = 0; step < MAX_STEPS_DEEP_SEED; step++) {
-          // As in the early-turn harness, ensure the backend has
-          // progressed through any automatic bookkeeping phases so
-          // getValidMoves is evaluated from a player-actionable phase.
-          backend.stepAutomaticPhasesForTesting();
-          await resolveBackendChainIfPresent(backend);
+    try {
+      for (let step = 0; step < MAX_STEPS_DEEP_SEED; step++) {
+        // As in the early-turn harness, ensure the backend has
+        // progressed through any automatic bookkeeping phases so
+        // getValidMoves is evaluated from a player-actionable phase.
+        backend.stepAutomaticPhasesForTesting();
+        await resolveBackendChainIfPresent(backend);
 
-          const backendBefore = backend.getGameState();
-          const sandboxBefore = sandbox.getGameState();
+        const backendBefore = backend.getGameState();
+        const sandboxBefore = sandbox.getGameState();
 
+        if (backendBefore.gameStatus !== 'active' || sandboxBefore.gameStatus !== 'active') {
+          break;
+        }
+
+        if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
+          throw new Error(
+            `Pre-step desync in deep-seed heuristic coverage: scenario=${scenarioLabel}, seed=${seed}, step=${step}, ` +
+              `backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
+              `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
+          );
+        }
+
+        const backendSummaryBefore = summariseStateLite(backendBefore);
+        const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
+
+        if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
+          break;
+        }
+
+        const currentPlayer = sandboxBefore.currentPlayer;
+        const backendMoves = backend.getValidMoves(currentPlayer);
+        const sandboxBeforeHash = hashGameState(sandboxBefore);
+
+        await sandbox.maybeRunAITurn();
+
+        const sandboxAfter = sandbox.getGameState();
+        const sandboxAfterHash = hashGameState(sandboxAfter);
+        const sandboxMove = sandbox.getLastAIMoveForTesting();
+
+        if (!sandboxMove) {
           if (
-            backendBefore.gameStatus !== 'active' ||
-            sandboxBefore.gameStatus !== 'active'
+            sandboxBeforeHash === sandboxAfterHash &&
+            sandboxAfter.gameStatus === 'active' &&
+            backendMoves.length > 0
           ) {
-            break;
-          }
-
-          if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
             throw new Error(
-              `Pre-step desync in deep-seed heuristic coverage: scenario=${scenarioLabel}, seed=${seed}, step=${step}, ` +
-                `backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
-                `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
+              `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
+                `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}. ` +
+                `Backend moves: ${JSON.stringify(
+                  backendMoves.map((m) => ({
+                    type: m.type,
+                    from: m.from,
+                    to: m.to,
+                    captureTarget: m.captureTarget,
+                  }))
+                )}`
             );
           }
 
-          const backendSummaryBefore = summariseStateLite(backendBefore);
-          const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
-
-          if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
-            break;
-          }
-
-          const currentPlayer = sandboxBefore.currentPlayer;
-          const backendMoves = backend.getValidMoves(currentPlayer);
-          const sandboxBeforeHash = hashGameState(sandboxBefore);
-
-          await sandbox.maybeRunAITurn();
-
-          const sandboxAfter = sandbox.getGameState();
-          const sandboxAfterHash = hashGameState(sandboxAfter);
-          const sandboxMove = sandbox.getLastAIMoveForTesting();
-
-          if (!sandboxMove) {
-            if (
-              sandboxBeforeHash === sandboxAfterHash &&
-              sandboxAfter.gameStatus === 'active' &&
-              backendMoves.length > 0
-            ) {
-              throw new Error(
-                `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
-                  `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}`
-              );
-            }
-
-            continue;
-          }
-
-          const matchingBackendMove = findMatchingBackendMove(sandboxMove, backendMoves);
-
-          if (!matchingBackendMove) {
-            const debugInfo = buildBackendMovementSummaryForMismatch(sandboxMove, backendMoves);
-
-            throw new Error(
-              `Sandbox AI move is not legal according to backend getValidMoves (deep-seed run); ` +
-                `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
-                `sandboxMove=${describeMoveForLog(sandboxMove)}, backendMovesCount=${backendMoves.length}` +
-                `\n${debugInfo}`
-            );
-          }
-
-          const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
-          const result = await backend.makeMove(
-            payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-          );
-
-          if (!result.success) {
-            throw new Error(
-              `Backend makeMove failed when applying sandbox AI move (deep-seed run); ` +
-                `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
-                `sandboxMove=${describeMoveForLog(sandboxMove)}, error=${result.error}`
-            );
-          }
+          continue;
         }
-      } finally {
-        Math.random = originalRandom;
+
+        const matchingBackendMove = findMatchingBackendMove(sandboxMove, backendMoves);
+
+        if (!matchingBackendMove) {
+          const debugInfo = buildBackendMovementSummaryForMismatch(sandboxMove, backendMoves);
+
+          throw new Error(
+            `Sandbox AI move is not legal according to backend getValidMoves (deep-seed run); ` +
+              `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
+              `sandboxMove=${describeMoveForLog(sandboxMove)}, backendMovesCount=${backendMoves.length}` +
+              `\n${debugInfo}`
+          );
+        }
+
+        const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
+        const result = await backend.makeMove(
+          payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+        );
+
+        // Debug: Verify stack consistency after move
+        const backendStacks = backend.getGameState().board.stacks;
+        const sandboxStacks = sandbox.getGameState().board.stacks;
+        const s27 = sandboxStacks.get('2,7');
+        const b27 = backendStacks.get('2,7');
+        console.log(
+          `[Test Debug] Step ${step} post-move. 2,7 exists? Backend=${!!b27}, Sandbox=${!!s27}`
+        );
+        if (s27 || b27) {
+          console.log(
+            `[Test Debug] Step ${step} post-move 2,7 height: Sandbox=${s27?.stackHeight}, Backend=${b27?.stackHeight}`
+          );
+        }
+
+        if (!result.success) {
+          throw new Error(
+            `Backend makeMove failed when applying sandbox AI move (deep-seed run); ` +
+              `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
+              `sandboxMove=${describeMoveForLog(sandboxMove)}, error=${result.error}`
+          );
+        }
       }
+    } finally {
+      Math.random = originalRandom;
     }
-  );
+  });
 
-  test(
-    'square8 with 2 AI players / seed=5: sandbox AI moves remain legal and not under-covered up to 2000 steps',
-    async () => {
-      const boardType: BoardType = 'square8';
-      const numPlayers = 2;
-      const seed = 5; // Sandbox AI simulation seed for run=4 (square8 / 2p)
-      const scenarioLabel = `${boardType} with ${numPlayers} AI players (deep seed ${seed})`;
+  test('square8 with 2 AI players / seed=5: sandbox AI moves remain legal and not under-covered up to 2000 steps', async () => {
+    const boardType: BoardType = 'square8';
+    const numPlayers = 2;
+    const seed = 5; // Sandbox AI simulation seed for run=4 (square8 / 2p)
+    const scenarioLabel = `${boardType} with ${numPlayers} AI players (deep seed ${seed})`;
 
-      const rng = makePrng(seed);
-      const backend = createBackendEngine(boardType, numPlayers);
-      const sandbox = createSandboxEngine(boardType, numPlayers);
+    const rng = makePrng(seed);
+    const backend = createBackendEngine(boardType, numPlayers);
+    const sandbox = createSandboxEngine(boardType, numPlayers);
 
-      const originalRandom = Math.random;
-      Math.random = rng;
+    const originalRandom = Math.random;
+    Math.random = rng;
 
-      try {
-        for (let step = 0; step < MAX_STEPS_DEEP_SEED; step++) {
-          backend.stepAutomaticPhasesForTesting();
-          await resolveBackendChainIfPresent(backend);
+    try {
+      for (let step = 0; step < MAX_STEPS_DEEP_SEED; step++) {
+        backend.stepAutomaticPhasesForTesting();
+        await resolveBackendChainIfPresent(backend);
 
-          const backendBefore = backend.getGameState();
-          const sandboxBefore = sandbox.getGameState();
+        const backendBefore = backend.getGameState();
+        const sandboxBefore = sandbox.getGameState();
 
+        if (backendBefore.gameStatus !== 'active' || sandboxBefore.gameStatus !== 'active') {
+          break;
+        }
+
+        if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
+          throw new Error(
+            `Pre-step desync in deep-seed heuristic coverage: scenario=${scenarioLabel}, seed=${seed}, step=${step}, ` +
+              `backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
+              `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
+          );
+        }
+
+        const backendSummaryBefore = summariseStateLite(backendBefore);
+        const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
+
+        if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
+          break;
+        }
+
+        const currentPlayer = sandboxBefore.currentPlayer;
+        const backendMoves = backend.getValidMoves(currentPlayer);
+        const sandboxBeforeHash = hashGameState(sandboxBefore);
+
+        await sandbox.maybeRunAITurn();
+
+        const sandboxAfter = sandbox.getGameState();
+        const sandboxAfterHash = hashGameState(sandboxAfter);
+        const sandboxMove = sandbox.getLastAIMoveForTesting();
+
+        if (!sandboxMove) {
           if (
-            backendBefore.gameStatus !== 'active' ||
-            sandboxBefore.gameStatus !== 'active'
+            sandboxBeforeHash === sandboxAfterHash &&
+            sandboxAfter.gameStatus === 'active' &&
+            backendMoves.length > 0
           ) {
-            break;
-          }
-
-          if (backendBefore.currentPlayer !== sandboxBefore.currentPlayer) {
             throw new Error(
-              `Pre-step desync in deep-seed heuristic coverage: scenario=${scenarioLabel}, seed=${seed}, step=${step}, ` +
-                `backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
-                `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
+              `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
+                `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}. ` +
+                `Backend moves: ${JSON.stringify(
+                  backendMoves.map((m) => ({
+                    type: m.type,
+                    from: m.from,
+                    to: m.to,
+                    captureTarget: m.captureTarget,
+                  }))
+                )}`
             );
           }
 
-          const backendSummaryBefore = summariseStateLite(backendBefore);
-          const sandboxSummaryBefore = summariseStateLite(sandboxBefore);
-
-          if (!statesStructurallyAligned(backendSummaryBefore, sandboxSummaryBefore)) {
-            break;
-          }
-
-          const currentPlayer = sandboxBefore.currentPlayer;
-          const backendMoves = backend.getValidMoves(currentPlayer);
-          const sandboxBeforeHash = hashGameState(sandboxBefore);
-
-          await sandbox.maybeRunAITurn();
-
-          const sandboxAfter = sandbox.getGameState();
-          const sandboxAfterHash = hashGameState(sandboxAfter);
-          const sandboxMove = sandbox.getLastAIMoveForTesting();
-
-          if (!sandboxMove) {
-            if (
-              sandboxBeforeHash === sandboxAfterHash &&
-              sandboxAfter.gameStatus === 'active' &&
-              backendMoves.length > 0
-            ) {
-              throw new Error(
-                `Sandbox AI produced no move but backend has ${backendMoves.length} legal moves; ` +
-                  `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}`
-              );
-            }
-
-            continue;
-          }
-
-          const matchingBackendMove = findMatchingBackendMove(sandboxMove, backendMoves);
-
-          if (!matchingBackendMove) {
-            const debugInfo = buildBackendMovementSummaryForMismatch(sandboxMove, backendMoves);
-
-            throw new Error(
-              `Sandbox AI move is not legal according to backend getValidMoves (deep-seed run); ` +
-                `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
-                `sandboxMove=${describeMoveForLog(sandboxMove)}, backendMovesCount=${backendMoves.length}` +
-                `\n${debugInfo}`
-            );
-          }
-
-          const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
-          const result = await backend.makeMove(
-            payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-          );
-
-          if (!result.success) {
-            throw new Error(
-              `Backend makeMove failed when applying sandbox AI move (deep-seed run); ` +
-                `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
-                `sandboxMove=${describeMoveForLog(sandboxMove)}, error=${result.error}`
-            );
-          }
+          continue;
         }
-      } finally {
-        Math.random = originalRandom;
+
+        const matchingBackendMove = findMatchingBackendMove(sandboxMove, backendMoves);
+
+        if (!matchingBackendMove) {
+          const debugInfo = buildBackendMovementSummaryForMismatch(sandboxMove, backendMoves);
+
+          throw new Error(
+            `Sandbox AI move is not legal according to backend getValidMoves (deep-seed run); ` +
+              `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
+              `sandboxMove=${describeMoveForLog(sandboxMove)}, backendMovesCount=${backendMoves.length}` +
+              `\n${debugInfo}`
+          );
+        }
+
+        const { id, timestamp, moveNumber, ...payload } = matchingBackendMove;
+        const result = await backend.makeMove(
+          payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+        );
+
+        if (!result.success) {
+          throw new Error(
+            `Backend makeMove failed when applying sandbox AI move (deep-seed run); ` +
+              `scenario=${scenarioLabel}, seed=${seed}, step=${step}, player=${currentPlayer}, ` +
+              `sandboxMove=${describeMoveForLog(sandboxMove)}, error=${result.error}`
+          );
+        }
       }
+    } finally {
+      Math.random = originalRandom;
     }
-  );
+  });
 
   // Optional diagnostic: backend movement set around the first movement-phase turn
   // for a specific seed. This is skipped by default to avoid noisy output in CI,
   // but can be enabled locally when investigating movement semantics.
-  test.skip(
-    'DIAGNOSTIC ONLY: backend movement moves at first movement-phase turn for square8 / 2p / seed=1',
-    async () => {
-      const boardType: BoardType = 'square8';
-      const numPlayers = 2;
-      const seed = 1;
-      const rng = makePrng(seed);
+  test.skip('DIAGNOSTIC ONLY: backend movement moves at first movement-phase turn for square8 / 2p / seed=1', async () => {
+    const boardType: BoardType = 'square8';
+    const numPlayers = 2;
+    const seed = 1;
+    const rng = makePrng(seed);
 
-      const backend = createBackendEngine(boardType, numPlayers);
+    const backend = createBackendEngine(boardType, numPlayers);
 
-      const originalRandom = Math.random;
-      Math.random = rng;
+    const originalRandom = Math.random;
+    Math.random = rng;
 
-      try {
-        // Drive the backend AI until we encounter the first explicit movement
-        // phase. At that point, log all movement-like moves for inspection.
-        // We cap the loop to avoid accidental infinite runs if something
-        // changes in the rules.
-        const MAX_BACKEND_STEPS = 64;
+    try {
+      // Drive the backend AI until we encounter the first explicit movement
+      // phase. At that point, log all movement-like moves for inspection.
+      // We cap the loop to avoid accidental infinite runs if something
+      // changes in the rules.
+      const MAX_BACKEND_STEPS = 64;
 
-        for (let step = 0; step < MAX_BACKEND_STEPS; step++) {
-          const state = backend.getGameState();
+      for (let step = 0; step < MAX_BACKEND_STEPS; step++) {
+        const state = backend.getGameState();
 
-          if (state.gameStatus !== 'active') {
-            console.log(
-              '[diagnostic] game ended before reaching a movement phase:',
-              state.gameStatus,
-              'phase=',
-              state.currentPhase
-            );
-            break;
-          }
+        if (state.gameStatus !== 'active') {
+          console.log(
+            '[diagnostic] game ended before reaching a movement phase:',
+            state.gameStatus,
+            'phase=',
+            state.currentPhase
+          );
+          break;
+        }
 
-          const backendMoves = backend.getValidMoves(state.currentPlayer);
+        const backendMoves = backend.getValidMoves(state.currentPlayer);
 
-          // If we are in movement phase, dump the movement-like moves and stop.
-          if (state.currentPhase === 'movement') {
-            const movementLike = backendMoves.filter(
-              m => m.type === 'move_ring' || m.type === 'move_stack'
-            );
-
-            console.log(
-              `[diagnostic] First movement-phase turn reached at step ${step}, ` +
-                `player=${state.currentPlayer}, backendMovesCount=${backendMoves.length}`
-            );
-            console.log(
-              '[diagnostic] All movement-like backend moves:',
-              describeMovesListForLog(movementLike)
-            );
-            break;
-          }
-
-          if (!backendMoves.length) {
-            console.log(
-              '[diagnostic] No backend moves available at step',
-              step,
-              'phase=',
-              state.currentPhase
-            );
-            break;
-          }
-
-          // Pick a random backend move using the deterministic RNG to keep
-          // this diagnostic reproducible.
-          const idx = Math.floor(rng() * backendMoves.length);
-          const move = backendMoves[idx];
-          const { id, timestamp, moveNumber, ...payload } = move;
-          const result = await backend.makeMove(
-            payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+        // If we are in movement phase, dump the movement-like moves and stop.
+        if (state.currentPhase === 'movement') {
+          const movementLike = backendMoves.filter(
+            (m) => m.type === 'move_ring' || m.type === 'move_stack'
           );
 
-          if (!result.success) {
-            console.log(
-              '[diagnostic] backend makeMove failed at step',
-              step,
-              'move=',
-              describeMoveForLog(move),
-              'error=',
-              result.error
-            );
-            break;
-          }
+          console.log(
+            `[diagnostic] First movement-phase turn reached at step ${step}, ` +
+              `player=${state.currentPlayer}, backendMovesCount=${backendMoves.length}`
+          );
+          console.log(
+            '[diagnostic] All movement-like backend moves:',
+            describeMovesListForLog(movementLike)
+          );
+          break;
         }
-      } finally {
-        Math.random = originalRandom;
+
+        if (!backendMoves.length) {
+          console.log(
+            '[diagnostic] No backend moves available at step',
+            step,
+            'phase=',
+            state.currentPhase
+          );
+          break;
+        }
+
+        // Pick a random backend move using the deterministic RNG to keep
+        // this diagnostic reproducible.
+        const idx = Math.floor(rng() * backendMoves.length);
+        const move = backendMoves[idx];
+        const { id, timestamp, moveNumber, ...payload } = move;
+        const result = await backend.makeMove(
+          payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+        );
+
+        if (!result.success) {
+          console.log(
+            '[diagnostic] backend makeMove failed at step',
+            step,
+            'move=',
+            describeMoveForLog(move),
+            'error=',
+            result.error
+          );
+          break;
+        }
       }
+    } finally {
+      Math.random = originalRandom;
     }
-  );
+  });
 });

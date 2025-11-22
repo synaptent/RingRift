@@ -2,19 +2,21 @@
 
 ⚠️ **PROJECT STATUS: ENGINE/AI-FOCUSED BETA – BACKEND PLAY & AI TURNS WORK; UX & SCENARIO TESTS STILL IN PROGRESS** ⚠️
 
-> **Important:** Core game mechanics are largely implemented, and there is now a **playable backend game flow**: the server’s `GameEngine` drives rules, WebSocket-backed games use it as the source of truth, the React client renders boards and submits moves, and AI opponents can make moves via the Python AI service. In addition, a **client-local sandbox engine** (`ClientSandboxEngine`) powers the `/sandbox` route with strong rules parity and dedicated Jest suites for movement, captures, lines, territory, and victory checks. However, the UI/UX is still evolving and there is not yet a comprehensive scenario matrix for every rule/FAQ example. See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) and [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) for code‑verified status.
+> **Important:** Core game mechanics are largely implemented, and there is now a **playable backend game flow**: the server’s `GameEngine` drives rules, WebSocket-backed games use it as the source of truth, the React client renders boards and submits moves, and AI opponents can make moves via the Python AI service. In addition, a **client-local sandbox engine** (`ClientSandboxEngine`) powers the `/sandbox` route with strong rules parity and dedicated Jest suites for movement, captures, lines, territory, and victory checks. However, the UI/UX is still evolving and there is not yet a comprehensive scenario matrix for every rule/FAQ example. See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) for code‑verified status.
 
 A web-based multiplayer implementation of the RingRift strategy game supporting 2-4 players with flexible human/AI combinations across multiple board configurations.
 
 ## 📋 Current Status
 
-**Last Updated:** November 18, 2025  
-**Verification:** Code-verified assessment (see `CURRENT_STATE_ASSESSMENT.md`)  
-**Overall Progress:** Strong foundation with critical gaps; see `IMPLEMENTATION_STATUS.md` for the latest high-level summary.
+**Last Updated:** November 21, 2025
+**Verification:** Code-verified assessment (see `CURRENT_STATE_ASSESSMENT.md`)
+**Overall Progress:** Strong foundation with critical gaps; see `CURRENT_STATE_ASSESSMENT.md` for the latest high-level summary.
 
 ### ✅ What's Working
 
 - ✅ Project infrastructure (Docker, database, Redis, WebSocket)
+- ✅ **Session Management** - Robust `GameSessionManager` with distributed locking
+- ✅ **Rules Facade** - `RulesBackendFacade` abstracting Python/TS engine parity
 - ✅ TypeScript type system and architecture
 - ✅ Comprehensive game rules documentation
 - ✅ Server and client scaffolding
@@ -71,19 +73,23 @@ To understand the project and know which documents are authoritative for each ar
   - `RULES_ANALYSIS_PHASE2.md` – consistency and strategic assessment of the rules.
 
 - **Status & roadmap (canonical, living)**
-  - `CURRENT_STATE_ASSESSMENT.md` – factual, code-verified current state.
-  - `IMPLEMENTATION_STATUS.md` – short high-level status summary.
+  - `CURRENT_STATE_ASSESSMENT.md` – factual, code-verified current state (includes implementation status).
   - `TODO.md` – phase-structured task tracker.
   - `STRATEGIC_ROADMAP.md` – phased roadmap to production.
   - `KNOWN_ISSUES.md` – current P0/P1 bugs and gaps.
 
+- **Architecture & Design**
+  - `ARCHITECTURE_ASSESSMENT.md` – comprehensive architecture review and future design plans.
+  - `AI_ARCHITECTURE.md` – AI service architecture, assessment, and improvement plans.
+  - `RULES_ENGINE_ARCHITECTURE.md` – Python rules engine architecture and rollout strategy.
+
 - **Subsystem guides**
   - `tests/README.md` – Jest setup, test structure, and the rules/FAQ → scenario test matrix.
+  - `RULES_SCENARIO_MATRIX.md` – Canonical mapping of rules/FAQ sections to specific Jest test suites.
   - `ai-service/README.md` – Python AI microservice (Random/Heuristic AI, endpoints, setup).
-  - `CONTRIBUTING.md` – contribution workflow and historical phase breakdown (for background; always defer to the status & roadmap docs above for current tasks).
+  - `CONTRIBUTING.md` – contribution workflow and historical phase breakdown.
 
 - **Historical plans & evaluations**
-  - `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` – historical end-to-end playability plan; many items are now implemented.
   - Docs under `deprecated/` – earlier architecture and improvement plans, preserved for context only.
 
 ## 🎯 Overview
@@ -347,7 +353,8 @@ For a detailed, task-level view, see `TODO.md` (especially Phase 0/1/3S near-ter
 ### AI Integration _(planned/partially implemented)_
 
 - **Difficulty Levels**: AI profiles with difficulty ratings
-- **Smart Opponents**: Python service-backed RandomAI + HeuristicAI
+- **Smart Opponents**: Python service-backed RandomAI + HeuristicAI (production-ready)
+- **Experimental AI**: Minimax and MCTS implementations exist but are experimental (see `ai-service/README.md`)
 - **Mixed Games**: Human-AI combinations supported
 - **Future Work**: Stronger tactical AI and learning algorithms
 
@@ -567,7 +574,7 @@ npm test
 - Architecture assessment: `ARCHITECTURE_ASSESSMENT.md`
 - Current state assessment: `CURRENT_STATE_ASSESSMENT.md`
 - Strategic roadmap: `STRATEGIC_ROADMAP.md`
-- Playable game implementation plan: `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`
+- Playable game implementation plan (historical): `deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`
 - Test documentation: `tests/README.md`
 
 ## 🤝 Contributing

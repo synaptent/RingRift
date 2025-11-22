@@ -37,7 +37,7 @@ Key values (defaults are usually fine for local dev):
 - `REDIS_URL` – Redis connection string.
 - `JWT_SECRET`, `JWT_REFRESH_SECRET` – any non-empty secrets for local usage.
 - `CORS_ORIGIN` – usually `http://localhost:5173` for the Vite dev client.
-- `AI_SERVICE_URL` – URL for the Python AI service (see below). For local dev without Docker: `http://localhost:8001`.
+- `AI_SERVICE_URL` – URL for the Python AI service. For local dev without Docker: `http://localhost:8001`. When running the full Docker Compose stack, the `app` service is configured to talk to `http://ai-service:8001` inside the Docker network.
 
 ### 1.4 Start Database & Redis (Docker)
 
@@ -102,6 +102,28 @@ npm run test:coverage     # Coverage report
 
 > For a deeper understanding of what is implemented and where the gaps are, see `CURRENT_STATE_ASSESSMENT.md` and `README.md`.
 
+### 1.7 Configuration Reference (Core Environment Variables)
+
+Most configuration is controlled via a root `.env` file for local development and
+environment variables passed into containers via `docker-compose.yml`. The most
+important variables are:
+
+- `DATABASE_URL` – PostgreSQL connection string.
+  - Local dev + Docker: defaults to the `postgres` service
+    (`postgresql://ringrift:${DB_PASSWORD:-password}@postgres:5432/ringrift`).
+- `REDIS_URL` – Redis connection string.
+  - Local dev + Docker: defaults to the `redis` service (`redis://redis:6379`).
+- `JWT_SECRET`, `JWT_REFRESH_SECRET` – secrets used to sign access and refresh tokens.
+- `CORS_ORIGIN` – allowed origin for the browser client (usually `http://localhost:5173` in dev).
+- `AI_SERVICE_URL` – base URL for the Python AI service:
+  - Local dev without Docker: `http://localhost:8001`
+  - Docker Compose: `http://ai-service:8001` inside the `app` container (preconfigured in `docker-compose.yml`).
+- `RINGRIFT_RULES_MODE` – Controls the rules engine authority:
+  - `ts` (default): TypeScript engine is authoritative.
+  - `shadow`: TypeScript is authoritative, but Python engine runs in parallel for parity checks.
+  - `python`: Python engine is authoritative for validation (experimental).
+- `PORT` – port the Node backend listens on (default `3000` in dev).
+
 ---
 
 ## 2. AI Service Quick Start
@@ -149,7 +171,10 @@ AI_SERVICE_URL=http://localhost:8001
 
 ### 2.2 Option B – Dockerized AI Service
 
-There is **no dedicated `ai-service` entry in the root `docker-compose.yml`** at the moment. To run the AI service via Docker, build and run the container directly from the `ai-service` directory:
+The root `docker-compose.yml` now defines an `ai-service` service that will be
+started automatically when you run `docker compose up` (see section 3). If you
+want to run the AI service by itself (without the rest of the stack), you can
+still build and run the container directly from the `ai-service` directory:
 
 ```bash
 cd ai-service
@@ -161,13 +186,16 @@ docker build -t ringrift-ai-service .
 docker run --rm -p 8001:8001 ringrift-ai-service
 ```
 
-Then set in your root `.env`:
+Then set in your root `.env` if you are running the Node backend on the host:
 
 ```env
 AI_SERVICE_URL=http://localhost:8001
 ```
 
-You can later add an `ai-service` block to `docker-compose.yml` if you want the AI service managed alongside the main stack; the current configuration focuses on the Node app, database, Redis, and observability stack.
+> When you use the full Docker Compose stack, you generally do **not** need to
+> run this container manually. The `ai-service` service is started as part of
+> `docker compose up`, and the `app` service is already configured with
+> `AI_SERVICE_URL=http://ai-service:8001`.
 
 ### 2.3 Verifying the AI Service
 
@@ -197,10 +225,13 @@ The root `docker-compose.yml` currently defines the **main application stack**:
 - `nginx` – Reverse proxy (80/443) using `nginx.conf`
 - `postgres` – PostgreSQL database
 - `redis` – Redis instance
+- `ai-service` – Python FastAPI AI microservice (exposes port 8001; used by `AIServiceClient`)
 - `prometheus` – Prometheus TSDB
 - `grafana` – Grafana dashboards
 
-> The AI service is **not** yet included here and should be run separately (see above) if you want AI opponents in Docker-based environments.
+> The AI service is now included as the `ai-service` service; you do not need to
+> start it manually when using `docker compose up`. The `app` container is
+> configured with `AI_SERVICE_URL=http://ai-service:8001`.
 
 ### 3.1 Start the Core Stack
 
@@ -235,7 +266,10 @@ docker compose logs -f app
 docker compose down
 ```
 
-> When using Docker for everything, remember to point `AI_SERVICE_URL` inside the `app` container to the correct AI service address (e.g., `http://host.docker.internal:8001` or a future `ai-service` container name).
+> When using Docker for everything, the `app` service is already configured with
+> `AI_SERVICE_URL=http://ai-service:8001`. If you choose to run the AI service
+> outside Docker instead, override this value in your `.env` (for example,
+> `http://host.docker.internal:8001`).
 
 ---
 
@@ -265,7 +299,7 @@ For more context on **what is already covered** and where we’re headed with te
 
 - `CURRENT_STATE_ASSESSMENT.md` – coverage and feature completeness
 - `STRATEGIC_ROADMAP.md` – higher-level plan
-- `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` – concrete steps toward a playable MVP
+- `deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` – historical concrete steps toward a playable MVP; for current, code‑verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
 
 ---
 
@@ -303,16 +337,19 @@ For more detailed plans, see:
 ### 6.1 Common Python / AI Service Issues
 
 **"command not found: python3"**
+
 ```bash
 brew install python@3.11
 ```
 
 **"zsh: permission denied: ./setup.sh"**
+
 ```bash
 chmod +x ai-service/setup.sh ai-service/run.sh
 ```
 
 **"pip install" errors**
+
 ```bash
 cd ai-service
 python3 -m venv venv
@@ -321,6 +358,7 @@ pip install -r requirements.txt
 ```
 
 **"Port 8001 already in use"**
+
 ```bash
 lsof -i :8001
 kill -9 <PID>
@@ -329,10 +367,12 @@ kill -9 <PID>
 ### 6.2 Docker Issues
 
 **"command not found: docker"**
+
 - Install Docker Desktop, OrbStack, or Colima.
 - See `deprecated/DOCKER_SETUP.md` for historical Docker notes if needed.
 
 **"Cannot connect to the Docker daemon"**
+
 ```bash
 # Check if Docker is running
 docker info
@@ -342,6 +382,7 @@ colima start
 ```
 
 **Database connection issues from Node**
+
 - Make sure `docker compose up -d postgres redis` is running.
 - Verify `DATABASE_URL` in `.env` matches the credentials in `docker-compose.yml`.
 
@@ -354,8 +395,8 @@ RingRift/
 ├── ai-service/                 # Python AI microservice (FastAPI)
 │   ├── app/
 │   │   ├── main.py            # FastAPI entrypoint
-│   │   ├── models.py          # Pydantic models
-│   │   └── ai/                # AI implementations (random, heuristic, etc.)
+│   │   ├── models/            # Pydantic models (see models/core.py; mirrors src/shared/types/game.ts)
+│   │   └── ai/                # AI implementations (random, heuristic, MCTS, descent, etc.)
 │   ├── setup.sh               # Create Python venv + install deps
 │   ├── run.sh                 # Start AI service with hot reload
 │   ├── Dockerfile             # AI service Docker image

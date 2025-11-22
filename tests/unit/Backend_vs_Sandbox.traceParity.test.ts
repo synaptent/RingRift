@@ -3,7 +3,26 @@ import { runSandboxAITrace, replayMovesOnBackend, replayTraceOnSandbox } from '.
 import { formatMoveList } from '../../src/shared/engine/notation';
 
 /**
- * Backend vs Sandbox trace-based parity checks (minimal harness).
+ * Backend vs Sandbox trace-based parity checks (minimal harness, **trace-level**).
+ *
+ * Classification (see tests/README.md + tests/TEST_SUITE_PARITY_PLAN.md):
+ * - Level: trace-level parity smoke test.
+ * - Domain: backend GameEngine ↔ ClientSandboxEngine.
+ * - Canonical semantics: src/shared/engine/* plus rules-level suites such as:
+ *   - tests/unit/RefactoredEngine.test.ts
+ *   - tests/unit/RefactoredEngineParity.test.ts
+ *   - tests/unit/LineDetectionParity.rules.test.ts
+ *   - tests/unit/Seed14Move35LineParity.test.ts
+ *   and the scenario suites listed in RULES_SCENARIO_MATRIX.md.
+ *
+ * Contract:
+ * - Recorded traces are treated as **derived artifacts**, not ground truth.
+ * - If this harness fails but rules-level suites are green, treat the failing
+ *   seed/trace as **stale under the current semantics**.
+ * - In that case either:
+ *   - regenerate the trace with the current shared-engine semantics, or
+ *   - retire the seed from this harness and add/extend a focused rules-level
+ *     test that captures the intended behaviour (the "seed-14 pattern").
  *
  * For a small set of seeds, we:
  *   1) Generate a sandbox AI trace via runSandboxAITrace.
@@ -18,7 +37,20 @@ import { formatMoveList } from '../../src/shared/engine/notation';
 describe('Backend vs Sandbox trace parity (square8 / 2p)', () => {
   const boardType: BoardType = 'square8';
   const numPlayers = 2;
-  const seeds = [5, 14];
+  // NOTE: historical seed 14 used to exercise a trace that emitted a
+  // `process_line` move at a state where, under the corrected line
+  // semantics (Section 11.1 + shared BoardManager/sandboxLines
+  // detectors), no valid lines exist. That divergence is now covered
+  // and locked in by dedicated rules/parity tests (see
+  // Seed14Move35LineParity and TraceParity.seed14.firstDivergence),
+  // and the shared engine + detectors are treated as canonical.
+  //
+  // In line with the rules-over-traces policy, this minimal harness
+  // keeps its seed list focused on a single representative AI game
+  // (seed 5). Semantics for seed 14 (and any similar edge cases) are
+  // asserted via those more targeted rules-level suites rather than by
+  // preserving outdated traces here.
+  const seeds = [5];
   const MAX_STEPS = 60;
 
   for (const seed of seeds) {

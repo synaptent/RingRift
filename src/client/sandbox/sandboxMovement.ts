@@ -4,9 +4,13 @@ import {
   BOARD_CONFIGS,
   Position,
   RingStack,
-  positionToString
+  positionToString,
 } from '../../shared/types/game';
-import { calculateDistance, getMovementDirectionsForBoardType, getPathPositions } from '../../shared/engine/core';
+import {
+  calculateDistance,
+  getMovementDirectionsForBoardType,
+  getPathPositions,
+} from '../../shared/engine/core';
 
 export interface SimpleLanding {
   fromKey: string;
@@ -33,24 +37,44 @@ export function enumerateSimpleMovementLandings(
     const from = stack.position;
     const fromKey = positionToString(from);
 
+    if (fromKey === '2,7') {
+      // eslint-disable-next-line no-console
+      console.log(
+        '[Sandbox Movement Debug] Checking moves for 2,7. Board stacks keys:',
+        Array.from(board.stacks.keys())
+      );
+    }
+
     for (const dir of directions) {
       let step = 1;
       for (;;) {
         const to: Position = {
           x: from.x + dir.x * step,
           y: from.y + dir.y * step,
-          ...(dir.z !== undefined && { z: (from.z || 0) + dir.z * step })
+          ...(dir.z !== undefined && { z: (from.z || 0) + dir.z * step }),
         };
 
         const toKey = positionToString(to);
 
         // Stop once we move off the logical board or far beyond its bounds.
-        if (!isValidPosition(to) || Math.abs(to.x) > config.size * 2 || Math.abs(to.y) > config.size * 2) {
+        if (
+          !isValidPosition(to) ||
+          Math.abs(to.x) > config.size * 2 ||
+          Math.abs(to.y) > config.size * 2
+        ) {
+          if (fromKey === '2,7') {
+            // eslint-disable-next-line no-console
+            console.log(`[Sandbox Movement Debug] Off board or invalid at ${toKey} from 2,7`);
+          }
           break;
         }
 
         // Collapsed spaces block movement and cannot be landed on.
         if (board.collapsedSpaces.has(toKey)) {
+          if (fromKey === '2,7') {
+            // eslint-disable-next-line no-console
+            console.log(`[Sandbox Movement Debug] Collapsed space at ${toKey} from 2,7`);
+          }
           break;
         }
 
@@ -60,12 +84,38 @@ export function enumerateSimpleMovementLandings(
         let blocked = false;
         for (const pos of path) {
           const pathKey = positionToString(pos);
-          if (board.collapsedSpaces.has(pathKey) || board.stacks.has(pathKey)) {
+          const hasStack = board.stacks.has(pathKey);
+          const hasCollapsed = board.collapsedSpaces.has(pathKey);
+
+          if (fromKey === '2,7' && toKey === '4,7') {
+            // eslint-disable-next-line no-console
+            console.log(
+              `[Sandbox Movement Debug] Checking path pos '${pathKey}' for 2,7->4,7. Stack: ${hasStack}, Collapsed: ${hasCollapsed}`
+            );
+            if (pathKey === '3,7' && !hasStack) {
+              const keys = Array.from(board.stacks.keys());
+              const matching = keys.find((k) => k === '3,7');
+              // eslint-disable-next-line no-console
+              console.log('[Sandbox Movement Debug] Key check:', {
+                pathKey,
+                pathKeyLen: pathKey.length,
+                keysIncludePathKey: keys.includes(pathKey),
+                matchingKeyInMap: matching,
+                matchingKeyLen: matching?.length,
+              });
+            }
+          }
+
+          if (hasCollapsed || hasStack) {
             blocked = true;
             break;
           }
         }
         if (blocked) {
+          if (fromKey === '2,7') {
+            // eslint-disable-next-line no-console
+            console.log(`[Sandbox Movement Debug] Blocked path from 2,7 to ${toKey}`);
+          }
           break;
         }
 
@@ -82,13 +132,37 @@ export function enumerateSimpleMovementLandings(
           if (markerOwner !== undefined && markerOwner !== stack.controllingPlayer) {
             // Opponent marker: this cell is not a legal landing square,
             // but the ray continues past it.
+            if (fromKey === '2,7') {
+              // eslint-disable-next-line no-console
+              console.log(`[Sandbox Movement Debug] Opponent marker at ${toKey} from 2,7`);
+            }
             step += 1;
             continue;
           }
 
           const distance = calculateDistance(boardType, from, to);
           if (distance >= stack.stackHeight) {
+            if (fromKey === '2,7') {
+              // eslint-disable-next-line no-console
+              console.log(`[Sandbox Movement Debug] Adding move from 2,7 to ${toKey}`, {
+                fromKey,
+                toKey,
+                pushedFromKey: fromKey,
+              });
+            }
             results.push({ fromKey, to });
+            if (fromKey === '2,7') {
+              // eslint-disable-next-line no-console
+              console.log(
+                `[Sandbox Movement Debug] Results length after push: ${results.length}. Last item fromKey: ${results[results.length - 1].fromKey}`
+              );
+            }
+          } else if (fromKey === '2,7') {
+            // eslint-disable-next-line no-console
+            console.log(`[Sandbox Movement Debug] Distance too short from 2,7 to ${toKey}`, {
+              distance,
+              stackHeight: stack.stackHeight,
+            });
           }
 
           // Empty/own-marker-only spaces do not block further exploration;
@@ -101,7 +175,21 @@ export function enumerateSimpleMovementLandings(
         // movement, but we cannot move beyond that stack.
         const distance = calculateDistance(boardType, from, to);
         if (distance >= stack.stackHeight) {
+          if (fromKey === '2,7') {
+            // eslint-disable-next-line no-console
+            console.log(`[Sandbox Movement Debug] Adding move (merge) from 2,7 to ${toKey}`, {
+              fromKey,
+              toKey,
+              pushedFromKey: fromKey,
+            });
+          }
           results.push({ fromKey, to });
+        } else if (fromKey === '2,7') {
+          // eslint-disable-next-line no-console
+          console.log(`[Sandbox Movement Debug] Distance too short (merge) from 2,7 to ${toKey}`, {
+            distance,
+            stackHeight: stack.stackHeight,
+          });
         }
 
         // Stacks block further positions along this ray.
@@ -110,6 +198,28 @@ export function enumerateSimpleMovementLandings(
     }
   }
 
+  if (
+    results.length === 0 &&
+    board.stacks.has('2,7') &&
+    playerNumber === board.stacks.get('2,7')?.controllingPlayer
+  ) {
+    // eslint-disable-next-line no-console
+    console.log('[Sandbox Movement Debug] Returning 0 results for player', playerNumber);
+  }
+  if (board.stacks.has('2,7') && playerNumber === board.stacks.get('2,7')?.controllingPlayer) {
+    const movesFrom27 = results.filter((r) => r.fromKey === '2,7');
+    // eslint-disable-next-line no-console
+    console.log(
+      `[Sandbox Movement Debug] Returning ${results.length} results. Moves from 2,7: ${movesFrom27.length}`
+    );
+    if (movesFrom27.length === 0 && results.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        '[Sandbox Movement Debug] All fromKeys:',
+        results.map((r) => r.fromKey)
+      );
+    }
+  }
   return results;
 }
 

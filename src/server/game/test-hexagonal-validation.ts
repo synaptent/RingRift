@@ -1,6 +1,6 @@
 /**
  * Hexagonal Board Validation Test
- * 
+ *
  * Purpose: Validate that the hexagonal board implementation satisfies all requirements:
  * 1. Generates exactly 331 positions for size=11 hexagonal board
  * 2. All positions satisfy cube coordinate constraint (x + y + z = 0)
@@ -20,7 +20,8 @@ console.log('TEST 1: Position Generation');
 console.log('----------------------------');
 
 const hexManager = new BoardManager('hexagonal' as BoardType);
-const hexBoard = hexManager.createBoard();
+// Initialize the board for completeness; no need to keep a reference.
+hexManager.createBoard();
 const hexPositions = hexManager.getAllPositions();
 
 console.log(`Expected positions: 331`);
@@ -48,8 +49,10 @@ console.log(`Positions checked: ${hexPositions.length}`);
 console.log(`Violations found: ${coordinateViolations}`);
 if (sampleViolations.length > 0) {
   console.log('Sample violations:');
-  sampleViolations.forEach(pos => {
-    console.log(`  Position ${positionToString(pos)}: x=${pos.x}, y=${pos.y}, z=${pos.z}, sum=${pos.x + pos.y + (pos.z || 0)}`);
+  sampleViolations.forEach((pos) => {
+    console.log(
+      `  Position ${positionToString(pos)}: x=${pos.x}, y=${pos.y}, z=${pos.z}, sum=${pos.x + pos.y + (pos.z || 0)}`
+    );
   });
 }
 console.log(`✓ Cube coordinates: ${coordinateViolations === 0 ? 'PASS' : 'FAIL'}\n`);
@@ -95,7 +98,7 @@ console.log(`Movement adjacency: ${config.movementAdjacency}`);
 console.log(`Line adjacency: ${config.lineAdjacency}`);
 console.log(`Territory adjacency: ${config.territoryAdjacency}`);
 
-const allHexagonal = 
+const allHexagonal =
   config.movementAdjacency === 'hexagonal' &&
   config.lineAdjacency === 'hexagonal' &&
   config.territoryAdjacency === 'hexagonal';
@@ -165,7 +168,7 @@ console.log(`  Movement adjacency: ${config.movementAdjacency} (should be hexago
 console.log(`  Territory adjacency: ${config.territoryAdjacency} (should be hexagonal)`);
 console.log();
 
-const differencesCorrect = 
+const differencesCorrect =
   square8LineDirections.length === 4 &&
   lineDirections.length === 3 &&
   square8Config.territoryAdjacency === 'von_neumann' &&
@@ -185,13 +188,13 @@ const tests = [
   { name: 'Adjacency types', pass: allHexagonal },
   { name: 'Distance calculation', pass: distance === expectedDistance },
   { name: 'Edge detection', pass: incorrectEdges === 0 },
-  { name: 'Board differences', pass: differencesCorrect }
+  { name: 'Board differences', pass: differencesCorrect },
 ];
 
-const passedTests = tests.filter(t => t.pass).length;
+const passedTests = tests.filter((t) => t.pass).length;
 const totalTests = tests.length;
 
-tests.forEach(test => {
+tests.forEach((test) => {
   const status = test.pass ? '✓ PASS' : '✗ FAIL';
   console.log(`${status}: ${test.name}`);
 });
@@ -202,6 +205,8 @@ if (passedTests === totalTests) {
   console.log('\n🎉 ALL TESTS PASSED! Hexagonal board implementation is correct.');
   process.exit(0);
 } else {
-  console.log(`\n❌ ${totalTests - passedTests} test(s) failed. Please review hexagonal board implementation.`);
+  console.log(
+    `\n❌ ${totalTests - passedTests} test(s) failed. Please review hexagonal board implementation.`
+  );
   process.exit(1);
 }

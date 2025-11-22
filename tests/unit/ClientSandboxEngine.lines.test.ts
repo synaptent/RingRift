@@ -1,18 +1,19 @@
 import {
   ClientSandboxEngine,
   SandboxConfig,
-  SandboxInteractionHandler
+  SandboxInteractionHandler,
 } from '../../src/client/sandbox/ClientSandboxEngine';
 import {
   BoardState,
   BoardType,
   GameState,
+  Move,
   Position,
   RingStack,
   PlayerChoiceResponseFor,
   CaptureDirectionChoice,
   positionToString,
-  BOARD_CONFIGS
+  BOARD_CONFIGS,
 } from '../../src/shared/types/game';
 
 /**
@@ -33,13 +34,13 @@ describe('ClientSandboxEngine line processing', () => {
     const config: SandboxConfig = {
       boardType,
       numPlayers: 2,
-      playerKinds: ['human', 'human']
+      playerKinds: ['human', 'human'],
     };
 
     const handler: SandboxInteractionHandler = {
       // For these tests we never actually trigger PlayerChoices, but we
       // provide a trivial handler to satisfy the constructor.
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
         const anyChoice = choice as CaptureDirectionChoice;
         const selectedOption = (anyChoice as any).options
           ? (anyChoice as any).options[0]
@@ -49,9 +50,9 @@ describe('ClientSandboxEngine line processing', () => {
           choiceId: (choice as any).id,
           playerNumber: (choice as any).playerNumber,
           choiceType: (choice as any).type,
-          selectedOption
+          selectedOption,
         } as PlayerChoiceResponseFor<any>;
-      }
+      },
     };
 
     return new ClientSandboxEngine({ config, interactionHandler: handler });
@@ -64,7 +65,7 @@ describe('ClientSandboxEngine line processing', () => {
       rings,
       stackHeight: rings.length,
       capHeight: rings.length,
-      controllingPlayer: playerNumber
+      controllingPlayer: playerNumber,
     };
     board.stacks.set(positionToString(position), stack);
   }
@@ -90,7 +91,7 @@ describe('ClientSandboxEngine line processing', () => {
       board.markers.set(positionToString(pos), {
         player: 1,
         position: pos,
-        type: 'regular'
+        type: 'regular',
       });
     }
 
@@ -99,14 +100,14 @@ describe('ClientSandboxEngine line processing', () => {
     makeStack(1, 2, stackPos, board);
 
     const initialTotalEliminated = state.totalRingsEliminated;
-    const initialTerritory = state.players.find(p => p.playerNumber === 1)!.territorySpaces;
+    const initialTerritory = state.players.find((p) => p.playerNumber === 1)!.territorySpaces;
 
     // Invoke line processing directly.
     engineAny.processLinesForCurrentPlayer();
 
     const finalState = engine.getGameState();
     const finalBoard = finalState.board;
-    const player1 = finalState.players.find(p => p.playerNumber === 1)!;
+    const player1 = finalState.players.find((p) => p.playerNumber === 1)!;
 
     // All marker positions in the line should now be collapsed spaces for p1,
     // with no markers or stacks remaining at those positions.
@@ -147,7 +148,7 @@ describe('ClientSandboxEngine line processing', () => {
       board.markers.set(positionToString(pos), {
         player: 1,
         position: pos,
-        type: 'regular'
+        type: 'regular',
       });
     }
 
@@ -159,7 +160,7 @@ describe('ClientSandboxEngine line processing', () => {
     const stackPos: Position = { x: 7, y: 7 };
     makeStack(1, 2, stackPos, board);
 
-    const initialPlayer1 = state.players.find(p => p.playerNumber === 1)!;
+    const initialPlayer1 = state.players.find((p) => p.playerNumber === 1)!;
     const initialEliminated = initialPlayer1.eliminatedRings;
     const initialTotalEliminated = state.totalRingsEliminated;
     const initialTerritory = initialPlayer1.territorySpaces;
@@ -168,7 +169,7 @@ describe('ClientSandboxEngine line processing', () => {
 
     const finalState = engine.getGameState();
     const finalBoard = finalState.board;
-    const player1 = finalState.players.find(p => p.playerNumber === 1)!;
+    const player1 = finalState.players.find((p) => p.playerNumber === 1)!;
 
     // Exactly requiredLength markers should be collapsed; the remaining
     // marker should still exist and not be collapsed.
@@ -193,5 +194,159 @@ describe('ClientSandboxEngine line processing', () => {
 
     // Stack should still exist at stackPos (no forced elimination in this test).
     expect(finalBoard.stacks.get(positionToString(stackPos))).toBeDefined();
+  });
+
+  test('enumerates canonical line-processing decision Moves for current player', () => {
+    const engine = createEngine();
+    const engineAny = engine as any;
+    const state: GameState = engineAny.gameState as GameState;
+
+    state.currentPlayer = 1;
+    const board = state.board;
+
+    board.markers.clear();
+    board.stacks.clear();
+    board.collapsedSpaces.clear();
+
+    // Exact-length horizontal line at y=0.
+    const exactLinePositions: Position[] = [];
+    for (let i = 0; i < requiredLength; i++) {
+      const pos: Position = { x: i, y: 0 };
+      exactLinePositions.push(pos);
+      board.markers.set(positionToString(pos), {
+        player: 1,
+        position: pos,
+        type: 'regular',
+      });
+    }
+
+    // Longer-than-required horizontal line at y=3 (requiredLength + 1 markers).
+    const longLinePositions: Position[] = [];
+    for (let i = 0; i < requiredLength + 1; i++) {
+      const pos: Position = { x: i, y: 3 };
+      longLinePositions.push(pos);
+      board.markers.set(positionToString(pos), {
+        player: 1,
+        position: pos,
+        type: 'regular',
+      });
+    }
+
+    const moves: any[] = engineAny.getValidLineProcessingMovesForCurrentPlayer();
+    const processLineMoves = moves.filter((m) => m.type === 'process_line');
+    const chooseRewardMoves = moves.filter((m) => m.type === 'choose_line_reward');
+
+    expect(processLineMoves.length).toBeGreaterThanOrEqual(2);
+    expect(chooseRewardMoves.length).toBeGreaterThanOrEqual(1);
+
+    const keyFrom = (positions: Position[]) =>
+      positions
+        .map((p) => positionToString(p))
+        .sort()
+        .join('|');
+
+    const exactKey = keyFrom(exactLinePositions);
+    const longKey = keyFrom(longLinePositions);
+
+    const processExact = processLineMoves.find(
+      (m) => m.formedLines && m.formedLines[0] && keyFrom(m.formedLines[0].positions) === exactKey
+    );
+    const processLong = processLineMoves.find(
+      (m) => m.formedLines && m.formedLines[0] && keyFrom(m.formedLines[0].positions) === longKey
+    );
+
+    expect(processExact).toBeDefined();
+    expect(processLong).toBeDefined();
+
+    const chooseForLong = chooseRewardMoves.find(
+      (m) => m.formedLines && m.formedLines[0] && keyFrom(m.formedLines[0].positions) === longKey
+    );
+
+    expect(chooseForLong).toBeDefined();
+
+    // There should be no choose_line_reward Move for the exact-length line.
+    const chooseForExact = chooseRewardMoves.find(
+      (m) => m.formedLines && m.formedLines[0] && keyFrom(m.formedLines[0].positions) === exactKey
+    );
+    expect(chooseForExact).toBeUndefined();
+  });
+
+  test('canonical choose_line_reward Move collapses entire overlength line and eliminates a cap', async () => {
+    const engine = createEngine();
+    const engineAny = engine as any;
+    const state: GameState = engineAny.gameState as GameState;
+
+    state.currentPlayer = 1;
+    const board = state.board;
+
+    board.markers.clear();
+    board.stacks.clear();
+    board.collapsedSpaces.clear();
+
+    // Build an overlength horizontal line at y=4.
+    const linePositions: Position[] = [];
+    for (let i = 0; i < requiredLength + 2; i++) {
+      const pos: Position = { x: i, y: 4 };
+      linePositions.push(pos);
+      board.markers.set(positionToString(pos), {
+        player: 1,
+        position: pos,
+        type: 'regular',
+      });
+    }
+
+    // Single stack for player 1 that will be used for elimination.
+    const stackPos: Position = { x: 7, y: 7 };
+    makeStack(1, 3, stackPos, board);
+
+    const playerBefore = state.players.find((p) => p.playerNumber === 1)!;
+    const initialEliminated = playerBefore.eliminatedRings;
+    const initialTotalEliminated = state.totalRingsEliminated;
+    const initialTerritory = playerBefore.territorySpaces;
+
+    // Construct a canonical choose_line_reward Move matching this line.
+    const lineKey = linePositions.map((p) => positionToString(p)).join('|');
+    const move: Move = {
+      id: `choose-line-reward-0-${lineKey}`,
+      type: 'choose_line_reward',
+      player: 1,
+      formedLines: [
+        {
+          positions: linePositions,
+          player: 1,
+          length: linePositions.length,
+          direction: { x: 1, y: 0 },
+        } as any,
+      ],
+      // Decision moves are phase-driven; `to` is unused but required.
+      to: { x: 0, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    await engine.applyCanonicalMove(move);
+
+    const finalState = engine.getGameState();
+    const finalBoard = finalState.board;
+    const playerAfter = finalState.players.find((p) => p.playerNumber === 1)!;
+
+    // All marker positions in the line should now be collapsed spaces for player 1,
+    // with no markers or stacks remaining at those positions.
+    for (const pos of linePositions) {
+      const key = positionToString(pos);
+      expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
+      expect(finalBoard.markers.has(key)).toBe(false);
+      expect(finalBoard.stacks.has(key)).toBe(false);
+    }
+
+    // Player 1's eliminated ring counts should have increased by at least 1.
+    expect(playerAfter.eliminatedRings).toBeGreaterThan(initialEliminated);
+    expect(finalState.totalRingsEliminated).toBeGreaterThan(initialTotalEliminated);
+
+    // Territory spaces should have increased by at least the line length.
+    expect(playerAfter.territorySpaces).toBeGreaterThanOrEqual(
+      initialTerritory + linePositions.length
+    );
   });
 });

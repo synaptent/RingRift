@@ -9,10 +9,7 @@ import torch
 from typing import Dict, Optional
 from datetime import datetime
 
-# Add app to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../'))
-
-from app.ai.mcts_ai import MCTSAI
+from app.ai.descent_ai import DescentAI
 from app.game_engine import GameEngine
 from app.models import (
     GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl,
@@ -31,11 +28,11 @@ class Tournament:
         self.num_games = num_games
         self.results = {"A": 0, "B": 0, "Draw": 0}
         
-    def _create_ai(self, player_number: int, model_path: str) -> MCTSAI:
+    def _create_ai(self, player_number: int, model_path: str) -> DescentAI:
         """Create an AI instance with specific model weights"""
         config = AIConfig(difficulty=10, randomness=0.1, think_time=500)
-        ai = MCTSAI(player_number, config)
-        
+        ai = DescentAI(player_number, config)
+
         # Manually load weights if neural net exists
         if ai.neural_net and os.path.exists(model_path):
             try:
@@ -82,7 +79,7 @@ class Tournament:
         logger.info(f"Tournament finished. Results: {self.results}")
         return self.results
 
-    def _play_game(self, ai1: MCTSAI, ai2: MCTSAI) -> Optional[int]:
+    def _play_game(self, ai1: DescentAI, ai2: DescentAI) -> Optional[int]:
         """Play a single game"""
         # Initialize game state
         state = self._create_initial_state()
@@ -145,7 +142,9 @@ class Tournament:
             totalRingsInPlay=rings * 2,
             totalRingsEliminated=0,
             victoryThreshold=19,
-            territoryVictoryThreshold=33
+            territoryVictoryThreshold=33,
+            chainCaptureState=None,
+            mustMoveFromStackKey=None
         )
 
 

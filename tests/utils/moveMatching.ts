@@ -5,6 +5,11 @@ import { Move, Position, positionToString } from '../../src/shared/types/game';
  * across engines/tests.
  */
 
+const TRACE_DEBUG_ENABLED =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
+
 export function positionsEqual(a?: Position, b?: Position): boolean {
   if (!a && !b) return true;
   if (!a || !b) return false;
@@ -32,6 +37,24 @@ export function movesLooselyMatch(a: Move, b: Move): boolean {
 
   if (isSimpleMovementPair) {
     return positionsEqual(a.from, b.from) && positionsEqual(a.to, b.to);
+  }
+
+  // When running under the seed/trace debug harness, treat a sandbox
+  // overtaking_capture as loosely equivalent to a backend move_stack
+  // with the same from/to landing geometry. This allows replay
+  // harnesses to progress far enough to surface **geometric** parity
+  // mismatches (stacks/markers/collapsedSpaces) even when the backend
+  // fails to classify a move as a capture. Outside of trace-debug
+  // runs, we continue to require strict type equality so capture vs
+  // non-capture divergences remain visible to CI.
+  if (TRACE_DEBUG_ENABLED) {
+    const isCaptureVsMoveStackPair =
+      (a.type === 'overtaking_capture' && b.type === 'move_stack') ||
+      (a.type === 'move_stack' && b.type === 'overtaking_capture');
+
+    if (isCaptureVsMoveStackPair) {
+      return positionsEqual(a.from, b.from) && positionsEqual(a.to, b.to);
+    }
   }
 
   if (a.type !== b.type) return false;

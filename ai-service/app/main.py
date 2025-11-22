@@ -6,13 +6,11 @@ Provides AI move selection and position evaluation endpoints
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from enum import Enum
+from typing import Optional, Dict, Any
 import logging
 
 from .ai.random_ai import RandomAI
 from .ai.heuristic_ai import HeuristicAI
-from .ai.neural_net import NeuralNetAI
 from .ai.descent_ai import DescentAI
 from .models import (
     GameState,
@@ -29,7 +27,11 @@ from .models import (
     RegionOrderChoiceResponse,
     RegionOrderChoiceOption,
     Position,
+    GameStatus,
 )
+from .board_manager import BoardManager
+from .game_engine import GameEngine
+from .rules.default_engine import DefaultRulesEngine
 
 # Configure logging
 logging.basicConfig(
@@ -87,6 +89,22 @@ class EvaluationResponse(BaseModel):
     breakdown: Dict[str, float]
 
 
+class RulesEvalRequest(BaseModel):
+    """Request model for rules-engine evaluation (parity/shadow mode)."""
+    game_state: GameState
+    move: Move
+
+
+class RulesEvalResponse(BaseModel):
+    """Response model for rules-engine evaluation."""
+    valid: bool
+    validation_error: Optional[str] = None
+    next_state: Optional[GameState] = None
+    state_hash: Optional[str] = None
+    s_invariant: Optional[int] = None
+    game_status: Optional[GameStatus] = None
+
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -122,7 +140,10 @@ async def get_ai_move(request: MoveRequest):
         ai_type = request.ai_type or _select_ai_type(request.difficulty)
         
         # Get or create AI instance
-        ai_key = f"{ai_type.value}-{request.difficulty}-{request.player_number}"
+        ai_key = (
+            f"{ai_type.value}-{request.difficulty}-"
+            f"{request.player_number}"
+        )
         
         if ai_key not in ai_instances:
             config = AIConfig(
@@ -192,7 +213,61 @@ async def evaluate_position(request: EvaluationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/ai/choice/line_reward_option", response_model=LineRewardChoiceResponse)
+@app.post("/rules/evaluate_move", response_model=RulesEvalResponse)
+async def evaluate_move(request: RulesEvalRequest):
+    """Rules-engine evaluation endpoint for TS↔Python parity/shadow mode.
+
+    Given a ``GameState`` and a candidate ``Move``, this endpoint:
+
+    - Validates the move using the canonical ``DefaultRulesEngine``
+      (which mirrors the shared TS rules engine).
+    - If invalid, returns ``valid=False`` with a ``validation_error``.
+    - If valid, applies the move via ``GameEngine.apply_move`` and
+      returns the resulting state, hash, S-invariant, and game_status.
+
+    This keeps the HTTP surface aligned with the same validation logic
+    used by the offline parity harness in
+    ``tests/parity/test_rules_parity_fixtures.py`` while avoiding
+    over-constraining equality to the exact synthetic moves emitted by
+    ``GameEngine.get_valid_moves`` (which may differ in non-semantic
+    fields such as ``id``, ``timestamp``, or sentinel ``to`` values).
+    """
+    try:
+        state = request.game_state
+        move = request.move
+
+        engine = DefaultRulesEngine()
+        is_valid = engine.validate_move(state, move)
+
+        if not is_valid:
+            return RulesEvalResponse(
+                valid=False,
+                validation_error="Move rejected by DefaultRulesEngine.validate_move",
+            )
+
+        # Apply the move using the Python GameEngine (TS-aligned semantics).
+        next_state = GameEngine.apply_move(state, move)
+
+        # Compute hash and S-invariant using BoardManager helpers.
+        state_hash = BoardManager.hash_game_state(next_state)
+        progress = BoardManager.compute_progress_snapshot(next_state)
+
+        return RulesEvalResponse(
+            valid=True,
+            next_state=next_state,
+            state_hash=state_hash,
+            s_invariant=progress.S,
+            game_status=next_state.game_status,
+        )
+    except Exception as e:
+        logger.error("Error in /rules/evaluate_move: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/ai/choice/line_reward_option",
+    response_model=LineRewardChoiceResponse,
+)
 async def choose_line_reward_option(request: LineRewardChoiceRequest):
     """Select a line reward option for an AI-controlled player.
 
@@ -216,8 +291,8 @@ async def choose_line_reward_option(request: LineRewardChoiceRequest):
             selected = request.options[0]
 
         return LineRewardChoiceResponse(
-            selected_option=selected,
-            ai_type=ai_type.value,
+            selectedOption=selected,
+            aiType=ai_type.value,
             difficulty=request.difficulty,
         )
     except Exception as e:
@@ -228,7 +303,10 @@ async def choose_line_reward_option(request: LineRewardChoiceRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/ai/choice/ring_elimination", response_model=RingEliminationChoiceResponse)
+@app.post(
+    "/ai/choice/ring_elimination",
+    response_model=RingEliminationChoiceResponse,
+)
 async def choose_ring_elimination_option(request: RingEliminationChoiceRequest):
     """Select a ring elimination option for an AI-controlled player.
 
@@ -246,7 +324,10 @@ async def choose_ring_elimination_option(request: RingEliminationChoiceRequest):
             # ask the AI to choose from an empty set of elimination
             # targets. Surface this clearly so the caller can fix the
             # upstream logic.
-            raise HTTPException(status_code=400, detail="ring_elimination choice has no options")
+            raise HTTPException(
+                status_code=400,
+                detail="ring_elimination choice has no options",
+            )
 
         # Prefer the option with the smallest cap_height; if tied,
         # choose the one with the smallest total_height.
@@ -254,12 +335,15 @@ async def choose_ring_elimination_option(request: RingEliminationChoiceRequest):
         for opt in request.options[1:]:
             if opt.cap_height < selected.cap_height:
                 selected = opt
-            elif opt.cap_height == selected.cap_height and opt.total_height < selected.total_height:
+            elif (
+                opt.cap_height == selected.cap_height
+                and opt.total_height < selected.total_height
+            ):
                 selected = opt
 
         return RingEliminationChoiceResponse(
-            selected_option=selected,
-            ai_type=ai_type.value,
+            selectedOption=selected,
+            aiType=ai_type.value,
             difficulty=request.difficulty,
         )
     except HTTPException:
@@ -274,7 +358,10 @@ async def choose_ring_elimination_option(request: RingEliminationChoiceRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/ai/choice/region_order", response_model=RegionOrderChoiceResponse)
+@app.post(
+    "/ai/choice/region_order",
+    response_model=RegionOrderChoiceResponse,
+)
 async def choose_region_order_option(request: RegionOrderChoiceRequest):
     """Select a region order option for an AI-controlled player.
 
@@ -307,7 +394,6 @@ async def choose_region_order_option(request: RegionOrderChoiceRequest):
             # Precompute enemy player numbers when game_state is
             # available.
             enemy_players = set()
-            stacks_by_key: Dict[str, RingEliminationChoiceOption] = {}
             if request.game_state is not None:
                 for p in request.game_state.players:
                     if getattr(p, "player_number", None) != request.player_number:
@@ -348,13 +434,15 @@ async def choose_region_order_option(request: RegionOrderChoiceRequest):
             best_score = score_region(selected)
             for opt in request.options[1:]:
                 s = score_region(opt)
-                if s > best_score or (s == best_score and opt.size > selected.size):
+                if s > best_score or (
+                    s == best_score and opt.size > selected.size
+                ):
                     selected = opt
                     best_score = s
 
         return RegionOrderChoiceResponse(
-            selected_option=selected,
-            ai_type=ai_type.value,
+            selectedOption=selected,
+            aiType=ai_type.value,
             difficulty=request.difficulty,
         )
     except Exception as e:
@@ -383,8 +471,8 @@ def _select_ai_type(difficulty: int) -> AIType:
     elif difficulty <= 8:
         return AIType.MINIMAX
     else:
-        # Use Neural Network for highest difficulty
-        return AIType.MCTS # Placeholder until MCTS is implemented, or use NeuralNetAI here if desired
+        # Highest difficulty: use MCTS (placeholder for more advanced AI).
+        return AIType.MCTS
 
 
 def _get_randomness_for_difficulty(difficulty: int) -> float:
@@ -405,8 +493,8 @@ def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
     # elif ai_type == AIType.MINIMAX:
     #     return MinimaxAI(player_number, config)
     elif ai_type == AIType.MCTS:
-         from .ai.mcts_ai import MCTSAI
-         return MCTSAI(player_number, config)
+        from .ai.mcts_ai import MCTSAI
+        return MCTSAI(player_number, config)
     elif ai_type == AIType.DESCENT:
         return DescentAI(player_number, config)
     else:

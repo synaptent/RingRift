@@ -3,12 +3,17 @@ import {
   Position,
   LineInfo,
   BOARD_CONFIGS,
-  positionToString
+  positionToString,
 } from '../../../shared/types/game';
 import { calculateCapHeight } from '../../../shared/engine/core';
 import { BoardManager } from '../BoardManager';
 import { PlayerInteractionManager } from '../PlayerInteractionManager';
-import { PlayerChoiceResponseFor, LineOrderChoice, LineRewardChoice, RingEliminationChoice } from '../../../shared/types/game';
+import {
+  PlayerChoiceResponseFor,
+  LineOrderChoice,
+  LineRewardChoice,
+  RingEliminationChoice,
+} from '../../../shared/types/game';
 
 export interface LineProcessingDeps {
   boardManager: BoardManager;
@@ -35,9 +40,7 @@ export async function processLinesForCurrentPlayer(
     if (allLines.length === 0) break;
 
     // Only consider lines for the moving player
-    const playerLines = allLines.filter(
-      line => line.player === gameState.currentPlayer
-    );
+    const playerLines = allLines.filter((line) => line.player === gameState.currentPlayer);
     if (playerLines.length === 0) break;
 
     let lineToProcess: LineInfo;
@@ -52,10 +55,21 @@ export async function processLinesForCurrentPlayer(
         playerNumber: gameState.currentPlayer,
         type: 'line_order',
         prompt: 'Choose which line to process first',
-        options: playerLines.map((line, index) => ({
-          lineId: String(index),
-          markerPositions: line.positions
-        }))
+        options: playerLines.map((line, index) => {
+          const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+          return {
+            lineId: String(index),
+            markerPositions: line.positions,
+            /**
+             * Stable identifier for the canonical 'process_line' Move that
+             * would process this line when enumerated via advanced-phase
+             * helpers (RuleEngine.getValidMoves / GameEngine.getValidMoves
+             * in the line_processing phase). This lets transports/AI map
+             * this choice option directly onto a Move.id.
+             */
+            moveId: `process-line-${index}-${lineKey}`,
+          };
+        }),
       };
 
       const response: PlayerChoiceResponseFor<LineOrderChoice> =
@@ -109,10 +123,7 @@ async function processOneLine(
       playerNumber: gameState.currentPlayer,
       type: 'line_reward_option',
       prompt: 'Choose line reward option',
-      options: [
-        'option_1_collapse_all_and_eliminate',
-        'option_2_min_collapse_no_elimination'
-      ]
+      options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
     };
 
     const response: PlayerChoiceResponseFor<LineRewardChoice> =
@@ -169,7 +180,7 @@ export async function eliminatePlayerRingOrCapWithChoice(
 
   if (playerStacks.length === 0) {
     // Mirror the hand-elimination behaviour: eliminate from rings in hand
-    const playerState = gameState.players.find(p => p.playerNumber === player);
+    const playerState = gameState.players.find((p) => p.playerNumber === player);
     if (playerState && playerState.ringsInHand > 0) {
       playerState.ringsInHand--;
       gameState.totalRingsEliminated++;
@@ -193,11 +204,21 @@ export async function eliminatePlayerRingOrCapWithChoice(
     playerNumber: player,
     type: 'ring_elimination',
     prompt: 'Choose which stack to eliminate from',
-    options: playerStacks.map(stack => ({
-      stackPosition: stack.position,
-      capHeight: stack.capHeight,
-      totalHeight: stack.stackHeight
-    }))
+    options: playerStacks.map((stack) => {
+      const stackKey = positionToString(stack.position);
+      return {
+        stackPosition: stack.position,
+        capHeight: stack.capHeight,
+        totalHeight: stack.stackHeight,
+        /**
+         * Stable identifier for the canonical 'eliminate_rings_from_stack'
+         * Move that would eliminate from this stack when enumerated via
+         * advanced-phase helpers. This lets transports/AI map this choice
+         * option directly onto a Move.id.
+         */
+        moveId: `eliminate-${stackKey}`,
+      };
+    }),
   };
 
   const response: PlayerChoiceResponseFor<RingEliminationChoice> =
@@ -206,8 +227,7 @@ export async function eliminatePlayerRingOrCapWithChoice(
 
   const selectedKey = positionToString(selected.stackPosition);
   const chosenStack =
-    playerStacks.find(s => positionToString(s.position) === selectedKey) ||
-    playerStacks[0];
+    playerStacks.find((s) => positionToString(s.position) === selectedKey) || playerStacks[0];
 
   return eliminateFromStack(gameState, chosenStack, player, deps);
 }
@@ -225,7 +245,7 @@ function eliminatePlayerRingOrCap(
   const playerStacks = boardManager.getPlayerStacks(gameState.board, player);
 
   if (playerStacks.length === 0) {
-    const playerState = gameState.players.find(p => p.playerNumber === player);
+    const playerState = gameState.players.find((p) => p.playerNumber === player);
     if (playerState && playerState.ringsInHand > 0) {
       playerState.ringsInHand--;
       gameState.totalRingsEliminated++;
@@ -278,7 +298,7 @@ function eliminateFromStack(
       rings: remainingRings,
       stackHeight: remainingRings.length,
       capHeight: calculateCapHeight(remainingRings),
-      controllingPlayer: remainingRings[0]
+      controllingPlayer: remainingRings[0],
     };
     boardManager.setStack(stack.position, newStack, gameState.board);
   } else {
@@ -297,7 +317,7 @@ export function updatePlayerEliminatedRings(
   playerNumber: number,
   count: number
 ): GameState {
-  const player = gameState.players.find(p => p.playerNumber === playerNumber);
+  const player = gameState.players.find((p) => p.playerNumber === playerNumber);
   if (player) {
     player.eliminatedRings += count;
   }
@@ -312,7 +332,7 @@ export function updatePlayerTerritorySpaces(
   playerNumber: number,
   count: number
 ): GameState {
-  const player = gameState.players.find(p => p.playerNumber === playerNumber);
+  const player = gameState.players.find((p) => p.playerNumber === playerNumber);
   if (player) {
     player.territorySpaces += count;
   }
@@ -321,7 +341,7 @@ export function updatePlayerTerritorySpaces(
 
 // Local UUID generator mirroring GameEngine.generateUUID
 function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);

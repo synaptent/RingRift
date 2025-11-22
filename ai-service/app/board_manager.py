@@ -81,6 +81,19 @@ class BoardManager:
 
         # Meta info
         meta = f"{state.current_player}:{state.current_phase.value}:{state.game_status.value}"
+        if state.must_move_from_stack_key:
+            meta += f":must_move={state.must_move_from_stack_key}"
+        
+        # Include capture context in hash
+        if state.current_phase in ["capture", "chain_capture"]:
+            if state.chain_capture_state:
+                meta += f":chain={state.chain_capture_state.current_position.to_key()}"
+                meta += f":visited={','.join(sorted(state.chain_capture_state.visited_positions))}"
+            elif state.move_history:
+                # Initial capture depends on last move's destination (attacker position)
+                last_move = state.move_history[-1]
+                if last_move.to:
+                    meta += f":last_to={last_move.to.to_key()}"
 
         return "#".join([
             meta,
@@ -92,211 +105,526 @@ class BoardManager:
 
     @staticmethod
     def find_all_lines(board: BoardState) -> List[LineInfo]:
-        lines = []
+        """
+        Find all marker lines on the board (4+ for 8x8, 5+ for 19x19/hex).
+
+        Mirrors src/shared/engine/lineDetection.findAllLines and the server
+        BoardManager.findAllLines implementation:
+        - Lines are formed by MARKERS, not stacks.
+        - Collapsed spaces and stacks act as hard blockers.
+        - Uses canonical line directions per board type to avoid duplicates.
+        """
+        lines: List[LineInfo] = []
+        processed_keys = set()
+
         # Determine line length based on board type
         min_length = 4 if board.type == BoardType.SQUARE8 else 5
-        
-        # Get all directions
-        directions = BoardManager._get_all_directions(board.type)
-        
+
+        directions = BoardManager._get_line_directions(board.type)
+
         # Iterate through all markers
         for pos_key, marker in board.markers.items():
             start_pos = marker.position
             player = marker.player
-            
-            for direction in directions:
-                # Check if this is the start of a line in this direction
-                # (i.e., previous position is not same player marker)
-                prev_pos = BoardManager._add_direction(
-                    start_pos, direction, -1
-                )
-                prev_key = prev_pos.to_key()
-                if (prev_key in board.markers and
-                        board.markers[prev_key].player == player):
-                    continue
-                
-                # Trace line
-                current_line_positions = [start_pos]
-                current_pos = start_pos
-                
-                while True:
-                    next_pos = BoardManager._add_direction(
-                        current_pos, direction, 1
-                    )
-                    next_key = next_pos.to_key()
 
-                    if (next_key in board.markers and
-                            board.markers[next_key].player == player):
-                        current_line_positions.append(next_pos)
-                        current_pos = next_pos
-                    else:
-                        break
-                
-                if len(current_line_positions) >= min_length:
-                    lines.append(LineInfo(
+            # Treat stacks and collapsed spaces as hard blockers that fully
+            # remove this cell from line consideration.
+            if BoardManager.is_collapsed_space(start_pos, board):
+                continue
+            if BoardManager.get_stack(start_pos, board):
+                continue
+
+            for direction in directions:
+                current_line_positions = BoardManager._find_line_in_direction(
+                    start_pos,
+                    direction,
+                    player,
+                    board,
+                )
+
+                if len(current_line_positions) < min_length:
+                    continue
+
+                line_key = "|".join(
+                    sorted(pos.to_key() for pos in current_line_positions),
+                )
+                if line_key in processed_keys:
+                    continue
+
+                processed_keys.add(line_key)
+                lines.append(
+                    LineInfo(
                         positions=current_line_positions,
                         player=player,
                         length=len(current_line_positions),
                         direction=Position(
                             x=direction[0],
                             y=direction[1],
-                            z=direction[2] if len(direction) > 2 else None
-                        )
-                    ))
-                    
+                            z=direction[2],
+                        ),
+                    )
+                )
+
         return lines
 
     @staticmethod
     def find_disconnected_regions(
         board: BoardState, player_number: int
     ) -> List[Territory]:
-        regions = []
-        visited = set()
-        
-        # Get all valid positions
-        all_positions = []
+        """
+        Python analogue of the TS BoardManager.findDisconnectedRegions.
+
+        A region is considered disconnected when:
+
+        1. Physical disconnection:
+           It is separated from the rest of the board by a border composed of
+           collapsed spaces, board edges, or markers belonging to a *single*
+           border color (or no markers at all, in which case only collapsed
+           spaces and edges form the border).
+
+        2. Representation:
+           The set of players with stacks inside the region is a proper subset
+           of the active players on the board (at least one active player is
+           not represented inside the region).
+
+        The returned Territory objects have controlling_player=0, matching the
+        TS implementation; the moving player decides how to process them.
+        The `player_number` argument is kept for API compatibility but is not
+        used in the discovery algorithm.
+        """
+        regions: List[Territory] = []
+
+        # Identify active players (those with stacks on board)
+        active_players = set()
+        for stack in board.stacks.values():
+            active_players.add(stack.controlling_player)
+
+        # If there is only one or zero active players, there is no meaningful
+        # notion of disconnection.
+        if len(active_players) <= 1:
+            return []
+
+        # Collect all marker colours present on the board
+        marker_colors = set()
+        for marker in board.markers.values():
+            marker_colors.add(marker.player)
+
+        # Regions where markers of a specific colour act as borders
+        for border_color in marker_colors:
+            regions.extend(
+                BoardManager._find_regions_with_border_color(
+                    board,
+                    border_color,
+                    active_players,
+                )
+            )
+
+        # Regions surrounded only by collapsed spaces and edges (no marker
+        # borders).
+        regions.extend(
+            BoardManager._find_regions_without_marker_border(
+                board,
+                active_players,
+            )
+        )
+
+        return regions
+
+    @staticmethod
+    def _generate_all_positions_for_board(board: BoardState) -> List[Position]:
+        """Generate all valid positions for the given board."""
+        positions: List[Position] = []
         if board.type == BoardType.SQUARE8:
             for x in range(8):
                 for y in range(8):
-                    all_positions.append(Position(x=x, y=y))
+                    positions.append(Position(x=x, y=y))
         elif board.type == BoardType.SQUARE19:
             for x in range(19):
                 for y in range(19):
-                    all_positions.append(Position(x=x, y=y))
+                    positions.append(Position(x=x, y=y))
         elif board.type == BoardType.HEXAGONAL:
             radius = board.size - 1
             for x in range(-radius, radius + 1):
                 for y in range(-radius, radius + 1):
                     z = -x - y
-                    if (abs(x) <= radius and
-                            abs(y) <= radius and
-                            abs(z) <= radius):
-                        all_positions.append(Position(x=x, y=y, z=z))
+                    if (
+                        abs(x) <= radius
+                        and abs(y) <= radius
+                        and abs(z) <= radius
+                    ):
+                        positions.append(Position(x=x, y=y, z=z))
+        return positions
 
-        # Identify active players (those with rings on board)
-        active_players = set()
-        for stack in board.stacks.values():
-            active_players.add(stack.controlling_player)
-            
+    @staticmethod
+    def _find_regions_with_border_color(
+        board: BoardState,
+        border_color: int,
+        active_players: set,
+    ) -> List[Territory]:
+        """
+        Find regions where markers of `border_color` act as borders.
+
+        This mirrors the TS BoardManager.findRegionsWithBorderColor:
+
+        - flood-fills regions while treating collapsed spaces and markers of
+          `border_color` as boundaries;
+        - then filters out regions that contain stacks for all active players.
+        """
+        disconnected_regions: List[Territory] = []
+        visited: set = set()
+
+        all_positions = BoardManager._generate_all_positions_for_board(board)
+
         for pos in all_positions:
             pos_key = pos.to_key()
             if pos_key in visited:
                 continue
-                
-            # Skip collapsed spaces and markers of the player
-            if pos_key in board.collapsed_spaces:
+
+            # Skip borders: collapsed spaces or markers of border_color.
+            if BoardManager.is_collapsed_space(pos, board):
                 visited.add(pos_key)
                 continue
 
-            if (pos_key in board.markers and
-                    board.markers[pos_key].player == player_number):
+            marker = board.markers.get(pos_key)
+            if marker is not None and marker.player == border_color:
                 visited.add(pos_key)
                 continue
-                
-            # Start flood fill
-            region_spaces = []
-            region_visited = set()
-            queue = [pos]
-            region_visited.add(pos_key)
-            visited.add(pos_key)
-            
-            represented_players = set()
 
-            while queue:
-                curr = queue.pop(0)
-                region_spaces.append(curr)
-                curr_key = curr.to_key()
+            region = BoardManager._explore_region_with_border_color(
+                pos,
+                board,
+                border_color,
+                visited,
+            )
+            if not region:
+                continue
 
-                # Check representation
-                if curr_key in board.stacks:
-                    represented_players.add(
-                        board.stacks[curr_key].controlling_player
+            represented_players = BoardManager._get_represented_players(
+                region,
+                board,
+            )
+
+            # Region must lack at least one active player's stacks.
+            if len(represented_players) < len(active_players):
+                disconnected_regions.append(
+                    Territory(
+                        **{
+                            "spaces": region,
+                            "controllingPlayer": 0,
+                            "isDisconnected": True,
+                        }
                     )
-
-                # Get neighbors (Von Neumann for square, Hex for hex)
-                neighbors = BoardManager._get_territory_neighbors(
-                    curr, board.type
                 )
 
-                for neighbor in neighbors:
-                    if not BoardManager.is_valid_position(
-                        neighbor, board.type, board.size
-                    ):
-                        # Hit edge of board - region is NOT surrounded
-                        continue
+        return disconnected_regions
 
-                    n_key = neighbor.to_key()
+    @staticmethod
+    def _find_regions_without_marker_border(
+        board: BoardState,
+        active_players: set,
+    ) -> List[Territory]:
+        """
+        Find regions surrounded only by collapsed spaces and edges (no marker
+        borders).
 
-                    if n_key in region_visited:
-                        continue
+        Mirrors the TS BoardManager.findRegionsWithoutMarkerBorder helper.
+        """
+        disconnected_regions: List[Territory] = []
+        visited: set = set()
 
-                    # Check if boundary
-                    if n_key in board.collapsed_spaces:
-                        continue
+        all_positions = BoardManager._generate_all_positions_for_board(board)
 
-                    if (n_key in board.markers and
-                            board.markers[n_key].player == player_number):
-                        continue
-                        
-                    # Not a boundary, add to region
-                    region_visited.add(n_key)
-                    visited.add(n_key)
-                    queue.append(neighbor)
-            
-            # Check if region is disconnected
-            # 1. Physically disconnected
-            #    Flood fill logic above implicitly handles this by only
-            #    visiting non-boundary nodes.
-            #    If we exhausted the queue, we found a connected component
-            #    bounded by boundaries/edges.
-            
-            # 2. Color Representation
-            #    Region must lack representation from at least one active
-            #    player
-            
-            # If region contains ALL active players, it's NOT disconnected
-            if active_players.issubset(represented_players):
+        for pos in all_positions:
+            pos_key = pos.to_key()
+            if pos_key in visited:
                 continue
-                
-            # If we found a valid region
-            if region_spaces:
-                regions.append(Territory(
-                    spaces=region_spaces,
-                    controlling_player=player_number,
-                    is_disconnected=True
-                ))
-                
-        return regions
+
+            # Skip collapsed spaces outright.
+            if BoardManager.is_collapsed_space(pos, board):
+                visited.add(pos_key)
+                continue
+
+            region = BoardManager._explore_region_without_marker_border(
+                pos,
+                board,
+                visited,
+            )
+            if not region:
+                continue
+
+            # Ensure region border is composed only of collapsed spaces and
+            # edges (no markers).
+            if not BoardManager._is_region_bordered_by_collapsed_only(
+                region,
+                board,
+            ):
+                continue
+
+            represented_players = BoardManager._get_represented_players(
+                region,
+                board,
+            )
+            if len(represented_players) < len(active_players):
+                disconnected_regions.append(
+                    Territory(
+                        **{
+                            "spaces": region,
+                            "controllingPlayer": 0,
+                            "isDisconnected": True,
+                        }
+                    )
+                )
+
+        return disconnected_regions
+
+    @staticmethod
+    def _explore_region_with_border_color(
+        start: Position,
+        board: BoardState,
+        border_color: int,
+        visited: set,
+    ) -> List[Position]:
+        """
+        Flood-fill to find a region where markers of `border_color` act as
+        borders.
+
+        Collapsed spaces and markers of `border_color` are treated as borders;
+        all other spaces (empty, stacks, other-colour markers) are part of the
+        region.
+        """
+        region: List[Position] = []
+        queue: List[Position] = [start]
+        local_visited: set = set()
+
+        while queue:
+            current = queue.pop(0)
+            current_key = current.to_key()
+            if current_key in local_visited:
+                continue
+            local_visited.add(current_key)
+            visited.add(current_key)
+
+            # Borders: collapsed spaces or markers of border_color.
+            if BoardManager.is_collapsed_space(current, board):
+                continue
+
+            marker = board.markers.get(current_key)
+            if marker is not None and marker.player == border_color:
+                continue
+
+            # This space is part of the region.
+            region.append(current)
+
+            # Explore neighbors using territory adjacency (Von Neumann on
+            # square boards, hex adjacency on hex boards).
+            neighbors = BoardManager._get_territory_neighbors(
+                current,
+                board.type,
+            )
+            for neighbor in neighbors:
+                if not BoardManager.is_valid_position(
+                    neighbor,
+                    board.type,
+                    board.size,
+                ):
+                    continue
+                n_key = neighbor.to_key()
+                if n_key not in local_visited:
+                    queue.append(neighbor)
+
+        return region
+
+    @staticmethod
+    def _explore_region_without_marker_border(
+        start: Position,
+        board: BoardState,
+        visited: set,
+    ) -> List[Position]:
+        """
+        Flood-fill to find a region where only collapsed spaces and edges act
+        as borders (markers do not terminate the fill).
+
+        This mirrors TS BoardManager.exploreRegionWithoutMarkerBorder.
+        """
+        region: List[Position] = []
+        queue: List[Position] = [start]
+        local_visited: set = set()
+
+        while queue:
+            current = queue.pop(0)
+            current_key = current.to_key()
+            if current_key in local_visited:
+                continue
+            local_visited.add(current_key)
+            visited.add(current_key)
+
+            # Borders are only collapsed spaces; they are not part of the
+            # region.
+            if BoardManager.is_collapsed_space(current, board):
+                continue
+
+            region.append(current)
+
+            neighbors = BoardManager._get_territory_neighbors(
+                current,
+                board.type,
+            )
+            for neighbor in neighbors:
+                if not BoardManager.is_valid_position(
+                    neighbor,
+                    board.type,
+                    board.size,
+                ):
+                    continue
+                n_key = neighbor.to_key()
+                if n_key not in local_visited:
+                    queue.append(neighbor)
+
+        return region
+
+    @staticmethod
+    def _is_region_bordered_by_collapsed_only(
+        region_spaces: List[Position],
+        board: BoardState,
+    ) -> bool:
+        """
+        Check that a region is bordered only by collapsed spaces and edges,
+        with no markers or open/stacked spaces on its perimeter.
+
+        Mirrors TS BoardManager.isRegionBorderedByCollapsedOnly.
+        """
+        region_keys = set(p.to_key() for p in region_spaces)
+
+        for space in region_spaces:
+            neighbors = BoardManager._get_territory_neighbors(
+                space,
+                board.type,
+            )
+            for neighbor in neighbors:
+                n_key = neighbor.to_key()
+
+                # Neighbor inside region is fine.
+                if n_key in region_keys:
+                    continue
+
+                # Board edge is an acceptable border.
+                if not BoardManager.is_valid_position(
+                    neighbor,
+                    board.type,
+                    board.size,
+                ):
+                    continue
+
+                # Collapsed space is an acceptable border.
+                if BoardManager.is_collapsed_space(neighbor, board):
+                    continue
+
+                # If neighbor has a marker, region is NOT bordered by
+                # collapsed-only.
+                if n_key in board.markers:
+                    return False
+
+                # Empty or stacked neighbor on the perimeter invalidates
+                # collapsed-only status.
+                return False
+
+        return True
+
+    @staticmethod
+    def _get_represented_players(
+        region_spaces: List[Position],
+        board: BoardState,
+    ) -> set:
+        """Get all players represented in a region by their ring stacks."""
+        represented = set()
+        for space in region_spaces:
+            stack = BoardManager.get_stack(space, board)
+            if stack:
+                represented.add(stack.controlling_player)
+        return represented
 
     @staticmethod
     def get_border_marker_positions(
-        spaces: List[Position], board: BoardState
+        spaces: List[Position],
+        board: BoardState,
     ) -> List[Position]:
-        border_markers = []
-        region_set = set(p.to_key() for p in spaces)
-        
-        for pos in spaces:
-            neighbors = BoardManager._get_territory_neighbors(pos, board.type)
+        """
+        Get border marker positions for a disconnected region.
+
+        Mirrors the TS BoardManager.getBorderMarkerPositions:
+
+        - Seed border markers as any markers adjacent to the region using
+          territory adjacency (Von Neumann / hex).
+        - Flood-fill across connected markers using Moore adjacency (for
+          square boards) to capture the entire connected marker ring,
+          including diagonal corners.
+        """
+        region_keys = set(p.to_key() for p in spaces)
+
+        # Step 1: territory-adjacent marker seeds.
+        seed_map: dict[str, Position] = {}
+        for space in spaces:
+            neighbors = BoardManager._get_territory_neighbors(
+                space,
+                board.type,
+            )
             for neighbor in neighbors:
                 n_key = neighbor.to_key()
-                if n_key not in region_set:
-                    # Neighbor is outside region
-                    if n_key in board.markers:
-                        # It's a marker, add to border
-                        # Note: We should check if it's the player's marker,
-                        # but caller usually handles context
-                        border_markers.append(neighbor)
-                        
-        # Deduplicate
-        unique_markers = []
-        seen = set()
-        for m in border_markers:
-            k = m.to_key()
-            if k not in seen:
-                seen.add(k)
-                unique_markers.append(m)
-                
-        return unique_markers
+                if n_key in region_keys:
+                    continue
+                marker = board.markers.get(n_key)
+                if marker is not None and n_key not in seed_map:
+                    seed_map[n_key] = neighbor
+
+        # No adjacent markers → no marker border.
+        if not seed_map:
+            return []
+
+        # Step 2: BFS through markers to capture the full border ring.
+        border_markers: dict[str, Position] = dict(seed_map)
+        queue: List[Position] = list(seed_map.values())
+        visited: set = set(seed_map.keys())
+
+        while queue:
+            current = queue.pop(0)
+
+            # For square boards, expand using Moore adjacency (8 directions).
+            # For hex boards, TS's getMooreNeighbors effectively contributes
+            # no additional neighbors; we mirror that by skipping expansion.
+            if board.type == BoardType.HEXAGONAL:
+                neighbors: List[Position] = []
+            else:
+                neighbors = []
+                directions = BoardManager._get_all_directions(board.type)
+                for direction in directions:
+                    neighbors.append(
+                        BoardManager._add_direction(
+                            current,
+                            direction,
+                            1,
+                        )
+                    )
+
+            for neighbor in neighbors:
+                n_key = neighbor.to_key()
+                if n_key in visited:
+                    continue
+                if n_key in region_keys:
+                    continue
+                if not BoardManager.is_valid_position(
+                    neighbor,
+                    board.type,
+                    board.size,
+                ):
+                    continue
+
+                marker = board.markers.get(n_key)
+                if marker is not None:
+                    visited.add(n_key)
+                    border_markers[n_key] = neighbor
+                    queue.append(neighbor)
+
+        return list(border_markers.values())
 
     @staticmethod
     def _get_territory_neighbors(
@@ -337,6 +665,87 @@ class BoardManager:
                 Position(x=pos.x, y=pos.y+1),
                 Position(x=pos.x, y=pos.y-1)
             ]
+
+    @staticmethod
+    def _get_line_directions(
+        board_type: BoardType,
+    ) -> List[Tuple[int, int, Optional[int]]]:
+        """
+        Canonical line directions for line detection.
+
+        Mirrors src/shared/engine/lineDetection.getLineDirections and the
+        server BoardManager.getLineDirections helpers:
+        - Square boards: E, SE, S, NE
+        - Hex boards: three axial directions (E, NE, NW in cube coords)
+        """
+        if board_type == BoardType.HEXAGONAL:
+            return [
+                (1, 0, -1),   # East
+                (1, -1, 0),   # Northeast
+                (0, -1, 1),   # Northwest
+            ]
+        else:
+            return [
+                (1, 0, None),   # East
+                (1, 1, None),   # Southeast
+                (0, 1, None),   # South
+                (1, -1, None),  # Northeast
+            ]
+
+    @staticmethod
+    def _find_line_in_direction(
+        start: Position,
+        direction: Tuple[int, int, Optional[int]],
+        player: int,
+        board: BoardState,
+    ) -> List[Position]:
+        """
+        Find consecutive markers in a given direction for a player.
+
+        Mirrors shared lineDetection.findLineInDirection semantics:
+        - Lines are formed by MARKERS, not stacks.
+        - Collapsed spaces and stacks break lines.
+        - Expands in both forward and backward directions.
+        """
+        line: List[Position] = [start]
+
+        # Forward
+        current = start
+        while True:
+            next_pos = BoardManager._add_direction(current, direction, 1)
+            if not BoardManager.is_valid_position(next_pos, board.type, board.size):
+                break
+            if BoardManager.is_collapsed_space(next_pos, board):
+                break
+            if BoardManager.get_stack(next_pos, board):
+                break
+
+            marker = board.markers.get(next_pos.to_key())
+            if marker is None or marker.player != player:
+                break
+
+            line.append(next_pos)
+            current = next_pos
+
+        # Backward
+        current = start
+        while True:
+            prev_pos = BoardManager._add_direction(current, direction, -1)
+            if not BoardManager.is_valid_position(prev_pos, board.type, board.size):
+                break
+            if BoardManager.is_collapsed_space(prev_pos, board):
+                break
+            if BoardManager.get_stack(prev_pos, board):
+                break
+
+            marker = board.markers.get(prev_pos.to_key())
+            if marker is None or marker.player != player:
+                break
+
+            line.insert(0, prev_pos)
+            current = prev_pos
+
+        return line
 
     @staticmethod
     def _get_all_directions(

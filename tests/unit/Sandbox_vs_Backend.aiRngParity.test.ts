@@ -1,4 +1,11 @@
-import { GameState, BoardState, Player, Move, BoardType, BOARD_CONFIGS } from '../../src/shared/types/game';
+import {
+  GameState,
+  BoardState,
+  Player,
+  Move,
+  BoardType,
+  BOARD_CONFIGS,
+} from '../../src/shared/types/game';
 import { hashGameState } from '../../src/shared/engine/core';
 import {
   ClientSandboxEngine,
@@ -56,7 +63,7 @@ describe('Sandbox vs Backend AI RNG hooks', () => {
     };
 
     const handler: SandboxInteractionHandler = {
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<any> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<any> {
         const anyChoice = choice as any;
 
         // Mirror the deterministic handler used in trace + heuristic tests:

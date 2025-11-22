@@ -4,13 +4,9 @@ import {
   Position,
   positionToString,
   CaptureDirectionChoice,
-  PlayerChoiceResponseFor
+  PlayerChoiceResponseFor,
 } from '../../../shared/types/game';
-import {
-  validateCaptureSegmentOnBoard,
-  CaptureSegmentBoardView,
-  getMovementDirectionsForBoardType
-} from '../../../shared/engine/core';
+import { enumerateCaptureMoves, CaptureBoardAdapters } from '../../../shared/engine/captureLogic';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
 import { PlayerInteractionManager } from '../PlayerInteractionManager';
@@ -59,7 +55,7 @@ export function updateChainCaptureStateAfterCapture(
     from: move.from,
     target: move.captureTarget,
     landing: move.to,
-    capturedCapHeight
+    capturedCapHeight,
   };
 
   if (!state) {
@@ -69,7 +65,7 @@ export function updateChainCaptureStateAfterCapture(
       currentPosition: move.to,
       segments: [segment],
       availableMoves: [],
-      visitedPositions: new Set<string>([positionToString(move.from)])
+      visitedPositions: new Set<string>([positionToString(move.from)]),
     };
   }
 
@@ -101,10 +97,10 @@ export function getCaptureOptionsFromPosition(
     return [];
   }
 
-  const moves: Move[] = [];
-  const directions = getMovementDirectionsForBoardType(gameState.boardType);
-
-  const view: CaptureSegmentBoardView = {
+  // Adapt the current board view to the shared capture enumerator so that
+  // backend chain-capture enumeration stays in lock-step with the
+  // sandbox and shared core rules.
+  const adapters: CaptureBoardAdapters = {
     isValidPosition: (pos: Position) => boardManager.isValidPosition(pos),
     isCollapsedSpace: (pos: Position) => boardManager.isCollapsedSpace(pos, board),
     getStackAt: (pos: Position) => {
@@ -113,104 +109,34 @@ export function getCaptureOptionsFromPosition(
       return {
         controllingPlayer: stack.controllingPlayer,
         capHeight: stack.capHeight,
-        stackHeight: stack.stackHeight
+        stackHeight: stack.stackHeight,
       };
     },
-    getMarkerOwner: (pos: Position) => boardManager.getMarker(pos, board)
+    getMarkerOwner: (pos: Position) => boardManager.getMarker(pos, board),
   };
 
-  for (const dir of directions) {
-    // Step outward from the attacker to find the first potential target
-    let step = 1;
-    let targetPos: Position | undefined;
+  const baseMoveNumber = gameState.moveHistory.length + 1;
 
-    for (;;) {
-      const pos: Position = {
-        x: position.x + dir.x * step,
-        y: position.y + dir.y * step,
-        ...(dir.z !== undefined && { z: (position.z || 0) + dir.z * step })
-      };
+  const rawMoves = enumerateCaptureMoves(
+    gameState.boardType,
+    position,
+    playerNumber,
+    adapters,
+    baseMoveNumber
+  );
 
-      if (!boardManager.isValidPosition(pos)) {
-        break; // Off-board
-      }
-
-      // Collapsed spaces block both target search and landing beyond
-      if (boardManager.isCollapsedSpace(pos, board)) {
-        break;
-      }
-
-      const stackAtPos = boardManager.getStack(pos, board);
-      if (stackAtPos && stackAtPos.rings.length > 0) {
-        // First stack encountered along this ray is the only possible
-        // capture target in this direction. Rule fix: players can
-        // overtake their own stacks; only cap-height comparison matters.
-        if (attackerStack.capHeight >= stackAtPos.capHeight) {
-          targetPos = pos;
-        }
-        break;
-      }
-
-      step++;
-    }
-
-    if (!targetPos) continue;
-
-    // From the target, walk further along the same ray to find candidate
-    // landing positions. Each candidate is validated via the shared
-    // validateCaptureSegmentOnBoard helper so that backend chain-capture
-    // enumeration stays in lock-step with the sandbox and core rules.
-    let landingStep = 1;
-    for (;;) {
-      const landingPos: Position = {
-        x: targetPos.x + dir.x * landingStep,
-        y: targetPos.y + dir.y * landingStep,
-        ...(dir.z !== undefined && { z: (targetPos.z || 0) + dir.z * landingStep })
-      };
-
-      if (!boardManager.isValidPosition(landingPos)) {
-        break;
-      }
-
-      // Collapsed spaces and stacks at the landing position block further
-      // landings along this ray.
-      if (boardManager.isCollapsedSpace(landingPos, board)) {
-        break;
-      }
-
-      const landingStack = boardManager.getStack(landingPos, board);
-      if (landingStack && landingStack.rings.length > 0) {
-        break;
-      }
-
-      if (
-        validateCaptureSegmentOnBoard(
-          gameState.boardType,
-          position,
-          targetPos,
-          landingPos,
-          playerNumber,
-          view
-        )
-      ) {
-        const candidate: Move = {
-          id: '',
-          type: 'overtaking_capture',
-          player: playerNumber,
-          from: position,
-          captureTarget: targetPos,
-          to: landingPos,
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: gameState.moveHistory.length + 1
-        };
-
-        moves.push(candidate);
-      }
-
-      landingStep++;
-    }
-  }
+  // Ensure stable-ish IDs for diagnostics and tests that may log moves;
+  // geometry (from/target/to) is what parity tests actually care about.
+  const moves: Move[] = rawMoves.map((m, index) => ({
+    ...m,
+    id:
+      m.id && m.id.length > 0
+        ? m.id
+        : `capture-${positionToString(m.from!)}-${positionToString(
+            m.captureTarget!
+          )}-${positionToString(m.to!)}-${index}`,
+    moveNumber: baseMoveNumber,
+  }));
 
   return moves;
 }
@@ -248,12 +174,11 @@ export async function chooseCaptureDirectionFromState(
     playerNumber: chainState.playerNumber,
     type: 'capture_direction',
     prompt: 'Choose capture direction and landing position',
-    options: options.map(opt => ({
+    options: options.map((opt) => ({
       targetPosition: opt.captureTarget!,
       landingPosition: opt.to,
-      capturedCapHeight:
-        boardManager.getStack(opt.captureTarget!, gameState.board)?.capHeight || 0
-    }))
+      capturedCapHeight: boardManager.getStack(opt.captureTarget!, gameState.board)?.capHeight || 0,
+    })),
   };
 
   const response: PlayerChoiceResponseFor<CaptureDirectionChoice> =
@@ -265,47 +190,19 @@ export async function chooseCaptureDirectionFromState(
 
   // Find the matching Move in the available options; fall back to the
   // first option if for some reason we cannot match exactly.
-  const matched = options.find(opt =>
-    opt.captureTarget &&
-    positionToString(opt.captureTarget) === targetKey &&
-    positionToString(opt.to) === landingKey
+  const matched = options.find(
+    (opt) =>
+      opt.captureTarget &&
+      positionToString(opt.captureTarget) === targetKey &&
+      positionToString(opt.to) === landingKey
   );
 
   return matched || options[0];
 }
 
-// Helper to get movement directions using BoardManager's config so we
-// don't reach into GameEngine directly.
-function getAllDirectionsForBoardType(
-  _boardType: string,
-  boardManager: BoardManager
-): { x: number; y: number; z?: number }[] {
-  const config = boardManager.getConfig();
-  if (config.type === 'hexagonal') {
-    return [
-      { x: 1, y: 0, z: -1 },
-      { x: 0, y: 1, z: -1 },
-      { x: -1, y: 1, z: 0 },
-      { x: -1, y: 0, z: 1 },
-      { x: 0, y: -1, z: 1 },
-      { x: 1, y: -1, z: 0 }
-    ];
-  }
-
-  // square boards: Moore directions used for movement rays
-  const directions: { x: number; y: number }[] = [];
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      if (dx === 0 && dy === 0) continue;
-      directions.push({ x: dx, y: dy });
-    }
-  }
-  return directions;
-}
-
 // Local UUID generator mirroring GameEngine.generateUUID
 function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = (Math.random() * 16) | 0;
     const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);

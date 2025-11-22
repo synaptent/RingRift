@@ -7,7 +7,8 @@ import {
   Player,
   Position,
   RingStack,
-  positionToString
+  Move,
+  positionToString,
 } from '../../shared/types/game';
 import { calculateCapHeight } from '../../shared/engine/core';
 import { findAllLinesOnBoard } from './sandboxLines';
@@ -41,8 +42,7 @@ function assertLineEngineMonotonicity(
     return;
   }
 
-  const message =
-    `sandboxLinesEngine invariant violation (${context}):` + '\n' + errors.join('\n');
+  const message = `sandboxLinesEngine invariant violation (${context}):` + '\n' + errors.join('\n');
 
   // eslint-disable-next-line no-console
   console.error(message);
@@ -110,7 +110,7 @@ function collapseLineMarkersOnBoard(
     collapsedSpaces: new Map(board.collapsedSpaces),
     territories: new Map(board.territories),
     formedLines: [...board.formedLines],
-    eliminatedRings: { ...board.eliminatedRings }
+    eliminatedRings: { ...board.eliminatedRings },
   };
 
   const collapsedKeys = new Set<string>();
@@ -124,7 +124,7 @@ function collapseLineMarkersOnBoard(
   }
 
   const territoryGain = collapsedKeys.size;
-  const nextPlayers = players.map(p =>
+  const nextPlayers = players.map((p) =>
     p.playerNumber === playerNumber
       ? { ...p, territorySpaces: p.territorySpaces + territoryGain }
       : p
@@ -132,7 +132,185 @@ function collapseLineMarkersOnBoard(
 
   return {
     board: nextBoard,
-    players: nextPlayers
+    players: nextPlayers,
+  };
+}
+
+/**
+ * Enumerate canonical line-processing decision moves for the current
+ * player. This mirrors GameEngine.getValidLineProcessingMoves.
+ */
+export function getValidLineProcessingMoves(gameState: GameState): Move[] {
+  const moves: Move[] = [];
+  const boardType = gameState.boardType;
+  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  const currentPlayer = gameState.currentPlayer;
+
+  const allLines: LineInfo[] = findAllLinesOnBoard(
+    boardType,
+    gameState.board,
+    (pos: Position) => isValidPosition(boardType, gameState.board, pos),
+    (posStr: string) => stringToPositionLocal(posStr)
+  );
+
+  const playerLines = allLines.filter((line) => line.player === currentPlayer);
+
+  if (playerLines.length === 0) {
+    return moves;
+  }
+
+  // One process_line move per player-owned line
+  playerLines.forEach((line, index) => {
+    const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+    moves.push({
+      id: `process-line-${index}-${lineKey}`,
+      type: 'process_line',
+      player: currentPlayer,
+      formedLines: [line],
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: gameState.moveHistory.length + 1,
+    } as Move);
+  });
+
+  // For overlength lines, also surface choose_line_reward decisions
+  const overlengthLines = playerLines.filter((line) => line.positions.length > requiredLength);
+
+  overlengthLines.forEach((line, index) => {
+    const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+
+    // Option 1: Collapse All (default/implicit)
+    moves.push({
+      id: `choose-line-reward-${index}-${lineKey}-all`,
+      type: 'choose_line_reward',
+      player: currentPlayer,
+      formedLines: [line],
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: gameState.moveHistory.length + 1,
+    } as Move);
+
+    // Option 2: Minimum Collapse
+    const minMarkers = line.positions.slice(0, requiredLength);
+    moves.push({
+      id: `choose-line-reward-${index}-${lineKey}-min`,
+      type: 'choose_line_reward',
+      player: currentPlayer,
+      formedLines: [line],
+      collapsedMarkers: minMarkers,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: gameState.moveHistory.length + 1,
+    } as Move);
+  });
+
+  return moves;
+}
+
+/**
+ * Apply a single line decision move to the game state.
+ */
+export function applyLineDecisionMove(gameState: GameState, move: Move): GameState {
+  if (move.type !== 'process_line' && move.type !== 'choose_line_reward') {
+    return gameState;
+  }
+
+  const boardType = gameState.boardType;
+  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+
+  let board = gameState.board;
+  let players = gameState.players;
+  let totalRingsEliminated = gameState.totalRingsEliminated;
+
+  let targetLine: LineInfo | undefined;
+
+  // Prefer the canonical line payload carried on the Move itself so that
+  // callers (including tests that stub findAllLinesOnBoard) can control
+  // exactly which line is being processed.
+  if (move.formedLines && move.formedLines.length > 0) {
+    targetLine = move.formedLines[0];
+  } else {
+    // Fallback: recompute lines when move.formedLines is absent. This keeps
+    // the helper usable with legacy callers that don't populate formedLines.
+    const allLines: LineInfo[] = findAllLinesOnBoard(
+      boardType,
+      board,
+      (pos: Position) => isValidPosition(boardType, board, pos),
+      (posStr: string) => stringToPositionLocal(posStr)
+    );
+
+    const playerLines = allLines.filter((line) => line.player === move.player);
+    if (playerLines.length === 0) {
+      return gameState;
+    }
+
+    targetLine = playerLines[0];
+  }
+
+  if (!targetLine) {
+    return gameState;
+  }
+
+  const lineLength = targetLine.positions.length;
+
+  if (lineLength === requiredLength) {
+    // Exact length: collapse all and eliminate
+    const collapsed = collapseLineMarkersOnBoard(board, players, targetLine.positions, move.player);
+    board = collapsed.board;
+    players = collapsed.players;
+
+    const stacks = getPlayerStacks(board, move.player);
+    const elimResult = forceEliminateCapOnBoard(board, players, move.player, stacks);
+    board = elimResult.board;
+    players = elimResult.players;
+    totalRingsEliminated += elimResult.totalRingsEliminatedDelta;
+  } else if (lineLength > requiredLength) {
+    // Overlength: check move for choice
+    if (
+      move.type === 'choose_line_reward' &&
+      move.collapsedMarkers &&
+      move.collapsedMarkers.length === requiredLength
+    ) {
+      // Option 2: Minimum collapse, no elimination
+      const collapsed = collapseLineMarkersOnBoard(
+        board,
+        players,
+        move.collapsedMarkers,
+        move.player
+      );
+      board = collapsed.board;
+      players = collapsed.players;
+    } else if (move.type === 'choose_line_reward') {
+      // Option 1 (explicit): Collapse all and eliminate
+      const collapsed = collapseLineMarkersOnBoard(
+        board,
+        players,
+        targetLine.positions,
+        move.player
+      );
+      board = collapsed.board;
+      players = collapsed.players;
+
+      const stacks = getPlayerStacks(board, move.player);
+      const elimResult = forceEliminateCapOnBoard(board, players, move.player, stacks);
+      board = elimResult.board;
+      players = elimResult.players;
+      totalRingsEliminated += elimResult.totalRingsEliminatedDelta;
+    } else {
+      // process_line default for overlength: Option 2 (Minimum collapse, no elimination)
+      // This preserves legacy sandbox behavior where overlength lines don't trigger elimination.
+      const markersToCollapse = targetLine.positions.slice(0, requiredLength);
+      const collapsed = collapseLineMarkersOnBoard(board, players, markersToCollapse, move.player);
+      board = collapsed.board;
+      players = collapsed.players;
+    }
+  }
+
+  return {
+    ...gameState,
+    board,
+    players,
+    totalRingsEliminated,
   };
 }
 
@@ -156,7 +334,7 @@ export function processLinesForCurrentPlayer(gameState: GameState): GameState {
 
   const beforeSnapshot = {
     collapsedSpaces: board.collapsedSpaces.size,
-    totalRingsEliminated
+    totalRingsEliminated,
   };
 
   // eslint-disable-next-line no-constant-condition
@@ -168,7 +346,7 @@ export function processLinesForCurrentPlayer(gameState: GameState): GameState {
       (posStr: string) => stringToPositionLocal(posStr)
     );
 
-    const playerLines = allLines.filter(line => line.player === currentPlayer);
+    const playerLines = allLines.filter((line) => line.player === currentPlayer);
     if (playerLines.length === 0) {
       break;
     }
@@ -190,7 +368,12 @@ export function processLinesForCurrentPlayer(gameState: GameState): GameState {
     } else if (line.length > requiredLength) {
       // Longer: collapse only requiredLength markers, no elimination.
       const markersToCollapse = line.positions.slice(0, requiredLength);
-      const collapsed = collapseLineMarkersOnBoard(board, players, markersToCollapse, currentPlayer);
+      const collapsed = collapseLineMarkersOnBoard(
+        board,
+        players,
+        markersToCollapse,
+        currentPlayer
+      );
       board = collapsed.board;
       players = collapsed.players;
     } else {
@@ -201,7 +384,7 @@ export function processLinesForCurrentPlayer(gameState: GameState): GameState {
 
   const afterSnapshot = {
     collapsedSpaces: board.collapsedSpaces.size,
-    totalRingsEliminated
+    totalRingsEliminated,
   };
 
   assertLineEngineMonotonicity('processLinesForCurrentPlayer', beforeSnapshot, afterSnapshot);
@@ -210,6 +393,6 @@ export function processLinesForCurrentPlayer(gameState: GameState): GameState {
     ...gameState,
     board,
     players,
-    totalRingsEliminated
+    totalRingsEliminated,
   };
 }

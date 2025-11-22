@@ -7,7 +7,10 @@ from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any
 import time
 import random
-from ..models import GameState, Move, AIConfig, Position
+
+from ..models import GameState, Move, AIConfig
+from ..rules.factory import get_rules_engine
+from ..rules.interfaces import RulesEngine
 
 
 class BaseAI(ABC):
@@ -24,6 +27,7 @@ class BaseAI(ABC):
         self.player_number = player_number
         self.config = config
         self.move_count = 0
+        self.rules_engine: RulesEngine = get_rules_engine()
         
     @abstractmethod
     def select_move(self, game_state: GameState) -> Optional[Move]:
@@ -51,7 +55,9 @@ class BaseAI(ABC):
         """
         pass
     
-    def get_evaluation_breakdown(self, game_state: GameState) -> Dict[str, float]:
+    def get_evaluation_breakdown(
+        self, game_state: GameState
+    ) -> Dict[str, float]:
         """
         Get detailed breakdown of position evaluation
         
@@ -65,22 +71,20 @@ class BaseAI(ABC):
             "total": self.evaluate_position(game_state)
         }
     
-    def get_valid_moves(self, game_state: GameState) -> List[Dict[str, Any]]:
+    def get_valid_moves(self, game_state: GameState) -> List[Move]:
         """
-        Get all valid moves for current position
-        This would need to call the game engine's move generation
-        For now, returns empty list - to be implemented with game logic
+        Get all valid moves for the current position using the rules engine.
         
         Args:
             game_state: Current game state
             
         Returns:
-            List of valid moves
+            List of valid Move instances
         """
-        # TODO: Implement move generation
-        # This will need to replicate the TypeScript move generation logic
-        # or call back to the main service for move validation
-        return []
+        return self.rules_engine.get_valid_moves(
+            game_state,
+            self.player_number,
+        )
     
     def simulate_thinking(self, min_ms: int = 100, max_ms: int = 2000) -> None:
         """
@@ -153,7 +157,11 @@ class BaseAI(ABC):
             if p.player_number != self.player_number
         ]
     
-    def get_player_info(self, game_state: GameState, player_number: int = None):
+    def get_player_info(
+        self,
+        game_state: GameState,
+        player_number: Optional[int] = None,
+    ):
         """
         Get player info for specified player (defaults to this AI's player)
         
@@ -164,7 +172,9 @@ class BaseAI(ABC):
         Returns:
             Player info or None if not found
         """
-        target_player = player_number if player_number is not None else self.player_number
+        target_player = (
+            player_number if player_number is not None else self.player_number
+        )
         for player in game_state.players:
             if player.player_number == target_player:
                 return player
@@ -172,4 +182,8 @@ class BaseAI(ABC):
     
     def __repr__(self) -> str:
         """String representation of AI"""
-        return f"{self.__class__.__name__}(player={self.player_number}, difficulty={self.config.difficulty})"
+        return (
+            f"{self.__class__.__name__}"
+            f"(player={self.player_number}, "
+            f"difficulty={self.config.difficulty})"
+        )

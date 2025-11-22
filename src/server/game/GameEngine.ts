@@ -78,6 +78,16 @@ export class GameEngine {
   private moveTimers: Map<number, any> = new Map();
   private interactionManager: PlayerInteractionManager | undefined;
   /**
+   * When true, line and territory processing are expressed as explicit
+   * canonical decision moves (process_line, choose_line_reward,
+   * process_territory_region, eliminate_rings_from_stack) rather than
+   * being resolved purely via PlayerChoice flows in
+   * processAutomaticConsequences. This flag is opt-in so legacy tests
+   * and tools can continue to rely on the older automatic behaviour
+   * while WebSocket/AI integrations migrate to the unified Move model.
+   */
+  private useMoveDrivenDecisionPhases: boolean = false;
+  /**
    * Per-turn placement state: when a ring placement occurs, we track that
    * fact and remember which stack must be moved this turn. This mirrors
    * the sandbox engine’s per-turn fields but remains internal to the
@@ -91,6 +101,17 @@ export class GameEngine {
    * from `currentPosition` are legal until no options remain.
    */
   private chainCaptureState: TsChainCaptureState | undefined;
+  /**
+   * Internal flag used only in move-driven decision phases to indicate
+   * that the current player has processed at least one disconnected
+   * territory region in the current territory_processing cycle and
+   * therefore must perform mandatory self-elimination via an explicit
+   * eliminate_rings_from_stack Move. This prevents the backend from
+   * surfacing spurious elimination decisions (and auto-applying them
+   * in stepAutomaticPhasesForTesting) in territory_processing states
+   * where no region has ever been processed.
+   */
+  private pendingTerritorySelfElimination: boolean = false;
 
   constructor(
     gameId: string,
@@ -137,6 +158,18 @@ export class GameEngine {
     // ts-node/TypeScript with noUnusedLocals can compile the server in
     // dev without stripping them. This has no behavioural effect.
     this._debugUseInternalHelpers();
+  }
+
+  /**
+   * Enable Move-driven decision phases (line_processing and
+   * territory_processing) so that line/territory decisions are
+   * expressed as explicit canonical Moves chosen via getValidMoves
+   * rather than being resolved internally via PlayerChoice flows in
+   * processAutomaticConsequences. This is primarily used by the
+   * WebSocket/AI integration layer.
+   */
+  public enableMoveDrivenDecisionPhases(): void {
+    this.useMoveDrivenDecisionPhases = true;
   }
 
   getGameState(): GameState {
@@ -223,8 +256,70 @@ export class GameEngine {
   private appendHistoryEntry(before: GameState, action: Move): void {
     const after = this.getGameState();
 
-    const progressBefore = computeProgressSnapshot(before);
-    const progressAfter = computeProgressSnapshot(after);
+    // Raw snapshots based purely on the underlying GameState. These are
+    // used as a diagnostic reference, but the history entry itself is
+    // normalised to match the geometric board summaries so that
+    // progress.collapsed and progress.markers can never silently drift
+    // out of sync with the recorded board geometry.
+    const rawProgressBefore = computeProgressSnapshot(before);
+    const rawProgressAfter = computeProgressSnapshot(after);
+
+    const boardBeforeSummary = summarizeBoard(before.board);
+    const boardAfterSummary = summarizeBoard(after.board);
+
+    const progressBefore = {
+      markers: boardBeforeSummary.markers.length,
+      collapsed: boardBeforeSummary.collapsedSpaces.length,
+      eliminated: rawProgressBefore.eliminated,
+      S:
+        boardBeforeSummary.markers.length +
+        boardBeforeSummary.collapsedSpaces.length +
+        rawProgressBefore.eliminated,
+    };
+
+    const progressAfter = {
+      markers: boardAfterSummary.markers.length,
+      collapsed: boardAfterSummary.collapsedSpaces.length,
+      eliminated: rawProgressAfter.eliminated,
+      S:
+        boardAfterSummary.markers.length +
+        boardAfterSummary.collapsedSpaces.length +
+        rawProgressAfter.eliminated,
+    };
+
+    // Defensive diagnostic: under trace-debug runs, detect any mismatch
+    // between the raw S-invariant counts (from GameState) and the
+    // geometry implied by the board summaries. This continues to surface
+    // bookkeeping drift for debugging, while the stored history entry is
+    // always consistent with its own boardBefore/After summaries.
+    const TRACE_DEBUG_ENABLED =
+      typeof process !== 'undefined' &&
+      !!(process as any).env &&
+      ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
+
+    if (TRACE_DEBUG_ENABLED) {
+      const collapsedFromBoard = boardAfterSummary.collapsedSpaces.length;
+      const markersFromBoard = boardAfterSummary.markers.length;
+
+      if (
+        collapsedFromBoard !== rawProgressAfter.collapsed ||
+        markersFromBoard !== rawProgressAfter.markers
+      ) {
+        // eslint-disable-next-line no-console
+        console.log('[GameEngine.appendHistoryEntry] S-invariant debug mismatch', {
+          moveNumber: action.moveNumber,
+          actor: action.player,
+          phaseAfter: after.currentPhase,
+          statusAfter: after.gameStatus,
+          rawProgressAfter,
+          countsFromBoardSummary: {
+            markers: markersFromBoard,
+            collapsed: collapsedFromBoard,
+          },
+          stateHashAfter: hashGameState(after),
+        });
+      }
+    }
 
     const entry: GameHistoryEntry = {
       moveNumber: action.moveNumber,
@@ -238,8 +333,8 @@ export class GameEngine {
       progressAfter,
       stateHashBefore: hashGameState(before),
       stateHashAfter: hashGameState(after),
-      boardBeforeSummary: summarizeBoard(before.board),
-      boardAfterSummary: summarizeBoard(after.board),
+      boardBeforeSummary,
+      boardAfterSummary,
     };
 
     const history: GameHistoryEntry[] = [...this.gameState.history, entry];
@@ -340,7 +435,8 @@ export class GameEngine {
     if (
       fullMove.type === 'process_line' ||
       fullMove.type === 'choose_line_reward' ||
-      fullMove.type === 'process_territory_region'
+      fullMove.type === 'process_territory_region' ||
+      fullMove.type === 'eliminate_rings_from_stack'
     ) {
       await this.applyDecisionMove(fullMove);
 
@@ -439,10 +535,7 @@ export class GameEngine {
     // internal PlayerChoice callbacks.
     let chainContinuationAvailable = false;
 
-    if (
-      fullMove.type === 'overtaking_capture' ||
-      fullMove.type === 'continue_capture_segment'
-    ) {
+    if (fullMove.type === 'overtaking_capture' || fullMove.type === 'continue_capture_segment') {
       this.updateChainCaptureStateAfterCapture(fullMove, capturedCapHeight);
 
       const state = this.chainCaptureState;
@@ -494,8 +587,92 @@ export class GameEngine {
       };
     }
 
+    // When Move-driven decision phases are enabled, expose pending
+    // line/territory decisions as explicit canonical Moves instead of
+    // resolving them internally. This keeps backend WebSocket/AI flows
+    // aligned with the sandbox engine and ensures every decision is
+    // visible in the move history.
+    if (this.useMoveDrivenDecisionPhases) {
+      const currentPlayer = this.gameState.currentPlayer;
+
+      // 1) Line-processing decisions: if any lines exist for the
+      // current player, enter the dedicated line_processing phase so
+      // clients/AI can submit process_line / choose_line_reward Moves
+      // via getValidMoves.
+      const lineDecisionMoves = this.getValidLineProcessingMoves(currentPlayer);
+      if (lineDecisionMoves.length > 0) {
+        this.gameState.currentPhase = 'line_processing';
+
+        // Restart the active player's timer for the upcoming
+        // interactive decision.
+        this.startPlayerTimer(this.gameState.currentPlayer);
+
+        // Record a structured history entry for the move that created
+        // this decision state.
+        this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+        return {
+          success: true,
+          gameState: this.getGameState(),
+        };
+      }
+
+      // 2) Territory-processing decisions: if no lines remain but
+      // disconnected regions exist for the current player, enter
+      // territory_processing so process_territory_region Moves can be
+      // chosen explicitly. Explicit self-elimination decisions
+      // (eliminate_rings_from_stack) are still surfaced later, once a
+      // region has been processed and the engine is already in the
+      // territory_processing phase.
+      const territoryRegionMoves = this.getValidTerritoryProcessingMoves(currentPlayer);
+
+      if (territoryRegionMoves.length > 0) {
+        this.gameState.currentPhase = 'territory_processing';
+
+        this.startPlayerTimer(this.gameState.currentPlayer);
+        this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+        return {
+          success: true,
+          gameState: this.getGameState(),
+        };
+      }
+    }
+
+    // Fallback: legacy automatic-consequence flow. This path remains
+    // the default when Move-driven decision phases are disabled and is
+    // also used when no line/territory decisions are available after
+    // the move.
+
     // Process automatic consequences (line formations, territory, etc.) only
     // after the full move (including any mandatory chain) has resolved.
+    const TRACE_DEBUG_ENABLED_LOCAL =
+      typeof process !== 'undefined' &&
+      !!(process as any).env &&
+      ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
+
+    if (TRACE_DEBUG_ENABLED_LOCAL) {
+      const allBoardStackKeys = Array.from(this.gameState.board.stacks.keys());
+      const stacksByPlayer: { [player: number]: string[] } = {};
+      for (const [key, stack] of this.gameState.board.stacks.entries()) {
+        const owner = stack.controllingPlayer;
+        if (!stacksByPlayer[owner]) {
+          stacksByPlayer[owner] = [];
+        }
+        stacksByPlayer[owner].push(key);
+      }
+
+      // eslint-disable-next-line no-console
+      console.log('[GameEngine.makeMove.beforeAutomaticConsequences]', {
+        gameId: this.gameState.id,
+        moveType: fullMove.type,
+        movePlayer: fullMove.player,
+        boardStackCount: allBoardStackKeys.length,
+        boardStackKeysSample: allBoardStackKeys.slice(0, 16),
+        stacksByPlayer,
+      });
+    }
+
     await this.processAutomaticConsequences();
 
     // Check for game end conditions
@@ -522,7 +699,7 @@ export class GameEngine {
     // territory_processing) so the post-move snapshot and history entry
     // reflect the same next-player interactive phase that the sandbox
     // engine records in its traces.
-    this.stepAutomaticPhasesForTesting();
+    await this.stepAutomaticPhasesForTesting();
 
     // Start next player's timer
     this.startPlayerTimer(this.gameState.currentPlayer);
@@ -706,19 +883,14 @@ export class GameEngine {
     }
 
     // Line formation is processed separately in line_processing phase
-    // This is just for tracking lines that were formed during the move
-
-    // Check for territory disconnection
-    const territories = this.boardManager.findAllTerritoriesForAllPlayers(this.gameState.board);
-    for (const territory of territories) {
-      if (territory.isDisconnected) {
-        // Remove disconnected territory
-        for (const pos of territory.spaces) {
-          this.boardManager.removeStack(pos, this.gameState.board);
-        }
-        result.territoryChanges.push(territory);
-      }
-    }
+    // This is just for tracking lines that were formed during the move.
+    //
+    // Territory disconnection and region collapse are now handled
+    // exclusively via the shared territoryProcessing helper in
+    // processAutomaticConsequences(), which applies the Q23
+    // self-elimination prerequisite and S-invariant accounting. Any
+    // legacy direct stack removal here would bypass those rules and
+    // drift out of parity with the sandbox engine.
 
     return result;
   }
@@ -813,7 +985,11 @@ export class GameEngine {
     }
 
     // Capture top ring from target stack and add to bottom of capturing stack
-    const capturedRing = targetStack.rings[0]; // Top ring
+    // Note: rings array is [top, ..., bottom] (based on calculateCapHeight and place_ring).
+    // So top ring is at index 0.
+    const capturedRing = targetStack.rings[0];
+
+    // Add captured ring to the BOTTOM of the capturing stack (end of array)
     const newRings = [...stack.rings, capturedRing];
 
     // Update target stack (remove top ring)
@@ -841,7 +1017,7 @@ export class GameEngine {
       rings: newRings,
       stackHeight: newRings.length,
       capHeight: calculateCapHeight(newRings),
-      controllingPlayer: newRings[0],
+      controllingPlayer: newRings[0], // Top ring is at index 0
     };
     this.boardManager.setStack(landing, newStack, this.gameState.board);
 
@@ -860,14 +1036,19 @@ export class GameEngine {
   private async processAutomaticConsequences(): Promise<void> {
     // Captures are already processed in applyMove
 
-    // Process line formations (Section 11.2, 11.3)
-    this.gameState = await processLinesForCurrentPlayer(this.gameState, {
+    // Process territory disconnections (Section 12.2) via the shared
+    // canonical helper so that the automatic post-move pipeline uses
+    // exactly the same semantics as the standalone
+    // territoryProcessing.rules tests and the Python/TS parity layer.
+    this.gameState = await processDisconnectedRegionsForCurrentPlayer(this.gameState, {
       boardManager: this.boardManager,
       interactionManager: this.interactionManager,
     });
 
-    // Process territory disconnections (Section 12.2)
-    this.gameState = await processDisconnectedRegionsForCurrentPlayer(this.gameState, {
+    // Process line formations (Section 11.2, 11.3) using the shared
+    // functional helper so that line semantics remain aligned between
+    // the backend GameEngine and the rules-layer tests.
+    this.gameState = await processLinesForCurrentPlayer(this.gameState, {
       boardManager: this.boardManager,
       interactionManager: this.interactionManager,
     });
@@ -924,17 +1105,34 @@ export class GameEngine {
     // process_line, we attach the concrete LineInfo so that tests and
     // parity tooling can identify the target line without re-deriving it
     // from ids.
-    const overlengthLines = playerLines.filter(
-      (line) => line.positions.length > requiredLength
-    );
+    const overlengthLines = playerLines.filter((line) => line.positions.length > requiredLength);
 
     overlengthLines.forEach((line, index) => {
       const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+
+      // Option 1: Collapse All (default/implicit)
       moves.push({
-        id: `choose-line-reward-${index}-${lineKey}`,
+        id: `choose-line-reward-${index}-${lineKey}-all`,
         type: 'choose_line_reward',
         player: playerNumber,
         formedLines: [line],
+        // No collapsedMarkers means collapse all
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: this.gameState.moveHistory.length + 1,
+      } as Move);
+
+      // Option 2: Minimum Collapse
+      // Note: In a full implementation, the player might choose WHICH subset
+      // of markers to collapse. For now, we default to the first N markers
+      // to match the legacy behaviour.
+      const minMarkers = line.positions.slice(0, requiredLength);
+      moves.push({
+        id: `choose-line-reward-${index}-${lineKey}-min`,
+        type: 'choose_line_reward',
+        player: playerNumber,
+        formedLines: [line],
+        collapsedMarkers: minMarkers,
         timestamp: new Date(),
         thinkTime: 0,
         moveNumber: this.gameState.moveHistory.length + 1,
@@ -983,9 +1181,7 @@ export class GameEngine {
     // that the Move fully identifies the region to be processed.
     eligibleRegions.forEach((region, index) => {
       const representative = region.spaces[0];
-      const regionKey = representative
-        ? positionToString(representative)
-        : `region-${index}`;
+      const regionKey = representative ? positionToString(representative) : `region-${index}`;
       moves.push({
         id: `process-region-${index}-${regionKey}`,
         type: 'process_territory_region',
@@ -1013,11 +1209,14 @@ export class GameEngine {
    *   - Option 2: Collapse required markers only, no elimination
    */
   /**
-   * Apply a single line- or territory-processing decision expressed as a
-   * canonical Move. This is the entry point for the unified Move model
-   * for the 'line_processing' and 'territory_processing' phases; it
-   * mirrors the semantics of processOneLine/processOneDisconnectedRegion
-   * but processes exactly one line or region selected by the Move.
+   * Apply a single line-, territory-, or explicit elimination decision
+   * expressed as a canonical Move. This is the entry point for the
+   * unified Move model for the 'line_processing' and
+   * 'territory_processing' phases; it mirrors the semantics of
+   * processOneLine/processOneDisconnectedRegion but processes exactly one
+   * line, region, or elimination choice selected by the Move and then
+   * updates phases so callers can chain further decision Moves or
+   * resume normal turn flow.
    */
   private async applyDecisionMove(move: Move): Promise<void> {
     if (move.type === 'process_line' || move.type === 'choose_line_reward') {
@@ -1053,9 +1252,117 @@ export class GameEngine {
       // to processOneLine, which will in turn use the interaction manager
       // (when present) to choose Option 1 vs Option 2 for overlength lines.
       await this.processOneLine(targetLine, config.lineLength);
+
+      // After processing one line, re-check whether any further lines
+      // exist for the same player. If so, stay in line_processing so the
+      // client/AI can submit another decision Move. Otherwise, advance to
+      // territory_processing to handle any disconnections created by the
+      // collapse.
+      const remainingLines = this.boardManager
+        .findAllLines(this.gameState.board)
+        .filter((line) => line.player === move.player);
+
+      if (remainingLines.length > 0) {
+        this.gameState.currentPhase = 'line_processing';
+      } else {
+        this.gameState.currentPhase = 'territory_processing';
+      }
     } else if (move.type === 'process_territory_region') {
       const movingPlayer = move.player;
 
+      // Legacy / non-move-driven behaviour: process the region and
+      // immediately perform mandatory self-elimination via the existing
+      // PlayerChoice helper. This keeps all scenario/parity tests that do
+      // not enable move-driven decision phases aligned with the original
+      // semantics.
+      if (!this.useMoveDrivenDecisionPhases) {
+        const disconnectedRegions = this.boardManager.findDisconnectedRegions(
+          this.gameState.board,
+          movingPlayer
+        );
+
+        if (!disconnectedRegions || disconnectedRegions.length === 0) {
+          return;
+        }
+
+        let targetRegion: Territory | undefined;
+
+        if (move.disconnectedRegions && move.disconnectedRegions.length > 0) {
+          const target = move.disconnectedRegions[0];
+          const targetKeys = new Set(target.spaces.map((pos) => positionToString(pos)));
+
+          targetRegion = disconnectedRegions.find((region) => {
+            if (region.spaces.length !== target.spaces.length) {
+              return false;
+            }
+
+            const regionKeys = new Set(region.spaces.map((pos) => positionToString(pos)));
+
+            if (regionKeys.size !== targetKeys.size) {
+              return false;
+            }
+
+            for (const key of targetKeys) {
+              if (!regionKeys.has(key)) {
+                return false;
+              }
+            }
+
+            return true;
+          });
+        }
+
+        if (!targetRegion) {
+          // Fallback: choose the first region that satisfies the
+          // self-elimination prerequisite; if none do, leave the state
+          // unchanged.
+          targetRegion =
+            disconnectedRegions.find((region) =>
+              this.canProcessDisconnectedRegion(region, movingPlayer)
+            ) ?? undefined;
+        }
+
+        if (!targetRegion) {
+          return;
+        }
+
+        // Respect the self-elimination prerequisite defensively even if the
+        // caller attempted to target an ineligible region.
+        if (!this.canProcessDisconnectedRegion(targetRegion, movingPlayer)) {
+          return;
+        }
+
+        await this.processOneDisconnectedRegion(targetRegion, movingPlayer);
+
+        // After processing this region (including mandatory self-elimination
+        // and any internal eliminations), re-check for additional eligible
+        // disconnected regions for the same player. If any remain, stay in
+        // territory_processing so another process_territory_region Move can
+        // be applied. Otherwise, hand control to the normal turn engine so
+        // the next player's turn/phase is computed exactly as after
+        // automatic territory processing.
+        const remainingDisconnected = this.boardManager.findDisconnectedRegions(
+          this.gameState.board,
+          movingPlayer
+        );
+
+        const remainingEligible = remainingDisconnected.filter((region) =>
+          this.canProcessDisconnectedRegion(region, movingPlayer)
+        );
+
+        if (remainingEligible.length > 0) {
+          this.gameState.currentPhase = 'territory_processing';
+        } else {
+          this.advanceGame();
+          this.stepAutomaticPhasesForTesting();
+        }
+
+        return;
+      }
+
+      // Move-driven decision phases: apply the core region-processing
+      // consequences but leave mandatory self-elimination to an explicit
+      // eliminate_rings_from_stack Move surfaced via RuleEngine.
       const disconnectedRegions = this.boardManager.findDisconnectedRegions(
         this.gameState.board,
         movingPlayer
@@ -1069,18 +1376,14 @@ export class GameEngine {
 
       if (move.disconnectedRegions && move.disconnectedRegions.length > 0) {
         const target = move.disconnectedRegions[0];
-        const targetKeys = new Set(
-          target.spaces.map((pos) => positionToString(pos))
-        );
+        const targetKeys = new Set(target.spaces.map((pos) => positionToString(pos)));
 
         targetRegion = disconnectedRegions.find((region) => {
           if (region.spaces.length !== target.spaces.length) {
             return false;
           }
 
-          const regionKeys = new Set(
-            region.spaces.map((pos) => positionToString(pos))
-          );
+          const regionKeys = new Set(region.spaces.map((pos) => positionToString(pos)));
 
           if (regionKeys.size !== targetKeys.size) {
             return false;
@@ -1116,7 +1419,69 @@ export class GameEngine {
         return;
       }
 
-      await this.processOneDisconnectedRegion(targetRegion, movingPlayer);
+      // Apply geometric territory consequences only; no self-elimination
+      // occurs here in move-driven mode.
+      this.processDisconnectedRegionCore(targetRegion, movingPlayer);
+
+      // Record that this player now owes a mandatory self-elimination
+      // decision before their territory_processing cycle can end.
+      this.pendingTerritorySelfElimination = true;
+
+      // After processing this region, recompute decision moves in a
+      // synthetic territory_processing view so we can determine whether
+      // additional region decisions or explicit elimination decisions
+      // remain for this player.
+      const tempState: GameState = {
+        ...this.gameState,
+        currentPlayer: movingPlayer,
+        currentPhase: 'territory_processing',
+      };
+
+      const nextDecisionMoves = this.ruleEngine.getValidMoves(tempState);
+      const remainingRegionMoves = nextDecisionMoves.filter(
+        (m) => m.type === 'process_territory_region'
+      );
+      const eliminationMoves = nextDecisionMoves.filter(
+        (m) => m.type === 'eliminate_rings_from_stack'
+      );
+
+      if (remainingRegionMoves.length > 0 || eliminationMoves.length > 0) {
+        // Stay in the interactive territory_processing phase so the
+        // client/AI can submit another decision Move.
+        this.gameState.currentPhase = 'territory_processing';
+      } else {
+        // No further territory decisions remain; hand control back to the
+        // normal turn engine.
+        this.advanceGame();
+        this.stepAutomaticPhasesForTesting();
+      }
+    } else if (move.type === 'eliminate_rings_from_stack') {
+      const playerNumber = move.player;
+
+      // This explicit elimination satisfies any pending
+      // self-elimination requirement for the current
+      // territory_processing cycle.
+      this.pendingTerritorySelfElimination = false;
+
+      if (!move.to) {
+        return;
+      }
+
+      const stack = this.boardManager.getStack(move.to, this.gameState.board);
+      if (!stack || stack.controllingPlayer !== playerNumber) {
+        return;
+      }
+
+      // Delegate to the same core helper used by choice-driven
+      // elimination flows so that elimination Moves share identical
+      // ring accounting and S-invariant behaviour.
+      this.eliminateFromStack(stack, playerNumber);
+
+      // After an explicit elimination decision, treat this as the final
+      // step of the current territory_processing phase and advance the
+      // turn using the normal turn engine.
+      this.advanceGame();
+      this.stepAutomaticPhasesForTesting();
     }
   }
 
@@ -1197,6 +1562,24 @@ export class GameEngine {
 
       const interaction = this.requireInteractionManager();
 
+      // Pre-compute canonical decision moves so we can attach moveIds to the choice
+      const validMoves = this.getValidLineProcessingMoves(this.gameState.currentPlayer);
+      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+
+      const option1Move = validMoves.find(
+        (m) =>
+          m.type === 'choose_line_reward' &&
+          m.id.includes(lineKey) &&
+          (!m.collapsedMarkers || m.collapsedMarkers.length === line.positions.length)
+      );
+
+      const option2Move = validMoves.find(
+        (m) =>
+          m.type === 'choose_line_reward' &&
+          m.id.includes(lineKey) &&
+          m.collapsedMarkers?.length === requiredLength
+      );
+
       const choice: LineRewardChoice = {
         id: generateUUID(),
         gameId: this.gameState.id,
@@ -1204,6 +1587,10 @@ export class GameEngine {
         type: 'line_reward_option',
         prompt: 'Choose line reward option',
         options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
+        moveIds: {
+          ...(option1Move?.id ? { option_1_collapse_all_and_eliminate: option1Move.id } : {}),
+          ...(option2Move?.id ? { option_2_min_collapse_no_elimination: option2Move.id } : {}),
+        },
       };
 
       const response: PlayerChoiceResponseFor<LineRewardChoice> =
@@ -1378,11 +1765,22 @@ export class GameEngine {
       playerNumber: player,
       type: 'ring_elimination',
       prompt: 'Choose which stack to eliminate from',
-      options: playerStacks.map((stack) => ({
-        stackPosition: stack.position,
-        capHeight: stack.capHeight,
-        totalHeight: stack.stackHeight,
-      })),
+      options: playerStacks.map((stack) => {
+        const stackKey = positionToString(stack.position);
+        return {
+          stackPosition: stack.position,
+          capHeight: stack.capHeight,
+          totalHeight: stack.stackHeight,
+          /**
+           * Stable identifier for the canonical 'eliminate_rings_from_stack'
+           * Move that would eliminate from this stack when enumerated via
+           * RuleEngine.getValidMoves during the territory_processing phase.
+           * This lets transports/AI map this choice option directly onto a
+           * Move.id in the unified Move model.
+           */
+          moveId: `eliminate-${stackKey}`,
+        };
+      }),
     };
 
     const response: PlayerChoiceResponseFor<RingEliminationChoice> =
@@ -1421,75 +1819,15 @@ export class GameEngine {
    * Rule Reference: Section 12.2, 12.3 - Territory Disconnection and Chain Reactions
    */
   private async processDisconnectedRegions(): Promise<void> {
-    const movingPlayer = this.gameState.currentPlayer;
-
-    // Keep processing until no more disconnections occur
-    while (true) {
-      const disconnectedRegions = this.boardManager.findDisconnectedRegions(
-        this.gameState.board,
-        movingPlayer
-      );
-
-      if (disconnectedRegions.length === 0) break;
-
-      // Filter to regions that satisfy the self-elimination prerequisite
-      // for the moving player. This mirrors the Rust notion of
-      // "eligible" disconnected regions and prevents us from
-      // prematurely bailing out just because the first region is not
-      // processable.
-      const eligibleRegions = disconnectedRegions.filter((region) =>
-        this.canProcessDisconnectedRegion(region, movingPlayer)
-      );
-
-      if (eligibleRegions.length === 0) {
-        // No region can be processed for this player; stop to avoid
-        // infinite loops.
-        break;
-      }
-
-      let region: Territory;
-
-      if (!this.interactionManager || eligibleRegions.length === 1) {
-        // No manager or only one eligible region: process it directly.
-        region = eligibleRegions[0];
-      } else {
-        const interaction = this.requireInteractionManager();
-        const choice: RegionOrderChoice = {
-          id: generateUUID(),
-          gameId: this.gameState.id,
-          playerNumber: movingPlayer,
-          type: 'region_order',
-          prompt: 'Choose which disconnected region to process first',
-          options: eligibleRegions.map((r, index) => {
-            const representative = r.spaces[0];
-            const regionKey = representative
-              ? positionToString(representative)
-              : `region-${index}`;
-            return {
-              regionId: String(index),
-              size: r.spaces.length,
-              representativePosition: representative,
-              /**
-               * Stable identifier for the canonical 'process_territory_region'
-               * Move that would process this region when enumerated via
-               * getValidTerritoryProcessingMoves. This lets transports/AI map
-               * this choice option directly onto a Move.id.
-               */
-              moveId: `process-region-${index}-${regionKey}`,
-            };
-          }),
-        };
-
-        const response: PlayerChoiceResponseFor<RegionOrderChoice> =
-          await interaction.requestChoice(choice);
-        const selected = response.selectedOption;
-        const index = parseInt(selected.regionId, 10);
-        region = eligibleRegions[index] ?? eligibleRegions[0];
-      }
-
-      // Process the disconnected region
-      await this.processOneDisconnectedRegion(region, movingPlayer);
-    }
+    // Legacy helper retained for direct test access and parity with
+    // existing GameEngine.territoryDisconnection tests. Internally this
+    // now delegates to the shared canonical helper so that both the
+    // explicit processDisconnectedRegions call and the automatic
+    // post-move pipeline share identical semantics.
+    this.gameState = await processDisconnectedRegionsForCurrentPlayer(this.gameState, {
+      boardManager: this.boardManager,
+      interactionManager: this.interactionManager,
+    });
   }
 
   /**
@@ -1516,13 +1854,26 @@ export class GameEngine {
   }
 
   /**
-   * Process a single disconnected region
-   * Rule Reference: Section 12.2 - Processing steps
+   * Core territory-processing helper shared by both legacy
+   * choice-driven flows and the move-driven decision model.
+   *
+   * This applies the geometric consequences of processing a
+   * disconnected region (eliminating all rings in the region,
+   * collapsing spaces and border markers, and crediting all
+   * eliminations/territory to the moving player) but does **not**
+   * perform the mandatory self-elimination step. That final
+   * self-elimination is layered on top differently for legacy vs
+   * move-driven modes:
+   *
+   * - Legacy / non-move-driven: processOneDisconnectedRegion calls this
+   *   helper and then immediately performs
+   *   eliminatePlayerRingOrCapWithChoice.
+   * - Move-driven decision phases: applyDecisionMove('process_territory_region')
+   *   calls this helper directly and then surfaces explicit
+   *   eliminate_rings_from_stack decision Moves via RuleEngine so the
+   *   self-elimination is represented as a canonical Move.
    */
-  private async processOneDisconnectedRegion(
-    region: Territory,
-    movingPlayer: number
-  ): Promise<void> {
+  private processDisconnectedRegionCore(region: Territory, movingPlayer: number): void {
     // 1. Get border markers to collapse
     const borderMarkers = this.boardManager.getBorderMarkerPositions(
       region.spaces,
@@ -1557,17 +1908,36 @@ export class GameEngine {
     this.updatePlayerTerritorySpaces(movingPlayer, totalTerritoryGained);
 
     // 5. Update elimination counts - ALL eliminated rings count toward moving player
-    this.gameState.totalRingsEliminated += totalRingsEliminated;
-    if (!this.gameState.board.eliminatedRings[movingPlayer]) {
-      this.gameState.board.eliminatedRings[movingPlayer] = 0;
+    if (totalRingsEliminated > 0) {
+      this.gameState.totalRingsEliminated += totalRingsEliminated;
+      if (!this.gameState.board.eliminatedRings[movingPlayer]) {
+        this.gameState.board.eliminatedRings[movingPlayer] = 0;
+      }
+      this.gameState.board.eliminatedRings[movingPlayer] += totalRingsEliminated;
+
+      // Update player state
+      this.updatePlayerEliminatedRings(movingPlayer, totalRingsEliminated);
     }
-    this.gameState.board.eliminatedRings[movingPlayer] += totalRingsEliminated;
+  }
 
-    // Update player state
-    this.updatePlayerEliminatedRings(movingPlayer, totalRingsEliminated);
+  /**
+   * Process a single disconnected region
+   * Rule Reference: Section 12.2 - Processing steps
+   */
+  private async processOneDisconnectedRegion(
+    region: Territory,
+    movingPlayer: number
+  ): Promise<void> {
+    // Always apply the geometric/core consequences first.
+    this.processDisconnectedRegionCore(region, movingPlayer);
 
-    // 6. Mandatory self-elimination (one ring or cap from moving player)
-    await this.eliminatePlayerRingOrCapWithChoice(movingPlayer);
+    // In legacy / non-move-driven mode, immediately perform the
+    // mandatory self-elimination using the existing PlayerChoice
+    // helper so behaviour remains identical for scenario/parity tests
+    // that do not opt into move-driven decision phases.
+    if (!this.useMoveDrivenDecisionPhases) {
+      await this.eliminatePlayerRingOrCapWithChoice(movingPlayer);
+    }
   }
 
   /**
@@ -1625,6 +1995,8 @@ export class GameEngine {
       mustMoveFromStackKey: this.mustMoveFromStackKey,
     };
 
+    const previousPhase = this.gameState.currentPhase;
+
     const turnStateAfter = advanceGameForCurrentPlayer(
       this.gameState,
       turnStateBefore,
@@ -1634,6 +2006,24 @@ export class GameEngine {
 
     this.hasPlacedThisTurn = turnStateAfter.hasPlacedThisTurn;
     this.mustMoveFromStackKey = turnStateAfter.mustMoveFromStackKey;
+    if (
+      this.mustMoveFromStackKey === undefined &&
+      turnStateAfter.mustMoveFromStackKey === undefined
+    ) {
+      // console.log('[GameEngine] advanceGame: mustMove cleared/remains undefined');
+    } else {
+      console.log(`[GameEngine] advanceGame: mustMove is ${this.mustMoveFromStackKey}`);
+    }
+
+    // Whenever we leave the territory_processing phase for the current
+    // player, clear any pending self-elimination flag so the next
+    // interactive turn starts with a clean slate.
+    if (
+      previousPhase === 'territory_processing' &&
+      this.gameState.currentPhase !== 'territory_processing'
+    ) {
+      this.pendingTerritorySelfElimination = false;
+    }
   }
 
   /**
@@ -1652,6 +2042,12 @@ export class GameEngine {
 
     this.hasPlacedThisTurn = after.hasPlacedThisTurn;
     this.mustMoveFromStackKey = after.mustMoveFromStackKey;
+
+    if (move.type === 'place_ring') {
+      console.log(
+        `[GameEngine] updatePerTurnStateAfterMove: place_ring at ${positionToString(move.to!)}. mustMove set to ${this.mustMoveFromStackKey}`
+      );
+    }
   }
 
   /**
@@ -2000,13 +2396,13 @@ export class GameEngine {
 
   getValidMoves(_playerNumber: number): Move[] {
     const playerNumber = _playerNumber;
-  
+
     // Only generate moves for the active player to keep server/UI
     // expectations clear.
     if (playerNumber !== this.gameState.currentPlayer) {
       return [];
     }
-  
+
     // During an active chain_capture phase, valid moves are the explicit
     // continuation segments from the current chain position. Rather than
     // relying on any cached list, we always re-enumerate from the board
@@ -2015,30 +2411,30 @@ export class GameEngine {
     // triangle/zig-zag tests.
     if (this.gameState.currentPhase === 'chain_capture') {
       const state = this.chainCaptureState;
-  
+
       // If for some reason the internal chain state has been cleared while
-      // the phase is still marked as chain_capture, treat this as "no legal
+      // the the phase is still marked as chain_capture, treat this as "no legal
       // actions" rather than attempting to guess a continuation.
       if (!state) {
         return [];
       }
-  
+
       // The capturing player for the entire chain is recorded on the
       // chainCaptureState. We rely on this rather than the caller's
       // playerNumber argument so that even if a test/UI accidentally
       // passes the wrong player, the engine still exposes the correct
       // follow-up segments for the active chain.
       const capturingPlayer = state.playerNumber;
-  
+
       const followUpMoves = this.getCaptureOptionsFromPosition(
         state.currentPosition,
         capturingPlayer
       );
-  
+
       // Keep availableMoves updated for any future PlayerChoice-based
       // integrations, but do not rely on it for correctness.
       state.availableMoves = followUpMoves;
-  
+
       // eslint-disable-next-line no-console
       console.log('[GameEngine.getValidMoves] chain_capture debug', {
         requestedPlayer: playerNumber,
@@ -2047,7 +2443,7 @@ export class GameEngine {
         currentPosition: state.currentPosition,
         followUpCount: followUpMoves.length,
       });
-  
+
       if (followUpMoves.length === 0) {
         // No legal continuations remain; clear chain state and treat the
         // chain as resolved so callers do not see an interactive phase
@@ -2055,7 +2451,7 @@ export class GameEngine {
         this.chainCaptureState = undefined;
         return [];
       }
-  
+
       return followUpMoves.map((m) => ({
         ...m,
         // Re-label the shared overtaking_capture candidates as dedicated
@@ -2075,7 +2471,7 @@ export class GameEngine {
               )}-${positionToString(m.to!)}`,
       }));
     }
-  
+
     // For automatic bookkeeping phases, expose the canonical decision moves
     // derived from the same helpers that drive line and territory
     // processing. This keeps the unified Move/GamePhase model complete even
@@ -2083,15 +2479,54 @@ export class GameEngine {
     if (this.gameState.currentPhase === 'line_processing') {
       return this.getValidLineProcessingMoves(playerNumber);
     }
-  
+
     if (this.gameState.currentPhase === 'territory_processing') {
-      return this.getValidTerritoryProcessingMoves(playerNumber);
+      const regionMoves = this.getValidTerritoryProcessingMoves(playerNumber);
+
+      // In legacy / non-move-driven mode, territory-processing decisions
+      // remain region-first and self-elimination is handled internally via
+      // PlayerChoice flows. Only expose process_territory_region Moves
+      // here to preserve existing semantics for scenario/parity tests.
+      if (!this.useMoveDrivenDecisionPhases) {
+        return regionMoves;
+      }
+
+      if (regionMoves.length > 0) {
+        return regionMoves;
+      }
+
+      // When no region has been processed in the current
+      // territory_processing cycle, do not surface elimination moves.
+      // This prevents spurious "free" self-elimination from trivial
+      // territory_processing entries that arise after every move in
+      // move-driven mode.
+      if (!this.pendingTerritorySelfElimination) {
+        return [];
+      }
+
+      // In move-driven decision phases, once no eligible regions remain
+      // for the moving player *and* a region has actually been processed
+      // this cycle, surface explicit self-elimination decisions as
+      // eliminate_rings_from_stack Moves. We delegate to
+      // RuleEngine.getValidMoves so enumeration stays consistent with the
+      // rules-level view used by applyDecisionMove.
+      const tempTerritoryState: GameState = {
+        ...this.gameState,
+        currentPlayer: playerNumber,
+        currentPhase: 'territory_processing',
+      };
+
+      const eliminationMoves = this.ruleEngine
+        .getValidMoves(tempTerritoryState)
+        .filter((m) => m.type === 'eliminate_rings_from_stack');
+
+      return eliminationMoves;
     }
-  
+
     // Base move generation comes from RuleEngine, which is responsible
     // for phase-specific legality (placement vs movement vs capture).
     let moves = this.ruleEngine.getValidMoves(this.gameState);
- 
+
     // When a placement has occurred this turn, restrict movement/capture
     // options so that only the placed/updated stack may move.
     if (
@@ -2105,23 +2540,98 @@ export class GameEngine {
           m.type === 'build_stack' ||
           m.type === 'overtaking_capture' ||
           m.type === 'continue_capture_segment';
- 
+
         if (!isMovementOrCaptureType) {
           // Non-movement moves (e.g. future skip_placement) are not
           // constrained here.
           return true;
         }
- 
+
         if (!m.from) {
           return false;
         }
- 
+
         const fromKey = positionToString(m.from);
         return fromKey === this.mustMoveFromStackKey;
       });
     }
- 
+
     return moves;
+  }
+
+  /**
+   * Apply a canonical Move for the current phase selected by its stable
+   * identifier.
+   *
+   * This helper is the primary bridge between PlayerChoice-based
+   * transports (WebSocket, AI service) and the unified Move model: given
+   * a moveId that was previously attached to a PlayerChoice option (for
+   * example, line_order/region_order/ring_elimination), it will:
+   *
+   *   1. Re-enumerate getValidMoves(playerNumber) for the current phase,
+   *   2. Locate the matching Move.id,
+   *   3. Forward the Move payload through makeMove(), so all validation,
+   *      history, S-invariant checks, and phase transitions apply
+   *      exactly as for a direct Move submission.
+   *
+   * It is intentionally conservative and never mutates state when no
+   * matching Move is found.
+   */
+  public async makeMoveById(
+    playerNumber: number,
+    moveId: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    gameState?: GameState;
+    gameResult?: GameResult;
+  }> {
+    // Only the active player may act.
+    if (playerNumber !== this.gameState.currentPlayer) {
+      return {
+        success: false,
+        error: `Player ${playerNumber} is not the active player`,
+        gameState: this.getGameState(),
+      };
+    }
+
+    const candidates = this.getValidMoves(playerNumber);
+
+    if (candidates.length === 0) {
+      return {
+        success: false,
+        error: `No valid moves available for player ${playerNumber} in phase ${this.gameState.currentPhase}`,
+        gameState: this.getGameState(),
+      };
+    }
+
+    const selected = candidates.find((m) => m.id === moveId);
+
+    if (!selected) {
+      return {
+        success: false,
+        error: `No valid move with id ${moveId} for player ${playerNumber} in phase ${this.gameState.currentPhase}`,
+        gameState: this.getGameState(),
+      };
+    }
+
+    if (selected.player !== playerNumber) {
+      return {
+        success: false,
+        error: `Move ${moveId} belongs to player ${selected.player}, not ${playerNumber}`,
+        gameState: this.getGameState(),
+      };
+    }
+
+    // Delegate to the primary makeMove() entry point so all validation,
+    // history, S-invariant checks, and phase/turn transitions are applied
+    // in one place. The candidate already includes id/timestamp/moveNumber
+    // fields, but makeMove() will generate fresh ones; we therefore strip
+    // them from the payload.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id, timestamp, moveNumber, ...payload } = selected as any;
+
+    return this.makeMove(payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>);
   }
 
   /**
@@ -2352,13 +2862,27 @@ export class GameEngine {
    * This is used by AI simulation/diagnostic harnesses so they do not
    * treat these internal bookkeeping phases as "no legal move" stalls.
    */
-  public stepAutomaticPhasesForTesting(): void {
+  public async stepAutomaticPhasesForTesting(): Promise<void> {
     while (
       this.gameState.gameStatus === 'active' &&
       (this.gameState.currentPhase === 'line_processing' ||
         this.gameState.currentPhase === 'territory_processing')
     ) {
-      this.advanceGame();
+      const moves = this.getValidMoves(this.gameState.currentPlayer);
+      if (moves.length === 0) {
+        // No moves available in an automatic phase. This implies there is
+        // no work to do (no lines, no disconnected regions). We must
+        // manually advance the phase/game to prevent getting stuck.
+        this.advanceGame();
+        continue;
+      }
+
+      // Automatically apply the first available decision move. This mimics
+      // the default behaviour of the legacy automatic pipeline (first line,
+      // first region, default elimination) but drives it via the unified
+      // Move model.
+      const move = moves[0];
+      await this.applyDecisionMove(move);
     }
   }
 }

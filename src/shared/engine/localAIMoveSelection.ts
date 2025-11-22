@@ -27,9 +27,43 @@ export function chooseLocalMoveFromCandidates(
   candidates: Move[],
   rng: LocalAIRng = Math.random
 ): Move | null {
+  // The current selection policy depends only on phase and move types,
+  // but we keep playerNumber in the signature for future per-player
+  // tuning. Mark it as used to satisfy strict TS settings.
+  void playerNumber;
+
   if (!candidates.length) {
     return null;
   }
+
+  // Sort candidates deterministically to ensure RNG parity between engines
+  // that might generate moves in different orders (e.g. RuleEngine vs Sandbox).
+  candidates.sort((a, b) => {
+    if (a.type !== b.type) return a.type.localeCompare(b.type);
+
+    // Compare 'from'
+    if (a.from && b.from) {
+      if (a.from.x !== b.from.x) return a.from.x - b.from.x;
+      if (a.from.y !== b.from.y) return a.from.y - b.from.y;
+    } else if (a.from) return 1;
+    else if (b.from) return -1;
+
+    // Compare 'to'
+    if (a.to && b.to) {
+      if (a.to.x !== b.to.x) return a.to.x - b.to.x;
+      if (a.to.y !== b.to.y) return a.to.y - b.to.y;
+    } else if (a.to) return 1;
+    else if (b.to) return -1;
+
+    // Compare 'captureTarget'
+    if (a.captureTarget && b.captureTarget) {
+      if (a.captureTarget.x !== b.captureTarget.x) return a.captureTarget.x - b.captureTarget.x;
+      if (a.captureTarget.y !== b.captureTarget.y) return a.captureTarget.y - b.captureTarget.y;
+    } else if (a.captureTarget) return 1;
+    else if (b.captureTarget) return -1;
+
+    return 0;
+  });
 
   // Pre-bucket placement vs non-placement so we can reason about
   // placement decisions explicitly.

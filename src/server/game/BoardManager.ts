@@ -1,27 +1,44 @@
-import { 
-  Position, 
-  BoardType, 
-  BoardState, 
+import {
+  Position,
+  BoardType,
+  BoardState,
   RingStack,
   Territory,
   LineInfo,
   AdjacencyType,
-  BOARD_CONFIGS, 
-  positionToString, 
-  stringToPosition 
+  BOARD_CONFIGS,
+  positionToString,
+  stringToPosition,
 } from '../../shared/types/game';
+
+const TERRITORY_TRACE_DEBUG =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
 
 export class BoardManager {
   private boardType: BoardType;
   private size: number;
-  private config: typeof BOARD_CONFIGS[BoardType];
+  private config: (typeof BOARD_CONFIGS)[BoardType];
   private validPositions: Set<string>;
+  private adjacencyGraph: Map<string, string[]> = new Map();
 
   constructor(boardType: BoardType) {
     this.boardType = boardType;
     this.config = BOARD_CONFIGS[boardType];
     this.size = this.config.size;
     this.validPositions = this.generateValidPositions();
+    this.buildAdjacencyGraph();
+  }
+
+  private buildAdjacencyGraph(): void {
+    // Pre-calculate neighbors for territory adjacency (used in hot path)
+    const adjType = this.config.territoryAdjacency;
+    for (const posStr of this.validPositions) {
+      const pos = stringToPosition(posStr);
+      const neighbors = this.getNeighbors(pos, adjType);
+      this.adjacencyGraph.set(posStr, neighbors.map(positionToString));
+    }
   }
 
   createBoard(): BoardState {
@@ -33,7 +50,7 @@ export class BoardManager {
       formedLines: [],
       eliminatedRings: {},
       size: this.size,
-      type: this.boardType
+      type: this.boardType,
     };
   }
 
@@ -73,7 +90,7 @@ export class BoardManager {
   // Get neighbors based on adjacency type
   getNeighbors(position: Position, adjacencyType?: AdjacencyType): Position[] {
     const adjType = adjacencyType || this.config.movementAdjacency;
-    
+
     if (this.boardType === 'hexagonal' || adjType === 'hexagonal') {
       return this.getHexagonalNeighbors(position);
     } else if (adjType === 'moore') {
@@ -81,7 +98,7 @@ export class BoardManager {
     } else if (adjType === 'von_neumann') {
       return this.getVonNeumannNeighbors(position);
     }
-    
+
     return [];
   }
 
@@ -89,19 +106,19 @@ export class BoardManager {
     const neighbors: Position[] = [];
     // Hexagonal neighbors (6 directions)
     const directions = [
-      { x: 1, y: 0, z: -1 },   // East
-      { x: 1, y: -1, z: 0 },   // Northeast
-      { x: 0, y: -1, z: 1 },   // Northwest
-      { x: -1, y: 0, z: 1 },   // West
-      { x: -1, y: 1, z: 0 },   // Southwest
-      { x: 0, y: 1, z: -1 }    // Southeast
+      { x: 1, y: 0, z: -1 }, // East
+      { x: 1, y: -1, z: 0 }, // Northeast
+      { x: 0, y: -1, z: 1 }, // Northwest
+      { x: -1, y: 0, z: 1 }, // West
+      { x: -1, y: 1, z: 0 }, // Southwest
+      { x: 0, y: 1, z: -1 }, // Southeast
     ];
 
     for (const dir of directions) {
       const neighbor: Position = {
         x: position.x + dir.x,
         y: position.y + dir.y,
-        z: (position.z || 0) + dir.z
+        z: (position.z || 0) + dir.z,
       };
 
       if (this.isValidPosition(neighbor)) {
@@ -116,15 +133,20 @@ export class BoardManager {
     const neighbors: Position[] = [];
     // Moore neighborhood (8 directions)
     const directions = [
-      { x: -1, y: -1 }, { x: -1, y: 0 }, { x: -1, y: 1 },
-      { x: 0, y: -1 },                   { x: 0, y: 1 },
-      { x: 1, y: -1 },  { x: 1, y: 0 },  { x: 1, y: 1 }
+      { x: -1, y: -1 },
+      { x: -1, y: 0 },
+      { x: -1, y: 1 },
+      { x: 0, y: -1 },
+      { x: 0, y: 1 },
+      { x: 1, y: -1 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
     ];
 
     for (const dir of directions) {
       const neighbor: Position = {
         x: position.x + dir.x,
-        y: position.y + dir.y
+        y: position.y + dir.y,
       };
 
       if (this.isValidPosition(neighbor)) {
@@ -139,14 +161,16 @@ export class BoardManager {
     const neighbors: Position[] = [];
     // Von Neumann neighborhood (4 directions)
     const directions = [
-      { x: -1, y: 0 }, { x: 1, y: 0 },
-      { x: 0, y: -1 }, { x: 0, y: 1 }
+      { x: -1, y: 0 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: 0, y: 1 },
     ];
 
     for (const dir of directions) {
       const neighbor: Position = {
         x: position.x + dir.x,
-        y: position.y + dir.y
+        y: position.y + dir.y,
       };
 
       if (this.isValidPosition(neighbor)) {
@@ -166,15 +190,12 @@ export class BoardManager {
       return Math.max(dx, dy, dz);
     } else {
       // Chebyshev distance for square boards (Moore adjacency)
-      return Math.max(
-        Math.abs(pos1.x - pos2.x),
-        Math.abs(pos1.y - pos2.y)
-      );
+      return Math.max(Math.abs(pos1.x - pos2.x), Math.abs(pos1.y - pos2.y));
     }
   }
 
   // Marker manipulation methods - Section 8.3 of rules
-  
+
   /**
    * Sets a marker at the specified position
    * Rule Reference: Section 4.2.1 - Leave marker on departure space
@@ -184,7 +205,7 @@ export class BoardManager {
     board.markers.set(posKey, {
       player,
       position,
-      type: 'regular'
+      type: 'regular',
     });
   }
 
@@ -217,7 +238,7 @@ export class BoardManager {
       board.markers.set(posKey, {
         player: newPlayer,
         position,
-        type: 'regular'
+        type: 'regular',
       });
     }
   }
@@ -277,11 +298,14 @@ export class BoardManager {
     // pinpoint the earlier operation that created the invalid state.
     if (board.markers.has(posKey)) {
       // eslint-disable-next-line no-console
-      console.error('[BoardManager.setStack] Invariant violation: setting stack on position that already has a marker', {
-        posKey,
-        stack,
-        existingMarker: board.markers.get(posKey)
-      });
+      console.error(
+        '[BoardManager.setStack] Invariant violation: setting stack on position that already has a marker',
+        {
+          posKey,
+          stack,
+          existingMarker: board.markers.get(posKey),
+        }
+      );
     }
 
     board.stacks.set(posKey, stack);
@@ -330,7 +354,11 @@ export class BoardManager {
   }
 
   // Territory analysis methods
-  findConnectedTerritory(startPosition: Position, playerId: number, board: BoardState): Set<string> {
+  findConnectedTerritory(
+    startPosition: Position,
+    playerId: number,
+    board: BoardState
+  ): Set<string> {
     const territory = new Set<string>();
     const visited = new Set<string>();
     const queue = [startPosition];
@@ -366,20 +394,20 @@ export class BoardManager {
   findAllTerritoriesForAllPlayers(board: BoardState): Territory[] {
     const allTerritories: Territory[] = [];
     const allPlayers = new Set<number>();
-    
+
     // Find all players who have stacks on the board
     for (const [, stack] of board.stacks) {
       if (stack) {
         allPlayers.add(stack.controllingPlayer);
       }
     }
-    
+
     // Get territories for each player
     for (const playerId of allPlayers) {
       const playerTerritories = this.findAllTerritories(playerId, board);
       allTerritories.push(...playerTerritories);
     }
-    
+
     return allTerritories;
   }
   // Find all territories for a player
@@ -392,7 +420,7 @@ export class BoardManager {
       const posKey = positionToString(position);
       if (!visited.has(posKey)) {
         const territoryPositions = this.findConnectedTerritory(position, playerId, board);
-        
+
         // Mark all positions in this territory as visited
         for (const pos of territoryPositions) {
           visited.add(pos);
@@ -402,7 +430,7 @@ export class BoardManager {
           territories.push({
             spaces: Array.from(territoryPositions).map(stringToPosition),
             controllingPlayer: playerId,
-            isDisconnected: false
+            isDisconnected: false,
           });
         }
       }
@@ -415,7 +443,7 @@ export class BoardManager {
   // Rule Reference: Section 11.1 - Line Formation Rules
   findLinesFromPosition(position: Position, board: BoardState): LineInfo[] {
     const lines: LineInfo[] = [];
-    
+
     // Check if this position has a marker (not a stack!)
     const marker = this.getMarker(position, board);
     if (marker === undefined) return lines;
@@ -430,7 +458,7 @@ export class BoardManager {
           positions: line,
           player: playerId,
           length: line.length,
-          direction: direction
+          direction: direction,
         });
       }
     }
@@ -438,21 +466,50 @@ export class BoardManager {
     return lines;
   }
 
+  /**
+   * Debug helper used in rules/parity tests to inspect backend line
+   * detection behaviour. This intentionally logs only high-level keys
+   * so it remains stable across refactors.
+   */
+  debugFindAllLines(board: BoardState): { keys: string[] } {
+    const lines = this.findAllLines(board);
+    const keys = lines
+      .map((l) =>
+        l.positions
+          .map((p) => positionToString(p))
+          .sort()
+          .join('|')
+      )
+      .sort();
+
+    // eslint-disable-next-line no-console
+    console.log('[BoardManager.debugFindAllLines]', {
+      boardType: this.boardType,
+      markerCount: board.markers.size,
+      stackCount: board.stacks.size,
+      collapsedCount: board.collapsedSpaces.size,
+      lineCount: lines.length,
+      keys,
+    });
+
+    return { keys };
+  }
+
   private getLineDirections(): Position[] {
     if (this.boardType === 'hexagonal') {
       // 6 directions for hexagonal
       return [
-        { x: 1, y: 0, z: -1 },   // East
-        { x: 1, y: -1, z: 0 },   // Northeast
-        { x: 0, y: -1, z: 1 },   // Northwest
+        { x: 1, y: 0, z: -1 }, // East
+        { x: 1, y: -1, z: 0 }, // Northeast
+        { x: 0, y: -1, z: 1 }, // Northwest
       ];
     } else {
       // 8 directions for square (Moore adjacency for lines)
       return [
-        { x: 1, y: 0 },   // East
-        { x: 1, y: 1 },   // Southeast
-        { x: 0, y: 1 },   // South
-        { x: 1, y: -1 },  // Northeast
+        { x: 1, y: 0 }, // East
+        { x: 1, y: 1 }, // Southeast
+        { x: 0, y: 1 }, // South
+        { x: 1, y: -1 }, // Northeast
       ];
     }
   }
@@ -462,29 +519,47 @@ export class BoardManager {
    * Rule Reference: Section 11.1 - Must consist of consecutive, contiguous, non-collapsed markers
    */
   private findLineInDirection(
-    startPosition: Position, 
-    direction: Position, 
-    playerId: number, 
+    startPosition: Position,
+    direction: Position,
+    playerId: number,
     board: BoardState
   ): Position[] {
     const line: Position[] = [startPosition];
 
+    const isHex = this.boardType === 'hexagonal';
+
+    // Helper to step one cell in the given direction, respecting board geometry
+    const step = (current: Position, sign: 1 | -1): Position => {
+      if (isHex) {
+        return {
+          x: current.x + sign * direction.x,
+          y: current.y + sign * direction.y,
+          z: (current.z || 0) + sign * (direction.z || 0),
+        };
+      }
+
+      // Square boards are purely 2D for line formation; we must not
+      // introduce a synthetic z coordinate here, otherwise
+      // positionToString(...) will produce keys like "x,y,0" which do
+      // not match the board's marker/stack maps (which use "x,y").
+      return {
+        x: current.x + sign * direction.x,
+        y: current.y + sign * direction.y,
+      };
+    };
+
     // Check forward direction
     let current = startPosition;
     while (true) {
-      const next: Position = {
-        x: current.x + direction.x,
-        y: current.y + direction.y,
-        z: (current.z || 0) + (direction.z || 0)
-      };
+      const next = step(current, 1);
 
       if (!this.isValidPosition(next)) break;
-      
+
       // CRITICAL: Check for MARKER, not stack!
       // Line cannot be interrupted by empty spaces, collapsed spaces, or stacks
       const marker = this.getMarker(next, board);
       if (marker !== playerId) break;
-      
+
       // Also check it's not a collapsed space or has a stack on it
       if (this.isCollapsedSpace(next, board) || this.getStack(next, board)) break;
 
@@ -495,18 +570,14 @@ export class BoardManager {
     // Check backward direction
     current = startPosition;
     while (true) {
-      const prev: Position = {
-        x: current.x - direction.x,
-        y: current.y - direction.y,
-        z: (current.z || 0) - (direction.z || 0)
-      };
+      const prev = step(current, -1);
 
       if (!this.isValidPosition(prev)) break;
-      
+
       // CRITICAL: Check for MARKER, not stack!
       const marker = this.getMarker(prev, board);
       if (marker !== playerId) break;
-      
+
       // Also check it's not a collapsed space or has a stack on it
       if (this.isCollapsedSpace(prev, board) || this.getStack(prev, board)) break;
 
@@ -526,28 +597,41 @@ export class BoardManager {
     const lines: LineInfo[] = [];
     const processedLines = new Set<string>();
 
-    // Iterate through all MARKERS (not stacks!)
+    // Iterate through all MARKERS (not stacks!). If a space currently
+    // hosts a stack or has already collapsed to territory, it cannot be
+    // part of an active marker line, even if a stale marker entry
+    // remains in the map (some tests deliberately construct such
+    // states).
     for (const [posStr, marker] of board.markers) {
       const position = stringToPosition(posStr);
+
+      // Treat stacks and collapsed spaces as hard blockers that fully
+      // remove this cell from line consideration. This matches the
+      // rules in Section 11.1: lines must consist only of consecutive,
+      // non-collapsed markers and cannot pass through stacks.
+      if (this.isCollapsedSpace(position, board) || this.getStack(position, board)) {
+        continue;
+      }
+
       const directions = this.getLineDirections();
 
       for (const direction of directions) {
         const line = this.findLineInDirection(position, direction, marker.player, board);
-        
+
         if (line.length >= this.config.lineLength) {
           // Create a unique key for this line (sorted positions to avoid duplicates)
           const lineKey = line
-            .map(p => positionToString(p))
+            .map((p) => positionToString(p))
             .sort()
             .join('|');
-          
+
           if (!processedLines.has(lineKey)) {
             processedLines.add(lineKey);
             lines.push({
               positions: line,
               player: marker.player,
               length: line.length,
-              direction: direction
+              direction: direction,
             });
           }
         }
@@ -597,7 +681,7 @@ export class BoardManager {
 
       for (const neighbor of neighbors) {
         const neighborKey = positionToString(neighbor);
-        
+
         // Skip if obstacle
         if (obstacles.has(neighborKey)) {
           continue;
@@ -627,24 +711,19 @@ export class BoardManager {
 
   getEdgePositions(): Position[] {
     const allPositions = this.getAllPositions();
-    
+
     if (this.boardType === 'hexagonal') {
       // Hexagonal edge positions
       // size=11 means radius 10, so edge is at distance 10
       const radius = this.size - 1;
-      return allPositions.filter(pos => {
-        const distance = Math.max(
-          Math.abs(pos.x),
-          Math.abs(pos.y),
-          Math.abs(pos.z || 0)
-        );
+      return allPositions.filter((pos) => {
+        const distance = Math.max(Math.abs(pos.x), Math.abs(pos.y), Math.abs(pos.z || 0));
         return distance === radius;
       });
     } else {
       // Square edge positions
-      return allPositions.filter(pos => 
-        pos.x === 0 || pos.x === this.size - 1 || 
-        pos.y === 0 || pos.y === this.size - 1
+      return allPositions.filter(
+        (pos) => pos.x === 0 || pos.x === this.size - 1 || pos.y === 0 || pos.y === this.size - 1
       );
     }
   }
@@ -652,23 +731,18 @@ export class BoardManager {
   getCenterPositions(): Position[] {
     const allPositions = this.getAllPositions();
     const center = Math.floor(this.size / 2);
-    
+
     if (this.boardType === 'hexagonal') {
       // Hexagonal center positions
-      return allPositions.filter(pos => {
-        const distance = Math.max(
-          Math.abs(pos.x),
-          Math.abs(pos.y),
-          Math.abs(pos.z || 0)
-        );
+      return allPositions.filter((pos) => {
+        const distance = Math.max(Math.abs(pos.x), Math.abs(pos.y), Math.abs(pos.z || 0));
         return distance <= 2; // Central area
       });
     } else {
       // Square center positions
       const centerRange = 2;
-      return allPositions.filter(pos => 
-        Math.abs(pos.x - center) <= centerRange && 
-        Math.abs(pos.y - center) <= centerRange
+      return allPositions.filter(
+        (pos) => Math.abs(pos.x - center) <= centerRange && Math.abs(pos.y - center) <= centerRange
       );
     }
   }
@@ -684,14 +758,18 @@ export class BoardManager {
       );
       return distance === radius;
     } else {
-      return position.x === 0 || position.x === this.size - 1 || 
-             position.y === 0 || position.y === this.size - 1;
+      return (
+        position.x === 0 ||
+        position.x === this.size - 1 ||
+        position.y === 0 ||
+        position.y === this.size - 1
+      );
     }
   }
 
   isInCenter(position: Position): boolean {
     const center = Math.floor(this.size / 2);
-    
+
     if (this.boardType === 'hexagonal') {
       const distance = Math.max(
         Math.abs(position.x),
@@ -700,100 +778,98 @@ export class BoardManager {
       );
       return distance <= 2;
     } else {
-      return Math.abs(position.x - center) <= 2 && 
-             Math.abs(position.y - center) <= 2;
+      return Math.abs(position.x - center) <= 2 && Math.abs(position.y - center) <= 2;
     }
   }
 
   /**
    * Find all disconnected regions on the board
    * Rule Reference: Section 12.2 - Territory Disconnection
-   * 
+   *
    * A region is disconnected when:
    * 1. Physical Disconnection: Surrounded by collapsed spaces, board edges, or single-player marker border
    * 2. Representation: Lacks representation from at least one active player's ring stacks
-   * 
+   *
    * Key Insight: Markers of a specific color can act as borders (treated like collapsed spaces).
    * We must check for disconnection with respect to each marker color separately.
    */
   findDisconnectedRegions(board: BoardState, _movingPlayer: number): Territory[] {
     const disconnectedRegions: Territory[] = [];
-    
+
     // Get all active players (those with stacks on board)
     const activePlayers = new Set<number>();
     for (const [, stack] of board.stacks) {
       activePlayers.add(stack.controllingPlayer);
     }
-    
+
     // Get all marker colors present on board
     const markerColors = new Set<number>();
     for (const [, marker] of board.markers) {
       markerColors.add(marker.player);
     }
-    
+
     // Check for disconnection with respect to each marker color
     // (markers of that color act as borders along with collapsed spaces and edges)
     for (const borderColor of markerColors) {
       const regions = this.findRegionsWithBorderColor(board, borderColor, activePlayers);
       disconnectedRegions.push(...regions);
     }
-    
+
     // Also check for regions surrounded by only collapsed spaces and edges (no marker borders)
     const regionsWithoutMarkerBorder = this.findRegionsWithoutMarkerBorder(board, activePlayers);
     disconnectedRegions.push(...regionsWithoutMarkerBorder);
-    
+
     return disconnectedRegions;
   }
-
 
   /**
    * Find regions where markers of a specific color act as borders
    * Rule Reference: Section 12.2 - Markers of one color can form disconnecting borders
    */
   private findRegionsWithBorderColor(
-    board: BoardState, 
-    borderColor: number, 
+    board: BoardState,
+    borderColor: number,
     activePlayers: Set<number>
   ): Territory[] {
     const disconnectedRegions: Territory[] = [];
     const visited = new Set<string>();
-    
+
     // Find all connected regions where borderColor markers act as borders
     for (const posStr of this.validPositions) {
       if (visited.has(posStr)) continue;
-      
+
       const position = stringToPosition(posStr);
-      
+
       // Skip if this is a border (collapsed or borderColor marker)
       if (this.isCollapsedSpace(position, board)) {
         visited.add(posStr);
         continue;
       }
-      
+
       const marker = this.getMarker(position, board);
       if (marker === borderColor) {
         visited.add(posStr);
         continue;
       }
-      
+
       // Find connected region using flood fill (borderColor markers act as borders)
       const region = this.exploreRegionWithBorderColor(position, board, borderColor, visited);
-      
+
       if (region.length === 0) continue;
-      
+
       // Check representation - must lack at least one active player's stacks
       const representedPlayers = this.getRepresentedPlayers(region, board);
-      
+
       if (representedPlayers.size < activePlayers.size) {
         // This region is disconnected!
         disconnectedRegions.push({
           spaces: region,
           controllingPlayer: 0, // Will be set by caller
-          isDisconnected: true
+          isDisconnected: true,
         });
       }
     }
-    
+
     return disconnectedRegions;
   }
 
@@ -806,41 +882,41 @@ export class BoardManager {
   ): Territory[] {
     const disconnectedRegions: Territory[] = [];
     const visited = new Set<string>();
-    
+
     // Find all connected regions where only collapsed spaces and edges form borders
     for (const posStr of this.validPositions) {
       if (visited.has(posStr)) continue;
-      
+
       const position = stringToPosition(posStr);
-      
+
       // Skip collapsed spaces
       if (this.isCollapsedSpace(position, board)) {
         visited.add(posStr);
         continue;
       }
-      
+
       // Find connected region (only collapsed spaces/edges are borders)
       const region = this.exploreRegionWithoutMarkerBorder(position, board, visited);
-      
+
       if (region.length === 0) continue;
-      
+
       // Check if region is actually bordered by collapsed spaces/edges (no markers in border)
       if (!this.isRegionBorderedByCollapsedOnly(region, board)) {
         continue;
       }
-      
+
       // Check representation
       const representedPlayers = this.getRepresentedPlayers(region, board);
-      
+
       if (representedPlayers.size < activePlayers.size) {
         disconnectedRegions.push({
           spaces: region,
           controllingPlayer: 0,
-          isDisconnected: true
+          isDisconnected: true,
         });
       }
     }
-    
+
     return disconnectedRegions;
   }
 
@@ -854,36 +930,39 @@ export class BoardManager {
     visited: Set<string>
   ): Position[] {
     const region: Position[] = [];
-    const queue = [startPosition];
+    const startKey = positionToString(startPosition);
+    const queue: string[] = [startKey];
     const localVisited = new Set<string>();
-    
+
     while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentKey = positionToString(current);
-      
+      const currentKey = queue.shift()!;
+
       if (localVisited.has(currentKey)) continue;
       localVisited.add(currentKey);
       visited.add(currentKey);
-      
+
       // Check if this is a border
-      if (this.isCollapsedSpace(current, board)) continue;
-      
-      const marker = this.getMarker(current, board);
-      if (marker === borderColor) continue;
-      
+      // Optimization: check directly against board maps using string key
+      if (board.collapsedSpaces.has(currentKey)) continue;
+
+      const marker = board.markers.get(currentKey);
+      if (marker?.player === borderColor) continue;
+
       // This space is part of the region (empty, stack, or other-color marker)
-      region.push(current);
-      
-      // Explore neighbors
-      const neighbors = this.getNeighbors(current, this.config.territoryAdjacency);
-      for (const neighbor of neighbors) {
-        const neighborKey = positionToString(neighbor);
-        if (!localVisited.has(neighborKey) && this.isValidPosition(neighbor)) {
-          queue.push(neighbor);
+      // Only convert to Position when adding to result
+      region.push(stringToPosition(currentKey));
+
+      // Explore neighbors using cached graph
+      const neighbors = this.adjacencyGraph.get(currentKey);
+      if (neighbors) {
+        for (const neighborKey of neighbors) {
+          if (!localVisited.has(neighborKey)) {
+            queue.push(neighborKey);
+          }
         }
       }
     }
-    
+
     return region;
   }
 
@@ -896,33 +975,34 @@ export class BoardManager {
     visited: Set<string>
   ): Position[] {
     const region: Position[] = [];
-    const queue = [startPosition];
+    const startKey = positionToString(startPosition);
+    const queue: string[] = [startKey];
     const localVisited = new Set<string>();
-    
+
     while (queue.length > 0) {
-      const current = queue.shift()!;
-      const currentKey = positionToString(current);
-      
+      const currentKey = queue.shift()!;
+
       if (localVisited.has(currentKey)) continue;
       localVisited.add(currentKey);
       visited.add(currentKey);
-      
+
       // Check if this is a border (only collapsed spaces)
-      if (this.isCollapsedSpace(current, board)) continue;
-      
+      if (board.collapsedSpaces.has(currentKey)) continue;
+
       // This space is part of the region
-      region.push(current);
-      
-      // Explore neighbors
-      const neighbors = this.getNeighbors(current, this.config.territoryAdjacency);
-      for (const neighbor of neighbors) {
-        const neighborKey = positionToString(neighbor);
-        if (!localVisited.has(neighborKey) && this.isValidPosition(neighbor)) {
-          queue.push(neighbor);
+      region.push(stringToPosition(currentKey));
+
+      // Explore neighbors using cached graph
+      const neighbors = this.adjacencyGraph.get(currentKey);
+      if (neighbors) {
+        for (const neighborKey of neighbors) {
+          if (!localVisited.has(neighborKey)) {
+            queue.push(neighborKey);
+          }
         }
       }
     }
-    
+
     return region;
   }
 
@@ -931,32 +1011,32 @@ export class BoardManager {
    */
   private isRegionBorderedByCollapsedOnly(regionSpaces: Position[], board: BoardState): boolean {
     const regionSet = new Set(regionSpaces.map(positionToString));
-    
+
     // Check all border positions
     for (const space of regionSpaces) {
       const neighbors = this.getNeighbors(space, this.config.territoryAdjacency);
       for (const neighbor of neighbors) {
         const neighborKey = positionToString(neighbor);
-        
+
         // Skip if neighbor is in region
         if (regionSet.has(neighborKey)) continue;
-        
+
         // Check if neighbor is valid position (board edge check)
         if (!this.isValidPosition(neighbor)) continue; // Edge is OK
-        
+
         // Check if it's collapsed
         if (this.isCollapsedSpace(neighbor, board)) continue; // Collapsed is OK
-        
+
         // If it has a marker, this region is NOT bordered by collapsed-only
         if (this.getMarker(neighbor, board) !== undefined) {
           return false;
         }
-        
+
         // Empty spaces or stacks in border mean not a valid disconnection
         return false;
       }
     }
-    
+
     return true;
   }
 
@@ -976,14 +1056,14 @@ export class BoardManager {
    */
   private getRepresentedPlayers(regionSpaces: Position[], board: BoardState): Set<number> {
     const represented = new Set<number>();
-    
+
     for (const space of regionSpaces) {
       const stack = this.getStack(space, board);
       if (stack) {
         represented.add(stack.controllingPlayer);
       }
     }
-    
+
     return represented;
   }
 
@@ -1050,7 +1130,37 @@ export class BoardManager {
       }
     }
 
-    return Array.from(borderMarkers.values());
+    const borderMarkersArray = Array.from(borderMarkers.values());
+
+    if (TERRITORY_TRACE_DEBUG) {
+      const regionSpacesSample = regionSpaces.slice(0, 12).map(positionToString);
+      const seedMarkersSample = Array.from(borderSeedMap.values())
+        .slice(0, 12)
+        .map(positionToString);
+      const borderMarkersSample = borderMarkersArray.slice(0, 12).map(positionToString);
+
+      const containsInRegion = (x: number, y: number) =>
+        regionSpaces.some((p) => p.x === x && p.y === y);
+      const containsInBorder = (x: number, y: number) =>
+        borderMarkersArray.some((p) => p.x === x && p.y === y);
+
+      // eslint-disable-next-line no-console
+      console.log('[BoardManager.getBorderMarkerPositions]', {
+        boardType: board.type,
+        regionSize: regionSpaces.length,
+        regionSample: regionSpacesSample,
+        seedCount: borderSeedMap.size,
+        seedSample: seedMarkersSample,
+        borderCount: borderMarkersArray.length,
+        borderSample: borderMarkersSample,
+        region_contains_3_7: containsInRegion(3, 7),
+        region_contains_4_0: containsInRegion(4, 0),
+        border_contains_3_7: containsInBorder(3, 7),
+        border_contains_4_0: containsInBorder(4, 0),
+      });
+    }
+
+    return borderMarkersArray;
   }
 
   // Get board configuration
@@ -1078,7 +1188,10 @@ export class BoardManager {
 
       case 'von_neumann': // 4-direction for square boards
         const vonNeumannDirections = [
-          { x: 0, y: 1 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: -1, y: 0 }
+          { x: 0, y: 1 },
+          { x: 1, y: 0 },
+          { x: 0, y: -1 },
+          { x: -1, y: 0 },
         ];
         for (const dir of vonNeumannDirections) {
           const newPos = { x: x + dir.x, y: y + dir.y };
@@ -1092,8 +1205,12 @@ export class BoardManager {
         if (z !== undefined) {
           // Cube coordinates for hexagonal
           const hexDirections = [
-            { x: 1, y: -1, z: 0 }, { x: 1, y: 0, z: -1 }, { x: 0, y: 1, z: -1 },
-            { x: -1, y: 1, z: 0 }, { x: -1, y: 0, z: 1 }, { x: 0, y: -1, z: 1 }
+            { x: 1, y: -1, z: 0 },
+            { x: 1, y: 0, z: -1 },
+            { x: 0, y: 1, z: -1 },
+            { x: -1, y: 1, z: 0 },
+            { x: -1, y: 0, z: 1 },
+            { x: 0, y: -1, z: 1 },
           ];
           for (const dir of hexDirections) {
             const newPos = { x: x + dir.x, y: y + dir.y, z: z + dir.z };

@@ -3,13 +3,13 @@
  * Common test data and helper functions for RingRift tests
  */
 
-import { 
-  BoardType, 
-  BoardState, 
-  GameState, 
-  Position, 
+import {
+  BoardType,
+  BoardState,
+  GameState,
+  Position,
   Player,
-  GamePhase 
+  GamePhase,
 } from '../../src/shared/types/game';
 
 /**
@@ -45,10 +45,7 @@ export function createTestBoard(boardType: BoardType = 'square8'): BoardState {
 /**
  * Creates a minimal Player for testing
  */
-export function createTestPlayer(
-  playerNumber: number,
-  overrides: Partial<Player> = {}
-): Player {
+export function createTestPlayer(playerNumber: number, overrides: Partial<Player> = {}): Player {
   return {
     id: `player-${playerNumber}`,
     username: `TestPlayer${playerNumber}`,
@@ -66,23 +63,21 @@ export function createTestPlayer(
 /**
  * Creates a minimal GameState for testing
  */
-export function createTestGameState(
-  overrides: Partial<GameState> = {}
-): GameState {
+export function createTestGameState(overrides: Partial<GameState> = {}): GameState {
   const boardType = (overrides.boardType || 'square8') as BoardType;
   const board = overrides.board || createTestBoard(boardType);
-  
+
   return {
     id: 'test-game-123',
     boardType,
     board,
-    players: overrides.players || [
-      createTestPlayer(1),
-      createTestPlayer(2),
-    ],
+    players: overrides.players || [createTestPlayer(1), createTestPlayer(2)],
     currentPlayer: 0,
     currentPhase: 'ring_placement',
     moveHistory: [],
+    // Initialise structured history so helpers that rely on it (e.g. for
+    // moveNumber computation) behave like real engine states.
+    history: overrides.history || [],
     timeControl: { initialTime: 600, increment: 0, type: 'blitz' },
     spectators: [],
     gameStatus: 'active',
@@ -166,10 +161,11 @@ export function addStack(
   player: number,
   height: number = 1
 ): void {
-  const key = position.z !== undefined 
-    ? `${position.x},${position.y},${position.z}` 
-    : `${position.x},${position.y}`;
-  
+  const key =
+    position.z !== undefined
+      ? `${position.x},${position.y},${position.z}`
+      : `${position.x},${position.y}`;
+
   board.stacks.set(key, {
     position,
     rings: Array(height).fill(player),
@@ -188,10 +184,11 @@ export function addMarker(
   player: number,
   type: 'regular' | 'collapsed' = 'regular'
 ): void {
-  const key = position.z !== undefined 
-    ? `${position.x},${position.y},${position.z}` 
-    : `${position.x},${position.y}`;
-  
+  const key =
+    position.z !== undefined
+      ? `${position.x},${position.y},${position.z}`
+      : `${position.x},${position.y}`;
+
   board.markers.set(key, {
     position,
     player,
@@ -202,15 +199,12 @@ export function addMarker(
 /**
  * Helper to add a collapsed space
  */
-export function addCollapsedSpace(
-  board: BoardState,
-  position: Position,
-  player: number
-): void {
-  const key = position.z !== undefined 
-    ? `${position.x},${position.y},${position.z}` 
-    : `${position.x},${position.y}`;
-  
+export function addCollapsedSpace(board: BoardState, position: Position, player: number): void {
+  const key =
+    position.z !== undefined
+      ? `${position.x},${position.y},${position.z}`
+      : `${position.x},${position.y}`;
+
   board.collapsedSpaces.set(key, player);
 }
 
@@ -225,17 +219,18 @@ export function createMarkerLine(
   player: number
 ): void {
   for (let i = 0; i < length; i++) {
-    const position: Position = direction.dz !== undefined
-      ? {
-          x: start.x + direction.dx * i,
-          y: start.y + direction.dy * i,
-          z: (start.z || 0) + direction.dz * i,
-        }
-      : {
-          x: start.x + direction.dx * i,
-          y: start.y + direction.dy * i,
-        };
-    
+    const position: Position =
+      direction.dz !== undefined
+        ? {
+            x: start.x + direction.dx * i,
+            y: start.y + direction.dy * i,
+            z: (start.z || 0) + direction.dz * i,
+          }
+        : {
+            x: start.x + direction.dx * i,
+            y: start.y + direction.dy * i,
+          };
+
     addMarker(board, position, player);
   }
 }
@@ -248,15 +243,16 @@ export function assertPositionHasStack(
   position: Position,
   expectedPlayer?: number
 ): void {
-  const key = position.z !== undefined 
-    ? `${position.x},${position.y},${position.z}` 
-    : `${position.x},${position.y}`;
-  
+  const key =
+    position.z !== undefined
+      ? `${position.x},${position.y},${position.z}`
+      : `${position.x},${position.y}`;
+
   const stack = board.stacks.get(key);
   if (!stack) {
     throw new Error(`Expected stack at position ${key}, but found none`);
   }
-  
+
   if (expectedPlayer !== undefined && stack.controllingPlayer !== expectedPlayer) {
     throw new Error(
       `Expected stack at ${key} to be owned by player ${expectedPlayer}, but found player ${stack.controllingPlayer}`
@@ -272,15 +268,16 @@ export function assertPositionHasMarker(
   position: Position,
   expectedPlayer?: number
 ): void {
-  const key = position.z !== undefined 
-    ? `${position.x},${position.y},${position.z}` 
-    : `${position.x},${position.y}`;
-  
+  const key =
+    position.z !== undefined
+      ? `${position.x},${position.y},${position.z}`
+      : `${position.x},${position.y}`;
+
   const marker = board.markers.get(key);
   if (!marker) {
     throw new Error(`Expected marker at position ${key}, but found none`);
   }
-  
+
   if (expectedPlayer !== undefined && marker.player !== expectedPlayer) {
     throw new Error(
       `Expected marker at ${key} to be owned by player ${expectedPlayer}, but found player ${marker.player}`
@@ -296,15 +293,16 @@ export function assertPositionCollapsed(
   position: Position,
   expectedPlayer?: number
 ): void {
-  const key = position.z !== undefined 
-    ? `${position.x},${position.y},${position.z}` 
-    : `${position.x},${position.y}`;
-  
+  const key =
+    position.z !== undefined
+      ? `${position.x},${position.y},${position.z}`
+      : `${position.x},${position.y}`;
+
   const player = board.collapsedSpaces.get(key);
   if (player === undefined) {
     throw new Error(`Expected collapsed space at position ${key}, but found none`);
   }
-  
+
   if (expectedPlayer !== undefined && player !== expectedPlayer) {
     throw new Error(
       `Expected collapsed space at ${key} to be owned by player ${expectedPlayer}, but found player ${player}`
@@ -317,7 +315,7 @@ export function assertPositionCollapsed(
  */
 export function getAllBoardPositions(boardType: BoardType, size: number): Position[] {
   const positions: Position[] = [];
-  
+
   if (boardType === 'hexagonal') {
     const radius = size - 1;
     for (let q = -radius; q <= radius; q++) {
@@ -335,7 +333,7 @@ export function getAllBoardPositions(boardType: BoardType, size: number): Positi
       }
     }
   }
-  
+
   return positions;
 }
 
@@ -343,13 +341,15 @@ export function getAllBoardPositions(boardType: BoardType, size: number): Positi
  * Deep clone a game state for testing
  */
 export function cloneGameState(gameState: GameState): GameState {
-  return JSON.parse(JSON.stringify({
-    ...gameState,
-    board: {
-      ...gameState.board,
-      stacks: Array.from(gameState.board.stacks.entries()),
-      markers: Array.from(gameState.board.markers.entries()),
-      collapsedSpaces: Array.from(gameState.board.collapsedSpaces.entries()),
-    },
-  }));
+  return JSON.parse(
+    JSON.stringify({
+      ...gameState,
+      board: {
+        ...gameState.board,
+        stacks: Array.from(gameState.board.stacks.entries()),
+        markers: Array.from(gameState.board.markers.entries()),
+        collapsedSpaces: Array.from(gameState.board.collapsedSpaces.entries()),
+      },
+    })
+  );
 }

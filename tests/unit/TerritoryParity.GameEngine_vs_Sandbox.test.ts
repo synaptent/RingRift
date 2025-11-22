@@ -4,14 +4,9 @@ import {
   SandboxConfig,
   SandboxInteractionHandler,
 } from '../../src/client/sandbox/ClientSandboxEngine';
-import {
-  BoardType,
-  GameState,
-  Player,
-  Position,
-  TimeControl,
-} from '../../src/shared/types/game';
-import { addMarker, addStack, pos } from '../utils/fixtures';
+import { BoardType, GameState, Player, Position, TimeControl } from '../../src/shared/types/game';
+import { summarizeBoard, computeProgressSnapshot } from '../../src/shared/engine/core';
+import { addMarker, addStack, addCollapsedSpace, pos } from '../utils/fixtures';
 import * as sandboxTerritory from '../../src/client/sandbox/sandboxTerritory';
 
 /**
@@ -78,7 +73,7 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
 
     const handler: SandboxInteractionHandler = {
       // Default handler: always pick the first option for any choice.
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<any> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<any> {
         const optionsArray = ((choice as any).options as any[]) ?? [];
         const selectedOption = optionsArray.length > 0 ? optionsArray[0] : undefined;
 
@@ -108,7 +103,7 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
       boardType,
       backendPlayers,
       timeControl,
-      false,
+      false
     );
     const backendAny: any = backendEngine;
     const backendState: GameState = backendAny.gameState as GameState;
@@ -206,10 +201,10 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
 
     // 3. Territory counts for player 1 match.
     const backendCollapsedForP1 = Array.from(backendFinalBoard.collapsedSpaces.values()).filter(
-      (v) => v === 1,
+      (v) => v === 1
     ).length;
     const sandboxCollapsedForP1 = Array.from(sandboxFinalBoard.collapsedSpaces.values()).filter(
-      (v) => v === 1,
+      (v) => v === 1
     ).length;
 
     expect(backendCollapsedForP1).toBe(sandboxCollapsedForP1);
@@ -217,10 +212,10 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
 
     // 4. All stacks inside the region are eliminated on both engines.
     const backendStacksInRegion = Array.from(backendFinalBoard.stacks.keys()).filter((k) =>
-      interiorKeys.has(k),
+      interiorKeys.has(k)
     );
     const sandboxStacksInRegion = Array.from(sandboxFinalBoard.stacks.keys()).filter((k) =>
-      interiorKeys.has(k),
+      interiorKeys.has(k)
     );
 
     expect(backendStacksInRegion.length).toBe(0);
@@ -231,14 +226,14 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
     const sandboxFinalP1Eliminated = sandboxP1Final.eliminatedRings;
 
     expect(backendFinalP1Eliminated - backendInitialP1Eliminated).toBe(
-      sandboxFinalP1Eliminated - sandboxInitialP1Eliminated,
+      sandboxFinalP1Eliminated - sandboxInitialP1Eliminated
     );
 
     const backendFinalTotalEliminated = backendFinalState.totalRingsEliminated;
     const sandboxFinalTotalEliminated = sandboxFinalState.totalRingsEliminated;
 
     expect(backendFinalTotalEliminated - backendInitialTotalEliminated).toBe(
-      sandboxFinalTotalEliminated - sandboxInitialTotalEliminated,
+      sandboxFinalTotalEliminated - sandboxInitialTotalEliminated
     );
 
     // Also ensure the board-level eliminatedRings bookkeeping matches for player 1.
@@ -259,7 +254,7 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
       boardType,
       backendPlayers,
       timeControl,
-      false,
+      false
     );
     const backendAny: any = backendEngine;
     const backendState: GameState = backendAny.gameState as GameState;
@@ -294,17 +289,16 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
     addStack(sandboxBoard, p2Outside, 2, 1);
 
     // Confirm player 1 has no stacks outside the region on either board.
-    const isInRegion = (p: Position) =>
-      interiorCoords.some((q) => keyFrom(q) === keyFrom(p));
+    const isInRegion = (p: Position) => interiorCoords.some((q) => keyFrom(q) === keyFrom(p));
 
     const backendP1Stacks = Array.from(backendBoard.stacks.values()).filter(
-      (s) => s.controllingPlayer === 1,
+      (s) => s.controllingPlayer === 1
     );
     const backendOutside = backendP1Stacks.filter((s) => !isInRegion(s.position));
     expect(backendOutside.length).toBe(0);
 
     const sandboxP1Stacks = Array.from(sandboxBoard.stacks.values()).filter(
-      (s) => s.controllingPlayer === 1,
+      (s) => s.controllingPlayer === 1
     );
     const sandboxOutside = sandboxP1Stacks.filter((s) => !isInRegion(s.position));
     expect(sandboxOutside.length).toBe(0);
@@ -330,13 +324,13 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
     const backendInitialCollapsed = backendBoard.collapsedSpaces.size;
     const backendInitialTotalEliminated = backendState.totalRingsEliminated;
     const backendInitialP1Eliminated = backendState.players.find(
-      (p) => p.playerNumber === 1,
+      (p) => p.playerNumber === 1
     )!.eliminatedRings;
 
     const sandboxInitialCollapsed = sandboxBoard.collapsedSpaces.size;
     const sandboxInitialTotalEliminated = sandboxState.totalRingsEliminated;
     const sandboxInitialP1Eliminated = sandboxState.players.find(
-      (p) => p.playerNumber === 1,
+      (p) => p.playerNumber === 1
     )!.eliminatedRings;
 
     await backendAny.processDisconnectedRegions();
@@ -353,10 +347,10 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
     expect(sandboxBoard.collapsedSpaces.size).toBe(sandboxInitialCollapsed);
 
     const backendStacksInRegion = Array.from(backendBoard.stacks.keys()).filter((key) =>
-      interiorCoords.some((p) => keyFrom(p) === key),
+      interiorCoords.some((p) => keyFrom(p) === key)
     );
     const sandboxStacksInRegion = Array.from(sandboxBoard.stacks.keys()).filter((key) =>
-      interiorCoords.some((p) => keyFrom(p) === key),
+      interiorCoords.some((p) => keyFrom(p) === key)
     );
 
     expect(backendStacksInRegion.length).toBe(interiorCoords.length);
@@ -364,12 +358,12 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
 
     const backendFinalTotalEliminated = backendState.totalRingsEliminated;
     const backendFinalP1Eliminated = backendState.players.find(
-      (p) => p.playerNumber === 1,
+      (p) => p.playerNumber === 1
     )!.eliminatedRings;
 
     const sandboxFinalTotalEliminated = sandboxState.totalRingsEliminated;
     const sandboxFinalP1Eliminated = sandboxState.players.find(
-      (p) => p.playerNumber === 1,
+      (p) => p.playerNumber === 1
     )!.eliminatedRings;
 
     expect(backendFinalTotalEliminated).toBe(backendInitialTotalEliminated);
@@ -390,7 +384,7 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
       boardType,
       backendPlayers,
       timeControl,
-      false,
+      false
     );
     const backendAny: any = backendEngine;
     const backendState: GameState = backendAny.gameState as GameState;
@@ -536,10 +530,10 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
 
     // 3. Player 1 territorySpaces and collapsed-space counts match.
     const backendCollapsedForP1 = Array.from(backendFinalBoard.collapsedSpaces.values()).filter(
-      (v) => v === 1,
+      (v) => v === 1
     ).length;
     const sandboxCollapsedForP1 = Array.from(sandboxFinalBoard.collapsedSpaces.values()).filter(
-      (v) => v === 1,
+      (v) => v === 1
     ).length;
 
     expect(backendCollapsedForP1).toBe(sandboxCollapsedForP1);
@@ -547,10 +541,10 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
 
     // 4. All stacks inside both regions are eliminated.
     const backendStacksInRegions = Array.from(backendFinalBoard.stacks.keys()).filter(
-      (k) => interiorKeys1.has(k) || interiorKeys2.has(k),
+      (k) => interiorKeys1.has(k) || interiorKeys2.has(k)
     );
     const sandboxStacksInRegions = Array.from(sandboxFinalBoard.stacks.keys()).filter(
-      (k) => interiorKeys1.has(k) || interiorKeys2.has(k),
+      (k) => interiorKeys1.has(k) || interiorKeys2.has(k)
     );
 
     expect(backendStacksInRegions.length).toBe(0);
@@ -564,11 +558,11 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
     const sandboxFinalP1Eliminated = sandboxP1Final.eliminatedRings;
 
     expect(backendFinalTotalEliminated - backendInitialTotalEliminated).toBe(
-      sandboxFinalTotalEliminated - sandboxInitialTotalEliminated,
+      sandboxFinalTotalEliminated - sandboxInitialTotalEliminated
     );
 
     expect(backendFinalP1Eliminated - backendInitialP1Eliminated).toBe(
-      sandboxFinalP1Eliminated - sandboxInitialP1Eliminated,
+      sandboxFinalP1Eliminated - sandboxInitialP1Eliminated
     );
 
     // Also ensure the board-level eliminatedRings bookkeeping matches for player 1.
@@ -580,13 +574,257 @@ describe('Territory parity: GameEngine vs ClientSandboxEngine (Q23 scenarios)', 
     // Sanity: the total territory gained for P1 matches the sum of both
     // regions' interior + border spaces.
     const expectedTerritory =
-      interiorKeys1.size +
-      interiorKeys2.size +
-      borderKeys1.size +
-      borderKeys2.size;
+      interiorKeys1.size + interiorKeys2.size + borderKeys1.size + borderKeys2.size;
 
     expect(backendCollapsedForP1).toBe(expectedTerritory);
     expect(sandboxCollapsedForP1).toBe(expectedTerritory);
   });
 
+  test('seed17_pre_final_board_territory_parity_square8', async () => {
+    // Regression parity test for the pre-final seed17 board (square8 / 2p).
+    //
+    // We reconstruct the boardBeforeSummary for moveNumber 52 from
+    // logs/seed17_trace_debug2.log and ensure that a single territory
+    // processing pass on backend and sandbox produces identical results for
+    // collapsedSpaces, totalRingsEliminated, and per-player
+    // territorySpaces/eliminatedRings.
+
+    const seedBoardType: BoardType = 'square8';
+    const seedTimeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+
+    // --- Backend setup (square8 / 2 players) ---
+    const backendPlayersSeed: Player[] = [
+      {
+        id: 'p1-seed17',
+        username: 'P1',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: seedTimeControl.initialTime * 1000,
+        ringsInHand: 2, // from stateHashBefore: 1:2:2:0
+        eliminatedRings: 2,
+        territorySpaces: 0,
+      },
+      {
+        id: 'p2-seed17',
+        username: 'P2',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: seedTimeControl.initialTime * 1000,
+        ringsInHand: 0, // from stateHashBefore: 2:0:5:6
+        eliminatedRings: 5,
+        territorySpaces: 6,
+      },
+    ];
+
+    const backendEngineSeed = new GameEngine(
+      'territory-seed17-pre-final-backend',
+      seedBoardType,
+      backendPlayersSeed,
+      seedTimeControl,
+      false
+    );
+    const backendAnySeed: any = backendEngineSeed;
+    const backendStateSeed: GameState = backendAnySeed.gameState as GameState;
+    const backendBoardSeed = backendStateSeed.board;
+
+    backendStateSeed.currentPlayer = 2; // actor 2 moves at moveNumber 52
+    backendStateSeed.totalRingsEliminated = 7; // from progressBefore.eliminated
+
+    backendBoardSeed.stacks.clear();
+    backendBoardSeed.markers.clear();
+    backendBoardSeed.collapsedSpaces.clear();
+    backendBoardSeed.eliminatedRings = { 1: 2, 2: 5 };
+
+    const parsePos = (key: string): Position => {
+      const [xStr, yStr] = key.split(',');
+      return { x: parseInt(xStr, 10), y: parseInt(yStr, 10) };
+    };
+
+    const stackSpecsSeed = [
+      '0,0:2:1:1',
+      '1,3:1:5:5',
+      '1,6:2:3:3',
+      '2,0:2:5:5',
+      '3,0:1:5:2',
+      '5,3:1:2:2',
+      '5,6:1:1:1',
+      '6,4:2:5:1',
+    ];
+
+    for (const spec of stackSpecsSeed) {
+      const [posKey, playerStr, heightStr] = spec.split(':');
+      const pos = parsePos(posKey);
+      const player = parseInt(playerStr, 10);
+      const height = parseInt(heightStr, 10);
+      addStack(backendBoardSeed, pos, player, height);
+    }
+
+    const markerSpecsSeed = [
+      '0,2:2',
+      '0,3:1',
+      '0,4:1',
+      '0,6:2',
+      '1,1:1',
+      '1,7:1',
+      '2,7:2',
+      '3,6:1',
+      '4,6:1',
+      '4,7:1',
+      '5,5:2',
+      '7,4:1',
+      '7,6:2',
+    ];
+
+    for (const spec of markerSpecsSeed) {
+      const [posKey, playerStr] = spec.split(':');
+      const pos = parsePos(posKey);
+      const player = parseInt(playerStr, 10);
+      addMarker(backendBoardSeed, pos, player);
+    }
+
+    const collapsedSpecsSeed = [
+      '1,5:2',
+      '2,3:2',
+      '3,4:1',
+      '3,5:1',
+      '4,2:2',
+      '4,3:2',
+      '5,1:2',
+      '5,2:2',
+      '6,0:2',
+      '7,0:2',
+      '7,1:2',
+    ];
+
+    for (const spec of collapsedSpecsSeed) {
+      const [posKey, ownerStr] = spec.split(':');
+      const pos = parsePos(posKey);
+      const owner = parseInt(ownerStr, 10);
+      addCollapsedSpace(backendBoardSeed, pos, owner);
+    }
+
+    // --- Sandbox setup mirroring the same geometry and counters ---
+    const sandboxConfigSeed: SandboxConfig = {
+      boardType: seedBoardType,
+      numPlayers: 2,
+      playerKinds: ['human', 'human'],
+    };
+
+    const sandboxHandlerSeed: SandboxInteractionHandler = {
+      async requestChoice<TChoice>(choice: TChoice): Promise<any> {
+        const optionsArray = ((choice as any).options as any[]) ?? [];
+        const selectedOption = optionsArray.length > 0 ? optionsArray[0] : undefined;
+
+        return {
+          choiceId: (choice as any).id,
+          playerNumber: (choice as any).playerNumber,
+          choiceType: (choice as any).type,
+          selectedOption,
+        };
+      },
+    };
+
+    const sandboxEngineSeed = new ClientSandboxEngine({
+      config: sandboxConfigSeed,
+      interactionHandler: sandboxHandlerSeed,
+    });
+    const sandboxAnySeed: any = sandboxEngineSeed;
+    const sandboxStateSeed: GameState = sandboxAnySeed.gameState as GameState;
+    const sandboxBoardSeed = sandboxStateSeed.board;
+
+    sandboxStateSeed.currentPlayer = 2;
+    sandboxStateSeed.totalRingsEliminated = 7;
+
+    sandboxBoardSeed.stacks.clear();
+    sandboxBoardSeed.markers.clear();
+    sandboxBoardSeed.collapsedSpaces.clear();
+    sandboxBoardSeed.eliminatedRings = { 1: 2, 2: 5 };
+
+    const sp1 = sandboxStateSeed.players.find((p) => p.playerNumber === 1)!;
+    sp1.ringsInHand = 2;
+    sp1.eliminatedRings = 2;
+    sp1.territorySpaces = 0;
+
+    const sp2 = sandboxStateSeed.players.find((p) => p.playerNumber === 2)!;
+    sp2.ringsInHand = 0;
+    sp2.eliminatedRings = 5;
+    sp2.territorySpaces = 6;
+
+    for (const spec of stackSpecsSeed) {
+      const [posKey, playerStr, heightStr] = spec.split(':');
+      const pos = parsePos(posKey);
+      const player = parseInt(playerStr, 10);
+      const height = parseInt(heightStr, 10);
+      addStack(sandboxBoardSeed, pos, player, height);
+    }
+
+    for (const spec of markerSpecsSeed) {
+      const [posKey, playerStr] = spec.split(':');
+      const pos = parsePos(posKey);
+      const player = parseInt(playerStr, 10);
+      addMarker(sandboxBoardSeed, pos, player);
+    }
+
+    for (const spec of collapsedSpecsSeed) {
+      const [posKey, ownerStr] = spec.split(':');
+      const pos = parsePos(posKey);
+      const owner = parseInt(ownerStr, 10);
+      addCollapsedSpace(sandboxBoardSeed, pos, owner);
+    }
+
+    // Sanity: initial backend and sandbox geometry and S-invariants match.
+    expect(summarizeBoard(backendBoardSeed)).toEqual(summarizeBoard(sandboxBoardSeed));
+
+    const backendSnapBefore = computeProgressSnapshot(backendStateSeed);
+    const sandboxSnapBefore = computeProgressSnapshot(sandboxStateSeed);
+    expect(backendSnapBefore).toEqual(sandboxSnapBefore);
+
+    const backendCollapsedBefore = backendBoardSeed.collapsedSpaces.size;
+    const sandboxCollapsedBefore = sandboxBoardSeed.collapsedSpaces.size;
+    expect(backendCollapsedBefore).toBe(sandboxCollapsedBefore);
+
+    const backendTotalElimBefore = backendStateSeed.totalRingsEliminated;
+    const sandboxTotalElimBefore = sandboxStateSeed.totalRingsEliminated;
+    expect(backendTotalElimBefore).toBe(sandboxTotalElimBefore);
+
+    // --- Run one round of territory processing on both engines ---
+    await backendAnySeed.processDisconnectedRegions();
+    await sandboxAnySeed.processDisconnectedRegionsForCurrentPlayer();
+
+    const backendFinalStateSeed = backendStateSeed;
+    const backendFinalBoardSeed = backendFinalStateSeed.board;
+
+    const sandboxFinalStateSeed = sandboxEngineSeed.getGameState();
+    const sandboxFinalBoardSeed = sandboxFinalStateSeed.board;
+
+    // 1. Geometric parity: collapsed spaces, stacks, and markers.
+    expect(summarizeBoard(backendFinalBoardSeed)).toEqual(summarizeBoard(sandboxFinalBoardSeed));
+
+    // 2. S-invariant parity.
+    const backendSnapAfter = computeProgressSnapshot(backendFinalStateSeed);
+    const sandboxSnapAfter = computeProgressSnapshot(sandboxFinalStateSeed);
+    expect(backendSnapAfter).toEqual(sandboxSnapAfter);
+
+    // 3. Per-player territory and elimination accounting parity.
+    const backendP1Seed = backendFinalStateSeed.players.find((p) => p.playerNumber === 1)!;
+    const backendP2Seed = backendFinalStateSeed.players.find((p) => p.playerNumber === 2)!;
+
+    const sandboxP1Seed = sandboxFinalStateSeed.players.find((p) => p.playerNumber === 1)!;
+    const sandboxP2Seed = sandboxFinalStateSeed.players.find((p) => p.playerNumber === 2)!;
+
+    expect(backendP1Seed.territorySpaces).toBe(sandboxP1Seed.territorySpaces);
+    expect(backendP2Seed.territorySpaces).toBe(sandboxP2Seed.territorySpaces);
+
+    expect(backendP1Seed.eliminatedRings).toBe(sandboxP1Seed.eliminatedRings);
+    expect(backendP2Seed.eliminatedRings).toBe(sandboxP2Seed.eliminatedRings);
+
+    // Board-level eliminatedRings and totalRingsEliminated must also match.
+    expect(backendFinalStateSeed.totalRingsEliminated).toBe(
+      sandboxFinalStateSeed.totalRingsEliminated
+    );
+
+    expect(backendFinalBoardSeed.eliminatedRings).toEqual(sandboxFinalBoardSeed.eliminatedRings);
+  });
 });

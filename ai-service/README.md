@@ -18,8 +18,10 @@ This service provides AI capabilities for the RingRift game through a RESTful AP
   - HeuristicAI: Uses strategic heuristics (difficulty 3–5)
 
 - **Experimental / in-progress AI types**:
-  - MinimaxAI: Prototype implementation under test in [`minimax_ai.py`](ai-service/app/ai/minimax_ai.py:1) and [`test_minimax_ai.py`](ai-service/tests/test_minimax_ai.py:1); not yet wired into the `/ai/move` path by default.
-  - MCTS / NeuralNetAI: Prototype Monte Carlo tree search + neural net scaffolding in [`mcts_ai.py`](ai-service/app/ai/mcts_ai.py:1) and [`neural_net.py`](ai-service/app/ai/neural_net.py:1). Current `/ai/move` requests at higher difficulties still fall back to heuristic-style evaluation; these types are not considered production-ready.
+  - MinimaxAI: Prototype implementation under test in [`minimax_ai.py`](ai-service/app/ai/minimax_ai.py:1) and [`test_minimax_ai.py`](ai-service/tests/test_minimax_ai.py:1).
+  - MCTS / NeuralNetAI: Prototype Monte Carlo tree search + neural net scaffolding in [`mcts_ai.py`](ai-service/app/ai/mcts_ai.py:1) and [`neural_net.py`](ai-service/app/ai/neural_net.py:1).
+
+  > **Note:** These experimental types are not yet fully wired into the main `/ai/move` endpoint for all difficulty levels. The service currently relies primarily on `RandomAI` and `HeuristicAI` for production gameplay.
 
 - **Difficulty Levels**: 1–10, mapped to AI profiles in the backend via [`AIServiceClient`](src/server/services/AIServiceClient.ts:1) and [`AIEngine`](src/server/game/ai/AIEngine.ts:1)
 - **Position Evaluation**: Heuristic evaluation with detailed breakdown
@@ -69,7 +71,7 @@ Get AI-selected move for current game state
 
 ### `POST /ai/evaluate`
 
-Evaluate position from player's perspective
+Evaluate position from player's perspective.
 
 **Request Body:**
 
@@ -95,6 +97,139 @@ Evaluate position from player's perspective
     "center_control": 4.0,
     "opponent_threats": -25.5
   }
+}
+```
+
+### `POST /ai/choice/line_reward_option`
+
+Select a line reward option for an AI-controlled player. This corresponds to the
+`line_reward_option` PlayerChoice in the TypeScript engine.
+
+The service currently mirrors the backend heuristic by preferring **Option 2**
+(minimum collapse, no elimination) when available, while still accepting
+difficulty/ai_type metadata for future smarter policies.
+
+**Request Body (simplified):**
+
+```json
+{
+  "game_state": {
+    /* Optional GameState object; may be null for simple heuristics */
+  },
+  "player_number": 1,
+  "difficulty": 5,
+  "ai_type": "heuristic",
+  "options": ["option_1_collapse_all_and_eliminate", "option_2_min_collapse_no_elimination"]
+}
+```
+
+**Response:**
+
+```json
+{
+  "selectedOption": "option_2_min_collapse_no_elimination",
+  "aiType": "heuristic",
+  "difficulty": 5
+}
+```
+
+### `POST /ai/choice/ring_elimination`
+
+Select which stack to eliminate rings from when a line collapse or territory
+processing step produces a `ring_elimination` PlayerChoice.
+
+**Request Body (simplified):**
+
+```json
+{
+  "game_state": {
+    /* Optional GameState object; not strictly required for current heuristic */
+  },
+  "player_number": 1,
+  "difficulty": 5,
+  "ai_type": "heuristic",
+  "options": [
+    {
+      "stackPosition": { "x": 4, "y": 4 },
+      "capHeight": 3,
+      "totalHeight": 4
+    },
+    {
+      "stackPosition": { "x": 10, "y": 10 },
+      "capHeight": 2,
+      "totalHeight": 5
+    }
+  ]
+}
+```
+
+The current heuristic prefers the option with the **smallest `capHeight`**, then
+breaks ties on **smallest `totalHeight`**.
+
+**Response:**
+
+```json
+{
+  "selectedOption": {
+    "stackPosition": { "x": 10, "y": 10 },
+    "capHeight": 2,
+    "totalHeight": 5
+  },
+  "aiType": "heuristic",
+  "difficulty": 5
+}
+```
+
+### `POST /ai/choice/region_order`
+
+Select which disconnected region to process first for a `region_order`
+PlayerChoice during territory processing.
+
+**Request Body (simplified):**
+
+```json
+{
+  "game_state": {
+    /* Optional GameState object; used to look for nearby enemy stacks */
+  },
+  "player_number": 1,
+  "difficulty": 5,
+  "ai_type": "heuristic",
+  "options": [
+    {
+      "regionId": "A",
+      "size": 5,
+      "representativePosition": { "x": 10, "y": 10 }
+    },
+    {
+      "regionId": "B",
+      "size": 3,
+      "representativePosition": { "x": 2, "y": 2 }
+    }
+  ]
+}
+```
+
+The current heuristic scores each region by:
+
+- Base score = `size`
+- Bonus for nearby enemy-controlled stacks (within a small radius of
+  `representativePosition`), with closer stacks contributing more
+
+The region with the highest score is selected; ties are broken in favour of the
+larger region.
+
+**Response:**
+
+```json
+{
+  "selectedOption": {
+    "regionId": "A",
+    "size": 5,
+    "representativePosition": { "x": 10, "y": 10 }
+  },
+  "aiType": "heuristic",
+  "difficulty": 5
 }
 ```
 
@@ -141,25 +276,29 @@ Clear cached AI instances
 
 ### Full Stack with Docker Compose
 
-The root `docker-compose.yml` currently defines the main application stack:
+The root `docker-compose.yml` defines the main application stack, **including this AI service**:
 
 - `app` – Node.js backend (builds from the root [`Dockerfile`](Dockerfile))
 - `nginx` – reverse proxy
 - `postgres` – PostgreSQL
 - `redis` – Redis
+- `ai-service` – Python FastAPI AI microservice (exposes port `8001`)
 - `prometheus`, `grafana` – observability
 
-It does **not yet include** an `ai-service` service. To use this Python AI service alongside the compose stack:
-
-1. Start the main stack from the project root:
+To run the full stack in Docker, from the project root:
 
 ```bash
-docker-compose up
+docker compose up
+# or
+docker compose up -d
 ```
 
-2. Build and run the AI service container separately as shown above (or run it via `uvicorn` on your host).
+By default:
 
-If you prefer, you can add an `ai-service` section to `docker-compose.yml` that uses [`ai-service/Dockerfile`](ai-service/Dockerfile) and exposes port `8001`, then update `AI_SERVICE_URL` for the `app` container accordingly.
+- The `ai-service` container is built from [`ai-service/Dockerfile`](ai-service/Dockerfile) and started alongside the `app` container.
+- The `app` container is configured with `AI_SERVICE_URL=http://ai-service:8001` (see the `AI_SERVICE_URL` entry under the `app` service in `docker-compose.yml`), so you do **not** need to run the AI service separately when using `docker compose up`.
+
+You should only run the AI service on its own (via `uvicorn` or `docker run`) when you are developing or profiling it in isolation from the rest of the stack.
 
 ## Environment Variables
 
@@ -173,13 +312,15 @@ ai-service/
 ├── app/
 │   ├── __init__.py
 │   ├── main.py              # FastAPI application
-│   ├── models.py            # Pydantic models
+│   ├── models/              # Pydantic models mirroring src/shared/types/game.ts
+│   │   ├── __init__.py      # Import surface for GameState, Move, choice payloads
+│   │   └── core.py          # Core model definitions (BoardState, GameState, choices)
 │   └── ai/
 │       ├── __init__.py
 │       ├── base.py          # Base AI class
 │       ├── random_ai.py     # Random AI implementation
 │       ├── heuristic_ai.py  # Heuristic AI implementation
-│       └── ...              # Future AI implementations
+│       └── ...              # Future AI implementations (MCTS, neural net, descent, etc.)
 ├── Dockerfile
 ├── requirements.txt
 └── README.md

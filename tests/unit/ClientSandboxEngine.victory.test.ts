@@ -1,10 +1,14 @@
-import { ClientSandboxEngine, SandboxConfig, SandboxInteractionHandler } from '../../src/client/sandbox/ClientSandboxEngine';
+import {
+  ClientSandboxEngine,
+  SandboxConfig,
+  SandboxInteractionHandler,
+} from '../../src/client/sandbox/ClientSandboxEngine';
 import {
   BoardType,
   GameResult,
   GameState,
   PlayerChoiceResponseFor,
-  CaptureDirectionChoice
+  CaptureDirectionChoice,
 } from '../../src/shared/types/game';
 import { addStack, pos } from '../utils/fixtures';
 
@@ -23,11 +27,11 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
     const config: SandboxConfig = {
       boardType,
       numPlayers: 2,
-      playerKinds: ['human', 'human']
+      playerKinds: ['human', 'human'],
     };
 
     const handler: SandboxInteractionHandler = {
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<PlayerChoiceResponseFor<any>> {
         const anyChoice = choice as CaptureDirectionChoice;
         const selectedOption = (anyChoice as any).options
           ? (anyChoice as any).options[0]
@@ -37,9 +41,9 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
           choiceId: (choice as any).id,
           playerNumber: (choice as any).playerNumber,
           choiceType: (choice as any).type,
-          selectedOption
+          selectedOption,
         } as PlayerChoiceResponseFor<any>;
-      }
+      },
     };
 
     return new ClientSandboxEngine({ config, interactionHandler: handler });
@@ -56,7 +60,7 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
 
     // Force player 1 to be just below their ring-elimination threshold,
     // then apply one more elimination via totalRingsEliminated.
-    const p1 = state.players.find(p => p.playerNumber === 1)!;
+    const p1 = state.players.find((p) => p.playerNumber === 1)!;
     const threshold = state.victoryThreshold;
     p1.eliminatedRings = threshold - 1;
 
@@ -87,7 +91,7 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
     state.gameStatus = 'active';
     state.winner = undefined as any;
 
-    const p1 = state.players.find(p => p.playerNumber === 1)!;
+    const p1 = state.players.find((p) => p.playerNumber === 1)!;
     const territoryThreshold = state.territoryVictoryThreshold;
 
     // Directly set player 1's territory to threshold and re-run checks.
@@ -114,7 +118,7 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
     state.board.stacks.clear();
     state.board.markers.clear();
 
-    state.players.forEach(p => {
+    state.players.forEach((p) => {
       p.ringsInHand = 0;
       p.territorySpaces = 0;
       p.eliminatedRings = 2;
@@ -124,17 +128,17 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
     (state.board.markers as any).set('0,0', {
       player: 1,
       position: { x: 0, y: 0 },
-      type: 'regular'
+      type: 'regular',
     });
     (state.board.markers as any).set('1,0', {
       player: 1,
       position: { x: 1, y: 0 },
-      type: 'regular'
+      type: 'regular',
     });
     (state.board.markers as any).set('0,1', {
       player: 2,
       position: { x: 0, y: 1 },
-      type: 'regular'
+      type: 'regular',
     });
 
     // Ensure victoryResult is clear.
@@ -161,7 +165,7 @@ describe('ClientSandboxEngine victory conditions (square19)', () => {
     state.board.stacks.clear();
     state.board.markers.clear();
 
-    state.players.forEach(p => {
+    state.players.forEach((p) => {
       p.ringsInHand = 0;
       p.territorySpaces = 0;
       p.eliminatedRings = 0;

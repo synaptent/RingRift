@@ -58,30 +58,26 @@ export interface SandboxMovementEngineHooks {
 
   // Optional callback invoked for each capture segment in a chain so hosts
   // can record canonical moves/history in a backend-like way.
-  onCaptureSegmentApplied?(
-    info: {
-      before: GameState;
-      after: GameState;
-      from: Position;
-      target: Position;
-      landing: Position;
-      playerNumber: number;
-      segmentIndex: number;
-      isFinal: boolean;
-    }
-  ): Promise<void> | void;
+  onCaptureSegmentApplied?(info: {
+    before: GameState;
+    after: GameState;
+    from: Position;
+    target: Position;
+    landing: Position;
+    playerNumber: number;
+    segmentIndex: number;
+    isFinal: boolean;
+  }): Promise<void> | void;
 
   // Optional callback invoked after a successful simple (non-capturing)
   // movement so hosts can record canonical move/history entries.
-  onSimpleMoveApplied?(
-    info: {
-      before: GameState;
-      after: GameState;
-      from: Position;
-      landing: Position;
-      playerNumber: number;
-    }
-  ): Promise<void> | void;
+  onSimpleMoveApplied?(info: {
+    before: GameState;
+    after: GameState;
+    from: Position;
+    landing: Position;
+    playerNumber: number;
+  }): Promise<void> | void;
 
   // Called after any successful movement or capture chain so the host can
   // perform post-movement processing (lines, territory, victory, turn
@@ -134,6 +130,8 @@ export async function handleMovementClickSandbox(
 
   // Invalid destination clears any selection.
   if (!hooks.isValidPosition(position)) {
+    if (selectedFromKey === '2,7')
+      console.log('[Sandbox Movement Engine Debug] Invalid position', position);
     return { nextSelectedFromKey: undefined };
   }
 
@@ -153,6 +151,12 @@ export async function handleMovementClickSandbox(
   const fromKey = selectedFromKey;
   const movingStack = board.stacks.get(fromKey);
   if (!movingStack || movingStack.controllingPlayer !== state.currentPlayer) {
+    if (selectedFromKey === '2,7')
+      console.log('[Sandbox Movement Engine Debug] Invalid moving stack', {
+        fromKey,
+        movingStack,
+        currentPlayer: state.currentPlayer,
+      });
     return { nextSelectedFromKey: undefined };
   }
 
@@ -160,12 +164,16 @@ export async function handleMovementClickSandbox(
 
   // Disallow landing on collapsed spaces.
   if (hooks.isCollapsedSpace(position, board)) {
+    if (selectedFromKey === '2,7')
+      console.log('[Sandbox Movement Engine Debug] Collapsed destination', position);
     return { nextSelectedFromKey: undefined };
   }
 
   // Determine whether this click represents a capture or a simple move.
   const fullPath = getPathPositions(fromPos, position);
   if (fullPath.length <= 1) {
+    if (selectedFromKey === '2,7')
+      console.log('[Sandbox Movement Engine Debug] Path too short', fullPath);
     return { nextSelectedFromKey: undefined };
   }
 
@@ -227,12 +235,19 @@ export async function handleMovementClickSandbox(
   for (const pos of intermediate) {
     const pathKey = positionToString(pos);
     if (hooks.isCollapsedSpace(pos, board) || board.stacks.has(pathKey)) {
+      if (selectedFromKey === '2,7')
+        console.log('[Sandbox Movement Engine Debug] Path blocked', { pos, pathKey });
       return { nextSelectedFromKey: undefined };
     }
   }
 
   const distance = calculateDistance(state.boardType, fromPos, position);
   if (distance < movingStack.stackHeight) {
+    if (selectedFromKey === '2,7')
+      console.log('[Sandbox Movement Engine Debug] Distance too short', {
+        distance,
+        stackHeight: movingStack.stackHeight,
+      });
     return { nextSelectedFromKey: undefined };
   }
 
@@ -469,9 +484,7 @@ export async function performCaptureChainSandbox(
       });
     }
 
-    let nextSegment:
-      | { from: Position; target: Position; landing: Position }
-      | undefined;
+    let nextSegment: { from: Position; target: Position; landing: Position } | undefined;
 
     if (hooks.chooseCaptureSegment) {
       nextSegment = await hooks.chooseCaptureSegment(options);

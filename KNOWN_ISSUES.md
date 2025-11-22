@@ -2,7 +2,7 @@
 
 **Last Updated:** November 15, 2025
 **Status:** Code-verified assessment based on actual implementation
-**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [deprecated/CODEBASE_EVALUATION.md](./deprecated/CODEBASE_EVALUATION.md)
+**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md)
 
 This document tracks **current, code-verified issues** in the RingRift codebase.
 

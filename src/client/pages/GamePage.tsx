@@ -245,13 +245,13 @@ export default function GamePage() {
   const [sandboxCaptureChoice, setSandboxCaptureChoice] = useState<PlayerChoice | null>(null);
   const [sandboxCaptureTargets, setSandboxCaptureTargets] = useState<Position[]>([]);
 
-    // UI selection state (used in both modes)
-    const [selected, setSelected] = useState<Position | undefined>();
-    const [validTargets, setValidTargets] = useState<Position[]>([]);
-  
-    // Sandbox stall/watchdog diagnostics for local AI games.
-    const [sandboxLastProgressAt, setSandboxLastProgressAt] = useState<number | null>(null);
-    const [sandboxStallWarning, setSandboxStallWarning] = useState<string | null>(null);
+  // UI selection state (used in both modes)
+  const [selected, setSelected] = useState<Position | undefined>();
+  const [validTargets, setValidTargets] = useState<Position[]>([]);
+
+  // Sandbox stall/watchdog diagnostics for local AI games.
+  const [sandboxLastProgressAt, setSandboxLastProgressAt] = useState<number | null>(null);
+  const [sandboxStallWarning, setSandboxStallWarning] = useState<string | null>(null);
 
   const createSandboxInteractionHandler = (
     playerTypesSnapshot: LocalPlayerType[]
@@ -502,7 +502,11 @@ export default function GamePage() {
       const trace = anyWindow.__RINGRIFT_SANDBOX_TRACE__ ?? [];
       const payload = JSON.stringify(trace, null, 2);
 
-      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.clipboard &&
+        navigator.clipboard.writeText
+      ) {
         await navigator.clipboard.writeText(payload);
         toast.success('Sandbox AI trace copied to clipboard');
       } else {
@@ -559,9 +563,7 @@ export default function GamePage() {
     const engine = sandboxEngineRef.current;
     if (engine) {
       const stateBefore = engine.getGameState();
-      const current = stateBefore.players.find(
-        (p) => p.playerNumber === stateBefore.currentPlayer
-      );
+      const current = stateBefore.players.find((p) => p.playerNumber === stateBefore.currentPlayer);
 
       // If it is currently an AI player's turn in the sandbox engine, ignore
       // human clicks and ensure the AI turn loop is running instead of placing
@@ -1090,83 +1092,83 @@ export default function GamePage() {
     lastConnectionStatusRef.current = connectionStatus;
   }, [connectionStatus]);
 
-    // Maintain a live countdown for the current choice (if any)
-    useEffect(() => {
-      if (!pendingChoice || !choiceDeadline) {
-        setChoiceTimeRemainingMs(null);
-        if (choiceTimerRef.current !== null) {
-          window.clearInterval(choiceTimerRef.current);
-          choiceTimerRef.current = null;
-        }
-        return;
+  // Maintain a live countdown for the current choice (if any)
+  useEffect(() => {
+    if (!pendingChoice || !choiceDeadline) {
+      setChoiceTimeRemainingMs(null);
+      if (choiceTimerRef.current !== null) {
+        window.clearInterval(choiceTimerRef.current);
+        choiceTimerRef.current = null;
       }
-  
-      const update = () => {
-        const remaining = choiceDeadline - Date.now();
-        setChoiceTimeRemainingMs(remaining > 0 ? remaining : 0);
-      };
-  
-      update();
-      const id = window.setInterval(update, 250);
-      choiceTimerRef.current = id as unknown as number;
-  
-      return () => {
-        if (choiceTimerRef.current !== null) {
-          window.clearInterval(choiceTimerRef.current);
-          choiceTimerRef.current = null;
-        }
-      };
-    }, [pendingChoice, choiceDeadline]);
-  
-    // Local sandbox AI-only stall watchdog. This runs independently of the
-    // internal sandbox AI diagnostics and focuses on scheduler-level stalls
-    // (situations where an AI player is to move but the local game state has
-    // not advanced for an extended period).
-    useEffect(() => {
-      if (!isConfigured) {
-        return;
+      return;
+    }
+
+    const update = () => {
+      const remaining = choiceDeadline - Date.now();
+      setChoiceTimeRemainingMs(remaining > 0 ? remaining : 0);
+    };
+
+    update();
+    const id = window.setInterval(update, 250);
+    choiceTimerRef.current = id as unknown as number;
+
+    return () => {
+      if (choiceTimerRef.current !== null) {
+        window.clearInterval(choiceTimerRef.current);
+        choiceTimerRef.current = null;
       }
-  
-      const STALL_TIMEOUT_MS = 8000;
-      const POLL_INTERVAL_MS = 1000;
-  
-      const id = window.setInterval(() => {
-        setSandboxStallWarning((prevWarning) => {
-          const last = sandboxLastProgressAt;
-          if (last === null) {
-            return prevWarning;
-          }
-  
-          const engine = sandboxEngineRef.current;
-          if (!engine) {
-            return null;
-          }
-  
-          const state = engine.getGameState();
-          const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
-          const now = Date.now();
-  
-          if (state.gameStatus !== 'active' || !current || current.type !== 'ai') {
-            // Clear any previous warning when there is no active AI turn pending.
-            return null;
-          }
-  
-          if (now - last > STALL_TIMEOUT_MS) {
-            return (
-              prevWarning ??
-              'Potential AI stall detected: sandbox AI has not advanced the game state for several seconds while an AI player is to move.'
-            );
-          }
-  
-          // Below threshold: clear any existing warning.
+    };
+  }, [pendingChoice, choiceDeadline]);
+
+  // Local sandbox AI-only stall watchdog. This runs independently of the
+  // internal sandbox AI diagnostics and focuses on scheduler-level stalls
+  // (situations where an AI player is to move but the local game state has
+  // not advanced for an extended period).
+  useEffect(() => {
+    if (!isConfigured) {
+      return;
+    }
+
+    const STALL_TIMEOUT_MS = 8000;
+    const POLL_INTERVAL_MS = 1000;
+
+    const id = window.setInterval(() => {
+      setSandboxStallWarning((prevWarning) => {
+        const last = sandboxLastProgressAt;
+        if (last === null) {
+          return prevWarning;
+        }
+
+        const engine = sandboxEngineRef.current;
+        if (!engine) {
           return null;
-        });
-      }, POLL_INTERVAL_MS);
-  
-      return () => {
-        window.clearInterval(id);
-      };
-    }, [isConfigured, sandboxLastProgressAt]);
+        }
+
+        const state = engine.getGameState();
+        const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
+        const now = Date.now();
+
+        if (state.gameStatus !== 'active' || !current || current.type !== 'ai') {
+          // Clear any previous warning when there is no active AI turn pending.
+          return null;
+        }
+
+        if (now - last > STALL_TIMEOUT_MS) {
+          return (
+            prevWarning ??
+            'Potential AI stall detected: sandbox AI has not advanced the game state for several seconds while an AI player is to move.'
+          );
+        }
+
+        // Below threshold: clear any existing warning.
+        return null;
+      });
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [isConfigured, sandboxLastProgressAt]);
 
   // === Backend game mode ===
   if (routeGameId) {
@@ -1284,6 +1286,7 @@ export default function GamePage() {
               onCellClick={(pos) => handleBackendCellClick(pos, board)}
               onCellDoubleClick={(pos) => handleBackendCellDoubleClick(pos, board)}
               onCellContextMenu={(pos) => handleBackendCellContextMenu(pos, board)}
+              isSpectator={!isPlayer}
             />
           </section>
 
@@ -1293,12 +1296,14 @@ export default function GamePage() {
             pendingChoice exists. For now we do not cancel from the client;
             choices time out or are cleared by the server.
           */}
-          <ChoiceDialog
-            choice={pendingChoice}
-            deadline={choiceDeadline}
-            timeRemainingMs={choiceTimeRemainingMs}
-            onSelectOption={(choice, option) => respondToChoice(choice, option)}
-          />
+          {isPlayer && (
+            <ChoiceDialog
+              choice={pendingChoice}
+              deadline={choiceDeadline}
+              timeRemainingMs={choiceTimeRemainingMs}
+              onSelectOption={(choice, option) => respondToChoice(choice, option)}
+            />
+          )}
 
           <aside className="w-full md:w-72 space-y-3 text-sm text-slate-100">
             <div className="p-3 border border-slate-700 rounded bg-slate-900/50">
@@ -1638,8 +1643,7 @@ export default function GamePage() {
   const sandboxPhaseKey = sandboxGameState?.currentPhase ?? 'ring_placement';
   const sandboxPhaseDetails = PHASE_COPY[sandboxPhaseKey] ?? PHASE_COPY.ring_placement;
   const sandboxCurrentPlayerLabel =
-    sandboxCurrentPlayer?.username ||
-    `Player ${sandboxCurrentPlayer?.playerNumber ?? '?'}`;
+    sandboxCurrentPlayer?.username || `Player ${sandboxCurrentPlayer?.playerNumber ?? '?'}`;
   const displayedValidTargets =
     sandboxCaptureTargets.length > 0 ? sandboxCaptureTargets : validTargets;
   const selectedStackDetails = (() => {
@@ -1661,60 +1665,60 @@ export default function GamePage() {
       : 'Legacy local sandbox fallback (no backend).',
     'Runs entirely in-browser; use "Change Setup" to switch configurations.',
   ];
- return (
-   <div className="container mx-auto px-4 py-8 space-y-4">
-     <header className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.1fr)]">
-       <div className="p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg">
-         <div className="flex flex-wrap items-center justify-between gap-3">
-           <div>
-             <p className="text-xs uppercase tracking-wide text-slate-400">Local Sandbox</p>
-             <h1 className="text-2xl font-bold text-white">Game – {boardDisplayLabel}</h1>
-           </div>
-           <button
-             type="button"
-             onClick={() => {
-               setIsConfigured(false);
-               setLocalSandbox(null);
-               sandboxEngineRef.current = null;
-               setSelected(undefined);
-               setValidTargets([]);
-               setBackendSandboxError(null);
-               setSandboxPendingChoice(null);
-               setSandboxStallWarning(null);
-               setSandboxLastProgressAt(null);
-             }}
-             className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-           >
-             Change Setup
-           </button>
-         </div>
-       </div>
-     </header>
+  return (
+    <div className="container mx-auto px-4 py-8 space-y-4">
+      <header className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.1fr)]">
+        <div className="p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-400">Local Sandbox</p>
+              <h1 className="text-2xl font-bold text-white">Game – {boardDisplayLabel}</h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setIsConfigured(false);
+                setLocalSandbox(null);
+                sandboxEngineRef.current = null;
+                setSelected(undefined);
+                setValidTargets([]);
+                setBackendSandboxError(null);
+                setSandboxPendingChoice(null);
+                setSandboxStallWarning(null);
+                setSandboxLastProgressAt(null);
+              }}
+              className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
+            >
+              Change Setup
+            </button>
+          </div>
+        </div>
+      </header>
 
-     {sandboxStallWarning && (
-       <div className="p-3 rounded-xl border border-amber-500/70 bg-amber-900/40 text-amber-100 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-         <span>{sandboxStallWarning}</span>
-         <div className="flex gap-2">
-           <button
-             type="button"
-             onClick={handleCopySandboxTrace}
-             className="px-3 py-1 rounded-lg border border-amber-300 bg-amber-800/70 text-[11px] font-semibold hover:border-amber-100 hover:bg-amber-700/80"
-           >
-             Copy AI trace
-           </button>
-           <button
-             type="button"
-             onClick={() => setSandboxStallWarning(null)}
-             className="px-2 py-1 rounded-lg border border-slate-500 text-[11px] hover:border-slate-300"
-           >
-             Dismiss
-           </button>
-         </div>
-       </div>
-     )}
+      {sandboxStallWarning && (
+        <div className="p-3 rounded-xl border border-amber-500/70 bg-amber-900/40 text-amber-100 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <span>{sandboxStallWarning}</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleCopySandboxTrace}
+              className="px-3 py-1 rounded-lg border border-amber-300 bg-amber-800/70 text-[11px] font-semibold hover:border-amber-100 hover:bg-amber-700/80"
+            >
+              Copy AI trace
+            </button>
+            <button
+              type="button"
+              onClick={() => setSandboxStallWarning(null)}
+              className="px-2 py-1 rounded-lg border border-slate-500 text-[11px] hover:border-slate-300"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
-     {/* Local sandbox victory modal, reusing the shared VictoryModal UI. */}
-     {sandboxGameState && (
+      {/* Local sandbox victory modal, reusing the shared VictoryModal UI. */}
+      {sandboxGameState && (
         <VictoryModal
           isOpen={!!sandboxVictoryResult}
           gameResult={sandboxVictoryResult}

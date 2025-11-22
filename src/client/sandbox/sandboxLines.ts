@@ -4,7 +4,7 @@ import {
   BOARD_CONFIGS,
   LineInfo,
   Position,
-  positionToString
+  positionToString,
 } from '../../shared/types/game';
 
 export type LineDirection = { x: number; y: number; z?: number };
@@ -19,16 +19,16 @@ export function getLineDirectionsForBoard(boardType: BoardType): LineDirection[]
     return [
       { x: 1, y: 0, z: -1 }, // East
       { x: 1, y: -1, z: 0 }, // Northeast
-      { x: 0, y: -1, z: 1 }  // Northwest
+      { x: 0, y: -1, z: 1 }, // Northwest
     ];
   }
 
   // Square boards: 4 principal directions (E, SE, S, NE)
   return [
-    { x: 1, y: 0 },  // East
-    { x: 1, y: 1 },  // Southeast
-    { x: 0, y: 1 },  // South
-    { x: 1, y: -1 }  // Northeast
+    { x: 1, y: 0 }, // East
+    { x: 1, y: 1 }, // Southeast
+    { x: 0, y: 1 }, // South
+    { x: 1, y: -1 }, // Northeast
   ];
 }
 
@@ -57,11 +57,11 @@ export function findLineInDirectionOnBoard(
       ? {
           x: current.x + direction.x,
           y: current.y + direction.y,
-          z: (current.z ?? 0) + (direction.z ?? 0)
+          z: (current.z ?? 0) + (direction.z ?? 0),
         }
       : {
           x: current.x + direction.x,
-          y: current.y + direction.y
+          y: current.y + direction.y,
         };
 
     if (!isValidPosition(next)) break;
@@ -84,11 +84,11 @@ export function findLineInDirectionOnBoard(
       ? {
           x: current.x - direction.x,
           y: current.y - direction.y,
-          z: (current.z ?? 0) - (direction.z ?? 0)
+          z: (current.z ?? 0) - (direction.z ?? 0),
         }
       : {
           x: current.x - direction.x,
-          y: current.y - direction.y
+          y: current.y - direction.y,
         };
 
     if (!isValidPosition(prev)) break;
@@ -124,7 +124,17 @@ export function findAllLinesOnBoard(
   const directions = getLineDirectionsForBoard(boardType);
 
   for (const [posStr, marker] of board.markers) {
+    // Treat stacks and collapsed spaces on the same cell as hard
+    // blockers that prevent that marker from participating in any
+    // active line. This mirrors BoardManager.findAllLines and the
+    // rules in Section 11.1: lines must consist only of consecutive,
+    // non-collapsed markers and cannot pass through stacks.
+    if (board.collapsedSpaces.has(posStr) || board.stacks.has(posStr)) {
+      continue;
+    }
+
     const position = stringToPosition(posStr);
+
     for (const direction of directions) {
       const linePositions = findLineInDirectionOnBoard(
         position,
@@ -136,7 +146,7 @@ export function findAllLinesOnBoard(
 
       if (linePositions.length >= requiredLength) {
         const key = linePositions
-          .map(p => positionToString(p))
+          .map((p) => positionToString(p))
           .sort()
           .join('|');
 
@@ -146,7 +156,7 @@ export function findAllLinesOnBoard(
             positions: linePositions,
             player: marker.player,
             length: linePositions.length,
-            direction
+            direction,
           });
         }
       }

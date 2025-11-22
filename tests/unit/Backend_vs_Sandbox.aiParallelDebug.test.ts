@@ -7,12 +7,12 @@ import {
   Player,
   PlayerChoice,
   PlayerChoiceResponseFor,
-  CaptureDirectionChoice
+  CaptureDirectionChoice,
 } from '../../src/shared/types/game';
 import {
   ClientSandboxEngine,
   SandboxConfig,
-  SandboxInteractionHandler
+  SandboxInteractionHandler,
 } from '../../src/client/sandbox/ClientSandboxEngine';
 
 /**
@@ -74,11 +74,17 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: boardConfig.ringsPerPlayer,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       } as Player;
     });
 
-    const engine = new GameEngine('backend-vs-sandbox-debug', boardType, players, timeControl, false);
+    const engine = new GameEngine(
+      'backend-vs-sandbox-debug',
+      boardType,
+      players,
+      timeControl,
+      false
+    );
     const started = engine.startGame();
     if (!started) {
       throw new Error('Failed to start GameEngine for backend vs sandbox debug harness');
@@ -90,7 +96,7 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
     const config: SandboxConfig = {
       boardType,
       numPlayers,
-      playerKinds: Array.from({ length: numPlayers }, () => 'ai')
+      playerKinds: Array.from({ length: numPlayers }, () => 'ai'),
     };
 
     const handler: SandboxInteractionHandler = {
@@ -123,7 +129,7 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
             choiceId: cd.id,
             playerNumber: cd.playerNumber,
             choiceType: cd.type,
-            selectedOption: selected
+            selectedOption: selected,
           } as PlayerChoiceResponseFor<TChoice>;
         }
 
@@ -132,9 +138,9 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
           choiceId: anyChoice.id,
           playerNumber: anyChoice.playerNumber,
           choiceType: anyChoice.type,
-          selectedOption
+          selectedOption,
         } as PlayerChoiceResponseFor<TChoice>;
-      }
+      },
     };
 
     return new ClientSandboxEngine({ config, interactionHandler: handler });
@@ -144,7 +150,11 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
    * Choose a random legal move for the backend engine using getValidMoves,
    * driven by the provided PRNG. Mirrors GameEngine.aiSimulation.test.ts.
    */
-  function chooseRandomBackendMove(engine: GameEngine, state: GameState, rng: () => number): Move | null {
+  function chooseRandomBackendMove(
+    engine: GameEngine,
+    state: GameState,
+    rng: () => number
+  ): Move | null {
     const currentPlayer = state.currentPlayer;
     const moves = engine.getValidMoves(currentPlayer);
 
@@ -181,10 +191,10 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
     const players: SummaryPlayer[] = state.players
       .slice()
       .sort((a, b) => a.playerNumber - b.playerNumber)
-      .map(p => ({
+      .map((p) => ({
         ringsInHand: p.ringsInHand,
         eliminatedRings: p.eliminatedRings,
-        territorySpaces: p.territorySpaces
+        territorySpaces: p.territorySpaces,
       }));
 
     return {
@@ -195,13 +205,13 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
       stacks,
       markers,
       collapsed,
-      totalRingsEliminated: state.totalRingsEliminated ?? 0
+      totalRingsEliminated: state.totalRingsEliminated ?? 0,
     };
   }
 
   function isStructurallyTerminal(state: GameState): boolean {
     const noStacks = state.board.stacks.size === 0;
-    const anyRingsInHand = state.players.some(p => p.ringsInHand > 0);
+    const anyRingsInHand = state.players.some((p) => p.ringsInHand > 0);
     return noStacks && !anyRingsInHand;
   }
 
@@ -228,14 +238,13 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
       positions.push({
         label,
         key,
-        stack:
-          stack && {
-            controllingPlayer: stack.controllingPlayer,
-            stackHeight: stack.stackHeight,
-            capHeight: stack.capHeight
-          },
+        stack: stack && {
+          controllingPlayer: stack.controllingPlayer,
+          stackHeight: stack.stackHeight,
+          capHeight: stack.capHeight,
+        },
         marker: marker && { player: marker.player },
-        collapsedOwner
+        collapsedOwner,
       });
     };
 
@@ -315,22 +324,11 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
               break;
             }
 
-            // Auto-advance the backend through non-interactive phases
-            // before asking it for a player move. During line_processing
-            // and territory_processing there are no legal moves to choose
-            // from; they are internal bookkeeping phases.
-            if (
-              backendBefore.currentPhase === 'line_processing' ||
-              backendBefore.currentPhase === 'territory_processing'
-            ) {
-              backend.stepAutomaticPhasesForTesting();
-              const afterAuto = backend.getGameState();
-              if (afterAuto.gameStatus !== 'active') {
-                break;
-              }
-              // Re-evaluate from the new state on the next loop.
-              continue;
-            }
+            // Treat all phases, including line_processing and
+            // territory_processing, as potential interactive decision
+            // surfaces. Any legal actions for these phases are exposed
+            // via GameEngine.getValidMoves and selected explicitly
+            // below, rather than being auto-advanced.
 
             // If one engine has structurally terminal board state but still
             // reports gameStatus === 'active', surface this immediately.
@@ -409,7 +407,7 @@ describe.skip('Backend vs Sandbox parallel AI debug harness (square8/2p focus)',
                 backendStructAfter,
                 sandboxStructAfter,
                 backendLocalContext: getLocalContext(backendAfter, sharedMove),
-                sandboxLocalContext: getLocalContext(sandboxAfter, sharedMove)
+                sandboxLocalContext: getLocalContext(sandboxAfter, sharedMove),
               });
 
               throw new Error(

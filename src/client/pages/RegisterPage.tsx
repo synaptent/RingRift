@@ -61,8 +61,8 @@ export default function RegisterPage() {
         </p>
         {cameFromLogin && initialEmail && (
           <p className="text-xs text-emerald-400 mt-1">
-            We didn't find an account for{' '}
-            <span className="font-mono">{initialEmail}</span>. Create one below.
+            We didn’t find an account for <span className="font-mono">{initialEmail}</span>. Create
+            one below.
           </p>
         )}
       </header>
@@ -158,7 +158,7 @@ export default function RegisterPage() {
         <div className="space-y-3 p-5 rounded-2xl bg-slate-900/40 border border-slate-700 shadow">
           <h2 className="text-lg font-semibold text-slate-100">Or play without registering</h2>
           <p className="text-sm text-slate-300">
-            The local sandbox runs entirely in your browser. It's ideal for exploring movement,
+            The local sandbox runs entirely in your browser. It’s ideal for exploring movement,
             captures, lines, and territory before committing to an account.
           </p>
           <Link

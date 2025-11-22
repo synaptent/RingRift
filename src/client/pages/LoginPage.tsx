@@ -28,10 +28,7 @@ export default function LoginPage() {
     } catch (err: any) {
       const errorData = err?.response?.data;
       const errorCode = errorData?.error?.code as string | undefined;
-      const backendMessage =
-        errorData?.error?.message ||
-        errorData?.message ||
-        err?.message;
+      const backendMessage = errorData?.error?.message || errorData?.message || err?.message;
 
       // If the backend reports invalid credentials for this email, assume this may
       // be a new user and send them directly to the registration flow, carrying
@@ -41,10 +38,7 @@ export default function LoginPage() {
         return;
       }
 
-      setError(
-        backendMessage ||
-          'Login failed. Please check your credentials and try again.'
-      );
+      setError(backendMessage || 'Login failed. Please check your credentials and try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -110,11 +104,8 @@ export default function LoginPage() {
           </button>
 
           <p className="text-xs text-slate-400">
-            Don't have an account yet?{' '}
-            <Link
-              to="/register"
-              className="text-emerald-400 hover:text-emerald-300 underline"
-            >
+            Don’t have an account yet?{' '}
+            <Link to="/register" className="text-emerald-400 hover:text-emerald-300 underline">
               Create an account
             </Link>
             .
@@ -124,9 +115,8 @@ export default function LoginPage() {
         <div className="space-y-3 p-5 rounded-2xl bg-slate-900/40 border border-slate-700 shadow">
           <h2 className="text-lg font-semibold text-slate-100">Or play without logging in</h2>
           <p className="text-sm text-slate-300">
-            The local sandbox runs the full rules engine entirely in your browser. It's ideal
-            for experimenting with movement, captures, lines, and territory without creating an
-            account.
+            The local sandbox runs the full rules engine entirely in your browser. It’s ideal for
+            experimenting with movement, captures, lines, and territory without creating an account.
           </p>
           <Link
             to="/sandbox"

@@ -11,7 +11,7 @@ import {
   PlayerChoiceResponse,
   Position,
   RingStack,
-  TimeControl
+  TimeControl,
 } from '../../src/shared/types/game';
 
 // Minimal Socket.IO Server stub for testing end-to-end choice plumbing
@@ -23,7 +23,7 @@ class FakeSocketIOServer extends EventEmitter {
       emit: (event: string, payload: any) => {
         this.toCalls.push({ target, event, payload });
         this.emit(event, payload);
-      }
+      },
     };
   }
 }
@@ -35,7 +35,7 @@ function makeStack(playerNumber: number, height: number, position: Position): Ri
     rings,
     stackHeight: rings.length,
     capHeight: rings.length,
-    controllingPlayer: playerNumber
+    controllingPlayer: playerNumber,
   };
 }
 
@@ -52,7 +52,7 @@ const players: Player[] = [
     timeRemaining: timeControl.initialTime * 1000,
     ringsInHand: 18,
     eliminatedRings: 0,
-    territorySpaces: 0
+    territorySpaces: 0,
   },
   {
     id: 'blue',
@@ -63,8 +63,8 @@ const players: Player[] = [
     timeRemaining: timeControl.initialTime * 1000,
     ringsInHand: 18,
     eliminatedRings: 0,
-    territorySpaces: 0
-  }
+    territorySpaces: 0,
+  },
 ];
 
 /**
@@ -118,7 +118,7 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
       { x: 1, y: 0 },
       { x: 2, y: 0 },
       { x: 3, y: 0 },
-      { x: 4, y: 0 }
+      { x: 4, y: 0 },
     ];
 
     // First call returns an overlong line for player 1; subsequent calls
@@ -129,16 +129,15 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
     findAllLinesSpy.mockImplementationOnce(() => [
       {
         player: 1,
-        positions: markerPositions
-      }
+        positions: markerPositions,
+      },
     ]);
     findAllLinesSpy.mockImplementation(() => []);
 
     const stackPos: Position = { x: 0, y: 1 };
     boardManager.setStack(stackPos, makeStack(1, 3, stackPos), gameState.board);
 
-    const initialEliminated = gameState.players.find(p => p.playerNumber === 1)!
-      .eliminatedRings;
+    const initialEliminated = gameState.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
 
     // Invoke the line processing pipeline directly. This mirrors the internal
     // call from processAutomaticConsequences, but keeps the test focused.
@@ -156,7 +155,7 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
     expect(choice.playerNumber).toBe(1);
     expect(choice.options).toEqual([
       'option_1_collapse_all_and_eliminate',
-      'option_2_min_collapse_no_elimination'
+      'option_2_min_collapse_no_elimination',
     ]);
 
     // Simulate the client choosing Option 1: collapse all markers and
@@ -164,7 +163,7 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
     const response: PlayerChoiceResponse<(typeof choice.options)[number]> = {
       choiceId: choice.id,
       playerNumber: choice.playerNumber,
-      selectedOption: 'option_1_collapse_all_and_eliminate'
+      selectedOption: 'option_1_collapse_all_and_eliminate',
     };
 
     handler.handleChoiceResponse(response as any);
@@ -178,8 +177,7 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
     }
 
     // Red's eliminated ring count should have increased.
-    const finalEliminated = gameState.players.find(p => p.playerNumber === 1)!
-      .eliminatedRings;
+    const finalEliminated = gameState.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
     expect(finalEliminated).toBeGreaterThan(initialEliminated);
   });
 
@@ -215,8 +213,7 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
     boardManager.setStack(stackA, makeStack(1, 2, stackA), gameState.board);
     boardManager.setStack(stackB, makeStack(1, 3, stackB), gameState.board);
 
-    const initialEliminated = gameState.players.find(p => p.playerNumber === 1)!
-      .eliminatedRings;
+    const initialEliminated = gameState.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
 
     // Call the internal helper that issues a RingEliminationChoice. This is
     // intentionally a white-box test focused on the PlayerChoice plumbing.
@@ -235,16 +232,35 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
     expect(Array.isArray(choice.options)).toBe(true);
     expect(choice.options.length).toBe(2);
 
+    // Each elimination option should expose a canonical moveId that identifies
+    // the corresponding eliminate_rings_from_stack Move.
+    for (const opt of choice.options) {
+      expect(typeof opt.moveId === 'string').toBe(true);
+    }
+
+    const optionForStackA = choice.options.find(
+      (opt: any) => opt.stackPosition.x === stackA.x && opt.stackPosition.y === stackA.y
+    );
+    expect(optionForStackA).toBeDefined();
+    expect(optionForStackA.moveId).toBe(`eliminate-${stackA.x},${stackA.y}`);
+
+    const optionForStackB = choice.options.find(
+      (opt: any) => opt.stackPosition.x === stackB.x && opt.stackPosition.y === stackB.y
+    );
+    expect(optionForStackB).toBeDefined();
+    expect(optionForStackB.moveId).toBe(`eliminate-${stackB.x},${stackB.y}`);
+
     // Choose the option corresponding to stackB (position 2,2).
-    const selectedOption = choice.options.find((opt: any) =>
-      opt.stackPosition.x === stackB.x && opt.stackPosition.y === stackB.y
+    const selectedOption = choice.options.find(
+      (opt: any) => opt.stackPosition.x === stackB.x && opt.stackPosition.y === stackB.y
     );
     expect(selectedOption).toBeDefined();
+    expect(selectedOption.moveId).toBe(`eliminate-${stackB.x},${stackB.y}`);
 
     const response: PlayerChoiceResponse<any> = {
       choiceId: choice.id,
       playerNumber: choice.playerNumber,
-      selectedOption
+      selectedOption,
     };
 
     handler.handleChoiceResponse(response);
@@ -253,8 +269,7 @@ describe('GameEngine + WebSocketInteractionHandler line reward choice integratio
     await eliminatePromise;
 
     // Rings should have been removed from stackB; total eliminated count increased.
-    const finalEliminated = gameState.players.find(p => p.playerNumber === 1)!
-      .eliminatedRings;
+    const finalEliminated = gameState.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
     expect(finalEliminated).toBeGreaterThan(initialEliminated);
   });
 });

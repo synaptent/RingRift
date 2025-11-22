@@ -88,8 +88,9 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
       bt,
       players,
       timeControl,
-      false,
+      false
     );
+    engine.enableMoveDrivenDecisionPhases();
     const started = engine.startGame();
     if (!started) {
       throw new Error('Failed to start GameEngine for RNG full-parity harness');
@@ -105,7 +106,7 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
     };
 
     const handler: SandboxInteractionHandler = {
-      async requestChoice<TChoice extends any>(choice: TChoice): Promise<any> {
+      async requestChoice<TChoice>(choice: TChoice): Promise<any> {
         const anyChoice = choice as any;
 
         if (anyChoice.type === 'capture_direction') {
@@ -143,7 +144,7 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
       },
     };
 
-    return new ClientSandboxEngine({ config, interactionHandler: handler });
+    return new ClientSandboxEngine({ config, interactionHandler: handler, traceMode: true });
   }
 
   interface SummaryLite {
@@ -265,12 +266,12 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
 
       const { id, timestamp, moveNumber, ...payload } = next as any;
       const result = await backend.makeMove(
-        payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>,
+        payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
       );
 
       if (!result.success) {
         throw new Error(
-          `resolveBackendChainIfPresent: backend.makeMove failed during chain resolution: ${result.error}`,
+          `resolveBackendChainIfPresent: backend.makeMove failed during chain resolution: ${result.error}`
         );
       }
     }
@@ -307,10 +308,7 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
           const backendBefore = backend.getGameState();
           const sandboxBefore = sandbox.getGameState();
 
-          if (
-            backendBefore.gameStatus !== 'active' ||
-            sandboxBefore.gameStatus !== 'active'
-          ) {
+          if (backendBefore.gameStatus !== 'active' || sandboxBefore.gameStatus !== 'active') {
             break;
           }
 
@@ -318,7 +316,7 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
             throw new Error(
               `Pre-step desync in RNG full-parity harness: seed=${seed}, step=${step}, ` +
                 `backendCurrent=${backendBefore.currentPlayer}, sandboxCurrent=${sandboxBefore.currentPlayer}, ` +
-                `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`,
+                `backendPhase=${backendBefore.currentPhase}, sandboxPhase=${sandboxBefore.currentPhase}`
             );
           }
 
@@ -340,12 +338,12 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
             currentPlayer,
             backendBefore,
             backendMoves,
-            rngBackend,
+            rngBackend
           );
 
           if (!backendPolicyMove) {
             throw new Error(
-              `Backend local AI produced no move despite non-empty getValidMoves; seed=${seed}, step=${step}, player=${currentPlayer}`,
+              `Backend local AI produced no move despite non-empty getValidMoves; seed=${seed}, step=${step}, player=${currentPlayer}`
             );
           }
 
@@ -358,12 +356,9 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
           const sandboxMove = sandbox.getLastAIMoveForTesting();
 
           if (!sandboxMove) {
-            if (
-              sandboxBeforeHash === sandboxAfterHash &&
-              sandboxAfter.gameStatus === 'active'
-            ) {
+            if (sandboxBeforeHash === sandboxAfterHash && sandboxAfter.gameStatus === 'active') {
               throw new Error(
-                `Sandbox AI produced no move in RNG full-parity harness; seed=${seed}, step=${step}, player=${currentPlayer}`,
+                `Sandbox AI produced no move in RNG full-parity harness; seed=${seed}, step=${step}, player=${currentPlayer}`
               );
             }
             break;
@@ -374,20 +369,20 @@ describe('Sandbox vs Backend AI full RNG-aligned parity (minimal smoke test)', (
               `Sandbox vs backend local AI chose different moves under RNG alignment; ` +
                 `seed=${seed}, step=${step}, player=${currentPlayer}, ` +
                 `sandboxMove=${describeMoveForLog(sandboxMove)}, ` +
-                `backendPolicyMove=${describeMoveForLog(backendPolicyMove)}`,
+                `backendPolicyMove=${describeMoveForLog(backendPolicyMove)}`
             );
           }
 
           const { id, timestamp, moveNumber, ...payload } = backendPolicyMove as any;
           const result = await backend.makeMove(
-            payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>,
+            payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
           );
 
           if (!result.success) {
             throw new Error(
               `Backend makeMove failed when applying backend policy move in RNG full-parity harness; ` +
                 `seed=${seed}, step=${step}, player=${currentPlayer}, ` +
-                `move=${describeMoveForLog(backendPolicyMove)}, error=${result.error}`,
+                `move=${describeMoveForLog(backendPolicyMove)}, error=${result.error}`
             );
           }
         }

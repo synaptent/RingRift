@@ -7,11 +7,9 @@ import time
 import random
 from datetime import datetime
 
-# Add app to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '../'))
-
 from app.models import GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl, Player, AIConfig
 from app.game_engine import GameEngine
+from app.rules.default_engine import DefaultRulesEngine
 from app.ai.mcts_ai import MCTSAI
 from app.ai.descent_ai import DescentAI
 
@@ -57,7 +55,12 @@ def run_benchmark(num_games=10):
     descent_wins = 0
     draws = 0
     
+    rules_engine = DefaultRulesEngine()
+
     for i in range(num_games):
+        # Clear cache between games to prevent state leakage
+        GameEngine.clear_cache()
+        
         # Alternate starting player
         if i % 2 == 0:
             p1_ai = MCTSAI(1, config)
@@ -69,6 +72,7 @@ def run_benchmark(num_games=10):
             p2_ai = MCTSAI(2, config)
             p1_name = "Descent"
             p2_name = "MCTS"
+            
             
         state = create_initial_state()
         move_count = 0
@@ -84,21 +88,22 @@ def run_benchmark(num_games=10):
             duration = time.time() - start_time
             
             if not move:
-                print(f"  No move found for P{current_player}", flush=True)
+                print(f"  No move found for P{current_player} (Phase: {state.current_phase}, MustMove: {state.must_move_from_stack_key})", flush=True)
                 # If no move found, current player loses
                 state.winner = 2 if current_player == 1 else 1
                 state.game_status = GameStatus.FINISHED
                 break
                 
-            state = GameEngine.apply_move(state, move)
+            # state = GameEngine.apply_move(state, move)
+            state = rules_engine.apply_move(state, move)
             move_count += 1
             
-            if move_count % 10 == 0:
-                print(f"  Move {move_count} ({duration:.2f}s)", flush=True)
+            print(f"  Move {move_count} ({duration:.2f}s) - P{current_player} played {move.type}", flush=True)
                 
         winner = state.winner
         print(f"  Winner: P{winner}", flush=True)
         
+        # Correct win tracking based on player roles
         if winner == 1:
             if p1_name == "MCTS": mcts_wins += 1
             else: descent_wins += 1
