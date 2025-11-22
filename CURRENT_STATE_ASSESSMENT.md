@@ -1,6 +1,6 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** November 21, 2025
+**Assessment Date:** November 22, 2025
 **Assessor:** Code + Test Review
 **Purpose:** Factual status of the codebase as it exists today
 
@@ -126,6 +126,9 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
 - **Trace Parity:**
   - Trace and parity harnesses using `GameTrace` and `tests/utils/traces.ts`.
   - Backend FAQ-style chain-capture scenario suites pass under the unified `chain_capture` + `continue_capture_segment` model.
+- **RNG & Determinism:**
+  - Shared `SeededRNG` utility (`src/shared/utils/rng.ts`) and per-game `rngSeed` field in `GameState` for deterministic replay.
+  - Determinism-focused Jest suites (`tests/unit/RNGDeterminism.test.ts`, `tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts`, `ai-service/tests/test_determinism.py`) and seeded trace helpers (`tests/utils/traces.ts`) for reproducible backend↔sandbox/AI parity.
 
 ---
 
