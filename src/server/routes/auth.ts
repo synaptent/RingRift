@@ -5,11 +5,175 @@ import { getDatabaseClient } from '../database/connection';
 import { generateToken, generateRefreshToken, verifyRefreshToken } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { authRateLimiter } from '../middleware/rateLimiter';
-import { logger } from '../utils/logger';
+import { logger, httpLogger } from '../utils/logger';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../utils/email';
 import { RegisterSchema, LoginSchema } from '../../shared/validation/schemas';
+import { getCacheService, CacheKeys } from '../cache/redis';
+import { config } from '../config';
 
 const router = Router();
+
+type FailedLoginRecord = {
+  count: number;
+  firstFailureAt: number;
+};
+
+const inMemoryFailedLogins = new Map<string, FailedLoginRecord>();
+const inMemoryLockouts = new Map<string, number>();
+
+const normalizeEmailForLockout = (email: string): string => email.trim().toLowerCase();
+
+const isLoginLockoutEnabled = (): boolean => config.auth.loginLockoutEnabled;
+
+/**
+ * Check whether a given email is currently locked out from logging in.
+ * Uses Redis when available, otherwise falls back to in-memory state.
+ */
+const isEmailLockedOut = async (email: string, ip?: string): Promise<boolean> => {
+  if (!isLoginLockoutEnabled()) {
+    return false;
+  }
+
+  const normalizedEmail = normalizeEmailForLockout(email);
+  const now = Date.now();
+  const cache = getCacheService();
+
+  if (cache) {
+    const lockoutKey = CacheKeys.authLoginLockout(normalizedEmail);
+    const locked = await cache.exists(lockoutKey);
+    if (locked) {
+      logger.warn('Login attempt while email is locked out', {
+        event: 'auth_lockout_attempt',
+        email: normalizedEmail,
+        ip,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  const lockoutUntil = inMemoryLockouts.get(normalizedEmail);
+  if (lockoutUntil && lockoutUntil > now) {
+    logger.warn('Login attempt while email is locked out (in-memory)', {
+      event: 'auth_lockout_attempt',
+      email: normalizedEmail,
+      ip,
+    });
+    return true;
+  }
+
+  if (lockoutUntil && lockoutUntil <= now) {
+    inMemoryLockouts.delete(normalizedEmail);
+  }
+
+  return false;
+};
+
+/**
+ * Record a failed login attempt for an email, potentially triggering
+ * a temporary lockout when the configured threshold is exceeded
+ * within the sliding window.
+ */
+const recordFailedLoginAttempt = async (email: string, ip?: string): Promise<void> => {
+  if (!isLoginLockoutEnabled()) {
+    return;
+  }
+
+  const normalizedEmail = normalizeEmailForLockout(email);
+  const now = Date.now();
+  const { maxFailedLoginAttempts, failedLoginWindowSeconds, lockoutDurationSeconds } = config.auth;
+  const windowMs = failedLoginWindowSeconds * 1000;
+
+  const cache = getCacheService();
+
+  if (cache) {
+    const failuresKey = CacheKeys.authLoginFailures(normalizedEmail);
+    const lockoutKey = CacheKeys.authLoginLockout(normalizedEmail);
+
+    const existing = (await cache.get<FailedLoginRecord>(failuresKey)) || {
+      count: 0,
+      firstFailureAt: now,
+    };
+
+    let record = existing;
+    if (now - existing.firstFailureAt > windowMs) {
+      record = { count: 0, firstFailureAt: now };
+    }
+
+    record = { ...record, count: record.count + 1 };
+
+    if (record.count >= maxFailedLoginAttempts) {
+      await cache.set(
+        lockoutKey,
+        {
+          lockedAt: now,
+          attempts: record.count,
+        },
+        lockoutDurationSeconds
+      );
+      await cache.del(failuresKey);
+
+      logger.warn('Auth login lockout triggered', {
+        event: 'auth_lockout',
+        email: normalizedEmail,
+        ip,
+        attempts: record.count,
+        lockoutDurationSeconds,
+      });
+    } else {
+      await cache.set(failuresKey, record, failedLoginWindowSeconds);
+    }
+
+    return;
+  }
+
+  // In-memory fallback when Redis is not available.
+  const existingRecord = inMemoryFailedLogins.get(normalizedEmail);
+  let record: FailedLoginRecord;
+
+  if (!existingRecord || now - existingRecord.firstFailureAt > windowMs) {
+    record = { count: 1, firstFailureAt: now };
+  } else {
+    record = { ...existingRecord, count: existingRecord.count + 1 };
+  }
+
+  if (record.count >= maxFailedLoginAttempts) {
+    inMemoryLockouts.set(normalizedEmail, now + lockoutDurationSeconds * 1000);
+    inMemoryFailedLogins.delete(normalizedEmail);
+
+    logger.warn('Auth login lockout triggered (in-memory)', {
+      event: 'auth_lockout',
+      email: normalizedEmail,
+      ip,
+      attempts: record.count,
+      lockoutDurationSeconds,
+    });
+  } else {
+    inMemoryFailedLogins.set(normalizedEmail, record);
+  }
+};
+
+/**
+ * Clear failure/lockout state after a successful login so that
+ * occasional mistakes do not accumulate into a lockout.
+ */
+const resetLoginFailures = async (email: string): Promise<void> => {
+  if (!isLoginLockoutEnabled()) {
+    return;
+  }
+
+  const normalizedEmail = normalizeEmailForLockout(email);
+  const cache = getCacheService();
+
+  if (cache) {
+    await cache.del(CacheKeys.authLoginFailures(normalizedEmail));
+    await cache.del(CacheKeys.authLoginLockout(normalizedEmail));
+    return;
+  }
+
+  inMemoryFailedLogins.delete(normalizedEmail);
+  inMemoryLockouts.delete(normalizedEmail);
+};
 
 // Apply rate limiting to all auth routes
 router.use(authRateLimiter);
@@ -74,7 +238,7 @@ router.post(
     try {
       await sendVerificationEmail(user.email, verificationToken);
     } catch (emailError) {
-      logger.error('Failed to send verification email', {
+      httpLogger.error(req, 'Failed to send verification email', {
         userId: user.id,
         email: user.email,
         error: emailError instanceof Error ? emailError.message : String(emailError),
@@ -100,7 +264,8 @@ router.post(
           },
         });
       } else {
-        logger.warn(
+        httpLogger.warn(
+          req,
           'RefreshToken model not available; skipping refresh token persistence on register',
           {
             userId: user.id,
@@ -109,7 +274,8 @@ router.post(
         );
       }
     } catch (tokenError) {
-      logger.warn(
+      httpLogger.warn(
+        req,
         'Failed to persist refresh token on register; continuing without DB-stored refresh token',
         {
           userId: user.id,
@@ -119,7 +285,7 @@ router.post(
       );
     }
 
-    logger.info('User registered successfully', { userId: user.id, email: user.email });
+    httpLogger.info(req, 'User registered successfully', { userId: user.id, email: user.email });
 
     res.status(201).json({
       success: true,
@@ -138,6 +304,15 @@ router.post(
   '/login',
   asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = LoginSchema.parse(req.body);
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (await isEmailLockedOut(normalizedEmail, req.ip)) {
+      throw createError(
+        'Too many failed login attempts. Please try again later.',
+        429,
+        'LOGIN_LOCKED_OUT'
+      );
+    }
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -160,6 +335,7 @@ router.post(
     });
 
     if (!user) {
+      await recordFailedLoginAttempt(normalizedEmail, req.ip);
       throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -175,14 +351,18 @@ router.post(
       if (typeof hash === 'string' && hash.length > 0) {
         isValidPassword = await bcrypt.compare(password, hash);
       } else {
-        logger.warn('User record missing valid passwordHash; treating as invalid credentials', {
-          userId: user.id,
-          email: user.email,
-        });
+        httpLogger.warn(
+          req,
+          'User record missing valid passwordHash; treating as invalid credentials',
+          {
+            userId: user.id,
+            email: user.email,
+          }
+        );
         isValidPassword = false;
       }
     } catch (err) {
-      logger.warn('Password verification failed; treating as invalid credentials', {
+      httpLogger.warn(req, 'Password verification failed; treating as invalid credentials', {
         userId: user.id,
         email: user.email,
         error: err instanceof Error ? err.message : String(err),
@@ -191,6 +371,7 @@ router.post(
     }
 
     if (!isValidPassword) {
+      await recordFailedLoginAttempt(normalizedEmail, req.ip);
       throw createError('Invalid credentials', 401, 'INVALID_CREDENTIALS');
     }
 
@@ -212,7 +393,8 @@ router.post(
           },
         });
       } else {
-        logger.warn(
+        httpLogger.warn(
+          req,
           'RefreshToken model not available; skipping refresh token persistence on login',
           {
             userId: user.id,
@@ -221,7 +403,8 @@ router.post(
         );
       }
     } catch (tokenError) {
-      logger.warn(
+      httpLogger.warn(
+        req,
         'Failed to persist refresh token on login; continuing without DB-stored refresh token',
         {
           userId: user.id,
@@ -230,14 +413,15 @@ router.post(
         }
       );
     }
-
     // Update last login
     await prisma.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
     });
 
-    logger.info('User logged in successfully', { userId: user.id, email: user.email });
+    await resetLoginFailures(normalizedEmail);
+
+    httpLogger.info(req, 'User logged in successfully', { userId: user.id, email: user.email });
 
     // Strip the passwordHash field before returning the user payload
     const { passwordHash: _, ...userWithoutPassword } = user;
@@ -436,7 +620,7 @@ router.post(
       },
     });
 
-    logger.info('Email verified successfully', { userId: user.id, email: user.email });
+    httpLogger.info(req, 'Email verified successfully', { userId: user.id, email: user.email });
 
     res.json({
       success: true,
@@ -490,7 +674,7 @@ router.post(
     try {
       await sendPasswordResetEmail(user.email, resetToken);
     } catch (emailError) {
-      logger.error('Failed to send password reset email', {
+      httpLogger.error(req, 'Failed to send password reset email', {
         userId: user.id,
         email: user.email,
         error: emailError instanceof Error ? emailError.message : String(emailError),
@@ -505,7 +689,6 @@ router.post(
   })
 );
 
-// Reset password
 router.post(
   '/reset-password',
   asyncHandler(async (req: Request, res: Response) => {
@@ -552,7 +735,7 @@ router.post(
       },
     });
 
-    logger.info('Password reset successfully', { userId: user.id, email: user.email });
+    httpLogger.info(req, 'Password reset successfully', { userId: user.id, email: user.email });
 
     res.json({
       success: true,
@@ -560,5 +743,10 @@ router.post(
     });
   })
 );
+
+export const __testResetLoginLockoutState = () => {
+  inMemoryFailedLogins.clear();
+  inMemoryLockouts.clear();
+};
 
 export default router;

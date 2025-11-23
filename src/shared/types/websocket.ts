@@ -1,243 +1,20 @@
-import { GameState, Move, Player, PlayerChoice, PlayerChoiceResponse } from './game';
-import { User } from './user';
+import type { Game, GameResult, GameState, Move, PlayerChoice } from './game';
+import type {
+  JoinGamePayload,
+  LeaveGamePayload,
+  PlayerMovePayload,
+  PlayerMoveByIdPayload,
+  ChatMessagePayload,
+  PlayerChoiceResponsePayload,
+} from '../validation/websocketSchemas';
 
-export interface ServerToClientEvents {
-  // Game events
-  'game-state': (gameState: GameState) => void;
-  move: (move: Move) => void;
-  'player-joined': (player: Player) => void;
-  'player-left': (playerId: string) => void;
-  'game-started': (gameState: GameState) => void;
-  'game-ended': (result: GameResult) => void;
-  'game-paused': (reason: string) => void;
-  'game-resumed': () => void;
-
-  // Spectator events
-  'spectator-joined': (user: User) => void;
-  'spectator-left': (userId: string) => void;
-  'spectator-count': (count: number) => void;
-
-  // Chat events
-  'chat-message': (message: ChatMessage) => void;
-  'chat-history': (messages: ChatMessage[]) => void;
-
-  // Time events
-  'time-update': (timeInfo: TimeInfo) => void;
-  'time-warning': (playerId: string, timeRemaining: number) => void;
-  'time-expired': (playerId: string) => void;
-
-  // Matchmaking events
-  'match-found': (gameId: string) => void;
-  'matchmaking-status': (status: MatchmakingStatus) => void;
-  'queue-position': (position: number) => void;
-
-    // System events
-    error: (error: WebSocketErrorPayload) => void;
-    notification: (notification: Notification) => void;
-    'user-status': (userId: string, status: string) => void;
-    'server-message': (message: string) => void;
-
-  // Connection events
-  connected: () => void;
-  disconnected: (reason: string) => void;
-  reconnected: () => void;
-
-  // Choice system events
-  /**
-   * Emitted by the server when a player must make a strategic choice
-   * (capture direction, line reward, region order, etc.).
-   */
-  player_choice_required: (choice: PlayerChoice) => void;
-
-  /**
-   * Optional: notify clients that a previously pending choice was
-   * cancelled/expired, so they can clear any UI.
-   */
-  player_choice_canceled?: (choiceId: string) => void;
-}
-
-export interface ClientToServerEvents {
-  // Game actions
-  'join-game': (gameId: string) => void;
-  'leave-game': (gameId: string) => void;
-  'make-move': (move: MoveRequest) => void;
-  /**
-   * Submit a canonical Move selection identified by its stable id. This is
-   * the Move-driven analogue of make-move for decision phases: clients are
-   * expected to:
-   *   1. Read validMoves from the latest game-state payload,
-   *   2. Choose a Move.id from that list,
-   *   3. Call `player_move_by_id` with { gameId, moveId } so the server can
-   *      resolve and apply the Move via GameEngine.makeMoveById.
-   */
-  player_move_by_id: (payload: { gameId: string; moveId: string }) => void;
-  resign: (gameId: string) => void;
-  'offer-draw': (gameId: string) => void;
-  'accept-draw': (gameId: string) => void;
-  'decline-draw': (gameId: string) => void;
-  'request-undo': (gameId: string) => void;
-  'accept-undo': (gameId: string) => void;
-  'decline-undo': (gameId: string) => void;
-
-  // Spectator actions
-  'spectate-game': (gameId: string) => void;
-  'stop-spectating': (gameId: string) => void;
-
-  // Chat actions
-  'send-message': (message: SendMessageRequest) => void;
-  'typing-start': (gameId: string) => void;
-  'typing-stop': (gameId: string) => void;
-
-  // Matchmaking actions
-  'join-queue': (preferences: MatchmakingPreferences) => void;
-  'leave-queue': () => void;
-  'create-game': (gameConfig: CreateGameRequest) => void;
-  'join-private-game': (gameCode: string) => void;
-
-  // User actions
-  'update-status': (status: string) => void;
-  'get-online-users': () => void;
-  'challenge-user': (userId: string, gameConfig: CreateGameRequest) => void;
-  'accept-challenge': (challengeId: string) => void;
-  'decline-challenge': (challengeId: string) => void;
-
-  // System actions
-  ping: () => void;
-  authenticate: (token: string) => void;
-  heartbeat: () => void;
-
-  // Choice system events
-  /**
-   * Sent by the client when the user responds to a PlayerChoice.
-   *
-   * The server is responsible for validating that:
-   * - response.playerNumber matches the authenticated player
-   * - response.choiceId refers to a currently pending choice
-   * - response.selectedOption is one of the allowed options for that choice
-   */
-  player_choice_response: (response: PlayerChoiceResponse<any>) => void;
-
-  /**
-   * Optional: let client proactively cancel/decline a choice (e.g. UI closed).
-   * In most RingRift flows, timeouts or forced defaults are more appropriate,
-   * so this can remain unused or be used only for UX niceties.
-   */
-  player_choice_cancel?: (choiceId: string) => void;
-}
-
-export interface InterServerEvents {
-  'game-update': (gameId: string, update: GameUpdate) => void;
-  'user-connected': (userId: string, socketId: string) => void;
-  'user-disconnected': (userId: string, socketId: string) => void;
-  'broadcast-message': (message: string) => void;
-}
-
-export interface SocketData {
-  userId: string;
-  username: string;
-  currentGameId?: string;
-  isSpectating?: string[];
-  lastActivity: Date;
-  authenticated: boolean;
-}
-
-// Request/Response types
-export interface MoveRequest {
-  gameId: string;
-  move: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
-}
-
-export interface CreateGameRequest {
-  boardType: string;
-  timeControl: {
-    initialTime: number;
-    increment: number;
-  };
-  isRated: boolean;
-  isPrivate: boolean;
-  maxPlayers: number;
-  aiOpponents?: {
-    count: number;
-    difficulty: number[];
-  };
-}
-
-export interface MatchmakingPreferences {
-  boardType: string;
-  timeControl: {
-    min: number;
-    max: number;
-  };
-  ratingRange: {
-    min: number;
-    max: number;
-  };
-  allowAI: boolean;
-}
-
-export interface SendMessageRequest {
-  gameId: string;
-  content: string;
-  type: 'game' | 'spectator' | 'private';
-  recipientId?: string;
-}
-
-// Event data types
-export interface ChatMessage {
-  id: string;
-  gameId: string;
-  userId: string;
-  username: string;
-  content: string;
-  type: 'game' | 'spectator' | 'system' | 'private';
-  timestamp: Date;
-  edited?: boolean;
-  editedAt?: Date;
-}
-
-export interface TimeInfo {
-  gameId: string;
-  players: {
-    [playerId: string]: {
-      timeRemaining: number;
-      isActive: boolean;
-    };
-  };
-  lastUpdate: Date;
-}
-
-export interface GameResult {
-  gameId: string;
-  winner?: string;
-  reason: 'rings_removed' | 'timeout' | 'resignation' | 'draw' | 'abandonment';
-  finalScore: { [playerId: string]: number };
-  ratingChanges?: { [playerId: string]: number };
-  endedAt: Date;
-}
-
-export interface MatchmakingStatus {
-  inQueue: boolean;
-  estimatedWaitTime?: number;
-  queuePosition?: number;
-  searchCriteria: MatchmakingPreferences;
-}
-
-export interface Notification {
-  id: string;
-  type: 'info' | 'warning' | 'error' | 'success';
-  title: string;
-  message: string;
-  timestamp: Date;
-  persistent?: boolean;
-  actions?: NotificationAction[];
-}
-
-export interface NotificationAction {
-  label: string;
-  action: string;
-  data?: any;
-}
-
+/**
+ * Error codes used in structured WebSocket error payloads.
+ *
+ * These are emitted by WebSocketServer and consumed by the client
+ * (see GameContext). They should remain stable over time so that
+ * clients can reliably distinguish categories of failures.
+ */
 export type WebSocketErrorCode =
   | 'INVALID_PAYLOAD'
   | 'GAME_NOT_FOUND'
@@ -249,46 +26,215 @@ export type WebSocketErrorCode =
 export interface WebSocketErrorPayload {
   type: 'error';
   code: WebSocketErrorCode;
-  event?: string | undefined;
+  /**
+   * Name of the event that triggered this error, when known
+   * (e.g. 'join_game', 'player_move').
+   */
+  event?: string;
   message: string;
 }
 
 /**
- * @deprecated Prefer WebSocketErrorPayload for new WebSocket error flows.
+ * Canonical payload for server → client chat messages.
+ *
+ * This is distinct from the inbound ChatMessagePayload, which only
+ * contains { gameId, text }.
  */
-export interface SocketError extends WebSocketErrorPayload {
-  details?: any;
-  timestamp?: Date;
+export interface ChatMessageServerPayload {
+  sender: string;
+  text: string;
+  timestamp: string;
 }
 
-export interface GameUpdate {
-  type: 'move' | 'player_joined' | 'player_left' | 'game_ended' | 'state_change';
-  data: any;
-  timestamp: Date;
+/**
+ * Canonical payload for `game_state` events.
+ *
+ * Emitted:
+ * - when a player joins a game (initial snapshot)
+ * - after each successful move while the game is active
+ *
+ * Consumed by:
+ * - GameContext on the client
+ */
+export interface GameStateUpdateMessage {
+  type: 'game_update';
+  data: {
+    gameId: string;
+    gameState: GameState;
+    /**
+     * Legal moves for the active player. Spectators receive an empty
+     * array here.
+     */
+    validMoves: Move[];
+  };
+  /** ISO-8601 timestamp produced on the server. */
+  timestamp: string;
 }
 
-// Socket event validation schemas
-export const SOCKET_EVENTS = {
-  // Client events that require authentication
-  AUTHENTICATED_EVENTS: [
-    'join-game',
-    'leave-game',
-    'make-move',
-    'resign',
-    'offer-draw',
-    'send-message',
-    'join-queue',
-    'create-game',
-    'challenge-user',
-  ],
+/**
+ * Canonical payload for `game_over` events.
+ *
+ * Emitted when a game reaches a terminal state (victory, draw,
+ * abandonment, etc.).
+ */
+export interface GameOverMessage {
+  type: 'game_over';
+  data: {
+    gameId: string;
+    gameState: GameState;
+    gameResult: GameResult;
+  };
+  timestamp: string;
+}
 
-  // Events that can be sent without authentication
-  PUBLIC_EVENTS: ['authenticate', 'ping', 'spectate-game'],
+/**
+ * Payload for fatal AI / rules service failures that cause the game
+ * to be abandoned.
+ */
+export interface GameErrorMessage {
+  type: 'game_error';
+  data: {
+    message: string;
+    /** Optional technical details intended for logs / debugging. */
+    technical?: string;
+    gameId: string;
+  };
+  timestamp: string;
+}
 
-  // Events that require game participation
-  GAME_EVENTS: ['make-move', 'resign', 'offer-draw', 'accept-draw', 'decline-draw', 'request-undo'],
-} as const;
+/**
+ * Shared shape for per-player room notifications emitted on
+ * `player_joined`, `player_left`, and `player_disconnected`.
+ */
+export interface GamePlayerRoomEventPayload {
+  type: 'player_joined' | 'player_left' | 'player_disconnected';
+  data: {
+    gameId: string;
+    player: {
+      id: string;
+      username: string;
+    };
+  };
+  timestamp: string;
+}
 
-export type AuthenticatedEvent = (typeof SOCKET_EVENTS.AUTHENTICATED_EVENTS)[number];
-export type PublicEvent = (typeof SOCKET_EVENTS.PUBLIC_EVENTS)[number];
-export type GameEvent = (typeof SOCKET_EVENTS.GAME_EVENTS)[number];
+export type PlayerJoinedPayload = GamePlayerRoomEventPayload & {
+  type: 'player_joined';
+};
+
+export type PlayerLeftPayload = GamePlayerRoomEventPayload & {
+  type: 'player_left';
+};
+
+export type PlayerDisconnectedPayload = GamePlayerRoomEventPayload & {
+  type: 'player_disconnected';
+};
+
+/**
+ * Lobby broadcast payloads emitted via WebSocketServer.broadcastLobbyEvent
+ * and consumed by LobbyPage.
+ */
+export type LobbyGameCreatedPayload = Game;
+
+export interface LobbyGameJoinedPayload {
+  gameId: string;
+  playerCount: number;
+}
+
+export interface LobbyGameStartedPayload {
+  gameId: string;
+  status: Game['status'];
+  startedAt: Game['startedAt'];
+  playerCount: number;
+}
+
+export interface LobbyGameCancelledPayload {
+  gameId: string;
+}
+
+/**
+ * Events the server can emit to connected clients over the game /
+ * lobby sockets.
+ */
+export interface ServerToClientEvents {
+  // Core game stream
+  game_state: (payload: GameStateUpdateMessage) => void;
+  game_over: (payload: GameOverMessage) => void;
+  game_error: (payload: GameErrorMessage) => void;
+
+  // Room-level player presence notifications
+  player_joined: (payload: PlayerJoinedPayload) => void;
+  player_left: (payload: PlayerLeftPayload) => void;
+  player_disconnected: (payload: PlayerDisconnectedPayload) => void;
+
+  // Chat
+  chat_message: (payload: ChatMessageServerPayload) => void;
+
+  // Legacy/experimental time control update event emitted from GameSession.
+  // Currently not consumed by the React client but kept in the contract
+  // to describe the runtime surface accurately.
+  time_update: (payload: { playerId: string; playerNumber: number; timeRemaining: number }) => void;
+
+  // Choice system
+  player_choice_required: (choice: PlayerChoice) => void;
+  player_choice_canceled: (choiceId: string) => void;
+
+  // Structured transport-level errors
+  error: (payload: WebSocketErrorPayload) => void;
+
+  // Lobby broadcasts
+  'lobby:game_created': (payload: LobbyGameCreatedPayload) => void;
+  'lobby:game_joined': (payload: LobbyGameJoinedPayload) => void;
+  'lobby:game_started': (payload: LobbyGameStartedPayload) => void;
+  'lobby:game_cancelled': (payload: LobbyGameCancelledPayload) => void;
+
+  // Reserved for future use: explicit reconnect / resync request.
+  // Currently listened to by GameContext but not emitted by the server.
+  request_reconnect?: () => void;
+}
+
+/**
+ * Events that clients are allowed to emit to the server.
+ *
+ * Payload types for the core game events are derived from the Zod
+ * schemas in src/shared/validation/websocketSchemas.ts to keep the
+ * runtime validators and TypeScript contracts aligned.
+ */
+export interface ClientToServerEvents {
+  // Game lifecycle / room membership
+  join_game: (payload: JoinGamePayload) => void;
+  leave_game: (payload: LeaveGamePayload) => void;
+
+  // Move submission
+  player_move: (payload: PlayerMovePayload) => void;
+  player_move_by_id: (payload: PlayerMoveByIdPayload) => void;
+
+  // Choice system
+  player_choice_response: (payload: PlayerChoiceResponsePayload) => void;
+
+  // Chat
+  chat_message: (payload: ChatMessagePayload) => void;
+
+  // Lobby subscription
+  'lobby:subscribe': () => void;
+  'lobby:unsubscribe': () => void;
+}
+
+/**
+ * Convenience aliases for event names, useful when constraining
+ * helper utilities or logging.
+ */
+export type ServerToClientEventName = keyof ServerToClientEvents;
+export type ClientToServerEventName = keyof ClientToServerEvents;
+
+// Re-export payload types from the Zod schema module so that callers
+// can treat this file as the single source of truth for WebSocket
+// contracts without importing validation code directly.
+export type {
+  JoinGamePayload,
+  LeaveGamePayload,
+  PlayerMovePayload,
+  PlayerMoveByIdPayload,
+  ChatMessagePayload,
+  PlayerChoiceResponsePayload,
+} from '../validation/websocketSchemas';

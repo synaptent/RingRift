@@ -59,6 +59,109 @@ export function movesLooselyMatch(a: Move, b: Move): boolean {
 
   if (a.type !== b.type) return false;
 
+  // For line-processing decisions, require that the underlying line
+  // geometry (and, when present, collapsedMarkers for reward choices)
+  // matches across engines. This prevents trace replays from pairing a
+  // sandbox process_line / choose_line_reward Move with a backend
+  // candidate that targets a different line, which would desynchronise
+  // stack heights and phases even when types/players match.
+  if (a.type === 'process_line' || a.type === 'choose_line_reward') {
+    const aLine = a.formedLines && a.formedLines[0];
+    const bLine = b.formedLines && b.formedLines[0];
+
+    const aSpaces = aLine?.positions ?? [];
+    const bSpaces = bLine?.positions ?? [];
+
+    if (aSpaces.length && bSpaces.length) {
+      if (aSpaces.length !== bSpaces.length) {
+        return false;
+      }
+
+      const aKeys = new Set(aSpaces.map(positionToString));
+      const bKeys = new Set(bSpaces.map(positionToString));
+
+      if (aKeys.size !== bKeys.size) {
+        return false;
+      }
+
+      for (const key of aKeys) {
+        if (!bKeys.has(key)) {
+          return false;
+        }
+      }
+
+      if (a.type === 'choose_line_reward') {
+        const aCollapsed = a.collapsedMarkers ?? [];
+        const bCollapsed = b.collapsedMarkers ?? [];
+
+        if (aCollapsed.length || bCollapsed.length) {
+          if (aCollapsed.length !== bCollapsed.length) {
+            return false;
+          }
+
+          const aCollapsedKeys = new Set(aCollapsed.map(positionToString));
+          const bCollapsedKeys = new Set(bCollapsed.map(positionToString));
+
+          if (aCollapsedKeys.size !== bCollapsedKeys.size) {
+            return false;
+          }
+
+          for (const key of aCollapsedKeys) {
+            if (!bCollapsedKeys.has(key)) {
+              return false;
+            }
+          }
+        }
+      }
+
+      return true;
+    }
+    // If either side lacks line metadata, fall through to the generic
+    // positional checks below so legacy traces that do not encode
+    // formedLines continue to use the original loose type+player
+    // matching semantics.
+  }
+
+  // For territory-processing decisions, require that the disconnected
+  // region being processed matches exactly (up to set equality of
+  // spaces) when both moves carry region metadata. This prevents the
+  // trace replay harness from treating *any* process_territory_region
+  // Move for the same player as equivalent and instead ensures we
+  // select the backend candidate whose region geometry matches the
+  // sandbox trace.
+  if (a.type === 'process_territory_region') {
+    const aRegion = a.disconnectedRegions && a.disconnectedRegions[0];
+    const bRegion = b.disconnectedRegions && b.disconnectedRegions[0];
+
+    const aSpaces = aRegion?.spaces ?? [];
+    const bSpaces = bRegion?.spaces ?? [];
+
+    if (aSpaces.length && bSpaces.length) {
+      if (aSpaces.length !== bSpaces.length) {
+        return false;
+      }
+
+      const aKeys = new Set(aSpaces.map(positionToString));
+      const bKeys = new Set(bSpaces.map(positionToString));
+
+      if (aKeys.size !== bKeys.size) {
+        return false;
+      }
+
+      for (const key of aKeys) {
+        if (!bKeys.has(key)) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+    // If either side lacks region-space metadata, fall through to the
+    // generic positional checks below so legacy traces that do not
+    // encode disconnectedRegions continue to use the original loose
+    // type+player matching semantics.
+  }
+
   // For placement moves, require same destination and the same
   // placementCount. Earlier we ignored placementCount, but for
   // trace-parity we need backend placements to mirror the sandbox

@@ -9,32 +9,35 @@ from app.ai.minimax_ai import MinimaxAI
 from app.ai.mcts_ai import MCTSAI
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.random_ai import RandomAI
+from app.ai.descent_ai import DescentAI
 
 
 def test_select_ai_type():
+    # Canonical mapping: 1→Random, 2→Heuristic, 3–6→Minimax, 7–8→MCTS, 9–10→Descent
     assert _select_ai_type(1) == AIType.RANDOM
-    assert _select_ai_type(2) == AIType.RANDOM
-    assert _select_ai_type(3) == AIType.HEURISTIC
-    assert _select_ai_type(5) == AIType.HEURISTIC
+    assert _select_ai_type(2) == AIType.HEURISTIC
+    assert _select_ai_type(3) == AIType.MINIMAX
+    assert _select_ai_type(4) == AIType.MINIMAX
     assert _select_ai_type(6) == AIType.MINIMAX
-    assert _select_ai_type(8) == AIType.MINIMAX
-    assert _select_ai_type(9) == AIType.MCTS
-    assert _select_ai_type(10) == AIType.MCTS
+    assert _select_ai_type(7) == AIType.MCTS
+    assert _select_ai_type(8) == AIType.MCTS
+    assert _select_ai_type(9) == AIType.DESCENT
+    assert _select_ai_type(10) == AIType.DESCENT
 
 
 def test_difficulty_profile_mapping():
     """Canonical ladder profiles for difficulties 1–10."""
     profiles = {
         1: (AIType.RANDOM, 0.5, 150, "v1-random-1"),
-        2: (AIType.RANDOM, 0.3, 200, "v1-random-2"),
-        3: (AIType.HEURISTIC, 0.2, 250, "v1-heuristic-3"),
-        4: (AIType.HEURISTIC, 0.1, 300, "v1-heuristic-4"),
-        5: (AIType.HEURISTIC, 0.05, 350, "v1-heuristic-5"),
+        2: (AIType.HEURISTIC, 0.3, 200, "v1-heuristic-2"),
+        3: (AIType.MINIMAX, 0.2, 250, "v1-minimax-3"),
+        4: (AIType.MINIMAX, 0.1, 300, "v1-minimax-4"),
+        5: (AIType.MINIMAX, 0.05, 350, "v1-minimax-5"),
         6: (AIType.MINIMAX, 0.02, 400, "v1-minimax-6"),
-        7: (AIType.MINIMAX, 0.01, 450, "v1-minimax-7"),
-        8: (AIType.MINIMAX, 0.0, 500, "v1-minimax-8"),
-        9: (AIType.MCTS, 0.0, 600, "v1-mcts-9"),
-        10: (AIType.MCTS, 0.0, 700, "v1-mcts-10"),
+        7: (AIType.MCTS, 0.0, 500, "v1-mcts-7"),
+        8: (AIType.MCTS, 0.0, 600, "v1-mcts-8"),
+        9: (AIType.DESCENT, 0.0, 700, "v1-descent-9"),
+        10: (AIType.DESCENT, 0.0, 800, "v1-descent-10"),
     }
 
     for difficulty, (
@@ -77,3 +80,7 @@ def test_create_ai_instance():
     # Test MCTS
     ai = _create_ai_instance(AIType.MCTS, 1, config)
     assert isinstance(ai, MCTSAI)
+
+    # Test Descent
+    ai = _create_ai_instance(AIType.DESCENT, 1, config)
+    assert isinstance(ai, DescentAI)

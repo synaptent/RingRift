@@ -26,9 +26,9 @@ from app.board_manager import BoardManager
 
 
 REQUIRED_LENGTH_BY_BOARD = {
-    BoardType.SQUARE8: 4,
-    BoardType.SQUARE19: 5,
-    BoardType.HEXAGONAL: 5,
+    BoardType.SQUARE8: 3,
+    BoardType.SQUARE19: 4,
+    BoardType.HEXAGONAL: 4,
 }
 
 

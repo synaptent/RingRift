@@ -15,11 +15,11 @@ dotenv.config();
 const NodeEnvSchema = z.enum(['development', 'test', 'production']);
 const AppTopologySchema = z.enum(['single', 'multi-unsafe', 'multi-sticky']);
 
- /**
-  * Placeholder or example JWT secrets that are safe for local development but
-  * MUST NOT be used in production. These values intentionally mirror the
-  * examples in `.env.example` and `docker-compose.yml`.
-  */
+/**
+ * Placeholder or example JWT secrets that are safe for local development but
+ * MUST NOT be used in production. These values intentionally mirror the
+ * examples in `.env.example` and `docker-compose.yml`.
+ */
 const PLACEHOLDER_JWT_SECRETS = new Set<string>([
   'your-super-secret-jwt-key-change-this-in-production',
   'your-super-secret-refresh-key-change-this-in-production',
@@ -63,12 +63,31 @@ const EnvSchema = z.object({
   // endpoints. Optional and safe to default when missing (e.g. direct node
   // invocations).
   npm_package_version: z.string().optional(),
+
+  // Auth login lockout / abuse-protection. These defaults are intentionally
+  // conservative so that local development is not painful while still
+  // providing basic protection in production.
+  AUTH_MAX_FAILED_LOGIN_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  AUTH_FAILED_LOGIN_WINDOW_SECONDS: z.coerce.number().int().positive().default(900), // 15 minutes
+  AUTH_LOCKOUT_DURATION_SECONDS: z.coerce.number().int().positive().default(900), // 15 minutes
+  // When unset, login lockout is enabled by default. Set to "false" or "0"
+  // to disable globally.
+  AUTH_LOGIN_LOCKOUT_ENABLED: z.string().optional(),
 });
 
 // Parse the raw environment with basic type coercion and defaults.
 const env = EnvSchema.parse(process.env);
 
-const nodeEnv = env.NODE_ENV;
+// When running under Jest, JEST_WORKER_ID is always defined. In that case we
+// treat the effective nodeEnv as "test" even if NODE_ENV was set to
+// "development" via a .env file, so that test-only switches (e.g. timer
+// suppression in GameEngine) behave correctly.
+const isJestRuntime =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  (process as any).env.JEST_WORKER_ID !== undefined;
+
+const nodeEnv: z.infer<typeof NodeEnvSchema> = isJestRuntime ? 'test' : env.NODE_ENV;
 const isProduction = nodeEnv === 'production';
 const isTest = nodeEnv === 'test';
 const isDevelopment = nodeEnv === 'development';
@@ -111,10 +130,7 @@ if (!jwtRefreshSecret && !isProduction) {
 
 if (isProduction) {
   const missingOrEmpty =
-    !jwtSecret ||
-    !jwtSecret.trim() ||
-    !jwtRefreshSecret ||
-    !jwtRefreshSecret.trim();
+    !jwtSecret || !jwtSecret.trim() || !jwtRefreshSecret || !jwtRefreshSecret.trim();
 
   const usingPlaceholder =
     isPlaceholderJwtSecret(jwtSecret) || isPlaceholderJwtSecret(jwtRefreshSecret);
@@ -158,7 +174,6 @@ const websocketOrigin =
   env.CORS_ORIGIN?.trim() ||
   (allowedOrigins[0] ?? 'http://localhost:5173');
 
-// High-level, structured config object.
 const ConfigSchema = z.object({
   nodeEnv: NodeEnvSchema,
   isProduction: z.boolean(),
@@ -188,6 +203,10 @@ const ConfigSchema = z.object({
     jwtRefreshSecret: z.string().min(1),
     accessTokenExpiresIn: z.string().min(1),
     refreshTokenExpiresIn: z.string().min(1),
+    maxFailedLoginAttempts: z.number().int().positive(),
+    failedLoginWindowSeconds: z.number().int().positive(),
+    lockoutDurationSeconds: z.number().int().positive(),
+    loginLockoutEnabled: z.boolean(),
   }),
   aiService: z.object({
     url: z.string().url(),
@@ -228,6 +247,13 @@ const preliminaryConfig = {
     jwtRefreshSecret: jwtRefreshSecret as string,
     accessTokenExpiresIn: env.JWT_EXPIRES_IN,
     refreshTokenExpiresIn: env.JWT_REFRESH_EXPIRES_IN,
+    maxFailedLoginAttempts: env.AUTH_MAX_FAILED_LOGIN_ATTEMPTS,
+    failedLoginWindowSeconds: env.AUTH_FAILED_LOGIN_WINDOW_SECONDS,
+    lockoutDurationSeconds: env.AUTH_LOCKOUT_DURATION_SECONDS,
+    loginLockoutEnabled:
+      env.AUTH_LOGIN_LOCKOUT_ENABLED === undefined
+        ? true
+        : !['false', '0'].includes(env.AUTH_LOGIN_LOCKOUT_ENABLED.toLowerCase()),
   },
   aiService: {
     url: aiServiceUrl,

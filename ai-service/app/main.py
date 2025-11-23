@@ -681,64 +681,74 @@ class DifficultyProfile(TypedDict):
 # heuristic engines use it as a UX-oriented delay.
 _CANONICAL_DIFFICULTY_PROFILES: Dict[int, DifficultyProfile] = {
     1: {
+        # Beginner: pure random baseline
         "ai_type": AIType.RANDOM,
         "randomness": 0.5,
         "think_time_ms": 150,
         "profile_id": "v1-random-1",
     },
     2: {
-        "ai_type": AIType.RANDOM,
+        # Easy: shallow heuristic play with noticeable randomness
+        "ai_type": AIType.HEURISTIC,
         "randomness": 0.3,
         "think_time_ms": 200,
-        "profile_id": "v1-random-2",
+        "profile_id": "v1-heuristic-2",
     },
     3: {
-        "ai_type": AIType.HEURISTIC,
+        # Lower-mid: very low-depth, low-budget minimax
+        "ai_type": AIType.MINIMAX,
         "randomness": 0.2,
         "think_time_ms": 250,
-        "profile_id": "v1-heuristic-3",
+        "profile_id": "v1-minimax-3",
     },
     4: {
-        "ai_type": AIType.HEURISTIC,
+        # Mid: minimax with slightly higher depth/budget
+        "ai_type": AIType.MINIMAX,
         "randomness": 0.1,
         "think_time_ms": 300,
-        "profile_id": "v1-heuristic-4",
+        "profile_id": "v1-minimax-4",
     },
     5: {
-        "ai_type": AIType.HEURISTIC,
+        # Upper-mid: minimax with moderate depth/budget
+        "ai_type": AIType.MINIMAX,
         "randomness": 0.05,
         "think_time_ms": 350,
-        "profile_id": "v1-heuristic-5",
+        "profile_id": "v1-minimax-5",
     },
     6: {
+        # High: minimax with reduced randomness and higher budget
         "ai_type": AIType.MINIMAX,
         "randomness": 0.02,
         "think_time_ms": 400,
         "profile_id": "v1-minimax-6",
     },
     7: {
-        "ai_type": AIType.MINIMAX,
-        "randomness": 0.01,
-        "think_time_ms": 450,
-        "profile_id": "v1-minimax-7",
-    },
-    8: {
-        "ai_type": AIType.MINIMAX,
+        # Expert: MCTS with NN guidance where available
+        "ai_type": AIType.MCTS,
         "randomness": 0.0,
         "think_time_ms": 500,
-        "profile_id": "v1-minimax-8",
+        "profile_id": "v1-mcts-7",
     },
-    9: {
+    8: {
+        # Strong expert: MCTS with larger search budget
         "ai_type": AIType.MCTS,
         "randomness": 0.0,
         "think_time_ms": 600,
-        "profile_id": "v1-mcts-9",
+        "profile_id": "v1-mcts-8",
     },
-    10: {
-        "ai_type": AIType.MCTS,
+    9: {
+        # Master: Descent/UBFM-style search with NN guidance
+        "ai_type": AIType.DESCENT,
         "randomness": 0.0,
         "think_time_ms": 700,
-        "profile_id": "v1-mcts-10",
+        "profile_id": "v1-descent-9",
+    },
+    10: {
+        # Grandmaster: strongest Descent configuration
+        "ai_type": AIType.DESCENT,
+        "randomness": 0.0,
+        "think_time_ms": 800,
+        "profile_id": "v1-descent-10",
     },
 }
 

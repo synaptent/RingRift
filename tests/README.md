@@ -59,6 +59,130 @@ npm test -- ClientSandboxEngine
 npm test -- GameEngine.territoryDisconnection
 ```
 
+### High-Level Testing Overview (by purpose)
+
+This section groups the Jest suites by **what** they validate. For detailed
+classification (rules-level vs trace-level vs integration-level) see
+[`tests/TEST_SUITE_PARITY_PLAN.md`](tests/TEST_SUITE_PARITY_PLAN.md:28).
+
+#### 1. Shared-helper rules tests (canonical semantics)
+
+These suites exercise the shared rules helpers under
+[`src/shared/engine`](../src/shared/engine/types.ts:1) and should be treated as
+the primary specification for game semantics:
+
+- **Movement & captures**
+  - [`movement.shared.test.ts`](tests/unit/movement.shared.test.ts:1) – non‑capturing movement reachability over `movementLogic.ts`.
+  - [`captureSequenceEnumeration.test.ts`](tests/unit/captureSequenceEnumeration.test.ts:1) – overtaking segment enumeration over `captureLogic.ts`.
+  - [`RuleEngine.movementCapture.test.ts`](tests/unit/RuleEngine.movementCapture.test.ts:1) – backend adapter alignment with shared movement/capture helpers.
+- **Lines**
+  - [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1) – shared marker-line geometry.
+  - [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1) – line semantics across shared engine, backend, and sandbox.
+  - [`Seed14Move35LineParity.test.ts`](tests/unit/Seed14Move35LineParity.test.ts:1) – seed‑14 guardrail for “no valid line” at a historically ambiguous state.
+- **Territory (detection, borders, processing)**
+  - [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1) – shared border-marker expansion.
+  - [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1) – shared region-processing pipeline.
+  - [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1),
+    [`sandboxTerritory.rules.test.ts`](tests/unit/sandboxTerritory.rules.test.ts:1),
+    [`sandboxTerritoryEngine.rules.test.ts`](tests/unit/sandboxTerritoryEngine.rules.test.ts:1) – rules-level suites for Q23, region collapse, and internal eliminations.
+- **Placement / no-dead-placement**
+  - [`placement.shared.test.ts`](tests/unit/placement.shared.test.ts:1) – shared placement validation rules.
+  - [`RuleEngine.placementMultiRing.test.ts`](tests/unit/RuleEngine.placementMultiRing.test.ts:1) – backend multi-ring placement behaviour over the shared helpers.
+- **Victory & invariants**
+  - [`victory.shared.test.ts`](tests/unit/victory.shared.test.ts:1) – shared victory/stalemate ladder over `victoryLogic.ts`.
+  - [`SInvariant.seed17FinalBoard.test.ts`](tests/unit/SInvariant.seed17FinalBoard.test.ts:1),
+    [`SharedMutators.invariants.test.ts`](tests/unit/SharedMutators.invariants.test.ts:1),
+    [`ProgressSnapshot.core.test.ts`](tests/unit/ProgressSnapshot.core.test.ts:1) – S-invariant and progress-snapshot guarantees.
+- **Turn sequencing & termination**
+  - [`GameEngine.turnSequence.scenarios.test.ts`](tests/unit/GameEngine.turnSequence.scenarios.test.ts:1) – backend turn ladder over the shared `turnLogic.ts`.
+  - [`SandboxAI.ringPlacementNoopRegression.test.ts`](tests/unit/SandboxAI.ringPlacementNoopRegression.test.ts:1),
+    [`ClientSandboxEngine.aiSimulation.test.ts`](tests/unit/ClientSandboxEngine.aiSimulation.test.ts:1) – shared termination ladder as exercised by sandbox AI.
+
+When changing rules, update or extend these suites first wherever possible.
+
+#### 2. Host parity tests (backend ↔ sandbox ↔ shared/Python)
+
+These suites ensure that backend `GameEngine`/`RuleEngine`, `ClientSandboxEngine`,
+and Python rules behave identically for a given ruleset:
+
+- **Backend vs sandbox (movement, captures, placement, territory, victory)**
+  - [`MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts:1)
+  - [`PlacementParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/PlacementParity.RuleEngine_vs_Sandbox.test.ts:1)
+  - [`movementReachabilityParity.test.ts`](tests/unit/movementReachabilityParity.test.ts:1)
+  - [`reachabilityParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/reachabilityParity.RuleEngine_vs_Sandbox.test.ts:1)
+  - [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1)
+  - [`TerritoryBorders.Backend_vs_Sandbox.test.ts`](tests/unit/TerritoryBorders.Backend_vs_Sandbox.test.ts:1)
+  - [`TerritoryCore.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts:1)
+  - [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1)
+- **Trace/fixture parity (shared engine vs hosts, TS vs Python)**
+  - [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1) – shared `GameEngine` vs backend.
+  - [`Backend_vs_Sandbox.traceParity.test.ts`](tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1) – curated seeded trace parity between backend and sandbox.
+  - [`Sandbox_vs_Backend.aiRngParity.test.ts`](tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1),
+    [`Sandbox_vs_Backend.aiRngFullParity.test.ts`](tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts:1) – RNG-driven AI parity harnesses.
+  - [`Python_vs_TS.traceParity.test.ts`](tests/unit/Python_vs_TS.traceParity.test.ts:1) plus the Python-side parity suites under
+    `ai-service/tests/parity/*`, driven by shared-engine fixtures.
+
+These are **smoke tests and regression nets**; when they disagree with rules-level
+suites, treat the traces/fixtures as derived artifacts (see below and
+[`tests/TEST_SUITE_PARITY_PLAN.md`](tests/TEST_SUITE_PARITY_PLAN.md:56)).
+
+#### 3. Scenario / RulesMatrix / FAQ tests
+
+Scenario-style suites encode concrete board positions and expected behaviour:
+
+- **RulesMatrix scenarios**
+  - Files under `tests/scenarios/RulesMatrix.*.test.ts`, for example
+    [`RulesMatrix.Territory.MiniRegion.test.ts`](tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts:1) and
+    the comprehensive movement/territory/victory suites referenced from
+    [`RULES_SCENARIO_MATRIX.md`](../RULES_SCENARIO_MATRIX.md:1).
+- **FAQ scenarios (Q1–Q24)**
+  - [`FAQ_Q01_Q06.test.ts`](tests/scenarios/FAQ_Q01_Q06.test.ts:1),
+    [`FAQ_Q07_Q08.test.ts`](tests/scenarios/FAQ_Q07_Q08.test.ts:1),
+    [`FAQ_Q09_Q14.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1),
+    [`FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts:1),
+    [`FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1),
+    [`FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1),
+    [`FAQ_Q22_Q23.test.ts`](tests/scenarios/FAQ_Q22_Q23.test.ts:1).
+- **Compound/termination scenarios**
+  - [`ForcedEliminationAndStalemate.test.ts`](tests/scenarios/ForcedEliminationAndStalemate.test.ts:12),
+    `LineAndTerritory.test.ts`, and other compound examples linked from
+    [`RULES_SCENARIO_MATRIX.md`](../RULES_SCENARIO_MATRIX.md:1).
+
+Scenario suites are the best starting point when you want to **see** how a rule
+behaves in a complete position or full turn sequence.
+
+### Quiet / logged runs (recommended in Cline/VSCode)
+
+Some suites (especially AI simulations and parity tests) can emit a lot of
+output. To avoid overwhelming the terminal or tooling, prefer running them in a
+"logged" mode and then viewing the result through the size‑limited
+`safe-view` helper.
+
+From the project root:
+
+```bash
+# 1. Run the full Jest suite quietly, logging to logs/jest/latest.log
+npm run test:all:quiet:log
+
+# 2. Create a safe, truncated view of the latest Jest log
+npm run logs:view:jest
+
+# 3. Run the Python AI-service pytest suite quietly, logging to logs/pytest
+npm run test:python:quiet:log
+
+# 4. Create a safe, truncated view of the latest pytest log
+npm run logs:view:pytest
+```
+
+Notes:
+
+- `scripts/safe-view.js` wraps long lines and caps the total number of lines
+  written to the `*.view.txt` files, so opening them in VSCode or Cline will
+  not explode the context.
+- Leave diagnostic flags like `RINGRIFT_AI_DEBUG` and `RINGRIFT_TRACE_DEBUG`
+  **unset** during normal runs; only enable them when you actively need
+  low-level AI/trace diagnostics.
+
 ## Test Configuration
 
 ### Jest Configuration (`jest.config.js`)
@@ -467,10 +591,10 @@ Recorded traces are **derived artifacts**, not ground truth. The canonical rules
 
 When a trace-based parity test fails:
 
-1. **Check rules-level tests first.**  
+1. **Check rules-level tests first.**
    If suites like `RefactoredEngine.test.ts`, `LineDetectionParity.rules.test.ts`, `Seed14Move35LineParity.test.ts`, and related rules‑level tests are green, treat the shared engine semantics as authoritative.
 
-2. **Determine whether the trace is stale.**  
+2. **Determine whether the trace is stale.**
    Many historic traces were recorded before rules fixes (e.g. line detection, territory, elimination). If the trace expects behaviour that now violates the canonical rules, the trace itself is outdated.
 
 3. **Apply the seed‑14 pattern:**
@@ -488,6 +612,44 @@ This policy applies equally to TS↔Python parity:
 
 - Python rules and `ai-service/tests/parity/*` must align with the shared TS engine and rules‑level fixtures.
 - If a TS↔Python trace parity test diverges but rules-level suites and fixtures agree, treat the trace as stale and update/replace it.
+
+### Workflow for rule changes (shared engine first)
+
+When you change or extend **game rules**, use the following workflow (see also
+[`tests/TEST_SUITE_PARITY_PLAN.md`](tests/TEST_SUITE_PARITY_PLAN.md:257)):
+
+1. **Update shared helpers under `src/shared/engine/*`.**
+   - Identify the relevant module(s) for the rule you are changing (movement/capture, lines, territory, placement, victory, or turn sequencing).
+   - Make the change in the shared helpers so backend and sandbox can both reuse it.
+
+2. **Extend shared-helper rules tests.**
+   - Add or update tests in the `*.shared.test.ts` and `*.rules.test.ts` suites listed in the
+     “Shared-helper rules tests” section above (for example
+     [`movement.shared.test.ts`](tests/unit/movement.shared.test.ts:1),
+     [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1),
+     [`victory.shared.test.ts`](tests/unit/victory.shared.test.ts:1)).
+   - Keep these suites green; they are the semantic authority.
+
+3. **Run and, if needed, extend parity suites.**
+   - Ensure backend vs sandbox vs shared parity suites still pass (for example
+     [`MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts:1),
+     [`PlacementParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/PlacementParity.RuleEngine_vs_Sandbox.test.ts:1),
+     [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
+     [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1),
+     and [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1)).
+   - If a parity suite fails but rules-level tests are green, treat the failing trace/fixture as stale and update or regenerate it.
+
+4. **Add or extend scenario tests.**
+   - Encode representative positions and turns in RulesMatrix or FAQ suites to make the new/changed behaviour concrete (see
+     [`RULES_SCENARIO_MATRIX.md`](../RULES_SCENARIO_MATRIX.md:1) and the FAQ suites under
+     [`tests/scenarios/FAQ_*.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1)).
+
+5. **Run the parity plan.**
+   - For larger changes, follow the plan in
+     [`tests/TEST_SUITE_PARITY_PLAN.md`](tests/TEST_SUITE_PARITY_PLAN.md:56):
+     - Run shared-helper rules tests.
+     - Run targeted parity suites.
+     - Optionally run heavier AI/trace harnesses (e.g. `Sandbox_vs_Backend.aiRngFullParity`, sandbox AI simulations) in diagnostic mode.
 
 ---
 
@@ -720,15 +882,15 @@ npm test -- FAQ_Q15 --verbose
 
 ### FAQ Test Coverage Map
 
-| FAQ Questions | Test File | Topics Covered |
-|--------------|-----------|----------------|
-| Q1-Q6 | [`tests/scenarios/FAQ_Q01_Q06.test.ts`](tests/scenarios/FAQ_Q01_Q06.test.ts:1) | Stack order, minimum distance, capture landing, overtaking vs elimination |
-| Q7-Q8 | [`tests/scenarios/FAQ_Q07_Q08.test.ts`](tests/scenarios/FAQ_Q07_Q08.test.ts:1) | Line formation, exact vs overlength lines, no rings to eliminate |
-| Q9-Q14 | [`tests/scenarios/FAQ_Q09_Q14.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1) | Chain blocking, multicolored stacks, Moore vs Von Neumann adjacency |
-| Q15 | [`tests/scenarios/FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts:1) | 180° reversal, cyclic patterns, mandatory chain continuation |
-| Q16-Q18 | [`tests/scenarios/FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1) | Control transfer, first placement, multiple victory conditions |
-| Q19-Q21, Q24 | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | Player count variations, thresholds, forced elimination, stalemate |
-| Q22-Q23 | [`tests/scenarios/FAQ_Q22_Q23.test.ts`](tests/scenarios/FAQ_Q22_Q23.test.ts:1) | Graduated line rewards, territory self-elimination prerequisite |
+| FAQ Questions | Test File                                                                              | Topics Covered                                                            |
+| ------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Q1-Q6         | [`tests/scenarios/FAQ_Q01_Q06.test.ts`](tests/scenarios/FAQ_Q01_Q06.test.ts:1)         | Stack order, minimum distance, capture landing, overtaking vs elimination |
+| Q7-Q8         | [`tests/scenarios/FAQ_Q07_Q08.test.ts`](tests/scenarios/FAQ_Q07_Q08.test.ts:1)         | Line formation, exact vs overlength lines, no rings to eliminate          |
+| Q9-Q14        | [`tests/scenarios/FAQ_Q09_Q14.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1)         | Chain blocking, multicolored stacks, Moore vs Von Neumann adjacency       |
+| Q15           | [`tests/scenarios/FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts:1)                 | 180° reversal, cyclic patterns, mandatory chain continuation              |
+| Q16-Q18       | [`tests/scenarios/FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1)         | Control transfer, first placement, multiple victory conditions            |
+| Q19-Q21, Q24  | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | Player count variations, thresholds, forced elimination, stalemate        |
+| Q22-Q23       | [`tests/scenarios/FAQ_Q22_Q23.test.ts`](tests/scenarios/FAQ_Q22_Q23.test.ts:1)         | Graduated line rewards, territory self-elimination prerequisite           |
 
 ### FAQ Test Design Principles
 
@@ -746,6 +908,23 @@ npm test -- FAQ_Q15 --verbose
 - **Approximate Test Cases**: 50+
 - **Board Types Covered**: square8, square19, hexagonal
 - **Engines Validated**: GameEngine (backend), ClientSandboxEngine (sandbox)
+
+### Notes for Game Designers
+
+Game designers who want to see concrete examples of how a rule plays out on the
+board can treat the RulesMatrix and FAQ suites as a **living, executable
+rulebook**:
+
+- Each scenario test encodes an explicit board setup, the sequence of canonical
+  `Move` objects, and the expected final state.
+- Both backend `GameEngine` and `ClientSandboxEngine` run these scenarios
+  through the same shared helpers under
+  [`src/shared/engine`](../src/shared/engine/types.ts:1), so behaviour in tests
+  matches behaviour in production.
+- When in doubt about an interpretation in
+  [`ringrift_complete_rules.md`](../ringrift_complete_rules.md:1), look for a
+  matching scenario in `tests/scenarios/RulesMatrix.*.test.ts` or
+  `tests/scenarios/FAQ_*.test.ts` and treat that as the authoritative example.
 
 For the complete FAQ → test mapping, see [`RULES_SCENARIO_MATRIX.md`](../RULES_SCENARIO_MATRIX.md:1) Section 9.
 

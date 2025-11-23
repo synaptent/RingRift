@@ -1,11 +1,11 @@
 import {
   BoardState,
   BoardType,
-  BOARD_CONFIGS,
   LineInfo,
   Position,
   positionToString,
 } from '../../shared/types/game';
+import { findAllLines as findAllLinesShared } from '../../shared/engine/lineDetection';
 
 export type LineDirection = { x: number; y: number; z?: number };
 
@@ -109,8 +109,17 @@ export function findLineInDirectionOnBoard(
 
 /**
  * Find all marker lines on the board for all players.
- * Mirrors BoardManager.findAllLines; only returns lines of at least the
- * configured minimum length.
+ *
+ * This is a thin adapter over the canonical shared helper
+ * {@link findAllLinesShared} so that sandbox code and rules/parity
+ * tests can continue to depend on the historical
+ * findAllLinesOnBoard(...) export without re-implementing geometry.
+ *
+ * The extra parameters (boardType, isValidPosition, stringToPosition)
+ * are retained for backwards compatibility and for tests that stub
+ * this function, but they are no longer used to derive line geometry.
+ * All hosts (backend, sandbox, shared GameEngine) now share a single
+ * source of truth in src/shared/engine/lineDetection.ts.
  */
 export function findAllLinesOnBoard(
   boardType: BoardType,
@@ -118,50 +127,8 @@ export function findAllLinesOnBoard(
   isValidPosition: (pos: Position) => boolean,
   stringToPosition: (posStr: string) => Position
 ): LineInfo[] {
-  const lines: LineInfo[] = [];
-  const processed = new Set<string>();
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
-  const directions = getLineDirectionsForBoard(boardType);
-
-  for (const [posStr, marker] of board.markers) {
-    // Treat stacks and collapsed spaces on the same cell as hard
-    // blockers that prevent that marker from participating in any
-    // active line. This mirrors BoardManager.findAllLines and the
-    // rules in Section 11.1: lines must consist only of consecutive,
-    // non-collapsed markers and cannot pass through stacks.
-    if (board.collapsedSpaces.has(posStr) || board.stacks.has(posStr)) {
-      continue;
-    }
-
-    const position = stringToPosition(posStr);
-
-    for (const direction of directions) {
-      const linePositions = findLineInDirectionOnBoard(
-        position,
-        direction,
-        marker.player,
-        board,
-        isValidPosition
-      );
-
-      if (linePositions.length >= requiredLength) {
-        const key = linePositions
-          .map((p) => positionToString(p))
-          .sort()
-          .join('|');
-
-        if (!processed.has(key)) {
-          processed.add(key);
-          lines.push({
-            positions: linePositions,
-            player: marker.player,
-            length: linePositions.length,
-            direction,
-          });
-        }
-      }
-    }
-  }
-
-  return lines;
+  void boardType;
+  void isValidPosition;
+  void stringToPosition;
+  return findAllLinesShared(board);
 }

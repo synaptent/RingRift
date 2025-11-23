@@ -9,6 +9,12 @@ import {
   RingStack,
 } from '../../shared/types/game';
 import { forceEliminateCapOnBoard, ForcedEliminationResult } from './sandboxElimination';
+import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../shared/engine/territoryDetection';
+import { getBorderMarkerPositionsForRegion as getSharedBorderMarkers } from '../../shared/engine/territoryBorders';
+import {
+  applyTerritoryRegion,
+  TerritoryProcessingContext,
+} from '../../shared/engine/territoryProcessing';
 
 const TERRITORY_TRACE_DEBUG =
   typeof process !== 'undefined' &&
@@ -190,6 +196,9 @@ function getRepresentedPlayers(regionSpaces: Position[], board: BoardState): Set
   return represented;
 }
 
+// NOTE: Deprecated - region detection now delegates to shared/engine/territoryDetection.
+// This helper is kept temporarily for reference and can be removed once remaining
+// tests are fully stabilised.
 function exploreRegionWithBorderColor(
   board: BoardState,
   start: Position,
@@ -258,6 +267,9 @@ function exploreRegionWithBorderColor(
   return region;
 }
 
+// NOTE: Deprecated - region detection now delegates to shared/engine/territoryDetection.
+// This helper is kept temporarily for reference and can be removed once remaining
+// tests are fully stabilised.
 function exploreRegionWithoutMarkerBorder(
   board: BoardState,
   start: Position,
@@ -328,6 +340,9 @@ function isRegionBorderedByCollapsedOnly(regionSpaces: Position[], board: BoardS
   return true;
 }
 
+// NOTE: Deprecated - region detection now delegates to shared/engine/territoryDetection.
+// This helper is kept temporarily for reference and can be removed once remaining
+// tests are fully stabilised.
 function findRegionsWithBorderColor(
   board: BoardState,
   borderColor: number,
@@ -367,6 +382,9 @@ function findRegionsWithBorderColor(
   return disconnected;
 }
 
+// NOTE: Deprecated - region detection now delegates to shared/engine/territoryDetection.
+// This helper is kept temporarily for reference and can be removed once remaining
+// tests are fully stabilised.
 function findRegionsWithoutMarkerBorder(
   board: BoardState,
   activePlayers: Set<number>
@@ -404,152 +422,27 @@ function findRegionsWithoutMarkerBorder(
 }
 
 /**
- * Compute all disconnected regions on the board according to the compact
- * rules:
- * - Physically disconnected by a single marker color + edges/collapsed
- *   spaces, or by collapsed spaces + edges alone.
- * - Color-disconnected when at least one active player has no stack
- *   inside the region.
+ * Compute all disconnected regions on the board.
+ *
+ * Sandbox now delegates to the shared detector in
+ * src/shared/engine/territoryDetection.ts so that region geometry is
+ * defined in exactly one place for backend and client engines.
  */
 export function findDisconnectedRegionsOnBoard(board: BoardState): Territory[] {
-  const disconnected: Territory[] = [];
-
-  const activePlayers = new Set<number>();
-  for (const stack of board.stacks.values()) {
-    activePlayers.add(stack.controllingPlayer);
-  }
-
-  if (activePlayers.size === 0) {
-    return [];
-  }
-
-  const markerColors = new Set<number>();
-  for (const marker of board.markers.values()) {
-    markerColors.add(marker.player);
-  }
-
-  for (const borderColor of markerColors) {
-    const regions = findRegionsWithBorderColor(board, borderColor, activePlayers);
-    disconnected.push(...regions);
-  }
-
-  const collapsedOnlyRegions = findRegionsWithoutMarkerBorder(board, activePlayers);
-  disconnected.push(...collapsedOnlyRegions);
-
-  return disconnected;
+  return findDisconnectedRegionsShared(board);
 }
 
 /**
  * Identify all marker positions that form the border around a disconnected
- * region. This mirrors BoardManager.getBorderMarkerPositions and is used
- * when collapsing a region to determine which border markers should become
- * territory for the moving player.
+ * region. This delegates to the shared helper in
+ * src/shared/engine/territoryBorders.ts so backend and sandbox cannot
+ * drift.
  */
 export function getBorderMarkerPositionsForRegion(
   board: BoardState,
   regionSpaces: Position[]
 ): Position[] {
-  const regionSet = new Set(regionSpaces.map(positionToString));
-  const config = BOARD_CONFIGS[board.type];
-
-  // Step 1: seed border markers = direct territory-adjacent markers.
-  const borderSeedMap = new Map<string, Position>();
-
-  for (const space of regionSpaces) {
-    const neighbors = getTerritoryNeighbors(board, space);
-    for (const n of neighbors) {
-      const nk = positionToString(n);
-      if (regionSet.has(nk)) continue;
-      const markerOwner = getMarkerOwner(board, n);
-      if (markerOwner !== undefined && !borderSeedMap.has(nk)) {
-        borderSeedMap.set(nk, n);
-      }
-    }
-  }
-
-  if (borderSeedMap.size === 0) {
-    return [];
-  }
-
-  // Step 2: expand across connected markers using Moore adjacency for
-  // square boards and hex adjacency for hex boards.
-  const borderMarkers = new Map<string, Position>(borderSeedMap);
-  const queue: Position[] = Array.from(borderSeedMap.values());
-  const visited = new Set<string>(borderSeedMap.keys());
-
-  const mooreDirs = [
-    { x: -1, y: -1 },
-    { x: -1, y: 0 },
-    { x: -1, y: 1 },
-    { x: 0, y: -1 },
-    { x: 0, y: 1 },
-    { x: 1, y: -1 },
-    { x: 1, y: 0 },
-    { x: 1, y: 1 },
-  ];
-
-  const hexDirs = [
-    { x: 1, y: -1, z: 0 },
-    { x: 1, y: 0, z: -1 },
-    { x: 0, y: 1, z: -1 },
-    { x: -1, y: 1, z: 0 },
-    { x: -1, y: 0, z: 1 },
-    { x: 0, y: -1, z: 1 },
-  ];
-
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    const dirs = config.type === 'hexagonal' ? hexDirs : mooreDirs;
-
-    for (const d of dirs) {
-      const n: Position =
-        config.type === 'hexagonal'
-          ? { x: current.x + d.x, y: current.y + d.y, z: (current.z || 0) + (d as any).z }
-          : { x: current.x + (d as any).x, y: current.y + (d as any).y };
-
-      const nk = positionToString(n);
-      if (visited.has(nk)) continue;
-      if (regionSet.has(nk)) continue; // never step into region
-      if (!isValidPositionOnBoard(board, n)) continue;
-
-      const markerOwner = getMarkerOwner(board, n);
-      if (markerOwner !== undefined) {
-        visited.add(nk);
-        borderMarkers.set(nk, n);
-        queue.push(n);
-      }
-    }
-  }
-
-  const borderMarkersArray = Array.from(borderMarkers.values());
-
-  if (TERRITORY_TRACE_DEBUG) {
-    const regionSpacesSample = regionSpaces.slice(0, 12).map(positionToString);
-    const seedMarkersSample = Array.from(borderSeedMap.values()).slice(0, 12).map(positionToString);
-    const borderMarkersSample = borderMarkersArray.slice(0, 12).map(positionToString);
-
-    const containsInRegion = (x: number, y: number) =>
-      regionSpaces.some((p) => p.x === x && p.y === y);
-    const containsInBorder = (x: number, y: number) =>
-      borderMarkersArray.some((p) => p.x === x && p.y === y);
-
-    // eslint-disable-next-line no-console
-    console.log('[sandboxTerritory.getBorderMarkerPositionsForRegion]', {
-      boardType: board.type,
-      regionSize: regionSpaces.length,
-      regionSample: regionSpacesSample,
-      seedCount: borderSeedMap.size,
-      seedSample: seedMarkersSample,
-      borderCount: borderMarkersArray.length,
-      borderSample: borderMarkersSample,
-      region_contains_3_7: containsInRegion(3, 7),
-      region_contains_4_0: containsInRegion(4, 0),
-      border_contains_3_7: containsInBorder(3, 7),
-      border_contains_4_0: containsInBorder(4, 0),
-    });
-  }
-
-  return borderMarkersArray;
+  return getSharedBorderMarkers(board, regionSpaces, { mode: 'rust_aligned' });
 }
 
 /**
@@ -564,73 +457,47 @@ export function processDisconnectedRegionCoreOnBoard(
   movingPlayer: number,
   regionSpaces: Position[]
 ): { board: BoardState; players: Player[]; totalRingsEliminatedDelta: number } {
-  let nextBoard: BoardState = {
-    ...board,
-    stacks: new Map(board.stacks),
-    markers: new Map(board.markers),
-    collapsedSpaces: new Map(board.collapsedSpaces),
-    territories: new Map(board.territories),
-    formedLines: [...board.formedLines],
-    eliminatedRings: { ...board.eliminatedRings },
+  // Delegate the geometric core (internal eliminations + region/border
+  // collapse) to the shared engine helper so that backend, sandbox, and
+  // rules-layer tests all share a single source of truth for territory
+  // semantics.
+  const region: Territory = {
+    spaces: regionSpaces,
+    controllingPlayer: movingPlayer,
+    isDisconnected: true,
   };
+
+  const ctx: TerritoryProcessingContext = { player: movingPlayer };
+  const outcome = applyTerritoryRegion(board, region, ctx);
 
   let nextPlayers: Player[] = players.map((p) => ({ ...p }));
 
-  // 1. Determine border markers that participate in this region's boundary.
-  const borderMarkers = getBorderMarkerPositionsForRegion(nextBoard, regionSpaces);
-
-  // 2. Eliminate all rings inside the region before collapsing spaces.
-  let internalRingsEliminated = 0;
-  for (const pos of regionSpaces) {
-    const key = positionToString(pos);
-    const stack = nextBoard.stacks.get(key);
-    if (stack) {
-      internalRingsEliminated += stack.stackHeight;
-      nextBoard.stacks.delete(key);
-    }
-  }
-
-  // 3. Collapse all spaces in the region to the moving player's color.
-  for (const pos of regionSpaces) {
-    const key = positionToString(pos);
-    nextBoard.markers.delete(key);
-    nextBoard.stacks.delete(key);
-    nextBoard.collapsedSpaces.set(key, movingPlayer);
-  }
-
-  // 4. Collapse all border markers to the moving player's color.
-  for (const pos of borderMarkers) {
-    const key = positionToString(pos);
-    nextBoard.markers.delete(key);
-    nextBoard.stacks.delete(key);
-    nextBoard.collapsedSpaces.set(key, movingPlayer);
-  }
-
-  // Update territorySpaces for moving player.
-  const territoryGain = regionSpaces.length + borderMarkers.length;
-  nextPlayers = nextPlayers.map((p) =>
-    p.playerNumber === movingPlayer
-      ? { ...p, territorySpaces: p.territorySpaces + territoryGain }
-      : p
-  );
-
-  // 5. Credit all internal eliminations to the moving player.
-  if (internalRingsEliminated > 0) {
-    const newEliminated = { ...nextBoard.eliminatedRings };
-    newEliminated[movingPlayer] = (newEliminated[movingPlayer] || 0) + internalRingsEliminated;
-    nextBoard = { ...nextBoard, eliminatedRings: newEliminated };
-
+  // Update territorySpaces for moving player based on the shared outcome.
+  const territoryGain = outcome.territoryGainedByPlayer[movingPlayer] ?? 0;
+  if (territoryGain > 0) {
     nextPlayers = nextPlayers.map((p) =>
       p.playerNumber === movingPlayer
-        ? { ...p, eliminatedRings: p.eliminatedRings + internalRingsEliminated }
+        ? { ...p, territorySpaces: p.territorySpaces + territoryGain }
+        : p
+    );
+  }
+
+  // Credit all internal eliminations to the moving player at the Player[]
+  // level. BoardState-level eliminatedRings has already been updated by
+  // applyTerritoryRegion.
+  const internalElims = outcome.eliminatedRingsByPlayer[movingPlayer] ?? 0;
+  if (internalElims > 0) {
+    nextPlayers = nextPlayers.map((p) =>
+      p.playerNumber === movingPlayer
+        ? { ...p, eliminatedRings: p.eliminatedRings + internalElims }
         : p
     );
   }
 
   return {
-    board: nextBoard,
+    board: outcome.board,
     players: nextPlayers,
-    totalRingsEliminatedDelta: internalRingsEliminated,
+    totalRingsEliminatedDelta: internalElims,
   };
 }
 
@@ -644,7 +511,12 @@ export function processDisconnectedRegionOnBoard(
   // processing a disconnected region and then immediately perform the mandatory
   // self-elimination using forceEliminateCapOnBoard. This preserves the
   // original sandbox semantics used by processDisconnectedRegionsForCurrentPlayerEngine.
-  const coreResult = processDisconnectedRegionCoreOnBoard(board, players, movingPlayer, regionSpaces);
+  const coreResult = processDisconnectedRegionCoreOnBoard(
+    board,
+    players,
+    movingPlayer,
+    regionSpaces
+  );
 
   const nextBoard = coreResult.board;
   const nextPlayers = coreResult.players;

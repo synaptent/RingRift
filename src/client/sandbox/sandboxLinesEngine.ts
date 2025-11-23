@@ -97,7 +97,7 @@ function getPlayerStacks(board: BoardState, playerNumber: number): RingStack[] {
   return stacks;
 }
 
-function collapseLineMarkersOnBoard(
+export function collapseLineMarkersOnBoard(
   board: BoardState,
   players: Player[],
   positions: Position[],

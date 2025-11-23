@@ -12,6 +12,11 @@ import {
   updatePlayerEliminatedRings,
   updatePlayerTerritorySpaces,
 } from './lineProcessing';
+import {
+  TerritoryProcessingContext,
+  filterProcessableTerritoryRegions,
+  applyTerritoryRegion,
+} from '../../../shared/engine/territoryProcessing';
 
 export interface TerritoryProcessingDeps {
   boardManager: BoardManager;
@@ -75,10 +80,16 @@ export async function processDisconnectedRegionsForCurrentPlayer(
 
     if (disconnectedRegions.length === 0) break;
 
-    // Filter to regions that satisfy the self-elimination prerequisite
-    // for the moving player.
-    const eligibleRegions = disconnectedRegions.filter((region) =>
-      canProcessDisconnectedRegion(gameState, region, movingPlayer, deps)
+    // Apply the shared self-elimination prerequisite (FAQ Q23 / §12.2):
+    // the moving player must control at least one stack outside each
+    // region for it to be processable. Delegating this gating to the
+    // shared helper keeps backend, sandbox, and rules-layer tests
+    // aligned.
+    const ctx: TerritoryProcessingContext = { player: movingPlayer };
+    const eligibleRegions = filterProcessableTerritoryRegions(
+      gameState.board,
+      disconnectedRegions,
+      ctx
     );
 
     if (TERRITORY_TRACE_DEBUG) {
@@ -227,46 +238,40 @@ async function processOneDisconnectedRegion(
   movingPlayer: number,
   deps: TerritoryProcessingDeps
 ): Promise<GameState> {
-  const { boardManager } = deps;
+  // Delegate the geometric core (internal eliminations + region/border
+  // collapse) to the shared engine helper so that backend, sandbox, and
+  // rules-layer tests share a single source of truth for territory
+  // semantics.
+  const ctx: TerritoryProcessingContext = { player: movingPlayer };
+  const outcome = applyTerritoryRegion(gameState.board, region, ctx);
 
-  // 1. Get border markers to collapse
-  const borderMarkers = boardManager.getBorderMarkerPositions(region.spaces, gameState.board);
+  // Replace the board with the processed clone from the shared helper.
+  gameState = {
+    ...gameState,
+    board: outcome.board,
+  };
 
-  // 2. Eliminate all rings within the region (all colors) BEFORE
-  //    collapsing spaces.
-  let totalRingsEliminated = 0;
-  for (const pos of region.spaces) {
-    const stack = boardManager.getStack(pos, gameState.board);
-    if (stack) {
-      totalRingsEliminated += stack.stackHeight;
-      boardManager.removeStack(pos, gameState.board);
-    }
+  // Apply per-player territory gain at the GameState level. Under current
+  // rules all territory gain from disconnected regions is credited to the
+  // moving player.
+  const territoryGain = outcome.territoryGainedByPlayer[movingPlayer] ?? 0;
+  if (territoryGain > 0) {
+    gameState = updatePlayerTerritorySpaces(gameState, movingPlayer, territoryGain);
   }
 
-  // 3. Collapse all spaces in the region to the moving player's color
-  for (const pos of region.spaces) {
-    boardManager.setCollapsedSpace(pos, movingPlayer, gameState.board);
+  // Apply internal elimination deltas to GameState.totalRingsEliminated and
+  // the moving player's eliminatedRings counter. The BoardState-level
+  // bookkeeping (board.eliminatedRings) has already been updated by the
+  // shared helper.
+  const internalElims = outcome.eliminatedRingsByPlayer[movingPlayer] ?? 0;
+  if (internalElims > 0) {
+    gameState.totalRingsEliminated += internalElims;
+    gameState = updatePlayerEliminatedRings(gameState, movingPlayer, internalElims);
   }
 
-  // 4. Collapse all border markers to the moving player's color
-  for (const pos of borderMarkers) {
-    boardManager.setCollapsedSpace(pos, movingPlayer, gameState.board);
-  }
-
-  // Update player's territory count (region spaces + border markers)
-  const totalTerritoryGained = region.spaces.length + borderMarkers.length;
-  gameState = updatePlayerTerritorySpaces(gameState, movingPlayer, totalTerritoryGained);
-
-  // 5. Update elimination counts - ALL eliminated rings count toward moving player
-  gameState.totalRingsEliminated += totalRingsEliminated;
-  if (!gameState.board.eliminatedRings[movingPlayer]) {
-    gameState.board.eliminatedRings[movingPlayer] = 0;
-  }
-  gameState.board.eliminatedRings[movingPlayer] += totalRingsEliminated;
-
-  gameState = updatePlayerEliminatedRings(gameState, movingPlayer, totalRingsEliminated);
-
-  // 6. Mandatory self-elimination (one ring or cap from moving player)
+  // 6. Mandatory self-elimination (one ring or cap from moving player).
+  // This remains a GameState-level concern and is intentionally layered on
+  // top of the shared board-level helper.
   gameState = await eliminatePlayerRingOrCapWithChoice(gameState, movingPlayer, deps);
 
   return gameState;

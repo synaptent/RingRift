@@ -127,11 +127,12 @@ describe('Backend vs sandbox line detection parity (rules-level)', () => {
 
   it('treats mixed-player markers correctly (only same-color contiguous markers form a line)', () => {
     const board = createEmptyBoard(boardType);
-    // P1 markers at a1, b1, c1; P2 marker at d1 – breaks the P1 line.
+    // Mixed markers should not create a cross-color line. Here, P1 only has runs of length 2.
+    // P1 at a1, b1; P2 at c1; P1 at d1.
     addMarker(board, 0, 7, 1);
     addMarker(board, 1, 7, 1);
-    addMarker(board, 2, 7, 1);
-    addMarker(board, 3, 7, 2);
+    addMarker(board, 2, 7, 2);
+    addMarker(board, 3, 7, 1);
 
     const backend = backendLines(boardType, board);
     const sandbox = sandboxLines(boardType, board);

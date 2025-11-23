@@ -20,6 +20,21 @@ import {
 
 jest.mock('../../src/server/services/AIServiceClient');
 
+// Local backing store for mocked RuleEngine valid moves used by getAIMove tests.
+let mockRuleEngineMoves: Move[] = [];
+
+// Mock RuleEngine and BoardManager so AIEngine.getAIMove does not depend on
+// the full rules engine or board geometry when verifying service integration.
+jest.mock('../../src/server/game/RuleEngine', () => ({
+  RuleEngine: jest.fn().mockImplementation(() => ({
+    getValidMoves: () => mockRuleEngineMoves,
+  })),
+}));
+
+jest.mock('../../src/server/game/BoardManager', () => ({
+  BoardManager: jest.fn().mockImplementation(() => ({})),
+}));
+
 describe('AIEngine service integration (profile-driven)', () => {
   it('getAIMove calls AIServiceClient.getAIMove with mapped ai_type and forwards the returned move', async () => {
     const mockedGetClient = getAIServiceClient as jest.MockedFunction<typeof getAIServiceClient>;
@@ -59,9 +74,63 @@ describe('AIEngine service integration (profile-driven)', () => {
 
     engine.createAIFromProfile(1, profile);
 
-    const gameState = {
+    const gameState: GameState = {
+      id: 'test-game',
+      boardType: 'square8',
+      board: {
+        type: 'square8',
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+        formedLines: [],
+        eliminatedRings: new Map(),
+        size: 8,
+      } as any,
+      players: [
+        {
+          id: 'ai-player-1',
+          username: 'AI Player 1',
+          playerNumber: 1,
+          type: 'ai',
+          isReady: true,
+          timeRemaining: 600000,
+          ringsInHand: 10,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+          aiDifficulty: 7,
+          aiProfile: profile,
+        },
+      ] as any,
       currentPhase: 'movement',
-    } as unknown as GameState;
+      currentPlayer: 1,
+      moveHistory: [],
+      history: [],
+      timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+      spectators: [],
+      gameStatus: 'active',
+      createdAt: new Date(),
+      lastMoveAt: new Date(),
+      isRated: false,
+      maxPlayers: 2,
+      totalRingsInPlay: 0,
+      totalRingsEliminated: 0,
+      victoryThreshold: 0,
+      territoryVictoryThreshold: 0,
+      rngSeed: 123,
+    };
+
+    // Provide at least two valid moves so AIEngine does not early-return and
+    // instead exercises the service-backed path.
+    mockRuleEngineMoves = [
+      fakeMove,
+      {
+        ...fakeMove,
+        id: 'svc-move-2',
+        to: { x: 2, y: 0 },
+        moveNumber: 2,
+      },
+    ];
 
     const move = await engine.getAIMove(1, gameState);
 
@@ -72,7 +141,9 @@ describe('AIEngine service integration (profile-driven)', () => {
     expect(callArgs[2]).toBe(7);
     expect(callArgs[3]).toBe(ServiceAIType.MINIMAX);
 
-    expect(move).toBe(fakeMove);
+    // The move instance may not be the exact same reference, but it should be
+    // structurally equal to the move returned by the service.
+    expect(move).toEqual(fakeMove);
   });
 
   it('getRingEliminationChoice calls AIServiceClient.getRingEliminationChoice and returns the selected option', async () => {
@@ -187,15 +258,15 @@ describe('AIEngine service integration (profile-driven)', () => {
       { aiType: InternalAIType; randomness: number; thinkTime: number }
     > = {
       1: { aiType: InternalAIType.RANDOM, randomness: 0.5, thinkTime: 150 },
-      2: { aiType: InternalAIType.RANDOM, randomness: 0.3, thinkTime: 200 },
-      3: { aiType: InternalAIType.HEURISTIC, randomness: 0.2, thinkTime: 250 },
-      4: { aiType: InternalAIType.HEURISTIC, randomness: 0.1, thinkTime: 300 },
-      5: { aiType: InternalAIType.HEURISTIC, randomness: 0.05, thinkTime: 350 },
+      2: { aiType: InternalAIType.HEURISTIC, randomness: 0.3, thinkTime: 200 },
+      3: { aiType: InternalAIType.MINIMAX, randomness: 0.2, thinkTime: 250 },
+      4: { aiType: InternalAIType.MINIMAX, randomness: 0.1, thinkTime: 300 },
+      5: { aiType: InternalAIType.MINIMAX, randomness: 0.05, thinkTime: 350 },
       6: { aiType: InternalAIType.MINIMAX, randomness: 0.02, thinkTime: 400 },
-      7: { aiType: InternalAIType.MINIMAX, randomness: 0.01, thinkTime: 450 },
-      8: { aiType: InternalAIType.MINIMAX, randomness: 0.0, thinkTime: 500 },
-      9: { aiType: InternalAIType.MCTS, randomness: 0.0, thinkTime: 600 },
-      10: { aiType: InternalAIType.MCTS, randomness: 0.0, thinkTime: 700 },
+      7: { aiType: InternalAIType.MCTS, randomness: 0.0, thinkTime: 500 },
+      8: { aiType: InternalAIType.MCTS, randomness: 0.0, thinkTime: 600 },
+      9: { aiType: InternalAIType.DESCENT, randomness: 0.0, thinkTime: 700 },
+      10: { aiType: InternalAIType.DESCENT, randomness: 0.0, thinkTime: 800 },
     };
 
     for (const [key, expectedPreset] of Object.entries(expected)) {
@@ -220,8 +291,213 @@ describe('AIEngine service integration (profile-driven)', () => {
     const config = engine.getAIConfig(1);
 
     expect(config).toBeDefined();
-    expect(config!.aiType).toBe(InternalAIType.MINIMAX);
-    expect(config!.randomness).toBeCloseTo(0.01);
-    expect(config!.thinkTime).toBe(450);
+    // Difficulty 7 should map to MCTS per the canonical ladder.
+    expect(config!.aiType).toBe(InternalAIType.MCTS);
+    expect(config!.randomness).toBeCloseTo(0.0);
+    expect(config!.thinkTime).toBe(500);
+  });
+
+  it('getAIMove uses canonical ladder aiType and service mapping for difficulty 8 (MCTS)', async () => {
+    const mockedGetClient = getAIServiceClient as jest.MockedFunction<typeof getAIServiceClient>;
+
+    const fakeMove: Move = {
+      id: 'svc-move-mcts',
+      type: 'move_ring',
+      player: 1,
+      from: { x: 0, y: 0 },
+      to: { x: 1, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    const fakeResponse: MoveResponse = {
+      move: fakeMove,
+      evaluation: 0.0,
+      thinking_time_ms: 50,
+      ai_type: 'mcts',
+      difficulty: 8,
+    };
+
+    const fakeClient = {
+      getAIMove: jest.fn().mockResolvedValue(fakeResponse),
+    } as any;
+
+    mockedGetClient.mockReturnValue(fakeClient);
+
+    const engine = new AIEngine();
+
+    const profile: AIProfile = {
+      difficulty: 8,
+      mode: 'service',
+      // No explicit aiType → rely on canonical ladder mapping (MCTS).
+    };
+
+    engine.createAIFromProfile(1, profile);
+
+    const gameState: GameState = {
+      id: 'test-game-mcts',
+      boardType: 'square8',
+      board: {
+        type: 'square8',
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+        formedLines: [],
+        eliminatedRings: new Map(),
+        size: 8,
+      } as any,
+      players: [
+        {
+          id: 'ai-player-1',
+          username: 'AI Player 1',
+          playerNumber: 1,
+          type: 'ai',
+          isReady: true,
+          timeRemaining: 600000,
+          ringsInHand: 10,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+          aiDifficulty: 8,
+          aiProfile: profile,
+        },
+      ] as any,
+      currentPhase: 'movement',
+      currentPlayer: 1,
+      moveHistory: [],
+      history: [],
+      timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+      spectators: [],
+      gameStatus: 'active',
+      createdAt: new Date(),
+      lastMoveAt: new Date(),
+      isRated: false,
+      maxPlayers: 2,
+      totalRingsInPlay: 0,
+      totalRingsEliminated: 0,
+      victoryThreshold: 0,
+      territoryVictoryThreshold: 0,
+      rngSeed: 42,
+    };
+
+    mockRuleEngineMoves = [
+      fakeMove,
+      {
+        ...fakeMove,
+        id: 'svc-move-mcts-2',
+        to: { x: 2, y: 0 },
+        moveNumber: 2,
+      },
+    ];
+
+    await engine.getAIMove(1, gameState);
+
+    expect(fakeClient.getAIMove).toHaveBeenCalledTimes(1);
+    const callArgs = fakeClient.getAIMove.mock.calls[0];
+    expect(callArgs[2]).toBe(8);
+    expect(callArgs[3]).toBe(ServiceAIType.MCTS);
+  });
+
+  it('getAIMove uses canonical ladder aiType and service mapping for difficulty 10 (Descent)', async () => {
+    const mockedGetClient = getAIServiceClient as jest.MockedFunction<typeof getAIServiceClient>;
+
+    const fakeMove: Move = {
+      id: 'svc-move-descent',
+      type: 'move_ring',
+      player: 1,
+      from: { x: 0, y: 0 },
+      to: { x: 1, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    const fakeResponse: MoveResponse = {
+      move: fakeMove,
+      evaluation: 0.0,
+      thinking_time_ms: 50,
+      ai_type: 'descent',
+      difficulty: 10,
+    };
+
+    const fakeClient = {
+      getAIMove: jest.fn().mockResolvedValue(fakeResponse),
+    } as any;
+
+    mockedGetClient.mockReturnValue(fakeClient);
+
+    const engine = new AIEngine();
+
+    const profile: AIProfile = {
+      difficulty: 10,
+      mode: 'service',
+      // No explicit aiType → rely on canonical ladder mapping (Descent).
+    };
+
+    engine.createAIFromProfile(1, profile);
+
+    const gameState: GameState = {
+      id: 'test-game-descent',
+      boardType: 'square8',
+      board: {
+        type: 'square8',
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+        formedLines: [],
+        eliminatedRings: new Map(),
+        size: 8,
+      } as any,
+      players: [
+        {
+          id: 'ai-player-1',
+          username: 'AI Player 1',
+          playerNumber: 1,
+          type: 'ai',
+          isReady: true,
+          timeRemaining: 600000,
+          ringsInHand: 10,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+          aiDifficulty: 10,
+          aiProfile: profile,
+        },
+      ] as any,
+      currentPhase: 'movement',
+      currentPlayer: 1,
+      moveHistory: [],
+      history: [],
+      timeControl: { type: 'rapid', initialTime: 600000, increment: 0 },
+      spectators: [],
+      gameStatus: 'active',
+      createdAt: new Date(),
+      lastMoveAt: new Date(),
+      isRated: false,
+      maxPlayers: 2,
+      totalRingsInPlay: 0,
+      totalRingsEliminated: 0,
+      victoryThreshold: 0,
+      territoryVictoryThreshold: 0,
+      rngSeed: 84,
+    };
+
+    mockRuleEngineMoves = [
+      fakeMove,
+      {
+        ...fakeMove,
+        id: 'svc-move-descent-2',
+        to: { x: 2, y: 0 },
+        moveNumber: 2,
+      },
+    ];
+
+    await engine.getAIMove(1, gameState);
+
+    expect(fakeClient.getAIMove).toHaveBeenCalledTimes(1);
+    const callArgs = fakeClient.getAIMove.mock.calls[0];
+    expect(callArgs[2]).toBe(10);
+    expect(callArgs[3]).toBe(ServiceAIType.DESCENT);
   });
 });

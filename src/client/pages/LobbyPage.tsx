@@ -4,6 +4,8 @@ import { io, Socket } from 'socket.io-client';
 import { gameApi } from '../services/api';
 import { BoardType, CreateGameRequest, Game } from '../../shared/types/game';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { Button } from '../components/ui/Button';
+import { Select } from '../components/ui/Select';
 
 interface FormState {
   boardType: BoardType;
@@ -60,10 +62,7 @@ function getSocketBaseUrl(): string {
 
   if (typeof window !== 'undefined' && window.location?.origin) {
     const origin = window.location.origin;
-    if (
-      origin.startsWith('http://localhost:5173') ||
-      origin.startsWith('https://localhost:5173')
-    ) {
+    if (origin.startsWith('http://localhost:5173') || origin.startsWith('https://localhost:5173')) {
       return 'http://localhost:3000';
     }
     return origin;
@@ -72,7 +71,13 @@ function getSocketBaseUrl(): string {
   return 'http://localhost:3000';
 }
 
-function GameCard({ game, onJoin, onSpectate, onCancel, currentUserId }: {
+function GameCard({
+  game,
+  onJoin,
+  onSpectate,
+  onCancel,
+  currentUserId,
+}: {
   game: Game;
   onJoin: (gameId: string) => void;
   onSpectate: (gameId: string) => void;
@@ -80,15 +85,19 @@ function GameCard({ game, onJoin, onSpectate, onCancel, currentUserId }: {
   currentUserId: string;
 }) {
   const isCreator = game.player1?.id === currentUserId;
-  const playerCount = [game.player1Id, game.player2Id, game.player3Id, game.player4Id].filter(Boolean).length;
+  const playerCount = [game.player1Id, game.player2Id, game.player3Id, game.player4Id].filter(
+    Boolean
+  ).length;
   const isFull = playerCount >= game.maxPlayers;
   const canJoin = !isCreator && !isFull && game.status === 'waiting';
-  
+
   return (
     <div className="bg-slate-800/70 rounded-xl shadow-md p-4 hover:shadow-lg transition-all border border-slate-700 hover:border-emerald-500/50">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <h4 className="font-semibold text-white">{game.player1?.username || 'Unknown'}'s Game</h4>
+          <h4 className="font-semibold text-white">
+            {`${game.player1?.username || 'Unknown'}'s Game`}
+          </h4>
           {game.isRated && (
             <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded border border-purple-500/30">
               Rated
@@ -100,17 +109,21 @@ function GameCard({ game, onJoin, onSpectate, onCancel, currentUserId }: {
             </span>
           )}
         </div>
-        
+
         <div className="text-sm text-slate-400">
           {playerCount}/{game.maxPlayers} players
         </div>
       </div>
-      
+
       <div className="grid grid-cols-2 gap-2 text-sm text-slate-400 mb-3">
         <div>
           <span className="font-medium text-slate-300">Board:</span>{' '}
           <span className="text-slate-400">
-            {game.boardType === 'square8' ? '8x8' : game.boardType === 'square19' ? '19x19' : 'Hexagonal'}
+            {game.boardType === 'square8'
+              ? '8x8'
+              : game.boardType === 'square19'
+                ? '19x19'
+                : 'Hexagonal'}
           </span>
         </div>
         {game.timeControl && (
@@ -126,55 +139,57 @@ function GameCard({ game, onJoin, onSpectate, onCancel, currentUserId }: {
           <span className="text-slate-400">{game.player1?.rating ?? '?'}</span>
         </div>
       </div>
-      
+
       <div className="flex gap-2">
         {canJoin && (
-          <button
-            onClick={() => onJoin(game.id)}
-            className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 font-semibold transition-colors"
-          >
+          <Button type="button" className="flex-1" onClick={() => onJoin(game.id)}>
             Join Game
-          </button>
+          </Button>
         )}
-        
+
         {isFull && game.status === 'waiting' && (
-          <button
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
             disabled
-            className="flex-1 px-4 py-2 bg-slate-700 text-slate-500 rounded-lg cursor-not-allowed"
+            className="flex-1 cursor-not-allowed"
           >
             Game Full
-          </button>
+          </Button>
         )}
-        
+
         {isCreator && game.status === 'waiting' && (
-          <button
-            onClick={() => onCancel(game.id)}
-            className="px-4 py-2 bg-red-600/80 text-white rounded-lg hover:bg-red-500 transition-colors"
-          >
+          <Button type="button" variant="danger" size="sm" onClick={() => onCancel(game.id)}>
             Cancel
-          </button>
+          </Button>
         )}
-        
-        <button
+
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
           onClick={() => onSpectate(game.id)}
-          className="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition-colors"
           title="Watch this game"
         >
           👁️ Watch
-        </button>
+        </Button>
       </div>
     </div>
   );
 }
 
-function LobbyFilters({ filters, onFilterChange }: {
+function LobbyFilters({
+  filters,
+  onFilterChange,
+}: {
   filters: LobbyFilters;
   onFilterChange: (filters: LobbyFilters) => void;
 }) {
   return (
     <div className="bg-slate-800/70 rounded-xl shadow-md p-4 space-y-4 border border-slate-700 sticky top-4">
       <h3 className="font-semibold text-lg text-white">Filters</h3>
-      
+
       {/* Board Type Filter */}
       <div>
         <label
@@ -183,9 +198,8 @@ function LobbyFilters({ filters, onFilterChange }: {
         >
           Board Type
         </label>
-        <select
+        <Select
           id="lobby-filter-board-type"
-          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           value={filters.boardType ?? 'all'}
           onChange={(e) =>
             onFilterChange({
@@ -198,9 +212,9 @@ function LobbyFilters({ filters, onFilterChange }: {
           <option value="square8">Square 8x8</option>
           <option value="square19">Square 19x19</option>
           <option value="hexagonal">Hexagonal</option>
-        </select>
+        </Select>
       </div>
-      
+
       {/* Rated Filter */}
       <div>
         <label
@@ -209,9 +223,8 @@ function LobbyFilters({ filters, onFilterChange }: {
         >
           Game Type
         </label>
-        <select
+        <Select
           id="lobby-filter-game-type"
-          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           value={filters.isRated === undefined ? 'all' : filters.isRated.toString()}
           onChange={(e) =>
             onFilterChange({
@@ -223,9 +236,9 @@ function LobbyFilters({ filters, onFilterChange }: {
           <option value="all">All</option>
           <option value="true">Rated Only</option>
           <option value="false">Unrated Only</option>
-        </select>
+        </Select>
       </div>
-      
+
       {/* Player Count Filter */}
       <div>
         <label
@@ -234,9 +247,8 @@ function LobbyFilters({ filters, onFilterChange }: {
         >
           Players
         </label>
-        <select
+        <Select
           id="lobby-filter-player-count"
-          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           value={filters.playerCount ?? 'all'}
           onChange={(e) =>
             onFilterChange({
@@ -249,9 +261,9 @@ function LobbyFilters({ filters, onFilterChange }: {
           <option value="2">2 Players</option>
           <option value="3">3 Players</option>
           <option value="4">4 Players</option>
-        </select>
+        </Select>
       </div>
-      
+
       {/* Search */}
       <div>
         <label
@@ -274,57 +286,65 @@ function LobbyFilters({ filters, onFilterChange }: {
           }
         />
       </div>
-      
+
       {/* Show In Progress */}
       <div className="flex items-center">
         <input
           type="checkbox"
           id="show-in-progress"
           checked={filters.showInProgress ?? false}
-          onChange={(e) => onFilterChange({
-            ...filters,
-            showInProgress: e.target.checked
-          })}
+          onChange={(e) =>
+            onFilterChange({
+              ...filters,
+              showInProgress: e.target.checked,
+            })
+          }
           className="mr-2 rounded border-slate-600 bg-slate-900 text-emerald-600 focus:ring-emerald-500"
         />
         <label htmlFor="show-in-progress" className="text-sm text-slate-300">
           Show games in progress
         </label>
       </div>
-      
+
       {/* Clear Filters */}
-      <button
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        fullWidth
         onClick={() => onFilterChange({})}
-        className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm text-slate-200 transition-colors"
       >
         Clear All Filters
-      </button>
+      </Button>
     </div>
   );
 }
 
-function SortControls({ sortBy, onSortChange }: {
+function SortControls({
+  sortBy,
+  onSortChange,
+}: {
   sortBy: SortOption;
   onSortChange: (sort: SortOption) => void;
 }) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-sm text-slate-400">Sort by:</span>
-      <select
-        value={sortBy}
-        onChange={(e) => onSortChange(e.target.value as SortOption)}
-        className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-      >
+      <Select value={sortBy} onChange={(e) => onSortChange(e.target.value as SortOption)} size="sm">
         <option value="created">Newest First</option>
         <option value="players">Most Players</option>
         <option value="board_type">Board Type</option>
         <option value="rating">Rated First</option>
-      </select>
+      </Select>
     </div>
   );
 }
 
-function EmptyLobby({ hasFilters, onClearFilters, onCreate }: {
+function EmptyLobby({
+  hasFilters,
+  onClearFilters,
+  onCreate,
+}: {
   hasFilters: boolean;
   onClearFilters: () => void;
   onCreate: () => void;
@@ -333,58 +353,44 @@ function EmptyLobby({ hasFilters, onClearFilters, onCreate }: {
     return (
       <div className="text-center py-16 bg-slate-800/40 rounded-xl border border-slate-700">
         <div className="text-6xl mb-4">🔍</div>
-        <h3 className="text-xl font-semibold text-slate-200 mb-2">
-          No games match your filters
-        </h3>
-        <p className="text-slate-400 mb-4">
-          Try adjusting your filters or create a new game
-        </p>
-        <button
-          onClick={onClearFilters}
-          className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors"
-        >
+        <h3 className="text-xl font-semibold text-slate-200 mb-2">No games match your filters</h3>
+        <p className="text-slate-400 mb-4">Try adjusting your filters or create a new game</p>
+        <Button type="button" onClick={onClearFilters}>
           Clear Filters
-        </button>
+        </Button>
       </div>
     );
   }
-  
+
   return (
     <div className="text-center py-16 bg-slate-800/40 rounded-xl border border-slate-700">
       <div className="text-6xl mb-4">🎮</div>
-      <h3 className="text-xl font-semibold text-slate-200 mb-2">
-        No games available
-      </h3>
-      <p className="text-slate-400 mb-4">
-        Be the first to create a game!
-      </p>
-      <button
-        onClick={onCreate}
-        className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 transition-colors font-semibold"
-      >
+      <h3 className="text-xl font-semibold text-slate-200 mb-2">No games available</h3>
+      <p className="text-slate-400 mb-4">Be the first to create a game!</p>
+      <Button type="button" onClick={onCreate}>
         Create Game
-      </button>
+      </Button>
     </div>
   );
 }
 
 function filterGames(games: Game[], filters: LobbyFilters): Game[] {
-  return games.filter(game => {
+  return games.filter((game) => {
     // Board type filter
     if (filters.boardType && game.boardType !== filters.boardType) {
       return false;
     }
-    
+
     // Rated filter
     if (filters.isRated !== undefined && game.isRated !== filters.isRated) {
       return false;
     }
-    
+
     // Player count filter
     if (filters.playerCount && game.maxPlayers !== filters.playerCount) {
       return false;
     }
-    
+
     // Search term
     if (filters.searchTerm) {
       const term = filters.searchTerm.toLowerCase();
@@ -394,26 +400,26 @@ function filterGames(games: Game[], filters: LobbyFilters): Game[] {
         return false;
       }
     }
-    
+
     // Show in progress
     if (!filters.showInProgress && game.status !== 'waiting') {
       return false;
     }
-    
+
     return true;
   });
 }
 
 function sortGames(games: Game[], sortBy: SortOption): Game[] {
   const sorted = [...games];
-  
+
   switch (sortBy) {
     case 'created':
-      return sorted.sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      return sorted.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
     case 'players': {
-      const getPlayerCount = (g: Game) => 
+      const getPlayerCount = (g: Game) =>
         [g.player1Id, g.player2Id, g.player3Id, g.player4Id].filter(Boolean).length;
       return sorted.sort((a, b) => getPlayerCount(b) - getPlayerCount(a));
     }
@@ -478,30 +484,33 @@ export default function LobbyPage() {
 
     socket.on('lobby:game_created', (game: Game) => {
       console.log('New game created:', game);
-      setAvailableGames(prev => [game, ...prev]);
+      setAvailableGames((prev) => [game, ...prev]);
     });
 
-    socket.on('lobby:game_joined', ({ gameId, playerCount }: { gameId: string; playerCount: number }) => {
-      console.log('Game joined:', gameId, playerCount);
-      setAvailableGames(prev =>
-        prev.map(g => {
-          if (g.id === gameId) {
-            // Update player count (simplified - in production would refetch full game data)
-            return { ...g };
-          }
-          return g;
-        })
-      );
-    });
+    socket.on(
+      'lobby:game_joined',
+      ({ gameId, playerCount }: { gameId: string; playerCount: number }) => {
+        console.log('Game joined:', gameId, playerCount);
+        setAvailableGames((prev) =>
+          prev.map((g) => {
+            if (g.id === gameId) {
+              // Update player count (simplified - in production would refetch full game data)
+              return { ...g };
+            }
+            return g;
+          })
+        );
+      }
+    );
 
     socket.on('lobby:game_started', ({ gameId }: { gameId: string }) => {
       console.log('Game started:', gameId);
-      setAvailableGames(prev => prev.filter(g => g.id !== gameId));
+      setAvailableGames((prev) => prev.filter((g) => g.id !== gameId));
     });
 
     socket.on('lobby:game_cancelled', ({ gameId }: { gameId: string }) => {
       console.log('Game cancelled:', gameId);
-      setAvailableGames(prev => prev.filter(g => g.id !== gameId));
+      setAvailableGames((prev) => prev.filter((g) => g.id !== gameId));
     });
 
     socket.on('connect_error', (err) => {
@@ -590,7 +599,7 @@ export default function LobbyPage() {
   const handleCancelGame = async (gameId: string) => {
     try {
       await gameApi.leaveGame(gameId);
-      setAvailableGames(prev => prev.filter(g => g.id !== gameId));
+      setAvailableGames((prev) => prev.filter((g) => g.id !== gameId));
     } catch (err: any) {
       console.error('Failed to cancel game:', err);
     }
@@ -598,30 +607,28 @@ export default function LobbyPage() {
 
   const filteredGames = filterGames(availableGames, filters);
   const sortedGames = sortGames(filteredGames, sortBy);
-  const hasFilters = Object.keys(filters).some(k => filters[k as keyof LobbyFilters] !== undefined);
+  const hasFilters = Object.keys(filters).some(
+    (k) => filters[k as keyof LobbyFilters] !== undefined
+  );
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-6">
       <header className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-50">Game Lobby</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Find and join games in real-time
-          </p>
+          <p className="text-sm text-slate-400 mt-1">Find and join games in real-time</p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(!showCreateForm)}
-          className="px-6 py-3 bg-emerald-600 text-white rounded-xl hover:bg-emerald-500 font-semibold shadow-lg transition-all"
-        >
+        <Button type="button" size="lg" onClick={() => setShowCreateForm(!showCreateForm)}>
           {showCreateForm ? '← Back to Lobby' : '+ Create Game'}
-        </button>
+        </Button>
       </header>
 
       {showCreateForm ? (
         <section className="bg-slate-800/70 rounded-2xl border border-slate-700 p-6 shadow-xl">
           <h2 className="text-xl font-semibold text-white mb-4">Create Backend Game</h2>
           <p className="text-sm text-slate-300 mb-6">
-            Choose board size, time control, and optional AI opponents. This creates a server-side game.
+            Choose board size, time control, and optional AI opponents. This creates a server-side
+            game.
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -634,42 +641,48 @@ export default function LobbyPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium mb-1 text-slate-100">Board type</label>
-                <select
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                <Select
                   value={form.boardType}
                   onChange={(e) => handleChange('boardType', e.target.value as BoardType)}
                 >
                   <option value="square8">8x8 (compact)</option>
                   <option value="square19">19x19 (full)</option>
                   <option value="hexagonal">Hexagonal</option>
-                </select>
+                </Select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium mb-1 text-slate-100">Max players</label>
-                <select
-                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                <Select
                   value={form.maxPlayers}
                   onChange={(e) => handleChange('maxPlayers', Number(e.target.value))}
                 >
                   {[2, 3, 4].map((n) => (
-                    <option key={n} value={n}>{n}</option>
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
                   ))}
-                </select>
+                </Select>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1 text-slate-100">Time control</label>
+                <label className="block text-sm font-medium mb-1 text-slate-100">
+                  Time control
+                </label>
                 <div className="flex gap-2">
-                  <select
-                    className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  <Select
                     value={form.timeControlType}
-                    onChange={(e) => handleChange('timeControlType', e.target.value as FormState['timeControlType'])}
+                    onChange={(e) =>
+                      handleChange(
+                        'timeControlType',
+                        e.target.value as FormState['timeControlType']
+                      )
+                    }
                   >
                     <option value="blitz">Blitz</option>
                     <option value="rapid">Rapid</option>
                     <option value="classical">Classical</option>
-                  </select>
+                  </Select>
                   <input
                     type="number"
                     min={60}
@@ -714,13 +727,9 @@ export default function LobbyPage() {
             </div>
 
             <div className="flex justify-end pt-2">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="px-6 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-sm font-semibold text-white transition-colors"
-              >
+              <Button type="submit" size="sm" disabled={isSubmitting}>
                 {isSubmitting ? 'Creating game…' : 'Create Game'}
-              </button>
+              </Button>
             </div>
           </form>
         </section>
@@ -735,7 +744,8 @@ export default function LobbyPage() {
           <div className="lg:col-span-3">
             <div className="flex justify-between items-center mb-4">
               <div className="text-slate-400 text-sm">
-                {filteredGames.length} game{filteredGames.length !== 1 ? 's' : ''} available
+                {filteredGames.length} game
+                {filteredGames.length !== 1 ? 's' : ''} available
               </div>
               <SortControls sortBy={sortBy} onSortChange={setSortBy} />
             </div>
@@ -758,7 +768,7 @@ export default function LobbyPage() {
               />
             ) : (
               <div className="space-y-3">
-                {sortedGames.map(game => (
+                {sortedGames.map((game) => (
                   <GameCard
                     key={game.id}
                     game={game}

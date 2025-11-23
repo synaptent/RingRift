@@ -317,7 +317,7 @@ def test_default_engine_apply_move_matches_game_engine_for_process_line_syntheti
     state = _make_base_game_state()
     state.current_phase = GamePhase.LINE_PROCESSING
 
-    required_len = 4 if state.board.type == BoardType.SQUARE8 else 5
+    required_len = 3 if state.board.type == BoardType.SQUARE8 else 4
     line_positions = [Position(x=i, y=0) for i in range(required_len)]
 
     # Import LineInfo lazily to keep imports focused at the top of the file.

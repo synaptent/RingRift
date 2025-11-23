@@ -1,9 +1,10 @@
 import express from 'express';
 import request from 'supertest';
-import authRoutes from '../../src/server/routes/auth';
+import authRoutes, { __testResetLoginLockoutState } from '../../src/server/routes/auth';
 import { errorHandler } from '../../src/server/middleware/errorHandler';
 import * as authModule from '../../src/server/middleware/auth';
 import { mockDb, prismaStub, resetPrismaMockDb } from '../utils/prismaTestUtils';
+import { config } from '../../src/server/config';
 
 // --- Mocks --------------------------------------------------------------
 
@@ -60,6 +61,7 @@ const mockedAuth = authModule as jest.Mocked<typeof authModule>;
 describe('Auth HTTP routes', () => {
   beforeEach(() => {
     resetPrismaMockDb();
+    __testResetLoginLockoutState();
   });
 
   describe('POST /api/auth/register', () => {
@@ -234,6 +236,118 @@ describe('Auth HTTP routes', () => {
 
       expect(prismaStub.refreshToken.create).toHaveBeenCalled();
       expect(prismaStub.user.update).toHaveBeenCalled();
+    });
+
+    it('locks out an email after too many failed login attempts', async () => {
+      const app = createTestApp();
+      const email = 'lockout@example.com';
+      const maxAttempts = config.auth.maxFailedLoginAttempts;
+
+      for (let i = 0; i < maxAttempts; i++) {
+        const res = await request(app)
+          .post('/api/auth/login')
+          .send({ email, password: 'Wrong123' })
+          .expect(401);
+
+        expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
+      }
+
+      const lockedRes = await request(app)
+        .post('/api/auth/login')
+        .send({ email, password: 'Wrong123' })
+        .expect(429);
+
+      expect(lockedRes.body.error.code).toBe('LOGIN_LOCKED_OUT');
+    });
+
+    it('resets failed-attempt counter after a successful login', async () => {
+      const app = createTestApp();
+      const email = 'user1@example.com';
+
+      mockDb.users.push({
+        id: 'user-1',
+        email,
+        username: 'user1',
+        passwordHash: 'hashed:Secret123',
+        role: 'USER',
+        isActive: true,
+        emailVerified: true,
+        createdAt: new Date(),
+        lastLoginAt: null,
+      });
+
+      const belowThreshold = config.auth.maxFailedLoginAttempts - 1;
+
+      for (let i = 0; i < belowThreshold; i++) {
+        const res = await request(app)
+          .post('/api/auth/login')
+          .send({ email, password: 'WrongPassword' })
+          .expect(401);
+
+        expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
+      }
+
+      const successRes = await request(app)
+        .post('/api/auth/login')
+        .send({ email, password: 'Secret123' })
+        .expect(200);
+
+      expect(successRes.body.success).toBe(true);
+
+      for (let i = 0; i < belowThreshold; i++) {
+        const res = await request(app)
+          .post('/api/auth/login')
+          .send({ email, password: 'WrongPassword' })
+          .expect(401);
+
+        expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
+      }
+    });
+
+    it('allows login attempts again after lockout duration has passed (in-memory fallback)', async () => {
+      const app = createTestApp();
+      const email = 'lockout-expiry@example.com';
+      const maxAttempts = config.auth.maxFailedLoginAttempts;
+      const originalLockoutDuration = config.auth.lockoutDurationSeconds;
+
+      try {
+        config.auth.lockoutDurationSeconds = 1;
+
+        jest.useFakeTimers();
+        const baseTime = new Date('2020-01-01T00:00:00.000Z');
+        jest.setSystemTime(baseTime);
+
+        for (let i = 0; i < maxAttempts; i++) {
+          const res = await request(app)
+            .post('/api/auth/login')
+            .send({ email, password: 'Wrong123' })
+            .expect(401);
+
+          expect(res.body.error.code).toBe('INVALID_CREDENTIALS');
+        }
+
+        const lockedRes = await request(app)
+          .post('/api/auth/login')
+          .send({ email, password: 'Wrong123' })
+          .expect(429);
+
+        expect(lockedRes.body.error.code).toBe('LOGIN_LOCKED_OUT');
+
+        const afterLockoutTime = new Date(
+          baseTime.getTime() + (config.auth.lockoutDurationSeconds + 1) * 1000
+        );
+        jest.setSystemTime(afterLockoutTime);
+
+        const resAfter = await request(app)
+          .post('/api/auth/login')
+          .send({ email, password: 'Wrong123' })
+          .expect(401);
+
+        expect(resAfter.body.error.code).toBe('INVALID_CREDENTIALS');
+      } finally {
+        config.auth.lockoutDurationSeconds = originalLockoutDuration;
+        jest.useRealTimers();
+      }
     });
   });
 

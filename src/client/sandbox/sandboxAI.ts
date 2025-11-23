@@ -120,6 +120,13 @@ export interface SandboxAIHooks {
    * GameEngine.pendingTerritorySelfElimination flag.
    */
   hasPendingTerritorySelfElimination(): boolean;
+  /**
+   * Parity hook: true when the sandbox engine has recorded a pending
+   * line-reward elimination for the current player in the current
+   * line_processing cycle. Mirrors the backend
+   * GameEngine.pendingLineRewardElimination flag.
+   */
+  hasPendingLineRewardElimination(): boolean;
 }
 
 function getLineDecisionMovesForSandboxAI(gameState: GameState): Move[] {
@@ -535,7 +542,10 @@ export async function maybeRunAITurnSandbox(
           // phase rather than silently stalling.
           const stateForMove = hooks.getGameState();
           const moveNumber = stateForMove.history.length + 1;
-          const sentinelTo = playerStacksForSkip[0]?.position ?? ({ x: 0, y: 0 } as Position);
+          // For canonical skip_placement, no board coordinate is semantically
+          // meaningful; use the shared sentinel {0,0} so sandbox traces align
+          // with backend GameEngine and shared-engine fixtures.
+          const sentinelTo: Position = { x: 0, y: 0 };
 
           const skipMove: Move = {
             id: '',
@@ -636,9 +646,10 @@ export async function maybeRunAITurnSandbox(
         if (hasAnyActionFromStacks) {
           const stateForMove = hooks.getGameState();
           const moveNumber = stateForMove.history.length + 1;
-          // For skip_placement, mirror the Python engine’s sentinel by
-          // pointing `to` at an arbitrary controlled stack when available.
-          const sentinelTo = playerStacksForSkip[0]?.position ?? ({ x: 0, y: 0 } as Position);
+          // For skip_placement, use the canonical sentinel {0,0}. The
+          // coordinate carries no spatial meaning but must be stable across
+          // engines for trace/parity tooling.
+          const sentinelTo: Position = { x: 0, y: 0 };
 
           const skipMove: Move = {
             id: '',
@@ -738,10 +749,12 @@ export async function maybeRunAITurnSandbox(
         }
 
         if (hasAnyActionFromStacks) {
-          // Player has hit cap but can skip placement and move existing stacks
+          // Player has hit cap but can skip placement and move existing stacks.
+          // As with other skip_placement moves, use the canonical sentinel {0,0}
+          // so backend and sandbox traces share the same representation.
           const stateForMove = hooks.getGameState();
           const moveNumber = stateForMove.history.length + 1;
-          const sentinelTo = stacksForPlayer[0]?.position ?? ({ x: 0, y: 0 } as Position);
+          const sentinelTo: Position = { x: 0, y: 0 };
 
           const skipMove: Move = {
             id: '',
@@ -865,9 +878,10 @@ export async function maybeRunAITurnSandbox(
       }
 
       if (hasAnyActionFromStacks) {
-        // Use an arbitrary controlled stack as the sentinel `to` position
-        // for skip_placement, matching the Python engine’s convention.
-        const sentinelTo = stacksForPlayer[0]?.position ?? ({ x: 0, y: 0 } as Position);
+        // For canonical skip_placement candidates, always use the shared
+        // sentinel {0,0}. The destination coordinate is ignored by rules
+        // logic but must be consistent across engines for trace parity.
+        const sentinelTo: Position = { x: 0, y: 0 };
 
         candidates.push({
           id: '',
@@ -1021,10 +1035,43 @@ export async function maybeRunAITurnSandbox(
       gameState.currentPhase === 'line_processing' ||
       gameState.currentPhase === 'territory_processing'
     ) {
-      const decisionCandidates =
-        gameState.currentPhase === 'line_processing'
-          ? getLineDecisionMovesForSandboxAI(gameState)
-          : getTerritoryDecisionMovesForSandboxAI(gameState, hooks);
+      let decisionCandidates: Move[] = [];
+
+      if (gameState.currentPhase === 'line_processing') {
+        // When a line-reward elimination is pending for the current player,
+        // mirror backend GameEngine.getValidMoves behaviour by surfacing
+        // explicit eliminate_rings_from_stack decisions instead of further
+        // process_line / choose_line_reward moves. This keeps the sandbox AI
+        // aligned with move-driven line-processing semantics and ensures that
+        // seed-based traces express the same high-level action sequence as the
+        // backend (collapse line -> eliminate cap -> continue lines/territory).
+        if (hooks.hasPendingLineRewardElimination()) {
+          const state = hooks.getGameState();
+          const currentPlayer = state.currentPlayer;
+          const board = state.board;
+          const playerStacks = hooks.getPlayerStacks(currentPlayer, board);
+
+          if (playerStacks.length > 0) {
+            const baseMoveNumber = state.history.length + 1;
+            playerStacks.forEach((stack, idx) => {
+              const key = positionToString(stack.position);
+              decisionCandidates.push({
+                id: `eliminate-${key}`,
+                type: 'eliminate_rings_from_stack',
+                player: currentPlayer,
+                to: stack.position,
+                timestamp: new Date(),
+                thinkTime: 0,
+                moveNumber: baseMoveNumber + idx,
+              } as Move);
+            });
+          }
+        } else {
+          decisionCandidates = getLineDecisionMovesForSandboxAI(gameState);
+        }
+      } else {
+        decisionCandidates = getTerritoryDecisionMovesForSandboxAI(gameState, hooks);
+      }
 
       if (decisionCandidates.length === 0) {
         return;

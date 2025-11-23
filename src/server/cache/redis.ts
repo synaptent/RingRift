@@ -333,4 +333,7 @@ export const CacheKeys = {
   leaderboard: (boardType: string) => `leaderboard:${boardType}`,
   tournament: (tournamentId: string) => `tournament:${tournamentId}`,
   chatHistory: (gameId: string) => `chat:${gameId}:history`,
+  // Auth / login abuse-protection
+  authLoginFailures: (email: string) => `auth:login:failures:${email}`,
+  authLoginLockout: (email: string) => `auth:login:lockout:${email}`,
 };

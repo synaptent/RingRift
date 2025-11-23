@@ -95,8 +95,9 @@ export function chooseLocalMoveFromCandidates(
   // === Movement / capture weighting ===
   //
   // Separate movement/capture candidates so we can choose between
-  // them in proportion to their counts, matching the sandbox AI
-  // movement policy.
+  // them explicitly. In earlier versions this was proportional to
+  // counts; we now prioritise captures whenever they are available
+  // so fallback play is tactically less blunder-prone.
   const captureMoves = nonPlacementMoves.filter(
     (m) => m.type === 'overtaking_capture' || m.type === 'continue_capture_segment'
   );
@@ -107,21 +108,19 @@ export function chooseLocalMoveFromCandidates(
 
   let pool: Move[] = [];
 
-  // Movement / capture / chain_capture phases: randomly choose between
-  // captures and simple moves in proportion to how many of each exist.
+  // Movement / capture / chain_capture phases: always prefer captures
+  // when at least one capture is available, otherwise fall back to
+  // simple non-capturing moves. This keeps the policy deterministic
+  // (up to RNG tie-breaking within a bucket) while strongly
+  // prioritising immediate material gain.
   if (
-    (gameState.currentPhase === 'movement' ||
-      gameState.currentPhase === 'capture' ||
-      gameState.currentPhase === 'chain_capture') &&
-    (captureMoves.length > 0 || simpleMovementMoves.length > 0)
+    gameState.currentPhase === 'movement' ||
+    gameState.currentPhase === 'capture' ||
+    gameState.currentPhase === 'chain_capture'
   ) {
-    if (captureMoves.length > 0 && simpleMovementMoves.length > 0) {
-      const total = captureMoves.length + simpleMovementMoves.length;
-      const r = rng() * total;
-      pool = r < captureMoves.length ? captureMoves : simpleMovementMoves;
-    } else if (captureMoves.length > 0) {
+    if (captureMoves.length > 0) {
       pool = captureMoves;
-    } else {
+    } else if (simpleMovementMoves.length > 0) {
       pool = simpleMovementMoves;
     }
   }

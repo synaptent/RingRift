@@ -15,6 +15,7 @@ import {
   BoardState,
   BoardType,
   GameState,
+  GameResult,
   Position,
   PlayerChoice,
   PlayerChoiceResponseFor,
@@ -110,6 +111,27 @@ const PHASE_COPY: Record<
       'Evaluate disconnected regions, collapsing captured territory and enforcing self-elimination.',
   },
 };
+
+function getGameOverBannerText(reason: GameResult['reason']): string {
+  switch (reason) {
+    case 'ring_elimination':
+      return 'Game over – victory by ring elimination.';
+    case 'territory_control':
+      return 'Game over – victory by territory control.';
+    case 'last_player_standing':
+      return 'Game over – last player standing.';
+    case 'timeout':
+      return 'Game over – victory on time.';
+    case 'resignation':
+      return 'Game over – victory by resignation.';
+    case 'abandonment':
+      return 'Game over – game abandoned.';
+    case 'draw':
+      return 'Game over – draw.';
+    default:
+      return 'Game over.';
+  }
+}
 
 /**
  * Get friendly display name for AI difficulty level with description
@@ -219,7 +241,12 @@ export default function GamePage() {
   // Choice/phase diagnostics
   const [eventLog, setEventLog] = useState<string[]>([]);
   const [showSystemEventsInLog, setShowSystemEventsInLog] = useState(true);
-  const [fatalGameError, setFatalGameError] = useState<{message: string; technical?: string} | null>(null);
+  const [fatalGameError, setFatalGameError] = useState<{
+    message: string;
+    technical?: string;
+  } | null>(null);
+  const [isVictoryModalDismissed, setIsVictoryModalDismissed] = useState(false);
+  const [isSandboxVictoryModalDismissed, setIsSandboxVictoryModalDismissed] = useState(false);
   // Use backend chat messages if available, otherwise local state (for sandbox/fallback)
   const [localChatMessages, setLocalChatMessages] = useState<{ sender: string; text: string }[]>(
     []
@@ -351,9 +378,9 @@ export default function GamePage() {
       if (data && data.data) {
         setFatalGameError({
           message: data.data.message || 'An error occurred during the game.',
-          technical: data.data.technical
+          technical: data.data.technical,
         });
-        
+
         // Log technical details in development
         if (process.env.NODE_ENV === 'development' && data.data.technical) {
           console.error('[Game Error]', data.data.technical);
@@ -364,11 +391,16 @@ export default function GamePage() {
     // Access socket through the game context
     // Note: This assumes the socket is exposed, or we use the error from context
     // For now, we'll rely on the error state from useGame context
-    
+
     return () => {
       // Cleanup if needed
     };
   }, [routeGameId]);
+
+  // Reset backend victory modal dismissal whenever the active game or victory state changes
+  useEffect(() => {
+    setIsVictoryModalDismissed(false);
+  }, [routeGameId, victoryState]);
 
   const handleSetupChange = (partial: Partial<LocalConfig>) => {
     setConfig((prev) => ({
@@ -628,15 +660,17 @@ export default function GamePage() {
       // human must then move that stack; the AI will respond only after
       // the movement step completes.
       if (stateBefore.currentPhase === 'ring_placement') {
-        const placed = engine.tryPlaceRings(pos, 1);
-        if (!placed) {
-          return;
-        }
+        void (async () => {
+          const placed = await engine.tryPlaceRings(pos, 1);
+          if (!placed) {
+            return;
+          }
 
-        setSelected(pos);
-        const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-        setValidTargets(targets);
-        setSandboxTurn((t) => t + 1);
+          setSelected(pos);
+          const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+          setValidTargets(targets);
+          setSandboxTurn((t) => t + 1);
+        })();
         return;
       }
 
@@ -724,35 +758,37 @@ export default function GamePage() {
       return;
     }
 
-    let placed = false;
+    void (async () => {
+      let placed = false;
 
-    if (!isOccupied) {
-      // Empty cell: treat as a request to place 2 rings here in a single
-      // placement action when possible.
-      const desiredCount = Math.min(2, maxPerPlacement);
-      placed = engine.tryPlaceRings(pos, desiredCount);
+      if (!isOccupied) {
+        // Empty cell: treat as a request to place 2 rings here in a single
+        // placement action when possible.
+        const desiredCount = Math.min(2, maxFromHand);
+        placed = await engine.tryPlaceRings(pos, desiredCount);
 
-      // If the desired multi-ring placement fails no-dead-placement checks,
-      // fall back to a single-ring placement.
-      if (!placed && desiredCount > 1) {
-        placed = engine.tryPlaceRings(pos, 1);
+        // If the desired multi-ring placement fails no-dead-placement checks,
+        // fall back to a single-ring placement.
+        if (!placed && desiredCount > 1) {
+          placed = await engine.tryPlaceRings(pos, 1);
+        }
+      } else {
+        // Existing stack: canonical rule is exactly 1 ring per placement.
+        placed = await engine.tryPlaceRings(pos, 1);
       }
-    } else {
-      // Existing stack: canonical rule is exactly 1 ring per placement.
-      placed = engine.tryPlaceRings(pos, 1);
-    }
 
-    if (!placed) {
-      return;
-    }
+      if (!placed) {
+        return;
+      }
 
-    // After a successful placement, we are now in the movement step for
-    // this player, and the placed/updated stack must move. Highlight its
-    // legal landing targets so the user can complete the turn.
-    setSelected(pos);
-    const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-    setValidTargets(targets);
-    setSandboxTurn((t) => t + 1);
+      // After a successful placement, we are now in the movement step for
+      // this player, and the placed/updated stack must move. Highlight its
+      // legal landing targets so the user can complete the turn.
+      setSelected(pos);
+      const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+      setValidTargets(targets);
+      setSandboxTurn((t) => t + 1);
+    })();
   };
 
   /**
@@ -799,15 +835,17 @@ export default function GamePage() {
       return;
     }
 
-    const placed = engine.tryPlaceRings(pos, parsed);
-    if (!placed) {
-      return;
-    }
+    void (async () => {
+      const placed = await engine.tryPlaceRings(pos, parsed);
+      if (!placed) {
+        return;
+      }
 
-    setSelected(pos);
-    const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-    setValidTargets(targets);
-    setSandboxTurn((t) => t + 1);
+      setSelected(pos);
+      const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+      setValidTargets(targets);
+      setSandboxTurn((t) => t + 1);
+    })();
   };
 
   /**
@@ -1347,6 +1385,11 @@ export default function GamePage() {
     const board = gameState.board;
     const boardType = gameState.boardType;
 
+    const gameOverBannerText =
+      victoryState && isVictoryModalDismissed && victoryState.reason
+        ? getGameOverBannerText(victoryState.reason)
+        : null;
+
     // Approximate must-move stack highlighting by inspecting backend-valid
     // movement/capture moves: if all such moves originate from the same
     // stack, we treat that stack as the must-move origin and highlight it
@@ -1377,7 +1420,13 @@ export default function GamePage() {
     return (
       <div className="container mx-auto px-4 py-8 space-y-4">
         {reconnectionBanner}
-        
+
+        {gameOverBannerText && (
+          <div className="bg-emerald-900/30 border border-emerald-500/60 text-emerald-100 px-4 py-2 rounded mb-2 text-sm">
+            {gameOverBannerText}
+          </div>
+        )}
+
         {/* Fatal game error banner */}
         {fatalGameError && (
           <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded">
@@ -1400,7 +1449,7 @@ export default function GamePage() {
             </div>
           </div>
         )}
-        
+
         <header className="flex items-center justify-between">
           <div>
             {renderGameHeader(gameState)}
@@ -1419,12 +1468,12 @@ export default function GamePage() {
 
         {/* Victory modal overlays the rest of the UI when the game is over. */}
         <VictoryModal
-          isOpen={!!victoryState}
+          isOpen={!!victoryState && !isVictoryModalDismissed}
           gameResult={victoryState}
           players={gameState.players}
           gameState={gameState}
           onClose={() => {
-            /* Optional: allow closing to view board */
+            setIsVictoryModalDismissed(true);
           }}
           onReturnToLobby={() => navigate('/lobby')}
           onRematch={() => {
@@ -1779,6 +1828,10 @@ export default function GamePage() {
 
   const sandboxBoardState: BoardState | null = sandboxGameState?.board ?? null;
   const sandboxVictoryResult = sandboxEngine ? sandboxEngine.getVictoryResult() : null;
+  const sandboxGameOverBannerText =
+    sandboxVictoryResult && isSandboxVictoryModalDismissed && sandboxVictoryResult.reason
+      ? getGameOverBannerText(sandboxVictoryResult.reason)
+      : null;
   const boardTypeValue = sandboxBoardState?.type ?? config.boardType;
   const boardPresetInfo = BOARD_PRESETS.find((preset) => preset.value === boardTypeValue);
   const boardDisplayLabel = boardPresetInfo?.label ?? boardTypeValue;
@@ -1827,34 +1880,6 @@ export default function GamePage() {
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-4">
-      <header className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.1fr)]">
-        <div className="p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-wide text-slate-400">Local Sandbox</p>
-              <h1 className="text-2xl font-bold text-white">Game – {boardDisplayLabel}</h1>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setIsConfigured(false);
-                setLocalSandbox(null);
-                sandboxEngineRef.current = null;
-                setSelected(undefined);
-                setValidTargets([]);
-                setBackendSandboxError(null);
-                setSandboxPendingChoice(null);
-                setSandboxStallWarning(null);
-                setSandboxLastProgressAt(null);
-              }}
-              className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-            >
-              Change Setup
-            </button>
-          </div>
-        </div>
-      </header>
-
       {sandboxStallWarning && (
         <div className="p-3 rounded-xl border border-amber-500/70 bg-amber-900/40 text-amber-100 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <span>{sandboxStallWarning}</span>
@@ -1877,15 +1902,21 @@ export default function GamePage() {
         </div>
       )}
 
+      {sandboxGameOverBannerText && (
+        <div className="p-3 rounded-xl border border-emerald-500/70 bg-emerald-900/40 text-emerald-100 text-xs">
+          {sandboxGameOverBannerText}
+        </div>
+      )}
+
       {/* Local sandbox victory modal, reusing the shared VictoryModal UI. */}
       {sandboxGameState && (
         <VictoryModal
-          isOpen={!!sandboxVictoryResult}
+          isOpen={!!sandboxVictoryResult && !isSandboxVictoryModalDismissed}
           gameResult={sandboxVictoryResult}
           players={sandboxGameState.players}
           gameState={sandboxGameState}
           onClose={() => {
-            /* Optional: allow closing to view board */
+            setIsSandboxVictoryModalDismissed(true);
           }}
           onReturnToLobby={() => {
             setIsConfigured(false);
@@ -1895,6 +1926,7 @@ export default function GamePage() {
             setValidTargets([]);
             setBackendSandboxError(null);
             setSandboxPendingChoice(null);
+            setIsSandboxVictoryModalDismissed(false);
           }}
           currentUserId={user?.id}
         />
@@ -1919,21 +1951,83 @@ export default function GamePage() {
       />
 
       <main className="flex flex-col md:flex-row md:space-x-8 space-y-4 md:space-y-0">
-        <section>
+        <section className="flex justify-center md:block">
           {sandboxBoardState && (
-            <BoardView
-              boardType={sandboxBoardState.type}
-              board={sandboxBoardState}
-              selectedPosition={selected}
-              validTargets={displayedValidTargets}
-              onCellClick={(pos) => handleSandboxCellClick(pos)}
-              onCellDoubleClick={(pos) => handleSandboxCellDoubleClick(pos)}
-              onCellContextMenu={(pos) => handleSandboxCellContextMenu(pos)}
-              showMovementGrid
-              showCoordinateLabels={
-                sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
-              }
-            />
+            <div className="inline-block space-y-3">
+              <div className="p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Local Sandbox</p>
+                    <h1 className="text-2xl font-bold text-white">Game – {boardDisplayLabel}</h1>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsConfigured(false);
+                      setLocalSandbox(null);
+                      sandboxEngineRef.current = null;
+                      setSelected(undefined);
+                      setValidTargets([]);
+                      setBackendSandboxError(null);
+                      setSandboxPendingChoice(null);
+                      setSandboxStallWarning(null);
+                      setSandboxLastProgressAt(null);
+                      setIsSandboxVictoryModalDismissed(false);
+                    }}
+                    className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
+                  >
+                    Change Setup
+                  </button>
+                </div>
+              </div>
+
+              <BoardView
+                boardType={sandboxBoardState.type}
+                board={sandboxBoardState}
+                selectedPosition={selected}
+                validTargets={displayedValidTargets}
+                onCellClick={(pos) => handleSandboxCellClick(pos)}
+                onCellDoubleClick={(pos) => handleSandboxCellDoubleClick(pos)}
+                onCellContextMenu={(pos) => handleSandboxCellContextMenu(pos)}
+                showMovementGrid
+                showCoordinateLabels={
+                  sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
+                }
+              />
+
+              {/* Sandbox game summary bar directly below the board */}
+              <section className="mt-1 p-3 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 text-xs text-slate-200">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
+                    {boardDisplaySubtitle}
+                  </span>
+                  <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
+                    Players: {config.numPlayers} ({humanSeatCount} human, {aiSeatCount} AI)
+                  </span>
+                  <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600 min-w-[10rem] inline-flex justify-center text-center">
+                    Phase: {sandboxPhaseDetails.label}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {sandboxPlayersList.map((player) => {
+                    const typeKey = player.type === 'ai' ? 'ai' : 'human';
+                    const meta = PLAYER_TYPE_META[typeKey as LocalPlayerType];
+                    const isCurrent = player.playerNumber === sandboxCurrentPlayerNumber;
+                    const nameLabel = player.username || `Player ${player.playerNumber}`;
+                    return (
+                      <span
+                        key={player.playerNumber}
+                        className={`px-3 py-1 rounded-full border transition ${
+                          isCurrent ? 'border-white text-white bg-white/15' : meta.chip
+                        }`}
+                      >
+                        P{player.playerNumber} • {nameLabel} ({meta.label})
+                      </span>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
           )}
         </section>
 
@@ -2045,39 +2139,6 @@ export default function GamePage() {
           </div>
         </aside>
       </main>
-
-      {/* Sandbox game summary bar below the board */}
-      <section className="mt-3 p-3 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 text-xs text-slate-200">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
-            {boardDisplaySubtitle}
-          </span>
-          <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
-            Players: {config.numPlayers} ({humanSeatCount} human, {aiSeatCount} AI)
-          </span>
-          <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
-            Phase: {sandboxPhaseDetails.label}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {sandboxPlayersList.map((player) => {
-            const typeKey = player.type === 'ai' ? 'ai' : 'human';
-            const meta = PLAYER_TYPE_META[typeKey as LocalPlayerType];
-            const isCurrent = player.playerNumber === sandboxCurrentPlayerNumber;
-            const nameLabel = player.username || `Player ${player.playerNumber}`;
-            return (
-              <span
-                key={player.playerNumber}
-                className={`px-3 py-1 rounded-full border transition ${
-                  isCurrent ? 'border-white text-white bg-white/15' : meta.chip
-                }`}
-              >
-                P{player.playerNumber} • {nameLabel} ({meta.label})
-              </span>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 }

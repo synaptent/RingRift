@@ -13,6 +13,7 @@ import {
   TimeControl,
   Position,
   positionToString,
+  BOARD_CONFIGS,
 } from '../../src/shared/types/game';
 import { createInitialGameState } from '../../src/shared/engine/initialState';
 import { computeProgressSnapshot } from '../../src/shared/engine/core';
@@ -140,13 +141,15 @@ describe('Shared engine mutators – basic invariants and S-invariant', () => {
       timeControl
     );
 
-    // Seed a simple exact-length line for player 1 with markers only.
-    const linePositions: Position[] = [
-      { x: 0, y: 0 },
-      { x: 1, y: 0 },
-      { x: 2, y: 0 },
-      { x: 3, y: 0 },
-    ];
+    // Seed a simple exact-length line for player 1 with markers only, using the
+    // canonical minimum line length for this board type. For square8 this is 3,
+    // so longer lines are treated as overlength and must be handled via
+    // CHOOSE_LINE_REWARD instead of PROCESS_LINE.
+    const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+    const linePositions: Position[] = [];
+    for (let i = 0; i < requiredLength; i++) {
+      linePositions.push({ x: i, y: 0 });
+    }
 
     for (const pos of linePositions) {
       const key = positionToString(pos);
@@ -193,6 +196,10 @@ describe('Shared engine mutators – basic invariants and S-invariant', () => {
       timeControl
     );
 
+    // Overlength line (length > requiredLength) for player 1. For square8 the
+    // minimum is 3, so a length-5 line is overlength and must be resolved via
+    // CHOOSE_LINE_REWARD. MINIMUM_COLLAPSE should select exactly the minimum
+    // number of markers from within the line.
     const linePositions: Position[] = [
       { x: 0, y: 0 },
       { x: 1, y: 0 },
@@ -211,7 +218,8 @@ describe('Shared engine mutators – basic invariants and S-invariant', () => {
 
     const beforeS = snapshotS(state);
 
-    const minSubset = linePositions.slice(0, 4);
+    const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+    const minSubset = linePositions.slice(0, requiredLength);
     const action: ChooseLineRewardAction = {
       type: 'CHOOSE_LINE_REWARD',
       playerId: 1,

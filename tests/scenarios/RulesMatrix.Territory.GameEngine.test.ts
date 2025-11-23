@@ -5,13 +5,10 @@ import {
   Player,
   Position,
   TimeControl,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 import { pos, addStack } from '../utils/fixtures';
-import {
-  territoryRuleScenarios,
-  TerritoryRuleScenario
-} from './rulesMatrix';
+import { territoryRuleScenarios, TerritoryRuleScenario } from './rulesMatrix';
 
 /**
  * RulesMatrix → GameEngine territory scenarios
@@ -39,7 +36,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p2',
@@ -50,7 +47,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p3',
@@ -61,8 +58,8 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
   }
 
@@ -115,7 +112,7 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
       const regionTerritory = {
         spaces: interiorCoords,
         controllingPlayer: region.controllingPlayer,
-        isDisconnected: true
+        isDisconnected: true,
       };
 
       const findDisconnectedRegionsSpy = jest
@@ -126,25 +123,32 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
       const initialCollapsedCount = board.collapsedSpaces.size;
       const initialTotalEliminated = gameState.totalRingsEliminated;
       const initialMovingEliminated =
-        gameState.players.find((p) => p.playerNumber === scenario.movingPlayer)?.eliminatedRings ?? 0;
+        gameState.players.find((p) => p.playerNumber === scenario.movingPlayer)?.eliminatedRings ??
+        0;
 
       await (engineAny as any).processDisconnectedRegions();
 
       expect(findDisconnectedRegionsSpy).toHaveBeenCalled();
 
+      // Re-read the final GameState/board after processing so assertions
+      // observe the updated board geometry rather than the pre-call alias.
+      const finalState: GameState = engineAny.gameState as GameState;
+      const finalBoard = finalState.board;
+
       if (!region.movingPlayerHasOutsideStack) {
         // Q23 negative case: because the moving player has no stacks outside
         // the region, it MUST NOT be processed.
-        expect(board.collapsedSpaces.size).toBe(initialCollapsedCount);
+        expect(finalBoard.collapsedSpaces.size).toBe(initialCollapsedCount);
 
-        const stacksInRegion = Array.from(board.stacks.keys()).filter((key) => {
+        const stacksInRegion = Array.from(finalBoard.stacks.keys()).filter((key) => {
           return interiorCoords.some((p) => positionToString(p) === key);
         });
         expect(stacksInRegion.length).toBe(interiorCoords.length);
 
-        const finalTotalEliminated = gameState.totalRingsEliminated;
+        const finalTotalEliminated = finalState.totalRingsEliminated;
         const finalMovingEliminated =
-          gameState.players.find((p) => p.playerNumber === scenario.movingPlayer)?.eliminatedRings ?? 0;
+          finalState.players.find((p) => p.playerNumber === scenario.movingPlayer)
+            ?.eliminatedRings ?? 0;
         expect(finalTotalEliminated).toBe(initialTotalEliminated);
         expect(finalMovingEliminated).toBe(initialMovingEliminated);
       } else {
@@ -152,14 +156,15 @@ describe('RulesMatrix → GameEngine territory scenarios (Section 12; FAQ Q23)',
         // be processed and the moving player must pay the self-elimination cost.
         for (const p of interiorCoords) {
           const key = positionToString(p);
-          expect(board.collapsedSpaces.get(key)).toBe(region.controllingPlayer);
-          expect(board.stacks.has(key)).toBe(false);
+          expect(finalBoard.collapsedSpaces.get(key)).toBe(region.controllingPlayer);
+          expect(finalBoard.stacks.has(key)).toBe(false);
         }
 
-        const finalCollapsedCount = board.collapsedSpaces.size;
-        const finalTotalEliminated = gameState.totalRingsEliminated;
+        const finalCollapsedCount = finalBoard.collapsedSpaces.size;
+        const finalTotalEliminated = finalState.totalRingsEliminated;
         const finalMovingEliminated =
-          gameState.players.find((p) => p.playerNumber === scenario.movingPlayer)?.eliminatedRings ?? 0;
+          finalState.players.find((p) => p.playerNumber === scenario.movingPlayer)
+            ?.eliminatedRings ?? 0;
 
         expect(finalCollapsedCount).toBeGreaterThan(initialCollapsedCount);
         expect(finalTotalEliminated).toBeGreaterThan(initialTotalEliminated);

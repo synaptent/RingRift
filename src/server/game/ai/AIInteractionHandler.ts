@@ -123,47 +123,52 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
 
     // First, attempt to delegate to the Python AI service via the
     // global AI engine when an AI configuration exists for this
-    // player. Any errors (including missing config or service
-    // failures) are swallowed and we fall back to the local
-    // heuristic below.
-    try {
-      const selected = await globalAIEngine.getLineRewardChoice(
-        choice.playerNumber,
-        null,
-        choice.options
-      );
+    // player and the AI is running in `service` mode. Any errors
+    // (including missing config or service failures) are swallowed
+    // and we fall back to the local heuristic below.
+    const config = globalAIEngine.getAIConfig(choice.playerNumber);
+    const mode = config?.mode ?? 'service';
 
-      // Defensive: ensure the returned option is one of the original
-      // options before accepting it.
-      if (choice.options.includes(selected)) {
-        return selected;
+    if (mode === 'service') {
+      try {
+        const selected = await globalAIEngine.getLineRewardChoice(
+          choice.playerNumber,
+          null,
+          choice.options
+        );
+
+        // Defensive: ensure the returned option is one of the original
+        // options before accepting it.
+        if (choice.options.includes(selected)) {
+          return selected;
+        }
+
+        logger.warn(
+          'AI service returned invalid option for line_reward_option; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            optionsCount: choice.options.length,
+            invalidOption: selected,
+          }
+        );
+      } catch (error) {
+        // Service is unavailable or misconfigured for this player. Log a
+        // structured warning and fall back to the local heuristic; this is
+        // treated as a degraded AI mode for non-move decisions.
+        logger.warn(
+          'AI service unavailable for line_reward_option; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
       }
-
-      logger.warn(
-        'AI service returned invalid option for line_reward_option; falling back to local heuristic',
-        {
-          gameId: choice.gameId,
-          playerNumber: choice.playerNumber,
-          choiceId: choice.id,
-          choiceType: choice.type,
-          optionsCount: choice.options.length,
-          invalidOption: selected,
-        }
-      );
-    } catch (error) {
-      // Service is unavailable or misconfigured for this player. Log a
-      // structured warning and fall back to the local heuristic; this is
-      // treated as a degraded AI mode for non-move decisions.
-      logger.warn(
-        'AI service unavailable for line_reward_option; falling back to local heuristic',
-        {
-          gameId: choice.gameId,
-          playerNumber: choice.playerNumber,
-          choiceId: choice.id,
-          choiceType: choice.type,
-          error: error instanceof Error ? error.message : String(error),
-        }
-      );
     }
 
     const hasOption2 = choice.options.includes('option_2_min_collapse_no_elimination');
@@ -195,43 +200,51 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
 
     // First, attempt to delegate to the Python AI service via the
     // global AI engine when an AI configuration exists for this
-    // player. Any errors (including missing config or service
-    // failures) are swallowed and we fall back to the local
-    // heuristic below.
-    try {
-      const selected = await globalAIEngine.getRingEliminationChoice(
-        choice.playerNumber,
-        null,
-        choice.options
-      );
+    // player and the AI is running in `service` mode. Any errors
+    // (including missing config or service failures) are swallowed
+    // and we fall back to the local heuristic below.
+    const config = globalAIEngine.getAIConfig(choice.playerNumber);
+    const mode = config?.mode ?? 'service';
 
-      // Defensive: ensure the returned option is one of the original
-      // options before accepting it.
-      if (choice.options.includes(selected)) {
-        return selected;
-      }
+    if (mode === 'service') {
+      try {
+        const selected = await globalAIEngine.getRingEliminationChoice(
+          choice.playerNumber,
+          null,
+          choice.options
+        );
 
-      logger.warn(
-        'AI service returned invalid option for ring_elimination; falling back to local heuristic',
-        {
-          gameId: choice.gameId,
-          playerNumber: choice.playerNumber,
-          choiceId: choice.id,
-          choiceType: choice.type,
-          optionsCount: choice.options.length,
-          invalidOption: selected,
+        // Defensive: ensure the returned option is one of the original
+        // options before accepting it.
+        if (choice.options.includes(selected)) {
+          return selected;
         }
-      );
-    } catch (error) {
-      // Service is unavailable or misconfigured for this player. Log a
-      // structured warning and fall back to the local heuristic.
-      logger.warn('AI service unavailable for ring_elimination; falling back to local heuristic', {
-        gameId: choice.gameId,
-        playerNumber: choice.playerNumber,
-        choiceId: choice.id,
-        choiceType: choice.type,
-        error: error instanceof Error ? error.message : String(error),
-      });
+
+        logger.warn(
+          'AI service returned invalid option for ring_elimination; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            optionsCount: choice.options.length,
+            invalidOption: selected,
+          }
+        );
+      } catch (error) {
+        // Service is unavailable or misconfigured for this player. Log a
+        // structured warning and fall back to the local heuristic.
+        logger.warn(
+          'AI service unavailable for ring_elimination; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
     }
 
     let best = choice.options[0];
@@ -270,43 +283,48 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
 
     // First, attempt to delegate to the Python AI service via the
     // global AI engine when an AI configuration exists for this
-    // player. Any errors (including missing config or service
-    // failures) are swallowed and we fall back to the local
-    // heuristic below.
-    try {
-      const selected = await globalAIEngine.getRegionOrderChoice(
-        choice.playerNumber,
-        null,
-        choice.options
-      );
+    // player and the AI is running in `service` mode. Any errors
+    // (including missing config or service failures) are swallowed
+    // and we fall back to the local heuristic below.
+    const config = globalAIEngine.getAIConfig(choice.playerNumber);
+    const mode = config?.mode ?? 'service';
 
-      // Defensive: ensure the returned option is one of the original
-      // options before accepting it.
-      if (choice.options.includes(selected)) {
-        return selected;
-      }
+    if (mode === 'service') {
+      try {
+        const selected = await globalAIEngine.getRegionOrderChoice(
+          choice.playerNumber,
+          null,
+          choice.options
+        );
 
-      logger.warn(
-        'AI service returned invalid option for region_order; falling back to local heuristic',
-        {
+        // Defensive: ensure the returned option is one of the original
+        // options before accepting it.
+        if (choice.options.includes(selected)) {
+          return selected;
+        }
+
+        logger.warn(
+          'AI service returned invalid option for region_order; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            optionsCount: choice.options.length,
+            invalidOption: selected,
+          }
+        );
+      } catch (error) {
+        // Service is unavailable or misconfigured for this player. Log a
+        // structured warning and fall back to the local heuristic.
+        logger.warn('AI service unavailable for region_order; falling back to local heuristic', {
           gameId: choice.gameId,
           playerNumber: choice.playerNumber,
           choiceId: choice.id,
           choiceType: choice.type,
-          optionsCount: choice.options.length,
-          invalidOption: selected,
-        }
-      );
-    } catch (error) {
-      // Service is unavailable or misconfigured for this player. Log a
-      // structured warning and fall back to the local heuristic.
-      logger.warn('AI service unavailable for region_order; falling back to local heuristic', {
-        gameId: choice.gameId,
-        playerNumber: choice.playerNumber,
-        choiceId: choice.id,
-        choiceType: choice.type,
-        error: error instanceof Error ? error.message : String(error),
-      });
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     let best = choice.options[0];

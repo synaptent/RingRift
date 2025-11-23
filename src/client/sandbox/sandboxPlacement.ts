@@ -4,13 +4,17 @@ import {
   BOARD_CONFIGS,
   Position,
   RingStack,
-  positionToString
+  positionToString,
 } from '../../shared/types/game';
 import {
   hasAnyLegalMoveOrCaptureFromOnBoard,
   MovementBoardView,
-  calculateCapHeight
+  calculateCapHeight,
 } from '../../shared/engine/core';
+import {
+  validatePlacementOnBoard,
+  PlacementContext,
+} from '../../shared/engine/validators/PlacementValidator';
 
 export interface PlacementBoardView {
   isValidPosition(pos: Position): boolean;
@@ -105,36 +109,86 @@ export function hasAnyLegalMoveOrCaptureFrom(
 }
 
 /**
- * Enumerate legal ring placement positions for the given player, enforcing
- * the same no-dead-placement rule used for human placement clicks.
+ * Enumerate legal ring placement positions for the given player.
+ *
+ * When a {@link PlacementContext} is provided, this function delegates
+ * legality checks (including board invariants, per-player capacity, and
+ * no-dead-placement) to the shared {@link validatePlacementOnBoard}
+ * helper so sandbox, backend, and shared GameEngine all agree on which
+ * destinations admit at least one legal placement count.
+ *
+ * When no context is provided, it falls back to the legacy behaviour:
+ * pure board-geometry + no-dead-placement without capacity checks. This
+ * legacy path is retained for backward-compatible tests and diagnostic
+ * tools that operate on BoardState alone.
  */
 export function enumerateLegalRingPlacements(
   boardType: BoardType,
   board: BoardState,
   playerNumber: number,
-  view: PlacementBoardView
+  view: PlacementBoardView,
+  ctx?: PlacementContext
 ): Position[] {
   const config = BOARD_CONFIGS[boardType];
   const results: Position[] = [];
 
+  // === Canonical path: use shared validator when context is supplied ===
+  if (ctx) {
+    const baseCtx: PlacementContext = {
+      ...ctx,
+      boardType,
+      player: playerNumber,
+    };
+
+    const testPosition = (pos: Position) => {
+      if (!view.isValidPosition(pos)) return;
+      const validation = validatePlacementOnBoard(board, pos, 1, baseCtx);
+      if (validation.valid) {
+        results.push(pos);
+      }
+    };
+
+    if (boardType === 'hexagonal') {
+      const radius = config.size - 1;
+      for (let x = -radius; x <= radius; x++) {
+        for (let y = -radius; y <= radius; y++) {
+          const z = -x - y;
+          const pos: Position = { x, y, z };
+          testPosition(pos);
+        }
+      }
+    } else {
+      // square boards: 0..size-1 grid
+      for (let x = 0; x < config.size; x++) {
+        for (let y = 0; y < config.size; y++) {
+          const pos: Position = { x, y };
+          testPosition(pos);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  // === Legacy path: board-geometry + no-dead-placement only ===
   if (boardType === 'hexagonal') {
     const radius = config.size - 1;
     for (let x = -radius; x <= radius; x++) {
       for (let y = -radius; y <= radius; y++) {
         const z = -x - y;
         const pos: Position = { x, y, z };
- 
+
         if (!view.isValidPosition(pos)) continue;
- 
+
         const key = positionToString(pos);
- 
+
         // Do not allow placement on collapsed territory or on markers
         // (stacks+markers must never coexist).
         if (board.collapsedSpaces.has(key)) continue;
         if (board.markers.has(key)) continue;
- 
+
         const hypothetical = createHypotheticalBoardWithPlacement(board, pos, playerNumber);
- 
+
         if (hasAnyLegalMoveOrCaptureFrom(boardType, hypothetical, pos, playerNumber, view)) {
           results.push(pos);
         }
@@ -145,18 +199,18 @@ export function enumerateLegalRingPlacements(
     for (let x = 0; x < config.size; x++) {
       for (let y = 0; y < config.size; y++) {
         const pos: Position = { x, y };
- 
+
         if (!view.isValidPosition(pos)) continue;
- 
+
         const key = positionToString(pos);
- 
+
         // Do not allow placement on collapsed territory or on markers to
         // match backend RuleEngine.validateRingPlacement semantics.
         if (board.collapsedSpaces.has(key)) continue;
         if (board.markers.has(key)) continue;
- 
+
         const hypothetical = createHypotheticalBoardWithPlacement(board, pos, playerNumber);
- 
+
         if (hasAnyLegalMoveOrCaptureFrom(boardType, hypothetical, pos, playerNumber, view)) {
           results.push(pos);
         }

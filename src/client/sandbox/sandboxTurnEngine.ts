@@ -7,17 +7,21 @@ import {
   positionToString,
 } from '../../shared/types/game';
 import { BoardState, RingStack } from '../../shared/types/game';
+import {
+  advanceTurnAndPhase,
+  PerTurnState as SharedPerTurnState,
+  TurnLogicDelegates,
+} from '../../shared/engine/turnLogic';
 
 /**
  * Internal per-turn state for the sandbox engine. Mirrors
  * ClientSandboxEngine._hasPlacedThisTurn and
  * ClientSandboxEngine._mustMoveFromStackKey but is kept here so turn
- * logic can be exercised in isolation.
+ * logic can be exercised in isolation. This is a thin alias of the
+ * shared PerTurnState used by src/shared/engine/turnLogic so sandbox,
+ * backend, and shared engines all share the same per-turn shape.
  */
-export interface SandboxTurnState {
-  hasPlacedThisTurn: boolean;
-  mustMoveFromStackKey?: string | undefined;
-}
+export type SandboxTurnState = SharedPerTurnState;
 
 /**
  * Hooks that the sandbox turn engine uses to delegate concrete board
@@ -61,6 +65,92 @@ export interface SandboxTurnHooks {
    * return an updated state if the game has ended.
    */
   checkAndApplyVictory: (state: GameState) => GameState;
+}
+
+/**
+ * Shared turn/phase progression helper for sandbox mode. This delegates
+ * to the shared advanceTurnAndPhase helper so that backend, shared
+ * engine, and sandbox all rotate turns and handle forced elimination
+ * using the same canonical state machine.
+ *
+ * Callers are expected to invoke this after completing all automatic
+ * post-move consequences for the current player (lines, territory,
+ * victory checks) and, when modelling a full turn boundary, with
+ * state.currentPhase set conceptually to 'territory_processing'.
+ */
+export function advanceTurnAndPhaseForCurrentPlayerSandbox(
+  state: GameState,
+  turnState: SandboxTurnState,
+  hooks: SandboxTurnHooks
+): { state: GameState; turnState: SandboxTurnState } {
+  const hasAnyMovementForPlayer = (
+    s: GameState,
+    playerNumber: number,
+    sharedTurn: SharedPerTurnState
+  ): boolean => {
+    const board = s.board;
+    const stacks = hooks.getPlayerStacks(s, playerNumber, board);
+    if (stacks.length === 0) {
+      return false;
+    }
+
+    const mustKey = sharedTurn.mustMoveFromStackKey;
+    const isMovementPhase = s.currentPhase === 'movement';
+
+    if (mustKey && isMovementPhase) {
+      const mustStack = stacks.find((stack) => positionToString(stack.position) === mustKey);
+      if (mustStack) {
+        return hooks.hasAnyLegalMoveOrCaptureFrom(s, mustStack.position, playerNumber, board);
+      }
+    }
+
+    return stacks.some((stack) =>
+      hooks.hasAnyLegalMoveOrCaptureFrom(s, stack.position, playerNumber, board)
+    );
+  };
+
+  const delegates: TurnLogicDelegates = {
+    getPlayerStacks: (s, playerNumber) => hooks.getPlayerStacks(s, playerNumber, s.board),
+    hasAnyPlacement: (s, playerNumber) => {
+      const player = s.players.find((p) => p.playerNumber === playerNumber);
+      if (!player || player.ringsInHand <= 0) {
+        return false;
+      }
+
+      const boardConfig = BOARD_CONFIGS[s.boardType];
+      const stacks = hooks.getPlayerStacks(s, playerNumber, s.board);
+      const ringsOnBoard = stacks.reduce((sum, stack) => sum + stack.rings.length, 0);
+      const perPlayerCap = boardConfig.ringsPerPlayer;
+      const remainingByCap = perPlayerCap - ringsOnBoard;
+      const atOrAboveCap = remainingByCap <= 0;
+      if (atOrAboveCap) {
+        return false;
+      }
+
+      const placements = hooks.enumerateLegalRingPlacements(s, playerNumber);
+      return placements.length > 0;
+    },
+    hasAnyMovement: (s, playerNumber, sharedTurn) =>
+      hasAnyMovementForPlayer(s, playerNumber, sharedTurn as SharedPerTurnState),
+    hasAnyCapture: (s, playerNumber, sharedTurn) =>
+      hasAnyMovementForPlayer(s, playerNumber, sharedTurn as SharedPerTurnState),
+    applyForcedElimination: (s, playerNumber) => {
+      const afterElimination = hooks.forceEliminateCap(s, playerNumber);
+      return hooks.checkAndApplyVictory(afterElimination);
+    },
+    getNextPlayerNumber: (s, current) => getNextPlayerNumberSandbox(s, current),
+  };
+
+  const { nextState, nextTurn } = advanceTurnAndPhase(
+    state,
+    turnState as SharedPerTurnState,
+    delegates
+  );
+
+  return {
+    state: nextState,
+    turnState: nextTurn as SandboxTurnState,
+  };
 }
 
 /**

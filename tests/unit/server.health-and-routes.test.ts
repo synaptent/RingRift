@@ -2,6 +2,8 @@ import express from 'express';
 import request from 'supertest';
 import client from 'prom-client';
 import setupRoutes from '../../src/server/routes';
+import { requestContext } from '../../src/server/middleware/requestContext';
+import { logger, httpLogger } from '../../src/server/utils/logger';
 import '../../src/server/utils/rulesParityMetrics';
 
 /**
@@ -18,6 +20,10 @@ import '../../src/server/utils/rulesParityMetrics';
 function createTestApp() {
   const app = express();
   app.use(express.json());
+  // Mirror the main server pipeline by attaching per-request context so that
+  // downstream logging helpers (httpLogger / withRequestContext) can include
+  // a correlation id.
+  app.use(requestContext as any);
 
   // Health check endpoint (lightweight mirror of src/server/index.ts)
   app.get('/health', (_req, res) => {
@@ -91,5 +97,32 @@ describe('Server health and API info routes', () => {
     expect(body).toContain('ai_fallback_total');
     expect(body).toContain('game_move_latency_ms');
     expect(body).toContain('websocket_connections_current');
+  });
+
+  it('requestContext + httpLogger attach requestId to log metadata', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use(requestContext as any);
+
+    app.get('/test-log', (req, res) => {
+      httpLogger.info(req, 'test_request_log');
+      res.json({ ok: true });
+    });
+
+    const infoSpy = jest.spyOn(logger, 'info');
+
+    const REQUEST_ID = 'test-request-id-123';
+    await request(app).get('/test-log').set('X-Request-Id', REQUEST_ID).expect(200);
+
+    expect(infoSpy).toHaveBeenCalled();
+
+    const lastCall = infoSpy.mock.calls[infoSpy.mock.calls.length - 1] as any[];
+    // Winston logger.info may be invoked as (infoObject) or (message, meta)
+    const metaOrInfo = lastCall[lastCall.length - 1] as any;
+
+    expect(metaOrInfo).toBeDefined();
+    expect(metaOrInfo.requestId).toBe(REQUEST_ID);
+
+    infoSpy.mockRestore();
   });
 });

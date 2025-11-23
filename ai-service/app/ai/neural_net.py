@@ -16,12 +16,51 @@ from ..models import (
     BoardType,
     Position,
     BoardState,
+    MoveType,
 )
 from ..rules.geometry import BoardGeometry
 
 
 INVALID_MOVE_INDEX = -1
 MAX_N = 19  # Canonical maximum side length for policy encoding (19x19 grid)
+
+# Hex-specific canonical geometry and policy layout constants.
+#
+# The canonical competitive hex board has radius N = 10, which yields
+# 3N^2 + 3N + 1 = 331 cells. We embed this hex into a fixed 21×21
+# bounding box (2N + 1 on each axis) using _to_canonical_xy /
+# _from_canonical_xy, and define a dedicated hex action space of size
+# P_HEX = 54_244 as documented in AI_ARCHITECTURE.md.
+HEX_BOARD_SIZE = 21
+HEX_MAX_DIST = HEX_BOARD_SIZE - 1  # 20 distance buckets (1..20)
+
+# Canonical axial directions in the 2D embedding.
+HEX_DIRS = [
+    (1, 0),   # +q
+    (0, 1),   # +r
+    (-1, 1),  # -q + r
+    (-1, 0),  # -q
+    (0, -1),  # -r
+    (1, -1),  # +q - r
+]
+NUM_HEX_DIRS = len(HEX_DIRS)
+
+# Layout spans for the hex policy head (see AI_ARCHITECTURE.md):
+#
+# Placements: 21 × 21 × 3 = 1_323
+# Movement/capture: 21 × 21 × 6 × 20 = 52_920
+# Special: 1 (skip_placement)
+# Total: P_HEX = 54_244
+HEX_PLACEMENT_SPAN = HEX_BOARD_SIZE * HEX_BOARD_SIZE * 3
+HEX_MOVEMENT_BASE = HEX_PLACEMENT_SPAN
+HEX_MOVEMENT_SPAN = (
+    HEX_BOARD_SIZE
+    * HEX_BOARD_SIZE
+    * NUM_HEX_DIRS
+    * HEX_MAX_DIST
+)
+HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + HEX_MOVEMENT_SPAN
+P_HEX = HEX_SPECIAL_BASE + 1
 
 
 def _infer_board_size(board: Union[BoardState, GameState]) -> int:
@@ -1117,3 +1156,364 @@ class NeuralNetAI(BaseAI):
         return features, globals
 
     # _evaluate_move_with_net is deprecated
+
+
+class ActionEncoderHex:
+    """Hex-only action encoder for the canonical N=10 board.
+
+    The concrete layout matches the design in AI_ARCHITECTURE.md:
+
+      * Spatial frame: 21×21 canonical hex bounding box.
+      * Placements (0 .. HEX_PLACEMENT_SPAN-1):
+          index = (cy * 21 + cx) * 3 + (count - 1)
+        where count ∈ {1,2,3} is the number of rings placed.
+
+      * Movement / capture (HEX_MOVEMENT_BASE .. HEX_SPECIAL_BASE-1):
+          index = HEX_MOVEMENT_BASE
+                  + from_idx * (6 * 20)
+                  + dir_idx * 20
+                  + (dist - 1)
+        where from_idx = from_cy * 21 + from_cx, dir_idx ∈ [0,6),
+        dist ∈ [1,20]. This shared layout is used for MOVE_STACK,
+        OVERTAKING_CAPTURE, and CONTINUE_CAPTURE_SEGMENT.
+
+      * Special (HEX_SPECIAL_BASE):
+          SKIP_PLACEMENT sentinel.
+
+    Any decoded index that maps to a canonical cell outside the true hex
+    (331-cell) region is treated as invalid and returns None.
+    """
+
+    def __init__(self, board_size: int = HEX_BOARD_SIZE, policy_size: int = 0) -> None:
+        # Spatial dimension of the hex bounding box (2N+1 for side N).
+        self.board_size = board_size
+        # Hex-specific action space dimension.
+        self.policy_size = policy_size or P_HEX
+
+    def _encode_canonical_xy(self, board: BoardState, pos: Position) -> Optional[tuple[int, int]]:
+        """Return (cx, cy) in [0, 21)×[0, 21) or None if off-grid."""
+        cx, cy = _to_canonical_xy(board, pos)
+        if not (0 <= cx < HEX_BOARD_SIZE and 0 <= cy < HEX_BOARD_SIZE):
+            return None
+        return cx, cy
+
+    def encode_move(self, move: Move, board: BoardState) -> int:
+        """Map a hex move into a [0, policy_size) index.
+
+        This encoder is only valid for BoardType.HEXAGONAL boards of the
+        canonical radius (size == 11). For any non-hex geometry or
+        geometries that do not match the canonical frame, the move is
+        treated as unrepresentable and INVALID_MOVE_INDEX is returned.
+        """
+        if board.type != BoardType.HEXAGONAL:
+            return INVALID_MOVE_INDEX
+
+        # Defensive guard: only support the canonical N=10 hex for now.
+        if _infer_board_size(board) != HEX_BOARD_SIZE:
+            return INVALID_MOVE_INDEX
+
+        # --- Placements ---
+        if move.type == MoveType.PLACE_RING:
+            canon = self._encode_canonical_xy(board, move.to)
+            if canon is None:
+                return INVALID_MOVE_INDEX
+            cx, cy = canon
+
+            pos_idx = cy * HEX_BOARD_SIZE + cx
+            count = move.placement_count or 1
+            if count < 1 or count > 3:
+                return INVALID_MOVE_INDEX
+
+            return pos_idx * 3 + (count - 1)
+
+        # --- Movement / capture ---
+        if move.type in (
+            MoveType.MOVE_STACK,
+            MoveType.OVERTAKING_CAPTURE,
+            MoveType.CONTINUE_CAPTURE_SEGMENT,
+        ):
+            if move.from_pos is None:
+                return INVALID_MOVE_INDEX
+
+            from_canon = self._encode_canonical_xy(board, move.from_pos)
+            to_canon = self._encode_canonical_xy(board, move.to)
+            if from_canon is None or to_canon is None:
+                return INVALID_MOVE_INDEX
+
+            from_cx, from_cy = from_canon
+            to_cx, to_cy = to_canon
+
+            dx = to_cx - from_cx
+            dy = to_cy - from_cy
+            dist = max(abs(dx), abs(dy))
+            if dist == 0 or dist > HEX_MAX_DIST:
+                return INVALID_MOVE_INDEX
+
+            dir_x = dx // dist
+            dir_y = dy // dist
+            try:
+                dir_idx = HEX_DIRS.index((dir_x, dir_y))
+            except ValueError:
+                # Direction not representable in our 6-direction scheme.
+                return INVALID_MOVE_INDEX
+
+            from_idx = from_cy * HEX_BOARD_SIZE + from_cx
+            return (
+                HEX_MOVEMENT_BASE
+                + from_idx * (NUM_HEX_DIRS * HEX_MAX_DIST)
+                + dir_idx * HEX_MAX_DIST
+                + (dist - 1)
+            )
+
+        # --- Special ---
+        if move.type == MoveType.SKIP_PLACEMENT:
+            return HEX_SPECIAL_BASE
+
+        return INVALID_MOVE_INDEX
+
+    def decode_move(
+        self,
+        index: int,
+        game_state: GameState,
+    ) -> Optional[Move]:
+        """Inverse of encode_move for hex boards.
+
+        Returns a Move instance for valid indices whose endpoints lie on the
+        true hex board, or None if the index is out of range or maps off
+        the playable hex.
+        """
+        board = game_state.board
+
+        if board.type != BoardType.HEXAGONAL:
+            return None
+        if _infer_board_size(board) != HEX_BOARD_SIZE:
+            return None
+        if index < 0 or index >= self.policy_size:
+            return None
+
+        # --- Placements ---
+        if index < HEX_PLACEMENT_SPAN:
+            count_idx = index % 3
+            pos_idx = index // 3
+            cy = pos_idx // HEX_BOARD_SIZE
+            cx = pos_idx % HEX_BOARD_SIZE
+
+            pos = _from_canonical_xy(board, cx, cy)
+            if pos is None or not BoardGeometry.is_within_bounds(
+                pos, board.type, board.size
+            ):
+                return None
+
+            to_payload: dict[str, int] = {"x": pos.x, "y": pos.y}
+            if pos.z is not None:
+                to_payload["z"] = pos.z
+
+            move_data = {
+                "id": "decoded",
+                "type": MoveType.PLACE_RING,
+                "player": game_state.current_player,
+                "to": to_payload,
+                "placementCount": count_idx + 1,
+                "timestamp": datetime.now(),
+                "thinkTime": 0,
+                "moveNumber": 0,
+            }
+            return Move(**move_data)
+
+        # --- Movement / capture ---
+        if index < HEX_SPECIAL_BASE:
+            offset = index - HEX_MOVEMENT_BASE
+
+            dist_idx = offset % HEX_MAX_DIST
+            dist = dist_idx + 1
+            offset //= HEX_MAX_DIST
+
+            dir_idx = offset % NUM_HEX_DIRS
+            offset //= NUM_HEX_DIRS
+
+            from_idx = offset
+            from_cy = from_idx // HEX_BOARD_SIZE
+            from_cx = from_idx % HEX_BOARD_SIZE
+
+            from_pos = _from_canonical_xy(board, from_cx, from_cy)
+            if from_pos is None or not BoardGeometry.is_within_bounds(
+                from_pos, board.type, board.size
+            ):
+                return None
+
+            dx, dy = HEX_DIRS[dir_idx]
+            to_cx = from_cx + dx * dist
+            to_cy = from_cy + dy * dist
+
+            to_pos = _from_canonical_xy(board, to_cx, to_cy)
+            if to_pos is None or not BoardGeometry.is_within_bounds(
+                to_pos, board.type, board.size
+            ):
+                return None
+
+            from_payload: dict[str, int] = {"x": from_pos.x, "y": from_pos.y}
+            if from_pos.z is not None:
+                from_payload["z"] = from_pos.z
+
+            to_payload: dict[str, int] = {"x": to_pos.x, "y": to_pos.y}
+            if to_pos.z is not None:
+                to_payload["z"] = to_pos.z
+
+            move_data = {
+                "id": "decoded",
+                "type": MoveType.MOVE_STACK,
+                "player": game_state.current_player,
+                "from": from_payload,
+                "to": to_payload,
+                "timestamp": datetime.now(),
+                "thinkTime": 0,
+                "moveNumber": 0,
+            }
+            return Move(**move_data)
+
+        # --- Special ---
+        if index == HEX_SPECIAL_BASE:
+            move_data = {
+                "id": "decoded",
+                "type": MoveType.SKIP_PLACEMENT,
+                "player": game_state.current_player,
+                "to": {"x": 0, "y": 0},
+                "timestamp": datetime.now(),
+                "thinkTime": 0,
+                "moveNumber": 0,
+            }
+            return Move(**move_data)
+
+        return None
+
+
+class HexNeuralNet(nn.Module):
+    """Hex-specific CNN for the canonical N=10 hex board.
+
+    This model mirrors the ResNet-style structure of :class:`RingRiftCNN`
+    but operates on a fixed [C_hex, 21, 21] spatial frame and exposes a
+    hex-only policy head of size :data:`P_HEX`.
+
+    Design (see AI_ARCHITECTURE.md, HexNeuralNet section):
+
+      * Backbone: initial 3×3 conv → BN → ReLU, followed by ``num_res_blocks``
+        residual blocks with 3×3 convolutions (stride 1, padding 1).
+      * Value head:
+          - 1×1 conv → BN → ReLU producing a single-channel map;
+          - masked global average pooling over the 21×21 hex frame using
+            ``hex_mask`` when provided;
+          - concatenation with the ``global_features`` vector; and
+          - a small MLP + tanh to produce a scalar in [-1, 1].
+      * Policy head:
+          - 1×1 conv → BN → ReLU on the shared backbone features;
+          - flatten over [H, W]; and
+          - a linear layer to :data:`P_HEX` logits.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        global_features: int,
+        num_res_blocks: int = 8,
+        num_filters: int = 128,
+        board_size: int = HEX_BOARD_SIZE,
+        policy_size: int = P_HEX,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.global_features = global_features
+        self.num_res_blocks = num_res_blocks
+        self.num_filters = num_filters
+        self.board_size = board_size
+        # Hex-only policy dimension (P_HEX).
+        self.policy_size = policy_size
+
+        # Shared backbone (spatial conv trunk + residual blocks).
+        self.conv1 = nn.Conv2d(
+            in_channels, num_filters, kernel_size=3, padding=1
+        )
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+        self.res_blocks = nn.ModuleList(
+            [ResidualBlock(num_filters) for _ in range(num_res_blocks)]
+        )
+
+        # Value head: 1×1 conv → BN → ReLU → masked global avg pool → MLP.
+        self.value_conv = nn.Conv2d(num_filters, 1, kernel_size=1)
+        self.value_bn = nn.BatchNorm2d(1)
+        # Pooled value features (1) + global_features.
+        self.value_fc1 = nn.Linear(1 + global_features, 64)
+        self.value_fc2 = nn.Linear(64, 1)
+        self.tanh = nn.Tanh()
+
+        # Policy head: 1×1 conv → BN → ReLU → flatten → linear to P_HEX.
+        self.policy_conv = nn.Conv2d(num_filters, num_filters, kernel_size=1)
+        self.policy_bn = nn.BatchNorm2d(num_filters)
+        self.policy_fc = nn.Linear(
+            num_filters * board_size * board_size, self.policy_size
+        )
+
+    def _masked_global_avg_pool(
+        self,
+        x: torch.Tensor,
+        hex_mask: Optional[torch.Tensor],
+    ) -> torch.Tensor:
+        """Perform masked global average pooling over [H, W].
+
+        Args:
+          x: [B, 1, H, W] tensor from the value head conv.
+          hex_mask: optional [B, 1, H, W] mask (1 = valid hex cell,
+            0 = padding). If None, falls back to unmasked mean.
+        """
+        if hex_mask is None:
+            return x.mean(dim=(2, 3))  # [B, 1]
+
+        # Ensure mask is float and on the same device.
+        mask = hex_mask.to(dtype=x.dtype, device=x.device)
+        masked = x * mask
+        # Sum over spatial dims.
+        num = masked.sum(dim=(2, 3))  # [B, 1]
+        denom = mask.sum(dim=(2, 3)).clamp_min(1.0)
+        return num / denom
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        globals: torch.Tensor,
+        hex_mask: Optional[torch.Tensor] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass.
+
+        Args:
+          x: [B, C_hex, H, W] feature tensor on the hex bounding box.
+          globals: [B, global_features] dense global features.
+          hex_mask: optional [B, 1, H, W] mask (1 = real hex cell,
+            0 = padding) for masked pooling in the value head.
+
+        Returns:
+          (value, policy_logits):
+            - value: [B, 1] tensor in [-1, 1].
+            - policy_logits: [B, P_HEX] unnormalised logits.
+        """
+        # Backbone trunk.
+        out = self.relu(self.bn1(self.conv1(x)))
+        for block in self.res_blocks:
+            out = block(out)
+
+        # Value head.
+        v = self.value_conv(out)
+        v = self.relu(self.value_bn(v))
+        v_pooled = self._masked_global_avg_pool(v, hex_mask)  # [B, 1]
+        # Concatenate pooled value features with globals.
+        v_cat = torch.cat([v_pooled, globals], dim=1)
+        v_hidden = self.relu(self.value_fc1(v_cat))
+        v_out = self.tanh(self.value_fc2(v_hidden))  # [B, 1]
+
+        # Policy head.
+        p = self.policy_conv(out)
+        p = self.relu(self.policy_bn(p))
+        batch_size = p.shape[0]
+        p_flat = p.view(batch_size, -1)
+        p_logits = self.policy_fc(p_flat)  # [B, P_HEX]
+
+        return v_out, p_logits

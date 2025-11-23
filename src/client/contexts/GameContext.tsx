@@ -2,7 +2,13 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 import { BoardState, GameState, Move, PlayerChoice, GameResult } from '../../shared/types/game';
-import type { WebSocketErrorPayload } from '../../shared/types/websocket';
+import type {
+  WebSocketErrorPayload,
+  GameStateUpdateMessage,
+  GameOverMessage,
+  ChatMessageServerPayload,
+  PlayerMovePayload,
+} from '../../shared/types/websocket';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
@@ -220,9 +226,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           socket.emit('join_game', { gameId: targetGameId });
         });
 
-        socket.on('game_state', (payload: any) => {
-          // Payload shape from server: { type: 'game_update', data: { gameId, gameState, validMoves }, timestamp }
-          const { data } = payload || {};
+        socket.on('game_state', (payload: GameStateUpdateMessage) => {
+          const { data } = payload || ({} as GameStateUpdateMessage);
           if (data?.gameId === targetGameId && data?.gameState) {
             setGameId(targetGameId);
             setGameState(hydrateGameState(data.gameState));
@@ -235,8 +240,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
 
         // Terminal game event carrying the final GameResult and snapshot.
-        socket.on('game_over', (payload: any) => {
-          const { data } = payload || {};
+        socket.on('game_over', (payload: GameOverMessage) => {
+          const { data } = payload || ({} as GameOverMessage);
           if (!data || data.gameId !== targetGameId) return;
 
           setGameId(targetGameId);
@@ -266,9 +271,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setChoiceDeadline((current) => (current ? null : current));
         });
 
-        socket.on('chat_message', (payload: any) => {
-          // Payload: { sender: string, text: string }
-          setChatMessages((prev) => [...prev, payload]);
+        socket.on('chat_message', (payload: ChatMessageServerPayload) => {
+          setChatMessages((prev) => [...prev, { sender: payload.sender, text: payload.text }]);
         });
 
         socket.on('error', (payload: WebSocketErrorPayload | any) => {
@@ -314,7 +318,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     },
     [gameId, disconnect]
   );
-
   // Clean up on unmount
   useEffect(() => {
     return () => {
@@ -385,10 +388,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       // current WebSocket/DB schema expected by handlePlayerMove. This is a
       // transitional implementation and should be revisited when the
       // WebSocket layer is refactored to speak Move directly.
-      const movePayload = {
+      const movePayload: PlayerMovePayload['move'] = {
         moveNumber: (gameState?.moveHistory.length ?? 0) + 1,
         position: JSON.stringify({ from: partialMove.from, to: partialMove.to }),
-        moveType: partialMove.type,
+        moveType: partialMove.type as PlayerMovePayload['move']['moveType'],
       };
 
       socket.emit('player_move', {

@@ -1,3 +1,7 @@
+> **Status:** Historical deep-dive. This document captures an in-depth analysis and set of recommendations from an earlier revision of the AI stack. For the **current architecture and behaviour**, see `AI_ARCHITECTURE.md`. For the **current backlog and follow-up tasks**, see `AI_IMPROVEMENT_BACKLOG.md`.
+>
+> Some implementation details here (especially difficulty ladders, RNG plumbing, and rules parity) have since been updated; defer to the canonical documents above for ground truth.
+
 ### Subtask 1 – High-Level AI Architecture & Integration Review
 
 **Objective & Scope**  
@@ -1018,7 +1022,7 @@ sequenceDiagram
 
 - **Service returning out-of-range options (AI)**:
   - For string-based options (line reward): `includes(selected)` check is valid.
-  - For object-based options (ring_elimination, region_order), the `includes` reference check causes _any_ structurally equal but new object to be treated as invalid, silently routing to the local heuristic instead of failing.
+  - For object-based options (ring*elimination, region_order), the `includes` reference check causes \_any* structurally equal but new object to be treated as invalid, silently routing to the local heuristic instead of failing.
   - This is both a robustness issue (mismatch between service expectations and server validation) and a wasted opportunity to leverage service intelligence (see §6).
 
 ---
@@ -1818,14 +1822,14 @@ MCTSAI is the primary “advanced” engine currently wired for difficulties ≥
 
 PUCT + RAVE structure:
 
-MCTSNode.uct_select_child:
+MCTSNode.uct*select_child:
 Computes:
 q_value = wins / visits (0 if unvisited).
 amaf_value = amaf_wins / amaf_visits (0 if unvisited).
-RAVE mixing weight beta = sqrt(rave_k / (3 _ parent.visits + rave_k)) with rave_k = 1000.
-Combined value (1 - beta) _ q_value + beta _ amaf_value.
+RAVE mixing weight beta = sqrt(rave_k / (3 * parent.visits + rave*k)) with rave_k = 1000.
+Combined value (1 - beta) * q*value + beta * amaf*value.
 Prior P from child.prior or uniform fallback.
-Exploration bonus u = c_puct _ P \* sqrt(parent.visits) / (1 + child.visits) with c_puct=1.0.
+Exploration bonus u = c_puct * P \* sqrt(parent.visits) / (1 + child.visits) with c_puct=1.0.
 Returns child with maximum combined_value + u.
 MCTSNode.update:
 Increments visits, wins += result.
@@ -3298,13 +3302,13 @@ Overall, the stack is a good prototype foundation but requires several concrete 
    The network is defined in RingRiftCNN with residual blocks in ResidualBlock:
 
 Backbone:
-Initial conv: 2D, kernel 3×3, in_channels = 10 _ (history_length + 1) = 40 by default, num_filters = 128.
+Initial conv: 2D, kernel 3×3, in*channels = 10 * (history*length + 1) = 40 by default, num_filters = 128.
 num_res_blocks = 10 residual blocks, each with:
 Conv–BN–ReLU–Conv–BN + identity skip + ReLU.
 Variable board size support:
 Uses nn.AdaptiveAvgPool2d((4, 4)) in RingRiftCNN.**init** and RingRiftCNN.forward, so any H×W board that fits into the canonical 2D representation is pooled to 4×4.
 Heads:
-Fully connected layer: conv_out_size = num_filters _ 4 \* 4 → 256 units with ReLU + Dropout(0.3) RingRiftCNN.**init**.
+Fully connected layer: conv_out_size = num_filters * 4 \* 4 → 256 units with ReLU + Dropout(0.3) RingRiftCNN.**init**.
 Value head: Linear → 1, tanh to [-1,1] RingRiftCNN.forward.
 Policy head: Linear → 55,000 logits RingRiftCNN.**init**, interpreted as a flat move distribution.
 Scaling:
@@ -3412,22 +3416,22 @@ On balance, the feature set is sufficient to get a strong baseline engine, but i
 
 Using MAX_N = 19:
 
-Placement span: placement_span = 3 _ MAX_N _ MAX_N = 1083 indices (0..1082).
-1, 2, or 3 rings per cell: (y _ 19 + x) _ 3 + (count - 1).
+Placement span: placement*span = 3 * MAX*N * MAX*N = 1083 indices (0..1082).
+1, 2, or 3 rings per cell: (y * 19 + x) _ 3 + (count - 1).
 Movement span:
 movement_base = placement_span = 1083.
-movement_span = MAX_N _ MAX_N _ (8 _ (MAX_N - 1)) = 361 _ 144 = 51,984.
+movement_span = MAX_N _ MAX*N * (8 _ (MAX_N - 1)) = 361 _ 144 = 51,984.
 Indices: 1083..53066.
 Encoding: origin cell _ 8 directions _ up to 18 steps.
 Line span:
-line_base = movement_base + movement_span = 53,067.
-line_span = MAX_N _ MAX_N _ 4 = 1,444.
+line*base = movement_base + movement_span = 53,067.
+line_span = MAX_N * MAX*N * 4 = 1,444.
 Indices: 53,067..54,510.
 Territory span:
-territory_base = line_base + line_span = 54,511.
-MAX_N _ MAX_N = 361 indices (54,511..54,871).
+territory*base = line_base + line_span = 54,511.
+MAX_N * MAX*N = 361 indices (54,511..54,871).
 Skip placement:
-skip_index = territory_base + MAX_N _ MAX_N = 54,872.
+skip_index = territory_base + MAX_N * MAX_N = 54,872.
 Total used indices: 54,873 (0–54,872 inclusive).
 Slack: policy_size=55,000 leaves 127 unused indices at the top.
 This layout is logically sound and leaves some reserved capacity for future action types.
@@ -3442,8 +3446,8 @@ Normalizes to a BoardState when possible.
 Non-BoardState path (int) assumes raw (x,y) are already in canonical 19×19 coordinates (legacy tests).
 Placement (move.type == "place_ring"):
 
-Uses \_to_canonical_xy with bounds 0≤cx,cy<19 or returns INVALID_MOVE_INDEX.
-Encodes per formula (cy _ MAX_N + cx) _ 3 + (placement_count - 1).
+Uses \_to*canonical_xy with bounds 0≤cx,cy<19 or returns INVALID_MOVE_INDEX.
+Encodes per formula (cy * MAX*N + cx) * 3 + (placement_count - 1).
 Movement and captures:
 
 Handles several types uniformly:
@@ -3528,12 +3532,12 @@ Given the current simplifications documented in AI_ARCHITECTURE.md (automatic li
    3.1 MCTS Structure & PUCT
    The tree node structure is defined in MCTSNode:
 
-Tracks wins, visits, AMAF stats (amaf_wins, amaf_visits), children, untried_moves, and prior.
+Tracks wins, visits, AMAF stats (amaf*wins, amaf_visits), children, untried_moves, and prior.
 uct_select_child implements a PUCT + RAVE selection rule:
 Q = wins / visits or 0 if unvisited.
 AMAF = amaf_wins / amaf_visits or 0.
-Blends Q and AMAF via beta = sqrt(rave_k / (3 _ self.visits + rave_k)) with rave_k=1000.
-Exploration bonus: c_puct _ prior \* sqrt(self.visits) / (1 + child.visits) with c_puct=1.0.
+Blends Q and AMAF via beta = sqrt(rave_k / (3 * self.visits + rave*k)) with rave_k=1000.
+Exploration bonus: c_puct * prior \* sqrt(self.visits) / (1 + child.visits) with c_puct=1.0.
 Children get priors via:
 
 MCTSNode.add_child MCTSNode.add_child, accepting an optional prior. If prior is None, child.prior remains at default 0.0.
@@ -4120,13 +4124,13 @@ At diff 7, ~1% random.
 At diff 8, 0% random; entirely heuristic best-move.
 Think-time:
 
-TS presets define thinkTime per difficulty in AI_DIFFICULTY_PRESETS but this is only used for TS fallback/local AI, not for the Python service.
+TS presets define thinkTime per difficulty in AI*DIFFICULTY_PRESETS but this is only used for TS fallback/local AI, not for the Python service.
 Python AIs handle time as follows:
 RandomAI.select_move → simulate_thinking(200–800ms).
 HeuristicAI.select_move → simulate_thinking(500–1500ms).
 MinimaxAI / MCTSAI override simulate_thinking() to not sleep, and instead treat config.think_time / difficulty as a search-time budget:
-MinimaxAI.select_move uses time_limit = 0.5 + difficulty _ 0.2 seconds if no explicit think_time is set.
-MCTSAI.select_move_and_policy uses time_limit = 1.0 + difficulty _ 0.5 seconds if no explicit think_time is set.
+MinimaxAI.select_move uses time_limit = 0.5 + difficulty * 0.2 seconds if no explicit think*time is set.
+MCTSAI.select_move_and_policy uses time_limit = 1.0 + difficulty * 0.5 seconds if no explicit think_time is set.
 Given \_create_ai_instance() never passes think_time, the effective behaviour is:
 
 Random/Heuristic: 0.2–1.5s sleep-based “thinking”, independent of difficulty.
@@ -4242,9 +4246,9 @@ Key tendencies (all “my vs opponent”):
 
 Multiple moderate stacks, anti-megastack
 
-\_evaluate_stack_control combines:
-(my_stacks - opponent_stacks) _ WEIGHT_STACK_CONTROL
-(my_height - opponent_height) _ WEIGHT_STACK_HEIGHT
+\_evaluate*stack_control combines:
+(my_stacks - opponent_stacks) * WEIGHT*STACK_CONTROL
+(my_height - opponent_height) * WEIGHT_STACK_HEIGHT
 Explicit penalties for 0 or 1 stack.
 Above height 5, marginal benefit shrinks (effective_height flattens).
 Personality: values distributed presence; avoids all-in mega stacks.
@@ -4323,11 +4327,11 @@ Reference: MCTSAI
 
 Core behaviour in select_move_and_policy:
 
-Reuses prior search tree via self.last_root when possible.
+Reuses prior search tree via self.last*root when possible.
 Selection:
 Uses a PUCT-like rule with RAVE:
-combined_value = (1 - beta) _ Q + beta _ AMAF
-Exploration ~ c_puct _ prior _ sqrt(N) / (1 + n) with c_puct = 1.0.
+combined_value = (1 - beta) * Q + beta _ AMAF
+Exploration ~ c_puct _ prior \_ sqrt(N) / (1 + n) with c_puct = 1.0.
 Evaluation:
 Prefer neural net (NeuralNetAI.evaluate_batch) when available:
 Produces value estimates and raw policy logits.
@@ -4925,9 +4929,9 @@ Buckets moves into:
 placementMoves vs nonPlacementMoves.
 Within non-placement: captureMoves vs simpleMovementMoves.
 Uses rng() for:
-Mixing between placement vs non-placement in ring_placement (r = rng() _ total).
+Mixing between placement vs non-placement in ring*placement (r = rng() * total).
 Mixing between capture vs simple movement in movement phases.
-Final randomIndex = Math.floor(rng() _ pool.length).
+Final randomIndex = Math.floor(rng() \_ pool.length).
 Because of the deterministic sort and the injected RNG, for a fixed candidate set and RNG stream, local AI selection is deterministic even if callers enumerate moves in different orders.
 
 This policy is reused:

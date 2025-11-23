@@ -26,6 +26,10 @@ jest.mock('../../src/server/game/ai/AIEngine', () => {
     getLineRewardChoice: jest.fn(),
     getRingEliminationChoice: jest.fn(),
     getRegionOrderChoice: jest.fn(),
+    // By default, behave as if the AI is in `service` mode so that
+    // service-backed paths remain exercised unless a test overrides
+    // this mock.
+    getAIConfig: jest.fn(() => ({ difficulty: 5, aiType: 'heuristic', mode: 'service' })),
   };
 
   return { globalAIEngine: mockGlobalAIEngine };
@@ -58,13 +62,12 @@ describe('AIInteractionHandler', () => {
     const choice: LineRewardChoice = {
       ...baseChoice,
       type: 'line_reward_option',
-      options: [
-        'option_1_collapse_all_and_eliminate',
-        'option_2_min_collapse_no_elimination'
-      ]
+      options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
     };
 
-    const response: PlayerChoiceResponse<unknown> = await handler.requestChoice(choice as PlayerChoice);
+    const response: PlayerChoiceResponse<unknown> = await handler.requestChoice(
+      choice as PlayerChoice
+    );
 
     expect(response.choiceId).toBe(choice.id);
     expect(response.playerNumber).toBe(choice.playerNumber);
@@ -74,11 +77,11 @@ describe('AIInteractionHandler', () => {
     const positionsA: Position[] = [
       { x: 0, y: 0 },
       { x: 1, y: 1 },
-      { x: 2, y: 2 }
+      { x: 2, y: 2 },
     ];
     const positionsB: Position[] = [
       { x: 3, y: 3 },
-      { x: 4, y: 4 }
+      { x: 4, y: 4 },
     ];
 
     const choice: LineOrderChoice = {
@@ -102,10 +105,7 @@ describe('AIInteractionHandler', () => {
     const choice: LineRewardChoice = {
       ...baseChoice,
       type: 'line_reward_option',
-      options: [
-        'option_1_collapse_all_and_eliminate',
-        'option_2_min_collapse_no_elimination'
-      ]
+      options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
     };
 
     const response = await handler.requestChoice(choice as PlayerChoice);
@@ -205,10 +205,7 @@ describe('AIInteractionHandler', () => {
     const choice: LineRewardChoice = {
       ...baseChoice,
       type: 'line_reward_option',
-      options: [
-        'option_1_collapse_all_and_eliminate',
-        'option_2_min_collapse_no_elimination',
-      ],
+      options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
     };
 
     const mockEngine = globalAIEngine as unknown as {
@@ -233,10 +230,7 @@ describe('AIInteractionHandler', () => {
     const choice: LineRewardChoice = {
       ...baseChoice,
       type: 'line_reward_option',
-      options: [
-        'option_1_collapse_all_and_eliminate',
-        'option_2_min_collapse_no_elimination',
-      ],
+      options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
     };
 
     const mockEngine = globalAIEngine as unknown as {

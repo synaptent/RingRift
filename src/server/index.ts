@@ -9,6 +9,7 @@ import { WebSocketServer } from './websocket/server';
 import { setupRoutes } from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
+import { requestContext } from './middleware/requestContext';
 import { logger } from './utils/logger';
 import { connectDatabase } from './database/connection';
 import { connectRedis } from './cache/redis';
@@ -43,6 +44,10 @@ app.use(
 
 app.use(compression());
 app.use(morgan('combined', { stream: { write: (message) => logger.info(message.trim()) } }));
+// Attach lightweight per-request context for correlation IDs. This middleware
+// runs before any API routes and before the global error handler so that
+// requestId is available throughout the HTTP pipeline.
+app.use(requestContext);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

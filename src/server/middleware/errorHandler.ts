@@ -1,7 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
-import { logger } from '../utils/logger';
-import { ValidationError, AuthenticationError, AuthorizationError } from '../../shared/validation/schemas';
+import { logger, withRequestContext } from '../utils/logger';
+import {
+  ValidationError,
+  AuthenticationError,
+  AuthorizationError,
+} from '../../shared/validation/schemas';
 import { config } from '../config';
 
 export interface AppError extends Error {
@@ -10,12 +14,7 @@ export interface AppError extends Error {
   isOperational?: boolean;
 }
 
-export const errorHandler = (
-  error: AppError,
-  req: Request,
-  res: Response,
-  _next: NextFunction
-) => {
+export const errorHandler = (error: AppError, req: Request, res: Response, _next: NextFunction) => {
   let statusCode = error.statusCode || 500;
   let message = error.message || 'Internal Server Error';
   let code = error.code || 'INTERNAL_ERROR';
@@ -55,24 +54,30 @@ export const errorHandler = (
     message = 'Duplicate entry found';
   }
 
-  // Log error
+  // Log error with correlation id when available
   if (statusCode >= 500) {
-    logger.error('Server Error:', {
-      error: error.message,
-      stack: error.stack,
-      url: req.url,
-      method: req.method,
-      ip: req.ip,
-      userAgent: req.get('User-Agent')
-    });
+    logger.error(
+      'Server Error:',
+      withRequestContext(req as any, {
+        error: error.message,
+        stack: error.stack,
+        url: req.url,
+        method: req.method,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+      })
+    );
   } else {
-    logger.warn('Client Error:', {
-      error: error.message,
-      url: req.url,
-      method: req.method,
-      ip: req.ip,
-      statusCode
-    });
+    logger.warn(
+      'Client Error:',
+      withRequestContext(req as any, {
+        error: error.message,
+        url: req.url,
+        method: req.method,
+        ip: req.ip,
+        statusCode,
+      })
+    );
   }
 
   // Send error response
@@ -84,9 +89,9 @@ export const errorHandler = (
       timestamp: new Date().toISOString(),
       ...(config.isDevelopment && {
         stack: error.stack,
-        details: error
-      })
-    }
+        details: error,
+      }),
+    },
   };
 
   res.status(statusCode).json(errorResponse);

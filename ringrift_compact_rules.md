@@ -1,11 +1,12 @@
 # RingRift Compact Rules (Engine / AI Implementation Spec)
 
-**Purpose:** This document is a compact, implementation‑oriented specification of the RingRift rules. It is designed for engine/AI authors, not for teaching humans. It encodes the *minimum complete* rule set needed to implement a correct engine for all supported versions.
+**Purpose:** This document is a compact, implementation‑oriented specification of the RingRift rules. It is designed for engine/AI authors, not for teaching humans. It encodes the _minimum complete_ rule set needed to implement a correct engine for all supported versions.
 
 - Full, narrative rules: `ringrift_complete_rules.md`
 - This file: focuses on **state**, **version parameters**, and **transition rules**.
 
 ---
+
 ## 1. Version Parameters & Board Model
 
 ### 1.1 Supported board types
@@ -14,11 +15,11 @@
 
 For each board type, define a static configuration:
 
-| BoardType   | size | totalSpaces | ringsPerPlayer | lineLength | movementAdjacency | lineAdjacency | territoryAdjacency | boardGeometry  |
-|------------|------|-------------|----------------|------------|-------------------|---------------|--------------------|----------------|
-| square8    | 8    | 64          | 18             | 4          | Moore (8-dir)     | Moore         | Von Neumann (4-dir)| orthogonal grid|
-| square19   | 19   | 361         | 36             | 5          | Moore             | Moore         | Von Neumann        | orthogonal grid|
-| hexagonal  | 11   | 331         | 36             | 5          | Hex (6-dir)       | Hex           | Hex                | hex coordinates|
+| BoardType | size | totalSpaces | ringsPerPlayer | lineLength | movementAdjacency | lineAdjacency | territoryAdjacency  | boardGeometry   |
+| --------- | ---- | ----------- | -------------- | ---------- | ----------------- | ------------- | ------------------- | --------------- |
+| square8   | 8    | 64          | 18             | 3          | Moore (8-dir)     | Moore         | Von Neumann (4-dir) | orthogonal grid |
+| square19  | 19   | 361         | 36             | 4          | Moore             | Moore         | Von Neumann         | orthogonal grid |
+| hexagonal | 11   | 331         | 36             | 4          | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
 
 - **Coordinates**:
   - Square boards: integer `(x, y)` in `[0, size-1] × [0, size-1]`.
@@ -83,6 +84,7 @@ At minimum, your engine must maintain:
 You must maintain `capHeight` and `stackHeight` correctly after **placement**, **movement**, **overtaking**, and **elimination**.
 
 ---
+
 ## 2. Turn & Phase Structure
 
 Each turn of `currentPlayer` is a deterministic state machine:
@@ -132,7 +134,7 @@ After placement step, define the set of **controlled stacks** `S = { stacks wher
   - If `P.ringsInHand > 0`, you must fall back to the ring‑placement rules in Section 2.1/6: your only way to act is by placing a new stack that satisfies the no‑dead‑placement rule.
   - If `P.ringsInHand == 0`, you have no material under your direct control and therefore no movement or capture action; your turn ends immediately and play passes to the next player. You are temporarily inactive or eliminated according to Section 7.3.
 - Otherwise (`S` non‑empty), compute all legal movement/capture moves from stacks in `S` (Section 3 & 4).
-  - If **no legal moves or captures** exist *and* there is at least one legal placement (per the no‑dead‑placement rule), you must either place (if placement is mandatory) or you may choose to place (if placement is optional).
+  - If **no legal moves or captures** exist _and_ there is at least one legal placement (per the no‑dead‑placement rule), you must either place (if placement is mandatory) or you may choose to place (if placement is optional).
   - If **no legal moves/captures** and **no legal placements** exist, you are **blocked with stacks** and must go to forced elimination (Section 2.3).
   - If ≥1 legal move/capture exists:
     - Movement is **mandatory**.
@@ -158,6 +160,7 @@ If after this elimination `P` still has no legal action, their turn ends.
 However, as long as any stacks remain on the board, it is never legal for the game to remain in an `active` state with the current player having no legal action. In any situation where **no player** has any legal placement, movement, or capture but at least one stack still exists on the board, the controlling player of some stack on their turn must satisfy the condition above and perform a forced elimination. Successive forced eliminations continue (possibly cycling through multiple players) until **no stacks remain**; only then can the game reach a structurally terminal state that is resolved by the stalemate rules in Section 7.4.
 
 ---
+
 ## 3. Non-Capture Movement
 
 ### 3.1 Path and distance
@@ -196,6 +199,7 @@ When moving along the path:
 You are **not required** to stop at the first legal landing after markers; any landing `pk` satisfying distance and landing conditions is allowed.
 
 ---
+
 ## 4. Overtaking Capture Movement
 
 ### 4.1 Single capture segment
@@ -223,9 +227,10 @@ A single overtaking capture segment is defined by `(from, target, landing)`:
    - On `target → landing` (excluding endpoints): no collapsed spaces, no stacks.
 
 4. **Distance constraints**:
-  - Let `segmentDistance = distance(from, landing)` (Chebyshev/king-move distance on square boards, cube distance on hex).
-  - `segmentDistance ≥ H`.
-   - `landing` must be strictly further from `from` than `target` is (i.e. beyond the target in same direction).
+
+- Let `segmentDistance = distance(from, landing)` (Chebyshev/king-move distance on square boards, cube distance on hex).
+- `segmentDistance ≥ H`.
+- `landing` must be strictly further from `from` than `target` is (i.e. beyond the target in same direction).
 
 5. **Landing cell**:
    - Not a collapsed space.
@@ -268,11 +273,13 @@ Once any overtaking segment is performed in a turn:
   - Recapture from the same target multiple times (as long as it still has rings and path constraints remain satisfied).
 
 ---
+
 ## 5. Lines & Graduated Line Rewards
 
 ### 5.1 Line detection
 
 A **line** is a maximal sequence of positions `[p0, p1, ..., pk]` with all:
+
 - Containing **markers** (not stacks) of the **same player** `P`;
 - Consecutive along a single line-adjacency axis (Moore for square, 3 axes for hex);
 - Not interrupted by empty cells, stacks, or collapsed spaces.
@@ -315,6 +322,7 @@ Two cases:
 Collapsed spaces are permanent: they cannot hold stacks or markers and act as obstacles for movement and capture.
 
 ---
+
 ## 6. Territory Disconnection & Region Collapse
 
 ### 6.1 Region & border definitions
@@ -331,6 +339,7 @@ For territory processing, use `territoryAdjacency` (Von Neumann on square, hex a
   - Markers, stacks, or empty cells.
 
 A region `R` is **physically disconnected** when **all paths** from any cell in `R` to the rest of the board’s non-collapsed cells must cross:
+
 - Collapsed spaces, and/or
 - Board edges, and/or
 - Markers of exactly **one single player** `B` (border color);
@@ -343,6 +352,7 @@ Let `ActiveColors` = set of players that currently have at least one ring on the
 For region `R`, define `RegionColors` = set of players that control at least one **stack** in `R` (top ring ownership). Markers and empties do **not** count.
 
 `R` is **color-disconnected** if `RegionColors` is a **proper subset** of `ActiveColors`:
+
 - At least one active player has no stack in `R`.
 
 **Important rule:** If `RegionColors == ActiveColors` (all active players have representation in `R`), `R` is **never** disconnected, regardless of border.
@@ -391,6 +401,7 @@ After all line processing is complete:
 All eliminated rings (from inside regions and self-eliminations) count toward `P`’s ring-elimination victory total.
 
 ---
+
 ## 7. Victory Conditions & Game End
 
 The game ends immediately if **any** of these is true after a full turn (including post-movement processing):
@@ -421,14 +432,16 @@ A player `P` wins by last-player-standing if, after a completed turn and post-pr
 - And `P` still has at least one legal action available on their own next turn.
 
 A player is **temporarily inactive** (has no legal actions on their own turn, but remain in the game) when:
-- They have stacks but no legal moves/captures *and* cannot place any ring, OR
-- They control no stacks on the board, *and* cannot place any ring, BUT
+
+- They have stacks but no legal moves/captures _and_ cannot place any ring, OR
+- They control no stacks on the board, _and_ cannot place any ring, BUT
 - They have rings on the board in stacks controlled by others
 - They may potentially become active again as a result of other players' turns.
 
 In practice, this means a temporarily inactive player can become active again if capture or elimination expose one of their buried rings as the new top ring of a stack, thereby giving them a controlled stack on a later turn.
 
 A player is **eliminated** (has no legal actions on their own turn, and cannot in future turns) when:
+
 - They have no stacks or rings anywhere on the board AND
 - They have `ringsInHand == 0`
 
@@ -447,6 +460,7 @@ If **no** player has any legal placement, movement, capture, or forced eliminati
 3. Highest rank wins.
 
 ---
+
 ## 8. AI/Engine Notes (Implementation-Oriented)
 
 - Treat the rules as a pure **state-transition system**:
@@ -466,15 +480,16 @@ If **no** player has any legal placement, movement, capture, or forced eliminati
 This compact spec plus the full narrative rules and tests should suffice to produce a complete, correct implementation of RingRift’s rules for both server engines and AI agents.
 
 ---
+
 ## 9. Progress & Termination Invariant (Implementation Note)
 
 For engine and AI authors, it is useful to track a simple global progress measure over the course of a game:
 
 - Let **M** = number of markers currently on the board.
 - Let **C** = number of collapsed spaces currently on the board.
-- Let **E** = total number of *eliminated* rings credited to any player (including rings eliminated from lines, territory disconnections, forced eliminations, and stalemate conversion of rings in hand).
+- Let **E** = total number of _eliminated_ rings credited to any player (including rings eliminated from lines, territory disconnections, forced eliminations, and stalemate conversion of rings in hand).
 - Define the **progress metric**:
-  
+
   ```text
   S = M + C + E
   ```

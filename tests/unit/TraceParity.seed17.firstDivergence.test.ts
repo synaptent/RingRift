@@ -63,6 +63,146 @@ describe('Trace parity first-divergence helper: square8 / 2p / seed=17', () => {
         continue;
       }
 
+      // For line-processing decisions, require that the underlying line
+      // geometry (and, when present, collapsedMarkers for reward choices)
+      // matches across engines so that we always replay the same logical
+      // line into the backend that the sandbox trace recorded.
+      if (
+        reference.type === 'process_line' &&
+        candidate.type === 'process_line' &&
+        reference.formedLines &&
+        reference.formedLines[0] &&
+        candidate.formedLines &&
+        candidate.formedLines[0]
+      ) {
+        const refLine = reference.formedLines[0];
+        const candLine = candidate.formedLines[0];
+
+        const refPositions = refLine.positions ?? [];
+        const candPositions = candLine.positions ?? [];
+
+        if (refPositions.length === candPositions.length) {
+          const refKeys = new Set(refPositions.map((p) => `${p.x},${p.y}`));
+          const candKeys = new Set(candPositions.map((p) => `${p.x},${p.y}`));
+
+          if (refKeys.size === candKeys.size) {
+            let allMatch = true;
+            for (const key of refKeys) {
+              if (!candKeys.has(key)) {
+                allMatch = false;
+                break;
+              }
+            }
+            if (allMatch) {
+              return candidate;
+            }
+          }
+        }
+
+        continue;
+      }
+
+      if (
+        reference.type === 'choose_line_reward' &&
+        candidate.type === 'choose_line_reward' &&
+        reference.formedLines &&
+        reference.formedLines[0] &&
+        candidate.formedLines &&
+        candidate.formedLines[0]
+      ) {
+        const refLine = reference.formedLines[0];
+        const candLine = candidate.formedLines[0];
+
+        const refPositions = refLine.positions ?? [];
+        const candPositions = candLine.positions ?? [];
+
+        const sameLine =
+          refPositions.length === candPositions.length &&
+          (() => {
+            const refKeys = new Set(refPositions.map((p) => `${p.x},${p.y}`));
+            const candKeys = new Set(candPositions.map((p) => `${p.x},${p.y}`));
+            if (refKeys.size !== candKeys.size) return false;
+            for (const key of refKeys) {
+              if (!candKeys.has(key)) return false;
+            }
+            return true;
+          })();
+
+        if (!sameLine) {
+          continue;
+        }
+
+        const refCollapsed = reference.collapsedMarkers ?? [];
+        const candCollapsed = candidate.collapsedMarkers ?? [];
+
+        if (refCollapsed.length || candCollapsed.length) {
+          if (refCollapsed.length !== candCollapsed.length) {
+            continue;
+          }
+          const refCKeys = new Set(refCollapsed.map((p) => `${p.x},${p.y}`));
+          const candCKeys = new Set(candCollapsed.map((p) => `${p.x},${p.y}`));
+          if (refCKeys.size !== candCKeys.size) {
+            continue;
+          }
+          let allCollapsedMatch = true;
+          for (const key of refCKeys) {
+            if (!candCKeys.has(key)) {
+              allCollapsedMatch = false;
+              break;
+            }
+          }
+          if (!allCollapsedMatch) {
+            continue;
+          }
+        }
+
+        return candidate;
+      }
+
+      // For territory-processing decisions, require that the disconnected
+      // region being processed matches exactly (up to set equality of
+      // spaces). This keeps the strict helper aligned with the looser
+      // move-matcher used by the main trace harness.
+      if (reference.type === 'process_territory_region') {
+        if (candidate.type !== 'process_territory_region') {
+          continue;
+        }
+
+        const refRegion = reference.disconnectedRegions && reference.disconnectedRegions[0];
+        const candRegion = candidate.disconnectedRegions && candidate.disconnectedRegions[0];
+
+        const refSpaces = refRegion?.spaces ?? [];
+        const candSpaces = candRegion?.spaces ?? [];
+
+        if (refSpaces.length && candSpaces.length) {
+          if (refSpaces.length !== candSpaces.length) {
+            continue;
+          }
+
+          const refKeys = new Set(refSpaces.map((p) => `${p.x},${p.y}`));
+          const candKeys = new Set(candSpaces.map((p) => `${p.x},${p.y}`));
+
+          if (refKeys.size !== candKeys.size) {
+            continue;
+          }
+
+          let allMatch = true;
+          for (const key of refKeys) {
+            if (!candKeys.has(key)) {
+              allMatch = false;
+              break;
+            }
+          }
+          if (!allMatch) {
+            continue;
+          }
+
+          return candidate;
+        }
+        // If either side lacks region metadata, fall through to the
+        // generic positional checks below.
+      }
+
       // For everything else we insist on exact MoveType equality.
       if (candidate.type !== reference.type) continue;
 

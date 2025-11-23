@@ -1,22 +1,23 @@
-import { AIEngine, AIType } from '../../src/server/game/ai/AIEngine';
+import { AIEngine } from '../../src/server/game/ai/AIEngine';
 import { getAIServiceClient } from '../../src/server/services/AIServiceClient';
-import { GameState, Move, AIProfile, Position } from '../../src/shared/types/game';
+import { GameState, Move, AIProfile } from '../../src/shared/types/game';
 import { logger } from '../../src/server/utils/logger';
 
- // Mock dependencies
- jest.mock('../../src/server/services/AIServiceClient');
- jest.mock('../../src/server/utils/logger');
+// Mock dependencies
+jest.mock('../../src/server/services/AIServiceClient');
+jest.mock('../../src/server/utils/logger');
 
- let ruleEngineValidMoves: Move[] = [];
+// Shared mutable backing store for the mocked RuleEngine.getValidMoves output.
+let mockRuleEngineValidMoves: Move[] = [];
 
- // Mock RuleEngine so we can control the valid move set seen by AIEngine.
- jest.mock('../../src/server/game/RuleEngine', () => {
-   return {
-     RuleEngine: jest.fn().mockImplementation(() => ({
-       getValidMoves: () => ruleEngineValidMoves,
-     })),
-   };
- });
+// Mock RuleEngine so we can control the valid move set seen by AIEngine.
+jest.mock('../../src/server/game/RuleEngine', () => {
+  return {
+    RuleEngine: jest.fn().mockImplementation(() => ({
+      getValidMoves: () => mockRuleEngineValidMoves,
+    })),
+  };
+});
 
 describe('AIEngine Fallback Handling', () => {
   let aiEngine: AIEngine;
@@ -44,7 +45,6 @@ describe('AIEngine Fallback Handling', () => {
 
     (getAIServiceClient as jest.Mock).mockReturnValue(mockAIServiceClient);
 
-    // Create mock game state
     // Create mock game state. We deliberately only populate the fields that
     // AIEngine.getAIMove touches (boardType, board maps, players, current state,
     // rngSeed, etc.). The cast via unknown avoids over-constraining the literal
@@ -111,42 +111,43 @@ describe('AIEngine Fallback Handling', () => {
       territoryVictoryThreshold: 0,
       rngSeed: 12345,
     } as unknown as GameState;
-        // Create mock valid moves
-        mockValidMoves = [
-          {
-            id: 'move1',
-            type: 'place_ring',
-            player: 2,
-            to: { x: 0, y: 0 },
-            placementCount: 1,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: 1,
-          },
-          {
-            id: 'move2',
-            type: 'place_ring',
-            player: 2,
-            to: { x: 1, y: 0 },
-            placementCount: 1,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: 1,
-          },
-          {
-            id: 'move3',
-            type: 'place_ring',
-            player: 2,
-            to: { x: 0, y: 1 },
-            placementCount: 1,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: 1,
-          },
-        ];
-    
-        // By default, expose all mock valid moves to the mocked RuleEngine.
-        ruleEngineValidMoves = mockValidMoves;
+
+    // Create mock valid moves
+    mockValidMoves = [
+      {
+        id: 'move1',
+        type: 'place_ring',
+        player: 2,
+        to: { x: 0, y: 0 },
+        placementCount: 1,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      },
+      {
+        id: 'move2',
+        type: 'place_ring',
+        player: 2,
+        to: { x: 1, y: 0 },
+        placementCount: 1,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      },
+      {
+        id: 'move3',
+        type: 'place_ring',
+        player: 2,
+        to: { x: 0, y: 1 },
+        placementCount: 1,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      },
+    ];
+
+    // By default, expose all mock valid moves to the mocked RuleEngine.
+    mockRuleEngineValidMoves = mockValidMoves;
   });
 
   describe('Service Failure Fallback', () => {
@@ -164,7 +165,7 @@ describe('AIEngine Fallback Handling', () => {
       // Should return a valid move despite service failure
       expect(move).toBeDefined();
       expect(move).not.toBeNull();
-      
+
       // Should have logged the fallback
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('falling back to local heuristics'),
@@ -181,9 +182,7 @@ describe('AIEngine Fallback Handling', () => {
       // Mock timeout
       mockAIServiceClient.getAIMove.mockImplementation(
         () =>
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('AI service timeout')), 100)
-          )
+          new Promise((_, reject) => setTimeout(() => reject(new Error('AI service timeout')), 100))
       );
 
       const profile: AIProfile = { difficulty: 5, mode: 'service' };
@@ -320,7 +319,7 @@ describe('AIEngine Fallback Handling', () => {
 
     it('should return immediately when only one valid move exists', async () => {
       // Restrict the mocked RuleEngine to expose exactly one valid move.
-      ruleEngineValidMoves = [mockValidMoves[0]];
+      mockRuleEngineValidMoves = [mockValidMoves[0]];
 
       const profile: AIProfile = { difficulty: 5, mode: 'service' };
       aiEngine.createAIFromProfile(2, profile);
@@ -339,7 +338,7 @@ describe('AIEngine Fallback Handling', () => {
 
     it('should return null when no valid moves exist', async () => {
       // No valid moves from the mocked RuleEngine.
-      ruleEngineValidMoves = [];
+      mockRuleEngineValidMoves = [];
 
       const profile: AIProfile = { difficulty: 5, mode: 'service' };
       aiEngine.createAIFromProfile(2, profile);
@@ -364,7 +363,7 @@ describe('AIEngine Fallback Handling', () => {
 
       // Should NOT have called the service
       expect(mockAIServiceClient.getAIMove).not.toHaveBeenCalled();
-      
+
       // Should have used local heuristics
       expect(move).toBeDefined();
       expect(logger.info).toHaveBeenCalledWith(
@@ -429,7 +428,7 @@ describe('AIEngine Fallback Handling', () => {
       );
     });
 
-    it('should log when using random f<br/>llback as last resort', async () => {
+    it('should log when using random fallback as last resort', async () => {
       mockAIServiceClient.getAIMove.mockRejectedValue(new Error('Service failed'));
 
       const profile: AIProfile = { difficulty: 5, mode: 'service' };
@@ -438,7 +437,7 @@ describe('AIEngine Fallback Handling', () => {
       await aiEngine.getAIMove(2, mockGameState);
 
       // Check if random fallback was logged (it should only happen if local heuristic also fails)
-      // In normal cases, local heuristic should succeed
+      // In normal cases, local heuristic should succeed, so we do not assert here.
     });
   });
 

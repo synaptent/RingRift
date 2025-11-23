@@ -4,7 +4,8 @@ import { GameProvider, useGame } from '../../src/client/contexts/GameContext';
 
 type HandlerMap = { [event: string]: (...args: any[]) => void };
 const socketEventHandlers: HandlerMap = {};
-const emitMock = jest.fn();
+// Named with `mock` prefix so Jest allows it to be referenced from jest.mock factory.
+const mockEmit = jest.fn();
 
 jest.mock('socket.io-client', () => {
   return {
@@ -13,7 +14,7 @@ jest.mock('socket.io-client', () => {
       on: jest.fn((event: string, handler: (...args: any[]) => void) => {
         socketEventHandlers[event] = handler;
       }),
-      emit: emitMock,
+      emit: mockEmit,
       disconnect: jest.fn(),
     })),
     Socket: jest.fn(),
@@ -40,7 +41,7 @@ function TestHarness({ gameId }: { gameId: string }) {
 
 describe('GameContext WebSocket reconnection', () => {
   beforeEach(() => {
-    emitMock.mockClear();
+    mockEmit.mockClear();
     for (const key of Object.keys(socketEventHandlers)) {
       delete socketEventHandlers[key];
     }
@@ -60,15 +61,15 @@ describe('GameContext WebSocket reconnection', () => {
     expect(typeof connectHandler).toBe('function');
     connectHandler?.();
 
-    expect(emitMock).toHaveBeenCalledWith('join_game', { gameId: targetGameId });
+    expect(mockEmit).toHaveBeenCalledWith('join_game', { gameId: targetGameId });
 
-    emitMock.mockClear();
+    mockEmit.mockClear();
 
     // Simulate a socket.io-level reconnect.
     const reconnectHandler = socketEventHandlers['reconnect'];
     expect(typeof reconnectHandler).toBe('function');
     reconnectHandler?.();
 
-    expect(emitMock).toHaveBeenCalledWith('join_game', { gameId: targetGameId });
+    expect(mockEmit).toHaveBeenCalledWith('join_game', { gameId: targetGameId });
   });
 });

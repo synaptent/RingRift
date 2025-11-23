@@ -29,49 +29,49 @@ function getPhaseInfo(phase: GamePhase): PhaseInfo {
         label: 'Ring Placement',
         description: 'Place your rings on the board',
         color: 'bg-blue-500',
-        icon: '🎯'
+        icon: '🎯',
       };
     case 'movement':
       return {
         label: 'Movement Phase',
         description: 'Move a stack or capture opponent pieces',
         color: 'bg-green-500',
-        icon: '⚡'
+        icon: '⚡',
       };
     case 'capture':
       return {
         label: 'Capture Phase',
         description: 'Execute a capture move',
         color: 'bg-orange-500',
-        icon: '⚔️'
+        icon: '⚔️',
       };
     case 'chain_capture':
       return {
         label: 'Chain Capture',
         description: 'Continue capturing or end your turn',
         color: 'bg-orange-500',
-        icon: '🔗'
+        icon: '🔗',
       };
     case 'line_processing':
       return {
         label: 'Line Reward',
         description: 'Choose how to process your line',
         color: 'bg-purple-500',
-        icon: '📏'
+        icon: '📏',
       };
     case 'territory_processing':
       return {
         label: 'Territory Claim',
         description: 'Choose regions to collapse',
         color: 'bg-pink-500',
-        icon: '🏰'
+        icon: '🏰',
       };
     default:
       return {
         label: 'Unknown Phase',
         description: '',
         color: 'bg-gray-400',
-        icon: '❓'
+        icon: '❓',
       };
   }
 }
@@ -81,7 +81,7 @@ function getPhaseInfo(phase: GamePhase): PhaseInfo {
  */
 function PhaseIndicator({ gameState }: { gameState: GameState }) {
   const phaseInfo = getPhaseInfo(gameState.currentPhase);
-  
+
   return (
     <div className={`${phaseInfo.color} text-white px-4 py-2 rounded-lg shadow-lg`}>
       <div className="flex items-center gap-2">
@@ -110,17 +110,13 @@ function SubPhaseDetails({ gameState }: { gameState: GameState }) {
       );
     }
   }
-  
+
   // For territory processing, we don't have a direct count in GameState,
   // but we can show a generic message
   if (gameState.currentPhase === 'territory_processing') {
-    return (
-      <div className="text-sm text-gray-600 mt-1">
-        Processing disconnected regions
-      </div>
-    );
+    return <div className="text-sm text-gray-600 mt-1">Processing disconnected regions</div>;
   }
-  
+
   return null;
 }
 
@@ -135,28 +131,28 @@ interface PlayerTimerProps {
 
 function PlayerTimer({ player, isActive, timeControl }: PlayerTimerProps) {
   const [timeRemaining, setTimeRemaining] = useState(player.timeRemaining ?? 0);
-  
+
   useEffect(() => {
     if (!isActive || !timeControl) return;
-    
+
     const interval = setInterval(() => {
-      setTimeRemaining(prev => Math.max(0, prev - 1000));
+      setTimeRemaining((prev) => Math.max(0, prev - 1000));
     }, 1000);
-    
+
     return () => clearInterval(interval);
   }, [isActive, timeControl]);
-  
+
   // Sync with player's actual time when it updates
   useEffect(() => {
     setTimeRemaining(player.timeRemaining ?? 0);
   }, [player.timeRemaining]);
-  
+
   if (!timeControl) return null;
-  
+
   const minutes = Math.floor(timeRemaining / 60000);
   const seconds = Math.floor((timeRemaining % 60000) / 1000);
   const isLowTime = timeRemaining < 60000; // Less than 1 minute
-  
+
   return (
     <div className={`font-mono ${isLowTime ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
       {minutes}:{seconds.toString().padStart(2, '0')}
@@ -170,15 +166,15 @@ function PlayerTimer({ player, isActive, timeControl }: PlayerTimerProps) {
 function calculateRingStats(player: Player, gameState: GameState) {
   const boardConfig = BOARD_CONFIGS[gameState.boardType];
   const total = boardConfig.ringsPerPlayer;
-  
+
   // Count rings on board
   const onBoard = Array.from(gameState.board.stacks.values()).reduce((count, stack) => {
-    return count + stack.rings.filter(r => r === player.playerNumber).length;
+    return count + stack.rings.filter((r) => r === player.playerNumber).length;
   }, 0);
-  
+
   const eliminated = player.eliminatedRings ?? 0;
   const inHand = player.ringsInHand ?? 0;
-  
+
   return { inHand, onBoard, eliminated, total };
 }
 
@@ -192,7 +188,7 @@ interface RingStatsProps {
 
 function RingStats({ player, gameState }: RingStatsProps) {
   const ringStats = calculateRingStats(player, gameState);
-  
+
   return (
     <div className="grid grid-cols-3 gap-2 text-xs mt-2">
       <div className="text-center">
@@ -216,12 +212,13 @@ function RingStats({ player, gameState }: RingStatsProps) {
  */
 function TerritoryStats({ player }: { player: Player }) {
   const territoryCount = player.territorySpaces ?? 0;
-  
+
   if (territoryCount === 0) return null;
-  
+
   return (
     <div className="text-sm mt-1 text-center">
-      <span className="font-semibold">{territoryCount}</span> territory space{territoryCount !== 1 ? 's' : ''}
+      <span className="font-semibold">{territoryCount}</span> territory space
+      {territoryCount !== 1 ? 's' : ''}
     </div>
   );
 }
@@ -231,17 +228,14 @@ function TerritoryStats({ player }: { player: Player }) {
  */
 function GameProgress({ gameState }: { gameState: GameState }) {
   const turnNumber = gameState.moveHistory.length;
-  const moveNumber = gameState.history.length > 0 
-    ? gameState.history[gameState.history.length - 1]?.moveNumber 
-    : 0;
-  
+  const moveNumber =
+    gameState.history.length > 0 ? gameState.history[gameState.history.length - 1]?.moveNumber : 0;
+
   return (
     <div className="text-center py-2 bg-gray-100 rounded">
       <div className="text-2xl font-bold">{turnNumber}</div>
       <div className="text-xs text-gray-600">Turn</div>
-      {moveNumber > 0 && (
-        <div className="text-xs text-gray-500">Move #{moveNumber}</div>
-      )}
+      {moveNumber > 0 && <div className="text-xs text-gray-500">Move #{moveNumber}</div>}
     </div>
   );
 }
@@ -254,16 +248,42 @@ function getAIDifficultyInfo(difficulty: number): {
   color: string;
   bgColor: string;
 } {
-  if (difficulty <= 2) {
-    return { label: 'Beginner', color: 'text-green-400', bgColor: 'bg-green-900/40' };
+  // Keep this categorisation broadly aligned with the canonical ladder:
+  // 1 → Random, 2 → Heuristic, 3–6 → Minimax, 7–8 → MCTS, 9–10 → Descent.
+  if (difficulty === 1) {
+    return {
+      label: 'Beginner · Random',
+      color: 'text-green-300',
+      bgColor: 'bg-green-900/40',
+    };
   }
-  if (difficulty <= 5) {
-    return { label: 'Intermediate', color: 'text-blue-400', bgColor: 'bg-blue-900/40' };
+  if (difficulty === 2) {
+    return {
+      label: 'Easy · Heuristic',
+      color: 'text-emerald-300',
+      bgColor: 'bg-emerald-900/40',
+    };
   }
-  if (difficulty <= 8) {
-    return { label: 'Advanced', color: 'text-purple-400', bgColor: 'bg-purple-900/40' };
+  if (difficulty >= 3 && difficulty <= 6) {
+    return {
+      label: 'Advanced · Minimax',
+      color: 'text-blue-300',
+      bgColor: 'bg-blue-900/40',
+    };
   }
-  return { label: 'Expert', color: 'text-red-400', bgColor: 'bg-red-900/40' };
+  if (difficulty === 7 || difficulty === 8) {
+    return {
+      label: 'Expert · MCTS',
+      color: 'text-purple-300',
+      bgColor: 'bg-purple-900/40',
+    };
+  }
+  // 9–10
+  return {
+    label: 'Grandmaster · Descent',
+    color: 'text-red-300',
+    bgColor: 'bg-red-900/40',
+  };
 }
 
 /**
@@ -289,13 +309,22 @@ function getAITypeLabel(aiType?: string): string {
 /**
  * Badge component for player indicators
  */
-function Badge({ variant = 'default', children }: { variant?: 'default' | 'primary'; children: React.ReactNode }) {
-  const classes = variant === 'primary' 
-    ? 'px-2 py-0.5 rounded-full bg-blue-500 text-white text-xs font-semibold'
-    : 'px-2 py-0.5 rounded-full bg-gray-600 text-gray-200 text-xs font-semibold';
-  
+function Badge({
+  variant = 'default',
+  children,
+}: {
+  variant?: 'default' | 'primary';
+  children: React.ReactNode;
+}) {
+  const classes =
+    variant === 'primary'
+      ? 'px-2 py-0.5 rounded-full bg-blue-500 text-white text-xs font-semibold'
+      : 'px-2 py-0.5 rounded-full bg-gray-600 text-gray-200 text-xs font-semibold';
+
   return <span className={classes}>{children}</span>;
 }
+
+const PLAYER_COLOR_CLASSES = ['bg-emerald-500', 'bg-sky-500', 'bg-amber-500', 'bg-fuchsia-500'];
 
 /**
  * Player card component
@@ -308,20 +337,24 @@ interface PlayerCardProps {
 }
 
 function PlayerCard({ player, gameState, isCurrentPlayer, isUserPlayer }: PlayerCardProps) {
+  const colorClass = PLAYER_COLOR_CLASSES[player.playerNumber - 1] ?? 'bg-gray-500';
+
   return (
-    <div className={`
+    <div
+      className={`
       p-3 rounded-lg border-2 transition-all
       ${isCurrentPlayer ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}
       ${isUserPlayer ? 'ring-2 ring-green-400' : ''}
-    `}>
+    `}
+    >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <div className={`w-4 h-4 rounded-full bg-${['emerald', 'sky', 'amber', 'fuchsia'][player.playerNumber - 1] || 'gray'}-500`} />
+          <div className={`w-4 h-4 rounded-full ${colorClass}`} />
           <span className="font-semibold">{player.username}</span>
           {player.type === 'ai' && <Badge>🤖 AI</Badge>}
           {isCurrentPlayer && <Badge variant="primary">Current Turn</Badge>}
         </div>
-        
+
         {gameState.timeControl && (
           <PlayerTimer
             player={player}
@@ -330,7 +363,7 @@ function PlayerCard({ player, gameState, isCurrentPlayer, isUserPlayer }: Player
           />
         )}
       </div>
-      
+
       {player.type === 'ai' && (
         <div className="flex flex-col gap-1 mb-2">
           {(() => {
@@ -339,7 +372,9 @@ function PlayerCard({ player, gameState, isCurrentPlayer, isUserPlayer }: Player
             const diffInfo = getAIDifficultyInfo(difficulty);
             return (
               <>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${diffInfo.bgColor} ${diffInfo.color} font-semibold`}>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded ${diffInfo.bgColor} ${diffInfo.color} font-semibold`}
+                >
                   {diffInfo.label} Lv{difficulty}
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-300">
@@ -350,7 +385,7 @@ function PlayerCard({ player, gameState, isCurrentPlayer, isUserPlayer }: Player
           })()}
         </div>
       )}
-      
+
       <RingStats player={player} gameState={gameState} />
       <TerritoryStats player={player} />
     </div>
@@ -456,7 +491,7 @@ export function GameHUD({
 
       {/* Player Cards */}
       <div className="mt-4 space-y-3">
-        {gameState.players.map(player => (
+        {gameState.players.map((player) => (
           <PlayerCard
             key={player.id}
             player={player}

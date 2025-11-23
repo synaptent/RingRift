@@ -174,9 +174,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run npm audit
-        run: npm audit --audit-level=moderate
-        continue-on-error: true
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Audit Node dependencies (prod, fail on high)
+        run: npm audit --production --audit-level=high
 
       - name: Run Snyk security scan
         uses: snyk/actions/node@master
@@ -242,3 +247,31 @@ jobs:
       - name: Run Python rules-parity tests (fixture-based)
         working-directory: ai-service
         run: python -m pytest tests/parity/test_rules_parity_fixtures.py
+
+  python-dependency-audit:
+    name: Python Dependency Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install pip-audit
+        run: python -m pip install pip-audit
+
+      - name: Run pip-audit against ai-service requirements (high/critical only)
+        working-directory: ai-service
+        run: |
+          # Fail the job only on known HIGH or CRITICAL vulnerabilities.
+          pip-audit -r requirements.txt --severity HIGH

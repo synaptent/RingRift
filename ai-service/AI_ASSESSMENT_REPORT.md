@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-The `ai-service` module is operationally stable, with a functional FastAPI server and passing unit tests. The core AI components (MCTS, Neural Network, Heuristic) are implemented and integrated. However, the Python-based `GameEngine` used for training and simulation is a re-implementation of the game rules that simplifies certain complex edge cases (specifically stalemate resolution and granular choices in line processing). While sufficient for heuristic training, these simplifications may lead to strategy divergence from the canonical TypeScript engine. The training pipeline lacks a robust orchestration system for continuous self-improvement.
+The `ai-service` module is operationally stable, with a functional FastAPI server and passing unit tests. The core AI components (Random, Heuristic, Minimax, MCTS, Descent, and Neural Network) are implemented and integrated. However, the Python-based `GameEngine` used for training and simulation is a re-implementation of the game rules that **currently** simplifies certain complex edge cases (specifically stalemate resolution and granular choices in line processing). These simplifications are no longer treated as acceptable shortcuts: the Python rules engine must be brought into **full parity** with the canonical TypeScript engine so that training and analysis always use spec-accurate rules. The training pipeline also lacks a robust orchestration system for continuous self-improvement.
 
 ## 2. Operational Stability
 
@@ -49,10 +49,10 @@ The `ai-service` maintains its own Python implementation of the game rules (`app
   - **Movement:** Handles `MOVE_STACK` and `OVERTAKING_CAPTURE`.
   - **Chain Capture:** Implements mandatory chain continuation logic.
   - **Territory:** Implements disconnection checks and self-elimination prerequisites.
-- **Gaps & Simplifications:**
-  - **Stalemate Resolution:** The complex tie-breaking rules for "Global Stalemate" (Section 7.4 of Compact Rules) are not explicitly implemented. The engine relies on "no valid moves" to determine a loser, which may not correctly handle the specific "no stacks remain" draw/tiebreaker scenario.
-  - **Line Processing (Option 2):** When a line is longer than required, the engine hardcodes the choice to collapse the _first_ 3 markers. A robust AI should be able to choose _which_ segment to collapse to maximize strategic advantage.
-  - **Forced Elimination:** The engine ends the turn immediately after a forced elimination. While compliant with "cycling through players", it relies on the next turn's logic to handle successive eliminations, which is acceptable but relies on the loop controller.
+- **Gaps & Simplifications (to be eliminated for full parity):**
+  - **Stalemate Resolution:** The complex tie-breaking rules for "Global Stalemate" (Section 7.4 of Compact Rules) are not explicitly implemented. The engine currently relies on "no valid moves" to determine a loser, which may not correctly handle the specific "no stacks remain" draw/tiebreaker scenario.
+  - **Line Processing (Option 2):** When a line is longer than required, the engine hardcodes the choice to collapse the _first_ 3 markers. A robust AI and training engine must be able to choose _which_ segment to collapse to maximize strategic advantage, matching the TypeScript implementation exactly.
+  - **Forced Elimination:** The engine ends the turn immediately after a forced elimination. While compliant with "cycling through players", it relies on the next turn's logic to handle successive eliminations. This behaviour should be reviewed and aligned 1:1 with the TypeScript `GameEngine` so that both engines share identical stalemate and elimination semantics.
 
 ### 3.3 Training Pipeline
 

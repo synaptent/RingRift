@@ -112,7 +112,10 @@ describe('AI Resilience Integration Tests', () => {
       // bucket are present.
       const metrics = await client.register.metrics();
       expect(metrics).toContain('ai_move_latency_ms');
-      expect(metrics).toContain('ai_move_latency_ms_bucket{aiType="heuristic"');
+      // Label ordering in Prometheus output is not guaranteed, so assert that
+      // there exists at least one heuristic-labelled bucket regardless of the
+      // position of the aiType label within the label set.
+      expect(metrics).toMatch(/ai_move_latency_ms_bucket\{[^}]*aiType="heuristic"[^}]*\}/);
     });
 
     it('should handle intermittent service failures gracefully', async () => {
@@ -144,7 +147,17 @@ describe('AI Resilience Integration Tests', () => {
         id: 'test',
         boardType: 'square8',
         currentPlayer: 1,
-        board: { type: 'square8', stacks: new Map(), size: 8, markers: new Map(), collapsedSpaces: new Map(), territories: new Map(), formedLines: [], pendingCaptureEvaluations: [], eliminatedRings: {} },
+        board: {
+          type: 'square8',
+          stacks: new Map(),
+          size: 8,
+          markers: new Map(),
+          collapsedSpaces: new Map(),
+          territories: new Map(),
+          formedLines: [],
+          pendingCaptureEvaluations: [],
+          eliminatedRings: {},
+        },
         players: [{ playerNumber: 1, type: 'ai', ringsInHand: 10 }],
         currentPhase: 'ring_placement',
         gameStatus: 'active',
@@ -179,7 +192,17 @@ describe('AI Resilience Integration Tests', () => {
         id: 'test',
         boardType: 'square8',
         currentPlayer: 1,
-        board: { type: 'square8', stacks: new Map(), size: 8, markers: new Map(), collapsedSpaces: new Map(), territories: new Map(), formedLines: [], pendingCaptureEvaluations: [], eliminatedRings: {} },
+        board: {
+          type: 'square8',
+          stacks: new Map(),
+          size: 8,
+          markers: new Map(),
+          collapsedSpaces: new Map(),
+          territories: new Map(),
+          formedLines: [],
+          pendingCaptureEvaluations: [],
+          eliminatedRings: {},
+        },
         players: [{ playerNumber: 1, type: 'ai', ringsInHand: 10 }],
         currentPhase: 'ring_placement',
         gameStatus: 'active',
@@ -223,7 +246,17 @@ describe('AI Resilience Integration Tests', () => {
         id: 'test',
         boardType: 'square8',
         currentPlayer: 1,
-        board: { type: 'square8', stacks: new Map(), size: 8, markers: new Map(), collapsedSpaces: new Map(), territories: new Map(), formedLines: [], pendingCaptureEvaluations: [], eliminatedRings: {} },
+        board: {
+          type: 'square8',
+          stacks: new Map(),
+          size: 8,
+          markers: new Map(),
+          collapsedSpaces: new Map(),
+          territories: new Map(),
+          formedLines: [],
+          pendingCaptureEvaluations: [],
+          eliminatedRings: {},
+        },
         players: [{ playerNumber: 1, type: 'ai', ringsInHand: 10 }],
         currentPhase: 'ring_placement',
         gameStatus: 'active',
@@ -269,7 +302,17 @@ describe('AI Resilience Integration Tests', () => {
         id: 'test',
         boardType: 'square8',
         currentPlayer: 1,
-        board: { type: 'square8', stacks: new Map(), size: 8, markers: new Map(), collapsedSpaces: new Map(), territories: new Map(), formedLines: [], pendingCaptureEvaluations: [], eliminatedRings: {} },
+        board: {
+          type: 'square8',
+          stacks: new Map(),
+          size: 8,
+          markers: new Map(),
+          collapsedSpaces: new Map(),
+          territories: new Map(),
+          formedLines: [],
+          pendingCaptureEvaluations: [],
+          eliminatedRings: {},
+        },
         players: [{ playerNumber: 1, type: 'ai', ringsInHand: 10 }],
         currentPhase: 'ring_placement',
         gameStatus: 'active',
@@ -304,7 +347,17 @@ describe('AI Resilience Integration Tests', () => {
         id: 'test',
         boardType: 'square8',
         currentPlayer: 1,
-        board: { type: 'square8', stacks: new Map(), size: 8, markers: new Map(), collapsedSpaces: new Map(), territories: new Map(), formedLines: [], pendingCaptureEvaluations: [], eliminatedRings: {} },
+        board: {
+          type: 'square8',
+          stacks: new Map(),
+          size: 8,
+          markers: new Map(),
+          collapsedSpaces: new Map(),
+          territories: new Map(),
+          formedLines: [],
+          pendingCaptureEvaluations: [],
+          eliminatedRings: {},
+        },
         players: [{ playerNumber: 1, type: 'ai', ringsInHand: 10 }],
         currentPhase: 'ring_placement',
         gameStatus: 'active',
@@ -314,7 +367,7 @@ describe('AI Resilience Integration Tests', () => {
       };
 
       const startTime = Date.now();
-      
+
       // Make 20 fallback moves
       for (let i = 0; i < 20; i++) {
         await aiEngine.getAIMove(1, stateSnapshot);

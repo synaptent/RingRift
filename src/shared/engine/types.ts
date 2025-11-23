@@ -10,7 +10,7 @@ import {
 } from '../types/game';
 
 // Re-export types used in the engine interface
-export type { Position, BoardType, GamePhase, GameStatus };
+export type { Position, BoardType, GamePhase, GameStatus, BoardState };
 
 /**
  * The GameState interface for the new engine architecture.

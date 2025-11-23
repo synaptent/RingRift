@@ -79,11 +79,15 @@ describe('Territory decision parity at seed 5 move 45', () => {
     const trace = await runSandboxAITrace(boardType, numPlayers, seed, MAX_STEPS);
     expect(trace.entries.length).toBeGreaterThan(0);
 
+    // Historically this decision occurred at moveNumber 45 in the seed-5 trace.
+    // After introducing explicit move-driven line/territory decisions, earlier
+    // line-reward eliminations and region-processing moves may shift the absolute
+    // moveNumber while preserving the same geometric/territory scenario. Rather
+    // than pinning to a hard-coded moveNumber, locate the first explicit
+    // process_territory_region decision for player 2 and treat that as the
+    // canonical inspection point.
     const targetIndex = trace.entries.findIndex(
-      (entry) =>
-        entry.action.type === 'process_territory_region' &&
-        entry.action.player === 2 &&
-        (entry.action as Move).moveNumber === 45
+      (entry) => entry.action.type === 'process_territory_region' && entry.action.player === 2
     );
     expect(targetIndex).toBeGreaterThanOrEqual(0);
 
@@ -154,8 +158,7 @@ describe('Territory decision parity at seed 5 move 45', () => {
     const sandboxBoard = sandboxStateBefore.board;
     const sandboxMovingPlayer = sandboxStateBefore.currentPlayer;
 
-    const keyFromRegion = (spaces: Position[]) =>
-      spaces.map((p) => positionToString(p)).sort();
+    const keyFromRegion = (spaces: Position[]) => spaces.map((p) => positionToString(p)).sort();
 
     // Detectors on sandbox board
     const sharedRegionsSandbox = findDisconnectedRegionsShared(sandboxBoard);
@@ -168,9 +171,7 @@ describe('Territory decision parity at seed 5 move 45', () => {
 
     const sharedKeysSandbox = sharedRegionsSandbox.map((r) => keyFromRegion(r.spaces));
     const sandboxKeysSandbox = sandboxRegionsSandbox.map((r) => keyFromRegion(r.spaces));
-    const backendViewKeysSandbox = backendViewRegionsOnSandbox.map((r) =>
-      keyFromRegion(r.spaces)
-    );
+    const backendViewKeysSandbox = backendViewRegionsOnSandbox.map((r) => keyFromRegion(r.spaces));
 
     const sandboxAICanProcessFlags = sharedRegionsSandbox.map((r) =>
       canProcessRegionForSandboxAIView(sandboxStateBefore, r, sandboxMovingPlayer)
@@ -196,8 +197,7 @@ describe('Territory decision parity at seed 5 move 45', () => {
     const backendCanProcessFlags = backendRegionsBackend.map((r) =>
       backendEngineAny.canProcessDisconnectedRegion(r, backendMovingPlayer)
     );
-    const pendingTerritoryFlag =
-      backendEngineAny.pendingTerritorySelfElimination === true;
+    const pendingTerritoryFlag = backendEngineAny.pendingTerritorySelfElimination === true;
 
     const backendValidMovesAt45 = backendEngine.getValidMoves(backendMovingPlayer);
     const backendRegionMoves = backendValidMovesAt45.filter(
@@ -208,8 +208,7 @@ describe('Territory decision parity at seed 5 move 45', () => {
     );
 
     const sandboxEngineAny: any = sandboxEngine;
-    const sandboxPendingFlag =
-      sandboxEngineAny._pendingTerritorySelfElimination === true;
+    const sandboxPendingFlag = sandboxEngineAny._pendingTerritorySelfElimination === true;
     const sandboxDecisionMoves: Move[] =
       sandboxEngineAny.getValidTerritoryProcessingMovesForCurrentPlayer() ?? [];
     const sandboxDecisionRegionMoves = sandboxDecisionMoves.filter(
@@ -235,7 +234,7 @@ describe('Territory decision parity at seed 5 move 45', () => {
         decisionRegionMoves: sandboxDecisionRegionMoves.map((m) => ({
           id: m.id,
           player: m.player,
-          disconnectedCount: ((m as any).disconnectedRegions?.[0]?.spaces?.length) ?? 0,
+          disconnectedCount: (m as any).disconnectedRegions?.[0]?.spaces?.length ?? 0,
         })),
         decisionEliminationMoves: sandboxDecisionEliminationMoves.map((m) => ({
           to: m.to,
@@ -254,7 +253,7 @@ describe('Territory decision parity at seed 5 move 45', () => {
         validRegionMoves: backendRegionMoves.map((m) => ({
           id: m.id,
           player: m.player,
-          disconnectedCount: ((m as any).disconnectedRegions?.[0]?.spaces?.length) ?? 0,
+          disconnectedCount: (m as any).disconnectedRegions?.[0]?.spaces?.length ?? 0,
         })),
         validEliminationMoves: backendEliminationMoves.map((m) => ({
           to: m.to,

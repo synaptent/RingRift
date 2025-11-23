@@ -1,6 +1,8 @@
 import React, { useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { Input } from '../components/ui/Input';
+import { Button } from '../components/ui/Button';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -63,13 +65,12 @@ export default function LoginPage() {
             <label htmlFor="email" className="block text-sm font-medium text-slate-100">
               Email
             </label>
-            <input
+            <Input
               id="email"
               type="email"
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               placeholder="you@example.com"
             />
           </div>
@@ -78,13 +79,12 @@ export default function LoginPage() {
             <label htmlFor="password" className="block text-sm font-medium text-slate-100">
               Password
             </label>
-            <input
+            <Input
               id="password"
               type="password"
               autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
               placeholder="••••••••"
             />
           </div>
@@ -95,13 +95,9 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button
-            type="submit"
-            className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white disabled:opacity-60 disabled:cursor-not-allowed"
-            disabled={isSubmitting}
-          >
+          <Button type="submit" fullWidth disabled={isSubmitting}>
             {isSubmitting ? 'Logging in…' : 'Login'}
-          </button>
+          </Button>
 
           <p className="text-xs text-slate-400">
             Don’t have an account yet?{' '}

@@ -1,12 +1,5 @@
-import {
-  BoardType,
-  GameState,
-  Move,
-} from '../../src/shared/types/game';
-import {
-  runSandboxAITrace,
-  createBackendEngineFromInitialState,
-} from '../utils/traces';
+import { BoardType, GameState, Move } from '../../src/shared/types/game';
+import { runSandboxAITrace, createBackendEngineFromInitialState } from '../utils/traces';
 import { findMatchingBackendMove } from '../utils/moveMatching';
 import {
   ClientSandboxEngine,
@@ -162,9 +155,7 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
 
         // Backend: find a matching canonical move in getValidMoves and apply via makeMove.
         const backendStateBeforeStep = backendEngine.getGameState();
-        const backendValidMoves = backendEngine.getValidMoves(
-          backendStateBeforeStep.currentPlayer
-        );
+        const backendValidMoves = backendEngine.getValidMoves(backendStateBeforeStep.currentPlayer);
         const matching = findMatchingBackendMove(move, backendValidMoves);
 
         if (!matching) {
@@ -172,24 +163,21 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
           // treat this as a divergence rather than throwing, so the bisect
           // harness can still locate the earliest mismatching index.
           // eslint-disable-next-line no-console
-          console.error(
-            '[Backend_vs_Sandbox.seed5.bisectParity] No matching backend move',
-            {
-              prefixLength,
-              stepIndex: i,
-              sandboxMove: {
-                moveNumber: move.moveNumber,
-                type: move.type,
-                player: move.player,
-                from: move.from,
-                to: move.to,
-                captureTarget: move.captureTarget,
-              },
-              backendCurrentPlayer: backendStateBeforeStep.currentPlayer,
-              backendCurrentPhase: backendStateBeforeStep.currentPhase,
-              backendValidMovesCount: backendValidMoves.length,
-            }
-          );
+          console.error('[Backend_vs_Sandbox.seed5.bisectParity] No matching backend move', {
+            prefixLength,
+            stepIndex: i,
+            sandboxMove: {
+              moveNumber: move.moveNumber,
+              type: move.type,
+              player: move.player,
+              from: move.from,
+              to: move.to,
+              captureTarget: move.captureTarget,
+            },
+            backendCurrentPlayer: backendStateBeforeStep.currentPlayer,
+            backendCurrentPhase: backendStateBeforeStep.currentPhase,
+            backendValidMovesCount: backendValidMoves.length,
+          });
           return false;
         }
 
@@ -220,16 +208,10 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
 
       const backendState = backendEngine.getGameState();
       const sandboxState = sandboxEngine.getGameState();
- 
-      const backendSnap = snapshotFromGameState(
-        `backend-prefix-${prefixLength}`,
-        backendState
-      );
-      const sandboxSnap = snapshotFromGameState(
-        `sandbox-prefix-${prefixLength}`,
-        sandboxState
-      );
- 
+
+      const backendSnap = snapshotFromGameState(`backend-prefix-${prefixLength}`, backendState);
+      const sandboxSnap = snapshotFromGameState(`sandbox-prefix-${prefixLength}`, sandboxState);
+
       // Diagnostic: around the known seed-5 divergence window (territory
       // processing near moveNumber 45), log internal decision-phase flags
       // for both engines so we can compare not just the public GameState
@@ -247,8 +229,7 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
             gameStatus: backendState.gameStatus,
             pendingTerritorySelfElimination:
               backendEngineAny.pendingTerritorySelfElimination === true,
-            pendingLineRewardElimination:
-              backendEngineAny.pendingLineRewardElimination === true,
+            pendingLineRewardElimination: backendEngineAny.pendingLineRewardElimination === true,
             hasPlacedThisTurn: backendEngineAny.hasPlacedThisTurn === true,
             mustMoveFromStackKey: backendEngineAny.mustMoveFromStackKey,
           },
@@ -263,22 +244,19 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
           },
         });
       }
- 
+
       if (!snapshotsEqual(backendSnap, sandboxSnap)) {
         const diff = diffSnapshots(backendSnap, sandboxSnap);
         const markerSummary = summariseMarkerAndCollapsedDiff(backendSnap, sandboxSnap);
         // eslint-disable-next-line no-console
-        console.error(
-          '[Backend_vs_Sandbox.seed5.bisectParity] Snapshot mismatch at prefix',
-          {
-            prefixLength,
-            diff,
-            markerSummary,
-          }
-        );
+        console.error('[Backend_vs_Sandbox.seed5.bisectParity] Snapshot mismatch at prefix', {
+          prefixLength,
+          diff,
+          markerSummary,
+        });
         return false;
       }
- 
+
       return true;
     }
 
@@ -316,17 +294,20 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
       allEqual,
     });
 
-    // Expectations:
-    // - Today there is a known backend vs sandbox divergence for seed=5, and
-    //   the bisect harness consistently locates the earliest mismatch at
-    //   index 43 (0-based).
-    // - If future rules/engine work restores full parity for this seed,
-    //   the harness should still pass by observing allEqual === true and
-    //   firstMismatchIndex === moves.length.
+    // Expectations (updated after move-driven territory fixes):
+    // - If backend and sandbox remain in full parity for the entire trace,
+    //   we expect allEqual === true and firstMismatchIndex === moves.length.
+    // - If there is a divergence strictly BEFORE the final move, this
+    //   indicates a regression in core rules / detection and the test
+    //   must fail.
+    // - A divergence only at moves.length (i.e. statesEqualAtPrefix(moves.length)
+    //   is false but binary search yields firstMismatchIndex === moves.length)
+    //   corresponds to end-of-game bookkeeping differences now asserted by
+    //   dedicated victory/territory suites. We allow that case here.
     if (allEqual) {
       expect(firstMismatchIndex).toBe(moves.length);
     } else {
-      expect(firstMismatchIndex).toBe(43);
+      expect(firstMismatchIndex).toBe(moves.length);
     }
   });
 });

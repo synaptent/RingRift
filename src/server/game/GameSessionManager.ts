@@ -3,13 +3,14 @@ import { GameSession } from './GameSession';
 import { PythonRulesClient } from '../services/PythonRulesClient';
 import { getCacheService } from '../cache/redis';
 import { logger } from '../utils/logger';
+import type { ClientToServerEvents, ServerToClientEvents } from '../../shared/types/websocket';
 
 export class GameSessionManager {
   private sessions: Map<string, GameSession> = new Map();
   private pythonRulesClient: PythonRulesClient;
 
   constructor(
-    private io: SocketIOServer,
+    private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>,
     private userSockets: Map<string, string>
   ) {
     this.pythonRulesClient = new PythonRulesClient();

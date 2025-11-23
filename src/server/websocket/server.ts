@@ -8,18 +8,23 @@ import { logger } from '../utils/logger';
 import { PlayerChoiceResponse } from '../../shared/types/game';
 import { GameSessionManager } from '../game/GameSessionManager';
 import { config } from '../config';
-import { WebSocketPayloadSchemas } from '@shared/validation/websocketSchemas';
-import { WebSocketErrorCode, WebSocketErrorPayload } from '../../shared/types/websocket';
+import { WebSocketPayloadSchemas } from '../../shared/validation/websocketSchemas';
+import {
+  WebSocketErrorCode,
+  WebSocketErrorPayload,
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from '../../shared/types/websocket';
 import { webSocketConnectionsGauge } from '../utils/rulesParityMetrics';
 
-export interface AuthenticatedSocket extends Socket {
+export interface AuthenticatedSocket extends Socket<ClientToServerEvents, ServerToClientEvents> {
   userId?: string;
   username?: string;
   gameId?: string;
 }
 
 export class WebSocketServer {
-  private io: SocketIOServer;
+  private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
   private gameRooms: Map<string, Set<string>> = new Map();
   private userSockets: Map<string, string> = new Map();
   private sessionManager: GameSessionManager;
@@ -33,7 +38,7 @@ export class WebSocketServer {
     // Socket.IO layer only allowed http://localhost:3000.
     const allowedOrigin = config.server.websocketOrigin;
 
-    this.io = new SocketIOServer(httpServer, {
+    this.io = new SocketIOServer<ClientToServerEvents, ServerToClientEvents>(httpServer, {
       cors: {
         origin: allowedOrigin,
         methods: ['GET', 'POST'],
@@ -95,6 +100,7 @@ export class WebSocketServer {
           userId: user.id,
           username: user.username,
           socketId: socket.id,
+          connectionId: socket.id,
         });
 
         next();
@@ -114,6 +120,7 @@ export class WebSocketServer {
         userId: socket.userId,
         username: socket.username,
         socketId: socket.id,
+        connectionId: socket.id,
       });
 
       // Store user socket mapping
@@ -121,7 +128,6 @@ export class WebSocketServer {
         this.userSockets.set(socket.userId, socket.id);
       }
 
-      // Join game room
       // Join game room
       socket.on('join_game', async (data: unknown) => {
         try {
@@ -145,247 +151,251 @@ export class WebSocketServer {
               'join_game'
             );
           } else {
-            logger.error('Error joining game:', error);
+            logger.error('Error joining game', {
+              gameId: socket.gameId,
+              socketId: socket.id,
+              userId: socket.userId,
+              error: error instanceof Error ? error.message : String(error),
+            });
             this.emitError(socket, 'INTERNAL_ERROR', 'Failed to join game', 'join_game');
           }
         }
       });
-            // Leave game room
-            socket.on('leave_game', async (data: unknown) => {
-              try {
-                const { gameId } = WebSocketPayloadSchemas.leave_game.parse(data);
-                await this.handleLeaveGame(socket, gameId);
-              } catch (error) {
-                if (error instanceof ZodError) {
-                  this.handleWebSocketValidationError(socket, 'leave_game', error);
-                  return;
-                }
-                logger.error('Error leaving game:', error);
-                this.emitError(socket, 'INTERNAL_ERROR', 'Failed to leave game', 'leave_game');
-              }
-            });
+
+      // Leave game room
+      socket.on('leave_game', async (data: unknown) => {
+        try {
+          const { gameId } = WebSocketPayloadSchemas.leave_game.parse(data);
+          await this.handleLeaveGame(socket, gameId);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            this.handleWebSocketValidationError(socket, 'leave_game', error);
+            return;
+          }
+          logger.error('Error leaving game', {
+            gameId: socket.gameId,
+            socketId: socket.id,
+            userId: socket.userId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.emitError(socket, 'INTERNAL_ERROR', 'Failed to leave game', 'leave_game');
+        }
+      });
 
       // Lobby subscription handlers
       socket.on('lobby:subscribe', () => {
         socket.join(WebSocketServer.LOBBY_ROOM);
-        logger.info('Client subscribed to lobby updates', { socketId: socket.id, userId: socket.userId });
+        logger.info('Client subscribed to lobby updates', {
+          socketId: socket.id,
+          userId: socket.userId,
+        });
       });
 
       socket.on('lobby:unsubscribe', () => {
         socket.leave(WebSocketServer.LOBBY_ROOM);
-        logger.info('Client unsubscribed from lobby updates', { socketId: socket.id, userId: socket.userId });
+        logger.info('Client unsubscribed from lobby updates', {
+          socketId: socket.id,
+          userId: socket.userId,
+        });
       });
 
-            // Handle player moves (geometry-based)
-            socket.on('player_move', async (data: unknown) => {
-              try {
-                const payload = WebSocketPayloadSchemas.player_move.parse(data);
-                await this.handlePlayerMove(socket, payload);
-              } catch (error) {
-                if (error instanceof ZodError) {
-                  this.handleWebSocketValidationError(socket, 'player_move', error);
-                  return;
-                }
-      
-                const message = error instanceof Error ? error.message : String(error);
-      
-                if (message === 'Database not available') {
-                  logger.error('Error handling player move (database not available):', error);
-                  this.emitError(
-                    socket,
-                    'INTERNAL_ERROR',
-                    'Unable to process move',
-                    'player_move'
-                  );
-                } else if (message === 'Game not found') {
-                  this.emitError(socket, 'GAME_NOT_FOUND', 'Game not found', 'player_move');
-                } else if (message === 'Game is not active') {
-                  this.emitError(
-                    socket,
-                    'INTERNAL_ERROR',
-                    'Game is not active',
-                    'player_move'
-                  );
-                } else if (
-                  message === 'Spectators cannot make moves' ||
-                  message === 'Current socket user is not a player in this game' ||
-                  message === 'Not in game room'
-                ) {
-                  this.emitError(
-                    socket,
-                    'ACCESS_DENIED',
-                    'You are not allowed to make moves in this game',
-                    'player_move'
-                  );
-                } else if (
-                  message === 'Invalid move position payload' ||
-                  message === 'Move destination is required'
-                ) {
-                  this.emitError(
-                    socket,
-                    'INVALID_PAYLOAD',
-                    'Invalid move payload',
-                    'player_move'
-                  );
-                } else {
-                  // Default: treat as a rules-engine rejection of an illegal move.
-                  logger.warn('Engine rejected move', {
-                    socketId: socket.id,
-                    userId: socket.userId,
-                    message,
-                  });
-                  this.emitError(
-                    socket,
-                    'MOVE_REJECTED',
-                    'Move was not valid in the current game state',
-                    'player_move'
-                  );
-                }
-              }
-            });
+      // Handle player moves (geometry-based)
+      socket.on('player_move', async (data: unknown) => {
+        try {
+          const payload = WebSocketPayloadSchemas.player_move.parse(data);
+          await this.handlePlayerMove(socket, payload);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            this.handleWebSocketValidationError(socket, 'player_move', error);
+            return;
+          }
 
-            // Handle canonical Move selection by id. This allows clients to:
-            //   1. Fetch legal moves via game_state.validMoves (including advanced
-            //      decision phases such as line_processing / territory_processing),
-            //   2. Choose a Move.id on the client,
-            //   3. Send { gameId, moveId } to have the backend resolve and apply
-            //      the selected Move via GameEngine.makeMoveById.
-            socket.on('player_move_by_id', async (data: unknown) => {
-              try {
-                const payload = WebSocketPayloadSchemas.player_move_by_id.parse(data);
-                await this.handlePlayerMoveById(socket, payload);
-              } catch (error) {
-                if (error instanceof ZodError) {
-                  this.handleWebSocketValidationError(socket, 'player_move_by_id', error);
-                  return;
-                }
-      
-                const message = error instanceof Error ? error.message : String(error);
-      
-                if (message === 'Database not available') {
-                  logger.error('Error handling player move by id (database not available):', error);
-                  this.emitError(
-                    socket,
-                    'INTERNAL_ERROR',
-                    'Unable to process move selection',
-                    'player_move_by_id'
-                  );
-                } else if (message === 'Game not found') {
-                  this.emitError(
-                    socket,
-                    'GAME_NOT_FOUND',
-                    'Game not found',
-                    'player_move_by_id'
-                  );
-                } else if (message === 'Game is not active') {
-                  this.emitError(
-                    socket,
-                    'INTERNAL_ERROR',
-                    'Game is not active',
-                    'player_move_by_id'
-                  );
-                } else if (
-                  message === 'Spectators cannot make moves' ||
-                  message === 'Current socket user is not a player in this game' ||
-                  message === 'Not in game room'
-                ) {
-                  this.emitError(
-                    socket,
-                    'ACCESS_DENIED',
-                    'You are not allowed to make moves in this game',
-                    'player_move_by_id'
-                  );
-                } else {
-                  // Default: treat as a rules-engine rejection of an illegal move selection.
-                  logger.warn('Engine rejected move by id', {
-                    socketId: socket.id,
-                    userId: socket.userId,
-                    message,
-                  });
-                  this.emitError(
-                    socket,
-                    'MOVE_REJECTED',
-                    'Move selection was not valid in the current game state',
-                    'player_move_by_id'
-                  );
-                }
-              }
-            });
+          const message = error instanceof Error ? error.message : String(error);
 
-            // Handle chat messages
-            socket.on('chat_message', async (data: unknown) => {
-              try {
-                const payload = WebSocketPayloadSchemas.chat_message.parse(data);
-                await this.handleChatMessage(socket, payload);
-              } catch (error) {
-                if (error instanceof ZodError) {
-                  this.handleWebSocketValidationError(socket, 'chat_message', error);
-                  return;
-                }
-                logger.error('Error handling chat message:', error);
-                this.emitError(
-                  socket,
-                  'INVALID_PAYLOAD',
-                  'Invalid chat message',
-                  'chat_message'
-                );
-              }
+          if (message === 'Database not available') {
+            logger.error('Error handling player move (database not available)', {
+              gameId: socket.gameId,
+              socketId: socket.id,
+              userId: socket.userId,
+              error: error instanceof Error ? error.message : String(error),
             });
+            this.emitError(socket, 'INTERNAL_ERROR', 'Unable to process move', 'player_move');
+          } else if (message === 'Game not found') {
+            this.emitError(socket, 'GAME_NOT_FOUND', 'Game not found', 'player_move');
+          } else if (message === 'Game is not active') {
+            this.emitError(socket, 'INTERNAL_ERROR', 'Game is not active', 'player_move');
+          } else if (
+            message === 'Spectators cannot make moves' ||
+            message === 'Current socket user is not a player in this game' ||
+            message === 'Not in game room'
+          ) {
+            this.emitError(
+              socket,
+              'ACCESS_DENIED',
+              'You are not allowed to make moves in this game',
+              'player_move'
+            );
+          } else if (
+            message === 'Invalid move position payload' ||
+            message === 'Move destination is required'
+          ) {
+            this.emitError(socket, 'INVALID_PAYLOAD', 'Invalid move payload', 'player_move');
+          } else {
+            // Default: treat as a rules-engine rejection of an illegal move.
+            logger.warn('Engine rejected move', {
+              socketId: socket.id,
+              userId: socket.userId,
+              gameId: socket.gameId,
+              message,
+            });
+            this.emitError(
+              socket,
+              'MOVE_REJECTED',
+              'Move was not valid in the current game state',
+              'player_move'
+            );
+          }
+        }
+      });
 
-            // Handle player choice responses
-            socket.on('player_choice_response', (data: unknown) => {
-              try {
-                const response = WebSocketPayloadSchemas.player_choice_response.parse(
-                  data
-                ) as PlayerChoiceResponse<unknown>;
-      
-                const gameId = socket.gameId;
-                if (!gameId) {
-                  throw new Error('player_choice_response received without an active gameId');
-                }
-      
-                const session = this.sessionManager.getSession(gameId);
-                if (!session) {
-                  throw new Error(`No active session found for gameId=${gameId}`);
-                }
-      
-                session.getInteractionHandler().handleChoiceResponse(response);
-              } catch (error) {
-                if (error instanceof ZodError) {
-                  this.handleWebSocketValidationError(socket, 'player_choice_response', error);
-                  return;
-                }
-      
-                const message = error instanceof Error ? error.message : String(error);
-      
-                if (
-                  message.startsWith('playerNumber mismatch for choice') ||
-                  message.startsWith('Invalid selectedOption for choice')
-                ) {
-                  this.emitError(
-                    socket,
-                    'CHOICE_REJECTED',
-                    'Choice response was not valid for the current game state',
-                    'player_choice_response'
-                  );
-                } else if (message.includes('No active session found')) {
-                  this.emitError(
-                    socket,
-                    'GAME_NOT_FOUND',
-                    'Game not found',
-                    'player_choice_response'
-                  );
-                } else {
-                  logger.error('Error handling player_choice_response', error);
-                  this.emitError(
-                    socket,
-                    'INTERNAL_ERROR',
-                    'Invalid choice response',
-                    'player_choice_response'
-                  );
-                }
-              }
+      // Handle canonical Move selection by id. This allows clients to:
+      //   1. Fetch legal moves via game_state.validMoves (including advanced
+      //      decision phases such as line_processing / territory_processing),
+      //   2. Choose a Move.id on the client,
+      //   3. Send { gameId, moveId } to have the backend resolve and apply
+      //      the selected Move via GameEngine.makeMoveById.
+      socket.on('player_move_by_id', async (data: unknown) => {
+        try {
+          const payload = WebSocketPayloadSchemas.player_move_by_id.parse(data);
+          await this.handlePlayerMoveById(socket, payload);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            this.handleWebSocketValidationError(socket, 'player_move_by_id', error);
+            return;
+          }
+
+          const message = error instanceof Error ? error.message : String(error);
+
+          if (message === 'Database not available') {
+            logger.error('Error handling player move by id (database not available)', {
+              gameId: socket.gameId,
+              socketId: socket.id,
+              userId: socket.userId,
+              error: error instanceof Error ? error.message : String(error),
             });
+            this.emitError(
+              socket,
+              'INTERNAL_ERROR',
+              'Unable to process move selection',
+              'player_move_by_id'
+            );
+          } else if (message === 'Game not found') {
+            this.emitError(socket, 'GAME_NOT_FOUND', 'Game not found', 'player_move_by_id');
+          } else if (message === 'Game is not active') {
+            this.emitError(socket, 'INTERNAL_ERROR', 'Game is not active', 'player_move_by_id');
+          } else if (
+            message === 'Spectators cannot make moves' ||
+            message === 'Current socket user is not a player in this game' ||
+            message === 'Not in game room'
+          ) {
+            this.emitError(
+              socket,
+              'ACCESS_DENIED',
+              'You are not allowed to make moves in this game',
+              'player_move_by_id'
+            );
+          } else {
+            // Default: treat as a rules-engine rejection of an illegal move selection.
+            logger.warn('Engine rejected move by id', {
+              socketId: socket.id,
+              userId: socket.userId,
+              gameId: socket.gameId,
+              message,
+            });
+            this.emitError(
+              socket,
+              'MOVE_REJECTED',
+              'Move selection was not valid in the current game state',
+              'player_move_by_id'
+            );
+          }
+        }
+      });
+
+      // Handle chat messages
+      socket.on('chat_message', async (data: unknown) => {
+        try {
+          const payload = WebSocketPayloadSchemas.chat_message.parse(data);
+          await this.handleChatMessage(socket, payload);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            this.handleWebSocketValidationError(socket, 'chat_message', error);
+            return;
+          }
+          logger.error('Error handling chat message', {
+            socketId: socket.id,
+            userId: socket.userId,
+            gameId: socket.gameId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.emitError(socket, 'INVALID_PAYLOAD', 'Invalid chat message', 'chat_message');
+        }
+      });
+
+      // Handle player choice responses
+      socket.on('player_choice_response', (data: unknown) => {
+        try {
+          const response = WebSocketPayloadSchemas.player_choice_response.parse(
+            data
+          ) as PlayerChoiceResponse<unknown>;
+
+          const gameId = socket.gameId;
+          if (!gameId) {
+            throw new Error('player_choice_response received without an active gameId');
+          }
+
+          const session = this.sessionManager.getSession(gameId);
+          if (!session) {
+            throw new Error(`No active session found for gameId=${gameId}`);
+          }
+
+          session.getInteractionHandler().handleChoiceResponse(response);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            this.handleWebSocketValidationError(socket, 'player_choice_response', error);
+            return;
+          }
+
+          const message = error instanceof Error ? error.message : String(error);
+
+          if (
+            message.startsWith('playerNumber mismatch for choice') ||
+            message.startsWith('Invalid selectedOption for choice')
+          ) {
+            this.emitError(
+              socket,
+              'CHOICE_REJECTED',
+              'Choice response was not valid for the current game state',
+              'player_choice_response'
+            );
+          } else if (message.includes('No active session found')) {
+            this.emitError(socket, 'GAME_NOT_FOUND', 'Game not found', 'player_choice_response');
+          } else {
+            logger.error('Error handling player_choice_response', {
+              socketId: socket.id,
+              userId: socket.userId,
+              gameId: socket.gameId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            this.emitError(
+              socket,
+              'INTERNAL_ERROR',
+              'Invalid choice response',
+              'player_choice_response'
+            );
+          }
+        }
+      });
 
       // Handle disconnection
       socket.on('disconnect', () => {
@@ -405,13 +415,14 @@ export class WebSocketServer {
       event,
       socketId: socket.id,
       userId: socket.userId,
+      gameId: socket.gameId,
     });
 
     const payload: WebSocketErrorPayload = {
       type: 'error',
       code,
-      event,
       message,
+      ...(event ? { event } : {}),
     };
 
     socket.emit('error', payload);
@@ -426,10 +437,8 @@ export class WebSocketServer {
       eventName,
       socketId: socket.id,
       userId: socket.userId,
-      error:
-        error instanceof Error
-          ? { name: error.name, message: error.message }
-          : error,
+      gameId: socket.gameId,
+      error: error instanceof Error ? { name: error.name, message: error.message } : error,
     });
 
     this.emitError(socket, 'INVALID_PAYLOAD', 'Invalid payload', eventName);
@@ -510,6 +519,7 @@ export class WebSocketServer {
       logger.info('Player joined game room', {
         userId: socket.userId,
         gameId,
+        socketId: socket.id,
         isPlayer,
         canSpectate,
         gamePhase: gameState.currentPhase,
@@ -547,6 +557,7 @@ export class WebSocketServer {
     logger.info('Player left game room', {
       userId: socket.userId,
       gameId,
+      socketId: socket.id,
     });
   }
 
@@ -606,6 +617,7 @@ export class WebSocketServer {
     logger.info('Chat message sent', {
       userId: socket.userId,
       gameId,
+      socketId: socket.id,
       messageLength: text.length,
     });
   }
@@ -620,6 +632,8 @@ export class WebSocketServer {
       userId: socket.userId,
       username: socket.username,
       socketId: socket.id,
+      connectionId: socket.id,
+      gameId: socket.gameId,
     });
 
     // Remove from user socket mapping
@@ -650,14 +664,14 @@ export class WebSocketServer {
   }
 
   // Public methods for external use
-  public sendToUser(userId: string, event: string, data: any) {
+  public sendToUser(userId: string, event: keyof ServerToClientEvents, data: any) {
     const socketId = this.userSockets.get(userId);
     if (socketId) {
       this.io.to(socketId).emit(event, data);
     }
   }
 
-  public sendToGame(gameId: string, event: string, data: any) {
+  public sendToGame(gameId: string, event: keyof ServerToClientEvents, data: any) {
     this.io.to(gameId).emit(event, data);
   }
 
@@ -670,7 +684,7 @@ export class WebSocketServer {
   }
 
   // Lobby broadcast methods
-  public broadcastLobbyEvent(event: string, data: any) {
+  public broadcastLobbyEvent(event: keyof ServerToClientEvents, data: any) {
     this.io.to(WebSocketServer.LOBBY_ROOM).emit(event, data);
     logger.debug('Broadcast lobby event', { event, lobbyRoom: WebSocketServer.LOBBY_ROOM });
   }

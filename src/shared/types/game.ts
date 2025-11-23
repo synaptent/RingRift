@@ -604,7 +604,7 @@ export const BOARD_CONFIGS = {
     size: 8,
     totalSpaces: 64,
     ringsPerPlayer: 18,
-    lineLength: 4, // Minimum line length for collapse
+    lineLength: 3, // Minimum line length for collapse (8x8 simplified)
     movementAdjacency: 'moore' as AdjacencyType, // 8-direction movement
     lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
     territoryAdjacency: 'von_neumann' as AdjacencyType, // 4-direction territory
@@ -614,7 +614,7 @@ export const BOARD_CONFIGS = {
     size: 19,
     totalSpaces: 361,
     ringsPerPlayer: 36,
-    lineLength: 5, // Minimum line length for collapse
+    lineLength: 4, // Minimum line length for collapse (19x19 full)
     movementAdjacency: 'moore' as AdjacencyType, // 8-direction movement
     lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
     territoryAdjacency: 'von_neumann' as AdjacencyType, // 4-direction territory
@@ -624,7 +624,7 @@ export const BOARD_CONFIGS = {
     size: 11, // Radius of hexagonal board
     totalSpaces: 331,
     ringsPerPlayer: 36,
-    lineLength: 5, // Minimum line length for collapse
+    lineLength: 4, // Minimum line length for collapse (hex)
     movementAdjacency: 'hexagonal' as AdjacencyType, // 6-direction movement
     lineAdjacency: 'hexagonal' as AdjacencyType, // 6-direction line formation
     territoryAdjacency: 'hexagonal' as AdjacencyType, // 6-direction territory

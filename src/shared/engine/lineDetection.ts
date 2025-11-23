@@ -8,16 +8,24 @@ import {
 } from '../types/game';
 
 /**
- * Find all marker lines on the board (4+ for 8x8, 5+ for 19x19/hex)
- * Rule Reference: Section 11.1 - Line Formation Rules
- * CRITICAL: Lines are formed by MARKERS, not stacks!
+ * Detect all marker lines on the board (3+ for 8x8, 4+ for 19x19/hex)
+ * according to the canonical RingRift line rules (Section 11.1).
+ *
+ * This helper is the single source of truth for line geometry used by:
+ * - the shared GameEngine (advanced phases),
+ * - the backend BoardManager / RuleEngine, and
+ * - the client sandbox line engines.
+ *
+ * CRITICAL: Lines are formed by MARKERS, not stacks.
  */
 export function findAllLines(board: BoardState): LineInfo[] {
   const lines: LineInfo[] = [];
   const processedLines = new Set<string>();
   const config = BOARD_CONFIGS[board.type];
 
-  // Iterate through all MARKERS (not stacks!).
+  // Iterate through all MARKERS (not stacks!). If a space currently
+  // hosts a stack or has already collapsed to territory, it cannot be
+  // part of an active marker line.
   for (const [posStr, marker] of board.markers) {
     const position = stringToPosition(posStr);
 
@@ -52,6 +60,15 @@ export function findAllLines(board: BoardState): LineInfo[] {
   }
 
   return lines;
+}
+
+/**
+ * Detect all marker lines on the board that belong to a specific player.
+ * Thin convenience wrapper over {@link findAllLines} used by hosts that
+ * want a player-filtered view without re-implementing geometry.
+ */
+export function findLinesForPlayer(board: BoardState, playerNumber: number): LineInfo[] {
+  return findAllLines(board).filter((line) => line.player === playerNumber);
 }
 
 function getLineDirections(boardType: string): Position[] {

@@ -3,7 +3,7 @@ import { getDatabaseClient } from '../database/connection';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { gameRateLimiter } from '../middleware/rateLimiter';
-import { logger } from '../utils/logger';
+import { httpLogger } from '../utils/logger';
 import { CreateGameSchema, CreateGameInput } from '../../shared/validation/schemas';
 import { AiOpponentsConfig } from '../../shared/types/game';
 import { GameEngine } from '../game/GameEngine';
@@ -192,7 +192,7 @@ router.post(
       },
     });
 
-    logger.info('Game created', {
+    httpLogger.info(req, 'Game created', {
       gameId: game.id,
       creatorId: userId,
       hasAI: hasAIOpponents,
@@ -316,14 +316,20 @@ router.post(
           },
         });
 
-        // Broadcast game started event to remove from lobby
+        // Broadcast game started event to remove from lobby and provide
+        // basic metadata for lobby consumers.
         if (wsServerInstance) {
-          wsServerInstance.broadcastLobbyEvent('lobby:game_started', { gameId });
+          wsServerInstance.broadcastLobbyEvent('lobby:game_started', {
+            gameId,
+            status: startedGame.status,
+            startedAt: startedGame.startedAt,
+            playerCount: currentPlayerCount,
+          });
         }
       }
     }
 
-    logger.info('Player joined game', { gameId, userId, playerSlot });
+    httpLogger.info(req, 'Player joined game', { gameId, userId, playerSlot });
 
     res.json({
       success: true,
@@ -383,7 +389,7 @@ router.post(
         wsServerInstance.broadcastLobbyEvent('lobby:game_cancelled', { gameId });
       }
 
-      logger.info('Player resigned from game', { gameId, userId });
+      httpLogger.info(req, 'Player resigned from game', { gameId, userId });
 
       res.json({
         success: true,
@@ -438,7 +444,7 @@ router.post(
         // Remove player from game engine (simplified for now)
       }
 
-      logger.info('Player left game', { gameId, userId });
+      httpLogger.info(req, 'Player left game', { gameId, userId });
 
       res.json({
         success: true,

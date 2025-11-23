@@ -18,7 +18,8 @@ import {
   CaptureBoardAdapters,
   CaptureApplyAdapters,
 } from './sandboxCaptures';
-import { MarkerPathHelpers, applyMarkerEffectsAlongPathOnBoard } from './sandboxMovement';
+import type { MarkerPathHelpers } from './sandboxMovement';
+import { applyMarkerEffectsAlongPathOnBoard } from './sandboxMovement';
 import { isSandboxCaptureDebugEnabled } from '../../shared/utils/envFlags';
 
 const isTestEnv =
@@ -259,10 +260,7 @@ export async function handleMovementClickSandbox(
   const destinationStack = board.stacks.get(key);
   const landingMarkerOwner = hooks.getMarkerOwner(position, board);
   if (!destinationStack || destinationStack.stackHeight === 0) {
-    if (
-      landingMarkerOwner !== undefined &&
-      landingMarkerOwner !== movingStack.controllingPlayer
-    ) {
+    if (landingMarkerOwner !== undefined && landingMarkerOwner !== movingStack.controllingPlayer) {
       if (selectedFromKey === '2,7')
         console.log('[Sandbox Movement Engine Debug] Opponent marker at landing', {
           position,
@@ -306,8 +304,7 @@ export async function handleMovementClickSandbox(
   // GameEngine behaviour where landing on your own marker immediately
   // eliminates your top ring.
   const landedOnOwnMarker =
-    landingMarkerOwner !== undefined &&
-    landingMarkerOwner === movingStack.controllingPlayer;
+    landingMarkerOwner !== undefined && landingMarkerOwner === movingStack.controllingPlayer;
 
   applyMarkerEffectsAlongPathWithHooks(
     hooks,

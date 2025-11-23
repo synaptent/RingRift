@@ -1784,7 +1784,7 @@ class GameEngine:
         if not player_lines:
             return []
 
-        required_len = 4 if game_state.board.type == BoardType.SQUARE8 else 5
+        required_len = 3 if game_state.board.type == BoardType.SQUARE8 else 4
         moves: List[Move] = []
 
         for idx, line in enumerate(player_lines):
@@ -2582,7 +2582,7 @@ class GameEngine:
             return
 
         # 2. Determine required minimum line length.
-        required_len = 4 if board.type == BoardType.SQUARE8 else 5
+        required_len = 3 if board.type == BoardType.SQUARE8 else 4
 
         # 3. Decide which positions to collapse.
         positions_to_collapse: List[Position]

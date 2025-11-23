@@ -22,8 +22,17 @@ import {
   applyMarkerEffectsAlongPathOnBoard,
   MarkerPathHelpers,
 } from '../../shared/engine/core';
+import { evaluateVictory } from '../../shared/engine/victoryLogic';
 import { enumerateCaptureMoves, CaptureBoardAdapters } from '../../shared/engine/captureLogic';
-import { createHypotheticalBoardWithPlacement as createHypotheticalBoardWithPlacementHelper } from './rules/placementHelpers';
+import { enumerateSimpleMoveTargetsFromStack } from '../../shared/engine/movementLogic';
+import {
+  filterProcessableTerritoryRegions,
+  canProcessTerritoryRegion,
+} from '../../shared/engine/territoryProcessing';
+import {
+  validatePlacementOnBoard,
+  PlacementContext,
+} from '../../shared/engine/validators/PlacementValidator';
 
 export class RuleEngine {
   private boardManager: BoardManager;
@@ -125,106 +134,64 @@ export class RuleEngine {
   }
 
   /**
-   * Validates ring placement according to RingRift rules
-   * Rule Reference: Section 7.1 - Placement must leave at least one legal move or capture
+   * Validates ring placement according to RingRift rules.
+   *
+   * This now delegates the detailed capacity, invariant, and no-dead-placement
+   * checks to the shared {@link validatePlacementOnBoard} helper so that the
+   * backend RuleEngine, shared GameEngine, and sandbox all share a single
+   * source of truth for placement semantics:
+   *
+   * - Board geometry / collapsed-space / marker-stack exclusivity.
+   * - Per-player ring cap + ringsInHand supply.
+   * - Single vs multi-ring placement rules (stacks vs empty cells).
+   * - No-dead-placement via hasAnyLegalMoveOrCaptureFromOnBoard.
+   *
+   * Rule Reference: Section 7.1 – Placement must leave at least one legal move
+   * or capture from the resulting stack.
    */
   private validateRingPlacement(move: Move, gameState: GameState): boolean {
-    // Ring placement is only allowed during ring placement phase
+    // Ring placement is only allowed during the ring_placement phase.
     if (gameState.currentPhase !== 'ring_placement') {
       return false;
     }
 
-    // Basic position validity
-    if (!this.boardManager.isValidPosition(move.to)) {
-      return false;
-    }
-
-    // Cannot place on collapsed spaces
-    if (this.boardManager.isCollapsedSpace(move.to, gameState.board)) {
-      return false;
-    }
-
-    // Cannot place on a marker. Markers represent movement history and
-    // must not coexist with stacks; allowing placement onto a marker
-    // would create stack+marker coexistence and break the S-invariant.
-    {
-      const posKey = positionToString(move.to);
-      if (gameState.board.markers.has(posKey)) {
-        return false;
-      }
-    }
-
     const playerState = gameState.players.find((p) => p.playerNumber === move.player);
-    if (!playerState) {
+    if (!playerState || playerState.ringsInHand <= 0) {
       return false;
     }
 
-    const ringsInHand = playerState.ringsInHand;
-    if (ringsInHand <= 0) {
-      return false;
-    }
-
-    // Compute how many rings this player already has on the board
-    const playerStacks = this.getPlayerStacks(move.player, gameState.board);
-    const ringsOnBoard = playerStacks.reduce((sum, pos) => {
-      const stackKey = positionToString(pos);
-      const stackAtPos = gameState.board.stacks.get(stackKey);
-      return sum + (stackAtPos ? stackAtPos.rings.length : 0);
-    }, 0);
-
-    const perPlayerCap = this.boardConfig.ringsPerPlayer;
-    const remainingByCap = perPlayerCap - ringsOnBoard;
-    const remainingBySupply = ringsInHand;
-    const maxAvailable = Math.min(remainingByCap, remainingBySupply);
-
-    if (maxAvailable <= 0) {
-      return false;
-    }
-
-    const posKey = positionToString(move.to);
-    const existingStack = gameState.board.stacks.get(posKey);
-    const isOccupied = !!(existingStack && existingStack.rings.length > 0);
-
-    let maxPerPlacement: number;
-    if (isOccupied) {
-      // On existing stacks we only ever place a single ring
-      if (maxAvailable < 1) {
-        return false;
-      }
-      maxPerPlacement = 1;
-    } else {
-      // On empty spaces we allow multi-ring placements (typically up to 3)
-      maxPerPlacement = Math.min(3, maxAvailable);
-    }
-
+    const boardType = gameState.board.type;
+    const boardConfig = BOARD_CONFIGS[boardType];
     const requestedCount = move.placementCount ?? 1;
 
-    if (requestedCount < 1 || requestedCount > maxPerPlacement) {
-      return false;
-    }
+    const ctx: PlacementContext = {
+      boardType,
+      player: move.player,
+      ringsInHand: playerState.ringsInHand,
+      ringsPerPlayerCap: boardConfig.ringsPerPlayer,
+    };
 
-    // No-dead-placement: after placing, the resulting stack must have at least
-    // one legal move or capture.
-    const hypotheticalBoard = this.createHypotheticalBoardWithPlacement(
-      gameState.board,
-      move.to,
-      move.player,
-      requestedCount
-    );
-
-    if (!this.hasAnyLegalMoveOrCaptureFrom(move.to, move.player, hypotheticalBoard)) {
-      return false;
-    }
-
-    return true;
+    const result = validatePlacementOnBoard(gameState.board, move.to, requestedCount, ctx);
+    return result.valid;
   }
 
   /**
-   * Validates stack movement according to RingRift rules
-   * Rule Reference: Section 8.2, FAQ Q2
+   * Validates stack movement according to RingRift rules.
+   *
+   * This now delegates the geometric and path/landing checks to the shared
+   * {@link enumerateSimpleMoveTargetsFromStack} helper so that backend
+   * semantics stay aligned with the sandbox and shared GameEngine:
+   *
+   * - Straight-line movement along canonical directions only.
+   * - Distance at least equal to stack height.
+   * - Path clear of stacks and collapsed spaces.
+   * - Landing on empty spaces, own markers, or any stack (merge).
+   * - Landing on opponent markers remains illegal.
+   *
+   * Rule Reference: Section 8.2, FAQ Q2.
    */
   private validateStackMovement(move: Move, gameState: GameState): boolean {
-    // Stack movement is allowed during movement or capture phases
+    // Stack movement is allowed during movement or capture phases.
     if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'capture') {
       return false;
     }
@@ -233,70 +200,40 @@ export class RuleEngine {
       return false;
     }
 
-    // Check if source position has player's stack
     const fromKey = positionToString(move.from);
     const sourceStack = gameState.board.stacks.get(fromKey);
     if (!sourceStack || sourceStack.controllingPlayer !== move.player) {
       return false;
     }
 
-    // Movement must follow a straight ray consistent with the board's
-    // movement directions (Moore for square, cube axes for hex), matching
-    // sandboxMovement and hasAnyLegalMoveOrCaptureFromOnBoard.
-    if (!this.isStraightLineMovement(move.from, move.to)) {
-      return false;
-    }
+    // Build a MovementBoardView over the current board so we can reuse the
+    // shared reachability helper for both validation and enumeration.
+    const view: MovementBoardView = {
+      isValidPosition: (pos: Position) => this.boardManager.isValidPosition(pos),
+      isCollapsedSpace: (pos: Position) => this.boardManager.isCollapsedSpace(pos, gameState.board),
+      getStackAt: (pos: Position) => {
+        const key = positionToString(pos);
+        const stack = gameState.board.stacks.get(key);
+        if (!stack) return undefined;
+        return {
+          controllingPlayer: stack.controllingPlayer,
+          capHeight: stack.capHeight,
+          stackHeight: stack.stackHeight,
+        };
+      },
+      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, gameState.board),
+    };
 
-    // Check if destination is valid
-    if (!this.boardManager.isValidPosition(move.to)) {
-      return false;
-    }
+    const targets = enumerateSimpleMoveTargetsFromStack(
+      this.boardConfig.type as any,
+      move.from,
+      move.player,
+      view
+    );
 
-    // Rule Reference: Section 8.2 - Cannot land on collapsed space
-    if (this.boardManager.isCollapsedSpace(move.to, gameState.board)) {
-      return false;
-    }
-
-    // Check movement distance based on stack height
-    // Rule Reference: Section 8.2 - Must move at least stack height
-    const distance = this.calculateDistance(move.from, move.to);
-    const minDistance = sourceStack.stackHeight;
-
-    if (distance < minDistance) {
-      // if (positionToString(move.from) === '2,7') {
-      //    console.log(`[RuleEngine] validateStackMovement: 2,7 -> ${positionToString(move.to)} distance=${distance} min=${minDistance} (height=${sourceStack.stackHeight})`);
-      // }
-      return false;
-    } else {
-      if (positionToString(move.from) === '2,7') {
-        console.log(
-          `[RuleEngine] validateStackMovement ALLOWED: 2,7 -> ${positionToString(move.to)} distance=${distance} min=${minDistance} (height=${sourceStack.stackHeight})`
-        );
-      }
-    }
-
-    // Validate landing position
-    // Rule Reference: Section 8.2, FAQ Q2 - Can land on empty or same-color marker
-    const toKey = positionToString(move.to);
-    const destinationStack = gameState.board.stacks.get(toKey);
-    const destinationMarker = this.boardManager.getMarker(move.to, gameState.board);
-
-    // Landing space must be either empty or have same-color marker
-    if (destinationStack && destinationStack.rings.length > 0) {
-      // Can land on stacks for merging
-      // This is valid in normal movement
-    } else if (destinationMarker !== undefined && destinationMarker !== move.player) {
-      // Cannot land on opponent's marker
-      return false;
-    }
-
-    // Check if path is clear
-    // Rule Reference: Section 8.1 - Cannot pass through collapsed spaces or other rings
-    if (!this.isPathClear(move.from, move.to, gameState.board)) {
-      return false;
-    }
-
-    return true;
+    // A simple move is legal iff the requested destination matches one of the
+    // shared helper's reachable targets.
+    return targets.some((t) => positionsEqual(t.to, move.to));
   }
 
   /**
@@ -774,169 +711,30 @@ export class RuleEngine {
   }
 
   /**
-   * Checks for game end conditions.
-   *
-   * Backend victory semantics are aligned with the sandbox victory helper
-   * (src/client/sandbox/sandboxVictory.ts) and the compact rules:
-   *
-   * - Ring-elimination victory: a player wins when their eliminatedRings
-   *   count reaches or exceeds GameState.victoryThreshold (>50% of total
-   *   rings in play).
-   * - Territory-control victory: a player wins when their territorySpaces
-   *   count reaches or exceeds GameState.territoryVictoryThreshold (>50%
-   *   of board spaces).
-   * - Fallback structural terminality: when there are no stacks on the
-   *   board and no player has ringsInHand, the game cannot progress.
-   *   In that case we apply territory, then eliminated-rings tie-breakers;
-   *   if still tied, we mark the game as completed with no winner.
+   * Checks for game end conditions using the shared, canonical victory helper
+   * from src/shared/engine/victoryLogic so that backend RuleEngine, shared
+   * GameEngine, and sandbox all share a single source of truth for
+   * ring-elimination, territory-control, and stalemate ladder semantics.
    */
   checkGameEnd(gameState: GameState): { isGameOver: boolean; winner?: number; reason?: string } {
-    const players = gameState.players;
+    const result = evaluateVictory(gameState);
 
-    // 1) Ring-elimination victory: strictly more than 50% of total rings
-    // in play have been eliminated for a single player.
-    const ringWinner = players.find((p) => p.eliminatedRings >= gameState.victoryThreshold);
-    if (ringWinner) {
-      return {
-        isGameOver: true,
-        winner: ringWinner.playerNumber,
-        reason: 'ring_elimination',
-      };
-    }
-
-    // 2) Territory-control victory: strictly more than 50% of the board's
-    // spaces are controlled as territory by a single player.
-    const territoryWinner = players.find(
-      (p) => p.territorySpaces >= gameState.territoryVictoryThreshold
-    );
-    if (territoryWinner) {
-      return {
-        isGameOver: true,
-        winner: territoryWinner.playerNumber,
-        reason: 'territory_control',
-      };
-    }
-
-    // 3) Fallback structural terminality & global stalemate on bare boards.
-    //
-    // When there are no stacks left on the board the game can only
-    // continue if at least one player can legally re-enter play via a
-    // ring placement that satisfies the no-dead-placement rule. If no
-    // such placement exists for any player, the compact rules treat all
-    // rings remaining in hand as eliminated (hand → E) for tie-break
-    // purposes and apply the stalemate ladder (territory → eliminated
-    // rings → markers → last actor).
-    const noStacksLeft = gameState.board.stacks.size === 0;
-    if (!noStacksLeft) {
+    if (!result.isGameOver) {
       return { isGameOver: false };
     }
 
-    const anyRingsInHand = players.some((p) => p.ringsInHand > 0);
-    let treatHandAsEliminated = false;
-
-    if (anyRingsInHand) {
-      // Check whether any player with rings in hand still has at least one
-      // legal placement under the full no-dead-placement rule. If so, the
-      // game is not yet structurally terminal: they may be able to
-      // re-enter play once phases advance.
-      const anyLegalPlacementForAnyPlayer = players.some((p) => {
-        if (p.ringsInHand <= 0) {
-          return false;
-        }
-        const placements = this.getValidRingPlacements(p.playerNumber, gameState);
-        return placements.length > 0;
-      });
-
-      if (anyLegalPlacementForAnyPlayer) {
-        return { isGameOver: false };
-      }
-
-      // Global stalemate on a bare board: some players hold rings in hand
-      // but none of them has a legal placement. For tie-break purposes we
-      // conceptually treat those rings as eliminated (hand → E) without
-      // mutating the underlying GameState counters; this keeps S
-      // non-decreasing while matching the rules text.
-      treatHandAsEliminated = true;
-    }
-
-    // At this point the board has no stacks and either nobody holds rings
-    // in hand or no legal placements exist for any player. Apply the
-    // stalemate ladder.
-
-    // First tie-breaker: territory spaces.
-    const maxTerritory = Math.max(...players.map((p) => p.territorySpaces));
-    const territoryLeaders = players.filter((p) => p.territorySpaces === maxTerritory);
-
-    if (territoryLeaders.length === 1 && maxTerritory > 0) {
-      return {
-        isGameOver: true,
-        winner: territoryLeaders[0].playerNumber,
-        reason: 'territory_control',
-      };
-    }
-
-    // Second tie-breaker: eliminated rings, including rings remaining in
-    // hand when we are in a global-stalemate case.
-    const eliminationScores = players.map(
-      (p) => p.eliminatedRings + (treatHandAsEliminated ? p.ringsInHand : 0)
-    );
-    const maxEliminated = Math.max(...eliminationScores);
-    const eliminationLeaders = players.filter((p, idx) => eliminationScores[idx] === maxEliminated);
-
-    if (eliminationLeaders.length === 1 && maxEliminated > 0) {
-      return {
-        isGameOver: true,
-        winner: eliminationLeaders[0].playerNumber,
-        reason: 'ring_elimination',
-      };
-    }
-
-    // Third tie-breaker: remaining markers on the board. This mirrors the
-    // complete rules' S-invariant ladder (markers, collapsed, eliminated)
-    // and ensures structural terminality still yields a definitive winner
-    // when possible.
-    const markerCountsByPlayer: { [player: number]: number } = {};
-    for (const p of players) {
-      markerCountsByPlayer[p.playerNumber] = 0;
-    }
-    for (const marker of gameState.board.markers.values()) {
-      const owner = marker.player;
-      if (markerCountsByPlayer[owner] !== undefined) {
-        markerCountsByPlayer[owner] += 1;
-      }
-    }
-
-    const markerCounts = players.map((p) => markerCountsByPlayer[p.playerNumber] ?? 0);
-    const maxMarkers = Math.max(...markerCounts);
-    const markerLeaders = players.filter(
-      (p) => (markerCountsByPlayer[p.playerNumber] ?? 0) === maxMarkers
-    );
-
-    if (markerLeaders.length === 1 && maxMarkers > 0) {
-      return {
-        isGameOver: true,
-        winner: markerLeaders[0].playerNumber,
-        reason: 'last_player_standing',
-      };
-    }
-
-    // Final tie-breaker: last player to complete a valid turn action.
-    const lastActor = this.getLastActor(gameState);
-    if (lastActor !== undefined) {
-      return {
-        isGameOver: true,
-        winner: lastActor,
-        reason: 'last_player_standing',
-      };
-    }
-
-    // Safety fallback: in degenerate cases where no last actor can be
-    // determined (e.g. malformed game state), mark the game as completed
-    // without a specific winner.
-    return {
+    const response: { isGameOver: boolean; winner?: number; reason?: string } = {
       isGameOver: true,
-      reason: 'game_completed',
     };
+
+    if (result.winner !== undefined) {
+      response.winner = result.winner;
+    }
+    if (result.reason !== undefined) {
+      response.reason = result.reason;
+    }
+
+    return response;
   }
 
   /**
@@ -1020,7 +818,14 @@ export class RuleEngine {
   }
 
   /**
-   * Gets valid ring placement moves
+   * Gets valid ring placement moves for the given player using the shared,
+   * canonical placement validator. This keeps backend move enumeration in
+   * lock-step with the shared GameEngine and sandbox:
+   *
+   * - Capacity (per-player ring cap + ringsInHand supply).
+   * - Board geometry / collapsed-space / marker-stack exclusivity.
+   * - Single vs multi-ring placement rules.
+   * - No-dead-placement via hasAnyLegalMoveOrCaptureFromOnBoard.
    */
   private getValidRingPlacements(player: number, gameState: GameState): Move[] {
     const moves: Move[] = [];
@@ -1030,9 +835,14 @@ export class RuleEngine {
     }
 
     const board = gameState.board;
+    const boardType = board.type;
+    const boardConfig = BOARD_CONFIGS[boardType];
     const allPositions = this.boardManager.getAllPositions();
 
-    // Compute rings on board for capacity checks
+    // Compute rings on board for capacity checks, mirroring the legacy
+    // RuleEngine behaviour (crediting whole stacks to the controlling
+    // player). This keeps per-player caps consistent across hosts even
+    // though it slightly over-approximates rings for mixed-colour stacks.
     const playerStacks = this.getPlayerStacks(player, board);
     const ringsOnBoard = playerStacks.reduce((sum, pos) => {
       const stackKey = positionToString(pos);
@@ -1040,8 +850,7 @@ export class RuleEngine {
       return sum + (stackAtPos ? stackAtPos.rings.length : 0);
     }, 0);
 
-    const perPlayerCap = this.boardConfig.ringsPerPlayer;
-    const remainingByCap = perPlayerCap - ringsOnBoard;
+    const remainingByCap = boardConfig.ringsPerPlayer - ringsOnBoard;
     const remainingBySupply = playerState.ringsInHand;
     const maxAvailableGlobal = Math.min(remainingByCap, remainingBySupply);
 
@@ -1049,58 +858,48 @@ export class RuleEngine {
       return moves;
     }
 
+    const baseCtx: PlacementContext = {
+      boardType,
+      player,
+      ringsInHand: playerState.ringsInHand,
+      ringsPerPlayerCap: boardConfig.ringsPerPlayer,
+      ringsOnBoard,
+      maxAvailableGlobal,
+    };
+
+    const baseMoveNumber = gameState.moveHistory.length + 1;
+
     for (const pos of allPositions) {
-      if (!this.boardManager.isValidPosition(pos)) {
-        continue;
-      }
-
-      if (this.boardManager.isCollapsedSpace(pos, board)) {
-        continue;
-      }
-
       const posKey = positionToString(pos);
       const stack = board.stacks.get(posKey);
       const isOccupied = !!(stack && stack.rings.length > 0);
 
-      if (isOccupied) {
-        if (maxAvailableGlobal < 1) {
+      const maxPerPlacement = isOccupied ? 1 : Math.min(3, maxAvailableGlobal);
+      if (maxPerPlacement <= 0) {
+        continue;
+      }
+
+      for (let count = 1; count <= maxPerPlacement; count++) {
+        const validation = validatePlacementOnBoard(board, pos, count, baseCtx);
+        if (!validation.valid) {
           continue;
         }
 
         const candidate: Move = {
-          id: `place-${positionToString(pos)}-stack`,
+          id: isOccupied
+            ? `place-${positionToString(pos)}-stack`
+            : `place-${positionToString(pos)}-x${count}`,
           type: 'place_ring',
           player,
           to: pos,
-          placedOnStack: true,
-          placementCount: 1,
+          placedOnStack: isOccupied,
+          placementCount: count,
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: gameState.moveHistory.length + 1,
+          moveNumber: baseMoveNumber,
         };
 
-        if (this.validateRingPlacement(candidate, gameState)) {
-          moves.push(candidate);
-        }
-      } else {
-        const maxPerPlacement = Math.min(3, maxAvailableGlobal);
-        for (let count = 1; count <= maxPerPlacement; count++) {
-          const candidate: Move = {
-            id: `place-${positionToString(pos)}-x${count}`,
-            type: 'place_ring',
-            player,
-            to: pos,
-            placedOnStack: false,
-            placementCount: count,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: gameState.moveHistory.length + 1,
-          };
-
-          if (this.validateRingPlacement(candidate, gameState)) {
-            moves.push(candidate);
-          }
-        }
+        moves.push(candidate);
       }
     }
 
@@ -1108,36 +907,58 @@ export class RuleEngine {
   }
 
   /**
-   * Gets valid stack movement moves
+   * Gets valid stack movement moves.
+   *
+   * This is now a thin adapter over the shared
+   * {@link enumerateSimpleMoveTargetsFromStack} helper, which encodes the
+   * canonical non-capturing movement semantics for both backend and sandbox.
    */
   private getValidStackMovements(player: number, gameState: GameState): Move[] {
     const moves: Move[] = [];
-    const playerStacks = this.getPlayerStacks(player, gameState.board);
+    const board = gameState.board;
+    const playerStacks = this.getPlayerStacks(player, board);
+
+    if (playerStacks.length === 0) {
+      return moves;
+    }
+
+    const view: MovementBoardView = {
+      isValidPosition: (pos: Position) => this.boardManager.isValidPosition(pos),
+      isCollapsedSpace: (pos: Position) => this.boardManager.isCollapsedSpace(pos, board),
+      getStackAt: (pos: Position) => {
+        const key = positionToString(pos);
+        const stack = board.stacks.get(key);
+        if (!stack) return undefined;
+        return {
+          controllingPlayer: stack.controllingPlayer,
+          capHeight: stack.capHeight,
+          stackHeight: stack.stackHeight,
+        };
+      },
+      getMarkerOwner: (pos: Position) => this.boardManager.getMarker(pos, board),
+    };
+
+    const baseMoveNumber = gameState.moveHistory.length + 1;
 
     for (const stackPos of playerStacks) {
-      const allPositions = this.boardManager.getAllPositions();
+      const targets = enumerateSimpleMoveTargetsFromStack(
+        this.boardConfig.type as any,
+        stackPos,
+        player,
+        view
+      );
 
-      for (const targetPos of allPositions) {
-        if (positionsEqual(stackPos, targetPos)) continue;
-
-        const testMove: Move = {
-          id: '',
+      for (const target of targets) {
+        moves.push({
+          id: `move-${positionToString(target.from)}-${positionToString(target.to)}`,
           type: 'move_stack',
           player,
-          from: stackPos,
-          to: targetPos,
+          from: target.from,
+          to: target.to,
           timestamp: new Date(),
           thinkTime: 0,
-          moveNumber: 0,
-        };
-
-        if (this.validateStackMovement(testMove, gameState)) {
-          moves.push({
-            ...testMove,
-            id: `move-${positionToString(stackPos)}-${positionToString(targetPos)}`,
-            moveNumber: gameState.moveHistory.length + 1,
-          });
-        }
+          moveNumber: baseMoveNumber,
+        });
       }
     }
 
@@ -1332,8 +1153,10 @@ export class RuleEngine {
       return moves;
     }
 
-    const eligibleRegions = disconnectedRegions.filter((region: Territory) =>
-      this.canProcessDisconnectedRegionForRules(gameState, region, movingPlayer)
+    const eligibleRegions = filterProcessableTerritoryRegions(
+      gameState.board,
+      disconnectedRegions,
+      { player: movingPlayer }
     );
 
     if (eligibleRegions.length === 0) {
@@ -1383,9 +1206,9 @@ export class RuleEngine {
 
     if (
       disconnectedRegions &&
-      disconnectedRegions.some((region: Territory) =>
-        this.canProcessDisconnectedRegionForRules(gameState, region, movingPlayer)
-      )
+      filterProcessableTerritoryRegions(gameState.board, disconnectedRegions, {
+        player: movingPlayer,
+      }).length > 0
     ) {
       return moves;
     }
@@ -1442,18 +1265,11 @@ export class RuleEngine {
     region: Territory,
     player: number
   ): boolean {
-    const regionPositionSet = new Set(region.spaces.map((pos: Position) => positionToString(pos)));
-
-    const playerStacks = this.getPlayerStacks(player, gameState.board);
-
-    for (const pos of playerStacks) {
-      const stackPosKey = positionToString(pos);
-      if (!regionPositionSet.has(stackPosKey)) {
-        return true;
-      }
-    }
-
-    return false;
+    // Thin wrapper around the shared self-elimination prerequisite helper
+    // so RulesEngine-based tests can continue to call this method directly
+    // while the actual gating semantics remain centralised in
+    // src/shared/engine/territoryProcessing.
+    return canProcessTerritoryRegion(gameState.board, region, { player });
   }
 
   /**
@@ -1476,54 +1292,6 @@ export class RuleEngine {
 
   private isPlayerTurn(player: number, gameState: GameState): boolean {
     return gameState.currentPlayer === player;
-  }
-
-  /**
-   * Determine the last player to complete a valid turn action, used as the
-   * final rung of the stalemate tie-break ladder. Preference order:
-   *
-   * 1. The actor of the last structured history entry, when available.
-   * 2. The player of the last legacy moveHistory entry.
-   * 3. The player immediately preceding currentPlayer in turn order.
-   *
-   * This mirrors the intent of the complete rules that "the last player to
-   * complete a valid turn action" wins when all other tiebreakers are
-   * exhausted, while remaining robust for synthetic test states that may not
-   * have full history recorded.
-   */
-  private getLastActor(gameState: GameState): number | undefined {
-    // 1) Prefer the canonical structured history when present.
-    if (gameState.history && gameState.history.length > 0) {
-      const lastEntry = gameState.history[gameState.history.length - 1];
-      if (lastEntry && typeof lastEntry.actor === 'number') {
-        return lastEntry.actor;
-      }
-    }
-
-    // 2) Fall back to the legacy moveHistory when available.
-    if (gameState.moveHistory && gameState.moveHistory.length > 0) {
-      const lastMove = gameState.moveHistory[gameState.moveHistory.length - 1];
-      if (lastMove && typeof lastMove.player === 'number') {
-        return lastMove.player;
-      }
-    }
-
-    // 3) As a defensive fallback (primarily for unit tests that construct
-    // minimal states), treat the previous player in turn order as the last
-    // actor. This preserves the "no perfect tie" guarantee even when no
-    // explicit history is recorded.
-    const players = gameState.players;
-    if (!players || players.length === 0) {
-      return undefined;
-    }
-
-    const currentIdx = players.findIndex((p) => p.playerNumber === gameState.currentPlayer);
-    if (currentIdx === -1) {
-      return players[0].playerNumber;
-    }
-
-    const lastIdx = (currentIdx - 1 + players.length) % players.length;
-    return players[lastIdx].playerNumber;
   }
 
   private getPlayerStacks(player: number, board: BoardState): Position[] {
@@ -1659,19 +1427,6 @@ export class RuleEngine {
       players: [...gameState.players],
       spectators: [...gameState.spectators],
     };
-  }
-
-  /**
-   * Creates a hypothetical board state with a ring placed at the specified position.
-   * Used for placement validation to check if the placement leaves legal moves.
-   */
-  private createHypotheticalBoardWithPlacement(
-    board: BoardState,
-    position: Position,
-    player: number,
-    count: number = 1
-  ): BoardState {
-    return createHypotheticalBoardWithPlacementHelper(board, position, player, count);
   }
 
   /**
@@ -1897,5 +1652,10 @@ export class RuleEngine {
     void this.areAdjacent;
     void this.isPathClearForHypothetical;
     void this.getCaptureDirections;
+    // Also keep legacy path/geometry helpers referenced so TypeScript
+    // does not flag them as unused while they remain valuable for
+    // diagnostics and future rule-engine extensions.
+    void this.isPathClear;
+    void this.isStraightLineMovement;
   }
 }

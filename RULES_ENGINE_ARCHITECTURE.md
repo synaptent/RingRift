@@ -16,17 +16,149 @@ RingRift maintains two implementations of the game rules:
 1.  **TypeScript Engine (Canonical):** Located in `src/shared/engine/`. Used by the Node.js backend (`GameEngine.ts`) and the client sandbox (`ClientSandboxEngine.ts`). This is the current source of truth.
 2.  **Python Engine (AI/Shadow):** Located in `ai-service/app/game_engine.py`. Used for AI search/evaluation and currently being rolled out as a shadow validator for the backend.
 
+### Shared Rules Engine as Single Source of Truth
+
+The canonical RingRift rules live in the shared TypeScript engine under
+[`src/shared/engine`](src/shared/engine/types.ts:1). These modules are pure,
+deterministic helpers that operate on shared `GameState` / `BoardState` types
+and are reused by every host (backend, sandbox, tests, Python parity). The most
+important groups are:
+
+- **Movement & captures**
+  - Geometry & non‑capturing reachability: [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1)
+  - Overtaking capture enumeration: [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1)
+  - Validators: [`MovementValidator.ts`](src/shared/engine/validators/MovementValidator.ts:1), [`CaptureValidator.ts`](src/shared/engine/validators/CaptureValidator.ts:1)
+  - Mutators: [`MovementMutator.ts`](src/shared/engine/mutators/MovementMutator.ts:1), [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1)
+
+- **Lines**
+  - Marker‑line geometry: [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21)
+  - Line‑phase validators: [`LineValidator.ts`](src/shared/engine/validators/LineValidator.ts:1)
+  - Line mutators (collapse, elimination bookkeeping): [`LineMutator.ts`](src/shared/engine/mutators/LineMutator.ts:1)
+
+- **Territory (detection, borders, processing)**
+  - Region detection: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36)
+  - Border‑marker expansion: [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35)
+  - Region processing pipeline (Q23 / self‑elimination compatible): [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1)
+
+- **Placement**
+  - Placement validation (including no‑dead‑placement wiring): [`PlacementValidator.ts`](src/shared/engine/validators/PlacementValidator.ts:1)
+  - Board‑level placement mutators: [`PlacementMutator.ts`](src/shared/engine/mutators/PlacementMutator.ts:1)
+
+- **Victory**
+  - Ring‑elimination, territory‑majority, and stalemate ladder: [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts:51)
+
+- **Turn sequencing**
+  - Shared phase/turn state machine: [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132)
+  - Turn/phase mutators used by hosts: [`TurnMutator.ts`](src/shared/engine/mutators/TurnMutator.ts:1)
+  - Shared orchestrating GameEngine used in parity tests: [`GameEngine.ts`](src/shared/engine/GameEngine.ts:37)
+
+### Backend, Shared Engine, and Sandbox Roles
+
+At runtime there are three TypeScript layers:
+
+- **Shared engine (pure helpers)** – modules under
+  [`src/shared/engine`](src/shared/engine/types.ts:1) implement geometry,
+  validation, and mutation operating on `GameState` / `BoardState`. They are
+  side‑effect free except for returning updated state/board structures and are
+  used as the single source of truth for rules semantics.
+
+- **Backend host (`RuleEngine` / `GameEngine`)** – server‑side orchestrators in
+  [`RuleEngine.ts`](src/server/game/RuleEngine.ts:1) and
+  [`GameEngine.ts`](src/server/game/GameEngine.ts:1) that:
+  - Adapt persistent `GameSession` state into the shared helpers.
+  - Call validators/mutators from the shared engine to apply canonical moves.
+  - Handle IO concerns: WebSockets, HTTP APIs, database persistence, Python
+    rules/AI service calls, metrics, etc.
+
+- **Client sandbox host (`ClientSandboxEngine`)** – browser‑side engine in
+  [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts:1) that:
+  - Uses the same shared helpers for movement, captures, lines, territory,
+    victory, and turn progression.
+  - Provides local experimentation, AI‑vs‑AI simulations, and RulesMatrix / FAQ
+    scenario playback.
+  - Mirrors backend behaviour and is validated via parity tests (see
+    [`tests/README.md`](tests/README.md:1)).
+
+### How to Change or Extend Rules Safely
+
+When changing rules, treat the shared engine as the only editable source of
+truth:
+
+1. Identify the relevant shared module(s):
+   - Movement & captures: [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1),
+     [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1),
+     [`MovementValidator.ts`](src/shared/engine/validators/MovementValidator.ts:1),
+     [`CaptureValidator.ts`](src/shared/engine/validators/CaptureValidator.ts:1),
+     [`MovementMutator.ts`](src/shared/engine/mutators/MovementMutator.ts:1),
+     [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1).
+   - Lines: [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21),
+     [`LineValidator.ts`](src/shared/engine/validators/LineValidator.ts:1),
+     [`LineMutator.ts`](src/shared/engine/mutators/LineMutator.ts:1).
+   - Territory: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36),
+     [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35),
+     [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1).
+   - Placement: [`PlacementValidator.ts`](src/shared/engine/validators/PlacementValidator.ts:1),
+     [`PlacementMutator.ts`](src/shared/engine/mutators/PlacementMutator.ts:1).
+   - Victory: [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts:51).
+   - Turn sequencing: [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132),
+     [`TurnMutator.ts`](src/shared/engine/mutators/TurnMutator.ts:1).
+
+2. Update the shared helper(s) under
+   [`src/shared/engine`](src/shared/engine/types.ts:1). Avoid editing
+   backend‑only or sandbox‑only geometry unless absolutely necessary.
+
+3. Extend or adjust the **shared unit tests** that cover these modules:
+   - Movement & captures:
+     [`movement.shared.test.ts`](tests/unit/movement.shared.test.ts:1),
+     [`captureSequenceEnumeration.test.ts`](tests/unit/captureSequenceEnumeration.test.ts:1).
+   - Lines:
+     [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1),
+     [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1).
+   - Territory:
+     [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1),
+     [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1),
+     [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1).
+   - Placement:
+     [`placement.shared.test.ts`](tests/unit/placement.shared.test.ts:1).
+   - Victory:
+     [`victory.shared.test.ts`](tests/unit/victory.shared.test.ts:1).
+   - Turn sequencing & termination:
+     [`GameEngine.turnSequence.scenarios.test.ts`](tests/unit/GameEngine.turnSequence.scenarios.test.ts:1),
+     [`SandboxAI.ringPlacementNoopRegression.test.ts`](tests/unit/SandboxAI.ringPlacementNoopRegression.test.ts:1),
+     [`GameEngine.aiSimulation.test.ts`](tests/unit/GameEngine.aiSimulation.test.ts:1).
+
+4. Re‑run parity suites that ensure backend and sandbox still match the shared
+   helpers:
+   - Backend vs sandbox:
+     [`MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts:1),
+     [`PlacementParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/PlacementParity.RuleEngine_vs_Sandbox.test.ts:1),
+     [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
+     [`TerritoryBorders.Backend_vs_Sandbox.test.ts`](tests/unit/TerritoryBorders.Backend_vs_Sandbox.test.ts:1),
+     [`TerritoryCore.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts:1),
+     [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1).
+   - Shared vs host engines:
+     [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1),
+     [`RefactoredEngineParity.test.ts`](tests/unit/RefactoredEngineParity.test.ts:1),
+     [`movementReachabilityParity.test.ts`](tests/unit/movementReachabilityParity.test.ts:1),
+     [`reachabilityParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/reachabilityParity.RuleEngine_vs_Sandbox.test.ts:1).
+
+5. Validate **RulesMatrix** and **FAQ** scenarios under
+   [`tests/scenarios`](tests/scenarios/FAQ_Q09_Q14.test.ts:1) remain green; add
+   new scenario cases where appropriate (see
+   [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md:1) and
+   [`tests/README.md`](tests/README.md:1)).
+
 ### Python Engine Structure
 
-- `ai-service/app/game_engine.py`: Core orchestration, move generation, state transitions, and turn logic.
-- `ai-service/app/board_manager.py`: Board-level utilities (hashing, S-invariant, line detection, territory regions).
-- `ai-service/app/rules/default_engine.py`: Adapter that delegates to `GameEngine` while routing key move types through dedicated mutators under _shadow contracts_.
-- `ai-service/app/models/`: Pydantic models mirroring the TypeScript shared engine types.
+- [`ai-service/app/game_engine.py`](ai-service/app/game_engine.py:1): Core orchestration, move generation, state transitions, and turn logic.
+- [`ai-service/app/board_manager.py`](ai-service/app/board_manager.py:1): Board-level utilities (hashing, S-invariant, line detection, territory regions).
+- [`ai-service/app/rules/default_engine.py`](ai-service/app/rules/default_engine.py:1): Adapter that delegates to `GameEngine` while routing key move types through dedicated mutators under _shadow contracts_.
+- [`ai-service/app/models/`](ai-service/app/models/__init__.py:1): Pydantic models mirroring the TypeScript shared engine types.
 
 ### TypeScript Integration
 
-- `src/server/game/RulesBackendFacade.ts`: The primary entry point for the backend. It abstracts the choice between the local TS engine and the Python service based on `RINGRIFT_RULES_MODE`.
-- `src/server/services/PythonRulesClient.ts`: Handles HTTP communication with the Python AI service (`/rules/evaluate_move`).
+- [`src/server/game/RulesBackendFacade.ts`](src/server/game/RulesBackendFacade.ts:1): The primary entry point for the backend. It abstracts the choice between the local TS engine and the Python service based on `RINGRIFT_RULES_MODE` while always applying moves via the canonical shared-engine–backed `GameEngine`.
+- [`src/server/services/PythonRulesClient.ts`](src/server/services/PythonRulesClient.ts:1): Handles HTTP communication with the Python AI service (`/rules/evaluate_move`).
 
 ### Parity Mechanisms
 
@@ -280,9 +412,18 @@ These exclusivity rules are considered **part of the rules contract** and must b
 
 **Reference implementations:**
 
-- Client sandbox: `src/client/sandbox/sandboxTerritory.ts`, `sandboxTerritoryEngine.ts`.
-- Shared engine: `src/shared/engine/territoryDetection.ts`, `TerritoryMutator.ts`.
-- Backend helpers: `src/server/game/BoardManager.ts`, `src/server/game/rules/territoryProcessing.ts`.
+- Client sandbox:
+  [`sandboxTerritory.ts`](src/client/sandbox/sandboxTerritory.ts:1),
+  [`sandboxTerritoryEngine.ts`](src/client/sandbox/sandboxTerritoryEngine.ts:1).
+- Shared engine:
+  [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36),
+  [`TerritoryMutator.ts`](src/shared/engine/mutators/TerritoryMutator.ts:1),
+  [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1).
+- Backend helpers:
+  [`BoardManager.ts`](src/server/game/BoardManager.ts:1),
+  [`GameEngine.ts`](src/server/game/GameEngine.ts:1) – both delegate to the
+  shared territory helpers above rather than maintaining a separate
+  server‑local implementation.
 
 **Board geometries:**
 
@@ -720,17 +861,20 @@ of the sandbox AI matches the theoretical termination guarantees in
   - `src/client/sandbox/sandboxTerritoryEngine.ts`
   - `src/client/sandbox/sandboxElimination.ts`
 - Shared engine:
-  - `src/shared/engine/territoryDetection.ts`
-  - `src/shared/engine/mutators/TerritoryMutator.ts`
-  - `src/shared/engine/mutators/CaptureMutator.ts`
+  - [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36)
+  - [`TerritoryMutator.ts`](src/shared/engine/mutators/TerritoryMutator.ts:1)
+  - [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1)
+  - [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35)
+  - [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1)
+  - [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts:51)
+  - [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132)
 - Backend:
-  - `src/server/game/BoardManager.ts`
-  - `src/server/game/rules/territoryProcessing.ts`
-  - `src/server/game/GameEngine.ts`
+  - [`BoardManager.ts`](src/server/game/BoardManager.ts:1)
+  - [`GameEngine.ts`](src/server/game/GameEngine.ts:1)
 - Python rules engine:
-  - `ai-service/app/board_manager.py`
-  - `ai-service/app/rules/mutators/territory.py`
-  - `ai-service/app/rules/mutators/capture.py`
+  - [`board_manager.py`](ai-service/app/board_manager.py:1)
+  - [`territory.py`](ai-service/app/rules/mutators/territory.py:1)
+  - [`capture.py`](ai-service/app/rules/mutators/capture.py:1)
 - Termination & sandbox AI:
   - `RULES_TERMINATION_ANALYSIS.md`
   - `src/client/sandbox/sandboxAI.ts`

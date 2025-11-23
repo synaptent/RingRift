@@ -79,28 +79,28 @@ export const AI_DIFFICULTY_PRESETS: Record<number, Partial<AIConfig> & { profile
     profileId: 'v1-random-1',
   },
   2: {
-    aiType: AIType.RANDOM,
+    aiType: AIType.HEURISTIC,
     randomness: 0.3,
     thinkTime: 200,
-    profileId: 'v1-random-2',
+    profileId: 'v1-heuristic-2',
   },
   3: {
-    aiType: AIType.HEURISTIC,
+    aiType: AIType.MINIMAX,
     randomness: 0.2,
     thinkTime: 250,
-    profileId: 'v1-heuristic-3',
+    profileId: 'v1-minimax-3',
   },
   4: {
-    aiType: AIType.HEURISTIC,
+    aiType: AIType.MINIMAX,
     randomness: 0.1,
     thinkTime: 300,
-    profileId: 'v1-heuristic-4',
+    profileId: 'v1-minimax-4',
   },
   5: {
-    aiType: AIType.HEURISTIC,
+    aiType: AIType.MINIMAX,
     randomness: 0.05,
     thinkTime: 350,
-    profileId: 'v1-heuristic-5',
+    profileId: 'v1-minimax-5',
   },
   6: {
     aiType: AIType.MINIMAX,
@@ -109,28 +109,28 @@ export const AI_DIFFICULTY_PRESETS: Record<number, Partial<AIConfig> & { profile
     profileId: 'v1-minimax-6',
   },
   7: {
-    aiType: AIType.MINIMAX,
-    randomness: 0.01,
-    thinkTime: 450,
-    profileId: 'v1-minimax-7',
-  },
-  8: {
-    aiType: AIType.MINIMAX,
+    aiType: AIType.MCTS,
     randomness: 0.0,
     thinkTime: 500,
-    profileId: 'v1-minimax-8',
+    profileId: 'v1-mcts-7',
   },
-  9: {
+  8: {
     aiType: AIType.MCTS,
     randomness: 0.0,
     thinkTime: 600,
-    profileId: 'v1-mcts-9',
+    profileId: 'v1-mcts-8',
   },
-  10: {
-    aiType: AIType.MCTS,
+  9: {
+    aiType: AIType.DESCENT,
     randomness: 0.0,
     thinkTime: 700,
-    profileId: 'v1-mcts-10',
+    profileId: 'v1-descent-9',
+  },
+  10: {
+    aiType: AIType.DESCENT,
+    randomness: 0.0,
+    thinkTime: 800,
+    profileId: 'v1-descent-10',
   },
 };
 
@@ -345,32 +345,32 @@ export class AIEngine {
       }
     }
 
-        // Level 2: Local heuristic AI
-        try {
-          const heuristicStart = performance.now();
-          const localMove = this.selectLocalHeuristicMove(gameState, validMoves, rng ?? Math.random);
-    
-          if (localMove) {
-            const duration = performance.now() - heuristicStart;
-            aiMoveLatencyHistogram.labels('heuristic', difficultyLabel).observe(duration);
-    
-            const diag = this.getOrCreateDiagnostics(playerNumber);
-            diag.localFallbackCount += 1;
-    
-            logger.info('AI move selected via local heuristics (fallback)', {
-              playerNumber,
-              moveType: localMove.type,
-              fallback: config.mode === 'service',
-            });
-            return localMove;
-          }
-        } catch (error) {
-          lastError = error as Error;
-          logger.error('Local heuristic AI failed, falling back to random', {
-            error: error instanceof Error ? error.message : 'Unknown error',
-            playerNumber,
-          });
-        }
+    // Level 2: Local heuristic AI
+    try {
+      const heuristicStart = performance.now();
+      const localMove = this.selectLocalHeuristicMove(gameState, validMoves, rng ?? Math.random);
+
+      if (localMove) {
+        const duration = performance.now() - heuristicStart;
+        aiMoveLatencyHistogram.labels('heuristic', difficultyLabel).observe(duration);
+
+        const diag = this.getOrCreateDiagnostics(playerNumber);
+        diag.localFallbackCount += 1;
+
+        logger.info('AI move selected via local heuristics (fallback)', {
+          playerNumber,
+          moveType: localMove.type,
+          fallback: config.mode === 'service',
+        });
+        return localMove;
+      }
+    } catch (error) {
+      lastError = error as Error;
+      logger.error('Local heuristic AI failed, falling back to random', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        playerNumber,
+      });
+    }
 
     // Level 3: Random selection (last resort)
     logger.warn('All AI methods failed, selecting random valid move', {
@@ -388,7 +388,7 @@ export class AIEngine {
    * Validate that a move is in the list of valid moves
    */
   private validateMoveInList(move: Move, validMoves: Move[]): boolean {
-    return validMoves.some(validMove => this.movesEqual(validMove, move));
+    return validMoves.some((validMove) => this.movesEqual(validMove, move));
   }
 
   /**
@@ -398,13 +398,13 @@ export class AIEngine {
     // Compare essential move properties
     if (m1.type !== m2.type) return false;
     if (m1.player !== m2.player) return false;
-    
+
     // Compare positions if they exist
     if (m1.from || m2.from) {
       if (!m1.from || !m2.from) return false;
       if (!this.positionsEqual(m1.from, m2.from)) return false;
     }
-    
+
     if (m1.to || m2.to) {
       if (!m1.to || !m2.to) return false;
       if (!this.positionsEqual(m1.to, m2.to)) return false;
@@ -449,12 +449,7 @@ export class AIEngine {
     }
 
     // Use the shared chooseLocalMoveFromCandidates for consistent heuristics
-    return chooseSharedLocalMoveFromCandidates(
-      gameState.currentPlayer,
-      gameState,
-      validMoves,
-      rng
-    );
+    return chooseSharedLocalMoveFromCandidates(gameState.currentPlayer, gameState, validMoves, rng);
   }
 
   /**
@@ -1028,20 +1023,25 @@ export class AIEngine {
   }
 
   /**
-   * Get AI description for difficulty level
+   * Get a human-friendly description for a given difficulty level.
+   *
+   * This is intentionally coarse-grained and should stay in sync with the
+   * canonical ladder described in AI_ARCHITECTURE.md and
+   * AI_DIFFICULTY_PRESETS above. The wording is kept honest about actual
+   * strength (no promises of "perfect" or "optimal" play).
    */
   static getAIDescription(difficulty: number): string {
     const descriptions: Record<number, string> = {
-      1: 'Very Easy - Random moves with high error rate',
-      2: 'Easy - Mostly random moves with some filtering',
-      3: 'Medium-Easy - Basic strategy with occasional mistakes',
-      4: 'Medium - Balanced play with tactical awareness',
-      5: 'Medium-Hard - Strong tactical play',
-      6: 'Hard - Advanced tactics and some planning',
-      7: 'Very Hard - Deep planning and strong positional play',
-      8: 'Expert - Excellent tactics and strategy',
-      9: 'Master - Near-perfect play with deep calculation',
-      10: 'Grandmaster - Optimal play across all phases',
+      1: 'Level 1 – Beginner: Random AI that plays legal but weak moves',
+      2: 'Level 2 – Easy: Heuristic AI with simple patterns and clear weaknesses',
+      3: 'Level 3 – Minimax: Shallow search that sees basic tactics',
+      4: 'Level 4 – Minimax: Deeper search with more consistent tactics',
+      5: 'Level 5 – Minimax: Solid tactical play with occasional oversights',
+      6: 'Level 6 – Minimax: Strong tactical play and some planning ahead',
+      7: 'Level 7 – MCTS: Expert search that samples many futures positions',
+      8: 'Level 8 – MCTS: Strong expert play with robust search in complex boards',
+      9: 'Level 9 – Descent: Hybrid MCTS/NN engine aimed at very strong play',
+      10: 'Level 10 – Descent: Strongest available engine; very challenging but not perfect',
     };
 
     return descriptions[difficulty] || 'Unknown difficulty level';

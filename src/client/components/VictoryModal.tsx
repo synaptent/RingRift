@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { GameResult, Player, GameState, positionToString } from '../../shared/types/game';
 
 interface VictoryModalProps {
@@ -38,18 +38,17 @@ function extractVictoryInfo(
   gameState: GameState | undefined,
   currentUserId: string | undefined
 ): VictoryInfo {
-  const winner = gameResult.winner !== undefined
-    ? players.find(p => p.playerNumber === gameResult.winner) ?? null
-    : null;
+  const winner =
+    gameResult.winner !== undefined
+      ? (players.find((p) => p.playerNumber === gameResult.winner) ?? null)
+      : null;
 
-  const finalStats = players.map(player => {
+  const finalStats = players.map((player) => {
     const ringsOnBoard = gameState
       ? countRingsOnBoard(player.playerNumber, gameState)
-      : gameResult.finalScore.ringsRemaining[player.playerNumber] ?? 0;
-    
-    const totalMoves = gameState
-      ? countPlayerMoves(player.playerNumber, gameState)
-      : 0;
+      : (gameResult.finalScore.ringsRemaining[player.playerNumber] ?? 0);
+
+    const totalMoves = gameState ? countPlayerMoves(player.playerNumber, gameState) : 0;
 
     return {
       player,
@@ -68,7 +67,12 @@ function extractVictoryInfo(
     // (and other no-winner outcomes) can use their dedicated messaging.
     isDraw: gameResult.reason === 'draw',
     userWon: !!(currentUserId && winner && winner.id === currentUserId),
-    userLost: !!(currentUserId && gameResult.winner !== undefined && winner && winner.id !== currentUserId),
+    userLost: !!(
+      currentUserId &&
+      gameResult.winner !== undefined &&
+      winner &&
+      winner.id !== currentUserId
+    ),
   };
 }
 
@@ -78,7 +82,7 @@ function extractVictoryInfo(
 function countRingsOnBoard(playerNumber: number, gameState: GameState): number {
   let count = 0;
   for (const stack of gameState.board.stacks.values()) {
-    count += stack.rings.filter(r => r === playerNumber).length;
+    count += stack.rings.filter((r) => r === playerNumber).length;
   }
   return count;
 }
@@ -89,9 +93,9 @@ function countRingsOnBoard(playerNumber: number, gameState: GameState): number {
 function countPlayerMoves(playerNumber: number, gameState: GameState): number {
   // Use structured history if available, otherwise fall back to moveHistory
   if (gameState.history && gameState.history.length > 0) {
-    return gameState.history.filter(entry => entry.actor === playerNumber).length;
+    return gameState.history.filter((entry) => entry.actor === playerNumber).length;
   }
-  return gameState.moveHistory.filter(move => move.player === playerNumber).length;
+  return gameState.moveHistory.filter((move) => move.player === playerNumber).length;
 }
 
 /**
@@ -172,7 +176,7 @@ function FinalStatsTable({ stats, winner }: { stats: PlayerStats[]; winner: Play
           </tr>
         </thead>
         <tbody>
-          {sortedStats.map(stat => (
+          {sortedStats.map((stat) => (
             <tr
               key={stat.player.playerNumber}
               className={`border-b border-slate-600 ${
@@ -252,6 +256,9 @@ function getPlayerColor(playerNumber: number): string {
 /**
  * Victory Modal Component
  */
+const FOCUSABLE_SELECTORS =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
 export function VictoryModal({
   isOpen,
   gameResult,
@@ -262,7 +269,10 @@ export function VictoryModal({
   onRematch,
   currentUserId,
 }: VictoryModalProps) {
-  // Keyboard navigation
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+
+  // Keyboard navigation (Escape to close)
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -274,14 +284,48 @@ export function VictoryModal({
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  // Focus trap - focus first button when modal opens
+  // Focus trap within the modal and focus restoration
   useEffect(() => {
-    if (isOpen) {
-      const firstButton = document.querySelector('.victory-modal button') as HTMLElement;
-      if (firstButton) {
-        firstButton.focus();
-      }
+    if (!isOpen) return;
+
+    const dialogEl = dialogRef.current;
+    previouslyFocusedElementRef.current = (document.activeElement as HTMLElement | null) ?? null;
+
+    if (!dialogEl) return;
+
+    const focusable = Array.from(dialogEl.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (first) {
+      first.focus();
     }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || focusable.length === 0) return;
+
+      const active = document.activeElement as HTMLElement | null;
+      if (!active) return;
+
+      const isShift = event.shiftKey;
+
+      if (isShift && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!isShift && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    dialogEl.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      dialogEl.removeEventListener('keydown', handleKeyDown);
+      if (previouslyFocusedElementRef.current) {
+        previouslyFocusedElementRef.current.focus();
+      }
+    };
   }, [isOpen]);
 
   if (!isOpen || !gameResult) return null;
@@ -289,13 +333,21 @@ export function VictoryModal({
   const victoryInfo = extractVictoryInfo(gameResult, players, gameState, currentUserId);
   const { title, description } = getVictoryMessage(victoryInfo);
 
+  const handleBackdropClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="victory-title"
       aria-describedby="victory-description"
+      onClick={handleBackdropClick}
     >
       <div className="victory-modal bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-3xl w-full mx-4 p-6 space-y-6">
         {/* Header with animation */}
