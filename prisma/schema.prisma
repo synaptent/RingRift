@@ -24,6 +24,8 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   lastLoginAt   DateTime?
+  tokenVersion  Int       @default(0)
+  deletedAt     DateTime?
 
   // Auth tokens
   verificationToken        String?

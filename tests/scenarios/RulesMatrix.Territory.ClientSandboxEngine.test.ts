@@ -3,7 +3,6 @@ import {
   SandboxConfig,
   SandboxInteractionHandler,
 } from '../../src/client/sandbox/ClientSandboxEngine';
-import * as sandboxTerritory from '../../src/client/sandbox/sandboxTerritory';
 import {
   BoardType,
   GameState,
@@ -13,6 +12,7 @@ import {
   positionToString,
   Territory,
 } from '../../src/shared/types/game';
+import { enumerateProcessTerritoryRegionMoves } from '../../src/shared/engine/territoryDecisionHelpers';
 import { addStack, pos } from '../utils/fixtures';
 import { territoryRuleScenarios, TerritoryRuleScenario } from './rulesMatrix';
 
@@ -157,8 +157,7 @@ describe('RulesMatrix → ClientSandboxEngine territory scenarios (Section 12; F
   test.each<TerritoryRuleScenario>(q23Scenarios)(
     '%s → sandbox canonical territory decision enumeration matches Q23 prerequisite',
     (scenario) => {
-      const { engine, state } = createEngine(scenario.boardType as BoardType);
-      const engineAny: any = engine;
+      const { state } = createEngine(scenario.boardType as BoardType);
       const board = state.board;
 
       state.currentPlayer = scenario.movingPlayer;
@@ -186,23 +185,19 @@ describe('RulesMatrix → ClientSandboxEngine territory scenarios (Section 12; F
         expect(stacksForMoving.length).toBe(0);
       }
 
-      // Mirror the backend RulesMatrix territory tests by stubbing the
-      // disconnected-region detector to return the scenario-defined region
-      // once, then no regions on subsequent calls. This keeps the canonical
-      // decision enumeration focused on the Q23 geometry rather than the
-      // full sandbox territory finder.
+      // Use the shared helper with a test-only override so that decision
+      // enumeration is driven purely by the curated RulesMatrix geometry
+      // rather than by the full sandbox region detector.
       const regionTerritory: Territory = {
         spaces: interiorCoords,
         controllingPlayer: region.controllingPlayer,
         isDisconnected: true,
       };
 
-      const findDisconnectedRegionsSpy = jest
-        .spyOn(sandboxTerritory, 'findDisconnectedRegionsOnBoard')
-        .mockImplementationOnce(() => [regionTerritory])
-        .mockImplementation(() => []);
+      const moves: Move[] = enumerateProcessTerritoryRegionMoves(state, scenario.movingPlayer, {
+        testOverrideRegions: [regionTerritory],
+      });
 
-      const moves: Move[] = engineAny.getValidTerritoryProcessingMovesForCurrentPlayer();
       const keyFrom = (positions: Position[]) =>
         positions
           .map((p) => positionToString(p))
@@ -221,10 +216,6 @@ describe('RulesMatrix → ClientSandboxEngine territory scenarios (Section 12; F
         const regionSpaces: Position[] = m.disconnectedRegions[0].spaces || [];
         return keyFrom(regionSpaces) === interiorKey;
       });
-
-      // Restore the original finder so other tests continue to use the full
-      // sandbox territory detection logic.
-      findDisconnectedRegionsSpy.mockRestore();
 
       if (!region.movingPlayerHasOutsideStack) {
         // Q23 negative: with no outside stack, the region must not appear as

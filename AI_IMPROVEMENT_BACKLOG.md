@@ -348,6 +348,12 @@ Canonical mapping (see `AI_ARCHITECTURE.md` §1.2):
   - Add utilities under `ai-service/app/training/` or `ai-service/scripts/` to:
     - Convert logged games and test traces into `(features, target)` pairs.
     - Include curated designer scenarios for critical tactical positions.
+    - Leverage existing RingRift-specific suites (FAQ scenarios, rules matrix
+      tests, plateau/stalemate and line/territory parity tests) as labelled
+      corpora, especially for:
+      - Overlength lines and Option 1 vs Option 2 decisions.
+      - Territory region ordering and forced self-elimination chains.
+      - Multi-step chain captures and "no-dead-placement" edge cases.
 
 - [ ] **Implement a training script for heuristic weights**
   - Create `train_heuristic_weights.py` that:

@@ -30,6 +30,19 @@ import {
   applyTerritoryRegion,
   canProcessTerritoryRegion,
 } from '../../shared/engine/territoryProcessing';
+import {
+  enumerateProcessTerritoryRegionMoves,
+  applyProcessTerritoryRegionDecision,
+  enumerateTerritoryEliminationMoves,
+  applyEliminateRingsFromStackDecision,
+} from '../../shared/engine/territoryDecisionHelpers';
+import {
+  enumerateProcessLineMoves,
+  enumerateChooseLineRewardMoves,
+  applyProcessLineDecision,
+  applyChooseLineRewardDecision,
+} from '../../shared/engine/lineDecisionHelpers';
+import { findLinesForPlayer } from '../../shared/engine/lineDetection';
 import { BoardManager } from './BoardManager';
 import { RuleEngine } from './RuleEngine';
 import { PlayerInteractionManager } from './PlayerInteractionManager';
@@ -134,7 +147,8 @@ export class GameEngine {
     players: Player[],
     timeControl: TimeControl,
     isRated: boolean = true,
-    interactionManager?: PlayerInteractionManager
+    interactionManager?: PlayerInteractionManager,
+    rngSeed?: number
   ) {
     this.boardManager = new BoardManager(boardType);
     this.ruleEngine = new RuleEngine(this.boardManager, boardType);
@@ -145,6 +159,7 @@ export class GameEngine {
     this.gameState = {
       id: gameId,
       boardType,
+      ...(typeof rngSeed === 'number' ? { rngSeed } : {}),
       board: this.boardManager.createBoard(),
       players: players.map((p, index) => ({
         ...p,
@@ -273,10 +288,6 @@ export class GameEngine {
     // perspective without invoking them.
     void this.processLineFormations;
     void this.processDisconnectedRegions;
-    void this.hasValidActions;
-    void this.processForcedElimination;
-    void this.getAdjacentPositions;
-    void this.nextPlayer;
     void this.getValidLineProcessingMoves;
     void this.getValidTerritoryProcessingMoves;
   }
@@ -1171,149 +1182,55 @@ export class GameEngine {
   }
 
   /**
-   * Enumerate canonical line-processing decision moves for the current
-   * player. This is a phase-aware helper that mirrors the behaviour of
-   * processLineFormations / processOneLine but expressed as Move objects:
+   * Enumerate canonical line-processing decision moves for the given player.
    *
-   * - process_line: select which line to process first when multiple
-   *   candidate lines exist for the moving player.
-   * - choose_line_reward: select Option 1 vs Option 2 when an overlength
-   *   line admits both outcomes and an interaction manager is present.
+   * This is now a thin adapter over the shared line-decision helpers so that
+   * backend GameEngine, shared GameEngine, RuleEngine, and sandbox all share
+   * a single source of truth for which `process_line` / `choose_line_reward`
+   * Moves exist in a given GameState.
    *
-   * NOTE: At present, line processing is still driven via PlayerChoice
-   * flows inside processAutomaticConsequences. This helper exists to
-   * support the unified Move/GamePhase model and future migration of
-   * those flows; it is intentionally not wired into makeMove yet.
+   * Semantics:
+   * - One `process_line` Move per player-owned line.
+   * - For each line index, {@link enumerateChooseLineRewardMoves} may expose:
+   *   - A collapse-all reward (with no `collapsedMarkers`), and
+   *   - Zero or more minimum-collapse contiguous-length-L segments for
+   *     overlength lines (each with `collapsedMarkers` populated).
    */
   private getValidLineProcessingMoves(playerNumber: number): Move[] {
-    const moves: Move[] = [];
-
-    const config = BOARD_CONFIGS[this.gameState.boardType];
-    const requiredLength = config.lineLength;
-
-    const allLines = this.boardManager.findAllLines(this.gameState.board);
-    const playerLines = allLines.filter((line) => line.player === playerNumber);
-
-    if (playerLines.length === 0) {
-      return moves;
-    }
-
-    // One process_line move per player-owned line, uniquely identified by
-    // its index and marker positions. In addition to a stable id, we
-    // attach the concrete LineInfo in formedLines[0] so that the Move
-    // object by itself fully describes which line is being processed.
-    playerLines.forEach((line, index) => {
-      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-      moves.push({
-        id: `process-line-${index}-${lineKey}`,
-        type: 'process_line',
-        player: playerNumber,
-        formedLines: [line],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.moveHistory.length + 1,
-      } as Move);
+    // Base process_line decisions from the shared helper. We prefer the
+    // board cache when present; when `formedLines` is empty the helper
+    // re-runs detection via findAllLines.
+    const processMoves = enumerateProcessLineMoves(this.gameState, playerNumber, {
+      detectionMode: 'use_board_cache',
     });
 
-    // For overlength lines, also surface a choose_line_reward decision so
-    // that the unified Move model can express Option 1 vs Option 2 even
-    // before the PlayerChoice-based flow is fully migrated. As with
-    // process_line, we attach the concrete LineInfo so that tests and
-    // parity tooling can identify the target line without re-deriving it
-    // from ids.
-    const overlengthLines = playerLines.filter((line) => line.positions.length > requiredLength);
+    // Reward decisions are driven per line index using the same detection
+    // order as the shared geometry helper.
+    const playerLines = findLinesForPlayer(this.gameState.board, playerNumber);
+    const rewardMoves: Move[] = [];
 
-    overlengthLines.forEach((line, index) => {
-      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-
-      // Option 1: Collapse All (default/implicit)
-      moves.push({
-        id: `choose-line-reward-${index}-${lineKey}-all`,
-        type: 'choose_line_reward',
-        player: playerNumber,
-        formedLines: [line],
-        // No collapsedMarkers means collapse all
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.moveHistory.length + 1,
-      } as Move);
-
-      // Option 2: Minimum Collapse
-      // Note: In a full implementation, the player might choose WHICH subset
-      // of markers to collapse. For now, we default to the first N markers
-      // to match the legacy behaviour.
-      const minMarkers = line.positions.slice(0, requiredLength);
-      moves.push({
-        id: `choose-line-reward-${index}-${lineKey}-min`,
-        type: 'choose_line_reward',
-        player: playerNumber,
-        formedLines: [line],
-        collapsedMarkers: minMarkers,
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.moveHistory.length + 1,
-      } as Move);
+    playerLines.forEach((_line, index) => {
+      rewardMoves.push(...enumerateChooseLineRewardMoves(this.gameState, playerNumber, index));
     });
 
-    return moves;
+    return [...processMoves, ...rewardMoves];
   }
 
   /**
-   * Enumerate canonical territory-processing decision moves for the
-   * current player. This is a phase-aware helper that mirrors the
-   * behaviour of processDisconnectedRegions / processOneDisconnectedRegion
-   * but expressed as Move objects:
-   *
-   * - process_territory_region: choose which eligible disconnected region
-   *   to process first when multiple exist.
-   *
-   * Self-elimination stack choices remain driven by the existing
-   * RingEliminationChoice flow for now; a future migration can introduce
-   * eliminate_rings_from_stack moves once the corresponding GamePhase
-   * contract is fully wired through makeMove().
-   */
+   /**
+    * Enumerate canonical territory-processing decision moves for the
+    * current player. This now delegates to the shared
+    * {@link enumerateProcessTerritoryRegionMoves} helper so that backend
+    * GameEngine, RuleEngine, and sandbox all share a single source of
+    * truth for:
+    *
+    * - Disconnected-region detection.
+    * - Q23 self-elimination gating (must control a stack outside the region).
+    * - Move ID / payload conventions for process_territory_region.
+    */
   private getValidTerritoryProcessingMoves(playerNumber: number): Move[] {
-    const moves: Move[] = [];
-
-    const disconnectedRegions = this.boardManager.findDisconnectedRegions(
-      this.gameState.board,
-      playerNumber
-    );
-
-    if (!disconnectedRegions || disconnectedRegions.length === 0) {
-      return moves;
-    }
-
-    const eligibleRegions = filterProcessableTerritoryRegions(
-      this.gameState.board,
-      disconnectedRegions,
-      { player: playerNumber }
-    );
-
-    if (eligibleRegions.length === 0) {
-      return moves;
-    }
-
-    // One process_territory_region move per eligible disconnected region,
-    // with the concrete Territory attached in disconnectedRegions[0] so
-    // that the Move fully identifies the region to be processed.
-    eligibleRegions.forEach((region, index) => {
-      const representative = region.spaces[0];
-      const regionKey = representative ? positionToString(representative) : `region-${index}`;
-      moves.push({
-        id: `process-region-${index}-${regionKey}`,
-        type: 'process_territory_region',
-        player: playerNumber,
-        disconnectedRegions: [region],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.moveHistory.length + 1,
-      } as Move);
-    });
-
-    return moves;
+    return enumerateProcessTerritoryRegionMoves(this.gameState, playerNumber);
   }
-
   /**
    * Process all line formations with graduated rewards
    * Rule Reference: Section 11.2, 11.3
@@ -1367,70 +1284,41 @@ export class GameEngine {
         targetLine = playerLines[0];
       }
 
-      // In move-driven mode with explicit decision Moves, apply line
-      // collapse effects directly based on the Move payload without
-      // delegating to processOneLine / PlayerChoice helpers.
+      // In move-driven mode with explicit decision Moves, delegate the
+      // geometric and bookkeeping effects to the shared lineDecisionHelpers
+      // so backend GameEngine, shared GameEngine, and sandbox all share a
+      // single source of truth for line collapse + reward semantics.
       if (this.useMoveDrivenDecisionPhases) {
-        if (move.type === 'process_line') {
-          // process_line is only used for exact-length lines in the unified
-          // model. Apply the same semantics as processOneLine for exact
-          // length: collapse all markers and set pendingLineRewardElimination
-          // so an explicit eliminate_rings_from_stack Move is surfaced.
-          if (targetLine.positions.length === requiredLength) {
-            this.collapseLineMarkers(targetLine.positions, move.player);
-            this.pendingLineRewardElimination = true;
+        const outcome =
+          move.type === 'process_line'
+            ? applyProcessLineDecision(this.gameState, move)
+            : applyChooseLineRewardDecision(this.gameState, move);
 
-            // Stay in line_processing for the elimination decision.
-            this.gameState.currentPhase = 'line_processing';
-            return;
-          }
+        this.gameState = outcome.nextState;
+        this.pendingLineRewardElimination = outcome.pendingLineRewardElimination;
 
-          // Defensive: process_line should only be used for exact-length
-          // lines in move-driven mode. Treat this as a no-op and log a
-          // warning for diagnostic purposes.
-          console.warn(
-            '[GameEngine.applyDecisionMove] process_line applied to overlength line in move-driven mode',
-            {
-              lineLength: targetLine.positions.length,
-              requiredLength,
-            }
-          );
+        // When a mandatory elimination reward is pending, remain in
+        // line_processing so getValidMoves can surface explicit
+        // eliminate_rings_from_stack decisions for this player.
+        if (this.pendingLineRewardElimination) {
+          this.gameState.currentPhase = 'line_processing';
           return;
         }
 
-        if (move.type === 'choose_line_reward') {
-          // choose_line_reward for overlength lines: apply the selected
-          // reward option based on collapsedMarkers metadata.
-          const isOption1 =
-            !move.collapsedMarkers || move.collapsedMarkers.length === targetLine.positions.length;
+        // No elimination owed; determine whether any further lines remain
+        // for this player in the updated board state. We use the shared
+        // enumerateProcessLineMoves helper so detection stays aligned with
+        // RuleEngine and sandbox.
+        const remainingProcessMoves = enumerateProcessLineMoves(this.gameState, move.player, {
+          detectionMode: 'use_board_cache',
+        });
 
-          if (isOption1) {
-            // Option 1: collapse all markers and set
-            // pendingLineRewardElimination for explicit ring elimination.
-            this.collapseLineMarkers(targetLine.positions, move.player);
-            this.pendingLineRewardElimination = true;
-            this.gameState.currentPhase = 'line_processing';
-            return;
-          }
-
-          // Option 2: collapse only the specified markers (or default to
-          // minimum if collapsedMarkers is missing).
-          const markersToCollapse =
-            move.collapsedMarkers ?? targetLine.positions.slice(0, requiredLength);
-          this.collapseLineMarkers(markersToCollapse, move.player);
-
-          // No elimination for Option 2; check if more lines remain.
-          const remainingLines = this.boardManager
-            .findAllLines(this.gameState.board)
-            .filter((line) => line.player === move.player);
-
-          if (remainingLines.length > 0) {
-            this.gameState.currentPhase = 'line_processing';
-          } else {
-            this.gameState.currentPhase = 'territory_processing';
-          }
-          return;
+        if (remainingProcessMoves.length > 0) {
+          this.gameState.currentPhase = 'line_processing';
+        } else {
+          this.gameState.currentPhase = 'territory_processing';
         }
+        return;
       }
 
       // Legacy / non-move-driven mode: delegate to processOneLine which
@@ -1544,64 +1432,19 @@ export class GameEngine {
         return;
       }
 
-      // Move-driven decision phases: apply the core region-processing
-      // consequences but leave mandatory self-elimination to an explicit
-      // eliminate_rings_from_stack Move surfaced via RuleEngine.
-      //
-      // In move-driven mode we intentionally do **not** auto-advance the
-      // turn after processing a region. Instead we:
-      //   - Apply only the geometric consequences of processing the region.
-      //   - Record that the moving player now owes a mandatory
-      //     self-elimination.
-      //   - Remain in `territory_processing` so that subsequent calls to
-      //     getValidMoves can enumerate either:
-      //       * additional process_territory_region moves (while any
-      //         eligible regions remain), or
-      //       * eliminate_rings_from_stack moves once no further regions
-      //         are eligible – mirroring the sandbox engine’s behaviour.
-      //
-      // When a concrete Territory is attached to the Move (via
-      // move.disconnectedRegions[0]), we treat that region as canonical –
-      // mirroring the sandbox engine’s applyTerritoryDecisionMove helper.
-      // This lets tests and transports feed a known region directly into
-      // the engine without re-running the detector, while still enforcing
-      // the self-elimination prerequisite via canProcessDisconnectedRegion.
-      let targetRegion: Territory | undefined;
+      // Move-driven decision phases: delegate the region-processing
+      // consequences to the shared applyProcessTerritoryRegionDecision
+      // helper so that backend GameEngine, RuleEngine, and sandbox all
+      // share identical geometry and S-invariant accounting.
+      const outcome = applyProcessTerritoryRegionDecision(this.gameState, move);
 
-      if (move.disconnectedRegions && move.disconnectedRegions.length > 0) {
-        targetRegion = move.disconnectedRegions[0];
-      } else {
-        const disconnectedRegions = this.boardManager.findDisconnectedRegions(
-          this.gameState.board,
-          movingPlayer
-        );
-
-        if (!disconnectedRegions || disconnectedRegions.length === 0) {
-          return;
-        }
-
-        // Fallback: choose the first region that satisfies the
-        // self-elimination prerequisite; if none do, leave the state
-        // unchanged.
-        targetRegion =
-          disconnectedRegions.find((region) =>
-            this.canProcessDisconnectedRegion(region, movingPlayer)
-          ) ?? undefined;
-
-        if (!targetRegion) {
-          return;
-        }
-      }
-
-      // Respect the self-elimination prerequisite defensively even if the
-      // caller attempted to target an ineligible region.
-      if (!this.canProcessDisconnectedRegion(targetRegion, movingPlayer)) {
+      // If no valid region can be resolved for this decision (for example,
+      // due to a stale or tampered Move), treat it as a no-op.
+      if (!outcome.pendingSelfElimination || outcome.processedRegion.spaces.length === 0) {
         return;
       }
 
-      // Apply geometric territory consequences only; no self-elimination
-      // occurs here in move-driven mode.
-      this.processDisconnectedRegionCore(targetRegion, movingPlayer);
+      this.gameState = outcome.nextState;
 
       // Record that this player now owes a mandatory self-elimination
       // decision before their territory_processing cycle can end. We stay
@@ -1627,15 +1470,13 @@ export class GameEngine {
         return;
       }
 
-      const stack = this.boardManager.getStack(move.to, this.gameState.board);
-      if (!stack || stack.controllingPlayer !== playerNumber) {
-        return;
-      }
-
-      // Delegate to the same core helper used by choice-driven
-      // elimination flows so that elimination Moves share identical
-      // ring accounting and S-invariant behaviour.
-      this.eliminateFromStack(stack, playerNumber);
+      // Delegate the actual elimination accounting to the shared
+      // applyEliminateRingsFromStackDecision helper so that backend
+      // GameEngine, RuleEngine, and sandbox all share identical S-invariant
+      // behaviour. Any structural invalidity (e.g. missing/foreign stack)
+      // results in a no-op nextState.
+      const { nextState } = applyEliminateRingsFromStackDecision(this.gameState, move);
+      this.gameState = nextState;
 
       // After an explicit elimination decision, determine which phase to
       // return to based on the origin of the elimination requirement.
@@ -2255,198 +2096,6 @@ export class GameEngine {
         `[GameEngine] updatePerTurnStateAfterMove: place_ring at ${positionToString(move.to!)}. mustMove set to ${this.mustMoveFromStackKey}`
       );
     }
-  }
-
-  /**
-   * Check if player has any valid capture moves available
-   * Rule Reference: Section 10.1
-   */
-  private hasValidCaptures(playerNumber: number): boolean {
-    // Delegate to RuleEngine for capture generation so that the
-    // decision to enter the capture phase stays in sync with the
-    // actual overtaking_capture semantics. We construct a lightweight
-    // view of the current state with phase forced to 'capture' for the
-    // specified player and ask RuleEngine for valid moves.
-    const tempState: GameState = {
-      ...this.gameState,
-      currentPlayer: playerNumber,
-      currentPhase: 'capture',
-    };
-
-    const moves = this.ruleEngine.getValidMoves(tempState);
-    return moves.some((m) => m.type === 'overtaking_capture');
-  }
-
-  /**
-   * Check if player has any valid actions available
-   * Rule Reference: Section 4.4
-   */
-  private hasValidActions(playerNumber: number): boolean {
-    return (
-      this.hasValidPlacements(playerNumber) ||
-      this.hasValidMovements(playerNumber) ||
-      this.hasValidCaptures(playerNumber)
-    );
-  }
-
-  /**
-   * Check if player has any valid placement moves
-   * Rule Reference: Section 4.1, 6.1-6.3
-   */
-  private hasValidPlacements(playerNumber: number): boolean {
-    const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
-    if (!player || player.ringsInHand === 0) {
-      return false; // No rings in hand to place
-    }
-
-    // Check for any empty, non-collapsed spaces
-    // For now, we'll do a simple check - in full implementation would check all positions
-    // A player can place if they have rings in hand (placement restrictions like movement validation would be checked in the actual move)
-    return true; // Simplified - assumes there's usually space to place
-  }
-
-  /**
-   * Check if player has any valid movement moves
-   * Rule Reference: Section 8.1, 8.2
-   */
-  private hasValidMovements(playerNumber: number): boolean {
-    const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, playerNumber);
-
-    if (playerStacks.length === 0) {
-      return false; // No stacks to move
-    }
-
-    // For each player stack, check if it has any valid moves
-    for (const stack of playerStacks) {
-      const stackHeight = stack.stackHeight;
-
-      // Check all 8 directions (or 6 for hexagonal)
-      const directions = this.getAllDirections();
-
-      for (const direction of directions) {
-        // Check if we can move at least stack height in this direction
-        let distance = 0;
-
-        for (let step = 1; step <= stackHeight + 5; step++) {
-          const nextPos: Position = {
-            x: stack.position.x + direction.x * step,
-            y: stack.position.y + direction.y * step,
-            ...(direction.z !== undefined && { z: (stack.position.z || 0) + direction.z * step }),
-          };
-
-          if (!this.boardManager.isValidPosition(nextPos)) {
-            break; // Out of bounds
-          }
-
-          // Check if this position is blocked (collapsed space or stack)
-          if (this.boardManager.isCollapsedSpace(nextPos, this.gameState.board)) {
-            break; // Blocked by collapsed space
-          }
-
-          const stackAtPos = this.boardManager.getStack(nextPos, this.gameState.board);
-          if (stackAtPos) {
-            break; // Blocked by another stack
-          }
-
-          // This position is reachable
-          distance = step;
-
-          // If we've met the minimum distance requirement, we have a valid move
-          if (distance >= stackHeight) {
-            return true;
-          }
-        }
-      }
-    }
-
-    return false; // No valid movements found
-  }
-
-  /**
-   * Force player to eliminate a cap when blocked with no valid moves
-   * Rule Reference: Section 4.4 - Forced Elimination When Blocked
-   */
-  private processForcedElimination(playerNumber: number): void {
-    const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, playerNumber);
-
-    if (playerStacks.length === 0) {
-      // No stacks to eliminate from - player forfeits turn
-      return;
-    }
-
-    // TODO: In full implementation, player should choose which stack
-    // For now, eliminate from first stack with a valid cap
-    for (const stack of playerStacks) {
-      if (stack.capHeight > 0) {
-        // Found a stack with a cap, eliminate it
-        this.eliminatePlayerRingOrCap(playerNumber, stack.position);
-        return;
-      }
-    }
-  }
-
-  /**
-   * Get all movement directions based on board type
-   */
-  private getAllDirections(): { x: number; y: number; z?: number }[] {
-    return getMovementDirectionsForBoardType(this.gameState.boardType);
-  }
-
-  /**
-   * Get adjacent positions for a given position
-   * Uses Moore adjacency (8-direction) for square boards, hexagonal for hex
-   */
-  private getAdjacentPositions(pos: Position): Position[] {
-    const adjacent: Position[] = [];
-    const config = BOARD_CONFIGS[this.gameState.boardType];
-
-    if (config.type === 'hexagonal') {
-      // Hexagonal adjacency (6 directions)
-      const directions = [
-        { x: 1, y: 0, z: -1 },
-        { x: 0, y: 1, z: -1 },
-        { x: -1, y: 1, z: 0 },
-        { x: -1, y: 0, z: 1 },
-        { x: 0, y: -1, z: 1 },
-        { x: 1, y: -1, z: 0 },
-      ];
-
-      for (const dir of directions) {
-        const newPos: Position = {
-          x: pos.x + dir.x,
-          y: pos.y + dir.y,
-          z: (pos.z || 0) + dir.z,
-        };
-        if (this.boardManager.isValidPosition(newPos)) {
-          adjacent.push(newPos);
-        }
-      }
-    } else {
-      // Moore adjacency for square boards (8 directions)
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          if (dx === 0 && dy === 0) continue;
-
-          const newPos: Position = {
-            x: pos.x + dx,
-            y: pos.y + dy,
-          };
-          if (this.boardManager.isValidPosition(newPos)) {
-            adjacent.push(newPos);
-          }
-        }
-      }
-    }
-
-    return adjacent;
-  }
-
-  private nextPlayer(): void {
-    const currentIndex = this.gameState.players.findIndex(
-      (p) => p.playerNumber === this.gameState.currentPlayer
-    );
-    const nextIndex = (currentIndex + 1) % this.gameState.players.length;
-    this.gameState.currentPlayer = this.gameState.players[nextIndex].playerNumber;
   }
 
   private startPlayerTimer(playerNumber: number): void {

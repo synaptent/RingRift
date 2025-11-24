@@ -21,6 +21,8 @@ For each board type, define a static configuration:
 | square19  | 19   | 361         | 36             | 4          | Moore             | Moore         | Von Neumann         | orthogonal grid |
 | hexagonal | 11   | 331         | 36             | 4          | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
 
+- **Ring supply semantics:** For each player P, `ringsPerPlayer` is the maximum number of rings of P's own colour that may ever be in play: all of P's rings currently on the board in any stack (regardless of which player controls those stacks) plus all of P's rings in hand must never exceed this value. Rings of other colours that P has captured and that are buried in stacks P controls do **not** count against P's `ringsPerPlayer` cap; they remain, by colour, part of the original owner's supply for conservation and victory accounting.
+
 - **Coordinates**:
   - Square boards: integer `(x, y)` in `[0, size-1] × [0, size-1]`.
   - Hex board: cube coordinates `(x, y, z)` with `x + y + z = 0` and `max(|x|,|y|,|z|) ≤ radius`, where `radius = size - 1`.
@@ -113,7 +115,7 @@ Placement options (if allowed):
    - Choose a non-collapsed, empty cell.
    - Place **1–3 rings** forming a new stack, subject to:
      - You cannot exceed `ringsInHand`, and
-     - You cannot exceed your remaining capacity under `boardConfig.ringsPerPlayer`.
+     - After placement, the total number of rings of your colour that are in play (on the board in any stack, regardless of controlling player, plus in your hand) must not exceed the `boardConfig.ringsPerPlayer` own-colour supply cap for this board type. Captured opponent-colour rings in stacks you control do **not** count against this limit.
    - **Legality constraint (no-dead-placement):** After placement, there must exist at least one legal non-capture or capture move for this exact stack according to movement/capture rules. If not, this placement is illegal.
 
 2. **On existing stack (any owner)**:
@@ -423,22 +425,34 @@ For player `P`:
 
 ### 7.3 Last-player-standing victory
 
-A player `P` wins by last-player-standing if, after a completed turn and post-processing:
+Last-player-standing is a **third formal victory condition**, alongside ring-elimination (Section 7.1) and territory-control (Section 7.2).
 
-- All **other** players have **no legal action** on their next turns:
-  - no legal placement,
-  - no legal movement,
-  - no legal capture,
-- And `P` still has at least one legal action available on their own next turn.
+For this rule, define a **real action** for a player `P` on their own turn as any legal:
 
-A player is **temporarily inactive** (has no legal actions on their own turn, but remain in the game) when:
+- ring placement (Section 2.1),
+- non-capture movement (Section 3), or
+- overtaking capture segment or chain (Section 4),
 
-- They have stacks but no legal moves/captures _and_ cannot place any ring, OR
-- They control no stacks on the board, _and_ cannot place any ring, BUT
-- They have rings on the board in stacks controlled by others
-- They may potentially become active again as a result of other players' turns.
+available at the start of their action. Having only forced elimination available (Section 2.3) does **not** count as having a real action for last-player-standing purposes.
 
-In practice, this means a temporarily inactive player can become active again if capture or elimination expose one of their buried rings as the new top ring of a stack, thereby giving them a controlled stack on a later turn.
+A **full round of turns** is one contiguous cycle of turns in player order in which each non-eliminated player takes exactly one turn.
+
+A player `P` wins by last-player-standing if all of the following hold:
+
+- There exists at least one full round of turns such that:
+  - On each of `P`’s turns in that round, `P` has at least one legal real action available at the start of their action; and
+  - On every other player’s turns in that same round, those players have **no** legal real action available at the start of their action (they may have only forced-elimination actions or no legal actions at all); and
+- Immediately after that round completes (including all line and territory processing), at the start of `P`’s next turn `P` is still the only player who has any legal real action.
+
+A player is **temporarily inactive** (has no real actions on their own turn, but remains in the game) when:
+
+- They have stacks but no legal non-capture moves or overtaking captures and cannot place any ring, OR
+- They control no stacks on the board and cannot place any ring, BUT
+- They still have rings on the board in stacks controlled by others.
+
+Such a player can potentially become active again if capture or elimination expose one of their buried rings as the new top ring of a stack, thereby giving them a controlled stack on a later turn and restoring at least one real action.
+
+If any temporarily inactive player regains a real action **before** the full-round condition above has been satisfied, the last-player-standing condition effectively resets and must be re-satisfied from that point.
 
 A player is **eliminated** (has no legal actions on their own turn, and cannot in future turns) when:
 

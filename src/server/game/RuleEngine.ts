@@ -30,9 +30,18 @@ import {
   canProcessTerritoryRegion,
 } from '../../shared/engine/territoryProcessing';
 import {
+  enumerateProcessTerritoryRegionMoves,
+  enumerateTerritoryEliminationMoves,
+} from '../../shared/engine/territoryDecisionHelpers';
+import {
   validatePlacementOnBoard,
   PlacementContext,
 } from '../../shared/engine/validators/PlacementValidator';
+import {
+  enumerateProcessLineMoves,
+  enumerateChooseLineRewardMoves,
+} from '../../shared/engine/lineDecisionHelpers';
+import { findLinesForPlayer } from '../../shared/engine/lineDetection';
 
 export class RuleEngine {
   private boardManager: BoardManager;
@@ -1069,115 +1078,67 @@ export class RuleEngine {
 
   /**
    * Enumerate canonical line-processing decision moves (process_line and
-   * choose_line_reward) for the current state. This mirrors the backend
-   * GameEngine.getValidLineProcessingMoves helper but is stateless and
-   * operates directly on the provided GameState.
+   * choose_line_reward) for the current state.
+   *
+   * This is now a thin, stateless adapter over the shared
+   * {@link enumerateProcessLineMoves} and {@link enumerateChooseLineRewardMoves}
+   * helpers so that backend RuleEngine, shared GameEngine, and sandbox all
+   * share a single source of truth for:
+   *
+   * - Which lines exist for the moving player.
+   * - How process_line decisions identify those lines (formedLines[0]).
+   * - How overlength reward options (collapse-all vs minimum-collapse
+   *   contiguous segments) are surfaced as choose_line_reward Moves.
+   *
+   * Tests that care about the precise reward surface should assert against
+   * the shared helper behaviour rather than re-encoding counting logic here.
    */
   private getValidLineProcessingDecisionMoves(gameState: GameState): Move[] {
-    const moves: Move[] = [];
-
     if (gameState.currentPhase !== 'line_processing') {
-      return moves;
-    }
-
-    const playerNumber = gameState.currentPlayer;
-
-    const allLines = this.boardManager.findAllLines(gameState.board);
-    const playerLines = allLines.filter((line) => line.player === playerNumber);
-
-    if (playerLines.length === 0) {
-      return moves;
-    }
-
-    const requiredLength = this.boardConfig.lineLength;
-
-    // One process_line move per player-owned line, including the concrete
-    // LineInfo in formedLines[0] so that the Move fully identifies the
-    // line being processed.
-    playerLines.forEach((line, index) => {
-      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-      moves.push({
-        id: `process-line-${index}-${lineKey}`,
-        type: 'process_line',
-        player: playerNumber,
-        formedLines: [line],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: gameState.moveHistory.length + 1,
-      } as Move);
-    });
-
-    // For overlength lines, also expose a choose_line_reward decision so that
-    // tests and tools can express Option 1 vs Option 2 in the unified Move
-    // space, even though GameEngine still uses PlayerChoice internally when
-    // an interaction manager is wired.
-    const overlengthLines = playerLines.filter((line) => line.positions.length > requiredLength);
-
-    overlengthLines.forEach((line, index) => {
-      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-      moves.push({
-        id: `choose-line-reward-${index}-${lineKey}`,
-        type: 'choose_line_reward',
-        player: playerNumber,
-        formedLines: [line],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: gameState.moveHistory.length + 1,
-      } as Move);
-    });
-
-    return moves;
-  }
-
-  /**
-   * Enumerate canonical territory-processing decision moves
-   * (process_territory_region) for the current state. This mirrors the
-   * GameEngine.getValidTerritoryProcessingMoves helper but is stateless
-   * and uses a local self-elimination prerequisite check.
-   */
-  private getValidTerritoryProcessingDecisionMoves(gameState: GameState): Move[] {
-    const moves: Move[] = [];
-
-    if (gameState.currentPhase !== 'territory_processing') {
-      return moves;
+      return [];
     }
 
     const movingPlayer = gameState.currentPlayer;
 
-    const disconnectedRegions = this.boardManager.findDisconnectedRegions(
-      gameState.board,
-      movingPlayer
-    );
-
-    if (!disconnectedRegions || disconnectedRegions.length === 0) {
-      return moves;
-    }
-
-    const eligibleRegions = filterProcessableTerritoryRegions(
-      gameState.board,
-      disconnectedRegions,
-      { player: movingPlayer }
-    );
-
-    if (eligibleRegions.length === 0) {
-      return moves;
-    }
-
-    eligibleRegions.forEach((region, index) => {
-      const representative = region.spaces[0];
-      const regionKey = representative ? positionToString(representative) : `region-${index}`;
-      moves.push({
-        id: `process-region-${index}-${regionKey}`,
-        type: 'process_territory_region',
-        player: movingPlayer,
-        disconnectedRegions: [region],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: gameState.moveHistory.length + 1,
-      } as Move);
+    // Base process_line decisions: one per player-owned line, using the
+    // canonical lineDecisionHelpers enumeration. We prefer the board's
+    // formedLines cache when present since the backend BoardManager keeps
+    // it up to date after movement/capture.
+    const processMoves = enumerateProcessLineMoves(gameState, movingPlayer, {
+      detectionMode: 'use_board_cache',
     });
 
-    return moves;
+    // Reward decisions are enumerated per line index. We drive the index
+    // sequence via findLinesForPlayer so that enumeration order remains
+    // stable even if detection internals change.
+    const playerLines = findLinesForPlayer(gameState.board, movingPlayer);
+    const rewardMoves: Move[] = [];
+
+    playerLines.forEach((_line, index) => {
+      rewardMoves.push(...enumerateChooseLineRewardMoves(gameState, movingPlayer, index));
+    });
+
+    return [...processMoves, ...rewardMoves];
+  }
+
+  /**
+   * Enumerate canonical territory-processing decision moves
+   * (process_territory_region) for the current state. This now delegates to
+   * the shared {@link enumerateProcessTerritoryRegionMoves} helper so that
+   * backend RuleEngine, shared GameEngine, and sandbox all share a single
+   * source of truth for:
+   *
+   * - Disconnected-region detection.
+   * - Q23 self-elimination gating (must control a stack outside the region).
+   * - Move ID / payload conventions for process_territory_region.
+   */
+  private getValidTerritoryProcessingDecisionMoves(gameState: GameState): Move[] {
+    if (gameState.currentPhase !== 'territory_processing') {
+      return [];
+    }
+
+    const movingPlayer = gameState.currentPlayer;
+    return enumerateProcessTerritoryRegionMoves(gameState, movingPlayer);
   }
 
   /**
@@ -1186,73 +1147,18 @@ export class RuleEngine {
    * phase. These are only exposed once no eligible disconnected regions
    * remain for the moving player, mirroring the "region first, then
    * self-elimination" ordering from §12.2 / FAQ Q23.
+   *
+   * This now delegates to the shared {@link enumerateTerritoryEliminationMoves}
+   * helper so backend RuleEngine, shared GameEngine, and sandbox enumerate
+   * identical elimination options with consistent diagnostics.
    */
   private getValidEliminationDecisionMoves(gameState: GameState): Move[] {
-    const moves: Move[] = [];
-
     if (gameState.currentPhase !== 'territory_processing') {
-      return moves;
+      return [];
     }
 
     const movingPlayer = gameState.currentPlayer;
-
-    // If any disconnected region is still eligible for processing under
-    // the self-elimination prerequisite, defer elimination decisions
-    // until those regions have been processed.
-    const disconnectedRegions = this.boardManager.findDisconnectedRegions(
-      gameState.board,
-      movingPlayer
-    );
-
-    if (
-      disconnectedRegions &&
-      filterProcessableTerritoryRegions(gameState.board, disconnectedRegions, {
-        player: movingPlayer,
-      }).length > 0
-    ) {
-      return moves;
-    }
-
-    // Enumerate one elimination Move per controlled stack whose cap is
-    // non-empty. We attach diagnostic fields so tests can validate that
-    // the move geometry matches the underlying stack configuration.
-    const board = gameState.board;
-    const playerStacks = this.getPlayerStacks(movingPlayer, board);
-
-    if (playerStacks.length === 0) {
-      return moves;
-    }
-
-    playerStacks.forEach((pos) => {
-      const key = positionToString(pos);
-      const stack = board.stacks.get(key);
-      if (!stack || stack.controllingPlayer !== movingPlayer) {
-        return;
-      }
-
-      const capHeight = calculateCapHeight(stack.rings);
-      if (capHeight <= 0) {
-        return;
-      }
-
-      moves.push({
-        id: `eliminate-${key}`,
-        type: 'eliminate_rings_from_stack',
-        player: movingPlayer,
-        to: stack.position,
-        eliminatedRings: [{ player: movingPlayer, count: capHeight }],
-        eliminationFromStack: {
-          position: stack.position,
-          capHeight,
-          totalHeight: stack.stackHeight,
-        },
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: gameState.moveHistory.length + 1,
-      } as Move);
-    });
-
-    return moves;
+    return enumerateTerritoryEliminationMoves(gameState, movingPlayer);
   }
 
   /**

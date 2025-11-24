@@ -122,10 +122,10 @@ class TestRingRiftEnv(unittest.TestCase):
         """
         env = RingRiftEnv(BoardType.SQUARE8)
         state = env.reset()
-        
+
         env_moves = env.legal_moves()
         engine_moves = GameEngine.get_valid_moves(state, state.current_player)
-        
+
         self.assertEqual(len(env_moves), len(engine_moves))
         # We assume order is preserved or at least set content is same
         # Since Move objects are Pydantic models, equality works if fields match
@@ -135,6 +135,79 @@ class TestRingRiftEnv(unittest.TestCase):
 
         self.assertEqual(env_moves[0].type, engine_moves[0].type)
         self.assertEqual(env_moves[0].to, engine_moves[0].to)
+
+    def test_reset_multi_player_initial_state(self):
+        """Verify that RingRiftEnv.reset() respects num_players for N-player games.
+
+        This exercises the Python initial-state helper used by the training
+        environment and checks that key thresholds match the shared
+        TypeScript/BOARD_CONFIGS semantics for square8.
+        """
+        # square8 configuration mirrored from src/shared/types/game.ts
+        rings_per_player = 18
+        total_spaces = 64
+
+        for num_players in (3, 4):
+            env = RingRiftEnv(BoardType.SQUARE8, num_players=num_players)
+            state = env.reset()
+
+            # Player list and max_players should reflect num_players.
+            self.assertEqual(len(state.players), num_players)
+            self.assertEqual(state.max_players, num_players)
+
+            player_numbers = sorted(p.player_number for p in state.players)
+            self.assertEqual(player_numbers, list(range(1, num_players + 1)))
+
+            # Victory threshold scales with total rings across all players.
+            total_rings = rings_per_player * num_players
+            expected_victory_threshold = (total_rings // 2) + 1
+            expected_territory_threshold = (total_spaces // 2) + 1
+
+            self.assertEqual(state.victory_threshold, expected_victory_threshold)
+            self.assertEqual(
+                state.territory_victory_threshold,
+                expected_territory_threshold,
+            )
+
+    def test_turn_rotation_multi_player(self):
+        """Smoke-test that current_player behaves sensibly in N-player games.
+
+        We do not assert an exact sequence of moves (that is rules-engine
+        territory), but we do require that the turn logic only ever yields
+        player indices in the expected range and that, when there are legal
+        moves, the env can make progress without getting stuck.
+        """
+        for num_players in (3, 4):
+            env = RingRiftEnv(BoardType.SQUARE8, num_players=num_players)
+            state = env.reset()
+
+            seen = set()
+            # Play up to a few full rounds of turns, or until the game ends
+            # or no legal moves are available for the current player.
+            for _ in range(num_players * 4):
+                seen.add(state.current_player)
+                moves = env.legal_moves()
+                if not moves:
+                    break
+
+                move = moves[0]
+                state, _reward, done, _info = env.step(move)
+                if done:
+                    break
+
+            expected_players = set(range(1, num_players + 1))
+            # All observed players must be within the configured range.
+            self.assertTrue(
+                seen.issubset(expected_players),
+                f"Observed invalid player numbers {seen} for num_players={num_players}",
+            )
+            # As a minimal sanity check, we should see at least two distinct
+            # players in typical games.
+            self.assertGreaterEqual(
+                len(seen),
+                min(2, num_players),
+                f"Expected to observe at least two players taking turns for num_players={num_players}",
+            )
 
 
 if __name__ == '__main__':

@@ -18,29 +18,70 @@ from app.models import (  # noqa: E402
 from app.training.env import RingRiftEnv  # noqa: E402
 
 
-def create_initial_state(board_type=BoardType.SQUARE8):
-    """Create initial state for self-play, supporting different board types"""
+def create_initial_state(
+    board_type: BoardType = BoardType.SQUARE8,
+    num_players: int = 2,
+) -> GameState:
+    """Create an initial GameState for self-play.
+
+    This mirrors the core TypeScript `createInitialGameState` logic for
+    per-player ring counts and victory thresholds while defaulting to an
+    ACTIVE game suitable for self-play training.
+
+    Parameters
+    ----------
+    board_type:
+        Board geometry to use (square8, square19, hexagonal).
+    num_players:
+        Number of active players in the game (2–4 supported).
+    """
+    # Clamp to a sensible range to avoid constructing degenerate states.
+    if num_players < 2:
+        num_players = 2
+    if num_players > 4:
+        num_players = 4
+
+    # Board configuration aligned with src/shared/types/game.ts BOARD_CONFIGS.
     if board_type == BoardType.SQUARE8:
         size = 8
-        rings = 18
-        victory_threshold = 19
-        territory_threshold = 33
+        rings_per_player = 18
+        total_spaces = 64
+    elif board_type == BoardType.SQUARE19:
+        size = 19
+        rings_per_player = 36
+        total_spaces = 361
     elif board_type == BoardType.HEXAGONAL:
-        size = 11  # Side length 11? Or radius? Rules say 11 spaces per side.
-        # Assuming size parameter represents radius or side length for
-        # BoardManager. BoardManager usually expects radius for hex.
-        # If 11 per side, radius is likely 10 or 11.
-        # Let's assume standard hex size for now.
-        rings = 36
-        victory_threshold = 37  # >36
-        territory_threshold = 166  # >165
+        # Hex boards use radius 11 and 36 rings per player in TS.
+        size = 11
+        rings_per_player = 36
+        total_spaces = 331
     else:
-        # Default/Fallback
+        # Fallback to square8-style defaults if an unknown board is passed.
         size = 8
-        rings = 18
-        victory_threshold = 19
-        territory_threshold = 33
-        
+        rings_per_player = 18
+        total_spaces = 64
+
+    # Victory thresholds: strictly more than half of total rings / spaces.
+    total_rings = rings_per_player * num_players
+    victory_threshold = (total_rings // 2) + 1
+    territory_threshold = (total_spaces // 2) + 1
+
+    players = [
+        Player(
+            id=f"p{idx}",
+            username=f"AI {idx}",
+            type="ai",
+            playerNumber=idx,
+            isReady=True,
+            timeRemaining=600,
+            ringsInHand=rings_per_player,
+            eliminatedRings=0,
+            territorySpaces=0,
+            aiDifficulty=10,
+        )
+        for idx in range(1, num_players + 1)
+    ]
+
     return GameState(
         id="self-play",
         boardType=board_type,
@@ -50,35 +91,28 @@ def create_initial_state(board_type=BoardType.SQUARE8):
             stacks={},
             markers={},
             collapsedSpaces={},
-            eliminatedRings={}
+            eliminatedRings={},
         ),
-        players=[
-            Player(
-                id="p1", username="AI 1", type="ai", playerNumber=1,
-                isReady=True, timeRemaining=600, ringsInHand=rings,
-                eliminatedRings=0, territorySpaces=0, aiDifficulty=10
-            ),
-            Player(
-                id="p2", username="AI 2", type="ai", playerNumber=2,
-                isReady=True, timeRemaining=600, ringsInHand=rings,
-                eliminatedRings=0, territorySpaces=0, aiDifficulty=10
-            )
-        ],
+        players=players,
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=1,
         moveHistory=[],
         timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
+        # For training we start in an ACTIVE state so env loops run.
         gameStatus=GameStatus.ACTIVE,
         createdAt=datetime.now(),
         lastMoveAt=datetime.now(),
         isRated=False,
-        maxPlayers=2,
-        totalRingsInPlay=rings * 2,
+        maxPlayers=num_players,
+        # Training use-cases historically treated this as total rings available
+        # in the game rather than "placed on board". Preserve that behaviour
+        # but generalise to N players.
+        totalRingsInPlay=total_rings,
         totalRingsEliminated=0,
         victoryThreshold=victory_threshold,
         territoryVictoryThreshold=territory_threshold,
         chainCaptureState=None,
-        mustMoveFromStackKey=None
+        mustMoveFromStackKey=None,
     )
 
 

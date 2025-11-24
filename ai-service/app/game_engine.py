@@ -6,6 +6,8 @@ Provides move generation and state simulation logic
 from typing import List, Optional
 import sys
 import os
+import json
+import time
 from .models import (
     GameState, Move, Position, BoardType, GamePhase, RingStack, MarkerInfo,
     GameStatus, MoveType
@@ -16,6 +18,10 @@ from .rules.geometry import BoardGeometry
 
 
 DEBUG_ENGINE = os.environ.get("RINGRIFT_DEBUG_ENGINE") == "1"
+STRICT_NO_MOVE_INVARIANT = os.environ.get(
+    "RINGRIFT_STRICT_NO_MOVE_INVARIANT",
+    "0",
+) in {"1", "true", "yes", "on"}
 
 
 def _debug(msg: str) -> None:
@@ -251,6 +257,11 @@ class GameEngine:
 
         # Check victory conditions
         GameEngine._check_victory(new_state)
+
+        # Strict no-move invariant: after any move that leaves the game ACTIVE,
+        # assert that the current player has at least one legal action.
+        if STRICT_NO_MOVE_INVARIANT and new_state.game_status == GameStatus.ACTIVE:
+            GameEngine._assert_active_player_has_legal_action(new_state, move)
 
         return new_state
 
@@ -645,6 +656,128 @@ class GameEngine:
         # stalemate (no stacks) and apply the tie-breaking rules.
         game_state.current_phase = GamePhase.MOVEMENT
         game_state.must_move_from_stack_key = None
+
+    @staticmethod
+    def _assert_active_player_has_legal_action(
+        game_state: GameState,
+        triggering_move: Move,
+    ) -> None:
+        """Enforce the strict no-move invariant for ACTIVE states.
+
+        When STRICT_NO_MOVE_INVARIANT is enabled, any ACTIVE state for the
+        current_player must admit at least one legal global action:
+
+        - a placement, movement, or capture (via _has_valid_actions), or
+        - a forced-elimination move when the player still controls stacks.
+
+        For fully eliminated players (no stacks and no rings in hand) we first
+        attempt a defensive _end_turn rotation before declaring an invariant
+        failure, mirroring TS TurnEngine semantics.
+        """
+        if game_state.game_status != GameStatus.ACTIVE:
+            return
+
+        current_player = game_state.current_player
+
+        def _player_has_material(pnum: int) -> bool:
+            player_obj = next(
+                (p for p in game_state.players if p.player_number == pnum),
+                None,
+            )
+            has_stacks = any(
+                s.controlling_player == pnum
+                for s in game_state.board.stacks.values()
+            )
+            rings_in_hand = player_obj.rings_in_hand if player_obj else 0
+            return has_stacks or rings_in_hand > 0
+
+        def _has_any_action(pnum: int) -> bool:
+            # Global action availability in the TS TurnEngine.hasValidActions
+            # sense: any placement, movement, or capture, plus forced
+            # elimination when applicable.
+            if GameEngine._has_valid_actions(game_state, pnum):
+                return True
+            forced = GameEngine._get_forced_elimination_moves(game_state, pnum)
+            return bool(forced)
+
+        # Fast path: if the current player has any global action, the invariant
+        # holds (even if the current phase only exposes a subset of those
+        # actions, e.g. MOVEMENT with only placements remaining).
+        if _has_any_action(current_player):
+            return
+
+        # If the current player has no material at all, attempt to rotate the
+        # turn once before declaring failure. This mirrors the TS behaviour of
+        # skipping fully eliminated players.
+        if not _player_has_material(current_player):
+            previous_player = current_player
+            GameEngine._end_turn(game_state)
+
+            # If rotation finished the game, there is no invariant violation.
+            if game_state.game_status != GameStatus.ACTIVE:
+                return
+
+            # Avoid infinite loops: if _end_turn did not advance to a new
+            # player, fall through to snapshot + raise.
+            if game_state.current_player != previous_player:
+                if _has_any_action(game_state.current_player):
+                    return
+
+        # At this point we have an ACTIVE state whose current_player has no
+        # placements, movements, captures, or forced eliminations available.
+        # Capture a diagnostic snapshot and raise.
+        try:
+            failure_dir = os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__),
+                    "..",
+                    "logs",
+                    "invariant_failures",
+                )
+            )
+            os.makedirs(failure_dir, exist_ok=True)
+
+            ts = int(time.time())
+            filename = f"active_no_moves_p{game_state.current_player}_{ts}.json"
+            path = os.path.join(failure_dir, filename)
+
+            try:
+                state_payload = game_state.model_dump(  # type: ignore[attr-defined]
+                    by_alias=True,
+                    mode="json",
+                )
+            except Exception:
+                state_payload = None
+
+            try:
+                move_payload = triggering_move.model_dump(  # type: ignore[attr-defined]
+                    by_alias=True,
+                    mode="json",
+                )
+            except Exception:
+                move_payload = None
+
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "timestamp": ts,
+                        "current_player": game_state.current_player,
+                        "game_status": game_state.game_status.value,
+                        "current_phase": game_state.current_phase.value,
+                        "state": state_payload,
+                        "move": move_payload,
+                    },
+                    f,
+                )
+        except Exception:
+            # Snapshotting must never prevent raising the invariant error.
+            pass
+
+        raise RuntimeError(
+            "STRICT_NO_MOVE_INVARIANT violated: ACTIVE "
+            f"{game_state.current_phase.value} state for player "
+            f"{game_state.current_player} has no legal actions",
+        )
 
     @staticmethod
     def _estimate_rings_per_player(game_state: GameState) -> int:

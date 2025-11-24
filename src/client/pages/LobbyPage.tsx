@@ -6,6 +6,7 @@ import { BoardType, CreateGameRequest, Game } from '../../shared/types/game';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { Button } from '../components/ui/Button';
 import { Select } from '../components/ui/Select';
+import type { ClientToServerEvents, ServerToClientEvents } from '../../shared/types/websocket';
 
 interface FormState {
   boardType: BoardType;
@@ -443,7 +444,7 @@ export default function LobbyPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [filters, setFilters] = useState<LobbyFilters>({});
   const [sortBy, setSortBy] = useState<SortOption>('created');
-  const socketRef = useRef<Socket | null>(null);
+  const socketRef = useRef<Socket<ServerToClientEvents, ClientToServerEvents> | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string>('');
 
   // Get current user ID
@@ -473,7 +474,7 @@ export default function LobbyPage() {
     const socket = io(baseUrl, {
       transports: ['websocket', 'polling'],
       auth: { token },
-    });
+    }) as Socket<ServerToClientEvents, ClientToServerEvents>;
 
     socketRef.current = socket;
 

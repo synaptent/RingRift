@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  app:
+    # Staging overrides for the main Node.js backend + React client.
+    # Runs database migrations on startup before starting the HTTP server.
+    command: >
+      sh -c "npx prisma migrate deploy && node dist/server/index.js"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+
+  ai-service:
+    # Ensure the FastAPI service uses the configured port and waits for
+    # PostgreSQL to be ready (for any rules-engine / training tasks that
+    # depend on the DB).
+    environment:
+      - PYTHON_ENV=production
+      - LOG_LEVEL=INFO
+      - AI_SERVICE_PORT=8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    # Basic healthcheck so other services can wait for the database.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    # Simple healthcheck ensuring Redis is accepting commands.
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

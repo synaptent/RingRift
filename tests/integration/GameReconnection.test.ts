@@ -1,5 +1,5 @@
 import { createServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
+import type { Server as SocketIOServer } from 'socket.io';
 import { GameEngine } from '../../src/server/game/GameEngine';
 import { GameSession } from '../../src/server/game/GameSession';
 import { hashGameState } from '../../src/shared/engine/core';
@@ -84,9 +84,7 @@ describe('Game reconnection and state resync (GameSession.initialize)', () => {
     const firstMove = validMoves[0];
     const { id, timestamp, moveNumber, ...payload } = firstMove as any;
 
-    const result = await engine.makeMove(
-      payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
-    );
+    const result = await engine.makeMove(payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>);
     if (!result.success) {
       throw new Error(`Baseline move failed: ${result.error ?? 'unknown error'}`);
     }
@@ -156,33 +154,41 @@ describe('Game reconnection and state resync (GameSession.initialize)', () => {
   });
 
   it('reconstructs identical GameState from persisted history on new sessions', async () => {
-    // Use a real Socket.IO server instance (backed by an in-memory HTTP server)
-    // so that GameSession can wire its WebSocketInteractionHandler without
-    // opening any actual network ports.
+    // Use a minimal fake Socket.IO server instance so that GameSession can
+    // wire its WebSocketInteractionHandler without requiring a real
+    // engine.io implementation (which is unnecessary for reconnection
+    // determinism tests and can be brittle under Jest).
     const httpServer = createServer();
-    const io = new SocketIOServer(httpServer);
+
+    const io = {
+      to: () => ({
+        emit: jest.fn(),
+      }),
+      sockets: {
+        adapter: {
+          rooms: new Map(),
+        },
+        sockets: new Map(),
+      },
+      // The WebSocketInteractionHandler attaches listeners via `io.on`,
+      // but this reconnection test never drives real socket traffic, so
+      // a no-op implementation is sufficient.
+      on: jest.fn(),
+      close: jest.fn(),
+    } as unknown as SocketIOServer;
+
     const userSockets = new Map<string, string>();
 
     // First session simulates the original in-memory engine that would exist
     // while players are connected.
-    const session1 = new GameSession(
-      gameId,
-      io,
-      new PythonRulesClient(),
-      userSockets
-    );
+    const session1 = new GameSession(gameId, io, new PythonRulesClient(), userSockets);
     await session1.initialize();
     const stateFromFirstSession = session1.getGameState();
 
     // Drop the in-memory session and construct a brand new GameSession that
     // must reconstruct purely from the mocked DB history. This models the
     // reconnection path after a process restart or session eviction.
-    const session2 = new GameSession(
-      gameId,
-      io,
-      new PythonRulesClient(),
-      userSockets
-    );
+    const session2 = new GameSession(gameId, io, new PythonRulesClient(), userSockets);
     await session2.initialize();
     const stateFromSecondSession = session2.getGameState();
 
@@ -199,9 +205,7 @@ describe('Game reconnection and state resync (GameSession.initialize)', () => {
     // also agree between sessions.
     expect(stateFromFirstSession.moveHistory.length).toBe(1);
     expect(stateFromSecondSession.moveHistory.length).toBe(1);
-    expect(stateFromFirstSession.currentPlayer).toBe(
-      stateFromSecondSession.currentPlayer
-    );
+    expect(stateFromFirstSession.currentPlayer).toBe(stateFromSecondSession.currentPlayer);
 
     io.close();
     httpServer.close();

@@ -28,107 +28,143 @@ export const mockDb = {
 };
 
 // Minimal Prisma-like client stub for tests.
-export const prismaStub = {
-  user: {
-    findFirst: jest.fn(async (args: any) => {
-      if (!args || !args.where || !args.where.OR) return null;
-      const { email, username } = args.where.OR.reduce(
-        (acc: any, cond: any) => ({
-          email: cond.email ?? acc.email,
-          username: cond.username ?? acc.username,
-        }),
-        { email: undefined, username: undefined }
-      );
-      return (
-        mockDb.users.find(
-          (u) => (email && u.email === email) || (username && u.username === username)
-        ) || null
-      );
-    }),
-    findUnique: jest.fn(async (args: any) => {
-      if (!args || !args.where) return null;
-      const { email, id } = args.where;
-      if (email) {
-        return mockDb.users.find((u) => u.email === email) || null;
-      }
-      if (id) {
-        return mockDb.users.find((u) => u.id === id) || null;
-      }
-      return null;
-    }),
-    create: jest.fn(async (args: any) => {
-      const data = args?.data || {};
-      const user = {
-        id: `user-${mockDb.users.length + 1}`,
-        createdAt: new Date(),
-        ...data,
-      };
-      mockDb.users.push(user);
-      return {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        createdAt: user.createdAt,
-      };
-    }),
-    update: jest.fn(async (args: any) => {
-      const { id } = args.where;
-      const idx = mockDb.users.findIndex((u) => u.id === id);
-      if (idx === -1) return null;
-      mockDb.users[idx] = { ...mockDb.users[idx], ...args.data };
-      return mockDb.users[idx];
-    }),
-  },
-  refreshToken: {
-    create: jest.fn(async (args: any) => {
-      const token = {
-        id: `rt-${mockDb.refreshTokens.length + 1}`,
-        ...args.data,
-      };
-      mockDb.refreshTokens.push(token);
-      return token;
-    }),
-    findFirst: jest.fn(async (args: any) => {
-      const { token, userId, expiresAt } = args.where;
-      return (
-        mockDb.refreshTokens.find((rt) => {
-          if (token && rt.token !== token) return false;
-          if (userId && rt.userId !== userId) return false;
-          if (expiresAt?.gt && !(rt.expiresAt instanceof Date)) return false;
-          if (expiresAt?.gt && rt.expiresAt <= expiresAt.gt) return false;
-          return true;
-        }) || null
-      );
-    }),
-    delete: jest.fn(async (args: any) => {
-      const { id } = args.where;
-      const idx = mockDb.refreshTokens.findIndex((rt) => rt.id === id);
-      if (idx === -1) return null;
-      const [deleted] = mockDb.refreshTokens.splice(idx, 1);
-      return deleted;
-    }),
-    deleteMany: jest.fn(async (args: any) => {
-      if (!args || !args.where) {
-        const count = mockDb.refreshTokens.length;
-        mockDb.refreshTokens = [];
-        return { count };
-      }
-      const { token, userId } = args.where;
-      const before = mockDb.refreshTokens.length;
-      mockDb.refreshTokens = mockDb.refreshTokens.filter((rt) => {
-        if (token && rt.token !== token) return true;
-        if (userId && rt.userId !== userId) return true;
-        return false;
-      });
-      return { count: before - mockDb.refreshTokens.length };
-    }),
-  },
-  $transaction: jest.fn(async (ops: any[]) => {
-    for (const op of ops) {
-      // eslint-disable-next-line no-await-in-loop
-      await op;
+const userModelStub = {
+  findFirst: jest.fn(async (args: any) => {
+    if (!args || !args.where || !args.where.OR) return null;
+    const { email, username } = args.where.OR.reduce(
+      (acc: any, cond: any) => ({
+        email: cond.email ?? acc.email,
+        username: cond.username ?? acc.username,
+      }),
+      { email: undefined, username: undefined }
+    );
+    return (
+      mockDb.users.find(
+        (u) => (email && u.email === email) || (username && u.username === username)
+      ) || null
+    );
+  }),
+  findUnique: jest.fn(async (args: any) => {
+    if (!args || !args.where) return null;
+    const { email, id } = args.where;
+    if (email) {
+      return mockDb.users.find((u) => u.email === email) || null;
     }
+    if (id) {
+      return mockDb.users.find((u) => u.id === id) || null;
+    }
+    return null;
+  }),
+  create: jest.fn(async (args: any) => {
+    const data = args?.data || {};
+    const user = {
+      id: `user-${mockDb.users.length + 1}`,
+      createdAt: new Date(),
+      ...data,
+    };
+    mockDb.users.push(user);
+    return {
+      id: user.id,
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      createdAt: user.createdAt,
+    };
+  }),
+  update: jest.fn(async (args: any) => {
+    const { id } = args.where;
+    const idx = mockDb.users.findIndex((u) => u.id === id);
+    if (idx === -1) return null;
+
+    const current = mockDb.users[idx];
+    const data = args.data || {};
+
+    // Support Prisma-style increment syntax for tokenVersion so that
+    // auth tests can observe version bumps from /logout-all.
+    const { tokenVersion, ...rest } = data;
+    const next: any = { ...current, ...rest };
+
+    if (
+      tokenVersion &&
+      typeof tokenVersion === 'object' &&
+      typeof tokenVersion.increment === 'number'
+    ) {
+      const prev = typeof next.tokenVersion === 'number' ? next.tokenVersion : 0;
+      next.tokenVersion = prev + tokenVersion.increment;
+    }
+
+    mockDb.users[idx] = next;
+    return mockDb.users[idx];
+  }),
+};
+
+const refreshTokenModelStub = {
+  create: jest.fn(async (args: any) => {
+    const token = {
+      id: `rt-${mockDb.refreshTokens.length + 1}`,
+      ...args.data,
+    };
+    mockDb.refreshTokens.push(token);
+    return token;
+  }),
+  findFirst: jest.fn(async (args: any) => {
+    const { token, userId, expiresAt } = args.where;
+    return (
+      mockDb.refreshTokens.find((rt) => {
+        if (token && rt.token !== token) return false;
+        if (userId && rt.userId !== userId) return false;
+        if (expiresAt?.gt && !(rt.expiresAt instanceof Date)) return false;
+        if (expiresAt?.gt && rt.expiresAt <= expiresAt.gt) return false;
+        return true;
+      }) || null
+    );
+  }),
+  delete: jest.fn(async (args: any) => {
+    const { id } = args.where;
+    const idx = mockDb.refreshTokens.findIndex((rt) => rt.id === id);
+    if (idx === -1) return null;
+    const [deleted] = mockDb.refreshTokens.splice(idx, 1);
+    return deleted;
+  }),
+  deleteMany: jest.fn(async (args: any) => {
+    if (!args || !args.where) {
+      const count = mockDb.refreshTokens.length;
+      mockDb.refreshTokens = [];
+      return { count };
+    }
+    const { token, userId } = args.where;
+    const before = mockDb.refreshTokens.length;
+    mockDb.refreshTokens = mockDb.refreshTokens.filter((rt) => {
+      if (token && rt.token !== token) return true;
+      if (userId && rt.userId !== userId) return true;
+      return false;
+    });
+    return { count: before - mockDb.refreshTokens.length };
+  }),
+};
+
+export const prismaStub = {
+  user: userModelStub,
+  refreshToken: refreshTokenModelStub,
+  $transaction: jest.fn(async (arg: any) => {
+    // Support array-of-promises style used in some routes (for example auth refresh).
+    if (Array.isArray(arg)) {
+      for (const op of arg) {
+        // eslint-disable-next-line no-await-in-loop
+        await op;
+      }
+      return undefined;
+    }
+
+    // Support callback-style transactions used in other routes (for example user deletion).
+    if (typeof arg === 'function') {
+      const tx = {
+        user: userModelStub,
+        refreshToken: refreshTokenModelStub,
+      };
+      return arg(tx);
+    }
+
     return undefined;
   }),
 } as any;

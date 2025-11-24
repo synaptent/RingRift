@@ -33,6 +33,8 @@ This service provides AI capabilities for the RingRift game through a RESTful AP
 - **AI Caching**: Instance caching for performance
 - **Health Checks**: Container orchestration support
 
+For end-to-end training, self-play, and dataset-generation workflows that consume this service and its embedded rules engine (including the territory/combined-margin generator), see [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1). For the territory forced-elimination / `TerritoryMutator` incident and its fix, see [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1).
+
 ## API Endpoints
 
 ### `GET /`
@@ -309,6 +311,10 @@ You should only run the AI service on its own (via `uvicorn` or `docker run`) wh
 
 - `PYTHON_ENV`: Environment mode (development/production)
 - `LOG_LEVEL`: Logging level (default: INFO)
+- `RINGRIFT_TRAINED_HEURISTIC_PROFILES` (optional): Path to a JSON file
+  produced by `app.training.train_heuristic_weights`. When set and
+  `load_trained_profiles_if_available` is called with `mode="override"`, the
+  in-memory heuristic profiles will be replaced by the trained values.
 
 ## Project Structure
 
@@ -326,6 +332,14 @@ ai-service/
 │       ├── random_ai.py     # Random AI implementation
 │       ├── heuristic_ai.py  # Heuristic AI implementation
 │       └── ...              # Future AI implementations (MCTS, neural net, descent, etc.)
+├── app/training/
+│   ├── generate_territory_dataset.py  # Self-play dataset generation for heuristic training
+│   ├── heuristic_features.py          # Feature extraction for heuristic regression
+│   ├── train_heuristic_weights.py     # Offline training for heuristic weight profiles
+│   └── ...                            # Additional training loops and helpers
+├── scripts/
+│   ├── run_ai_tournament.py           # Generic AI-vs-AI tournament driver
+│   └── run_heuristic_experiment.py    # Baseline-vs-trained and A/B heuristic experiments
 ├── Dockerfile
 ├── requirements.txt
 └── README.md
@@ -356,6 +370,133 @@ ai-service/
   - Opponent threats (6.0)
 - Selects moves with highest evaluation
 - Used for difficulty levels 3-5
+
+### Offline heuristic training and experiments
+
+The `app/training` and `scripts` modules provide an offline pipeline for
+training and evaluating heuristic weight profiles for `HeuristicAI`. High-level CLI usage, dataset schemas, and guidance for these training workflows (including how [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py:1) is used to produce combined-margin targets) are documented centrally in [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1).
+
+#### 1. Generate self-play datasets
+
+Use `generate_territory_dataset.py` to produce JSONL datasets with
+per-state targets for heuristic training. For example, from the `ai-service`
+root:
+
+```bash
+python -m app.training.generate_territory_dataset \
+  --num-games 100 \
+  --output logs/heuristic/combined_margin.square8.mixed2p.jsonl \
+  --board-type square8 \
+  --max-moves 200 \
+  --seed 123 \
+  --engine-mode mixed \
+  --num-players 2
+```
+
+This produces a JSONL file where each line has:
+
+- `game_state`: a serialised `GameState` snapshot
+- `player_number`: perspective (1..N)
+- `target`: scalar combined-margin target for that player
+- `time_weight`: optional per-example weight
+
+#### 2. Train heuristic weight profiles
+
+Use `train_heuristic_weights.py` to fit the scalar weights used by
+`HeuristicAI` to a dataset:
+
+```bash
+python -m app.training.train_heuristic_weights \
+  --dataset logs/heuristic/combined_margin.square8.mixed2p.jsonl \
+  --output  logs/heuristic/heuristic_profiles.v1.trained.json \
+  --lambda  0.001
+```
+
+The output JSON contains a mapping from profile ids (e.g.
+`"heuristic_v1_balanced"`) to updated weight dictionaries. These are
+compatible with the runtime registry in `app.ai.heuristic_weights`.
+
+#### 3. Loading trained profiles at runtime
+
+The helper `load_trained_profiles_if_available` in
+`app.ai.heuristic_weights` can be used to register trained profiles:
+
+```python
+from app.ai.heuristic_weights import load_trained_profiles_if_available
+
+# Experiment-only: keep baselines and add trained copies under *_trained ids
+load_trained_profiles_if_available(
+    path="logs/heuristic/heuristic_profiles.v1.trained.json",
+    mode="suffix",
+    suffix="_trained",
+)
+
+# Production override: replace existing ids with trained values
+load_trained_profiles_if_available(
+    path="logs/heuristic/heuristic_profiles.v1.trained.json",
+    mode="override",
+)
+```
+
+When using the `suffix` mode with the default `"_trained"` suffix, a
+baseline profile like `"heuristic_v1_balanced"` will get a trained
+counterpart `"heuristic_v1_balanced_trained"` that can be referenced from
+`AIConfig.heuristic_profile_id`.
+
+#### 4. Automated baseline-vs-trained and A/B experiments
+
+The script `scripts/run_heuristic_experiment.py` provides a thin CLI for
+pitting heuristic profiles against each other using the canonical rules
+engine and collecting aggregated stats.
+
+**Baseline vs trained (single file):**
+
+```bash
+cd ai-service
+
+python scripts/run_heuristic_experiment.py \
+  --mode baseline-vs-trained \
+  --trained-profiles-a logs/heuristic/heuristic_profiles.v1.trained.json \
+  --base-profile-id-a heuristic_v1_balanced \
+  --difficulties 5 \
+  --boards Square8 \
+  --games-per-match 200 \
+  --out-json logs/heuristic/experiments.baseline_vs_trained.json \
+  --out-csv  logs/heuristic/experiments.baseline_vs_trained.csv
+```
+
+This registers `heuristic_v1_balanced_trained` from the given JSON and runs
+matches between:
+
+- Profile A: `heuristic_v1_balanced` (baseline)
+- Profile B: `heuristic_v1_balanced_trained` (trained)
+
+for each requested `(difficulty, board)` pairing, swapping sides every other
+game for fairness. A summary is printed to stdout and written to the optional
+JSON/CSV outputs.
+
+**A/B between two different trained files:**
+
+```bash
+cd ai-service
+
+python scripts/run_heuristic_experiment.py \
+  --mode ab-trained \
+  --trained-profiles-a logs/heuristic/heuristic_profiles.v1.expA.json \
+  --trained-profiles-b logs/heuristic/heuristic_profiles.v1.expB.json \
+  --base-profile-id-a heuristic_v1_balanced \
+  --base-profile-id-b heuristic_v1_balanced \
+  --difficulties 3,5,7 \
+  --boards Square8,Square19 \
+  --games-per-match 200 \
+  --out-json logs/heuristic/experiments.expA_vs_expB.json \
+  --out-csv  logs/heuristic/experiments.expA_vs_expB.csv
+```
+
+In this mode, the script registers profiles like
+`"heuristic_v1_balanced_A"` and `"heuristic_v1_balanced_B"` from the two
+trained files and reports relative win-rates across the requested grid of
+(difficulty, board) conditions.
 
 ## Testing
 

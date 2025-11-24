@@ -82,17 +82,22 @@ To understand the project and know which documents are authoritative for each ar
   - `KNOWN_ISSUES.md` – Current P0/P1 bugs and gaps.
 
 - **Architecture & Design**
-  - `ARCHITECTURE_ASSESSMENT.md` – Comprehensive architecture review and future design plans.
-  - `AI_ARCHITECTURE.md` – AI service architecture, assessment, and improvement plans.
-  - `RULES_ENGINE_ARCHITECTURE.md` – Python rules engine architecture and rollout strategy.
+  - `ARCHITECTURE_ASS
+
+essment.md` – Comprehensive architecture review and future design plans.
+
+- `AI_ARCHITECTURE.md` – AI service architecture, assessment, and improvement plans (with cross-links to training pipelines and incidents).
+- `RULES_ENGINE_ARCHITECTURE.md` – Python rules engine architecture and rollout strategy.
 
 - **Subsystem Guides**
   - `tests/README.md` – Jest setup, test structure, and the rules/FAQ → scenario test matrix.
   - `RULES_SCENARIO_MATRIX.md` – Canonical mapping of rules/FAQ sections to specific Jest test suites.
   - `ai-service/README.md` – Python AI microservice (Random/Heuristic AI, endpoints, setup).
+  - [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1) – AI service training pipelines, self-play and territory dataset generation CLIs, JSONL schema, and seed behaviour.
   - `CONTRIBUTING.md` – Contribution workflow and historical phase breakdown.
 
 - **Historical Plans & Evaluations**
+  - [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1) – Incident report for the TerritoryMutator vs `GameEngine.apply_move()` divergence and its fix, with tests and follow-up tasks.
   - Docs under `deprecated/` – Earlier architecture and improvement plans, preserved for context only.
 
 ### 🔗 Developer Quick Links

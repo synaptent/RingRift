@@ -1,6 +1,23 @@
 /**
- * AI Player Interface and Base Class
- * Defines the contract for AI players and provides base functionality
+ * LEGACY AI BASE CLASS (NOT USED BY CURRENT PRODUCTION AI PIPELINE)
+ *
+ * This file predates the current AI architecture, which is centred on
+ * `AIEngine` (TS), `AIServiceClient`, and the Python `ai-service`.
+ *
+ * Key points:
+ * - No concrete subclasses of `AIPlayer` are referenced anywhere in the
+ *   live code path.
+ * - All production AI flows use `AIEngine` + `AIInteractionHandler` on
+ *   the backend and `sandboxAI` + `localAIMoveSelection` in the client.
+ * - Per-game RNG determinism is implemented via `SeededRNG` and
+ *   injected `LocalAIRng` hooks; this legacy base class still uses
+ *   `Math.random()` internally and MUST NOT be reintroduced into any
+ *   move-selection logic without first being refactored to accept an
+ *   injected RNG compatible with the seeded pipeline.
+ *
+ * The class and presets are retained only as a historical reference and
+ * for potential future refactors. New code should not extend `AIPlayer`
+ * or depend on its randomness helpers.
  */
 
 import { GameState, Move } from '../../../shared/types/game';

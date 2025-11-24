@@ -5,7 +5,10 @@ import {
   Move,
   positionToString,
 } from '../../src/shared/types/game';
-import { MovementBoardView } from '../../src/shared/engine/core';
+import {
+  MovementBoardView,
+  hasAnyLegalMoveOrCaptureFromOnBoard,
+} from '../../src/shared/engine/core';
 import { enumerateSimpleMoveTargetsFromStack } from '../../src/shared/engine/movementLogic';
 import { createTestBoard, createTestGameState, addStack, addMarker, pos } from '../utils/fixtures';
 import { RuleEngine } from '../../src/server/game/RuleEngine';
@@ -50,6 +53,8 @@ function makeMovementView(boardType: BoardType, board: BoardState): MovementBoar
   };
 }
 
+// Classification: canonical shared movement helper tests for enumerateSimpleMoveTargetsFromStack
+// plus cross-host parity against sandbox and backend RuleEngine.
 describe('enumerateSimpleMoveTargetsFromStack shared helper', () => {
   test('square8: shared vs sandbox vs RuleEngine on open board', () => {
     const boardType: BoardType = 'square8';
@@ -215,5 +220,87 @@ describe('enumerateSimpleMoveTargetsFromStack shared helper', () => {
 
     expect(sharedTargets).toEqual(sandboxTargets);
     expect(sharedTargets).toEqual(backendTargets);
+  });
+});
+
+describe('hasAnyLegalMoveOrCaptureFromOnBoard shared helper', () => {
+  test('returns true when a stack has at least one simple movement target', () => {
+    const boardType: BoardType = 'square8';
+    const board = createTestBoard(boardType);
+    const from = pos(3, 3);
+    const player = 1;
+
+    addStack(board, from, player, 2);
+
+    const view = makeMovementView(boardType, board);
+    const hasAny = hasAnyLegalMoveOrCaptureFromOnBoard(boardType, from, player, view);
+
+    expect(hasAny).toBe(true);
+  });
+
+  test('returns true when a stack has no simple moves but at least one capture', () => {
+    const boardType: BoardType = 'square8';
+    const board = createTestBoard(boardType);
+    const from = pos(3, 3);
+    const target = pos(4, 3);
+    const landing = pos(5, 3);
+    const player = 1;
+
+    const fromKey = positionToString(from);
+    const targetKey = positionToString(target);
+    const landingKey = positionToString(landing);
+
+    // Collapsed everywhere except along the intended capture ray so that
+    // non-capturing movement is blocked but the single capture segment
+    // remains legal.
+    for (let x = 0; x < board.size; x++) {
+      for (let y = 0; y < board.size; y++) {
+        const key = positionToString({ x, y });
+        if (key === fromKey || key === targetKey || key === landingKey) {
+          continue;
+        }
+        board.collapsedSpaces.set(key, 1);
+      }
+    }
+
+    // Attacker height 2, target height 1 – capture over (4,3) to (5,3)
+    // is legal by the shared capture rules.
+    addStack(board, from, player, 2);
+    addStack(board, target, 2, 1);
+
+    const view = makeMovementView(boardType, board);
+
+    const simpleTargets = enumerateSimpleMoveTargetsFromStack(boardType, from, player, view);
+    expect(simpleTargets).toHaveLength(0);
+
+    const hasAny = hasAnyLegalMoveOrCaptureFromOnBoard(boardType, from, player, view);
+    expect(hasAny).toBe(true);
+  });
+
+  test('returns false when a stack has no legal moves or captures', () => {
+    const boardType: BoardType = 'square8';
+    const board = createTestBoard(boardType);
+    const from = pos(3, 3);
+    const player = 1;
+
+    const fromKey = positionToString(from);
+
+    // Collapse all spaces except the origin so the stack is completely stuck.
+    for (let x = 0; x < board.size; x++) {
+      for (let y = 0; y < board.size; y++) {
+        const key = positionToString({ x, y });
+        if (key === fromKey) {
+          continue;
+        }
+        board.collapsedSpaces.set(key, 1);
+      }
+    }
+
+    addStack(board, from, player, 1);
+
+    const view = makeMovementView(boardType, board);
+    const hasAny = hasAnyLegalMoveOrCaptureFromOnBoard(boardType, from, player, view);
+
+    expect(hasAny).toBe(false);
   });
 });

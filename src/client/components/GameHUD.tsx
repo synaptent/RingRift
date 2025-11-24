@@ -437,7 +437,7 @@ export function GameHUD({
         : 'text-rose-300';
 
   return (
-    <div className="w-full max-w-4xl mx-auto mb-4">
+    <div className="w-full max-w-4xl mx-auto mb-4" data-testid="game-hud">
       {/* Connection Status */}
       <div className="flex items-center justify-between text-xs text-slate-300 mb-3">
         <div className={`font-semibold ${connectionColor}`}>

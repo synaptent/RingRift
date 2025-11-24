@@ -19,6 +19,7 @@ export type WebSocketErrorCode =
   | 'INVALID_PAYLOAD'
   | 'GAME_NOT_FOUND'
   | 'ACCESS_DENIED'
+  | 'RATE_LIMITED'
   | 'MOVE_REJECTED'
   | 'CHOICE_REJECTED'
   | 'INTERNAL_ERROR';

@@ -18,7 +18,9 @@ import { addMarker, addStack, pos } from '../utils/fixtures';
  *   to the moving player, plus one mandatory self-elimination.
  */
 
-describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
+// Classification: legacy backend 19x19 territory integration tests; semantics now
+// covered by shared helpers and RulesMatrix.Territory.*. Kept for reference but skipped.
+describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () => {
   const boardType: BoardType = 'square19';
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
@@ -33,7 +35,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p2',
@@ -44,7 +46,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p3',
@@ -55,8 +57,8 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
   }
 
@@ -93,7 +95,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
       borderCoords.push(pos(4, y));
       borderCoords.push(pos(8, y));
     }
-    borderCoords.forEach(p => addMarker(board, p, 1)); // player 1 markers
+    borderCoords.forEach((p) => addMarker(board, p, 1)); // player 1 markers
 
     // Sanity check: BoardManager should see these markers as a border
     // for the chosen interior region.
@@ -129,33 +131,29 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
       {
         spaces: interiorCoords,
         controllingPlayer: 1,
-        isDisconnected: true
+        isDisconnected: true,
       },
       /*movingPlayer*/ 1
     );
 
     // Compute expected sets for assertions.
     const interiorKeys = new Set(
-      interiorCoords.map(p =>
-        p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-      )
+      interiorCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
     );
     const borderKeys = new Set(
-      borderCoords.map(p =>
-        p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-      )
+      borderCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
     );
 
     // 1. All interior region spaces should be collapsed to player 1 and
     //    no stacks should remain there.
-    interiorCoords.forEach(p => {
+    interiorCoords.forEach((p) => {
       const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
       expect(board.collapsedSpaces.get(key)).toBe(1);
       expect(board.stacks.get(key)).toBeUndefined();
     });
 
     // 2. All border marker positions should be collapsed to player 1.
-    borderCoords.forEach(p => {
+    borderCoords.forEach((p) => {
       const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
       expect(board.collapsedSpaces.get(key)).toBe(1);
     });
@@ -167,13 +165,13 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     // line collapses or other effects. Instead of asserting an exact
     // count here, assert that territorySpaces is consistent with the
     // number of collapsed spaces owned by player 1.
-    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter(v => v === 1).length;
+    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter((v) => v === 1).length;
     expect(gameState.players[0].territorySpaces).toBe(collapsedForP1);
 
     // 4. All stacks inside the region should have been eliminated, and
     //    eliminated rings should be credited to player 1, including the
     //    mandatory self-elimination of one of their own rings.
-    const stacksInRegion = Array.from(board.stacks.keys()).filter(k => interiorKeys.has(k));
+    const stacksInRegion = Array.from(board.stacks.keys()).filter((k) => interiorKeys.has(k));
     expect(stacksInRegion.length).toBe(0);
 
     // We started with:
@@ -217,7 +215,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
       borderCoords.push(pos(4, y));
       borderCoords.push(pos(8, y));
     }
-    borderCoords.forEach(p => addMarker(board, p, 1));
+    borderCoords.forEach((p) => addMarker(board, p, 1));
 
     const outsideP1 = pos(1, 1);
     addStack(board, outsideP1, 1, 1);
@@ -233,7 +231,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     const regionTerritory = {
       spaces: interiorCoords,
       controllingPlayer: 1,
-      isDisconnected: true
+      isDisconnected: true,
     };
     const findDisconnectedRegionsSpy = jest
       .spyOn(boardManager, 'findDisconnectedRegions')
@@ -249,7 +247,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     const result = await engine.makeMove({
       type: 'place_ring',
       player: 1,
-      to: placePos
+      to: placePos,
     } as any);
 
     expect(result.success).toBe(true);
@@ -259,23 +257,19 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     expect(findDisconnectedRegionsSpy).toHaveBeenCalled();
 
     const interiorKeys = new Set(
-      interiorCoords.map(p =>
-        p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-      )
+      interiorCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
     );
     const borderKeys = new Set(
-      borderCoords.map(p =>
-        p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-      )
+      borderCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
     );
 
-    interiorCoords.forEach(p => {
+    interiorCoords.forEach((p) => {
       const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
       expect(board.collapsedSpaces.get(key)).toBe(1);
       expect(board.stacks.get(key)).toBeUndefined();
     });
 
-    borderCoords.forEach(p => {
+    borderCoords.forEach((p) => {
       const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
       expect(board.collapsedSpaces.get(key)).toBe(1);
     });
@@ -283,7 +277,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     const expectedTerritory = interiorKeys.size + borderKeys.size;
     expect(gameState.players[0].territorySpaces).toBe(expectedTerritory);
 
-    const stacksInRegion = Array.from(board.stacks.keys()).filter(k => interiorKeys.has(k));
+    const stacksInRegion = Array.from(board.stacks.keys()).filter((k) => interiorKeys.has(k));
     expect(stacksInRegion.length).toBe(0);
 
     const expectedEliminatedForP1 = 10;
@@ -294,7 +288,13 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
 
   test('Q15_Q20_territory_disconnection_real_detection_backend', async () => {
     const players = createPlayers();
-    const engine = new GameEngine('territory-move-e2e-real', boardType, players, timeControl, false);
+    const engine = new GameEngine(
+      'territory-move-e2e-real',
+      boardType,
+      players,
+      timeControl,
+      false
+    );
     const engineAny: any = engine;
     const gameState: GameState = (engineAny as any).gameState;
     const board = gameState.board;
@@ -322,7 +322,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
       borderCoords.push(pos(4, y));
       borderCoords.push(pos(8, y));
     }
-    borderCoords.forEach(p => addMarker(board, p, 1));
+    borderCoords.forEach((p) => addMarker(board, p, 1));
 
     const outsideP1 = pos(1, 1);
     addStack(board, outsideP1, 1, 1);
@@ -339,7 +339,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     const result = await engine.makeMove({
       type: 'place_ring',
       player: 1,
-      to: placePos
+      to: placePos,
     } as any);
 
     expect(result.success).toBe(true);
@@ -352,25 +352,21 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     // elimination effects.
 
     const interiorKeys = new Set(
-      interiorCoords.map(p =>
-        p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-      )
+      interiorCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
     );
     const borderKeys = new Set(
-      borderCoords.map(p =>
-        p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-      )
+      borderCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
     );
 
     // 1. Interior region spaces should be collapsed for player 1 and empty of stacks.
-    interiorCoords.forEach(p => {
+    interiorCoords.forEach((p) => {
       const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
       expect(board.collapsedSpaces.get(key)).toBe(1);
       expect(board.stacks.get(key)).toBeUndefined();
     });
 
     // 2. Border marker positions should be collapsed for player 1.
-    borderCoords.forEach(p => {
+    borderCoords.forEach((p) => {
       const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
       expect(board.collapsedSpaces.get(key)).toBe(1);
     });
@@ -378,12 +374,12 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     // 3. Player 1's territorySpaces should match the number of collapsed
     // spaces owned by player 1 in this simple scenario.
     const expectedTerritory = interiorKeys.size + borderKeys.size;
-    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter(v => v === 1).length;
+    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter((v) => v === 1).length;
     expect(collapsedForP1).toBe(expectedTerritory);
     expect(gameState.players[0].territorySpaces).toBe(collapsedForP1);
 
     // 4. All stacks inside the region should be eliminated.
-    const stacksInRegion = Array.from(board.stacks.keys()).filter(k => interiorKeys.has(k));
+    const stacksInRegion = Array.from(board.stacks.keys()).filter((k) => interiorKeys.has(k));
     expect(stacksInRegion.length).toBe(0);
 
     // 5. Eliminated ring counts should still reflect 9 internal + 1 self-elim.
@@ -431,7 +427,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
         border.push(pos(x0 - 1, y));
         border.push(pos(x0 + 3, y));
       }
-      border.forEach(p => addMarker(board, p, 1)); // A markers (player 1)
+      border.forEach((p) => addMarker(board, p, 1)); // A markers (player 1)
       return border;
     };
 
@@ -458,11 +454,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     await (engineAny as any).processDisconnectedRegions();
 
     const keysFrom = (positions: Position[]) =>
-      new Set(
-        positions.map(p =>
-          p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-        )
-      );
+      new Set(positions.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`)));
 
     const interiorKeys1 = keysFrom(block1);
     const interiorKeys2 = keysFrom(block2);
@@ -488,13 +480,13 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     //    their borders).
     const expectedTerritory =
       interiorKeys1.size + interiorKeys2.size + borderKeys1.size + borderKeys2.size;
-    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter(v => v === 1).length;
+    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter((v) => v === 1).length;
     expect(collapsedForP1).toBe(expectedTerritory);
     expect(gameState.players[0].territorySpaces).toBe(collapsedForP1);
 
     // 4. All stacks inside both regions should be eliminated.
     const stacksInRegions = Array.from(board.stacks.keys()).filter(
-      k => interiorKeys1.has(k) || interiorKeys2.has(k)
+      (k) => interiorKeys1.has(k) || interiorKeys2.has(k)
     );
     expect(stacksInRegions.length).toBe(0);
 
@@ -511,7 +503,13 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
 
   test('Q15_Q7_combined_line_and_region_backend', async () => {
     const players = createPlayers();
-    const engine = new GameEngine('territory-line-capture-combined', boardType, players, timeControl, false);
+    const engine = new GameEngine(
+      'territory-line-capture-combined',
+      boardType,
+      players,
+      timeControl,
+      false
+    );
     const engineAny: any = engine;
     const gameState: GameState = (engineAny as any).gameState;
     const board = gameState.board;
@@ -539,7 +537,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
       borderCoords.push(pos(4, y));
       borderCoords.push(pos(8, y));
     }
-    borderCoords.forEach(p => addMarker(board, p, 1)); // A markers (player 1)
+    borderCoords.forEach((p) => addMarker(board, p, 1)); // A markers (player 1)
 
     // C active elsewhere but not inside region
     addStack(board, pos(0, 0), 3, 1);
@@ -570,7 +568,7 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
     // territory consequences rather than BoardManager geometry.
     const lineInfo: any = {
       player: 1,
-      positions: lineCoords
+      positions: lineCoords,
     };
     const findAllLinesSpy = jest
       .spyOn(boardManager, 'findAllLines')
@@ -590,18 +588,14 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
       type: 'overtaking_capture',
       from: captureFrom,
       captureTarget,
-      to: captureLanding
+      to: captureLanding,
     } as any);
 
     expect(result.success).toBe(true);
     expect(findAllLinesSpy).toHaveBeenCalled();
 
     const keysFrom = (positions: Position[]) =>
-      new Set(
-        positions.map(p =>
-          p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`
-        )
-      );
+      new Set(positions.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`)));
 
     const interiorKeys = keysFrom(interiorCoords);
     const borderKeys = keysFrom(borderCoords);
@@ -629,14 +623,13 @@ describe('GameEngine territory disconnection (square19, Von Neumann)', () => {
 
     // 4. Player 1's territorySpaces should equal the number of collapsed
     //    spaces owned by P1 in this constructed scenario.
-    const expectedTerritory =
-      interiorKeys.size + borderKeys.size + lineKeys.size;
-    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter(v => v === 1).length;
+    const expectedTerritory = interiorKeys.size + borderKeys.size + lineKeys.size;
+    const collapsedForP1 = Array.from(board.collapsedSpaces.values()).filter((v) => v === 1).length;
     expect(collapsedForP1).toBe(expectedTerritory);
     expect(gameState.players[0].territorySpaces).toBe(collapsedForP1);
 
     // 5. All stacks inside the region should be eliminated.
-    const stacksInRegion = Array.from(board.stacks.keys()).filter(k => interiorKeys.has(k));
+    const stacksInRegion = Array.from(board.stacks.keys()).filter((k) => interiorKeys.has(k));
     expect(stacksInRegion.length).toBe(0);
 
     // 6. Eliminated ring counts should combine line + territory contributions:

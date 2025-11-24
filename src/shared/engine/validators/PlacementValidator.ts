@@ -1,6 +1,10 @@
 import { GameState, PlaceRingAction, SkipPlacementAction, ValidationResult } from '../types';
 import { BoardState, BoardType, Position, BOARD_CONFIGS, positionToString } from '../../types/game';
-import { hasAnyLegalMoveOrCaptureFromOnBoard, MovementBoardView } from '../core';
+import {
+  hasAnyLegalMoveOrCaptureFromOnBoard,
+  MovementBoardView,
+  countRingsOnBoardForPlayer,
+} from '../core';
 import { isValidPosition } from './utils';
 
 /**
@@ -17,9 +21,10 @@ export interface PlacementContext {
   /** Per-player cap for total rings that may ever be placed on the board. */
   ringsPerPlayerCap: number;
   /**
-   * Optional optimisation: precomputed total number of rings currently on the
-   * board for this player, measured as the sum of stack heights for stacks
-   * they control. When omitted, the validator computes this from the board.
+   * Optional optimisation: precomputed total number of this player's rings
+   * currently on the board, counting all rings of their colour in every
+   * stack (regardless of which player controls those stacks).
+   * When omitted, the validator computes this from the board.
    */
   ringsOnBoard?: number;
   /**
@@ -49,13 +54,11 @@ export interface PlacementValidationResult {
 }
 
 function computeRingsOnBoardForPlayer(board: BoardState, player: number): number {
-  let total = 0;
-  for (const stack of board.stacks.values()) {
-    if (stack.controllingPlayer === player) {
-      total += stack.rings.length;
-    }
-  }
-  return total;
+  // Own-colour-based helper: count all rings of `player`'s colour that are
+  // present in any stack on the board, regardless of which player currently
+  // controls those stacks. This mirrors the canonical ringsPerPlayer
+  // semantics (RR-CANON-R020 / compact §1.1).
+  return countRingsOnBoardForPlayer(board, player);
 }
 
 /**

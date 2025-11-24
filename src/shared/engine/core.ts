@@ -66,6 +66,47 @@ export function getMovementDirectionsForBoardType(boardType: BoardType): Directi
 }
 
 /**
+ * Count the number of rings of a given player's colour that are currently
+ * on the board in any stack, regardless of which player controls those
+ * stacks. This is used for own-colour supply cap checks (ringsPerPlayer).
+ *
+ * Rule reference:
+ * - RR-CANON-R020 / Compact §1.1 – own-colour supply cap.
+ */
+export function countRingsOnBoardForPlayer(board: BoardState, playerNumber: number): number {
+  let count = 0;
+
+  for (const stack of board.stacks.values()) {
+    // RingStack.rings is ordered top→bottom, but for counting by colour
+    // only the owner ID matters, not position within the stack.
+    for (const owner of stack.rings) {
+      if (owner === playerNumber) {
+        count += 1;
+      }
+    }
+  }
+
+  return count;
+}
+
+/**
+ * Count the total number of rings of a given player's colour that are
+ * currently in play: all rings of that colour on the board in any stack
+ * (regardless of controlling player) plus that player's rings in hand.
+ *
+ * This mirrors the formal definition of the ringsPerPlayer own-colour
+ * supply cap in the compact/canonical rules.
+ */
+export function countRingsInPlayForPlayer(state: GameState, playerNumber: number): number {
+  const countOnBoard = countRingsOnBoardForPlayer(state.board, playerNumber);
+
+  const player = state.players.find((p) => p.playerNumber === playerNumber);
+  const ringsInHand = player ? player.ringsInHand : 0;
+
+  return countOnBoard + ringsInHand;
+}
+
+/**
  * Calculate cap height for a ring stack.
  *
  * Rule Reference: Section 5.2 - Cap height is consecutive rings of

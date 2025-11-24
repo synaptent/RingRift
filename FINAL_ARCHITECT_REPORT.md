@@ -38,7 +38,7 @@ RingRift is built as a **distributed multiplayer game platform** with three prim
 
 - **Express API Server** (Port 3000): REST endpoints for auth, games, users
 - **Socket.IO WebSocket Server**: Real-time game state synchronization
-- **Game engine host**: Backend orchestrator over the shared rules engine, implemented in [`GameEngine`](src/server/game/GameEngine.ts:1). Uses shared helpers under [`src/shared/engine`](src/shared/engine/types.ts:1) for movement, captures, lines, territory, placement, victory, and turn/phase progression.
+- **Game engine host**: Backend orchestrator over the shared rules engine, implemented in [`GameEngine`](src/server/game/GameEngine.ts:1). Uses shared helpers under [`src/shared/engine`](src/shared/engine/types.ts:1) for movement, captures, lines, territory, placement, victory, and turn/phase progression, and delegates all **line and territory decision phases** to canonical decision helpers ([`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1), [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1)) which enumerate and apply `process_line`, `choose_line_reward`, `process_territory_region`, and `eliminate_rings_from_stack` `Move`s.
 - **Session Management**: [`GameSessionManager`](src/server/game/GameSessionManager.ts:1) with Redis-backed distributed locking
 - **Database**: PostgreSQL via Prisma ORM for persistence
 - **Caching**: Redis for session data and distributed locks
@@ -187,29 +187,32 @@ Fallback Chain:
 
 #### Line Processing Workflow
 
-1. GameEngine detects line formation after move
-2. Set phase to `line_processing`
-3. Generate decision Moves:
-   - For exact-length lines: `process_line` (auto-collapse all)
-   - For overlength lines: `choose_line_reward` (Option 1 vs Option 2)
-4. If collapse causes elimination:
-   - Generate `eliminate_rings_from_stack` Moves
-   - Emit choice to player
-5. Apply selected elimination
-6. Check for additional lines
-7. Advance to territory_processing or next player
+1. After a move is applied, the backend `GameEngine` asks the shared line helpers (geometry in [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21), decisions in [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1)) to compute all applicable line‑decision `Move`s for the current state.
+2. The shared helper enumerates:
+   - `process_line` `Move`s for exact‑length lines (auto‑collapse).
+   - `choose_line_reward` `Move`s for overlength lines, encoding the available reward options (collapse‑all vs minimal‑collapse).
+3. If at least one decision requires player input, the host sets `phase = 'line_processing'` and surfaces these canonical `Move`s to the client as a `player_choice_required` payload keyed by `moveId`. No host‑local branching logic is allowed; the helper determines which `Move`s exist.
+4. When a chosen line collapse grants a ring‑elimination opportunity, the helper sets `pendingLineRewardElimination` and emits follow‑up `eliminate_rings_from_stack` `Move`s. The host again only:
+   - Presents these `Move`s as PlayerChoices, and
+   - Applies the selected `moveId` via `GameEngine.makeMoveById()`.
+5. The helper indicates when additional line decisions remain; hosts loop until no further line decisions are available, then advance to `territory_processing` or the next phase/turn.
+
+All semantics for line rewards (collapse‑all vs minimal‑collapse), when eliminations are granted, and ordering across lines live in the shared decision helpers, not in backend‑only or sandbox‑only code.
 
 #### Territory Processing Workflow
 
-1. GameEngine detects disconnected regions
-2. Set phase to `territory_processing`
-3. For each region:
-   - Check self-elimination prerequisite (Q23)
-   - Generate `process_territory_region` Move
-   - Emit choice if multiple regions exist
-   - Process selected region (collapse, mark territory)
-   - If causes elimination: emit `eliminate_rings_from_stack` choice
-4. After all regions processed: advance turn
+1. After automatic consequences from movement/captures (including line collapses) are applied, the backend `GameEngine` uses the shared territory helpers (detection in [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36), borders in [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35)) to discover disconnected regions for the current player.
+2. The shared decision helpers in [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) then:
+   - Apply Q23 eligibility checks per region (does the player have at least one stack/cap **outside** the region?).
+   - Enumerate `process_territory_region` `Move`s for each Q23‑eligible region.
+3. When multiple eligible regions exist, the host sets `phase = 'territory_processing'` and surfaces these canonical `Move`s as a PlayerChoice over `moveId`. When only one region is eligible, hosts may apply the corresponding `process_territory_region` `Move` directly, still via `GameEngine.makeMoveById()`.
+4. Processing a region (implemented via [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1) and [`TerritoryMutator.ts`](src/shared/engine/mutators/TerritoryMutator.ts:1)):
+   - Collapses interior spaces to controlled territory.
+   - Eliminates interior stacks and credits `eliminatedRings`.
+   - Computes the self‑elimination cost and exposes follow‑up `eliminate_rings_from_stack` `Move`s for stacks **outside** the region when required.
+5. The host presents any `eliminate_rings_from_stack` `Move`s as PlayerChoices and applies the selected `moveId` via `GameEngine.makeMoveById()`. The helper indicates when further regions remain; once all territory decisions are exhausted, the host advances the turn/phase.
+
+All semantics for Q23 gating, internal vs self‑elimination bookkeeping, and region‑processing order live in the shared territory helpers; backend and sandbox hosts only manage phase transitions, PlayerChoice presentation, and turn advancement.
 
 ---
 
@@ -431,28 +434,49 @@ Filed under [`deprecated/`](deprecated/) with strong deprecation banners:
   - Line validation and processing (collapse + elimination bookkeeping) are shared via
     [`LineValidator.ts`](src/shared/engine/validators/LineValidator.ts:1) and
     [`LineMutator.ts`](src/shared/engine/mutators/LineMutator.ts:1).
+  - Canonical line‑decision enumeration and application (including collapse‑all vs minimal‑collapse rewards and when eliminations are granted) are centralised in
+    [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1), which produces `process_line` and `choose_line_reward` `Move`s and wires `pendingLineRewardElimination` for both backend and sandbox hosts.
   - Tests:
-    [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1),
-    [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1),
-    and the seed‑14 guard
-    [`Seed14Move35LineParity.test.ts`](tests/unit/Seed14Move35LineParity.test.ts:1).
+    - Geometry and basic rules:
+      [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1),
+      [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1),
+      and the seed‑14 guard
+      [`Seed14Move35LineParity.test.ts`](tests/unit/Seed14Move35LineParity.test.ts:1).
+    - Decision helpers:
+      [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) – canonical line‑decision enumeration/application.
+      [`GameEngine.lines.scenarios.test.ts`](tests/unit/GameEngine.lines.scenarios.test.ts:1),
+      [`ClientSandboxEngine.lines.test.ts`](tests/unit/ClientSandboxEngine.lines.test.ts:1) – host‑level scenarios that exercise the same shared decision helpers in backend and sandbox.
 
 - **Territory (detection, borders, processing)**
   - Disconnected region detection is centralised in
     [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36).
   - Marker-border expansion for regions is centralised in
     [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35).
-  - Region processing (internal eliminations, collapse of interior + borders, Q23 self-elimination prerequisite wiring to hosts) is centralised in
+  - Region processing (internal eliminations, collapse of interior + borders) is centralised in
     [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1) and
     [`TerritoryMutator.ts`](src/shared/engine/mutators/TerritoryMutator.ts:1).
-  - Backend `BoardManager` / `GameEngine` and sandbox territory engines delegate to these helpers. Behaviour is validated by
-    [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1),
-    [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1),
-    [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1),
-    [`BoardManager.territoryDisconnection.test.ts`](tests/unit/BoardManager.territoryDisconnection.test.ts:1),
-    [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
-    and the RulesMatrix territory suites under
-    [`tests/scenarios/RulesMatrix.*.test.ts`](tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts:1).
+  - Territory‑phase decision enumeration and self‑elimination bookkeeping (Q23, `process_territory_region`, `eliminate_rings_from_stack`) are centralised in
+    [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1), which provides the canonical `Move` surface for both backend and sandbox hosts.
+  - Backend `BoardManager` / `GameEngine` and sandbox territory engines delegate to these helpers. Behaviour is validated by:
+    - Shared geometry/processing:
+      [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1),
+      [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1),
+      [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1).
+    - Decision helpers:
+      [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) – canonical `process_territory_region` / self‑elimination decisions and elimination bookkeeping.
+      [`GameEngine.territory.scenarios.test.ts`](tests/unit/GameEngine.territory.scenarios.test.ts:1),
+      [`ClientSandboxEngine.territoryDecisionPhases.MoveDriven.test.ts`](tests/unit/ClientSandboxEngine.territoryDecisionPhases.MoveDriven.test.ts:1) – host‑level move‑driven territory‑phase scenarios over the shared helpers.
+      RulesMatrix territory suites such as
+      [`RulesMatrix.Territory.MiniRegion.test.ts`](tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts:1) and FAQ Q22/Q23 scenarios.
+    - Legacy/diagnostic parity harnesses:
+      [`BoardManager.territoryDisconnection.test.ts`](tests/unit/BoardManager.territoryDisconnection.test.ts:1),
+      [`BoardManager.territoryDisconnection.square8.test.ts`](tests/unit/BoardManager.territoryDisconnection.square8.test.ts:1),
+      [`BoardManager.territoryDisconnection.hex.test.ts`](tests/unit/BoardManager.territoryDisconnection.hex.test.ts:1),
+      [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
+      [`TerritoryDecision.seed5Move45.parity.test.ts`](tests/unit/TerritoryDecision.seed5Move45.parity.test.ts:1),
+      [`TerritoryDetection.seed5Move45.parity.test.ts`](tests/unit/TerritoryDetection.seed5Move45.parity.test.ts:1),
+      [`TerritoryDecisions.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryDecisions.GameEngine_vs_Sandbox.test.ts:1),
+      [`TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts:1) – **diagnostic 19×19 and seed‑based suites**; canonical semantics live in the shared territory helpers and RulesMatrix/FAQ coverage.
 
 - **Placement & no-dead-placement**
   - Canonical placement validation, including no-dead-placement wiring, is implemented in
@@ -793,7 +817,7 @@ Filed under [`deprecated/`](deprecated/) with strong deprecation banners:
 #### Low Priority (Not Blocking)
 
 - Legacy automatic decision mode removal (maintain for tests)
-- Shared engine mutator integration in backend
+- Shared engine mutator / decision‑helper integration in backend (mostly complete; remaining work is retiring thin legacy helpers and ensuring all new rules changes flow through `src/shared/engine/*` first)
 - Type system cleanup (some any types remain)
 - Documentation consolidation (some historical overlap)
 
@@ -1231,6 +1255,39 @@ The current implementation provides a **stable foundation** for rule experimenta
 - Variant rule modules
 - Custom game modes
 - Scenario-based challenges
+
+#### Where to change line & territory behaviour
+
+For designers who want to adjust how lines and territory behave **without forking backend vs sandbox semantics**, the primary extension points are:
+
+- **Lines**
+  - Implementation:
+    - [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) – controls:
+      - Which line lengths are eligible for rewards.
+      - How `process_line` vs `choose_line_reward` `Move`s are generated.
+      - Whether a given collapse grants an `eliminate_rings_from_stack` opportunity (via `pendingLineRewardElimination`).
+    - Geometry and low‑level processing in [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21), [`LineValidator.ts`](src/shared/engine/validators/LineValidator.ts:1), and [`LineMutator.ts`](src/shared/engine/mutators/LineMutator.ts:1).
+  - Tests to update:
+    - [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) – canonical line‑decision semantics.
+    - [`GameEngine.lines.scenarios.test.ts`](tests/unit/GameEngine.lines.scenarios.test.ts:1),
+      [`ClientSandboxEngine.lines.test.ts`](tests/unit/ClientSandboxEngine.lines.test.ts:1) – host‑level scenarios.
+    - Relevant RulesMatrix and FAQ suites for lines (e.g. Q7/Q8, Q22).
+
+- **Territory**
+  - Implementation:
+    - [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) – controls:
+      - Region eligibility (Q23: when a region may be processed).
+      - Enumeration of `process_territory_region` and `eliminate_rings_from_stack` `Move`s.
+      - How internal vs self‑elimination is attributed per player.
+      - Ordering/selection when multiple disconnected regions are available.
+    - Region geometry and collapse pipeline in [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36), [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35), and [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1).
+  - Tests to update:
+    - [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) – canonical territory decision semantics.
+    - [`GameEngine.territory.scenarios.test.ts`](tests/unit/GameEngine.territory.scenarios.test.ts:1),
+      [`ClientSandboxEngine.territoryDecisionPhases.MoveDriven.test.ts`](tests/unit/ClientSandboxEngine.territoryDecisionPhases.MoveDriven.test.ts:1) – host‑level decision‑phase scenarios.
+    - Territory RulesMatrix suites such as [`RulesMatrix.Territory.MiniRegion.test.ts`](tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts:1) and FAQ Q22/Q23 scenario files.
+
+Any design change to line rewards or territory behaviour should be implemented in these shared helpers first and then reflected in the corresponding shared‑helper tests and RulesMatrix/FAQ scenarios. Parity and trace‑level suites should be treated as derived diagnostics rather than the primary specification.
 
 ### Playtesting Recommendations
 

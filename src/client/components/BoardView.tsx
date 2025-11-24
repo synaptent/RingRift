@@ -523,16 +523,27 @@ export const BoardView: React.FC<BoardViewProps> = ({
   };
 
   if (boardType === 'square8') {
-    return <div className="inline-block">{renderSquareBoard(8)}</div>;
+    return (
+      <div className="inline-block" data-testid="board-view">
+        {renderSquareBoard(8)}
+      </div>
+    );
   }
 
   if (boardType === 'square19') {
-    return <div className="inline-block">{renderSquareBoard(19)}</div>;
+    return (
+      <div className="inline-block" data-testid="board-view">
+        {renderSquareBoard(19)}
+      </div>
+    );
   }
 
   if (boardType === 'hexagonal') {
     return (
-      <div className="relative inline-block p-2 border border-slate-300 rounded-md bg-white text-slate-900 shadow-inner">
+      <div
+        className="relative inline-block p-2 border border-slate-300 rounded-md bg-white text-slate-900 shadow-inner"
+        data-testid="board-view"
+      >
         {renderHexBoard()}
         {renderMovementOverlay()}
       </div>

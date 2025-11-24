@@ -13,7 +13,11 @@ import {
   processDisconnectedRegionOnBoard,
   processDisconnectedRegionCoreOnBoard,
 } from './sandboxTerritory';
-import { forceEliminateCapOnBoard } from './sandboxElimination';
+import {
+  enumerateProcessTerritoryRegionMoves,
+  applyProcessTerritoryRegionDecision,
+  applyEliminateRingsFromStackDecision,
+} from '../../shared/engine/territoryDecisionHelpers';
 
 const TERRITORY_TRACE_DEBUG =
   typeof process !== 'undefined' &&
@@ -84,117 +88,64 @@ function assertTerritoryEngineMonotonicity(
  * totalRingsEliminated.
  */
 /**
- * Enumerate canonical territory-processing decision moves for the current
- * player. This mirrors GameEngine.getValidTerritoryProcessingMoves.
- */
+ /**
+  * Enumerate canonical territory-processing decision moves for the current
+  * player. This mirrors GameEngine.getValidTerritoryProcessingMoves but now
+  * delegates region discovery + Q23 gating to the shared
+  * {@link enumerateProcessTerritoryRegionMoves} helper so that backend and
+  * sandbox observe identical decision sets.
+  */
 export function getValidTerritoryProcessingMoves(
   gameState: GameState,
   canProcessRegion: (regionSpaces: Position[], playerNumber: number, state: GameState) => boolean
 ): Move[] {
-  const moves: Move[] = [];
   const currentPlayer = gameState.currentPlayer;
 
-  const disconnectedRegions = findDisconnectedRegionsOnBoard(gameState.board);
+  // Delegate to the shared helper so region enumeration and
+  // self-elimination prerequisites are identical across hosts.
+  const rawMoves = enumerateProcessTerritoryRegionMoves(gameState, currentPlayer);
 
-  if (disconnectedRegions.length === 0) {
-    return moves;
+  if (rawMoves.length === 0) {
+    return rawMoves;
   }
 
-  const eligibleRegions = disconnectedRegions.filter((region) =>
-    canProcessRegion(region.spaces, currentPlayer, gameState)
-  );
-
-  if (eligibleRegions.length === 0) {
-    return moves;
-  }
-
-  // One process_territory_region move per eligible disconnected region
-  eligibleRegions.forEach((region, index) => {
-    const representative = region.spaces[0];
-    const regionKey = representative ? positionToString(representative) : `region-${index}`;
-    moves.push({
-      id: `process-region-${index}-${regionKey}`,
-      type: 'process_territory_region',
-      player: currentPlayer,
-      disconnectedRegions: [region],
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: gameState.moveHistory.length + 1,
-    } as Move);
+  // For defensive parity with legacy behaviour, also apply the caller's
+  // canProcessRegion predicate as an additional filter. Under normal
+  // sandbox flows this is equivalent to the shared helper's gating.
+  return rawMoves.filter((move) => {
+    if (!move.disconnectedRegions || move.disconnectedRegions.length === 0) {
+      return false;
+    }
+    const region = move.disconnectedRegions[0];
+    return canProcessRegion(region.spaces, currentPlayer, gameState);
   });
-
-  return moves;
 }
-
 /**
  * Apply a single territory decision move to the game state.
+ *
+ * This is now a thin adapter over the shared
+ * {@link applyProcessTerritoryRegionDecision} and
+ * {@link applyEliminateRingsFromStackDecision} helpers so that sandbox
+ * behaviour matches the backend GameEngine / RuleEngine exactly for
+ * move-driven territory and self-elimination decisions.
  */
 export function applyTerritoryDecisionMove(
   gameState: GameState,
   move: Move,
-  canProcessRegion: (regionSpaces: Position[], playerNumber: number, state: GameState) => boolean
+  _canProcessRegion: (regionSpaces: Position[], playerNumber: number, state: GameState) => boolean
 ): GameState {
   if (move.type !== 'process_territory_region' && move.type !== 'eliminate_rings_from_stack') {
     return gameState;
   }
 
-  let state = gameState;
-  const movingPlayer = move.player;
-
   if (move.type === 'process_territory_region') {
-    if (!move.disconnectedRegions || move.disconnectedRegions.length === 0) {
-      return state;
-    }
-
-    const targetRegion = move.disconnectedRegions[0];
-
-    if (!canProcessRegion(targetRegion.spaces, movingPlayer, state)) {
-      return state;
-    }
-
-    // Move-driven territory decision: apply only the geometric/core
-    // consequences of processing this region (internal eliminations +
-    // collapse + border markers), without performing the mandatory
-    // self-elimination. Explicit eliminate_rings_from_stack Moves are
-    // responsible for the self-elimination step, mirroring the backend
-    // GameEngine.processDisconnectedRegionCore + applyDecisionMove split.
-    const result = processDisconnectedRegionCoreOnBoard(
-      state.board,
-      state.players,
-      movingPlayer,
-      targetRegion.spaces
-    );
-
-    state = {
-      ...state,
-      board: result.board,
-      players: result.players,
-      totalRingsEliminated: state.totalRingsEliminated + result.totalRingsEliminatedDelta,
-    };
-  } else if (move.type === 'eliminate_rings_from_stack') {
-    if (!move.to) {
-      return state;
-    }
-
-    const stackKey = positionToString(move.to);
-    const stack = state.board.stacks.get(stackKey);
-
-    if (!stack || stack.controllingPlayer !== movingPlayer) {
-      return state;
-    }
-
-    const stacks = [stack];
-    const elimResult = forceEliminateCapOnBoard(state.board, state.players, movingPlayer, stacks);
-
-    state = {
-      ...state,
-      board: elimResult.board,
-      players: elimResult.players,
-      totalRingsEliminated: state.totalRingsEliminated + elimResult.totalRingsEliminatedDelta,
-    };
+    const outcome = applyProcessTerritoryRegionDecision(gameState, move);
+    return outcome.nextState;
   }
 
-  return state;
+  // move.type === 'eliminate_rings_from_stack'
+  const { nextState } = applyEliminateRingsFromStackDecision(gameState, move);
+  return nextState;
 }
 
 export async function processDisconnectedRegionsForCurrentPlayerEngine(

@@ -2,8 +2,8 @@ import { Router, Response } from 'express';
 import { getDatabaseClient } from '../database/connection';
 import { AuthenticatedRequest } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
-import { gameRateLimiter } from '../middleware/rateLimiter';
-import { httpLogger } from '../utils/logger';
+import { gameRateLimiter, consumeRateLimit } from '../middleware/rateLimiter';
+import { httpLogger, logger } from '../utils/logger';
 import { CreateGameSchema, CreateGameInput } from '../../shared/validation/schemas';
 import { AiOpponentsConfig } from '../../shared/types/game';
 import { GameEngine } from '../game/GameEngine';
@@ -22,6 +22,58 @@ router.use(gameRateLimiter);
 
 // Active games storage (in production, this would be in Redis)
 const activeGames = new Map<string, GameEngine>();
+
+/**
+ * Lightweight view of game participants used for HTTP-level authorization
+ * checks. This intentionally mirrors only the player slots and spectator
+ * flag that are required to enforce access control invariants.
+ */
+type GameParticipantSnapshot = {
+  player1Id: string | null;
+  player2Id: string | null;
+  player3Id: string | null;
+  player4Id: string | null;
+  allowSpectators?: boolean | null;
+};
+
+const isUserParticipantInGame = (userId: string, game: GameParticipantSnapshot): boolean => {
+  return [game.player1Id, game.player2Id, game.player3Id, game.player4Id]
+    .filter(Boolean)
+    .includes(userId);
+};
+
+/**
+ * Enforce the invariant that only participants (or, when enabled, permitted
+ * spectators) may inspect game-scoped HTTP resources.
+ *
+ * This guard is shared by both the game-details and move-history endpoints so
+ * that the authorization rule remains obvious and consistent.
+ */
+const assertUserCanViewGame = (
+  userId: string,
+  game: GameParticipantSnapshot & { allowSpectators: boolean }
+): void => {
+  const isParticipant = isUserParticipantInGame(userId, game);
+
+  if (!isParticipant && !game.allowSpectators) {
+    throw createError('Access denied', 403, 'ACCESS_DENIED');
+  }
+};
+
+/**
+ * Enforce the invariant that only seated human participants in a game may
+ * perform HTTP mutations that change its state (e.g. resignation via
+ * POST /api/games/:gameId/leave).
+ *
+ * This helper intentionally mirrors the lightweight GameParticipantSnapshot
+ * view so that authorization rules stay consistent across endpoints without
+ * depending on full Prisma types.
+ */
+const assertUserIsGameParticipant = (userId: string, game: GameParticipantSnapshot): void => {
+  if (!isUserParticipantInGame(userId, game)) {
+    throw createError('Access denied', 403, 'ACCESS_DENIED');
+  }
+};
 
 // Get user's games
 router.get(
@@ -110,14 +162,9 @@ router.get(
       throw createError('Game not found', 404, 'GAME_NOT_FOUND');
     }
 
-    // Check if user is a participant or spectator
-    const isParticipant = [game.player1Id, game.player2Id, game.player3Id, game.player4Id]
-      .filter(Boolean)
-      .includes(userId);
-
-    if (!isParticipant && !game.allowSpectators) {
-      throw createError('Access denied', 403, 'ACCESS_DENIED');
-    }
+    // Enforce game-level authorization: only participants (or permitted
+    // spectators when allowSpectators=true) may inspect game details.
+    assertUserCanViewGame(userId, game);
 
     res.json({
       success: true,
@@ -132,6 +179,47 @@ router.post(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const gameData: CreateGameInput = CreateGameSchema.parse(req.body);
     const userId = req.user!.id;
+
+    // Derive an IP address for quota enforcement, preferring X-Forwarded-For
+    // when present so deployments behind a proxy still get a stable key.
+    const forwardedForHeader = req.headers['x-forwarded-for'] as string | undefined;
+    const forwardedFor = forwardedForHeader?.split(',')[0]?.trim();
+    const clientIp = forwardedFor || req.ip || 'unknown';
+
+    // Per-user game creation quota.
+    const userQuota = await consumeRateLimit('gameCreateUser', userId);
+    if (!userQuota.allowed) {
+      logger.warn('Game creation quota exceeded for user', {
+        userId,
+        ip: clientIp,
+        limiter: 'gameCreateUser',
+        retryAfter: userQuota.retryAfter,
+      });
+
+      throw createError(
+        'Too many games created in a short period. Please try again later.',
+        429,
+        'GAME_CREATE_RATE_LIMITED'
+      );
+    }
+
+    // Per-IP game creation quota as an additional guard (including for any
+    // edge cases where authentication might be missing or misconfigured).
+    const ipQuota = await consumeRateLimit('gameCreateIp', clientIp);
+    if (!ipQuota.allowed) {
+      logger.warn('Game creation quota exceeded for IP', {
+        userId,
+        ip: clientIp,
+        limiter: 'gameCreateIp',
+        retryAfter: ipQuota.retryAfter,
+      });
+
+      throw createError(
+        'Too many games created from this IP address. Please try again later.',
+        429,
+        'GAME_CREATE_RATE_LIMITED'
+      );
+    }
 
     const prisma = getDatabaseClient();
     if (!prisma) {
@@ -359,13 +447,13 @@ router.post(
       throw createError('Game not found', 404, 'GAME_NOT_FOUND');
     }
 
-    // Check if user is in the game
-    const playerIds = [game.player1Id, game.player2Id, game.player3Id, game.player4Id];
-    const playerIndex = playerIds.indexOf(userId);
-
-    if (playerIndex === -1) {
-      throw createError('Not a player in this game', 400, 'NOT_A_PLAYER');
-    }
+    // HTTP-level authorization: only seated players may leave or resign this game.
+    assertUserIsGameParticipant(userId, {
+      player1Id: game.player1Id,
+      player2Id: game.player2Id,
+      player3Id: game.player3Id,
+      player4Id: game.player4Id,
+    });
 
     if (game.status === ('active' as any)) {
       // If game is active, this is a resignation
@@ -482,14 +570,10 @@ router.get(
       throw createError('Game not found', 404, 'GAME_NOT_FOUND');
     }
 
-    // Check access permissions
-    const isParticipant = [game.player1Id, game.player2Id, game.player3Id, game.player4Id]
-      .filter(Boolean)
-      .includes(userId);
-
-    if (!isParticipant && !game.allowSpectators) {
-      throw createError('Access denied', 403, 'ACCESS_DENIED');
-    }
+    // Reuse the same authorization invariant as the game-details endpoint:
+    // a caller must be either a participant or, when enabled, a permitted
+    // spectator to inspect the move history.
+    assertUserCanViewGame(userId, game);
 
     const moves = await prisma.move.findMany({
       where: { gameId },

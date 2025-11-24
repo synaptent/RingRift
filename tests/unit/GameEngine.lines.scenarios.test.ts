@@ -222,12 +222,14 @@ describe('GameEngine line formation scenarios (square8)', () => {
     expect(board.stacks.get(positionToString(stackPos))).toBeDefined();
   });
 
-  test('line_processing_getValidMoves_exposes_process_line_and_choose_line_reward_moves', () => {
+  test('line_processing_getValidMoves_exposes_process_line_and_rich_choose_line_reward_moves', () => {
     // Rules reference:
     // - Section 11.2–11.3: when multiple lines exist for the moving player,
     //   line_processing should surface one process_line move per line.
-    // - Overlength lines should additionally expose a choose_line_reward
-    //   decision so the unified Move model can express Option 1 vs Option 2.
+    // - Overlength lines expose a richer choose_line_reward surface:
+    //   - One collapse-all reward (implicit Option 1).
+    //   - One or more minimum-collapse contiguous segments of length L
+    //     (Option 2-style rewards).
     const { engine, gameState, boardManager } = createEngine();
     const board = gameState.board;
 
@@ -250,8 +252,18 @@ describe('GameEngine line formation scenarios (square8)', () => {
       overlengthLine.push({ x: i, y: 2 });
     }
 
-    const findAllLinesSpy = jest.spyOn(boardManager, 'findAllLines');
-    findAllLinesSpy.mockImplementation(() => [
+    // Seed markers and formedLines so the shared line-detection helpers
+    // (lineDecisionHelpers + lineDetection) see exactly these two lines.
+    const allLinePositions = [...exactLine, ...overlengthLine];
+    for (const pos of allLinePositions) {
+      board.markers.set(positionToString(pos), {
+        player: 1,
+        position: pos,
+        type: 'regular',
+      } as any);
+    }
+
+    (board as any).formedLines = [
       {
         player: 1,
         positions: exactLine,
@@ -264,7 +276,7 @@ describe('GameEngine line formation scenarios (square8)', () => {
         length: overlengthLine.length,
         direction: { x: 1, y: 0 },
       },
-    ]);
+    ];
 
     const moves = engine.getValidMoves(1);
 
@@ -275,28 +287,37 @@ describe('GameEngine line formation scenarios (square8)', () => {
     expect(processLineMoves).toHaveLength(2);
     expect(processLineMoves.every((m) => m.player === 1)).toBe(true);
 
-    // Two choose_line_reward moves for the single overlength line:
-    // - Option 1: collapse all markers and eliminate (no collapsedMarkers specified)
-    // - Option 2: minimum collapse only (collapsedMarkers length === requiredLength)
-    expect(rewardMoves).toHaveLength(2);
+    // There should be at least one collapse-all reward and at least one
+    // minimum-collapse reward for the overlength line.
+    expect(rewardMoves.length).toBeGreaterThanOrEqual(2);
     expect(rewardMoves.every((m) => m.player === 1)).toBe(true);
 
-    const minReward = rewardMoves.find(
-      (m) => m.collapsedMarkers && m.collapsedMarkers.length === requiredLength
-    );
-    const allReward = rewardMoves.find(
-      (m) => !m.collapsedMarkers || m.collapsedMarkers.length === overlengthLine.length
-    );
-
-    expect(minReward).toBeDefined();
-    expect(allReward).toBeDefined();
-
-    // The reward move ids should embed the overlength line key so tests and
-    // tooling can associate them back to a concrete line.
     const overlengthKey = overlengthLine.map((p) => positionToString(p)).join('|');
+
+    const collapseAllRewards = rewardMoves.filter((m) => {
+      if (!m.formedLines || m.formedLines.length === 0) return false;
+      const line = m.formedLines[0];
+      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+      const isOverlengthLine = lineKey === overlengthKey;
+      const collapsed = m.collapsedMarkers ?? [];
+      return isOverlengthLine && (collapsed.length === 0 || collapsed.length >= line.length);
+    });
+
+    const minimumRewards = rewardMoves.filter((m) => {
+      if (!m.formedLines || m.formedLines.length === 0) return false;
+      const line = m.formedLines[0];
+      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+      const isOverlengthLine = lineKey === overlengthKey;
+      const collapsed = m.collapsedMarkers ?? [];
+      return isOverlengthLine && collapsed.length === requiredLength;
+    });
+
+    expect(collapseAllRewards.length).toBeGreaterThanOrEqual(1);
+    expect(minimumRewards.length).toBeGreaterThanOrEqual(1);
+
+    // All choose_line_reward moves should embed the overlength line's key
+    // in their id so tools can map them back to a concrete line geometry.
     const rewardIds = rewardMoves.map((m) => m.id);
     expect(rewardIds.some((id) => id.includes(overlengthKey))).toBe(true);
-
-    expect(findAllLinesSpy).toHaveBeenCalled();
   });
 });

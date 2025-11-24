@@ -10,7 +10,13 @@
 
 import { GameEngine } from '../../src/server/game/GameEngine';
 import { ClientSandboxEngine } from '../../src/client/sandbox/ClientSandboxEngine';
-import { Position, Player, TimeControl, GameState } from '../../src/shared/types/game';
+import {
+  Position,
+  Player,
+  TimeControl,
+  GameState,
+  BOARD_CONFIGS,
+} from '../../src/shared/types/game';
 import { createTestPlayer } from '../utils/fixtures';
 
 describe('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => {
@@ -101,7 +107,7 @@ describe('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => 
           false
         );
         const engineAny: any = engine;
-        const gameState = engineAny.gameState;
+        const gameState: GameState = engineAny.gameState as GameState;
 
         // Create 5-marker line
         gameState.board.markers.clear();
@@ -124,6 +130,7 @@ describe('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => 
         });
 
         const initialEliminated = gameState.players[0].eliminatedRings;
+        const requiredLength = BOARD_CONFIGS[gameState.boardType].lineLength;
 
         gameState.currentPhase = 'line_processing';
         gameState.currentPlayer = 1;
@@ -133,13 +140,15 @@ describe('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => 
 
         expect(lineMoves.length).toBeGreaterThan(0);
 
-        // Default backend behavior is Option 2 for overlength lines
+        // Default backend behavior is Option 2 for overlength lines: collapse
+        // exactly the minimum requiredLength markers for this board type, with
+        // no ring elimination.
         const result = await engine.makeMove(lineMoves[0]);
         expect(result.success).toBe(true);
 
-        // Only 4 markers collapsed, no elimination
+        // Only requiredLength markers collapsed, no elimination
         expect(gameState.players[0].eliminatedRings).toBe(initialEliminated);
-        expect(gameState.players[0].territorySpaces).toBe(4);
+        expect(gameState.players[0].territorySpaces).toBe(requiredLength);
 
         // One marker should remain uncollapsed
         const remainingMarkers = Array.from(gameState.board.markers.values());
@@ -435,6 +444,10 @@ describe('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => 
         const result = await engine.makeMove(territoryMoves[0]);
         expect(result.success).toBe(true);
 
+        const finalState: GameState = engine.getGameState();
+        const finalBlue = finalState.players[0];
+        const finalBoard = finalState.board;
+
         // Verify:
         //
         // In this FAQ geometry there are TWO disconnected regions (inner and
@@ -458,13 +471,13 @@ describe('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => 
         // could also be processed with an additional `process_territory_region`
         // move; its numeric invariants are covered by the dedicated rules-layer
         // tests in territoryProcessing.rules.* and sandboxTerritory*.rules.*.
-        expect(gameState.players[0].eliminatedRings).toBe(initialEliminated + 4);
+        expect(finalBlue.eliminatedRings).toBe(initialEliminated + 4);
 
         // Sample a point known to be in the processed (outer) region to confirm
         // collapse. (0,0) originally held Green's stack and is outside the
         // 3×3 interior; after processing the outer region it must be collapsed
         // to Blue.
-        const outerSampleCollapsed = gameState.board.collapsedSpaces.get('0,0');
+        const outerSampleCollapsed = finalBoard.collapsedSpaces.get('0,0');
         expect(outerSampleCollapsed).toBe(1); // Blue's color
       });
     });

@@ -45,6 +45,20 @@ export function isSandboxAiParityModeEnabled(): boolean {
 }
 
 /**
+ * Feature flag for enabling experimental local heuristic-based AI selection
+ * in TypeScript hosts (backend fallback + sandbox AI).
+ *
+ * When enabled, callers may choose to invoke the shared heuristic evaluator
+ * for diagnostics or tie-breaking, while keeping the existing bucketed
+ * selection policy as the default. This flag is intentionally decoupled
+ * from parity-mode flags so that heuristic behaviour can be explored in
+ * isolation without affecting RNG-parity or Python-aligned test suites.
+ */
+export function isLocalAIHeuristicModeEnabled(): boolean {
+  return flagEnabled('RINGRIFT_LOCAL_AI_HEURISTIC_MODE');
+}
+
+/**
  * Global rules-backend mode selector.
  *
  * RINGRIFT_RULES_MODE:

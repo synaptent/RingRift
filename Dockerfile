@@ -14,8 +14,9 @@ COPY tailwind.config.js ./
 # Install dependencies (including devDependencies for build tools)
 RUN npm ci && npm cache clean --force
 
-# Copy source code
+# Copy source code and Prisma schema/migrations for runtime migrations
 COPY src/ ./src/
+COPY prisma ./prisma
 
 # Build both server and client (server bundle + Vite SPA)
 RUN npm run build
@@ -30,10 +31,11 @@ RUN addgroup -g 1001 -S nodejs && \
 # Set working directory
 WORKDIR /app
 
-# Copy built application and dependencies
+# Copy built application, Prisma schema/migrations, and dependencies
 COPY --from=builder --chown=ringrift:nodejs /app/dist ./dist
 COPY --from=builder --chown=ringrift:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=ringrift:nodejs /app/package*.json ./
+COPY --from=builder --chown=ringrift:nodejs /app/prisma ./prisma
 
 # Create necessary directories
 RUN mkdir -p uploads logs && \

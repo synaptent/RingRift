@@ -188,8 +188,25 @@ export class GameSession {
 
     this.interactionManager = new PlayerInteractionManager(delegatingHandler);
 
-    // Initialize RNG from game's seed (if available) or database rngSeed
-    const gameSeed = (game as any).rngSeed ?? generateGameSeed();
+    // Initialize RNG from game's seed (if available) or persist a new one
+    let gameSeed: number | null = (game as any).rngSeed ?? null;
+
+    if (typeof gameSeed !== 'number') {
+      gameSeed = generateGameSeed();
+
+      try {
+        await prisma.game.update({
+          where: { id: this.gameId },
+          data: { rngSeed: gameSeed },
+        });
+      } catch (err) {
+        logger.error('Failed to persist generated RNG seed for game', {
+          gameId: this.gameId,
+          error: (err as Error).message,
+        });
+      }
+    }
+
     this.rng = new SeededRNG(gameSeed);
 
     logger.info('GameSession RNG initialized', {
@@ -204,7 +221,8 @@ export class GameSession {
       players,
       timeControl,
       (game as any).isRated ?? true,
-      this.interactionManager
+      this.interactionManager,
+      gameSeed ?? undefined
     );
 
     this.gameEngine.enableMoveDrivenDecisionPhases();

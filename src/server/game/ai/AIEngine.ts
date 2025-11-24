@@ -323,6 +323,9 @@ export class AIEngine {
           case 'client_error':
             reason = 'client_error';
             break;
+          case 'overloaded':
+            reason = 'overloaded';
+            break;
           default:
             if (error instanceof Error && error.message.includes('Circuit breaker is open')) {
               reason = 'circuit_open';

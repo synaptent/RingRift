@@ -11,6 +11,14 @@ import {
   positionToString,
 } from '../../shared/types/game';
 import { calculateCapHeight } from '../../shared/engine/core';
+import {
+  enumerateProcessLineMoves,
+  enumerateChooseLineRewardMoves,
+  applyProcessLineDecision,
+  applyChooseLineRewardDecision,
+} from '../../shared/engine/lineDecisionHelpers';
+import type { LineDecisionApplicationOutcome } from '../../shared/engine/lineDecisionHelpers';
+import { findLinesForPlayer } from '../../shared/engine/lineDetection';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { forceEliminateCapOnBoard } from './sandboxElimination';
 
@@ -141,177 +149,56 @@ export function collapseLineMarkersOnBoard(
  * player. This mirrors GameEngine.getValidLineProcessingMoves.
  */
 export function getValidLineProcessingMoves(gameState: GameState): Move[] {
-  const moves: Move[] = [];
-  const boardType = gameState.boardType;
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
   const currentPlayer = gameState.currentPlayer;
 
-  const allLines: LineInfo[] = findAllLinesOnBoard(
-    boardType,
-    gameState.board,
-    (pos: Position) => isValidPosition(boardType, gameState.board, pos),
-    (posStr: string) => stringToPositionLocal(posStr)
-  );
-
-  const playerLines = allLines.filter((line) => line.player === currentPlayer);
-
-  if (playerLines.length === 0) {
-    return moves;
-  }
-
-  // One process_line move per player-owned line
-  playerLines.forEach((line, index) => {
-    const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-    moves.push({
-      id: `process-line-${index}-${lineKey}`,
-      type: 'process_line',
-      player: currentPlayer,
-      formedLines: [line],
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: gameState.moveHistory.length + 1,
-    } as Move);
+  // Base process_line decisions are enumerated via the shared helper so that
+  // sandbox, backend GameEngine, and shared GameEngine all see the same line
+  // geometry and Move payloads.
+  const processMoves = enumerateProcessLineMoves(gameState, currentPlayer, {
+    detectionMode: 'detect_now',
   });
 
-  // For overlength lines, also surface choose_line_reward decisions
-  const overlengthLines = playerLines.filter((line) => line.positions.length > requiredLength);
+  // Reward moves are driven per line index using the shared geometry helper.
+  // This surfaces:
+  // - For exact-length lines: a single collapse-all choose_line_reward (optional).
+  // - For overlength lines: one collapse-all + all contiguous minimum-collapse
+  //   segments of length L.
+  const playerLines = findLinesForPlayer(gameState.board, currentPlayer);
+  const rewardMoves: Move[] = [];
 
-  overlengthLines.forEach((line, index) => {
-    const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-
-    // Option 1: Collapse All (default/implicit)
-    moves.push({
-      id: `choose-line-reward-${index}-${lineKey}-all`,
-      type: 'choose_line_reward',
-      player: currentPlayer,
-      formedLines: [line],
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: gameState.moveHistory.length + 1,
-    } as Move);
-
-    // Option 2: Minimum Collapse
-    const minMarkers = line.positions.slice(0, requiredLength);
-    moves.push({
-      id: `choose-line-reward-${index}-${lineKey}-min`,
-      type: 'choose_line_reward',
-      player: currentPlayer,
-      formedLines: [line],
-      collapsedMarkers: minMarkers,
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: gameState.moveHistory.length + 1,
-    } as Move);
+  playerLines.forEach((_line, index) => {
+    rewardMoves.push(...enumerateChooseLineRewardMoves(gameState, currentPlayer, index));
   });
 
-  return moves;
+  return [...processMoves, ...rewardMoves];
 }
 
 /**
- * Apply a single line decision move to the game state.
+ * Apply a single line decision move to the game state using the shared
+ * lineDecisionHelpers. This is the sandbox counterpart to the backend
+ * GameEngine.applyDecisionMove line branch and returns both the next
+ * GameState and a flag indicating whether a mandatory self-elimination
+ * reward is now owed by the acting player.
+ *
+ * Elimination itself is orchestrated at the ClientSandboxEngine level so
+ * that automatic sandbox flows can continue to apply elimination
+ * immediately, while move-driven decision phases can surface explicit
+ * eliminate_rings_from_stack Moves for parity with the backend.
  */
-export function applyLineDecisionMove(gameState: GameState, move: Move): GameState {
+export function applyLineDecisionMove(
+  gameState: GameState,
+  move: Move
+): LineDecisionApplicationOutcome {
   if (move.type !== 'process_line' && move.type !== 'choose_line_reward') {
-    return gameState;
+    return {
+      nextState: gameState,
+      pendingLineRewardElimination: false,
+    };
   }
 
-  const boardType = gameState.boardType;
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
-
-  let board = gameState.board;
-  let players = gameState.players;
-  let totalRingsEliminated = gameState.totalRingsEliminated;
-
-  let targetLine: LineInfo | undefined;
-
-  // Prefer the canonical line payload carried on the Move itself so that
-  // callers (including tests that stub findAllLinesOnBoard) can control
-  // exactly which line is being processed.
-  if (move.formedLines && move.formedLines.length > 0) {
-    targetLine = move.formedLines[0];
-  } else {
-    // Fallback: recompute lines when move.formedLines is absent. This keeps
-    // the helper usable with legacy callers that don't populate formedLines.
-    const allLines: LineInfo[] = findAllLinesOnBoard(
-      boardType,
-      board,
-      (pos: Position) => isValidPosition(boardType, board, pos),
-      (posStr: string) => stringToPositionLocal(posStr)
-    );
-
-    const playerLines = allLines.filter((line) => line.player === move.player);
-    if (playerLines.length === 0) {
-      return gameState;
-    }
-
-    targetLine = playerLines[0];
-  }
-
-  if (!targetLine) {
-    return gameState;
-  }
-
-  const lineLength = targetLine.positions.length;
-
-  if (lineLength === requiredLength) {
-    // Exact length: collapse all and eliminate
-    const collapsed = collapseLineMarkersOnBoard(board, players, targetLine.positions, move.player);
-    board = collapsed.board;
-    players = collapsed.players;
-
-    const stacks = getPlayerStacks(board, move.player);
-    const elimResult = forceEliminateCapOnBoard(board, players, move.player, stacks);
-    board = elimResult.board;
-    players = elimResult.players;
-    totalRingsEliminated += elimResult.totalRingsEliminatedDelta;
-  } else if (lineLength > requiredLength) {
-    // Overlength: check move for choice
-    if (
-      move.type === 'choose_line_reward' &&
-      move.collapsedMarkers &&
-      move.collapsedMarkers.length === requiredLength
-    ) {
-      // Option 2: Minimum collapse, no elimination
-      const collapsed = collapseLineMarkersOnBoard(
-        board,
-        players,
-        move.collapsedMarkers,
-        move.player
-      );
-      board = collapsed.board;
-      players = collapsed.players;
-    } else if (move.type === 'choose_line_reward') {
-      // Option 1 (explicit): Collapse all and eliminate
-      const collapsed = collapseLineMarkersOnBoard(
-        board,
-        players,
-        targetLine.positions,
-        move.player
-      );
-      board = collapsed.board;
-      players = collapsed.players;
-
-      const stacks = getPlayerStacks(board, move.player);
-      const elimResult = forceEliminateCapOnBoard(board, players, move.player, stacks);
-      board = elimResult.board;
-      players = elimResult.players;
-      totalRingsEliminated += elimResult.totalRingsEliminatedDelta;
-    } else {
-      // process_line default for overlength: Option 2 (Minimum collapse, no elimination)
-      // This preserves legacy sandbox behavior where overlength lines don't trigger elimination.
-      const markersToCollapse = targetLine.positions.slice(0, requiredLength);
-      const collapsed = collapseLineMarkersOnBoard(board, players, markersToCollapse, move.player);
-      board = collapsed.board;
-      players = collapsed.players;
-    }
-  }
-
-  return {
-    ...gameState,
-    board,
-    players,
-    totalRingsEliminated,
-  };
+  return move.type === 'process_line'
+    ? applyProcessLineDecision(gameState, move)
+    : applyChooseLineRewardDecision(gameState, move);
 }
 
 /**

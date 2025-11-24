@@ -9,7 +9,7 @@ from app.models import AIConfig  # noqa: E402
 from app.ai.descent_ai import DescentAI  # noqa: E402
 from app.training.tournament import Tournament  # noqa: E402
 from app.training.config import TrainConfig  # noqa: E402
-from app.ai.heuristic_ai import HEURISTIC_WEIGHT_PROFILES  # noqa: E402
+from app.ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES  # noqa: E402
 
 
 def export_heuristic_profiles(log_dir: str) -> None:

@@ -277,6 +277,14 @@ router.get(
   })
 );
 
+function anonymizedEmail(user: { id: string; email: string }): string {
+  return `deleted+${user.id}@example.invalid`;
+}
+
+function anonymizedUsername(user: { id: string; username: string }): string {
+  return `DeletedPlayer_${user.id.slice(0, 8)}`;
+}
+
 // Get leaderboard
 router.get(
   '/leaderboard',
@@ -331,6 +339,67 @@ router.get(
           hasMore: Number(offset) + Number(limit) < total,
         },
       },
+    });
+  })
+);
+
+// Soft-delete current user account
+router.delete(
+  '/me',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.id;
+
+    const prisma = getDatabaseClient();
+    if (!prisma) {
+      throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
+    }
+
+    await prisma.$transaction(async (tx: any) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw createError('User not found', 404, 'USER_NOT_FOUND');
+      }
+
+      if (user.deletedAt) {
+        // Already soft-deleted; idempotent behaviour
+        return;
+      }
+
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          isActive: false,
+          deletedAt: new Date(),
+          tokenVersion: {
+            increment: 1,
+          },
+          verificationToken: null,
+          verificationTokenExpires: null,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+          email: anonymizedEmail(user),
+          username: anonymizedUsername(user),
+        },
+      });
+
+      // Best-effort cleanup of any persisted refresh tokens for this user.
+      const refreshTokenModel = (tx as any).refreshToken;
+      if (refreshTokenModel && typeof refreshTokenModel.deleteMany === 'function') {
+        await refreshTokenModel.deleteMany({ where: { userId } });
+      }
+    });
+
+    httpLogger.info(req, 'User account deleted (soft-delete)', {
+      event: 'user_delete',
+      userId,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Account deleted successfully',
     });
   })
 );

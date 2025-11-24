@@ -55,6 +55,15 @@ const EnvSchema = z.object({
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
 
   AI_SERVICE_URL: z.string().optional(),
+  // Per-request timeouts for AI service interactions (in milliseconds).
+  // These defaults are intentionally modest so that dependency failures
+  // surface quickly and do not stall game flows.
+  AI_SERVICE_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  AI_RULES_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  // Node-local cap on concurrent AI HTTP requests. This provides basic
+  // backpressure so that a single game or user cannot saturate the AI
+  // service and starve others.
+  AI_MAX_CONCURRENT_REQUESTS: z.coerce.number().int().positive().default(16),
 
   LOG_LEVEL: z.string().default('info'),
   RINGRIFT_APP_TOPOLOGY: AppTopologySchema.default('single'),
@@ -154,8 +163,26 @@ if (isProduction) {
   }
 }
 
-// AI service URL – always defaults to local FastAPI service when unset.
-const aiServiceUrl = (env.AI_SERVICE_URL?.trim() || 'http://localhost:8001') as string;
+// AI service URL.
+// - In non-production (development/test), defaults to a local FastAPI service
+//   on port 8001 when unset so that developers can run the AI service on the
+//   host without extra configuration.
+// - In production, we *require* AI_SERVICE_URL to be explicitly set so that
+//   containerized deployments never accidentally point at localhost.
+let resolvedAiServiceUrl: string | undefined = env.AI_SERVICE_URL?.trim() || undefined;
+
+if (!resolvedAiServiceUrl && !isProduction) {
+  resolvedAiServiceUrl = 'http://localhost:8001';
+}
+
+if (!resolvedAiServiceUrl && isProduction) {
+  throw new Error(
+    'AI_SERVICE_URL is required when NODE_ENV=production. ' +
+      "For Docker deployments, set AI_SERVICE_URL to the internal service URL, for example 'http://ai-service:8001' when using docker-compose."
+  );
+}
+
+const aiServiceUrl = resolvedAiServiceUrl as string;
 
 // Application version – driven by npm's injected env var when available.
 const appVersion = env.npm_package_version?.trim() || '1.0.0';
@@ -210,6 +237,9 @@ const ConfigSchema = z.object({
   }),
   aiService: z.object({
     url: z.string().url(),
+    requestTimeoutMs: z.number().int().positive(),
+    rulesTimeoutMs: z.number().int().positive(),
+    maxConcurrent: z.number().int().positive(),
   }),
   logging: z.object({
     level: z.string().min(1),
@@ -257,6 +287,9 @@ const preliminaryConfig = {
   },
   aiService: {
     url: aiServiceUrl,
+    requestTimeoutMs: env.AI_SERVICE_REQUEST_TIMEOUT_MS,
+    rulesTimeoutMs: env.AI_RULES_REQUEST_TIMEOUT_MS,
+    maxConcurrent: env.AI_MAX_CONCURRENT_REQUESTS,
   },
   logging: {
     level: env.LOG_LEVEL,

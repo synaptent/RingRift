@@ -236,8 +236,10 @@ describe('ClientSandboxEngine line processing', () => {
     const processLineMoves = moves.filter((m) => m.type === 'process_line');
     const chooseRewardMoves = moves.filter((m) => m.type === 'choose_line_reward');
 
-    expect(processLineMoves.length).toBeGreaterThanOrEqual(2);
-    expect(chooseRewardMoves.length).toBeGreaterThanOrEqual(1);
+    // One process_line per line, plus a richer reward surface for the
+    // overlength line (collapse-all + all minimum segments).
+    expect(processLineMoves.length).toBe(2);
+    expect(chooseRewardMoves.length).toBeGreaterThanOrEqual(2);
 
     const keyFrom = (positions: Position[]) =>
       positions
@@ -258,20 +260,35 @@ describe('ClientSandboxEngine line processing', () => {
     expect(processExact).toBeDefined();
     expect(processLong).toBeDefined();
 
-    const chooseForLong = chooseRewardMoves.find(
+    const chooseForExact = chooseRewardMoves.filter(
+      (m) => m.formedLines && m.formedLines[0] && keyFrom(m.formedLines[0].positions) === exactKey
+    );
+    const chooseForLong = chooseRewardMoves.filter(
       (m) => m.formedLines && m.formedLines[0] && keyFrom(m.formedLines[0].positions) === longKey
     );
 
-    expect(chooseForLong).toBeDefined();
+    // Exact-length line may be expressed as a single collapse-all reward.
+    // Under the shared helper semantics we expect exactly one such Move.
+    expect(chooseForExact.length).toBe(1);
+    expect(chooseForExact[0].collapsedMarkers).toBeUndefined();
 
-    // There should be no choose_line_reward Move for the exact-length line.
-    const chooseForExact = chooseRewardMoves.find(
-      (m) => m.formedLines && m.formedLines[0] && keyFrom(m.formedLines[0].positions) === exactKey
+    // Overlength line should expose one collapse-all reward and one or more
+    // minimum-collapse contiguous segments of length L.
+    expect(chooseForLong.length).toBeGreaterThanOrEqual(2);
+
+    const collapseAllForLong = chooseForLong.filter((m) => {
+      const collapsed = m.collapsedMarkers ?? [];
+      return collapsed.length === 0 || collapsed.length >= longLinePositions.length;
+    });
+    const minCollapseForLong = chooseForLong.filter(
+      (m) => m.collapsedMarkers && m.collapsedMarkers.length === requiredLength
     );
-    expect(chooseForExact).toBeUndefined();
+
+    expect(collapseAllForLong.length).toBeGreaterThanOrEqual(1);
+    expect(minCollapseForLong.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('canonical choose_line_reward Move collapses entire overlength line and eliminates a cap', async () => {
+  test('canonical choose_line_reward Move collapses entire overlength line and defers elimination reward', async () => {
     const engine = createEngine();
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;
@@ -295,7 +312,8 @@ describe('ClientSandboxEngine line processing', () => {
       });
     }
 
-    // Single stack for player 1 that will be used for elimination.
+    // Single stack for player 1 that would be used for elimination under a
+    // follow-up eliminate_rings_from_stack decision.
     const stackPos: Position = { x: 7, y: 7 };
     makeStack(1, 3, stackPos, board);
 
@@ -340,9 +358,11 @@ describe('ClientSandboxEngine line processing', () => {
       expect(finalBoard.stacks.has(key)).toBe(false);
     }
 
-    // Player 1's eliminated ring counts should have increased by at least 1.
-    expect(playerAfter.eliminatedRings).toBeGreaterThan(initialEliminated);
-    expect(finalState.totalRingsEliminated).toBeGreaterThan(initialTotalEliminated);
+    // Canonical helpers do not auto-eliminate for line rewards; instead they
+    // set pendingLineRewardElimination so a follow-up eliminate_rings_from_stack
+    // decision can be applied. Ensure that no elimination has occurred yet.
+    expect(playerAfter.eliminatedRings).toBe(initialEliminated);
+    expect(finalState.totalRingsEliminated).toBe(initialTotalEliminated);
 
     // Territory spaces should have increased by at least the line length.
     expect(playerAfter.territorySpaces).toBeGreaterThanOrEqual(

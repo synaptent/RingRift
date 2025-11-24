@@ -60,6 +60,10 @@ class FakeSocket extends EventEmitter {
 
 let mockLastIoInstance: any = null;
 
+function setMockLastIoInstance(instance: any) {
+  mockLastIoInstance = instance;
+}
+
 // Replace the real Socket.IO Server with our in-memory stub. The mock factory
 // defines FakeSocketIOServer inside its own scope to satisfy Jest's
 // "no out-of-scope variables" rule for jest.mock module factories.
@@ -79,7 +83,7 @@ jest.mock('socket.io', () => {
     };
 
     constructor(..._args: any[]) {
-      mockLastIoInstance = this;
+      setMockLastIoInstance(this);
     }
 
     on(event: string, handler: (...args: any[]) => void) {

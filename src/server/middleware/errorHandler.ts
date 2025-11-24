@@ -22,14 +22,14 @@ export const errorHandler = (error: AppError, req: Request, res: Response, _next
   // Handle specific error types
   if (error instanceof ZodError) {
     statusCode = 400;
-    code = 'VALIDATION_ERROR';
+    code = 'INVALID_REQUEST';
     // Use the first issue message when available, fall back to generic message
     if (error.issues?.length > 0) {
       message = error.issues[0]?.message || message;
     }
   } else if (error instanceof ValidationError) {
     statusCode = 400;
-    code = 'VALIDATION_ERROR';
+    code = 'INVALID_REQUEST';
   } else if (error instanceof AuthenticationError) {
     statusCode = 401;
     code = 'AUTHENTICATION_ERROR';
@@ -52,6 +52,27 @@ export const errorHandler = (error: AppError, req: Request, res: Response, _next
     statusCode = 409;
     code = 'DUPLICATE_ENTRY';
     message = 'Duplicate entry found';
+  } else if (
+    error.code === 'AI_SERVICE_TIMEOUT' ||
+    error.code === 'AI_SERVICE_UNAVAILABLE' ||
+    error.code === 'AI_SERVICE_ERROR' ||
+    error.code === 'AI_SERVICE_OVERLOADED'
+  ) {
+    // Map AI dependency failures onto well-defined 5xx responses while
+    // preserving any explicit statusCode that upstream callers provided.
+    if (error.statusCode && error.statusCode >= 500 && error.statusCode <= 599) {
+      statusCode = error.statusCode;
+    } else if (error.code === 'AI_SERVICE_ERROR') {
+      statusCode = 502;
+    } else {
+      statusCode = 503;
+    }
+    code = error.code;
+  } else if (error.code === 'DATABASE_UNAVAILABLE') {
+    // Database connectivity issues are treated as temporary 5xx errors so that
+    // clients and operators can distinguish them from generic 500s.
+    statusCode = error.statusCode || 503;
+    code = 'DATABASE_UNAVAILABLE';
   }
 
   // Log error with correlation id when available
@@ -81,13 +102,15 @@ export const errorHandler = (error: AppError, req: Request, res: Response, _next
   }
 
   // Send error response
+  const includeDebugDetails = config.isDevelopment && statusCode >= 500;
+
   const errorResponse = {
     success: false,
     error: {
       message,
       code,
       timestamp: new Date().toISOString(),
-      ...(config.isDevelopment && {
+      ...(includeDebugDetails && {
         stack: error.stack,
         details: error,
       }),

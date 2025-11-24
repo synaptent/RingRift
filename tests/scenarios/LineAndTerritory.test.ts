@@ -115,131 +115,132 @@ describe('Scenario: Line and Territory Interactions (FAQ 7, 20, 22, 23; backend)
       //     eliminates all rings inside it (Player 2), and forces a single
       //     self-elimination from Player 1, with all eliminations credited
       //     to Player 1.
- 
-    const { engine, gameState, boardManager } = createEngine(boardType);
-    const engineAny: any = engine;
-    const board = gameState.board;
-    const requiredLength = BOARD_CONFIGS[gameState.boardType].lineLength;
 
-    gameState.currentPlayer = 1;
+      const { engine, gameState, boardManager } = createEngine(boardType);
+      const engineAny: any = engine;
+      const board = gameState.board;
+      const requiredLength = BOARD_CONFIGS[gameState.boardType].lineLength;
 
-    // Clear any existing board state for a clean scenario.
-    board.markers.clear();
-    board.stacks.clear();
-    board.collapsedSpaces.clear();
+      gameState.currentPlayer = 1;
 
-    // Synthetic overlong line (length = requiredLength + 1) for Player 1.
-    const linePositions: Position[] = [];
-    for (let i = 0; i < requiredLength + 1; i++) {
-      linePositions.push({ x: i, y: 0 });
+      // Clear any existing board state for a clean scenario.
+      board.markers.clear();
+      board.stacks.clear();
+      board.collapsedSpaces.clear();
+
+      // Synthetic overlong line (length = requiredLength + 1) for Player 1.
+      const linePositions: Position[] = [];
+      for (let i = 0; i < requiredLength + 1; i++) {
+        linePositions.push({ x: i, y: 0 });
+      }
+
+      // Stub BoardManager.findAllLines to return this single line once,
+      // then no further lines. This mirrors the pattern used in
+      // GameEngine.lines.scenarios.test.ts and isolates semantics of
+      // line processing from geometric detection.
+      const findAllLinesSpy = jest.spyOn(boardManager, 'findAllLines');
+      findAllLinesSpy
+        .mockImplementationOnce(() => [
+          {
+            player: 1,
+            positions: linePositions,
+            length: linePositions.length,
+            direction: { x: 1, y: 0 },
+          },
+        ])
+        .mockImplementation(() => []);
+
+      // Territory region: a single-cell region at (5,5) containing a
+      // Player 2 stack, plus a Player 1 stack outside the region so the
+      // self-elimination prerequisite is satisfied.
+      const regionPos: Position = { x: 5, y: 5 };
+      const outsidePos: Position = { x: 7, y: 7 };
+
+      makeStack(boardManager, gameState, 2, 1, regionPos); // victim inside region
+      makeStack(boardManager, gameState, 1, 2, outsidePos); // P1 stack outside
+
+      const regionTerritory = {
+        spaces: [regionPos],
+        controllingPlayer: 1,
+        isDisconnected: true,
+      };
+
+      const findDisconnectedRegionsSpy = jest
+        .spyOn(boardManager, 'findDisconnectedRegions')
+        .mockImplementationOnce(() => [regionTerritory])
+        .mockImplementation(() => []);
+
+      // Border markers for disconnected regions are computed by the shared
+      // territoryBorders helper via applyTerritoryRegion. In this scenario we
+      // deliberately avoid placing any markers, so the border set is empty and
+      // there is no need to stub backend-specific getBorderMarkerPositions.
+
+      const player1Before = gameState.players.find((p) => p.playerNumber === 1)!;
+      const initialTerritory = player1Before.territorySpaces;
+      const initialEliminated = player1Before.eliminatedRings;
+      const initialTotalEliminated = gameState.totalRingsEliminated;
+      const initialCollapsedCount = board.collapsedSpaces.size;
+
+      // 1) Process line formations for the current player (Player 1).
+      await engineAny.processLineFormations();
+
+      const afterLinesState: GameState = engine.getGameState();
+      const player1AfterLines = afterLinesState.players.find((p) => p.playerNumber === 1)!;
+
+      // Overlong line + no interaction manager → Option 2: exactly
+      // requiredLength markers collapsed, no ring elimination.
+      const collapsedKeysAfterLines = new Set<string>();
+      for (const [key, owner] of afterLinesState.board.collapsedSpaces) {
+        if (owner === 1) collapsedKeysAfterLines.add(key);
+      }
+
+      expect(collapsedKeysAfterLines.size - initialCollapsedCount).toBe(requiredLength);
+      expect(player1AfterLines.eliminatedRings).toBe(initialEliminated);
+      expect(afterLinesState.totalRingsEliminated).toBe(initialTotalEliminated);
+      expect(player1AfterLines.territorySpaces).toBe(initialTerritory + requiredLength);
+
+      // 2) Now process disconnected regions. This should collapse the
+      // region at (5,5), eliminate the P2 stack there and one additional
+      // ring/cap from P1 (self-elimination), with all eliminations
+      // credited to Player 1.
+      await engineAny.processDisconnectedRegions();
+
+      const afterTerritoryState: GameState = engine.getGameState();
+      const player1AfterTerritory = afterTerritoryState.players.find((p) => p.playerNumber === 1)!;
+
+      // Region space should now be a collapsed space for Player 1 and
+      // the P2 stack there should be gone.
+      const regionKey = positionToString(regionPos);
+      expect(afterTerritoryState.board.collapsedSpaces.get(regionKey)).toBe(1);
+      expect(afterTerritoryState.board.stacks.get(regionKey)).toBeUndefined();
+
+      // Player 1's territory count should have grown by at least the
+      // size of the region (1 space). Border markers are stubbed as []
+      // so the exact increment is +1 beyond the line collapse.
+      expect(player1AfterTerritory.territorySpaces).toBe(
+        initialTerritory + requiredLength + regionTerritory.spaces.length
+      );
+
+      // Elimination accounting:
+      // - Line processing: 0 rings eliminated (Option 2 default).
+      // - Territory: 1 ring from P2 stack inside region + 1 ring (or cap)
+      //   from P1 due to mandatory self-elimination.
+      const eliminatedDeltaPlayer1 = player1AfterTerritory.eliminatedRings - initialEliminated;
+      const totalEliminatedDelta =
+        afterTerritoryState.totalRingsEliminated - initialTotalEliminated;
+
+      // In this concrete setup:
+      // - Region contains a single-stack of height 1 (P2) ⇒ 1 ring eliminated.
+      // - Player 1 has a single stack of height 2 outside the region; the
+      //   default elimination path removes the entire cap (2 rings).
+      // All three eliminated rings are credited to Player 1 (rules 12.2/9.2),
+      // so we expect a delta of 3 here.
+      expect(eliminatedDeltaPlayer1).toBe(3);
+      expect(totalEliminatedDelta).toBe(3);
+
+      // Sanity: ensure our core spies were actually invoked.
+      expect(findAllLinesSpy).toHaveBeenCalled();
+      expect(findDisconnectedRegionsSpy).toHaveBeenCalled();
     }
-
-    // Stub BoardManager.findAllLines to return this single line once,
-    // then no further lines. This mirrors the pattern used in
-    // GameEngine.lines.scenarios.test.ts and isolates semantics of
-    // line processing from geometric detection.
-    const findAllLinesSpy = jest.spyOn(boardManager, 'findAllLines');
-    findAllLinesSpy
-      .mockImplementationOnce(() => [
-        {
-          player: 1,
-          positions: linePositions,
-          length: linePositions.length,
-          direction: { x: 1, y: 0 },
-        },
-      ])
-      .mockImplementation(() => []);
-
-    // Territory region: a single-cell region at (5,5) containing a
-    // Player 2 stack, plus a Player 1 stack outside the region so the
-    // self-elimination prerequisite is satisfied.
-    const regionPos: Position = { x: 5, y: 5 };
-    const outsidePos: Position = { x: 7, y: 7 };
-
-    makeStack(boardManager, gameState, 2, 1, regionPos); // victim inside region
-    makeStack(boardManager, gameState, 1, 2, outsidePos); // P1 stack outside
-
-    const regionTerritory = {
-      spaces: [regionPos],
-      controllingPlayer: 1,
-      isDisconnected: true,
-    };
-
-    const findDisconnectedRegionsSpy = jest
-      .spyOn(boardManager, 'findDisconnectedRegions')
-      .mockImplementationOnce(() => [regionTerritory])
-      .mockImplementation(() => []);
-
-    // For simplicity, make border marker detection a no-op: this
-    // scenario focuses on ordering and elimination/territory effects,
-    // not the exact border geometry.
-    const getBorderMarkersSpy = jest
-      .spyOn(boardManager, 'getBorderMarkerPositions')
-      .mockImplementation(() => []);
-
-    const player1Before = gameState.players.find((p) => p.playerNumber === 1)!;
-    const initialTerritory = player1Before.territorySpaces;
-    const initialEliminated = player1Before.eliminatedRings;
-    const initialTotalEliminated = gameState.totalRingsEliminated;
-    const initialCollapsedCount = board.collapsedSpaces.size;
-
-    // 1) Process line formations for the current player (Player 1).
-    await engineAny.processLineFormations();
-
-    const player1AfterLines = gameState.players.find((p) => p.playerNumber === 1)!;
-
-    // Overlong line + no interaction manager → Option 2: exactly
-    // requiredLength markers collapsed, no ring elimination.
-    const collapsedKeysAfterLines = new Set<string>();
-    for (const [key, owner] of board.collapsedSpaces) {
-      if (owner === 1) collapsedKeysAfterLines.add(key);
-    }
-
-    expect(collapsedKeysAfterLines.size - initialCollapsedCount).toBe(requiredLength);
-    expect(player1AfterLines.eliminatedRings).toBe(initialEliminated);
-    expect(gameState.totalRingsEliminated).toBe(initialTotalEliminated);
-    expect(player1AfterLines.territorySpaces).toBe(initialTerritory + requiredLength);
-
-    // 2) Now process disconnected regions. This should collapse the
-    // region at (5,5), eliminate the P2 stack there and one additional
-    // ring/cap from P1 (self-elimination), with all eliminations
-    // credited to Player 1.
-    await engineAny.processDisconnectedRegions();
-
-    const player1AfterTerritory = gameState.players.find((p) => p.playerNumber === 1)!;
-
-    // Region space should now be a collapsed space for Player 1 and
-    // the P2 stack there should be gone.
-    const regionKey = positionToString(regionPos);
-    expect(board.collapsedSpaces.get(regionKey)).toBe(1);
-    expect(board.stacks.get(regionKey)).toBeUndefined();
-
-    // Player 1's territory count should have grown by at least the
-    // size of the region (1 space). Border markers are stubbed as []
-    // so the exact increment is +1 beyond the line collapse.
-    expect(player1AfterTerritory.territorySpaces).toBe(
-      initialTerritory + requiredLength + regionTerritory.spaces.length
-    );
-
-    // Elimination accounting:
-    // - Line processing: 0 rings eliminated (Option 2 default).
-    // - Territory: 1 ring from P2 stack inside region + 1 ring (or cap)
-    //   from P1 due to mandatory self-elimination.
-    const eliminatedDeltaPlayer1 = player1AfterTerritory.eliminatedRings - initialEliminated;
-    const totalEliminatedDelta = gameState.totalRingsEliminated - initialTotalEliminated;
-
-    // In this concrete setup:
-    // - Region contains a single-stack of height 1 (P2) ⇒ 1 ring eliminated.
-    // - Player 1 has a single stack of height 2 outside the region; the
-    //   default elimination path removes the entire cap (2 rings).
-    // All three eliminated rings are credited to Player 1 (rules 12.2/9.2),
-    // so we expect a delta of 3 here.
-    expect(eliminatedDeltaPlayer1).toBe(3);
-    expect(totalEliminatedDelta).toBe(3);
-
-    // Sanity: ensure our spies were actually invoked.
-    expect(findAllLinesSpy).toHaveBeenCalled();
-    expect(findDisconnectedRegionsSpy).toHaveBeenCalled();
-    expect(getBorderMarkersSpy).toHaveBeenCalled();
-  });
+  );
 });

@@ -30,6 +30,7 @@ import {
   hashGameState,
 } from '../../shared/engine/core';
 import { canProcessTerritoryRegion } from '../../shared/engine/territoryProcessing';
+import { enumerateTerritoryEliminationMoves } from '../../shared/engine/territoryDecisionHelpers';
 import { LocalAIRng } from '../../shared/engine/localAIMoveSelection';
 import { SeededRNG, generateGameSeed } from '../../shared/utils/rng';
 import { findAllLinesOnBoard } from './sandboxLines';
@@ -1330,9 +1331,10 @@ export class ClientSandboxEngine {
 
   /**
    * Enumerate canonical territory-processing decision Moves for the
-   * current player in the sandbox. This mirrors the backend
-   * GameEngine.getValidTerritoryProcessingMoves helper and is primarily
-   * used by parity/debug tooling and future sandbox AI/decision flows:
+   * current player in the sandbox. This now delegates region discovery
+   * and Q23 gating to the shared + sandbox territory helpers so that
+   * backend GameEngine, RuleEngine, and sandbox observe an identical
+   * decision surface:
    *
    * - process_territory_region: choose which eligible disconnected
    *   region to process first, subject to the self-elimination
@@ -1343,39 +1345,11 @@ export class ClientSandboxEngine {
    * intended for canonical replay and advanced parity harnesses.
    */
   private getValidTerritoryProcessingMovesForCurrentPlayer(): Move[] {
-    const moves: Move[] = [];
-    const movingPlayer = this.gameState.currentPlayer;
-    const board = this.gameState.board;
-
-    const disconnected = findDisconnectedRegionsOnBoard(board);
-    if (!disconnected || disconnected.length === 0) {
-      return moves;
-    }
-
-    const eligible = disconnected.filter((region) =>
-      this.canProcessDisconnectedRegion(region.spaces, movingPlayer, board)
+    return getValidTerritoryProcessingMoves(
+      this.gameState,
+      (regionSpaces: Position[], playerNumber: number, state: GameState) =>
+        this.canProcessDisconnectedRegion(regionSpaces, playerNumber, state.board)
     );
-
-    eligible.forEach((region, index) => {
-      if (!region.spaces || region.spaces.length === 0) {
-        return;
-      }
-
-      const representative = region.spaces[0];
-      const regionKey = representative ? positionToString(representative) : `region-${index}`;
-
-      moves.push({
-        id: `process-region-${index}-${regionKey}`,
-        type: 'process_territory_region',
-        player: movingPlayer,
-        disconnectedRegions: [region],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.history.length + 1,
-      } as Move);
-    });
-
-    return moves;
   }
 
   /**
@@ -1390,11 +1364,13 @@ export class ClientSandboxEngine {
    * For now, this helper does not alter sandbox turn flow; it simply
    * exposes the canonical decision surface so tests and future UI/AI
    * can treat elimination as a Move selection problem.
+   *
+   * Enumeration itself is delegated to the shared
+   * {@link enumerateTerritoryEliminationMoves} helper so that backend and
+   * sandbox share identical elimination options and diagnostics; local
+   * pending flags only control *when* these options are surfaced.
    */
   private getValidEliminationDecisionMovesForCurrentPlayer(): Move[] {
-    // console.log('DEBUG: getValidEliminationDecisionMovesForCurrentPlayer this:', this, 'getPlayerStacks:', this.getPlayerStacks);
-    const moves: Move[] = [];
-
     const pendingTerritory = this._pendingTerritorySelfElimination;
     const pendingLineReward = this._pendingLineRewardElimination;
 
@@ -1402,57 +1378,11 @@ export class ClientSandboxEngine {
     // debt is outstanding from either a prior territory decision or a
     // line-reward decision, mirroring the backend GameEngine flags.
     if (!pendingTerritory && !pendingLineReward) {
-      return moves;
+      return [];
     }
 
     const movingPlayer = this.gameState.currentPlayer;
-    const board = this.gameState.board;
-
-    // Territory-origin self-elimination still obeys the region eligibility
-    // prerequisite; line-reward eliminations do not depend on disconnected
-    // regions.
-    if (pendingTerritory) {
-      const disconnected = findDisconnectedRegionsOnBoard(board);
-      if (
-        disconnected &&
-        disconnected.some((region) =>
-          this.canProcessDisconnectedRegion(region.spaces, movingPlayer, board)
-        )
-      ) {
-        return moves;
-      }
-    }
-
-    const stacks = this.getPlayerStacks(movingPlayer, board);
-    if (stacks.length === 0) {
-      return moves;
-    }
-
-    stacks.forEach((stack) => {
-      const key = positionToString(stack.position);
-      const capHeight = calculateCapHeight(stack.rings);
-      if (capHeight <= 0) {
-        return;
-      }
-
-      moves.push({
-        id: `eliminate-${key}`,
-        type: 'eliminate_rings_from_stack',
-        player: movingPlayer,
-        to: stack.position,
-        eliminatedRings: [{ player: movingPlayer, count: capHeight }],
-        eliminationFromStack: {
-          position: stack.position,
-          capHeight,
-          totalHeight: stack.stackHeight,
-        },
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.history.length + 1,
-      } as Move);
-    });
-
-    return moves;
+    return enumerateTerritoryEliminationMoves(this.gameState, movingPlayer);
   }
 
   /**
@@ -1551,69 +1481,29 @@ export class ClientSandboxEngine {
    */
   /**
    * Enumerate canonical line-processing decision Moves for the current
-   * player in the sandbox. This mirrors the backend
-   * GameEngine.getValidLineProcessingMoves helper and is primarily used
-   * by parity/debug tooling and future sandbox PlayerChoice flows:
+   * player in the sandbox.
    *
-   * - process_line: select which detected line to process next.
-   * - choose_line_reward: for overlength lines, select Option 1 vs
-   *   Option 2 style rewards (currently only Option 1 is modelled
-   *   explicitly via applyCanonicalChooseLineReward).
-   *
-   * For now, ClientSandboxEngine continues to auto-select the first
-   * process_line Move when resolving lines internally; this helper
-   * exists so tests and future UI can see the same decision surface
-   * that the backend exposes via GameEngine.getValidMoves during the
-   * line_processing phase.
+   * This is now a thin adapter over {@link getValidLineProcessingMoves}
+   * from sandboxLinesEngine, which itself delegates geometry and move
+   * shapes to the shared {@link enumerateProcessLineMoves} and
+   * {@link enumerateChooseLineRewardMoves} helpers in
+   * src/shared/engine/lineDecisionHelpers.ts.
    */
   private getValidLineProcessingMovesForCurrentPlayer(): Move[] {
-    const moves: Move[] = [];
-    const boardType = this.gameState.boardType;
-    const requiredLength = BOARD_CONFIGS[boardType].lineLength;
-    const currentPlayer = this.gameState.currentPlayer;
-
-    const board = this.gameState.board;
-    const allLines = this.findAllLines(board);
-    const playerLines = allLines.filter((line) => line.player === currentPlayer);
-
-    playerLines.forEach((line, index) => {
-      const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-
-      // Base decision: which line to process.
-      moves.push({
-        id: `process-line-${index}-${lineKey}`,
-        type: 'process_line',
-        player: currentPlayer,
-        formedLines: [line],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: this.gameState.history.length + 1,
-      } as Move);
-
-      // Overlength lines admit a reward choice on the backend. We surface
-      // the same decision Move shape here even though the current sandbox
-      // UI still defaults to "minimum collapse, no elimination" when
-      // resolving lines automatically.
-      if (line.length > requiredLength) {
-        moves.push({
-          id: `choose-line-reward-${index}-${lineKey}`,
-          type: 'choose_line_reward',
-          player: currentPlayer,
-          formedLines: [line],
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: this.gameState.history.length + 1,
-        } as Move);
-      }
-    });
-
-    return moves;
+    return getValidLineProcessingMoves(this.gameState);
   }
 
   private async processLinesForCurrentPlayer(): Promise<void> {
     // Keep applying lines for the current player until none remain.
-    // We use the shared getValidLineProcessingMoves helper to identify
+    // We use the sandboxLinesEngine.getValidLineProcessingMoves helper
+    // (which delegates to shared lineDecisionHelpers) to identify
     // candidates and applyLineDecisionMove to execute them.
+    //
+    // Automatic sandbox behaviour remains:
+    // - Exact-length lines: collapse all markers and immediately eliminate
+    //   a cap via forceEliminateCapOnBoard.
+    // - Overlength lines: default to Option 2 (minimum contiguous subset of
+    //   length L, no elimination) for the first available line.
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const moves = getValidLineProcessingMoves(this.gameState);
@@ -1623,11 +1513,54 @@ export class ClientSandboxEngine {
         break;
       }
 
-      // Default behavior: pick the first line.
-      // TODO: Surface choice via interactionHandler if multiple lines exist.
-      const move = processLineMoves[0];
+      const boardType = this.gameState.boardType;
+      const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+
+      // Default behaviour: pick the first line for the current player.
+      let moveToApply: Move = processLineMoves[0];
+      const line = moveToApply.formedLines && moveToApply.formedLines[0];
+      if (!line) {
+        break;
+      }
+
+      // For overlength lines, prefer a MINIMUM_COLLAPSE reward choice
+      // (length L contiguous subset) rather than the raw process_line
+      // decision, to preserve the legacy "Option 2 by default" sandbox
+      // behaviour.
+      if (line.length > requiredLength) {
+        const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+        const rewardCandidates = moves.filter(
+          (m) =>
+            m.type === 'choose_line_reward' &&
+            m.formedLines &&
+            m.formedLines.length > 0 &&
+            m.formedLines[0].positions.length === line.positions.length &&
+            m.formedLines[0].positions.map((p) => positionToString(p)).join('|') === lineKey
+        );
+
+        const preferredSegment = line.positions.slice(0, requiredLength);
+        const preferredKey = preferredSegment.map((p) => positionToString(p)).join('|');
+
+        const minCollapse =
+          rewardCandidates.find(
+            (m) =>
+              m.collapsedMarkers &&
+              m.collapsedMarkers.length === requiredLength &&
+              m.collapsedMarkers.map((p) => positionToString(p)).join('|') === preferredKey
+          ) ||
+          rewardCandidates.find(
+            (m) => m.collapsedMarkers && m.collapsedMarkers.length === requiredLength
+          );
+
+        if (minCollapse) {
+          moveToApply = minCollapse;
+        }
+      }
 
       if (this.traceMode) {
+        // In trace/parity mode we only need to surface that a line decision
+        // is available; the concrete decision Moves will be applied via
+        // applyCanonicalMove. Normalise the phase and return.
         this.gameState = {
           ...this.gameState,
           currentPhase: 'line_processing',
@@ -1640,7 +1573,8 @@ export class ClientSandboxEngine {
       const beforeState = this.getGameState();
 
       // Apply the move using the shared helper.
-      const nextState = applyLineDecisionMove(this.gameState, move);
+      const outcome = applyLineDecisionMove(this.gameState, moveToApply);
+      const nextState = outcome.nextState;
 
       // Check if state actually changed
       if (hashGameState(nextState) === hashGameState(this.gameState)) {
@@ -1649,9 +1583,16 @@ export class ClientSandboxEngine {
 
       this.gameState = nextState;
 
+      // For automatic sandbox flows, immediately apply the cap elimination
+      // when the shared helper reports a pending line-reward elimination
+      // (exact-length lines and collapse-all rewards).
+      if (outcome.pendingLineRewardElimination) {
+        this.forceEliminateCap(moveToApply.player);
+      }
+
       // Record the canonical decision in history so that parity harnesses
       // can replay the exact same sequence into both engines.
-      this.appendHistoryEntry(beforeState, move);
+      this.appendHistoryEntry(beforeState, moveToApply);
     }
   }
 
@@ -2078,10 +2019,19 @@ export class ClientSandboxEngine {
             applied = true;
           }
         } else {
-          const nextState = applyLineDecisionMove(this.gameState, move);
+          const outcome = applyLineDecisionMove(this.gameState, move);
+          const nextState = outcome.nextState;
           if (hashGameState(nextState) !== hashGameState(this.gameState)) {
             this.gameState = nextState;
             applied = true;
+
+            // Record any pending line-reward elimination so that explicit
+            // eliminate_rings_from_stack decisions can be surfaced via
+            // getValidEliminationDecisionMovesForCurrentPlayer, mirroring
+            // the backend GameEngine.pendingLineRewardElimination flag.
+            if (outcome.pendingLineRewardElimination) {
+              this._pendingLineRewardElimination = true;
+            }
 
             // After applying a line decision in non-trace mode, keep the previous
             // behaviour: continue processing remaining lines, then hand off to

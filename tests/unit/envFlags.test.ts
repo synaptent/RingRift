@@ -6,6 +6,7 @@ import {
   isSandboxAiCaptureDebugEnabled,
   isSandboxAiTraceModeEnabled,
   isSandboxAiParityModeEnabled,
+  isLocalAIHeuristicModeEnabled,
 } from '../../src/shared/utils/envFlags';
 
 describe('envFlags helpers', () => {
@@ -90,6 +91,17 @@ describe('envFlags helpers', () => {
     expect(isSandboxAiParityModeEnabled()).toBe(false);
   });
 
+  it('isLocalAIHeuristicModeEnabled proxies the correct env name', () => {
+    (process.env as any).RINGRIFT_LOCAL_AI_HEURISTIC_MODE = '1';
+    expect(isLocalAIHeuristicModeEnabled()).toBe(true);
+
+    (process.env as any).RINGRIFT_LOCAL_AI_HEURISTIC_MODE = '0';
+    expect(isLocalAIHeuristicModeEnabled()).toBe(false);
+
+    delete (process.env as any).RINGRIFT_LOCAL_AI_HEURISTIC_MODE;
+    expect(isLocalAIHeuristicModeEnabled()).toBe(false);
+  });
+
   //
   // Server config / JWT secret validation
   //
@@ -109,9 +121,7 @@ describe('envFlags helpers', () => {
     const { config } = await import('../../src/server/config');
 
     expect(config.nodeEnv).toBe('development');
-    expect(config.auth.jwtSecret).toBe(
-      'your-super-secret-jwt-key-change-this-in-production'
-    );
+    expect(config.auth.jwtSecret).toBe('your-super-secret-jwt-key-change-this-in-production');
     expect(config.auth.jwtRefreshSecret).toBe(
       'your-super-secret-refresh-key-change-this-in-production'
     );

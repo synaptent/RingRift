@@ -16,7 +16,7 @@ const rateLimiterConfigs = {
     duration: 900, // Per 15 minutes (900 seconds)
     blockDuration: 900, // Block for 15 minutes if limit exceeded
   },
-  
+
   // Authentication endpoints (more restrictive)
   auth: {
     storeClient: null,
@@ -25,7 +25,7 @@ const rateLimiterConfigs = {
     duration: 900, // Per 15 minutes
     blockDuration: 1800, // Block for 30 minutes
   },
-  
+
   // Game actions (moderate limiting)
   game: {
     storeClient: null,
@@ -34,7 +34,7 @@ const rateLimiterConfigs = {
     duration: 60, // Per minute
     blockDuration: 300, // Block for 5 minutes
   },
-  
+
   // WebSocket connections
   websocket: {
     storeClient: null,
@@ -42,30 +42,100 @@ const rateLimiterConfigs = {
     points: 10, // Number of connections
     duration: 60, // Per minute
     blockDuration: 300, // Block for 5 minutes
-  }
+  },
+
+  // Game creation quotas (per-user and per-IP)
+  gameCreateUser: {
+    storeClient: null,
+    keyPrefix: 'game_create_user',
+    points: 20, // Max games per user per window
+    duration: 600, // Per 10 minutes
+    blockDuration: 600,
+  },
+  gameCreateIp: {
+    storeClient: null,
+    keyPrefix: 'game_create_ip',
+    points: 50, // Max game-create requests per IP per window
+    duration: 600, // Per 10 minutes
+    blockDuration: 600,
+  },
 };
 
-let rateLimiters: { [key: string]: RateLimiterRedis } = {};
+const rateLimiters: { [key: string]: RateLimiterRedis } = {};
 
 // Initialize rate limiters
 export const initializeRateLimiters = (redis: any) => {
   redisClient = redis;
-  
+
   Object.entries(rateLimiterConfigs).forEach(([key, config]) => {
     rateLimiters[key] = new RateLimiterRedis({
       ...config,
-      storeClient: redisClient
+      storeClient: redisClient,
     });
   });
-  
+
   logger.info('Rate limiters initialized');
+};
+
+export interface RateLimitResult {
+  allowed: boolean;
+  retryAfter?: number;
+}
+
+/**
+ * Low-level helper used by HTTP routes and other callers that need to perform
+ * ad-hoc rate limiting (for example, game creation quotas).
+ *
+ * This wrapper centralises graceful degradation semantics:
+ * - When the limiter is not initialised, the request is allowed and a warning
+ *   is logged.
+ * - When Redis or the underlying store fails, the request is allowed and a
+ *   warning is logged so that dependency outages do not cascade.
+ * - When the configured quota is exceeded, the caller receives
+ *   { allowed: false, retryAfter } without the helper writing any response.
+ */
+export const consumeRateLimit = async (
+  limiterKey: string,
+  key: string
+): Promise<RateLimitResult> => {
+  const limiter = rateLimiters[limiterKey];
+
+  if (!limiter) {
+    logger.warn(`Rate limiter '${limiterKey}' not available, allowing request`, {
+      key,
+    });
+    return { allowed: true };
+  }
+
+  try {
+    await limiter.consume(key);
+    return { allowed: true };
+  } catch (error: any) {
+    // rate-limiter-flexible returns a special object with msBeforeNext when
+    // the limit is exceeded. Treat all other errors as infrastructure
+    // failures and allow the request to proceed to avoid cascading
+    // outages when Redis is unavailable.
+    const msBeforeNext =
+      error && typeof error === 'object' ? (error as any).msBeforeNext : undefined;
+
+    if (typeof msBeforeNext === 'number') {
+      const secs = Math.round(msBeforeNext / 1000) || 1;
+      return { allowed: false, retryAfter: secs };
+    }
+
+    logger.warn(`Rate limiter '${limiterKey}' error, allowing request`, {
+      key,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return { allowed: true };
+  }
 };
 
 // Generic rate limiter middleware factory
 const createRateLimiter = (limiterKey: string) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const limiter = rateLimiters[limiterKey];
-    
+
     if (!limiter) {
       // If rate limiter is not available, allow the request but log warning
       logger.warn(`Rate limiter '${limiterKey}' not available, allowing request`);
@@ -78,30 +148,30 @@ const createRateLimiter = (limiterKey: string) => {
       next();
     } catch (rejRes: any) {
       const secs = Math.round(rejRes.msBeforeNext / 1000) || 1;
-      
+
       logger.warn('Rate limit exceeded', {
         ip: req.ip,
         limiter: limiterKey,
         path: req.path,
-        retryAfter: secs
+        retryAfter: secs,
       });
 
       res.set('Retry-After', String(secs));
-      
+
       const error = createError(
         'Too many requests, please try again later',
         429,
         'RATE_LIMIT_EXCEEDED'
       );
-      
+
       res.status(429).json({
         success: false,
         error: {
           message: error.message,
           code: error.code,
           retryAfter: secs,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   };
@@ -126,7 +196,7 @@ export const customRateLimiter = (points: number, duration: number, blockDuratio
       keyPrefix: 'custom_limit',
       points,
       duration,
-      blockDuration: blockDuration || duration
+      blockDuration: blockDuration || duration,
     });
 
     try {
@@ -135,25 +205,25 @@ export const customRateLimiter = (points: number, duration: number, blockDuratio
       next();
     } catch (rejRes: any) {
       const secs = Math.round(rejRes.msBeforeNext / 1000) || 1;
-      
+
       logger.warn('Custom rate limit exceeded', {
         ip: req.ip,
         path: req.path,
         points,
         duration,
-        retryAfter: secs
+        retryAfter: secs,
       });
 
       res.set('Retry-After', String(secs));
-      
+
       res.status(429).json({
         success: false,
         error: {
           message: 'Too many requests, please try again later',
           code: 'RATE_LIMIT_EXCEEDED',
           retryAfter: secs,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   };
@@ -163,7 +233,7 @@ export const customRateLimiter = (points: number, duration: number, blockDuratio
 export const userRateLimiter = (limiterKey: string) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     const limiter = rateLimiters[limiterKey];
-    
+
     if (!limiter) {
       logger.warn(`Rate limiter '${limiterKey}' not available, allowing request`);
       return next();
@@ -176,25 +246,25 @@ export const userRateLimiter = (limiterKey: string) => {
       next();
     } catch (rejRes: any) {
       const secs = Math.round(rejRes.msBeforeNext / 1000) || 1;
-      
+
       logger.warn('User rate limit exceeded', {
         userId: (req as any).user?.id,
         ip: req.ip,
         limiter: limiterKey,
         path: req.path,
-        retryAfter: secs
+        retryAfter: secs,
       });
 
       res.set('Retry-After', String(secs));
-      
+
       res.status(429).json({
         success: false,
         error: {
           message: 'Too many requests, please try again later',
           code: 'RATE_LIMIT_EXCEEDED',
           retryAfter: secs,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       });
     }
   };
@@ -219,7 +289,7 @@ export const fallbackRateLimiter = (() => {
     }
 
     const current = requests.get(key);
-    
+
     if (!current) {
       requests.set(key, { count: 1, resetTime: now });
       return next();
@@ -234,7 +304,7 @@ export const fallbackRateLimiter = (() => {
       logger.warn('Fallback rate limit exceeded', {
         ip: req.ip,
         path: req.path,
-        count: current.count
+        count: current.count,
       });
 
       return res.status(429).json({
@@ -242,8 +312,8 @@ export const fallbackRateLimiter = (() => {
         error: {
           message: 'Too many requests, please try again later',
           code: 'RATE_LIMIT_EXCEEDED',
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       });
     }
 

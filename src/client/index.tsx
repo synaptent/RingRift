@@ -7,6 +7,8 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import { AuthProvider } from './contexts/AuthContext';
 import { GameProvider } from './contexts/GameContext';
+import ErrorBoundary from './components/ErrorBoundary';
+import { setupGlobalErrorHandlers, isErrorReportingEnabled } from './utils/errorReporting';
 import './styles/globals.css';
 
 // Create a client
@@ -20,6 +22,10 @@ const queryClient = new QueryClient({
   },
 });
 
+if (isErrorReportingEnabled()) {
+  setupGlobalErrorHandlers();
+}
+
 const container = document.getElementById('root');
 if (!container) throw new Error('Failed to find the root element');
 
@@ -31,8 +37,10 @@ root.render(
       <BrowserRouter>
         <AuthProvider>
           <GameProvider>
-            <App />
-            <Toaster 
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
+            <Toaster
               position="top-right"
               toastOptions={{
                 duration: 4000,

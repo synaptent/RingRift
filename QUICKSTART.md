@@ -15,6 +15,7 @@ When a game ends, you'll see a comprehensive victory screen showing:
 ### Available Actions
 
 After viewing the victory screen, you can:
+
 - **Return to Lobby**: Start a new game or join an existing one
 - **Request Rematch**: Challenge the same players to another game (multiplayer only)
 - **Close**: View the final board state
@@ -41,7 +42,9 @@ Games can end in several ways:
 The heads-up display (HUD) provides real-time information about the game state:
 
 ### Phase Indicator
+
 The colored banner at the top shows the current game phase with an icon and description:
+
 - 🎯 **Blue - Placement Phase**: Place your rings on the board
 - ⚡ **Green - Movement Phase**: Move a stack or capture opponent pieces
 - ⚔️ **Orange - Capture Phase**: Execute a capture move
@@ -50,10 +53,13 @@ The colored banner at the top shows the current game phase with an icon and desc
 - 🏰 **Pink - Territory Claim**: Choose regions to collapse
 
 ### Turn Counter
+
 Displays the current turn number and move count to track game progress.
 
 ### Player Cards
+
 Each player card shows:
+
 - **Name and Color**: Player identifier with color indicator
 - **AI Indicator**: Shows if player is AI-controlled, with difficulty level and type
 - **Current Turn Badge**: Highlights the active player
@@ -65,8 +71,8 @@ Each player card shows:
 - **Territory Count**: Number of spaces controlled as territory
 
 ### Connection Status
-Top bar shows WebSocket connection state and whether you're spectating.
 
+Top bar shows WebSocket connection state and whether you're spectating.
 
 This guide focuses on getting a **local development environment** running quickly (backend + frontend) and then wiring up the **Python AI service** used for AI turns and some PlayerChoices.
 
@@ -185,6 +191,7 @@ AI games are currently unrated. The AI thinking indicator shows when it's the AI
 The lobby shows all available games in real-time with powerful filtering and discovery features:
 
 **Filtering Options:**
+
 - **Board type**: Filter by square8, square19, or hexagonal boards
 - **Rated vs unrated**: Show only rated games or unrated games
 - **Player count**: Filter by 2, 3, or 4 player games
@@ -192,6 +199,7 @@ The lobby shows all available games in real-time with powerful filtering and dis
 
 **Game Information:**
 Each game card displays:
+
 - Creator's name and rating
 - Board type and time control settings
 - Current players vs maximum capacity
@@ -199,25 +207,27 @@ Each game card displays:
 - Game status (waiting or in progress)
 
 **Available Actions:**
+
 - **Join**: Enter a waiting game (button disabled if game is full or you're the creator)
 - **Watch**: Spectate any game to observe gameplay
 - **Cancel**: Remove your own waiting game from the lobby
 
 **Real-Time Updates:**
 The lobby automatically updates when:
+
 - New games are created and appear in the list
 - Players join games (player count updates)
 - Games start (removed from lobby)
 - Games are cancelled (removed from lobby)
 
 **Sorting Options:**
+
 - Newest First (default)
 - Most Players
 - Board Type
 - Rated First
 
 No manual refresh needed - the lobby stays synchronized across all connected clients via WebSocket.
-
 
 To run tests while you work:
 
@@ -254,6 +264,9 @@ important variables are:
   - `multi-unsafe`: Multiple app instances **without** sticky sessions or shared state; unsupported in production (the server will refuse to start when `NODE_ENV=production`).
   - `multi-sticky`: Multiple app instances with **infrastructure-enforced sticky sessions** for all game-affecting HTTP + WebSocket traffic; still risky and intended for operators who understand and accept the trade-offs.
 - `PORT` – port the Node backend listens on (default `3000` in dev).
+- `VITE_ERROR_REPORTING_ENABLED` – when set to `"true"`, enables client-side error reporting in the React SPA (recommended for staging/production).
+- `VITE_ERROR_REPORTING_ENDPOINT` – HTTP endpoint used by the SPA to POST error events (defaults to `/api/client-errors`).
+- `VITE_ERROR_REPORTING_MAX_EVENTS` – optional per-page-load cap on the number of error reports sent by the SPA (default `50`).
 
 ---
 
@@ -265,6 +278,8 @@ The AI service is a separate **Python FastAPI microservice** in `ai-service/`. I
 - Several PlayerChoices (e.g. line reward, ring elimination, region order), alongside local heuristics.
 
 You have two primary ways to run it: **Python virtualenv (recommended for development)** or **Docker**.
+
+For training pipelines and dataset generation (including the territory/combined-margin generator used for heuristic and ML training), see the canonical reference in [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1).
 
 ### 2.1 Option A – Python Virtual Environment (Recommended for Dev)
 
@@ -545,3 +560,112 @@ RingRift/
 ```
 
 If you run into issues beyond what’s covered here, check the other docs in the project root—they are kept in sync with the current codebase and include more detailed plans and assessments.
+
+---
+
+## 8. Staging Deployment (Docker Compose)
+
+This section describes how to run a **single-node staging stack** (backend, client, AI service, PostgreSQL, Redis, and observability) using Docker Compose.
+
+### 8.1 Prerequisites
+
+- Docker + Docker Compose installed and running.
+- A populated `.env` file with non-placeholder secrets (you can start from `.env.staging`):
+
+  ```bash
+  cp .env.staging .env
+  # then edit .env to set strong JWT_* secrets and any DB/Redis passwords
+  ```
+
+At minimum, ensure **all** of the following are set to non-placeholder values in `.env`:
+
+- `JWT_SECRET`
+- `JWT_REFRESH_SECRET`
+- `DB_PASSWORD`
+- `REDIS_PASSWORD` (if you enable Redis auth)
+- `AI_SERVICE_URL` (only needed when running the AI service outside Docker)
+
+The default `.env.staging` values are suitable for **local-only staging** but should be rotated for any externally exposed deployment.
+
+### 8.2 Starting the Staging Stack
+
+From the project root:
+
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.staging.yml up --build
+```
+
+This will start:
+
+- `app` – Node.js backend + built React client (served on `http://localhost:3000`)
+- `ai-service` – Python FastAPI AI microservice (internal port `8001`)
+- `postgres` – PostgreSQL database (`5432`)
+- `redis` – Redis cache (`6379`)
+- `prometheus` – Prometheus TSDB (`9090`)
+- `grafana` – Grafana dashboards (`3001`, mapped from Grafana’s `3000`)
+- `nginx` – Optional reverse proxy (80/443) if you have `nginx.conf`/TLS configured
+
+The staging overlay [`docker-compose.staging.yml`](docker-compose.staging.yml:1) adds:
+
+- A startup command for the `app` service that runs:
+  - `npx prisma migrate deploy` (applies Prisma migrations against `DATABASE_URL`)
+  - Then starts `node dist/server/index.js`
+- Health-check–based dependencies so `app` waits for:
+  - `postgres` (via `pg_isready`)
+  - `redis` (via `redis-cli ping`)
+  - `ai-service` (via its internal `/health` endpoint and Dockerfile `HEALTHCHECK`)
+
+### 8.3 Expected Endpoints
+
+Once the stack is healthy, you should have:
+
+- **Client + API + WebSocket** (served by `app`):
+  - Backend & client: `http://localhost:3000`
+  - Health: `http://localhost:3000/health`
+  - Metrics: `http://localhost:3000/metrics`
+- **AI service**:
+  - Internal base URL (from inside Docker): `http://ai-service:8001`
+  - From the host (for debugging): `http://localhost:8001`
+  - Health: `http://localhost:8001/health`
+  - Docs: `http://localhost:8001/docs`
+- **Database**:
+  - PostgreSQL: `localhost:5432`
+- **Redis**:
+  - Redis: `localhost:6379`
+- **Observability**:
+  - Prometheus: `http://localhost:9090`
+  - Grafana: `http://localhost:3001`
+
+### 8.4 Verifying the Staging Stack
+
+1. **Check container health:**
+
+   ```bash
+   docker-compose -f docker-compose.yml -f docker-compose.staging.yml ps
+   ```
+
+   All core services (`app`, `ai-service`, `postgres`, `redis`) should report `healthy` or `running`.
+
+2. **Hit health endpoints:**
+
+   ```bash
+   curl http://localhost:3000/health
+   curl http://localhost:8001/health
+   ```
+
+   Both should return simple JSON with a `"status"` field.
+
+3. **Run a basic AI game flow:**
+   - Open `http://localhost:3000` in a browser.
+   - Register/login, go to the lobby, and create a game with at least one AI opponent.
+   - Start the game and make a few moves, verifying that:
+     - The AI takes its turns without backend errors.
+     - Territory/line events and victory conditions behave normally.
+
+4. **Shut down the stack:**
+
+   ```bash
+   docker-compose -f docker-compose.yml -f docker-compose.staging.yml down
+   ```
+
+This staging setup is intentionally single-node and **non-TLS**. For production-grade hardening (HTTPS termination, WAF, centralized logging/metrics, backups, and multi-instance topology with sticky sessions), additional infrastructure work is required beyond this local staging configuration.

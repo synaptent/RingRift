@@ -61,6 +61,23 @@ const withRequestContext = (req: any, meta: LogMeta = {}): LogMeta => {
 };
 
 /**
+ * Best-effort redaction for email addresses to avoid logging full PII in
+ * low-level logs while still preserving enough information for debugging.
+ */
+const redactEmail = (email: string | null | undefined): string | undefined => {
+  if (!email) return undefined;
+  const trimmed = String(email).trim();
+  const atIndex = trimmed.indexOf('@');
+  if (atIndex <= 0 || atIndex === trimmed.length - 1) {
+    return '***';
+  }
+  const local = trimmed.slice(0, atIndex);
+  const domain = trimmed.slice(atIndex + 1);
+  const firstChar = local[0] ?? '*';
+  return `${firstChar}***@${domain}`;
+};
+
+/**
  * Convenience logger for HTTP handlers where an Express Request (or
  * compatible object) is available. Ensures requestId is consistently
  * attached to log metadata.
@@ -83,4 +100,4 @@ const stream = {
   },
 };
 
-export { logger, stream, httpLogger, withRequestContext };
+export { logger, stream, httpLogger, withRequestContext, redactEmail };

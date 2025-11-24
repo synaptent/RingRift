@@ -1,6 +1,6 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** November 23, 2025
+**Assessment Date:** November 24, 2025
 **Assessor:** Code + Test Review
 **Purpose:** Factual status of the codebase as it exists today
 
@@ -69,6 +69,9 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
     [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35),
     [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1),
     [`TerritoryMutator.ts`](src/shared/engine/mutators/TerritoryMutator.ts:1).
+  - Line & territory decision helpers:
+    - [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) – enumerates and applies canonical `process_line` and `choose_line_reward` `Move`s and wires `pendingLineRewardElimination` in a host‑agnostic way.
+    - [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) – enumerates and applies canonical `process_territory_region` and `eliminate_rings_from_stack` `Move`s, enforcing Q23 gating and per‑player elimination bookkeeping for both hosts.
   - Placement & no‑dead‑placement:
     [`PlacementValidator.ts`](src/shared/engine/validators/PlacementValidator.ts:1),
     [`PlacementMutator.ts`](src/shared/engine/mutators/PlacementMutator.ts:1),
@@ -80,6 +83,9 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
   - Turn sequencing:
     [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132) and the shared
     [`TurnMutator.ts`](src/shared/engine/mutators/TurnMutator.ts:1) capture the canonical phase/turn progression, which backend and sandbox hosts mirror.
+  - Host usage:
+    - Backend [`GameEngine.ts`](src/server/game/GameEngine.ts:1) and [`RuleEngine.ts`](src/server/game/RuleEngine.ts:1) call these helpers (including the decision helpers) to enumerate decision `Move`s such as `process_line`, `choose_line_reward`, `process_territory_region`, and `eliminate_rings_from_stack`, and then apply them by `moveId`.
+    - [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts:1) and sandbox engines such as [`sandboxLinesEngine.ts`](src/client/sandbox/sandboxLinesEngine.ts:1) and [`sandboxTerritoryEngine.ts`](src/client/sandbox/sandboxTerritoryEngine.ts:1) are thin adapters over the same helpers for line and territory phases.
 - **GameEngine (backend host)**
   - Orchestrates turn/phase loop: `ring_placement → movement → capture → chain_capture → line_processing → territory_processing → next player`.
   - Uses shared validators/mutators and helpers for movement, capture, line detection/processing, territory disconnection/processing, placement, and victory while also handling persistence, WebSocket events, and AI delegation.
@@ -159,20 +165,22 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
   - WebSocketServer integration tests.
 - **Shared-helper rules suites (TypeScript engine):**
   - Movement & captures:
-    [`movement.shared.test.ts`](tests/unit/movement.shared.test.ts:1),
-    [`captureSequenceEnumeration.test.ts`](tests/unit/captureSequenceEnumeration.test.ts:1),
-    [`RuleEngine.movement.scenarios.test.ts`](tests/unit/RuleEngine.movement.scenarios.test.ts:1),
-    [`RuleEngine.movementCapture.test.ts`](tests/unit/RuleEngine.movementCapture.test.ts:1).
+    - [`movement.shared.test.ts`](tests/unit/movement.shared.test.ts:1) – canonical non‑capturing movement reachability and integration with the no‑dead‑placement helper `hasAnyLegalMoveOrCaptureFromOnBoard`.
+    - [`captureLogic.shared.test.ts`](tests/unit/captureLogic.shared.test.ts:1) – overtaking capture enumeration and reachability over [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1), including coverage for the same no‑dead‑placement helper.
+    - [`captureSequenceEnumeration.test.ts`](tests/unit/captureSequenceEnumeration.test.ts:1) – legacy capture‑sequence enumeration harness kept as a regression/diagnostic suite.
+    - [`RuleEngine.movement.scenarios.test.ts`](tests/unit/RuleEngine.movement.scenarios.test.ts:1) and [`RuleEngine.movementCapture.test.ts`](tests/unit/RuleEngine.movementCapture.test.ts:1) – backend adapter alignment with shared movement/capture helpers.
   - Lines:
-    [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1),
-    [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1),
-    [`Seed14Move35LineParity.test.ts`](tests/unit/Seed14Move35LineParity.test.ts:1).
+    - [`lineDetection.shared.test.ts`](tests/unit/lineDetection.shared.test.ts:1) – shared marker‑line geometry.
+    - [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) – canonical enumeration and application of line‑decision `Move`s (`process_line`, `choose_line_reward`) and reward options over the shared helpers.
+    - [`LineDetectionParity.rules.test.ts`](tests/unit/LineDetectionParity.rules.test.ts:1),
+      [`Seed14Move35LineParity.test.ts`](tests/unit/Seed14Move35LineParity.test.ts:1) – rules‑level geometry/regression guards for historically tricky line‑detection states.
   - Territory:
-    [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1),
-    [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1),
-    [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1),
-    [`sandboxTerritory.rules.test.ts`](tests/unit/sandboxTerritory.rules.test.ts:1),
-    [`sandboxTerritoryEngine.rules.test.ts`](tests/unit/sandboxTerritoryEngine.rules.test.ts:1).
+    - [`territoryBorders.shared.test.ts`](tests/unit/territoryBorders.shared.test.ts:1) – shared border‑marker expansion.
+    - [`territoryProcessing.shared.test.ts`](tests/unit/territoryProcessing.shared.test.ts:1) – shared region‑processing pipeline (collapse + internal elimination).
+    - [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) – canonical `process_territory_region` / `eliminate_rings_from_stack` decision semantics, including Q23 gating and elimination bookkeeping.
+    - [`territoryProcessing.rules.test.ts`](tests/unit/territoryProcessing.rules.test.ts:1),
+      [`sandboxTerritory.rules.test.ts`](tests/unit/sandboxTerritory.rules.test.ts:1),
+      [`sandboxTerritoryEngine.rules.test.ts`](tests/unit/sandboxTerritoryEngine.rules.test.ts:1) – rules‑level suites for Q23, region collapse, and internal vs self‑elimination.
   - Placement:
     [`placement.shared.test.ts`](tests/unit/placement.shared.test.ts:1),
     [`RuleEngine.placementMultiRing.test.ts`](tests/unit/RuleEngine.placementMultiRing.test.ts:1).
@@ -191,14 +199,18 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
     [`reachabilityParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/reachabilityParity.RuleEngine_vs_Sandbox.test.ts:1),
     [`ClientSandboxEngine.moveParity.test.ts`](tests/unit/ClientSandboxEngine.moveParity.test.ts:1).
   - Territory & borders:
+    [`BoardManager.territoryDisconnection.square8.test.ts`](tests/unit/BoardManager.territoryDisconnection.square8.test.ts:1),
     [`BoardManager.territoryDisconnection.test.ts`](tests/unit/BoardManager.territoryDisconnection.test.ts:1),
-    [`BoardManager.territoryDisconnection.hex.test.ts`](tests/unit/BoardManager.territoryDisconnection.hex.test.ts:1),
-    [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
+    [`BoardManager.territoryDisconnection.hex.test.ts`](tests/unit/BoardManager.territoryDisconnection.hex.test.ts:1) – board‑level region‑detection geometry suites for `square8`, `square19`, and `hex` (primarily diagnostic/regression harnesses over the shared territory‑detection helpers).
+    [`GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1),
+    [`GameEngine.territoryDisconnection.hex.test.ts`](tests/unit/GameEngine.territoryDisconnection.hex.test.ts:1) – backend host territory‑processing scenarios wired through the shared detection and decision helpers.
     [`TerritoryBorders.Backend_vs_Sandbox.test.ts`](tests/unit/TerritoryBorders.Backend_vs_Sandbox.test.ts:1),
     [`TerritoryCore.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts:1),
+    [`TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts:1) – backend↔sandbox parity on region borders, core processing, and pending‑territory flags.
+    [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
     [`TerritoryDecision.seed5Move45.parity.test.ts`](tests/unit/TerritoryDecision.seed5Move45.parity.test.ts:1),
-    [`TerritoryDecisions.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryDecisions.GameEngine_vs_Sandbox.test.ts:1),
-    [`TerritoryDetection.seed5Move45.parity.test.ts`](tests/unit/TerritoryDetection.seed5Move45.parity.test.ts:1).
+    [`TerritoryDetection.seed5Move45.parity.test.ts`](tests/unit/TerritoryDetection.seed5Move45.parity.test.ts:1),
+    [`TerritoryDecisions.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryDecisions.GameEngine_vs_Sandbox.test.ts:1) – heavy 19×19 parity and seed‑based diagnostics (**diagnostic, may be `describe.skip`**; canonical territory decision semantics now live in [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) plus the RulesMatrix/FAQ Q23 suites).
   - Victory:
     [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1),
     [`GameEngine.victory.scenarios.test.ts`](tests/unit/GameEngine.victory.scenarios.test.ts:1),
@@ -245,15 +257,20 @@ A reasonable label for the current state is: **engine/AI-focused beta suitable f
 ### P0 – Confidence in Exhaustive Rules Coverage
 
 - The **rules/FAQ scenario matrix** ([`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md:1)) and dedicated FAQ suites
-  ([`tests/scenarios/FAQ_*.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1)) now cover all FAQ questions (Q1–Q24) and a large set of high-value examples, but they are not yet exhaustive for every composite diagram and multi-turn example in
+  ([`tests/scenarios/FAQ_*.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1)) now cover all FAQ questions (Q1–Q24) and a large set of high-value examples. Line and territory **decision phases** in particular are anchored by the shared-helper suites
+  [`lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts:1) and
+  [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1), plus targeted RulesMatrix territory scenarios such as
+  [`RulesMatrix.Territory.MiniRegion.test.ts`](tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts:1). The remaining gap is exhaustive coverage of every composite diagram and multi-turn example in
   [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1), especially for deeply nested capture + line + territory chains.
-- Some complex capture + line + territory combinations are not yet encoded as focused rules-level tests and still rely on trace/simulation harnesses for coverage.
-- Backend↔sandbox semantic parity for canonical rules flows (movement, captures, lines, territory, placement, victory, and turn sequencing) is validated by shared-helper and host parity suites (for example
+- Some complex capture + line + territory combinations are still not encoded as focused rules-level tests and rely on seeded trace/simulation harnesses for coverage. When those harnesses uncover new behaviour, the expected fix is to (1) adjust the shared helpers (including the decision helpers) and (2) add or extend RulesMatrix/FAQ scenarios, rather than making host-local one-off patches.
+- Backend↔sandbox semantic parity for canonical rules flows (movement, captures, lines, territory, placement, victory, and turn sequencing) is validated by shared-helper suites and targeted host parity suites (for example
   [`MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts:1),
   [`PlacementParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/PlacementParity.RuleEngine_vs_Sandbox.test.ts:1),
-  [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
   [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1),
-  and [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1)). A small number of heavy AI/RNG fuzz and long-seed suites remain **diagnostic** rather than hard CI gates; when they reveal divergences, those are treated as engine bugs and tracked via the scenario matrix.
+  and [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1)). Heavy 19×19 territory parity and long-seed RNG/AI harnesses (for example
+  [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1) and
+  [`Sandbox_vs_Backend.aiRngFullParity.test.ts`](tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts:1)) are treated as **diagnostic** suites (some may be `describe.skip`) rather than hard CI gates; when they reveal divergences, those are tracked as engine bugs and converted into focused RulesMatrix + shared-helper tests.
+  **NOTE:** Maintainers should periodically review which heavy parity suites remain skipped vs enforced in CI and ensure that any territory or line semantics they exercise are first-class in the decision-helper shared tests plus RulesMatrix scenario coverage.
 
 ### P1 – Multiplayer UX & Lifecycle Polish
 

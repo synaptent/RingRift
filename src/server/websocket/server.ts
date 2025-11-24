@@ -1,9 +1,9 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import { Socket } from 'socket.io';
-import jwt from 'jsonwebtoken';
 import { ZodError } from 'zod';
 import { getDatabaseClient } from '../database/connection';
+import { getRedisClient } from '../cache/redis';
 import { logger } from '../utils/logger';
 import { PlayerChoiceResponse } from '../../shared/types/game';
 import { GameSessionManager } from '../game/GameSessionManager';
@@ -16,11 +16,91 @@ import {
   ServerToClientEvents,
 } from '../../shared/types/websocket';
 import { webSocketConnectionsGauge } from '../utils/rulesParityMetrics';
+import { verifyToken, validateUser } from '../middleware/auth';
 
 export interface AuthenticatedSocket extends Socket<ClientToServerEvents, ServerToClientEvents> {
   userId?: string;
   username?: string;
   gameId?: string;
+}
+
+const CHAT_RATE_LIMIT_WINDOW_SECONDS = 10;
+const CHAT_RATE_LIMIT_MAX_MESSAGES = 20;
+
+type InMemoryChatCounter = {
+  count: number;
+  resetAt: number;
+};
+
+const inMemoryChatCounters = new Map<string, InMemoryChatCounter>();
+
+async function checkChatRateLimit(socket: AuthenticatedSocket, gameId: string): Promise<boolean> {
+  const userKey = socket.userId ?? socket.id;
+  const key = `chat:${gameId}:${userKey}`;
+  const windowSeconds = CHAT_RATE_LIMIT_WINDOW_SECONDS;
+  const maxMessages = CHAT_RATE_LIMIT_MAX_MESSAGES;
+
+  try {
+    const redis = getRedisClient();
+
+    if (redis) {
+      try {
+        const current = await redis.incr(key);
+        if (current === 1) {
+          await redis.expire(key, windowSeconds);
+        }
+
+        if (current > maxMessages) {
+          logger.warn('Chat rate limit exceeded (redis)', {
+            userId: socket.userId,
+            gameId,
+            key,
+            count: current,
+          });
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        logger.warn('Chat rate limiter Redis error, falling back to in-memory', {
+          userId: socket.userId,
+          gameId,
+          key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const now = Date.now();
+    const windowMs = windowSeconds * 1000;
+
+    const existing = inMemoryChatCounters.get(key);
+    if (!existing || existing.resetAt <= now) {
+      inMemoryChatCounters.set(key, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+
+    if (existing.count >= maxMessages) {
+      logger.warn('Chat rate limit exceeded (memory)', {
+        userId: socket.userId,
+        gameId,
+        key,
+        count: existing.count + 1,
+      });
+      return false;
+    }
+
+    existing.count += 1;
+    return true;
+  } catch (error) {
+    logger.warn('Chat rate limiter failure, allowing chat message', {
+      userId: socket.userId,
+      gameId,
+      key,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return true;
+  }
 }
 
 export class WebSocketServer {
@@ -57,55 +137,80 @@ export class WebSocketServer {
     // Authentication middleware
     this.io.use(async (socket: AuthenticatedSocket, next) => {
       try {
-        const token = socket.handshake.auth.token || socket.handshake.query.token;
+        const rawToken =
+          (socket.handshake.auth && (socket.handshake.auth as any).token) ||
+          socket.handshake.query.token;
 
-        if (!token) {
+        if (!rawToken || typeof rawToken !== 'string') {
+          const payload: WebSocketErrorPayload = {
+            type: 'error',
+            code: 'ACCESS_DENIED',
+            message: 'Authentication token required',
+          };
+          socket.emit('error', payload);
           return next(new Error('Authentication token required'));
         }
 
-        const secret = config.auth.jwtSecret;
-        if (!secret) {
-          return next(new Error('JWT_SECRET not configured'));
+        let decoded;
+        try {
+          decoded = verifyToken(rawToken);
+        } catch (err) {
+          logger.warn('WebSocket JWT verification failed', {
+            error: err instanceof Error ? err.message : String(err),
+            socketId: socket.id,
+          });
+
+          const payload: WebSocketErrorPayload = {
+            type: 'error',
+            code: 'ACCESS_DENIED',
+            message: 'Authentication failed',
+          };
+          socket.emit('error', payload);
+
+          return next(new Error('Authentication failed'));
         }
 
-        const decoded = jwt.verify(token, secret) as any;
+        try {
+          const user = await validateUser(decoded.userId, decoded.tokenVersion);
 
-        if (!decoded.userId || !decoded.email) {
-          return next(new Error('Invalid token payload'));
+          socket.userId = user.id;
+          socket.username = user.username;
+
+          logger.info('WebSocket authenticated', {
+            userId: user.id,
+            username: user.username,
+            socketId: socket.id,
+            connectionId: socket.id,
+          });
+
+          next();
+        } catch (err) {
+          logger.warn('WebSocket auth user validation failed', {
+            error: err instanceof Error ? err.message : String(err),
+            socketId: socket.id,
+            userId: decoded.userId,
+          });
+
+          const payload: WebSocketErrorPayload = {
+            type: 'error',
+            code: 'ACCESS_DENIED',
+            message: 'Authentication failed',
+          };
+          socket.emit('error', payload);
+
+          return next(new Error('Authentication failed'));
         }
-
-        // Verify user exists and is active
-        const prisma = getDatabaseClient();
-        if (!prisma) {
-          return next(new Error('Database not available'));
-        }
-
-        const user = await prisma.user.findUnique({
-          where: { id: decoded.userId },
-          select: {
-            id: true,
-            username: true,
-            isActive: true,
-          },
-        });
-
-        if (!user || !user.isActive) {
-          return next(new Error('User not found or inactive'));
-        }
-
-        socket.userId = user.id;
-        socket.username = user.username;
-
-        logger.info('WebSocket authenticated', {
-          userId: user.id,
-          username: user.username,
-          socketId: socket.id,
-          connectionId: socket.id,
-        });
-
-        next();
       } catch (error) {
-        logger.error('WebSocket authentication failed:', error);
+        logger.error('WebSocket authentication middleware threw unexpectedly', {
+          error: error instanceof Error ? error.message : String(error),
+          socketId: socket.id,
+        });
+        const payload: WebSocketErrorPayload = {
+          type: 'error',
+          code: 'ACCESS_DENIED',
+          message: 'Authentication failed',
+        };
+        socket.emit('error', payload);
         next(new Error('Authentication failed'));
       }
     });
@@ -332,13 +437,27 @@ export class WebSocketServer {
             this.handleWebSocketValidationError(socket, 'chat_message', error);
             return;
           }
-          logger.error('Error handling chat message', {
-            socketId: socket.id,
-            userId: socket.userId,
-            gameId: socket.gameId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          this.emitError(socket, 'INVALID_PAYLOAD', 'Invalid chat message', 'chat_message');
+
+          const message = error instanceof Error ? error.message : String(error);
+
+          if (message === 'User not in game room') {
+            // Authorization invariant: only sockets that have successfully joined
+            // the game room (via join_game) may send chat messages for that game.
+            this.emitError(
+              socket,
+              'ACCESS_DENIED',
+              'You are not allowed to chat in this game',
+              'chat_message'
+            );
+          } else {
+            logger.error('Error handling chat message', {
+              socketId: socket.id,
+              userId: socket.userId,
+              gameId: socket.gameId,
+              error: message,
+            });
+            this.emitError(socket, 'INVALID_PAYLOAD', 'Invalid chat message', 'chat_message');
+          }
         }
       });
 
@@ -359,6 +478,15 @@ export class WebSocketServer {
             throw new Error(`No active session found for gameId=${gameId}`);
           }
 
+          // Game-level authorization: ensure that the responding socket
+          // belongs to the human player associated with response.playerNumber.
+          const gameState = session.getGameState();
+          const player = gameState.players.find((p) => p.playerNumber === response.playerNumber);
+
+          if (!player || player.id !== socket.userId) {
+            throw new Error('Current socket user is not the player for this choice');
+          }
+
           session.getInteractionHandler().handleChoiceResponse(response);
         } catch (error) {
           if (error instanceof ZodError) {
@@ -376,6 +504,13 @@ export class WebSocketServer {
               socket,
               'CHOICE_REJECTED',
               'Choice response was not valid for the current game state',
+              'player_choice_response'
+            );
+          } else if (message === 'Current socket user is not the player for this choice') {
+            this.emitError(
+              socket,
+              'CHOICE_REJECTED',
+              'You are not allowed to respond to this choice',
               'player_choice_response'
             );
           } else if (message.includes('No active session found')) {
@@ -605,6 +740,14 @@ export class WebSocketServer {
     // Verify user is in the game room
     if (!socket.rooms.has(gameId)) {
       throw new Error('User not in game room');
+    }
+
+    // Enforce a per-user, per-game chat rate limit to mitigate spam and simple
+    // abuse without impacting normal play.
+    const allowed = await checkChatRateLimit(socket, gameId);
+    if (!allowed) {
+      this.emitError(socket, 'RATE_LIMITED', 'Chat rate limit exceeded', 'chat_message');
+      return;
     }
 
     // Broadcast chat message to all players in the game

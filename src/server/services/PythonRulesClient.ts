@@ -38,7 +38,9 @@ export class PythonRulesClient {
 
     this.client = axios.create({
       baseURL: url,
-      timeout: 5000,
+      // Use a bounded per-request timeout for rules evaluations so that
+      // slow or unavailable Python backends do not block move application.
+      timeout: config.aiService.rulesTimeoutMs,
       headers: { 'Content-Type': 'application/json' },
     });
   }

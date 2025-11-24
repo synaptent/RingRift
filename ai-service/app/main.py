@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, TypedDict
 import logging
 import time
+import os
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -801,4 +802,14 @@ def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+
+    # When run directly (e.g. via `python -m app.main`), bind to 0.0.0.0 and
+    # respect AI_SERVICE_PORT if provided so that local runs and containers
+    # share the same configuration surface as docker-compose.
+    port_str = os.getenv("AI_SERVICE_PORT", "8001")
+    try:
+        port = int(port_str)
+    except ValueError:
+        port = 8001
+
+    uvicorn.run(app, host="0.0.0.0", port=port)

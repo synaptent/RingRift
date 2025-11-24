@@ -87,8 +87,8 @@ Above all, embrace the dynamic and emergent nature of the game - the richest str
       - [Key Movement Rules (19x19 Full Version)](#key-movement-rules-19x19-full-version)
     - [8.3 Marker Interaction](#83-marker-interaction)
   - [9. Capture Types: Overtaking vs Elimination (All Versions)](#9-capture-types-overtaking-vs-elimination-all-versions)
-    - [9.1 Overtaking Captures (Rings Stay in Play)](#91--overtaking-captures-rings-stay-in-play)
-    - [9.2 Elimination Captures (Rings Permanently Leave Play)](#92--elimination-captures-rings-permanently-leave-play)
+    - [9.1 Overtaking Captures (Rings Stay in Play)](#91-overtaking-captures-rings-stay-in-play)
+    - [9.2 Elimination Captures (Rings Permanently Leave Play)](#92-elimination-captures-rings-permanently-leave-play)
   - [10. Capture (Overtaking) Movement (All Versions)](#10-capture-overtaking-movement-all-versions)
     - [10.1 Basic Requirements](#101-basic-requirements)
     - [10.2 Executing an Overtaking Capture](#102-executing-an-overtaking-capture)
@@ -147,24 +147,6 @@ Above all, embrace the dynamic and emergent nature of the game - the richest str
       - [Q24: What happens if I control stacks but have no valid placement, movement, or capture options on my turn?](#q24-what-happens-if-i-control-stacks-but-have-no-valid-placement-movement-or-capture-options-on-my-turn)
   - [16. Simplified 8×8 Version and Comparison with Full Version](#16-simplified-88-version-and-comparison-with-full-version)
     - [16.1 Visual Summary of Territory Disconnection Rules](#161-visual-summary-of-territory-disconnection-rules)
-    - [16.9 Full 19×19 Version](#169-full-1919-version)
-      - [16.9.1 Major Differences from 8×8](#1691-major-differences-from-88)
-      - [16.9.2 Components \& Setup (19×19)](#1692-components--setup-1919)
-      - [16.9.3 Turn Sequence Summary (Full)](#1693-turn-sequence-summary-full)
-      - [16.9.4 Detailed Rules](#1694-detailed-rules)
-        - [16.9.4.1 Movement \& Adjacency](#16941-movement--adjacency)
-        - [16.9.4.2 Overtaking vs. Elimination](#16942-overtaking-vs-elimination)
-        - [16.9.4.3 Lines \& Collapses (19x19 / Hexagonal Focus)](#16943-lines--collapses-19x19--hexagonal-focus)
-        - [16.9.4.4 Territory Disconnection](#16944-territory-disconnection)
-        - [16.9.4.5 Victory Conditions \& Tiebreakers](#16945-victory-conditions--tiebreakers)
-      - [16.9.5 Quick Start Examples (19×19)](#1695-quick-start-examples-1919)
-      - [16.9.6 Territory Disconnection Example (19×19 Using Von Neumann/4-Direction Adjacency)](#1696-territory-disconnection-example-1919-using-von-neumann4-direction-adjacency)
-      - [16.9.7 Victory Through Territory Control](#1697-victory-through-territory-control)
-      - [16.9.8 Chain Reaction Example](#1698-chain-reaction-example)
-    - [16.10 Comparing the Three Editions](#1610-comparing-the-three-editions)
-    - [16.11 Closing Note](#1611-closing-note)
-  - [17. Conclusion](#17-conclusion)
-    - [Summary of RingRift](#summary-of-ringrift)
 
 ## 1. Introduction (All Versions)
 
@@ -231,7 +213,7 @@ RingRift is a territory control and ring elimination game where you'll build sta
 
 - Eliminate more than 50% of the total rings in play
 - Control more than 50% of the board as territory
-- Be the last player able to make legal moves
+- Win by last-player-standing: over at least one full round of turns, be the only player who ever has any legal real action (placement, non-capture movement, or overtaking capture) on your turns while all other players have no such real actions, and still be the only player with a real action when your next turn begins.
 
 #### Start With The Simpler Version
 
@@ -239,7 +221,7 @@ We recommend beginning with the **8×8 version** - it has simpler rules but pres
 
 #### Setup in 30 Seconds
 
-- Each player takes the appropriate number of rings for the chosen version (18 for 8x8, 36 for 19x19/Hexagonal).
+- Each player takes the appropriate number of rings of their own color for the chosen version (18 for 8×8, 36 for 19×19/Hexagonal); this is their entire personal ring supply for the game.
 - No rings start on the board - players place and move them during play.
 - Decide turn order and begin!
 
@@ -339,7 +321,8 @@ Before diving into the detailed rules, it's helpful to understand some core conc
 
 #### 3.2.1 Rings (19x19 Full Version)
 
-• Quantity: Each player has 36 rings (for 19x19 and Hexagonal versions; 18 for 8x8).
+• Quantity: Each player has a fixed personal supply of rings of their own color: 36 in the 19×19 and Hexagonal versions, 18 in the 8×8 version.
+• Supply cap semantics: At any time, the total number of rings of a player's color that are in play (on the board in any stack, regardless of which player currently controls those stacks, plus in that player's hand) can never exceed this `ringsPerPlayer` value. Captured rings of other colors in stacks you control do not count against your own ring supply; they still belong, by color, to their original owner for conservation and victory accounting.
 • Characteristics:
 • Begin "in hand" (off the board)
 • May be placed on the board and later form part of a stack
@@ -565,7 +548,7 @@ _In these examples, the Blue player controls both stacks (as Blue is on top). Ex
 
 ### 6.2 Placement on Empty Spaces
 
-• Can place **1–3 rings** on any empty, non-collapsed space, forming a stack. The exact maximum is constrained by both your remaining rings in hand and your remaining capacity under `ringsPerPlayer` for the chosen board type.
+• Can place **1–3 rings** on any empty, non-collapsed space, forming a stack. The exact maximum is constrained by both your remaining rings in hand and your remaining capacity in your own-color ring supply for the chosen board type: the total number of rings of your color currently on the board in any stack, plus in your hand, must not exceed `ringsPerPlayer`. Captured opponent-color rings in stacks you control do not reduce this capacity.
 • Before a placement is legal, the resulting stack must have at least one legal move or capture available according to the standard movement and capture rules (the **no-dead-placement** rule).
 • Must move the newly placed stack immediately.
 • The placed stack's movement follows standard rules for its initial height (e.g., placing 3 rings requires moving at least 3 spaces).
@@ -1227,9 +1210,23 @@ Note: With more than 50% of territory required for victory, simultaneous victory
 
 ### 13.3 Last Player Standing
 
-• **Victory Condition:** A player wins by Last Player Standing if, after completing all phases of a turn and its post‑movement processing, they are the only player who has any legal action available on their next turn (a legal ring placement, non‑capture move, or overtaking capture), while all other players have no legal placements, movements, or captures. - _Example Scenario:_ Win by being the only player able to make legal moves—for instance, if all other players lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, while you still have at least one legal placement, movement, or capture available on yours.
-• **Player Status Details:** - A player is **temporarily inactive** on their own turns when: - They control no stacks on the board, AND - They have no legal placements (either because `ringsInHand == 0` or because all placements would be illegal), OR - They have stacks but no legal moves/captures _and_ no legal placements. - In this state the player has no legal actions when their turn comes around, but this does **not** mean all of their rings have left the game. They may still have rings buried inside mixed-color stacks controlled by other players; those rings simply cannot act until exposed. - A player with rings in hand but no board presence is still active if any legal placements exist.
-• **Recovery Possibility:** A temporarily inactive player can return to full activity if they gain control of a multicolored stack through its top ring becoming their color, thereby regaining a controlled stack. This commonly happens when captures or eliminations expose one of their buried rings as the new top ring of a stack.
+• **Last-player-standing as a formal victory:** Last Player Standing is a third formal victory condition, alongside Ring Elimination and Territory victories.
+
+• **Real actions vs forced elimination:** For Last Player Standing purposes, a player has a **real action** on their own turn if they have at least one legal ring placement, non-capture movement, or overtaking capture available at the start of their action. Having only forced elimination available (Section 4.4) does **not** count as having a real action.
+
+• **Full-round condition:** A player P wins by Last Player Standing if all of the following are true:
+
+- For at least one complete round of turns (each non-eliminated player taking exactly one turn in order), P has at least one legal real action available at the start of each of their own turns in that round.
+- On every other player's turns in that same round, those players have **no** legal real action available at the start of their action (they may have only forced eliminations or no legal actions at all).
+- Immediately after that round completes (including all post-movement processing), when P's next turn begins, P is still the only player who has any legal real action.
+
+• **Temporarily inactive players:** A player is **temporarily inactive** on their own turns when:
+
+- They control no stacks on the board and either have no legal placements (because `ringsInHand == 0` or because all placements would be illegal), or
+- They do control stacks but have no legal placements _and_ no legal non-capture moves or overtaking captures, so their only possible action is forced elimination (Section 4.4), or they have no legal actions at all.
+  In this state the player has no real actions for Last Player Standing purposes, but this does **not** mean all of their rings have left the game. They may still have rings buried inside mixed-color stacks controlled by other players; those rings simply cannot act until exposed.
+
+• **Recovery and reset:** A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolored stack through its top ring becoming their color, thereby regaining a controlled stack. If any temporarily inactive player regains a real action **before** the full-round condition above has been satisfied, the Last Player Standing condition effectively resets and must be re-satisfied from that point.
 
 ### 13.4 End of Game "Stalemate" Resolution
 
@@ -1831,7 +1828,7 @@ A24: In this specific situation, you cannot simply skip your turn. You _must_ ch
  "You can move in a straight line (orthogonal or diagonal) any number of empty spaces (or to a same‑color marker space, which is then handled as described in Sections 8.2 / 16.5.1), but you must not stop closer to your start than your stack's height. If no available landing space meets that requirement, you cannot move in that direction."
  • *(Rule Unified)*: The landing rule after passing markers during non-capture moves is now consistent across all versions. You are not required to stop at the first valid space after markers.
  3. Rings & Counts
- • Each player has 18 rings (instead of 36). This yields 36 total rings for 2 players, or 54 total rings for 3 players.
+ • Each player has 18 rings of their own color (instead of 36). These are their entire personal ring supply; this yields 36 total rings for 2 players, or 54 total rings for 3 players.
  • The ring Elimination victory threshold is >50% of total rings: >18 for 2 players, >27 for 3 players.
  4. Line and Territory Formation
  • Lines of **3+** markers can be formed in both orthogonal and diagonal directions (Moore neighborhood).
@@ -1844,7 +1841,7 @@ Despite these changes, we preserve:
 ### 16.4 Components & Setup (8×8)
 
  • Board: 8×8 intersections, each "space" can be empty, occupied, or collapsed.
- • Rings: Each player (A, B, optionally C) has 18 rings.
+ • Rings: Each player (A, B, optionally C) has 18 rings of their own color; this is their entire personal ring supply.
  • Markers: Enough markers for each space. Each marker has faces for 3 colors + 3 collapsed color sides (if you like the physical version).
  • Initial Setup:
 
@@ -1895,7 +1892,7 @@ Turn Flow Summary:
 ### 16.6 Winning Conditions (8×8)
 
  1. Ring Elimination Victory: Once a player achieves more than 50% of total rings as Eliminated rings (>18 for 2 players, >27 for 3 players), they instantly win.
- 2. Last Player Standing: If the other two lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, but you can move on your turn, and they still cannot move on their subsequent turns, then you win.
+ 2. Last Player Standing: If you satisfy the Last Player Standing condition from Section 13.3 (one full round in which only you ever have any legal real action and you are still the only player with a real action when the round returns to you), then you win by Last Player Standing.
  3. Stalemate: If no moves are possible, compare collapsed spaces (then ring Elimination totals, then markers if needed) to pick a winner.
 
 ### 16.7 Quick Start Example (8×8)
@@ -1990,7 +1987,7 @@ Below are the 19x19 full rules in comparison with the simplified 8x8 version. Ke
 #### 16.9.2 Components & Setup (19×19)
 
  • Board: 19×19 = 361 intersection spaces.
- • Rings: Each player has 36 rings (regardless of player count: 2, 3, or 4 players).
+ • Rings: Each player has 36 rings of their own color (regardless of player count: 2, 3, or 4 players); this is their entire personal ring supply.
  • Markers: Enough for each space, with faces for player colors + collapsed sides.
  • Initial State: No rings on board, each player has 36 in hand.
  • Turn Order:
@@ -2008,7 +2005,7 @@ Every Turn:
  4. Chain Overtaking (forced if available).
  5. Line-of-4 Check (Moore adjacency). Collapse lines → Eliminate rings (with graduated reward for 5+).
  6. Territory Disconnection Check (Von Neumann). Collapse regions → Eliminate rings.
- 7. Check for Victory: If ring Elimination total exceeds 50% of total rings, or only you remain, you win. Otherwise, next player.
+ 7. Check for Victory: If any player satisfies Ring Elimination, Territory Control, or Last Player Standing (Sections 13.1–13.3 / 16.9.4.5), the game ends with that victory; otherwise, next player.
 
 #### 16.9.4 Detailed Rules
 
@@ -2098,9 +2095,9 @@ Elimination  Lines/Disconnection  Rings physically removed from board   Yes
 
 ##### 16.9.4.5 Victory Conditions & Tiebreakers
 
- 1. Ring Elimination Victory: Once you have more than 50% of total rings as Eliminated rings, you win immediately
- 2. Last Player Standing: If the other two lose control of all rings and stacks and have none in hand, or otherwise cannot move on their turns, but you can move on your turn, and they still cannot move on their subsequent turns, then you win.
- 3. Stalemate: If no moves are possible for any players, compare, in order:
+  1. Ring Elimination Victory: Once you have more than 50% of total rings as Eliminated rings, you win immediately
+  2. Last Player Standing: If you satisfy the Last Player Standing condition from Section 13.3 (one full round in which only you ever have any legal real action and you are still the only player with a real action when the round returns to you), then you win by Last Player Standing.
+  3. Stalemate: If no moves are possible for any players, compare, in order:
     - Most collapsed spaces (indicating territorial control) first
     - Most Eliminated rings (including rings eliminated during gameplay **and** any rings remaining in hand at the point of stalemate) if still tied
     - Most remaining markers (board presence) if still tied

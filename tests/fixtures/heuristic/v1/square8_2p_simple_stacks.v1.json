@@ -1,0 +1,127 @@
+{
+  "version": "v1",
+  "description": "Simple square8 two-stacks-vs-one-stacks heuristic comparison for player 1.",
+  "profileId": "heuristic_v1_balanced",
+  "states": [
+    {
+      "id": "two_vs_one",
+      "playerNumber": 1,
+      "gameState": {
+        "boardType": "square8",
+        "gameStatus": "active",
+        "currentPlayer": 1,
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "0,0": {
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "2,0": {
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "4,0": {
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "type": "ai",
+            "ringsInHand": 10,
+            "eliminatedRings": 0,
+            "territorySpaces": 0
+          },
+          {
+            "playerNumber": 2,
+            "type": "ai",
+            "ringsInHand": 10,
+            "eliminatedRings": 0,
+            "territorySpaces": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "one_vs_two",
+      "playerNumber": 1,
+      "gameState": {
+        "boardType": "square8",
+        "gameStatus": "active",
+        "currentPlayer": 1,
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "0,0": {
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "2,0": {
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "4,0": {
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            }
+          }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "type": "ai",
+            "ringsInHand": 10,
+            "eliminatedRings": 0,
+            "territorySpaces": 0
+          },
+          {
+            "playerNumber": 2,
+            "type": "ai",
+            "ringsInHand": 10,
+            "eliminatedRings": 0,
+            "territorySpaces": 0
+          }
+        ]
+      }
+    }
+  ],
+  "orderings": [
+    {
+      "profileId": "heuristic_v1_balanced",
+      "better": "two_vs_one",
+      "worse": "one_vs_two"
+    },
+    {
+      "profileId": "heuristic_v1_aggressive",
+      "better": "two_vs_one",
+      "worse": "one_vs_two"
+    },
+    {
+      "profileId": "heuristic_v1_territorial",
+      "better": "two_vs_one",
+      "worse": "one_vs_two"
+    },
+    {
+      "profileId": "heuristic_v1_defensive",
+      "better": "two_vs_one",
+      "worse": "one_vs_two"
+    }
+  ]
+}

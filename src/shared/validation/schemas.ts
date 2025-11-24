@@ -103,6 +103,27 @@ export const LoginSchema = z.object({
   rememberMe: z.boolean().optional(),
 });
 
+// Auth token / email verification payloads
+export const RefreshTokenSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token required'),
+});
+
+export const VerifyEmailSchema = z.object({
+  token: z.string().min(1, 'Verification token required'),
+});
+
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address'),
+});
+
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+  newPassword: z
+    .string()
+    .min(8, 'Password must be at least 8 characters long')
+    .max(128, 'Password must be at most 128 characters'),
+});
+
 // Profile update validation
 export const UpdateProfileSchema = z.object({
   username: z

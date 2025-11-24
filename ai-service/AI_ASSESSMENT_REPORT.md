@@ -1,3 +1,13 @@
+> **Status:** Historical deep-dive. This document captures an in-depth
+> assessment of the Python AI service from an earlier revision of the
+> architecture. For the **current canonical overview**, see
+> `AI_ARCHITECTURE.md`. For the **current backlog and follow-up tasks**, see
+> `AI_IMPROVEMENT_BACKLOG.md`.
+>
+> Some implementation details here (especially difficulty ladders, RNG
+> plumbing, and rules parity) have since been updated; defer to the canonical
+> documents above for ground truth.
+
 # AI Service Technical Assessment Report
 
 ## 1. Executive Summary

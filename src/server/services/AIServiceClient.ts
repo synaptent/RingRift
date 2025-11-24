@@ -17,6 +17,17 @@ import { logger } from '../utils/logger';
 import { aiMoveLatencyHistogram } from '../utils/rulesParityMetrics';
 
 /**
+ * High-level error codes surfaced by the AI service client. These are used
+ * by upstream layers (HTTP handlers, WebSocket orchestration, tests) to map
+ * dependency failures into predictable 5xx responses and fallback paths.
+ */
+export type AIServiceErrorCode =
+  | 'AI_SERVICE_TIMEOUT'
+  | 'AI_SERVICE_UNAVAILABLE'
+  | 'AI_SERVICE_ERROR'
+  | 'AI_SERVICE_OVERLOADED';
+
+/**
  * Circuit breaker to prevent hammering a failing AI service
  */
 class CircuitBreaker {
@@ -175,13 +186,47 @@ export class AIServiceClient {
   private baseURL: string;
   private circuitBreaker: CircuitBreaker;
 
+  // Node-local concurrency counters used to provide basic backpressure for
+  // AI-heavy workloads. These are intentionally static so that all instances
+  // of AIServiceClient within a single Node process share the same cap.
+  private static inFlightRequests = 0;
+  // Max concurrent AI HTTP calls per Node instance.
+  // Config-driven so operators can tune without code changes.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private static maxConcurrent: number = (config as any).aiService?.maxConcurrent ?? 16;
+
+  private static incrementConcurrency(): boolean {
+    if (AIServiceClient.inFlightRequests >= AIServiceClient.maxConcurrent) {
+      return false;
+    }
+    AIServiceClient.inFlightRequests += 1;
+    return true;
+  }
+
+  private static decrementConcurrency(): void {
+    if (AIServiceClient.inFlightRequests > 0) {
+      AIServiceClient.inFlightRequests -= 1;
+    }
+  }
+
+  /**
+   * Exposed for tests to observe the current concurrency level without
+   * coupling production code to Prometheus or other metrics sinks.
+   */
+  static getInFlightRequestsForTest(): number {
+    return AIServiceClient.inFlightRequests;
+  }
+
   constructor(baseURL?: string) {
     this.baseURL = baseURL || config.aiService.url;
     this.circuitBreaker = new CircuitBreaker();
 
     this.client = axios.create({
       baseURL: this.baseURL,
-      timeout: 30000, // 30 second timeout for AI computation
+      // Enforce a bounded per-request timeout for all AI interactions so that
+      // slow or unavailable dependencies surface promptly and upstream layers
+      // can apply fallbacks instead of hanging indefinitely.
+      timeout: config.aiService.requestTimeoutMs,
       headers: {
         'Content-Type': 'application/json',
       },
@@ -235,57 +280,125 @@ export class AIServiceClient {
     const startTime = performance.now();
     const difficultyLabel = String(difficulty ?? 'n/a');
 
-    return this.circuitBreaker.execute(async () => {
-      try {
-        // Derive seed from gameState if not explicitly provided
-        const effectiveSeed = seed ?? gameState.rngSeed;
+    // Fast-fail when the node-local concurrency cap has been reached so that
+    // AI-heavy workloads cannot starve the service or other games.
+    if (!AIServiceClient.incrementConcurrency()) {
+      const overloadedError: Error & {
+        statusCode?: number;
+        code?: AIServiceErrorCode | 'AI_SERVICE_OVERLOADED';
+        isOperational?: boolean;
+        aiErrorType?: string;
+      } = new Error('AI service overloaded: too many concurrent requests');
 
-        const request: MoveRequest = {
-          game_state: gameState,
-          player_number: playerNumber,
-          difficulty,
-          ...(aiType && { ai_type: aiType }),
-          ...(effectiveSeed !== undefined && { seed: effectiveSeed }),
-        };
+      overloadedError.statusCode = 503;
+      overloadedError.code = 'AI_SERVICE_OVERLOADED';
+      overloadedError.isOperational = true;
+      // Distinct aiErrorType so AIEngine can emit ai_fallback_total{reason="overloaded"}.
+      overloadedError.aiErrorType = 'overloaded';
 
-        logger.info('Requesting AI move', {
-          playerNumber,
-          difficulty,
-          aiType,
-          phase: gameState.currentPhase,
-        });
+      logger.warn('AI Service concurrency limit reached, rejecting request', {
+        playerNumber,
+        difficulty,
+        maxConcurrent: AIServiceClient['maxConcurrent'],
+      });
 
-        const response = await this.client.post<MoveResponse>('/ai/move', request);
-        const duration = performance.now() - startTime;
+      throw overloadedError;
+    }
 
-        // Record latency for successful Python-service-backed move selection.
-        aiMoveLatencyHistogram.labels('python', difficultyLabel).observe(duration);
+    try {
+      return await this.circuitBreaker.execute(async () => {
+        try {
+          // Derive seed from gameState if not explicitly provided
+          const effectiveSeed = seed ?? gameState.rngSeed;
 
-        logger.info('AI move received', {
-          aiType: response.data.ai_type,
-          thinkingTime: response.data.thinking_time_ms,
-          evaluation: response.data.evaluation,
-          latencyMs: Math.round(duration),
-        });
+          const request: MoveRequest = {
+            game_state: gameState,
+            player_number: playerNumber,
+            difficulty,
+            ...(aiType && { ai_type: aiType }),
+            ...(effectiveSeed !== undefined && { seed: effectiveSeed }),
+          };
 
-        return response.data;
-      } catch (error) {
-        const duration = performance.now() - startTime;
+          logger.info('Requesting AI move', {
+            playerNumber,
+            difficulty,
+            aiType,
+            phase: gameState.currentPhase,
+          });
 
-        logger.error('Failed to get AI move', {
-          error,
-          latencyMs: Math.round(duration),
-          playerNumber,
-          difficulty,
-        });
+          const response = await this.client.post<MoveResponse>('/ai/move', request);
+          const duration = performance.now() - startTime;
 
-        throw new Error(
-          `AI Service failed to generate move: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`
-        );
-      }
-    });
+          // Record latency for successful Python-service-backed move selection.
+          aiMoveLatencyHistogram.labels('python', difficultyLabel).observe(duration);
+
+          logger.info('AI move received', {
+            aiType: response.data.ai_type,
+            thinkingTime: response.data.thinking_time_ms,
+            evaluation: response.data.evaluation,
+            latencyMs: Math.round(duration),
+          });
+
+          return response.data;
+        } catch (error) {
+          const duration = performance.now() - startTime;
+
+          // Preserve the low-level error classification set by the axios
+          // interceptor so AIEngine and observability layers can distinguish
+          // between timeouts, connection failures, and other errors.
+          const aiErrorType = (error as any)?.aiErrorType as string | undefined;
+
+          logger.error('Failed to get AI move', {
+            error,
+            latencyMs: Math.round(duration),
+            playerNumber,
+            difficulty,
+            aiErrorType,
+          });
+
+          const structuredError: Error & {
+            statusCode?: number;
+            code?: AIServiceErrorCode;
+            isOperational?: boolean;
+            aiErrorType?: string;
+          } = new Error(
+            `AI Service failed to generate move: ${
+              error instanceof Error ? error.message : 'Unknown error'
+            }`
+          );
+
+          // Map transport-level/category details onto a stable, high-level code
+          // so HTTP handlers and WebSocket flows can surface a predictable 5xx.
+          if (aiErrorType === 'timeout') {
+            structuredError.statusCode = 503;
+            structuredError.code = 'AI_SERVICE_TIMEOUT';
+          } else if (
+            aiErrorType === 'connection_refused' ||
+            aiErrorType === 'service_unavailable'
+          ) {
+            structuredError.statusCode = 503;
+            structuredError.code = 'AI_SERVICE_UNAVAILABLE';
+          } else {
+            structuredError.statusCode = 502;
+            structuredError.code = 'AI_SERVICE_ERROR';
+          }
+
+          // Mark as operational so the central error handler can treat this as a
+          // handled dependency failure rather than an unexpected crash.
+          structuredError.isOperational = true;
+
+          // Preserve the fine-grained aiErrorType hint for AIEngine fallback
+          // metrics (e.g. ai_fallback_total{reason="timeout"}).
+          if (aiErrorType) {
+            structuredError.aiErrorType = aiErrorType;
+          }
+
+          throw structuredError;
+        }
+      });
+    } finally {
+      AIServiceClient.decrementConcurrency();
+    }
   }
 
   /**

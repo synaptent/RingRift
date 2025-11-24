@@ -1,13 +1,18 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
+import { reportClientError, isErrorReportingEnabled } from '../utils/errorReporting';
 import { BoardState, GameState, Move, PlayerChoice, GameResult } from '../../shared/types/game';
 import type {
   WebSocketErrorPayload,
   GameStateUpdateMessage,
   GameOverMessage,
   ChatMessageServerPayload,
+  JoinGamePayload,
   PlayerMovePayload,
+  PlayerMoveByIdPayload,
+  PlayerChoiceResponsePayload,
+  ChatMessagePayload,
 } from '../../shared/types/websocket';
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -190,6 +195,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
         socketRef.current = socket;
 
+        const reportingEnabled = isErrorReportingEnabled();
+
+        const emitJoinGame = () => {
+          const payload: JoinGamePayload = { gameId: targetGameId };
+          socket.emit('join_game', payload);
+        };
+
         socket.on('connect_error', (err: Error) => {
           console.error('Socket connect_error', err);
           const msg = err.message || 'Failed to connect to game server';
@@ -198,12 +210,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setIsConnecting(false);
           setConnectionStatus('disconnected');
           setLastHeartbeatAt(null);
+
+          if (reportingEnabled) {
+            void reportClientError(err, {
+              type: 'socket_connect_error',
+              gameId: targetGameId,
+            });
+          }
         });
 
         socket.on('connect', () => {
           setConnectionStatus('connected');
           // After connecting, join the specific game room.
-          socket.emit('join_game', { gameId: targetGameId });
+          emitJoinGame();
         });
 
         socket.on('reconnect_attempt', () => {
@@ -217,13 +236,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           setConnectionStatus('connected');
           toast.success('Reconnected!', { id: 'reconnecting' });
           // Re-join the game room and request latest state
-          socket.emit('join_game', { gameId: targetGameId });
+          emitJoinGame();
         });
 
         // Handle explicit reconnection requests from the server or client logic
         socket.on('request_reconnect', () => {
           console.log('Server requested reconnection/resync');
-          socket.emit('join_game', { gameId: targetGameId });
+          emitJoinGame();
         });
 
         socket.on('game_state', (payload: GameStateUpdateMessage) => {
@@ -276,18 +295,30 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
 
         socket.on('error', (payload: WebSocketErrorPayload | any) => {
+          let message: string;
+
           if (payload && payload.type === 'error' && payload.code) {
             console.warn('Game socket error', payload.code, payload.event, payload.message);
-            const message = payload.message || 'Game error';
+            message = payload.message || 'Game error';
             setError(message);
             toast.error(message);
           } else {
-            const message = payload?.message || 'Game error';
+            message = payload?.message || 'Game error';
             console.error('Game socket error', payload);
             setError(message);
             toast.error(message);
           }
           setIsConnecting(false);
+
+          if (reportingEnabled) {
+            void reportClientError(payload, {
+              type: 'game_socket_error',
+              code: (payload as any)?.code,
+              event: (payload as any)?.event,
+              gameId: targetGameId,
+              message,
+            });
+          }
         });
 
         socket.on('disconnect', (reason) => {
@@ -307,6 +338,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             // Note: Socket.IO's auto-reconnect will handle the actual connection retry,
             // but we update UI state here.
             setConnectionStatus('reconnecting');
+
+            if (reportingEnabled) {
+              void reportClientError(new Error(`Socket disconnected: ${reason}`), {
+                type: 'socket_disconnect',
+                gameId: targetGameId,
+                reason,
+              });
+            }
           }
         });
       } catch (err: any) {
@@ -358,12 +397,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (moveId) {
-        socket.emit('player_move_by_id', { gameId, moveId });
+        const payload: PlayerMoveByIdPayload = { gameId, moveId };
+        socket.emit('player_move_by_id', payload);
       } else {
-        const response = {
+        const response: PlayerChoiceResponsePayload = {
           choiceId: choice.id,
           playerNumber: choice.playerNumber,
-          choiceType: choice.type,
+          choiceType: choice.type as PlayerChoiceResponsePayload['choiceType'],
           selectedOption,
         };
 
@@ -394,10 +434,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         moveType: partialMove.type as PlayerMovePayload['move']['moveType'],
       };
 
-      socket.emit('player_move', {
+      const payload: PlayerMovePayload = {
         gameId,
         move: movePayload,
-      });
+      };
+
+      socket.emit('player_move', payload);
     },
     [gameId, gameState]
   );
@@ -410,10 +452,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      socket.emit('chat_message', {
+      const payload: ChatMessagePayload = {
         gameId,
         text,
-      });
+      };
+
+      socket.emit('chat_message', payload);
     },
     [gameId]
   );
