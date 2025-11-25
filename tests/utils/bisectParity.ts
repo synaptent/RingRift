@@ -5,8 +5,10 @@ import {
   sandboxAdapter,
   findFirstMismatchIndex,
   compareEnginesAtPrefix,
+  replayPrefixOnEngine,
 } from './traceReplayer';
 import { snapshotFromGameState, ComparableSnapshot } from './stateSnapshots';
+import { computeProgressSnapshot, hashGameState } from '../../src/shared/engine/core';
 
 /**
  * Shared helper for backend vs sandbox snapshot-parity bisect harnesses.
@@ -48,6 +50,14 @@ export interface BisectOutcome {
    * found. Undefined when allEqual === true.
    */
   sandboxSnapAtMismatch?: ComparableSnapshot;
+  /** S-invariant at the earliest mismatching prefix (backend). */
+  backendSAtMismatch?: number;
+  /** S-invariant at the earliest mismatching prefix (sandbox). */
+  sandboxSAtMismatch?: number;
+  /** State hash at the earliest mismatching prefix (backend). */
+  backendHashAtMismatch?: string;
+  /** State hash at the earliest mismatching prefix (sandbox). */
+  sandboxHashAtMismatch?: string;
   /** Initial GameState from which both engines are constructed. */
   initialState: GameState;
 }
@@ -67,16 +77,26 @@ export async function runBackendVsSandboxBisect(config: BisectConfig): Promise<B
 
   let backendSnapAtMismatch: ComparableSnapshot | undefined;
   let sandboxSnapAtMismatch: ComparableSnapshot | undefined;
+  let backendSAtMismatch: number | undefined;
+  let sandboxSAtMismatch: number | undefined;
+  let backendHashAtMismatch: string | undefined;
+  let sandboxHashAtMismatch: string | undefined;
 
   if (!allEqual) {
     const prefix = firstMismatchIndex;
 
+    let backendStateAtMismatch: GameState;
+    let sandboxStateAtMismatch: GameState;
+
     // For prefix 0 we simply compare the initial state; for k > 0, reuse the
-    // shared compareEnginesAtPrefix helper to derive focused snapshots.
+    // shared compareEnginesAtPrefix helper and also replay prefixes to obtain
+    // concrete GameState instances for S/hash diagnostics.
     if (prefix === 0) {
       const snap = snapshotFromGameState('initial-state', trace.initialState);
       backendSnapAtMismatch = snap;
       sandboxSnapAtMismatch = snap;
+      backendStateAtMismatch = trace.initialState;
+      sandboxStateAtMismatch = trace.initialState;
     } else {
       const { backendSnap, sandboxSnap } = await compareEnginesAtPrefix(
         backendAdapter,
@@ -87,7 +107,29 @@ export async function runBackendVsSandboxBisect(config: BisectConfig): Promise<B
       );
       backendSnapAtMismatch = backendSnap;
       sandboxSnapAtMismatch = sandboxSnap;
+
+      const backendReplay = await replayPrefixOnEngine(
+        backendAdapter,
+        trace.initialState,
+        moves,
+        prefix
+      );
+      const sandboxReplay = await replayPrefixOnEngine(
+        sandboxAdapter,
+        trace.initialState,
+        moves,
+        prefix
+      );
+      backendStateAtMismatch = backendReplay.finalState;
+      sandboxStateAtMismatch = sandboxReplay.finalState;
     }
+
+    const backendProgress = computeProgressSnapshot(backendStateAtMismatch);
+    const sandboxProgress = computeProgressSnapshot(sandboxStateAtMismatch);
+    backendSAtMismatch = backendProgress.S;
+    sandboxSAtMismatch = sandboxProgress.S;
+    backendHashAtMismatch = hashGameState(backendStateAtMismatch);
+    sandboxHashAtMismatch = hashGameState(sandboxStateAtMismatch);
   }
 
   return {
@@ -96,6 +138,10 @@ export async function runBackendVsSandboxBisect(config: BisectConfig): Promise<B
     firstMismatchIndex,
     backendSnapAtMismatch,
     sandboxSnapAtMismatch,
+    backendSAtMismatch,
+    sandboxSAtMismatch,
+    backendHashAtMismatch,
+    sandboxHashAtMismatch,
     initialState: trace.initialState,
   };
 }

@@ -20,7 +20,7 @@ import { findDisconnectedRegionsOnBoard } from '../../src/client/sandbox/sandbox
 // NOTE: Diagnostic seed-5 territory decision parity harness; currently skipped because
 // its extensive console diagnostics can exceed Jest reporter limits. Core territory
 // parity is covered by TerritoryDecisions.GameEngine_vs_Sandbox and related suites.
-describe.skip('Territory decision parity at seed 5 move 45', () => {
+describe('Territory decision parity at seed 5 move 45', () => {
   const boardType: BoardType = 'square8';
   const numPlayers = 2;
   const seed = 5;

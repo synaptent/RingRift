@@ -63,25 +63,6 @@ export async function processDisconnectedRegionsForCurrentPlayer(
   const { boardManager, interactionManager } = deps;
   const movingPlayer = gameState.currentPlayer;
 
-  // Guard: when the *moving player* is the only player with stacks on the
-  // board, there is no meaningful notion of a "disconnected" region for
-  // self-elimination purposes. This prevents early sparse positions (e.g.
-  // after the very first move) from being treated as fully disconnected
-  // regions and triggering premature territory processing.
-  //
-  // NOTE: We intentionally do **not** short-circuit when exactly one player
-  // has stacks but that player is *not* the moving player. RulesMatrix
-  // territory scenarios (Q23 negative cases) rely on the engine still
-  // consulting findDisconnectedRegions in situations where the moving player
-  // controls the region conceptually but currently has no on-board stacks.
-  const activePlayers = new Set<number>();
-  for (const stack of gameState.board.stacks.values()) {
-    activePlayers.add(stack.controllingPlayer);
-  }
-  if (activePlayers.size === 1 && activePlayers.has(movingPlayer)) {
-    return gameState;
-  }
-
   // Keep processing until no more disconnections occur
   while (true) {
     const disconnectedRegions = boardManager.findDisconnectedRegions(gameState.board, movingPlayer);
@@ -162,7 +143,7 @@ export async function processDisconnectedRegionsForCurrentPlayer(
         options: eligibleRegions.map((r, index) => {
           const representative = r.spaces[0];
           const regionKey = representative ? positionToString(representative) : `region-${index}`;
- 
+
           return {
             regionId: String(index),
             size: r.spaces.length,

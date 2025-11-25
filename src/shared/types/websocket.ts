@@ -22,6 +22,7 @@ export type WebSocketErrorCode =
   | 'RATE_LIMITED'
   | 'MOVE_REJECTED'
   | 'CHOICE_REJECTED'
+  | 'DECISION_PHASE_TIMEOUT'
   | 'INTERNAL_ERROR';
 
 export interface WebSocketErrorPayload {
@@ -105,10 +106,10 @@ export interface GameErrorMessage {
 
 /**
  * Shared shape for per-player room notifications emitted on
- * `player_joined`, `player_left`, and `player_disconnected`.
+ * `player_joined`, `player_left`, `player_disconnected`, and `player_reconnected`.
  */
 export interface GamePlayerRoomEventPayload {
-  type: 'player_joined' | 'player_left' | 'player_disconnected';
+  type: 'player_joined' | 'player_left' | 'player_disconnected' | 'player_reconnected';
   data: {
     gameId: string;
     player: {
@@ -130,6 +131,48 @@ export type PlayerLeftPayload = GamePlayerRoomEventPayload & {
 export type PlayerDisconnectedPayload = GamePlayerRoomEventPayload & {
   type: 'player_disconnected';
 };
+
+export type PlayerReconnectedPayload = GamePlayerRoomEventPayload & {
+  type: 'player_reconnected';
+};
+
+/**
+ * Payload for decision phase timeout warning events.
+ *
+ * Emitted to the player when they are approaching a decision phase timeout
+ * (e.g., 5 seconds before auto-resolution).
+ */
+export interface DecisionPhaseTimeoutWarningPayload {
+  type: 'decision_phase_timeout_warning';
+  data: {
+    gameId: string;
+    playerNumber: number;
+    phase: 'line_processing' | 'territory_processing' | 'chain_capture';
+    remainingMs: number;
+    choiceId?: string;
+  };
+  timestamp: string;
+}
+
+/**
+ * Payload for decision phase timeout events.
+ *
+ * Emitted when a decision phase times out and is auto-resolved with a default
+ * choice. Includes the chosen move so clients can update their state.
+ */
+export interface DecisionPhaseTimedOutPayload {
+  type: 'decision_phase_timed_out';
+  data: {
+    gameId: string;
+    playerNumber: number;
+    phase: 'line_processing' | 'territory_processing' | 'chain_capture';
+    /** The move ID that was auto-selected due to timeout */
+    autoSelectedMoveId: string;
+    /** Human-readable reason for the auto-selection */
+    reason: string;
+  };
+  timestamp: string;
+}
 
 /**
  * Lobby broadcast payloads emitted via WebSocketServer.broadcastLobbyEvent
@@ -179,6 +222,10 @@ export interface ServerToClientEvents {
   // Choice system
   player_choice_required: (choice: PlayerChoice) => void;
   player_choice_canceled: (choiceId: string) => void;
+
+  // Decision phase timeout events
+  decision_phase_timeout_warning: (payload: DecisionPhaseTimeoutWarningPayload) => void;
+  decision_phase_timed_out: (payload: DecisionPhaseTimedOutPayload) => void;
 
   // Structured transport-level errors
   error: (payload: WebSocketErrorPayload) => void;

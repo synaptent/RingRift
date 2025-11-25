@@ -121,7 +121,7 @@ describe('sandboxTerritoryEngine.rules – Q23 self-elimination prerequisite (sq
     const boardElimBefore = gameStateBefore.board.eliminatedRings[movingPlayer] ?? 0;
     const collapsedBefore = gameStateBefore.board.collapsedSpaces.size;
 
-    const stateAfter = await processDisconnectedRegionsForCurrentPlayerEngine(
+    const { state: stateAfter } = await processDisconnectedRegionsForCurrentPlayerEngine(
       gameStateBefore,
       interactionHandler,
       canProcessRegion

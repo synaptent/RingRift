@@ -13,12 +13,7 @@ import {
   SECRET_MIN_LENGTHS,
   validateSecretsOrThrow,
 } from './utils/secretsValidation';
-import {
-  NodeEnvSchema,
-  AppTopologySchema,
-  parseEnv,
-  getEffectiveNodeEnv,
-} from './config/env';
+import { NodeEnvSchema, AppTopologySchema, parseEnv, getEffectiveNodeEnv } from './config/env';
 
 // Load .env into process.env before we read anything from it.
 dotenv.config();
@@ -89,8 +84,7 @@ if (isProduction) {
   const missingOrEmpty =
     !jwtSecret || !jwtSecret.trim() || !jwtRefreshSecret || !jwtRefreshSecret.trim();
 
-  const usingPlaceholder =
-    isPlaceholderSecret(jwtSecret) || isPlaceholderSecret(jwtRefreshSecret);
+  const usingPlaceholder = isPlaceholderSecret(jwtSecret) || isPlaceholderSecret(jwtRefreshSecret);
 
   // Check minimum length requirement for production (32+ characters)
   const minLength = SECRET_MIN_LENGTHS.JWT_SECRET || 32;
@@ -206,6 +200,11 @@ const ConfigSchema = z.object({
   rules: z.object({
     mode: z.union([z.literal('ts'), z.literal('python'), z.literal('shadow')]),
   }),
+  decisionPhaseTimeouts: z.object({
+    defaultTimeoutMs: z.number().int().positive(),
+    warningBeforeTimeoutMs: z.number().int().positive(),
+    extensionMs: z.number().int().positive(),
+  }),
 });
 
 const preliminaryConfig = {
@@ -256,6 +255,11 @@ const preliminaryConfig = {
   rules: {
     mode: getRulesMode(),
   },
+  decisionPhaseTimeouts: {
+    defaultTimeoutMs: 30_000, // 30 seconds for decision phases
+    warningBeforeTimeoutMs: 5_000, // Warning 5 seconds before timeout
+    extensionMs: 15_000, // Optional extension time
+  },
 };
 
 export type AppConfig = z.infer<typeof ConfigSchema>;
@@ -274,4 +278,8 @@ if (!isJestRuntime) {
 export const config: AppConfig = Object.freeze(ConfigSchema.parse(preliminaryConfig));
 
 // Re-export validation utilities for use in tests and other modules.
-export { validateSecretsOrThrow, validateAllSecrets, isPlaceholderSecret } from './utils/secretsValidation';
+export {
+  validateSecretsOrThrow,
+  validateAllSecrets,
+  isPlaceholderSecret,
+} from './utils/secretsValidation';

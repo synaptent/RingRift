@@ -89,13 +89,22 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
   }
 
   test('binary search finds earliest backend vs sandbox snapshot divergence for seed=5', async () => {
-    const { moves, allEqual, firstMismatchIndex, backendSnapAtMismatch, sandboxSnapAtMismatch } =
-      await runBackendVsSandboxBisect({
-        boardType,
-        numPlayers,
-        seed,
-        maxSteps: MAX_STEPS,
-      });
+    const {
+      moves,
+      allEqual,
+      firstMismatchIndex,
+      backendSnapAtMismatch,
+      sandboxSnapAtMismatch,
+      backendSAtMismatch,
+      sandboxSAtMismatch,
+      backendHashAtMismatch,
+      sandboxHashAtMismatch,
+    } = await runBackendVsSandboxBisect({
+      boardType,
+      numPlayers,
+      seed,
+      maxSteps: MAX_STEPS,
+    });
 
     expect(moves.length).toBeGreaterThan(0);
 
@@ -119,6 +128,10 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
         totalMoves: moves.length,
         firstMismatchIndex,
         allEqual,
+        backendSAtMismatch,
+        sandboxSAtMismatch,
+        backendHashAtMismatch,
+        sandboxHashAtMismatch,
         diff,
         markerSummary,
       });
@@ -131,6 +144,10 @@ describe('Backend vs Sandbox snapshot parity bisect (square8 / 2p / seed=5)', ()
       totalMoves: moves.length,
       firstMismatchIndex,
       allEqual,
+      backendSAtMismatch,
+      sandboxSAtMismatch,
+      backendHashAtMismatch,
+      sandboxHashAtMismatch,
     });
 
     // Expectations (zero tolerance enforced):

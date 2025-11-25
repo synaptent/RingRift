@@ -10,9 +10,7 @@ import {
   PlayerChoiceResponseFor,
   CaptureDirectionChoice,
   positionToString,
-  LineInfo,
 } from '../../src/shared/types/game';
-import * as sandboxLines from '../../src/client/sandbox/sandboxLines';
 import { addMarker, addStack, pos } from '../utils/fixtures';
 
 /**
@@ -261,7 +259,7 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     expect(finalState.totalRingsEliminated).toBe(initialTotalEliminated + expectedEliminatedForP1);
   });
 
-  test.skip('line + territory consequences combine in a single post-move cycle', async () => {
+  test('line + territory consequences combine in a single post-move cycle', async () => {
     const engine = createEngine();
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;
@@ -270,48 +268,41 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     state.currentPlayer = 1;
 
     // --- 1. Set up a canonical disconnected region for player 2 (B) ---
+    // IMPORTANT: For square19 boards, lineLength=4, so we must use a 3x3 border (max 3 markers/row)
+    // to avoid accidentally triggering line processing before territory processing!
     const interiorCoords: Position[] = [];
-    for (let x = 5; x <= 7; x++) {
-      for (let y = 5; y <= 7; y++) {
-        const p = pos(x, y);
-        interiorCoords.push(p);
-        addStack(board, p, 2, 1); // B stacks (player 2)
-      }
-    }
+    // Single interior space at (5,5)
+    const p = pos(5, 5);
+    interiorCoords.push(p);
+    addStack(board, p, 2, 1); // B stack (player 2)
 
+    // 3x3 border: max 3 markers in a row (won't form a line on square19)
     const borderCoords: Position[] = [];
-    for (let x = 4; x <= 8; x++) {
+    // Top row: (4,4), (5,4), (6,4) = 3 markers
+    for (let x = 4; x <= 6; x++) {
       borderCoords.push(pos(x, 4));
-      borderCoords.push(pos(x, 8));
     }
-    for (let y = 5; y <= 7; y++) {
-      borderCoords.push(pos(4, y));
-      borderCoords.push(pos(8, y));
+    // Bottom row: (4,6), (5,6), (6,6) = 3 markers
+    for (let x = 4; x <= 6; x++) {
+      borderCoords.push(pos(x, 6));
     }
+    // Left column: (4,5) = 1 marker
+    borderCoords.push(pos(4, 5));
+    // Right column: (6,5) = 1 marker
+    borderCoords.push(pos(6, 5));
+    // Total: 8 border markers
     borderCoords.forEach((p) => addMarker(board, p, 1)); // A markers (player 1)
 
     // Player 3 (C) active elsewhere but not inside the region.
     addStack(board, pos(0, 0), 3, 1);
 
-    // --- 2. Set up a horizontal line of 5 A markers away from the region ---
+    // --- 2. Set up a horizontal line of exactly 4 A markers (matches lineLength for square19) ---
     const lineCoords: Position[] = [];
-    for (let x = 0; x < 5; x++) {
+    for (let x = 0; x < 4; x++) {
       const p = pos(x, 10);
       lineCoords.push(p);
       addMarker(board, p, 1);
     }
-
-    const lineInfo: LineInfo = {
-      player: 1,
-      positions: lineCoords,
-      length: lineCoords.length,
-      direction: { x: 1, y: 0 },
-    };
-
-    const findAllLinesSpy = jest
-      .spyOn(sandboxLines, 'findAllLinesOnBoard')
-      .mockImplementationOnce(() => [lineInfo])
-      .mockImplementation(() => []);
 
     // --- 3. Provide P1 stacks: one for line elimination, one for territory self-elim.
     const lineStackPos = pos(1, 1);
@@ -326,10 +317,8 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     expect(state.totalRingsEliminated).toBe(0);
 
     // --- 4. Run the same post-move pipeline used by advanceAfterMovement.
-    engineAny.processLinesForCurrentPlayer();
+    await engineAny.processLinesForCurrentPlayer();
     await engineAny.processDisconnectedRegionsForCurrentPlayer();
-
-    expect(findAllLinesSpy).toHaveBeenCalled();
 
     const finalState = engine.getGameState();
     const finalBoard = finalState.board;
@@ -374,11 +363,11 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     expect(stacksInRegion.length).toBe(0);
 
     // 6. Eliminated ring counts should combine line + territory contributions:
-    //    - 9 internal B stacks (one ring each) collapsed to P1 territory
-    //    - 1 ring from a P1 stack eliminated for the line
-    //    - 1 ring from a P1 stack eliminated for territory self-elimination
-    //    Total: 11 rings attributed to player 1.
-    const expectedEliminatedForP1 = 11;
+    //    - 1 internal B stack (one ring) eliminated when P1 processes territory
+    //    - 1 ring from a P1 stack self-eliminated for the line
+    //    - 1 ring from a P1 stack self-eliminated for territory processing
+    //    Total: 3 rings attributed to player 1.
+    const expectedEliminatedForP1 = 3;
     const finalP1Eliminated = player1.eliminatedRings;
     expect(finalP1Eliminated).toBe(expectedEliminatedForP1);
     expect(finalState.board.eliminatedRings[1]).toBe(expectedEliminatedForP1);

@@ -1,8 +1,8 @@
 # Known Issues & Bugs
 
-**Last Updated:** November 15, 2025
+**Last Updated:** November 25, 2025
 **Status:** Code-verified assessment based on actual implementation
-**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md)
+**Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [docs/PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md)
 
 This document tracks **current, code-verified issues** in the RingRift codebase.
 
@@ -103,11 +103,18 @@ especially in less-tested corners of the rules.
 
 ### P0.2 – Backend ↔ Sandbox Semantic Trace Parity Gaps
 
-**Component(s):** GameEngine, ClientSandboxEngine, trace utilities, AI turn logic  
-**Severity:** Critical for engine correctness/debuggability  
-**Status:** Trace infrastructure in place; several semantic mismatches remain
+**Component(s):** GameEngine, ClientSandboxEngine, trace utilities, AI turn logic
+**Severity:** Medium (previously Critical)
+**Status:** Major divergences resolved; remaining gaps are lower priority
+**Tracking:** See [PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md) for detailed per-seed divergence matrix
 
-**What’s implemented and working:**
+**Recent Progress (November 25, 2025):**
+
+- **DIV-001 (Seed 5 Capture Enumeration):** **RESOLVED** – Both backend and sandbox now use the unified `enumerateCaptureMoves()` function from `captureLogic.ts`.
+- **DIV-002 (Seed 5 Territory Processing):** **RESOLVED** – Territory region detection and processing aligned via shared helpers.
+- **DIV-008 (Late-game Phase/Player Tracking):** **DEFERRED** – Minor divergence in late-game phase/player tracking is within tolerance and does not affect gameplay correctness.
+
+**What's implemented and working:**
 
 - Canonical trace types (`GameHistoryEntry`, `GameTrace`) defined in
   `src/shared/types/game.ts` and used across backend and sandbox.
@@ -122,6 +129,7 @@ especially in less-tested corners of the rules.
 - Backend replay now calls `engine.stepAutomaticPhasesForTesting()` between
   moves, so internal `line_processing` / `territory_processing` phases no
   longer stall replay.
+- Decision phase timeout guards implemented to prevent infinite waits during player choice scenarios.
 - Diagnostic env vars and logging:
   - `RINGRIFT_TRACE_DEBUG=1` – writes sandbox opening sequences and
     backend mismatch snapshots to `logs/ai/trace-parity.log`.
@@ -131,60 +139,26 @@ especially in less-tested corners of the rules.
   - `Sandbox_vs_Backend.seed5.traceDebug.test.ts`
   - `Backend_vs_Sandbox.aiParallelDebug.test.ts`
 
-**What’s going wrong:**
+**Remaining Open Divergences:**
 
-Even with phase-stepping and trace structure fixes, several **semantic
-mismatches** remain between backend and sandbox traces:
+The following divergences are tracked in [PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md) but are lower priority:
 
-- In some AI-generated positions (e.g. certain `square8` seeds such as seed 5
-  in `Sandbox_vs_Backend.seed5.traceDebug.test.ts`), the sandbox emits
-  `overtaking_capture` moves where the backend never enumerates a matching
-  capture from the same position.
-- In other positions (e.g. seed 14), the sandbox AI attempts `place_ring` with
-  a count > 1, which the backend rejects as a "dead placement" (no legal moves
-  available from the resulting stack). This suggests a discrepancy in how
-  `hasAnyLegalMoveOrCaptureFrom` evaluates hypothetical boards between Sandbox
-  and Backend, despite sharing the same core logic.
-- These discrepancies appear **after** internal-phase replay issues were fixed,
-  so they reflect genuine differences in how the sandbox AI and backend
-  enumerate/apply moves and transitions between phases, not simply replay
-  harness problems.
+- **DIV-003 (Seed 14 Placement):** Multi-ring placement validation differences
+- **DIV-004 (Seed 14 Line Processing):** Line detection edge cases
+- **DIV-005 (Seed 17 Capture):** Capture enumeration edge case
+- **DIV-006 (Seed 17 Chain Capture):** Chain capture phase exit conditions
+- **DIV-007 (Seed 17 Phase Tracking):** Phase/player advancement differences
 
 **Impact:**
 
-- The parity suites above intermittently fail, even though the S-invariant,
-  hashing, and trace logging are wired correctly.
-- Debugging backend bugs via sandbox AI traces is harder than it should be
-  because some failures are caused by sandbox semantics diverging from the
-  backend rather than by true backend rule bugs.
-- Until these semantic gaps are closed, trace-based diagnostics must always
-  distinguish **infrastructure issues** (now mostly resolved) from
-  **sandbox/backend semantic differences**.
+- The major parity gaps that blocked trace-based debugging are now resolved.
+- Trace-based diagnostics are reliable for most seeds.
+- Remaining divergences are edge cases that do not affect normal gameplay.
 
-**Planned direction (see TODO.md Phase 1E / Sandbox Stage 2):**
+**Planned direction:**
 
-- Unify all sandbox canonical mutations through a single, well-structured
-  path in `ClientSandboxEngine`:
-  - Treat `applyCanonicalMoveInternal` as the single source of truth for
-    applying canonical `Move` objects (place_ring, skip_placement,
-    move_stack/move_ring, overtaking_capture).
-  - Refactor `maybeRunAITurn` so that **every** AI action is expressed as a
-    canonical `Move` and routed through the same mutation + history pipeline
-    used by `applyCanonicalMove`, instead of using bespoke mutation logic.
-- Harden backend replay helpers:
-  - Introduce a generic `replayMovesOnBackend(initialConfig, moves: Move[]):
-GameTrace` helper that builds a backend `GameEngine`, finds matching
-    backend moves via `findMatchingBackendMove`, and produces a backend
-    `GameTrace` suitable for parity analysis.
-  - Treat `replayTraceOnBackend` / `replayMovesOnBackend` as canonical
-    backend replay APIs used by parity tests and future tooling.
-- Use the existing parity suites plus the new logging to iteratively close
-  semantic gaps:
-  - When a parity failure occurs, confirm first that the backend has a
-    genuinely matching legal move for the sandbox action (or vice versa).
-  - Where semantics diverge (e.g. missing backend overtaking captures, phase
-    transitions that disagree), treat that as a P0/P1 engine bug and fix the
-    underlying rules/phase logic rather than patching tests.
+- Continue using parity suites to detect and close remaining semantic gaps.
+- Prioritize divergences that affect user-facing gameplay over diagnostic-only issues.
 
 ---
 

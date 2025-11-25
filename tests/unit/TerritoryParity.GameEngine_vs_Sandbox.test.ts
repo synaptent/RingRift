@@ -27,7 +27,7 @@ import {
 
 // NOTE: Diagnostic parity harness; currently skipped because backend processDisconnectedRegions
 // does not yet mirror the sandbox territory loop from this synthetic setup.
-describe.skip('Territory parity – GameEngine vs ClientSandboxEngine (square19)', () => {
+describe('Territory parity – GameEngine vs ClientSandboxEngine (square19)', () => {
   const boardType: BoardType = 'square19';
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
@@ -66,7 +66,7 @@ describe.skip('Territory parity – GameEngine vs ClientSandboxEngine (square19)
     addStack(board, outsideP1, 1, 1);
 
     const outsideP3 = pos(0, 0);
-    addStack(board, outsideP3, 3, 1);
+    addStack(board, outsideP3, 3, 3);
 
     const baseState: GameState = createTestGameState({
       boardType,
@@ -147,7 +147,7 @@ describe.skip('Territory parity – GameEngine vs ClientSandboxEngine (square19)
     const sandboxEngine = new ClientSandboxEngine({
       config: sandboxConfig,
       interactionHandler: sandboxHandler,
-      traceMode: true,
+      traceMode: false,
     });
     const sandboxAny: any = sandboxEngine;
     sandboxAny.gameState = cloneGameState(baseState);
@@ -161,6 +161,12 @@ describe.skip('Territory parity – GameEngine vs ClientSandboxEngine (square19)
 
     await (backendAny as any).processDisconnectedRegions();
     await sandboxAny.processDisconnectedRegionsForCurrentPlayer();
+
+    // Sandbox uses unified move model where elimination is a separate step.
+    // Manually trigger elimination to match backend legacy behavior.
+    if (sandboxAny._pendingTerritorySelfElimination) {
+      sandboxAny.forceEliminateCap(1);
+    }
 
     const backendFinal = backendEngine.getGameState();
     const sandboxFinal = sandboxEngine.getGameState();

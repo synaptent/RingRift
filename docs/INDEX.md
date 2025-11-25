@@ -16,16 +16,14 @@
 - **Known Issues:** [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) - Current bugs and gaps.
 
 ### Supplementary Rules Documentation
+
 - [docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md](./supplementary/RULES_CONSISTENCY_EDGE_CASES.md) - Edge case analysis and handling.
-- [docs/supplementary/RULES_TERMINATION_ANALYSIS.md](./supplementary/RULES_TERMINATION_ANALYSIS.md) - Analysis of game termination conditions.
 - [docs/supplementary/RULES_RULESET_CLARIFICATIONS.md](./supplementary/RULES_RULESET_CLARIFICATIONS.md) - Clarifications for ambiguous rules.
-- [docs/supplementary/RULES_DOCS_UX_AUDIT.md](./supplementary/RULES_DOCS_UX_AUDIT.md) - Audit of rules documentation and UX.
 - [docs/supplementary/AI_IMPROVEMENT_BACKLOG.md](./supplementary/AI_IMPROVEMENT_BACKLOG.md) - Backlog for AI improvements.
 
 ### Drafts
-- [docs/drafts/RULES_ENGINE_R172_RINGCAP_IMPLEMENTATION_PLAN.md](./drafts/RULES_ENGINE_R172_RINGCAP_IMPLEMENTATION_PLAN.md) - Plan for implementing R172 and ring caps.
+
 - [docs/drafts/PHASE1_REMEDIATION_PLAN.md](./drafts/PHASE1_REMEDIATION_PLAN.md) - Remediation plan for Phase 1.
-- [docs/drafts/REMAINING_IMPLEMENTATION_TASKS.md](./drafts/REMAINING_IMPLEMENTATION_TASKS.md) - Remaining implementation tasks.
 
 ## 🏗️ Project Structure
 

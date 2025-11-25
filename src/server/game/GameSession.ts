@@ -11,17 +11,24 @@ import { PythonRulesClient } from '../services/PythonRulesClient';
 import { getDatabaseClient } from '../database/connection';
 import { logger } from '../utils/logger';
 import { gameMoveLatencyHistogram } from '../utils/rulesParityMetrics';
+import { config } from '../config';
 import {
   Move,
   Player,
   GameState,
+  GamePhase,
   Position,
   AIProfile,
   BOARD_CONFIGS,
   TimeControl,
   GameResult,
 } from '../../shared/types/game';
-import type { ClientToServerEvents, ServerToClientEvents } from '../../shared/types/websocket';
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+  DecisionPhaseTimeoutWarningPayload,
+  DecisionPhaseTimedOutPayload,
+} from '../../shared/types/websocket';
 import { hashGameState } from '../../shared/engine/core';
 import { SeededRNG, generateGameSeed } from '../../shared/utils/rng';
 
@@ -36,6 +43,12 @@ export class GameSession {
   private userSockets: Map<string, string>; // userId -> socketId
   private rng: SeededRNG; // Per-game RNG for deterministic AI behavior
   private turnTimerId: NodeJS.Timeout | null = null; // Timer for turn countdown
+
+  // Decision phase timeout tracking
+  private decisionPhaseTimeoutId: NodeJS.Timeout | null = null;
+  private decisionPhaseWarningId: NodeJS.Timeout | null = null;
+  private decisionPhaseStartTime: number | null = null;
+  private decisionPhasePlayerNumber: number | null = null;
 
   /**
    * Per-game view of AI/rules degraded-mode diagnostics. These counters are
@@ -408,6 +421,9 @@ export class GameSession {
       throw new Error(result.error || 'Invalid move');
     }
 
+    // Clear decision phase timers since a move was made
+    this.clearDecisionPhaseTimers();
+
     await this.persistMove(socket.userId, moveData, result);
     await this.broadcastUpdate(result);
     // Refresh degraded-mode diagnostics after a successful human move so
@@ -454,6 +470,9 @@ export class GameSession {
 
     const updatedState = this.gameEngine.getGameState();
     const lastMove = updatedState.moveHistory[updatedState.moveHistory.length - 1];
+
+    // Clear decision phase timers since a move was made
+    this.clearDecisionPhaseTimers();
 
     if (lastMove) {
       await this.persistMove(
@@ -517,8 +536,9 @@ export class GameSession {
     const updatedState = this.gameEngine.getGameState();
 
     if (result.gameResult) {
-      // Stop timer when game ends
+      // Stop timers when game ends
       this.stopTurnTimer();
+      this.clearDecisionPhaseTimers();
 
       this.io.to(this.gameId).emit('game_over', {
         type: 'game_over',
@@ -532,6 +552,9 @@ export class GameSession {
     } else {
       // Start timer for the new current player
       this.startTurnTimer();
+
+      // Check if we're in a decision phase for a human player
+      this.maybeStartDecisionPhaseTimeout(updatedState);
 
       // Broadcast state to all connected clients in the room
       // For active players, we include their valid moves
@@ -1029,5 +1052,314 @@ export class GameSession {
         });
       }
     }
+  }
+
+  /**
+   * Check if the current phase is a decision phase for a human player
+   * and start timeout tracking if so.
+   */
+  private maybeStartDecisionPhaseTimeout(gameState: GameState): void {
+    // Clear any existing decision phase timers
+    this.clearDecisionPhaseTimers();
+
+    // Only track decision phases
+    const phase = gameState.currentPhase;
+    if (
+      phase !== 'line_processing' &&
+      phase !== 'territory_processing' &&
+      phase !== 'chain_capture'
+    ) {
+      return;
+    }
+
+    // Only track for human players
+    const currentPlayer = gameState.players.find((p) => p.playerNumber === gameState.currentPlayer);
+    if (!currentPlayer || currentPlayer.type === 'ai') {
+      return;
+    }
+
+    // Check if there are valid decision moves available
+    const validMoves = this.gameEngine.getValidMoves(gameState.currentPlayer);
+    if (validMoves.length === 0) {
+      // No decisions to make, let the game engine handle it
+      return;
+    }
+
+    const timeoutMs = config.decisionPhaseTimeouts.defaultTimeoutMs;
+    const warningMs = timeoutMs - config.decisionPhaseTimeouts.warningBeforeTimeoutMs;
+
+    this.decisionPhaseStartTime = Date.now();
+    this.decisionPhasePlayerNumber = gameState.currentPlayer;
+
+    logger.info('Starting decision phase timeout', {
+      gameId: this.gameId,
+      playerNumber: gameState.currentPlayer,
+      phase,
+      timeoutMs,
+      warningMs,
+    });
+
+    // Set up warning timer
+    this.decisionPhaseWarningId = setTimeout(() => {
+      this.emitDecisionPhaseWarning(
+        gameState.currentPlayer,
+        phase as 'line_processing' | 'territory_processing' | 'chain_capture'
+      );
+    }, warningMs);
+
+    // Set up timeout timer
+    this.decisionPhaseTimeoutId = setTimeout(() => {
+      this.handleDecisionPhaseTimeout(
+        gameState.currentPlayer,
+        phase as 'line_processing' | 'territory_processing' | 'chain_capture'
+      );
+    }, timeoutMs);
+  }
+
+  /**
+   * Clear all decision phase timers.
+   */
+  private clearDecisionPhaseTimers(): void {
+    if (this.decisionPhaseTimeoutId) {
+      clearTimeout(this.decisionPhaseTimeoutId);
+      this.decisionPhaseTimeoutId = null;
+    }
+    if (this.decisionPhaseWarningId) {
+      clearTimeout(this.decisionPhaseWarningId);
+      this.decisionPhaseWarningId = null;
+    }
+    this.decisionPhaseStartTime = null;
+    this.decisionPhasePlayerNumber = null;
+  }
+
+  /**
+   * Emit a warning that a decision phase timeout is approaching.
+   */
+  private emitDecisionPhaseWarning(
+    playerNumber: number,
+    phase: 'line_processing' | 'territory_processing' | 'chain_capture'
+  ): void {
+    const gameState = this.gameEngine.getGameState();
+
+    // Verify we're still in the same phase with the same player
+    if (
+      gameState.currentPlayer !== playerNumber ||
+      gameState.currentPhase !== phase ||
+      gameState.gameStatus !== 'active'
+    ) {
+      return;
+    }
+
+    const remainingMs = config.decisionPhaseTimeouts.warningBeforeTimeoutMs;
+
+    logger.info('Emitting decision phase timeout warning', {
+      gameId: this.gameId,
+      playerNumber,
+      phase,
+      remainingMs,
+    });
+
+    const payload: DecisionPhaseTimeoutWarningPayload = {
+      type: 'decision_phase_timeout_warning',
+      data: {
+        gameId: this.gameId,
+        playerNumber,
+        phase,
+        remainingMs,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    this.io.to(this.gameId).emit('decision_phase_timeout_warning', payload);
+  }
+
+  /**
+   * Handle a decision phase timeout by auto-selecting a default move.
+   */
+  private async handleDecisionPhaseTimeout(
+    playerNumber: number,
+    phase: 'line_processing' | 'territory_processing' | 'chain_capture'
+  ): Promise<void> {
+    // Clear timers
+    this.clearDecisionPhaseTimers();
+
+    const gameState = this.gameEngine.getGameState();
+
+    // Verify we're still in the same phase with the same player
+    if (
+      gameState.currentPlayer !== playerNumber ||
+      gameState.currentPhase !== phase ||
+      gameState.gameStatus !== 'active'
+    ) {
+      logger.info('Decision phase timeout skipped - conditions changed', {
+        gameId: this.gameId,
+        expectedPlayer: playerNumber,
+        expectedPhase: phase,
+        actualPlayer: gameState.currentPlayer,
+        actualPhase: gameState.currentPhase,
+        actualStatus: gameState.gameStatus,
+      });
+      return;
+    }
+
+    // Get valid moves and auto-select the first one
+    const validMoves = this.gameEngine.getValidMoves(playerNumber);
+    if (validMoves.length === 0) {
+      logger.warn('Decision phase timeout but no valid moves available', {
+        gameId: this.gameId,
+        playerNumber,
+        phase,
+      });
+      return;
+    }
+
+    // Select the first (default) move
+    const autoSelectedMove = validMoves[0];
+
+    logger.warn('Decision phase timeout - auto-selecting default move', {
+      gameId: this.gameId,
+      playerNumber,
+      phase,
+      moveId: autoSelectedMove.id,
+      moveType: autoSelectedMove.type,
+    });
+
+    // Emit timeout event
+    const timeoutPayload: DecisionPhaseTimedOutPayload = {
+      type: 'decision_phase_timed_out',
+      data: {
+        gameId: this.gameId,
+        playerNumber,
+        phase,
+        autoSelectedMoveId: autoSelectedMove.id,
+        reason: `Decision timeout: auto-selected ${autoSelectedMove.type}`,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    this.io.to(this.gameId).emit('decision_phase_timed_out', timeoutPayload);
+
+    // Apply the auto-selected move
+    try {
+      const { id, timestamp, moveNumber, ...rest } = autoSelectedMove as any;
+      const engineMove = rest as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
+
+      const result = await this.rulesFacade.applyMove(engineMove);
+
+      if (result.success) {
+        // Persist the move
+        const prisma = getDatabaseClient();
+        if (prisma) {
+          const player = gameState.players.find((p) => p.playerNumber === playerNumber);
+          if (player) {
+            await prisma.move.create({
+              data: {
+                gameId: this.gameId,
+                playerId: player.id,
+                moveNumber: this.gameEngine.getGameState().moveHistory.length,
+                position: JSON.stringify({ from: autoSelectedMove.from, to: autoSelectedMove.to }),
+                moveType: autoSelectedMove.type as any,
+                timestamp: new Date(),
+              },
+            });
+          }
+        }
+
+        await this.broadcastUpdate(result);
+        await this.maybePerformAITurn();
+      } else {
+        logger.error('Failed to apply auto-selected move after timeout', {
+          gameId: this.gameId,
+          playerNumber,
+          phase,
+          moveId: autoSelectedMove.id,
+          error: result.error,
+        });
+      }
+    } catch (err) {
+      logger.error('Exception while applying auto-selected move after timeout', {
+        gameId: this.gameId,
+        playerNumber,
+        phase,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Reset the decision phase timeout (e.g., after player reconnection).
+   * The timer is extended by the configured extension amount.
+   */
+  public resetDecisionPhaseTimeout(): void {
+    // Guard: do nothing if game engine is not initialized
+    if (!this.gameEngine) {
+      return;
+    }
+
+    const gameState = this.gameEngine.getGameState();
+    const phase = gameState.currentPhase;
+
+    // Only reset for decision phases
+    if (
+      phase !== 'line_processing' &&
+      phase !== 'territory_processing' &&
+      phase !== 'chain_capture'
+    ) {
+      return;
+    }
+
+    const currentPlayer = gameState.players.find((p) => p.playerNumber === gameState.currentPlayer);
+    if (!currentPlayer || currentPlayer.type === 'ai') {
+      return;
+    }
+
+    // Clear existing timers and restart with extension time
+    this.clearDecisionPhaseTimers();
+
+    const extensionMs = config.decisionPhaseTimeouts.extensionMs;
+    const warningMs = extensionMs - config.decisionPhaseTimeouts.warningBeforeTimeoutMs;
+
+    this.decisionPhaseStartTime = Date.now();
+    this.decisionPhasePlayerNumber = gameState.currentPlayer;
+
+    logger.info('Reset decision phase timeout (reconnection)', {
+      gameId: this.gameId,
+      playerNumber: gameState.currentPlayer,
+      phase,
+      extensionMs,
+    });
+
+    // Set up warning timer
+    if (warningMs > 0) {
+      this.decisionPhaseWarningId = setTimeout(() => {
+        this.emitDecisionPhaseWarning(
+          gameState.currentPlayer,
+          phase as 'line_processing' | 'territory_processing' | 'chain_capture'
+        );
+      }, warningMs);
+    }
+
+    // Set up timeout timer
+    this.decisionPhaseTimeoutId = setTimeout(() => {
+      this.handleDecisionPhaseTimeout(
+        gameState.currentPlayer,
+        phase as 'line_processing' | 'territory_processing' | 'chain_capture'
+      );
+    }, extensionMs);
+  }
+
+  /**
+   * Get the remaining time for the current decision phase timeout.
+   * Returns null if no decision phase timeout is active.
+   */
+  public getDecisionPhaseRemainingMs(): number | null {
+    if (!this.decisionPhaseStartTime || !this.decisionPhaseTimeoutId) {
+      return null;
+    }
+
+    const elapsed = Date.now() - this.decisionPhaseStartTime;
+    const remaining = config.decisionPhaseTimeouts.defaultTimeoutMs - elapsed;
+
+    return Math.max(0, remaining);
   }
 }

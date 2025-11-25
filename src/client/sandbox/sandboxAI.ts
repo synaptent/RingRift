@@ -18,8 +18,14 @@ import {
   isSandboxAiStallDiagnosticsEnabled,
   isSandboxAiParityModeEnabled,
 } from '../../shared/utils/envFlags';
-import { findAllLinesOnBoard } from './sandboxLines';
-import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../shared/engine/territoryDetection';
+import {
+  enumerateProcessLineMoves,
+  enumerateChooseLineRewardMoves,
+} from '../../shared/engine/lineDecisionHelpers';
+import {
+  enumerateProcessTerritoryRegionMoves,
+  enumerateTerritoryEliminationMoves,
+} from '../../shared/engine/territoryDecisionHelpers';
 
 const SANDBOX_AI_CAPTURE_DEBUG_ENABLED = isSandboxAiCaptureDebugEnabled();
 const SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED = isSandboxAiStallDiagnosticsEnabled();
@@ -130,168 +136,58 @@ export interface SandboxAIHooks {
 }
 
 function getLineDecisionMovesForSandboxAI(gameState: GameState): Move[] {
-  const moves: Move[] = [];
-
   if (gameState.currentPhase !== 'line_processing') {
-    return moves;
+    return [];
   }
 
   const playerNumber = gameState.currentPlayer;
-  const boardType = gameState.boardType;
-  const board = gameState.board;
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
 
-  const allLines = findAllLinesOnBoard(
-    boardType,
-    board,
-    (pos: Position) => {
-      const config = BOARD_CONFIGS[boardType];
-      if (boardType === 'hexagonal') {
-        const radius = config.size - 1;
-        const x = pos.x;
-        const y = pos.y;
-        const z = pos.z !== undefined ? pos.z : -x - y;
-        const distance = Math.max(Math.abs(x), Math.abs(y), Math.abs(z));
-        return distance <= radius;
-      }
-      return pos.x >= 0 && pos.x < config.size && pos.y >= 0 && pos.y < config.size;
-    },
-    (posStr: string) => {
-      const parts = posStr.split(',').map(Number);
-      if (parts.length === 2) {
-        const [x, y] = parts;
-        return { x, y };
-      }
-      if (parts.length === 3) {
-        const [x, y, z] = parts;
-        return { x, y, z };
-      }
-      return { x: 0, y: 0 };
-    }
-  );
-
-  const playerLines = allLines.filter((line) => line.player === playerNumber);
-  if (playerLines.length === 0) {
-    return moves;
-  }
-
-  // One process_line move per player-owned line.
-  playerLines.forEach((line, index) => {
-    const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-    moves.push({
-      id: `process-line-${index}-${lineKey}`,
-      type: 'process_line',
-      player: playerNumber,
-      formedLines: [line],
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: gameState.history.length + 1,
-    } as Move);
+  // Use shared helpers to enumerate process_line and choose_line_reward moves.
+  // This ensures the AI sees the exact same decision surface as the backend.
+  const processMoves = enumerateProcessLineMoves(gameState, playerNumber, {
+    detectionMode: 'detect_now',
   });
 
-  // For overlength lines, also expose a choose_line_reward decision so the
-  // AI can explicitly choose Option 1 vs Option 2 when available.
-  const overlengthLines = playerLines.filter((line) => line.positions.length > requiredLength);
-  overlengthLines.forEach((line, index) => {
-    const lineKey = line.positions.map((p) => positionToString(p)).join('|');
-    moves.push({
-      id: `choose-line-reward-${index}-${lineKey}`,
-      type: 'choose_line_reward',
-      player: playerNumber,
-      formedLines: [line],
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: gameState.history.length + 1,
-    } as Move);
+  // For each line, also enumerate reward choices (if any).
+  // Note: enumerateChooseLineRewardMoves requires a line index relative to
+  // the player's lines. We iterate through the detected lines to generate these.
+  const rewardMoves: Move[] = [];
+  // We can infer the number of lines from processMoves since enumerateProcessLineMoves
+  // returns one move per line.
+  processMoves.forEach((_, index) => {
+    rewardMoves.push(...enumerateChooseLineRewardMoves(gameState, playerNumber, index));
   });
 
-  return moves;
-}
-
-function canProcessRegionForSandboxAI(
-  gameState: GameState,
-  region: Territory,
-  playerNumber: number
-): boolean {
-  const regionPositionSet = new Set(region.spaces.map((pos) => positionToString(pos)));
-
-  for (const stack of gameState.board.stacks.values()) {
-    if (stack.controllingPlayer !== playerNumber) {
-      continue;
-    }
-
-    const key = positionToString(stack.position);
-    if (!regionPositionSet.has(key)) {
-      return true;
-    }
-  }
-
-  return false;
+  return [...processMoves, ...rewardMoves];
 }
 
 function getTerritoryDecisionMovesForSandboxAI(
   gameState: GameState,
   hooks: SandboxAIHooks
 ): Move[] {
-  const moves: Move[] = [];
-
   if (gameState.currentPhase !== 'territory_processing') {
-    return moves;
+    return [];
   }
 
   const movingPlayer = gameState.currentPlayer;
-  const board = gameState.board;
 
-  const disconnected = findDisconnectedRegionsShared(board);
-  const eligible: Territory[] = disconnected
-    ? disconnected.filter((region) => canProcessRegionForSandboxAI(gameState, region, movingPlayer))
-    : [];
-
-  if (eligible.length > 0) {
-    eligible.forEach((region, index) => {
-      const representative = region.spaces[0];
-      const regionKey = representative ? positionToString(representative) : `region-${index}`;
-      moves.push({
-        id: `process-region-${index}-${regionKey}`,
-        type: 'process_territory_region',
-        player: movingPlayer,
-        disconnectedRegions: [region],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: gameState.history.length + 1,
-      } as Move);
-    });
-    return moves;
-  }
-
-  // At this point, no eligible regions remain. Only surface explicit
-  // elimination decisions when the engine reports a pending self-elimination
-  // debt for this player, mirroring the backend
-  // GameEngine.pendingTerritorySelfElimination flag.
-  if (!hooks.hasPendingTerritorySelfElimination()) {
-    return moves;
-  }
-
-  // Generate eliminate_rings_from_stack decisions for all controlled stacks.
-  const playerStacks = hooks.getPlayerStacks(movingPlayer, board);
-  if (playerStacks.length === 0) {
-    return moves;
-  }
-
-  playerStacks.forEach((stack) => {
-    const stackKey = positionToString(stack.position);
-    moves.push({
-      id: `eliminate-${stackKey}`,
-      type: 'eliminate_rings_from_stack',
-      player: movingPlayer,
-      to: stack.position,
-      timestamp: new Date(),
-      thinkTime: 0,
-      moveNumber: gameState.history.length + 1,
-    } as Move);
+  // 1. Enumerate region processing moves using the shared helper.
+  // This handles region detection and Q23 gating (must have stack outside region).
+  const regionMoves = enumerateProcessTerritoryRegionMoves(gameState, movingPlayer, {
+    detectionMode: 'detect_now',
   });
 
-  return moves;
+  if (regionMoves.length > 0) {
+    return regionMoves;
+  }
+
+  // 2. If no regions are processable, check for pending self-elimination.
+  if (!hooks.hasPendingTerritorySelfElimination()) {
+    return [];
+  }
+
+  // 3. Enumerate elimination moves using the shared helper.
+  return enumerateTerritoryEliminationMoves(gameState, movingPlayer);
 }
 
 export function buildSandboxMovementCandidates(

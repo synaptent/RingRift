@@ -1,3 +1,44 @@
+"""
+MCTS AI Test Suite
+==================
+
+These tests exercise the MCTS (Monte Carlo Tree Search) AI implementation
+which involves:
+- Neural network inference for position evaluation
+- Tree search with time-bounded exploration
+- Complex game state simulation
+
+Configuration
+-------------
+MCTS tests are disabled by default for fast CI execution. To enable:
+
+    # Enable MCTS tests with default 60s timeout
+    ENABLE_MCTS_TESTS=true pytest tests/test_mcts_ai.py -v
+
+    # Enable with custom timeout (30 seconds)
+    ENABLE_MCTS_TESTS=true MCTS_TEST_TIMEOUT=30 pytest tests/test_mcts_ai.py -v
+
+    # Run all tests EXCEPT mcts tests
+    pytest -m "not mcts" -v
+
+Environment Variables
+---------------------
+- ENABLE_MCTS_TESTS: Set to 'true' to enable MCTS tests (default: false)
+- MCTS_TEST_TIMEOUT: Timeout in seconds per test (default: 60)
+
+CI Integration
+--------------
+For CI pipelines, MCTS tests should remain disabled (default) to prevent
+slow builds. Enable selectively for nightly or dedicated AI test runs:
+
+    # Fast CI (default) - skips MCTS tests
+    pytest tests/
+
+    # Dedicated AI test job
+    ENABLE_MCTS_TESTS=true MCTS_TEST_TIMEOUT=120 \\
+        pytest tests/test_mcts_ai.py -v
+"""
+import os
 import unittest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
@@ -12,15 +53,25 @@ from app.models import (
     BoardState
 )
 
-# TODO-MCTS-AI-TIMEOUT: These tests exercise MCTS tree search with neural
-# network inference which can exceed timeout limits due to model loading
-# and search exploration overhead. Skip pending test optimization.
-pytestmark = pytest.mark.skip(
-    reason="TODO-MCTS-AI-TIMEOUT: MCTS search + NN inference timeouts"
-)
+# ==============================================================================
+# MCTS TEST CONFIGURATION
+# ==============================================================================
+# By default, MCTS tests are skipped because they involve expensive tree search
+# and neural network inference. Enable via ENABLE_MCTS_TESTS=true for local
+# development or dedicated CI jobs.
 
-# Test timeout guards to prevent hanging in CI
-TEST_TIMEOUT_SECONDS = 30
+MCTS_TESTS_ENABLED = os.getenv('ENABLE_MCTS_TESTS', 'false').lower() == 'true'
+MCTS_TEST_TIMEOUT = int(os.getenv('MCTS_TEST_TIMEOUT', '60'))
+
+# Apply markers and conditional skip at module level
+pytestmark = [
+    pytest.mark.mcts,
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        not MCTS_TESTS_ENABLED,
+        reason="MCTS tests disabled (set ENABLE_MCTS_TESTS=true to enable)"
+    ),
+]
 
 
 class TestMCTSAI(unittest.TestCase):
@@ -58,7 +109,7 @@ class TestMCTSAI(unittest.TestCase):
             chainCaptureState=None,
         )
 
-    @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
+    @pytest.mark.timeout(MCTS_TEST_TIMEOUT)
     @patch('app.game_engine.GameEngine.get_valid_moves')
     def test_select_move_returns_move(self, mock_get_valid_moves):
         mock_move = MagicMock()
@@ -80,7 +131,7 @@ class TestMCTSAI(unittest.TestCase):
         self.assertIsNotNone(move)
         self.assertEqual(move, mock_move)
 
-    @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
+    @pytest.mark.timeout(MCTS_TEST_TIMEOUT)
     @patch('app.game_engine.GameEngine.get_valid_moves')
     def test_select_move_no_valid_moves(self, mock_get_valid_moves):
         mock_get_valid_moves.return_value = []
@@ -89,7 +140,7 @@ class TestMCTSAI(unittest.TestCase):
         move = self.ai.select_move(self.game_state)
         self.assertIsNone(move)
 
-    @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
+    @pytest.mark.timeout(MCTS_TEST_TIMEOUT)
     @patch('app.game_engine.GameEngine.get_valid_moves')
     def test_select_move_uses_hex_network_for_hex_board(
         self,

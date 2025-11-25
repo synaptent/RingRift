@@ -152,15 +152,19 @@ export async function processDisconnectedRegionsForCurrentPlayerEngine(
   gameState: GameState,
   interactionHandler: TerritoryInteractionHandler | null,
   canProcessRegion: (regionSpaces: Position[], playerNumber: number, state: GameState) => boolean
-): Promise<GameState> {
+): Promise<{ state: GameState; pendingSelfElimination: boolean }> {
   let state = gameState;
   const movingPlayer = state.currentPlayer;
+  let pendingSelfElimination = false;
 
   // Keep processing until no further eligible regions remain.
   // eslint-disable-next-line no-constant-condition
   while (true) {
     const disconnected = findDisconnectedRegionsOnBoard(state.board);
     if (disconnected.length === 0) {
+      if (TERRITORY_TRACE_DEBUG) {
+        console.log('[sandboxTerritoryEngine] No disconnected regions found');
+      }
       break;
     }
 
@@ -169,6 +173,12 @@ export async function processDisconnectedRegionsForCurrentPlayerEngine(
     );
 
     if (eligible.length === 0) {
+      if (TERRITORY_TRACE_DEBUG) {
+        console.log('[sandboxTerritoryEngine] No eligible regions found', {
+          disconnectedCount: disconnected.length,
+          movingPlayer,
+        });
+      }
       break;
     }
 
@@ -247,19 +257,105 @@ export async function processDisconnectedRegionsForCurrentPlayerEngine(
       totalRingsEliminated: state.totalRingsEliminated,
     };
 
-    const result = processDisconnectedRegionOnBoard(
-      state.board,
-      state.players,
-      movingPlayer,
-      regionSpaces
-    );
-
-    state = {
-      ...state,
-      board: result.board,
-      players: result.players,
-      totalRingsEliminated: state.totalRingsEliminated + result.totalRingsEliminatedDelta,
+    // Construct a synthetic Move to apply the decision via the shared helper.
+    // This ensures that automatic processing shares the exact same semantics
+    // as explicit move application.
+    const move: Move = {
+      id: `auto-process-region-${Date.now()}`,
+      type: 'process_territory_region',
+      player: movingPlayer,
+      disconnectedRegions: [
+        {
+          spaces: regionSpaces,
+          controllingPlayer: movingPlayer,
+          isDisconnected: true,
+        },
+      ],
+      to: regionSpaces[0] ?? { x: 0, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: state.history.length + 1,
     };
+
+    const outcome = applyProcessTerritoryRegionDecision(state, move);
+    state = outcome.nextState;
+
+    // If this region triggered a self-elimination requirement, apply it
+    // immediately within the loop (like the backend processOneDisconnectedRegion).
+    // The pendingSelfElimination flag returned to the caller indicates whether
+    // ANY region required elimination, for use by traceMode callers that want
+    // explicit elimination moves instead of automatic application.
+    if (outcome.pendingSelfElimination) {
+      pendingSelfElimination = true;
+
+      // Apply automatic self-elimination within the loop to match backend
+      // semantics which calls eliminatePlayerRingOrCapWithChoice after each
+      // region collapse. The interactionHandler is for region-order choices,
+      // not for self-elimination decisions.
+      {
+        // Find the highest cap stack of the moving player and eliminate from it
+        const playerStacks: Array<{ key: string; stack: any; capHeight: number }> = [];
+        for (const [key, stack] of state.board.stacks.entries()) {
+          if (stack.controllingPlayer === movingPlayer && stack.capHeight > 0) {
+            playerStacks.push({ key, stack, capHeight: stack.capHeight });
+          }
+        }
+
+        if (playerStacks.length > 0) {
+          // Sort by capHeight descending to eliminate from highest cap
+          playerStacks.sort((a, b) => b.capHeight - a.capHeight);
+          const target = playerStacks[0];
+
+          // Apply elimination using same logic as forceEliminateCapOnBoard
+          const capHeight = target.capHeight;
+          const remainingRings = target.stack.rings.slice(capHeight);
+          const nextStacks = new Map(state.board.stacks);
+
+          if (remainingRings.length > 0) {
+            const calculateCapHeightFn = (rings: number[]) => {
+              if (rings.length === 0) return 0;
+              const top = rings[0];
+              let count = 0;
+              for (const r of rings) {
+                if (r === top) count++;
+                else break;
+              }
+              return count;
+            };
+
+            nextStacks.set(target.key, {
+              ...target.stack,
+              rings: remainingRings,
+              stackHeight: remainingRings.length,
+              capHeight: calculateCapHeightFn(remainingRings),
+              controllingPlayer: remainingRings[0],
+            });
+          } else {
+            nextStacks.delete(target.key);
+          }
+
+          const nextPlayers = state.players.map((p) =>
+            p.playerNumber === movingPlayer
+              ? { ...p, eliminatedRings: p.eliminatedRings + capHeight }
+              : p
+          );
+
+          state = {
+            ...state,
+            board: {
+              ...state.board,
+              stacks: nextStacks,
+              eliminatedRings: {
+                ...state.board.eliminatedRings,
+                [movingPlayer]: (state.board.eliminatedRings[movingPlayer] || 0) + capHeight,
+              },
+            },
+            players: nextPlayers,
+            totalRingsEliminated: state.totalRingsEliminated + capHeight,
+          };
+        }
+      }
+    }
 
     const afterSnapshot = {
       collapsedSpaces: state.board.collapsedSpaces.size,
@@ -273,5 +369,5 @@ export async function processDisconnectedRegionsForCurrentPlayerEngine(
     );
   }
 
-  return state;
+  return { state, pendingSelfElimination };
 }
