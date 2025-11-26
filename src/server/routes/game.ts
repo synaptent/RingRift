@@ -1046,6 +1046,163 @@ router.get(
 
 /**
  * @openapi
+ * /games/{gameId}/diagnostics/session:
+ *   get:
+ *     summary: Get in-memory session and connection diagnostics for a game
+ *     description: |
+ *       Returns a compact diagnostics snapshot for a specific game, combining
+ *       the GameSession state-machine projections with WebSocket connection
+ *       state. Only participants and permitted spectators may access this
+ *       endpoint.
+ *
+ *       The diagnostics are best-effort and reflect only in-memory sessions;
+ *       games that are not currently loaded into memory will return
+ *       `hasInMemorySession: false`.
+ *     tags: [Games]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: gameId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Game ID
+ *     responses:
+ *       200:
+ *         description: Diagnostics snapshot retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     sessionStatus:
+ *                       type: object
+ *                       nullable: true
+ *                       description: Derived GameSessionStatus projection (shape is internal and may evolve)
+ *                     lastAIRequestState:
+ *                       type: object
+ *                       nullable: true
+ *                       description: Last AIRequestState snapshot for this game
+ *                     aiDiagnostics:
+ *                       type: object
+ *                       nullable: true
+ *                       description: Per-game AI/rules degraded-mode diagnostics
+ *                     connections:
+ *                       type: object
+ *                       additionalProperties:
+ *                         $ref: '#/components/schemas/PlayerConnectionState'
+ *                     meta:
+ *                       type: object
+ *                       properties:
+ *                         hasInMemorySession:
+ *                           type: boolean
+ *                           description: Whether an in-memory GameSession was found on this node
+ *       400:
+ *         description: Invalid game ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               success: false
+ *               error:
+ *                 code: GAME_INVALID_ID
+ *                 message: Invalid game ID format
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       503:
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+router.get(
+  '/:gameId/diagnostics/session',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const paramResult = GameIdParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      throw createError('Invalid game ID format', 400, 'INVALID_GAME_ID');
+    }
+    const { gameId } = paramResult.data;
+    const userId = req.user!.id;
+
+    const prisma = getDatabaseClient();
+    if (!prisma) {
+      throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
+    }
+
+    const game = await prisma.game.findUnique({
+      where: { id: gameId },
+      select: {
+        id: true,
+        player1Id: true,
+        player2Id: true,
+        player3Id: true,
+        player4Id: true,
+        allowSpectators: true,
+      },
+    });
+
+    if (!game) {
+      throw createError('Game not found', 404, 'GAME_NOT_FOUND');
+    }
+
+    // Enforce the same participant-or-spectator invariant used by
+    // game details and move history endpoints.
+    assertUserCanViewGame(userId, game);
+
+    // If the WebSocket server is not wired in this process (for example,
+    // in certain tests or CLI tools), return a minimal diagnostics view
+    // that reflects only the absence of an in-memory session.
+    if (!wsServerInstance || typeof wsServerInstance.getGameDiagnosticsForGame !== 'function') {
+      return res.json({
+        success: true,
+        data: {
+          sessionStatus: null,
+          lastAIRequestState: null,
+          aiDiagnostics: null,
+          connections: {},
+          meta: {
+            hasInMemorySession: false,
+          },
+        },
+      });
+    }
+
+    const diagnostics = wsServerInstance.getGameDiagnosticsForGame(gameId) as {
+      sessionStatus: any | null;
+      lastAIRequestState: any | null;
+      aiDiagnostics: any | null;
+      connections: Record<string, unknown>;
+      hasInMemorySession: boolean;
+    };
+
+    res.json({
+      success: true,
+      data: {
+        sessionStatus: diagnostics.sessionStatus,
+        lastAIRequestState: diagnostics.lastAIRequestState,
+        aiDiagnostics: diagnostics.aiDiagnostics,
+        connections: diagnostics.connections || {},
+        meta: {
+          hasInMemorySession: diagnostics.hasInMemorySession,
+        },
+      },
+    });
+  })
+);
+
+/**
+ * @openapi
  * /games/lobby/available:
  *   get:
  *     summary: Get available games to join

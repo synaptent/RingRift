@@ -6,6 +6,7 @@ Uses minimax algorithm with alpha-beta pruning for move selection
 from typing import Optional
 import time
 
+from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
 from .zobrist import ZobristHash
 from ..models import GameState, Move, AIConfig
@@ -16,10 +17,15 @@ class MinimaxAI(HeuristicAI):
 
     def __init__(self, player_number: int, config: AIConfig):
         super().__init__(player_number, config)
-        self.transposition_table = {}
+        # Use bounded tables to prevent memory leaks
+        self.transposition_table: BoundedTranspositionTable = (
+            BoundedTranspositionTable(max_entries=100000)
+        )
         # Killer moves table: [depth][move_index] -> Move
         # We store up to 2 killer moves per depth
-        self.killer_moves = {}
+        self.killer_moves: BoundedTranspositionTable = (
+            BoundedTranspositionTable(max_entries=10000)
+        )
         self.zobrist = ZobristHash()
         self.start_time = 0.0
         self.time_limit = 0.0
@@ -112,8 +118,8 @@ class MinimaxAI(HeuristicAI):
             scored_moves.sort(key=lambda x: x[0], reverse=True)
             
             # Clear transposition table for new search
-            self.transposition_table = {}
-            self.killer_moves = {}
+            self.transposition_table.clear()
+            self.killer_moves.clear()
             
             for depth in range(1, max_depth + 1):
                 if time.time() - self.start_time > self.time_limit:
@@ -177,8 +183,8 @@ class MinimaxAI(HeuristicAI):
                 return self.evaluate_position(game_state)
 
         state_hash = self._get_state_hash(game_state)
-        if state_hash in self.transposition_table:
-            entry = self.transposition_table[state_hash]
+        entry = self.transposition_table.get(state_hash)
+        if entry is not None:
             if entry['depth'] >= depth:
                 if entry['flag'] == 'exact':
                     return entry['score']
@@ -198,11 +204,11 @@ class MinimaxAI(HeuristicAI):
                 maximizing_player,
                 depth=3
             )
-            self.transposition_table[state_hash] = {
+            self.transposition_table.put(state_hash, {
                 'score': score,
                 'depth': depth,
                 'flag': 'exact'
-            }
+            })
             return score
             
         current_player_num = game_state.current_player
@@ -240,7 +246,7 @@ class MinimaxAI(HeuristicAI):
         # 3. History/Others
         
         ordered_moves = []
-        killer_moves_at_depth = self.killer_moves.get(depth, [])
+        killer_moves_at_depth = self.killer_moves.get(depth) or []
         
         # Separate killer moves
         killers = []
@@ -306,14 +312,14 @@ class MinimaxAI(HeuristicAI):
                 alpha = max(alpha, eval)
                 if beta <= alpha:
                     # Beta cutoff - store killer move
-                    if depth not in self.killer_moves:
-                        self.killer_moves[depth] = []
+                    killer_list = self.killer_moves.get(depth) or []
                     # Add if not already present
-                    if move not in self.killer_moves[depth]:
-                        self.killer_moves[depth].insert(0, move)
+                    if move not in killer_list:
+                        killer_list.insert(0, move)
                         # Keep only 2 recent killer moves
-                        if len(self.killer_moves[depth]) > 2:
-                            self.killer_moves[depth].pop()
+                        if len(killer_list) > 2:
+                            killer_list.pop()
+                        self.killer_moves.put(depth, killer_list)
                     break
             
             flag = 'exact'
@@ -322,11 +328,11 @@ class MinimaxAI(HeuristicAI):
             elif max_eval >= beta:
                 flag = 'lowerbound'
             
-            self.transposition_table[state_hash] = {
+            self.transposition_table.put(state_hash, {
                 'score': max_eval,
                 'depth': depth,
                 'flag': flag
-            }
+            })
             return max_eval
         else:
             # Opponent turn (Minimizing my score)
@@ -357,12 +363,12 @@ class MinimaxAI(HeuristicAI):
                 beta = min(beta, eval)
                 if beta <= alpha:
                     # Alpha cutoff - store killer move
-                    if depth not in self.killer_moves:
-                        self.killer_moves[depth] = []
-                    if move not in self.killer_moves[depth]:
-                        self.killer_moves[depth].insert(0, move)
-                        if len(self.killer_moves[depth]) > 2:
-                            self.killer_moves[depth].pop()
+                    killer_list = self.killer_moves.get(depth) or []
+                    if move not in killer_list:
+                        killer_list.insert(0, move)
+                        if len(killer_list) > 2:
+                            killer_list.pop()
+                        self.killer_moves.put(depth, killer_list)
                     break
             
             flag = 'exact'
@@ -371,11 +377,11 @@ class MinimaxAI(HeuristicAI):
             elif min_eval >= beta:
                 flag = 'lowerbound'
                 
-            self.transposition_table[state_hash] = {
+            self.transposition_table.put(state_hash, {
                 'score': min_eval,
                 'depth': depth,
                 'flag': flag
-            }
+            })
             return min_eval
 
     def _quiescence_search(

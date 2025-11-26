@@ -667,6 +667,9 @@ export class WebSocketServer {
         clearTimeout(pendingReconnection.timeout);
         this.pendingReconnections.delete(reconnectionKey);
 
+        // Record successful reconnection metric
+        getMetricsService().recordWebsocketReconnection('success');
+
         logger.info('Player reconnected within window', {
           userId: socket.userId,
           gameId,
@@ -958,6 +961,9 @@ export class WebSocketServer {
   private handleReconnectionTimeout(gameId: string, userId: string, playerNumber: number): void {
     const reconnectionKey = `${gameId}:${userId}`;
     this.pendingReconnections.delete(reconnectionKey);
+
+    // Record timeout for reconnection metric
+    getMetricsService().recordWebsocketReconnection('timeout');
 
     logger.info('Reconnection window expired, clearing stale choices', {
       userId,

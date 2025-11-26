@@ -84,13 +84,34 @@ class DescentAI(BaseAI):
         
         # Search log for Tree Learning
         # List of (features, value)
-        self.search_log = []
+        # Only populated when collect_training_data is True to prevent
+        # memory leaks in inference-only scenarios.
+        self.collect_training_data: bool = False
+        self.search_log: List[Tuple[Any, float]] = []
 
     def get_search_data(self) -> List[Tuple[Any, float]]:
-        """Retrieve and clear the search log"""
+        """Retrieve and clear the search log.
+        
+        Note: For training, set collect_training_data=True before calling
+        select_move to enable search data collection.
+        """
         data = self.search_log
         self.search_log = []
         return data
+    
+    def enable_training_data_collection(self, enabled: bool = True) -> None:
+        """Enable or disable search data collection for training.
+        
+        When disabled (default), search_log is not populated, preventing
+        memory accumulation in inference-only scenarios.
+        
+        Args:
+            enabled: Whether to collect training data during search.
+        """
+        self.collect_training_data = enabled
+        if not enabled:
+            # Clear any existing data when disabling
+            self.search_log.clear()
         
     def select_move(self, game_state: GameState) -> Optional[Move]:
         """
@@ -302,8 +323,8 @@ class DescentAI(BaseAI):
                 (new_best_val, children_values, new_status),
             )
 
-            # Log update
-            if self.neural_net:
+            # Log update (only if collecting training data)
+            if self.collect_training_data and self.neural_net:
                 features, _ = self.neural_net._extract_features(state)
                 self.search_log.append((features, new_best_val))
                 
@@ -463,8 +484,8 @@ class DescentAI(BaseAI):
                 (best_val, children_values, status),
             )
 
-            # Log initial visit
-            if self.neural_net:
+            # Log initial visit (only if collecting training data)
+            if self.collect_training_data and self.neural_net:
                 features, _ = self.neural_net._extract_features(state)
                 self.search_log.append((features, best_val))
                 

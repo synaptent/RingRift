@@ -23,6 +23,7 @@ This task aimed to achieve complete trace parity between backend [`GameEngine`](
 **Impact**: Backend would detect "disconnected regions" (the entire empty board) after move 1, while sandbox correctly skipped this.
 
 **Fix Applied**:
+
 - Added one-player guard to [`src/server/game/rules/territoryProcessing.ts`](src/server/game/rules/territoryProcessing.ts:36)
 
 ```typescript
@@ -39,12 +40,14 @@ if (activePlayers.size === 1) {
 
 ### 2. **Backend Auto-Applies Decision Moves During Replay** (PARTIALLY FIXED ⚠️)
 
-**Issue**: 
+**Issue**:
+
 - Backend's [`enableMoveDrivenDecisionPhases()`](src/server/game/GameEngine.ts:179) makes line/territory processing explicit moves
 - But [`stepAutomaticPhasesForTesting()`](src/server/game/GameEngine.ts:3003) was AUTO-APPLYING these decision moves during replay
 - This caused backend to skip past phases that exist as explicit moves in the trace
 
 **Fix Applied**:
+
 - Modified [`stepAutomaticPhasesForTesting()`](src/server/game/GameEngine.ts:3016) to **return early** when in move-driven mode and decision moves exist
 - Removed auto-application of `process_line`, `process_territory_region`, etc. during trace replay
 
@@ -61,24 +64,27 @@ if (this.useMoveDrivenDecisionPhases) {
 **Issue**: [`runSandboxAITrace()`](tests/utils/traces.ts:100) was creating sandbox engine WITHOUT `traceMode: true`, so it auto-processed lines/territory instead of generating explicit decision moves.
 
 **Fix Applied**:
+
 - Enabled `traceMode: true` in [`tests/utils/traces.ts`](tests/utils/traces.ts:118)
 
 ```typescript
-const engine = new ClientSandboxEngine({ 
-  config, 
+const engine = new ClientSandboxEngine({
+  config,
   interactionHandler: handler,
-  traceMode: true,  // Enable decision phase moves in traces
+  traceMode: true, // Enable decision phase moves in traces
 });
 ```
 
 ### 4. **Sandbox Decision Move Handling Incomplete** (IN PROGRESS 🔄)
 
 **Issue**: After applying decision moves (`process_line`, `process_territory_region`), the sandbox doesn't properly:
+
 1. Check if more decisions remain
-2. Advance to next phase/player when complete  
+2. Advance to next phase/player when complete
 3. Generate mandatory `eliminate_rings_from_stack` moves after `process_territory_region`
 
 **Current State**:
+
 - Modified [`ClientSandboxEngine.ts:applyCanonicalMoveInternal()`](src/client/sandbox/ClientSandboxEngine.ts:1844) to handle phase transitions
 - Set `territory_processing` phase to stay active for elimination moves
 - Need to update [`sandboxAI.ts:getTerritoryDecisionMovesForSandboxAI()`](src/client/sandbox/sandboxAI.ts:218) to generate elimination moves
@@ -93,7 +99,7 @@ const engine = new ClientSandboxEngine({
    - Line 118: Added `traceMode: true` to sandbox engine creation
    - Ensures trace generation uses move-driven decision phases
 
-2. **[`src/server/game/rules/territoryProcessing.ts`](src/server/game/rules/territoryProcessing.ts:36)** ✅  
+2. **[`src/server/game/rules/territoryProcessing.ts`](src/server/game/rules/territoryProcessing.ts:36)** ✅
    - Line 40-56: Added one-player guard matching sandbox behavior
    - Prevents spurious territory processing in early-game positions
 
@@ -111,19 +117,22 @@ const engine = new ClientSandboxEngine({
 ## Test Progress
 
 **Before fixes**:
+
 ```
 Move 3: Backend stuck in line_processing, sandbox has P2 placement
 ```
 
 **After partial fixes**:
+
 ```
 Move 45: Backend expects eliminate_rings_from_stack, sandbox has process_territory_region
 (Test got 42 moves further!)
 ```
 
 **Current failure**:
+
 ```
-replayMovesOn Backend: no matching backend move found for move moveNumber=45, player=2, 
+replayMovesOn Backend: no matching backend move found for move moveNumber=45, player=2,
 move={"type":"process_territory_region"}, backendMovesCount=6
 type=eliminate_rings_from_stack,player=2,...
 ```
@@ -136,7 +145,7 @@ This shows the sandbox is generating `process_territory_region` but the backend 
 
 ### Immediate (P0 - Critical for parity)
 
-1. **Update [`sandboxAI.ts:getTerritoryDecisionMovesForSandboxAI()`](src/client/sandbox/sandboxAI.ts:218)** 
+1. **Update [`sandboxAI.ts:getTerritoryDecisionMovesForSandboxAI()`](src/client/sandbox/sandboxAI.ts:218)**
    - When no eligible regions remain, generate `eliminate_rings_from_stack` moves
    - Mirror backend pattern from [`GameEngine.ts:getValidMoves()`](src/server/game/GameEngine.ts:2621)
    - This is the LAST blocking issue for seed 5 parity
@@ -169,6 +178,7 @@ This shows the sandbox is generating `process_territory_region` but the backend 
 ### Decision Phase Flow (Move-Driven Mode)
 
 **Backend**:
+
 1. Move applied → lines/territory detected
 2. Set phase to `line_processing` / `territory_processing`
 3. Return from `makeMove()` with phase set
@@ -177,7 +187,8 @@ This shows the sandbox is generating `process_territory_region` but the backend 
 6. After all decisions, `advanceGame()` → next player
 
 **Sandbox**:
-1. Move applied → lines/territory detected  
+
+1. Move applied → lines/territory detected
 2. With `traceMode: true`, set phase and **return from `advanceAfterMovement()`**
 3. Next AI turn sees decision phase
 4. AI calls decision move helpers → generates `process_line` / `process_territory_region`
@@ -194,7 +205,7 @@ Backend (with enableMoveDrivenDecisionPhases):
 
 Sandbox (with traceMode: true):
   move → [line_processing if lines] → [territory_processing if regions] → next player
-  
+
 Both must:
 - Generate identical decision moves (process_line, process_territory_region, eliminate_rings_from_stack)
 - Apply them in same order
@@ -213,20 +224,21 @@ The pattern from backend [`GameEngine.ts:2621`](src/server/game/GameEngine.ts:26
 ```typescript
 if (this.gameState.currentPhase === 'territory_processing') {
   const regionMoves = this.getValidTerritoryProcessingMoves(playerNumber);
-  
+
   if (regionMoves.length > 0) {
-    return regionMoves;  // Process regions first
+    return regionMoves; // Process regions first
   }
-  
+
   // No regions remain; check for mandatory self-elimination
   if (!this.pendingTerritorySelfElimination) {
-    return [];  // No elimination owed
+    return []; // No elimination owed
   }
-  
+
   // Generate eliminate_rings_from_stack moves
-  const eliminationMoves = this.ruleEngine.getValidMoves(tempState)
-    .filter(m => m.type === 'eliminate_rings_from_stack');
-  
+  const eliminationMoves = this.ruleEngine
+    .getValidMoves(tempState)
+    .filter((m) => m.type === 'eliminate_rings_from_stack');
+
   return eliminationMoves;
 }
 ```
@@ -242,7 +254,7 @@ case 'process_territory_region': {
   // Apply the region processing
   const nextState = applyTerritoryDecisionMove(...);
   this.gameState = nextState;
-  
+
   // In traceMode, stay in territory_processing for elimination
   this.gameState = {
     ...this.gameState,
@@ -259,7 +271,7 @@ case 'eliminate_rings_from_stack': {
   // Apply the elimination
   const nextState = applyTerritoryDecisionMove(...);
   this.gameState = nextState;
-  
+
   // Check if more regions or eliminations remain
   // If not, advance to next player
 }
@@ -288,17 +300,20 @@ npm test -- Sandbox_vs_Backend.seed5.traceDebug.test.ts
 ## Files to Review for Continuation
 
 **Primary fixes needed**:
+
 - [`src/client/sandbox/sandboxAI.ts`](src/client/sandbox/sandboxAI.ts:218) - `getTerritoryDecisionMovesForSandboxAI()` needs elimination move generation
 - [`src/client/sandbox/ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts:1844) - Decision move phase transitions need line elimination support
 
 **Reference implementations**:
+
 - [`src/server/game/GameEngine.ts:2621`](src/server/game/GameEngine.ts:2621) - Backend territory decision move enumeration (CANONICAL)
 - [`src/server/game/GameEngine.ts:1234`](src/server/game/GameEngine.ts:1234) - Backend `applyDecisionMove()` phase transitions
 - [`src/server/game/RuleEngine.ts`](src/server/game/RuleEngine.ts:1) - Move validation and enumeration
 
 **Test infrastructure**:
+
 - [`tests/unit/Backend_vs_Sandbox.traceParity.test.ts`](tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1) - Main parity suite
--  [`tests/utils/traces.ts`](tests/utils/traces.ts:1) - Trace generation and replay helpers
+- [`tests/utils/traces.ts`](tests/utils/traces.ts:1) - Trace generation and replay helpers
 - [`tests/utils/moveMatching.ts`](tests/utils/moveMatching.ts:1) - Move comparison logic
 
 ---
@@ -334,11 +349,11 @@ Update [`sandboxAI.ts:getTerritoryDecisionMovesForSandboxAI()`](src/client/sandb
 ```typescript
 function getTerritoryDecisionMovesForSandboxAI(
   gameState: GameState,
-  hooks: SandboxAIHooks  // Add hooks parameter
+  hooks: SandboxAIHooks // Add hooks parameter
 ): Move[] {
   const moves: Move[] = [];
   // ... existing region move generation ...
-  
+
   // If no eligible regions but in territory_processing, generate eliminations
   if (eligible.length === 0) {
     const stacks = hooks.getPlayerStacks(movingPlayer, board);
@@ -351,14 +366,15 @@ function getTerritoryDecisionMovesForSandboxAI(
       } as Move);
     });
   }
-  
+
   return moves;
 }
 ```
 
 Update call site at line ~930:
+
 ```typescript
-getTerritoryDecisionMovesForSandboxAI(gameState, hooks)
+getTerritoryDecisionMovesForSandboxAI(gameState, hooks);
 ```
 
 ### Step 2: Add Line Elimination Support
@@ -368,6 +384,7 @@ Similar pattern for [`sandboxAI.ts:getLineDecisionMovesForSandboxAI()`](src/clie
 ### Step 3: Validate Phase Transitions
 
 Ensure [`ClientSandboxEngine.ts:applyCanonicalMoveInternal()`](src/client/sandbox/ClientSandboxEngine.ts:1844) properly:
+
 - Stays in decision phase when more decisions remain
 - Advances to next player when all decisions complete
 - Matches backend's `applyDecisionMove()` logic
@@ -394,15 +411,15 @@ npm test -- Sandbox_vs_Backend.seed5.traceDebug.test.ts
 ```
 ● Backend vs Sandbox trace parity (square8 / 2p) › square8 / 2p / seed=5
 
-  replayMovesOnBackend: no matching backend move found for move moveNumber=45, 
+  replayMovesOnBackend: no matching backend move found for move moveNumber=45,
   player=2, move={"type":"process_territory_region"}, backendMovesCount=6
 
   Backend expected:
   - eliminate_rings_from_stack moves (mandatory self-elimination after region)
-  
+
   Sandbox generated:
   - process_territory_region (another region to process)
-  
+
   This is the FINAL blocking issue for seed 5 parity.
 ```
 
@@ -432,16 +449,19 @@ npm test -- Sandbox_vs_Backend.seed5.traceDebug.test.ts
 ## Risk Assessment
 
 **Low Risk**:
+
 - One-player guard fix aligns with rules intent
 - TraceMode enablement is test-only
 - stepAutomaticPhasesForTesting guard prevents over-automation
 
 **Medium Risk**:
+
 - Sandbox phase transition logic is complex
   - Need careful testing of multi-line, multi-region scenarios
   - Edge cases: elimination from hand, no stacks remaining
 
 **Mitigation**:
+
 - All changes are in test/trace infrastructure or guarded by flags
 - Production sandbox (non-traceMode) unchanged
 - Backend non-move-driven mode unchanged
@@ -452,8 +472,9 @@ npm test -- Sandbox_vs_Backend.seed5.traceDebug.test.ts
 ## Estimated Completion
 
 **Remaining work**: 2-3 hours
+
 - 30 min: Fix sandbox elimination move generation
-- 30 min: Fix line elimination support  
+- 30 min: Fix line elimination support
 - 1 hour: Test all seeds and fix edge cases
 - 30-60 min: Documentation and cleanup
 

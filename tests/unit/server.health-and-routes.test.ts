@@ -91,7 +91,7 @@ jest.mock('../../src/server/middleware/auth', () => {
  * is relevant for these endpoints.
  */
 
-function createTestApp() {
+function createTestApp(wsServer?: any) {
   const app = express();
   app.use(express.json());
   // Mirror the main server pipeline by attaching per-request context so that
@@ -122,8 +122,10 @@ function createTestApp() {
     res.send(metrics);
   });
 
-  // API routes mounted at /api
-  app.use('/api', setupRoutes());
+  // API routes mounted at /api. Allow an optional WebSocketServer-like
+  // instance to be injected so routes that depend on it (e.g. game
+  // diagnostics) can be exercised in isolation.
+  app.use('/api', setupRoutes(wsServer));
   // Attach global error handler so that route errors (including auth /
   // authorization failures) are rendered using the standard JSON shape.
   app.use(errorHandler as any);
@@ -382,6 +384,141 @@ describe('Protected game route authorization', () => {
 
     expect(res.body.success).toBe(false);
     expect(res.body.error.code).toBe('RESOURCE_ACCESS_DENIED');
+  });
+});
+
+describe('Game diagnostics session route', () => {
+  beforeEach(() => {
+    mockPrisma.game.findUnique.mockReset();
+  });
+
+  it('GET /api/games/:gameId/diagnostics/session returns 401 AUTH_TOKEN_REQUIRED when unauthenticated', async () => {
+    const app = createTestApp();
+
+    const res = await request(app).get('/api/games/game-1/diagnostics/session').expect(401);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('AUTH_TOKEN_REQUIRED');
+  });
+
+  it('GET /api/games/:gameId/diagnostics/session denies access to non-participants when spectators are disabled', async () => {
+    const validGameId = '550e8400-e29b-41d4-a716-446655440010';
+    mockPrisma.game.findUnique.mockResolvedValueOnce({
+      id: validGameId,
+      player1Id: 'other-user',
+      player2Id: null,
+      player3Id: null,
+      player4Id: null,
+      allowSpectators: false,
+    } as any);
+
+    const app = createTestApp();
+
+    const res = await request(app)
+      .get(`/api/games/${validGameId}/diagnostics/session`)
+      .set('Authorization', 'Bearer user-1')
+      .expect(403);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('RESOURCE_ACCESS_DENIED');
+  });
+
+  it('GET /api/games/:gameId/diagnostics/session returns 404 GAME_NOT_FOUND when game does not exist', async () => {
+    const validGameId = '550e8400-e29b-41d4-a716-446655440011';
+    mockPrisma.game.findUnique.mockResolvedValueOnce(null as any);
+
+    const app = createTestApp();
+
+    const res = await request(app)
+      .get(`/api/games/${validGameId}/diagnostics/session`)
+      .set('Authorization', 'Bearer user-1')
+      .expect(404);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('GAME_NOT_FOUND');
+  });
+
+  it('returns minimal diagnostics snapshot when no WebSocketServer instance is wired', async () => {
+    const validGameId = '550e8400-e29b-41d4-a716-446655440012';
+    mockPrisma.game.findUnique.mockResolvedValueOnce({
+      id: validGameId,
+      player1Id: 'user-1',
+      player2Id: null,
+      player3Id: null,
+      player4Id: null,
+      allowSpectators: false,
+    } as any);
+
+    const app = createTestApp();
+
+    const res = await request(app)
+      .get(`/api/games/${validGameId}/diagnostics/session`)
+      .set('Authorization', 'Bearer user-1')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({
+      sessionStatus: null,
+      lastAIRequestState: null,
+      aiDiagnostics: null,
+      connections: {},
+      meta: {
+        hasInMemorySession: false,
+      },
+    });
+  });
+
+  it('returns diagnostics snapshot from injected WebSocketServer instance when available', async () => {
+    const validGameId = '550e8400-e29b-41d4-a716-446655440013';
+    mockPrisma.game.findUnique.mockResolvedValueOnce({
+      id: validGameId,
+      player1Id: 'user-1',
+      player2Id: null,
+      player3Id: null,
+      player4Id: null,
+      allowSpectators: false,
+    } as any);
+
+    const diagnosticsSnapshot = {
+      sessionStatus: { kind: 'active', reason: 'test' },
+      lastAIRequestState: { kind: 'completed', terminalCode: 'OK' },
+      aiDiagnostics: { degraded: false, aiErrorCount: 0 },
+      connections: {
+        'user-1': { state: 'connected' },
+      },
+      hasInMemorySession: true,
+    };
+
+    // Minimal WebSocketServer-like test double that supports both diagnostics
+    // and lobby broadcasting used by the game routes. The diagnostics test
+    // injects this instance via createTestApp(wsServerMock), and subsequent
+    // tests that construct an app without explicitly passing a wsServer will
+    // still see this instance via setWebSocketServer(), so it must implement
+    // all methods the routes might call (at minimum, getGameDiagnosticsForGame
+    // and broadcastLobbyEvent).
+    const wsServerMock = {
+      getGameDiagnosticsForGame: jest.fn().mockReturnValue(diagnosticsSnapshot),
+      broadcastLobbyEvent: jest.fn(),
+    };
+
+    const app = createTestApp(wsServerMock);
+
+    const res = await request(app)
+      .get(`/api/games/${validGameId}/diagnostics/session`)
+      .set('Authorization', 'Bearer user-1')
+      .expect(200);
+
+    expect(wsServerMock.getGameDiagnosticsForGame).toHaveBeenCalledWith(validGameId);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toEqual({
+      sessionStatus: diagnosticsSnapshot.sessionStatus,
+      lastAIRequestState: diagnosticsSnapshot.lastAIRequestState,
+      aiDiagnostics: diagnosticsSnapshot.aiDiagnostics,
+      connections: diagnosticsSnapshot.connections,
+      meta: {
+        hasInMemorySession: true,
+      },
+    });
   });
 });
 

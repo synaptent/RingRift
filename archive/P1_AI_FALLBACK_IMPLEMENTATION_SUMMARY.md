@@ -19,6 +19,7 @@ Successfully implemented a comprehensive three-tier fallback system that ensures
 **File:** [`src/server/services/AIServiceClient.ts`](src/server/services/AIServiceClient.ts:1)
 
 **Changes:**
+
 - Added [`CircuitBreaker`](src/server/services/AIServiceClient.ts:20) class implementing the circuit breaker pattern
   - Opens after 5 consecutive failures
   - 60-second cooldown before retry
@@ -36,6 +37,7 @@ Successfully implemented a comprehensive three-tier fallback system that ensures
 - Added [`getCircuitBreakerStatus()`](src/server/services/AIServiceClient.ts:289) for monitoring
 
 **Benefits:**
+
 - Prevents hammering failing AI service
 - Reduces latency when service is down
 - Automatic recovery detection
@@ -54,7 +56,7 @@ Successfully implemented a comprehensive three-tier fallback system that ensures
 ```typescript
 Level 1: Python AI Service (if mode === 'service')
    ↓ (on failure: timeout, error, invalid move)
-Level 2: Local Heuristic AI  
+Level 2: Local Heuristic AI
    ↓ (on failure: exception)
 Level 3: Random Valid Move Selection
 ```
@@ -81,6 +83,7 @@ Level 3: Random Valid Move Selection
 - Diagnostic counters for monitoring
 
 **Benefits:**
+
 - Games never get stuck waiting for AI moves
 - Invalid AI suggestions are caught and handled
 - Clear diagnostic trail for troubleshooting
@@ -102,6 +105,7 @@ Level 3: Random Valid Move Selection
 - Marks game as completed with abandonment reason
 
 **Error Event Structure:**
+
 ```typescript
 {
   type: 'game_error',
@@ -114,6 +118,7 @@ Level 3: Random Valid Move Selection
 ```
 
 **Benefits:**
+
 - Clear communication to players when fatal errors occur
 - Prevents games from hanging indefinitely
 - Provides actionable error information
@@ -136,6 +141,7 @@ Level 3: Random Valid Move Selection
   - Clear visual styling (red border/background)
 
 **Benefits:**
+
 - Users see clear error messages instead of hanging
 - Developers get technical details for debugging
 - Improved user experience during failures
@@ -150,17 +156,20 @@ Level 3: Random Valid Move Selection
 **Changes:**
 
 #### Enhanced [`selectSandboxMovementMove()`](src/client/sandbox/sandboxAI.ts:392):
+
 - Wrapped in try-catch with random fallback
 - Never throws exceptions
 - Logs errors for debugging
 
 #### Enhanced [`maybeRunAITurnSandbox()`](src/client/sandbox/sandboxAI.ts:437):
+
 - Outer try-catch wrapper for entire function
 - Inner try-catch for game logic
 - Records errors in trace buffer for diagnostics
 - Graceful error recovery without game corruption
 
 **Benefits:**
+
 - Sandbox games never crash due to AI errors
 - Maintains trace buffer integrity even with errors
 - Clear error logging for debugging
@@ -175,6 +184,7 @@ Level 3: Random Valid Move Selection
 **File:** [`tests/unit/AIEngine.fallback.test.ts`](tests/unit/AIEngine.fallback.test.ts:1)
 
 **Test Suites:**
+
 1. **Service Failure Fallback**
    - Falls back to local heuristics when service fails
    - Handles timeouts
@@ -214,6 +224,7 @@ Level 3: Random Valid Move Selection
 **File:** [`tests/integration/AIResilience.test.ts`](tests/integration/AIResilience.test.ts:1)
 
 **Test Suites:**
+
 1. **Service Degradation Scenarios**
    - Completes game with AI service down
    - Handles intermittent failures
@@ -267,6 +278,7 @@ Level 3: Random Valid Move Selection
 **On Failure:** Log error, increment diagnostics, proceed to Tier 2
 
 **Failure Triggers:**
+
 - Connection refused (service down)
 - Request timeout (>30s)
 - HTTP errors (500, 503, etc.)
@@ -281,6 +293,7 @@ Level 3: Random Valid Move Selection
 **On Failure:** Log error, proceed to Tier 3
 
 **Selection Heuristics:**
+
 - Prioritize captures over movements
 - Prefer moves advancing game state
 - Use deterministic tie-breaking with RNG
@@ -294,6 +307,7 @@ Level 3: Random Valid Move Selection
 **On Failure:** Return null (no valid moves)
 
 **Characteristics:**
+
 - Last resort fallback
 - Always succeeds if any valid move exists
 - Maintains RNG determinism for replay integrity
@@ -309,8 +323,8 @@ Level 3: Random Valid Move Selection
 
 ```typescript
 interface AIDiagnostics {
-  serviceFailureCount: number;  // Total service failures for this player
-  localFallbackCount: number;   // Total local heuristic usages
+  serviceFailureCount: number; // Total service failures for this player
+  localFallbackCount: number; // Total local heuristic usages
 }
 ```
 
@@ -338,30 +352,33 @@ type AIQualityMode = 'normal' | 'fallbackLocalAI' | 'rulesServiceDegraded';
 ### Logging Strategy
 
 **Info Level:**
+
 - Successful AI move generation
 - Circuit breaker state transitions
 - Local heuristic usage (in normal mode)
 
 **Warn Level:**
+
 - Service failures with fallback
 - Invalid moves from service
 - Random fallback usage
 
 **Error Level:**
+
 - Fatal AI failures (all tiers failed)
 - Game abandonment
 - Circuit breaker opening
 
 ### Recommended Alerts
 
-| Metric | Threshold | Severity | Action |
-|--------|-----------|----------|--------|
-| Service availability | < 95% | Warning | Check AI service health |
-| Fallback usage rate | > 20% | Warning | Investigate network/service |
-| Circuit breaker open | Any | Critical | AI service down |
-| Invalid move rate | > 1% | Warning | AI service logic issue |
-| Random fallback usage | > 0.1% | Warning | Local heuristic failing |
-| Fatal failures | > 0 | Critical | Investigate immediately |
+| Metric                | Threshold | Severity | Action                      |
+| --------------------- | --------- | -------- | --------------------------- |
+| Service availability  | < 95%     | Warning  | Check AI service health     |
+| Fallback usage rate   | > 20%     | Warning  | Investigate network/service |
+| Circuit breaker open  | Any       | Critical | AI service down             |
+| Invalid move rate     | > 1%      | Warning  | AI service logic issue      |
+| Random fallback usage | > 0.1%    | Warning  | Local heuristic failing     |
+| Fatal failures        | > 0       | Critical | Investigate immediately     |
 
 ---
 
@@ -396,16 +413,19 @@ type AIQualityMode = 'normal' | 'fallbackLocalAI' | 'rulesServiceDegraded';
 ### Test Execution
 
 Run unit tests:
+
 ```bash
 npm test tests/unit/AIEngine.fallback.test.ts
 ```
 
 Run integration tests:
+
 ```bash
 npm test tests/integration/AIResilience.test.ts
 ```
 
 Run all AI-related tests:
+
 ```bash
 npm test -- --testPathPattern="AI"
 ```
@@ -554,21 +574,25 @@ npm test -- --testPathPattern="AI"
 ### Manual Testing Scenarios
 
 **Scenario 1: AI Service Down**
+
 - Result: ✅ Game completes using local heuristics
 - Fallback: Tier 2 (Local Heuristic AI)
 - Diagnostics: `serviceFailureCount` increments
 
 **Scenario 2: AI Service Returns Invalid Move**
+
 - Result: ✅ Invalid move rejected, fallback used
 - Fallback: Tier 2 (Local Heuristic AI)
 - Logging: Warning logged with move details
 
 **Scenario 3: AI Service Timeout**
+
 - Result: ✅ Request times out, fallback used
 - Fallback: Tier 2 (Local Heuristic AI)
 - Timing: < 31 seconds total (30s timeout + fallback)
 
 **Scenario 4: Repeated Failures**
+
 - Result: ✅ Circuit breaker opens, all requests use fallback
 - Fallback: Immediate Tier 2 (bypassing service)
 - Recovery: Automatic retry after 60 seconds
@@ -579,13 +603,13 @@ npm test -- --testPathPattern="AI"
 
 ### Latency Analysis
 
-| Scenario | Tier Used | Typical Latency |
-|----------|-----------|-----------------|
-| Service success | Tier 1 | 50-500ms |
-| Service timeout | Tier 2 | ~30s (timeout) + <10ms (fallback) |
-| Service error | Tier 2 | <50ms (error detect) + <10ms (fallback) |
-| Circuit breaker open | Tier 2 | <10ms (immediate fallback) |
-| Heuristic failure | Tier 3 | <1ms (random selection) |
+| Scenario             | Tier Used | Typical Latency                         |
+| -------------------- | --------- | --------------------------------------- |
+| Service success      | Tier 1    | 50-500ms                                |
+| Service timeout      | Tier 2    | ~30s (timeout) + <10ms (fallback)       |
+| Service error        | Tier 2    | <50ms (error detect) + <10ms (fallback) |
+| Circuit breaker open | Tier 2    | <10ms (immediate fallback)              |
+| Heuristic failure    | Tier 3    | <1ms (random selection)                 |
 
 ### Resource Usage
 
@@ -651,11 +675,13 @@ npm test -- --testPathPattern="AI"
 **Symptom:** High fallback usage (>20%)
 
 **Possible Causes:**
+
 1. AI service performance degradation
 2. Network issues between backend and AI service
 3. AI service overloaded
 
 **Actions:**
+
 1. Check AI service health: `curl http://localhost:8001/health`
 2. Review AI service logs for errors
 3. Check network connectivity
@@ -666,11 +692,13 @@ npm test -- --testPathPattern="AI"
 **Symptom:** Circuit breaker frequently opening
 
 **Possible Causes:**
+
 1. AI service crashes or restarts
 2. Resource exhaustion
 3. Code bugs in AI service
 
 **Actions:**
+
 1. Review AI service logs
 2. Check resource usage (CPU, memory)
 3. Restart AI service
@@ -681,11 +709,13 @@ npm test -- --testPathPattern="AI"
 **Symptom:** Invalid moves from AI service
 
 **Possible Causes:**
+
 1. AI service/backend rules out of sync
 2. Bug in AI move generation
 3. State serialization issues
 
 **Actions:**
+
 1. Review logged invalid moves
 2. Check AI service version compatibility
 3. Run parity tests
@@ -766,6 +796,7 @@ npm test -- --testPathPattern="AI"
 ### Rollback Plan
 
 If issues arise:
+
 1. Revert to previous backend version
 2. AI games will use old error handling
 3. No data loss (only behavior change)

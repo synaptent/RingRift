@@ -136,6 +136,18 @@ export class MetricsService {
   /** Counter: AI turn request terminal outcomes keyed by final state */
   public readonly aiTurnRequestTerminals: Counter<'kind' | 'code' | 'ai_error_type'>;
 
+  /** Counter: WebSocket reconnection attempts */
+  public readonly websocketReconnectionTotal: Counter<'result'>;
+
+  /** Counter: Game session abnormal terminations by reason */
+  public readonly gameSessionAbnormalTerminationTotal: Counter<'reason'>;
+
+  /** Histogram: AI request latency in milliseconds */
+  public readonly aiRequestLatencyMs: Histogram<'outcome'>;
+
+  /** Counter: AI request timeout occurrences */
+  public readonly aiRequestTimeoutTotal: Counter<string>;
+
   // ===================
   // Rules Parity Metrics (already exist, re-exported for convenience)
   // ===================
@@ -314,6 +326,30 @@ export class MetricsService {
       name: 'ringrift_ai_turn_request_terminal_total',
       help: 'Total number of AI turn requests reaching a terminal state',
       labelNames: ['kind', 'code', 'ai_error_type'] as const,
+    });
+
+    this.websocketReconnectionTotal = new Counter({
+      name: 'ringrift_websocket_reconnection_total',
+      help: 'Total number of WebSocket reconnection attempts by result',
+      labelNames: ['result'] as const,
+    });
+
+    this.gameSessionAbnormalTerminationTotal = new Counter({
+      name: 'ringrift_game_session_abnormal_termination_total',
+      help: 'Total number of game sessions terminated abnormally by reason',
+      labelNames: ['reason'] as const,
+    });
+
+    this.aiRequestLatencyMs = new Histogram({
+      name: 'ringrift_ai_request_latency_ms',
+      help: 'AI request latency in milliseconds',
+      labelNames: ['outcome'] as const,
+      buckets: [50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000],
+    });
+
+    this.aiRequestTimeoutTotal = new Counter({
+      name: 'ringrift_ai_request_timeout_total',
+      help: 'Total number of AI request timeouts',
     });
 
     // ===================
@@ -619,6 +655,49 @@ export class MetricsService {
    */
   public recordAITurnRequestTerminal(kind: string, code?: string, aiErrorType?: string): void {
     this.aiTurnRequestTerminals.labels(kind, code ?? 'none', aiErrorType ?? 'none').inc();
+  }
+
+  // ===================
+  // WebSocket Session Helpers
+  // ===================
+
+  /**
+   * Record a WebSocket reconnection attempt.
+   */
+  public recordWebsocketReconnection(result: 'success' | 'failed' | 'timeout'): void {
+    this.websocketReconnectionTotal.labels(result).inc();
+  }
+
+  // ===================
+  // Abnormal Termination Helpers
+  // ===================
+
+  /**
+   * Record an abnormal game session termination.
+   */
+  public recordAbnormalTermination(reason: string): void {
+    this.gameSessionAbnormalTerminationTotal.labels(reason).inc();
+  }
+
+  // ===================
+  // AI Request Latency Helpers
+  // ===================
+
+  /**
+   * Record AI request latency in milliseconds.
+   */
+  public recordAIRequestLatencyMs(
+    latencyMs: number,
+    outcome: 'success' | 'fallback' | 'timeout' | 'error'
+  ): void {
+    this.aiRequestLatencyMs.labels(outcome).observe(latencyMs);
+  }
+
+  /**
+   * Record an AI request timeout.
+   */
+  public recordAIRequestTimeout(): void {
+    this.aiRequestTimeoutTotal.inc();
   }
 }
 

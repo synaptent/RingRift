@@ -32,21 +32,40 @@ describe('GameSession AI request state modeling', () => {
 
     const session = new GameSession('game-1', io, pythonClient, new Map());
 
+    // Track call count to return different states
+    let callCount = 0;
+
     // Inject a minimal gameEngine and rulesFacade so maybePerformAITurn
     // can operate without hitting the real engine or database.
     (session as any).gameEngine = {
-      getGameState: jest.fn(() => initialState),
-      getValidMoves: jest.fn(),
+      getGameState: jest.fn(() => {
+        // After first call, return a state where it's not AI's turn (to prevent recursion)
+        callCount++;
+        if (callCount > 1) {
+          return {
+            ...initialState,
+            currentPlayer: 1,
+            // Change gameStatus to inactive to break recursion
+            gameStatus: 'completed',
+          };
+        }
+        return initialState;
+      }),
+      getValidMoves: jest.fn().mockReturnValue([]),
     };
 
     (session as any).rulesFacade = {
       applyMove: jest.fn(),
+      getDiagnostics: jest.fn().mockReturnValue({
+        pythonEvalFailures: 0,
+        pythonBackendFallbacks: 0,
+        pythonShadowErrors: 0,
+      }),
     };
 
-    // Stub out persistence / broadcast side effects; these are exercised in
-    // other tests and are not needed for AIRequestState coverage.
-    (session as any).handleAIMoveResult = jest.fn(async () => {});
-    (session as any).handleAIFatalFailure = jest.fn(async () => {});
+    // Stub out persistence / broadcast side effects
+    (session as any).persistAIMove = jest.fn(async () => {});
+    (session as any).broadcastUpdate = jest.fn(async () => {});
 
     return session as any;
   };
@@ -91,7 +110,10 @@ describe('GameSession AI request state modeling', () => {
       thinkTime: 0,
     } as any);
 
-    (session.rulesFacade.applyMove as jest.Mock).mockResolvedValueOnce({ success: true });
+    (session.rulesFacade.applyMove as jest.Mock).mockResolvedValueOnce({
+      success: true,
+      gameState: initialState,
+    });
 
     await session.maybePerformAITurn();
 
@@ -124,27 +146,19 @@ describe('GameSession AI request state modeling', () => {
 
     const session = makeSession(initialState);
 
-    // First service attempt returns a move that is rejected by the rules engine.
-    mockedGlobalAIEngine.getAIMove
-      .mockResolvedValueOnce({
-        id: 'service-move',
-        player: 1,
-        type: 'place_ring',
-        from: null,
-        to: { q: 0, r: 0 },
-        moveNumber: 1,
-        timestamp: new Date().toISOString(),
-        thinkTime: 0,
-      } as any)
-      // Second attempt yields no move, triggering the local-fallback path.
-      .mockResolvedValueOnce(null as any);
+    // Service returns a move that is rejected by the rules engine
+    mockedGlobalAIEngine.getAIMove.mockResolvedValueOnce({
+      id: 'service-move',
+      player: 1,
+      type: 'place_ring',
+      from: null,
+      to: { q: 0, r: 0 },
+      moveNumber: 1,
+      timestamp: new Date().toISOString(),
+      thinkTime: 0,
+    } as any);
 
-    (session.rulesFacade.applyMove as jest.Mock)
-      // Reject service-provided move
-      .mockResolvedValueOnce({ success: false, error: 'service move rejected' })
-      // Reject local fallback move as well
-      .mockResolvedValueOnce({ success: false, error: 'fallback move rejected' });
-
+    // Local fallback is also provided but will be rejected
     mockedGlobalAIEngine.getLocalFallbackMove.mockReturnValue({
       id: 'fallback-move',
       player: 1,
@@ -155,6 +169,12 @@ describe('GameSession AI request state modeling', () => {
       timestamp: new Date().toISOString(),
       thinkTime: 0,
     } as any);
+
+    (session.rulesFacade.applyMove as jest.Mock)
+      // Reject service-provided move
+      .mockResolvedValueOnce({ success: false, error: 'service move rejected' })
+      // Reject local fallback move as well
+      .mockResolvedValueOnce({ success: false, error: 'fallback move rejected' });
 
     await session.maybePerformAITurn();
 
