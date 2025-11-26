@@ -46,7 +46,7 @@ A reasonable label for the current state is: **stable beta with consolidated arc
   - **Complete:** Canonical `GameState` / `GameAction` types, validators, and mutators for all core mechanics
   - **Movement & captures:** [`movementLogic.ts`](src/shared/engine/movementLogic.ts), [`captureLogic.ts`](src/shared/engine/captureLogic.ts), with full mutator support
   - **Lines:** [`lineDetection.ts`](src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts) with canonical Move enumeration
-  - **Territory:** [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts), [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts)
+  - **Territory:** [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts), [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts), [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts)
   - **Victory & placement:** [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts), [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts) with no-dead-placement validation
   - **Turn lifecycle:** [`turnLogic.ts`](src/shared/engine/turnLogic.ts), [`turnLifecycle.ts`](src/shared/engine/turnLifecycle.ts) with canonical phase transitions
 
