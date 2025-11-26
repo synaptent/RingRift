@@ -548,6 +548,88 @@ AI_SERVICE_URL=http://ai-service:8001  # Docker
 AI_SERVICE_URL=http://localhost:8001   # Local
 ```
 
+## Canonical Difficulty Ladder
+
+The AI service implements a 10-level difficulty ladder that maps numeric difficulty values to specific AI algorithms and parameters. This mapping is defined in [`_CANONICAL_DIFFICULTY_PROFILES`](app/main.py:1) and mirrored in the TypeScript backend's [`AI_DIFFICULTY_PRESETS`](../src/server/game/ai/AIEngine.ts:1).
+
+| Difficulty | AI Type   | Randomness | Profile ID     | Description                     |
+| ---------- | --------- | ---------- | -------------- | ------------------------------- |
+| 1          | RANDOM    | 0.5        | v1-random-1    | Random valid moves              |
+| 2          | HEURISTIC | 0.3        | v1-heuristic-2 | Basic heuristic with noise      |
+| 3          | MINIMAX   | 0.2        | v1-minimax-3   | Shallow search, some randomness |
+| 4          | MINIMAX   | 0.15       | v1-minimax-4   | Medium depth                    |
+| 5          | MINIMAX   | 0.1        | v1-minimax-5   | Deeper search                   |
+| 6          | MINIMAX   | 0.0        | v1-minimax-6   | Deterministic minimax           |
+| 7          | MCTS      | 0.0        | v1-mcts-7      | Monte Carlo tree search         |
+| 8          | MCTS      | 0.0        | v1-mcts-8      | Extended MCTS                   |
+| 9          | DESCENT   | 0.0        | v1-descent-9   | Local descent optimizer         |
+| 10         | DESCENT   | 0.0        | v1-descent-10  | Full strength descent           |
+
+## RNG Seeding for Determinism
+
+The AI service supports deterministic behavior through RNG seeding, enabling reproducible AI moves for testing, replay, and parity verification.
+
+### Seed Flow Architecture
+
+```
+gameState.rngSeed
+    └─> AIServiceClient.getAIMove()
+            └─> POST /ai/move { seed: <value> }
+                    └─> AIConfig.rng_seed
+                            └─> BaseAI.rng (per-instance Random)
+```
+
+### API Usage
+
+Pass the `seed` field in the `/ai/move` request body:
+
+```json
+{
+  "game_state": {
+    /* GameState object */
+  },
+  "player_number": 1,
+  "difficulty": 5,
+  "seed": 42
+}
+```
+
+### Python Implementation
+
+Each AI instance in [`base.py`](app/ai/base.py:1) creates a per-instance `random.Random` seeded as follows:
+
+```python
+if config.rng_seed is not None:
+    seed = config.rng_seed
+else:
+    # Deterministic fallback from difficulty + player
+    seed = (difficulty * 1_000_003) ^ (player_number * 97_911)
+self.rng = random.Random(seed)
+```
+
+### TypeScript Alignment
+
+The TypeScript side uses the [`SeededRNG`](../src/shared/utils/rng.ts:1) class (xorshift128+) for client-side sandbox AI, and passes seeds through `AIServiceClient` for server-side requests. Key files:
+
+- [`localAIMoveSelection.ts`](../src/shared/engine/localAIMoveSelection.ts:1) - Accepts injectable `LocalAIRng` for deterministic selection
+- [`ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts:1) - Creates `SeededRNG` from `generateGameSeed()`
+- [`AIServiceClient.ts`](../src/server/services/AIServiceClient.ts:1) - Passes `gameState.rngSeed` as `seed` in API requests
+
+### Testing Determinism
+
+**Python tests** (in [`tests/test_determinism.py`](tests/test_determinism.py:1)):
+
+- `test_seeded_random_ai_determinism` - Same seed produces identical moves
+- `test_different_seeds_produce_different_moves` - Different seeds diverge
+- `test_heuristic_ai_determinism` - HeuristicAI with seeded RNG
+- `test_evaluation_determinism` - Position evaluation consistency
+
+**TypeScript tests**:
+
+- [`RNGDeterminism.test.ts`](../tests/unit/RNGDeterminism.test.ts:1) - SeededRNG class behavior
+- [`Sandbox_vs_Backend.aiRngParity.test.ts`](../tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1) - RNG plumbing verification
+- [`GameSession.aiDeterminism.test.ts`](../tests/integration/GameSession.aiDeterminism.test.ts:1) - End-to-end AI determinism
+
 ## Performance Considerations
 
 - AI instances are cached by `{ai_type}-{difficulty}-{player_number}`

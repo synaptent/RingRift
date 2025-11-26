@@ -1,4 +1,4 @@
-import { GameResult, GameState, Position } from '../../shared/types/game';
+import type { GameResult, GameState, Position } from '../../shared/engine';
 import { checkSandboxVictory } from './sandboxVictory';
 
 /**

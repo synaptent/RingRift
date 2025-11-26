@@ -1,12 +1,12 @@
-import {
+import type {
   GameState,
   Move,
   Position,
-  positionToString,
   CaptureDirectionChoice,
   PlayerChoiceResponseFor,
-} from '../../../shared/types/game';
-import { enumerateCaptureMoves, CaptureBoardAdapters } from '../../../shared/engine/captureLogic';
+} from '../../../shared/engine';
+import type { CaptureBoardAdapters } from '../../../shared/engine';
+import { positionToString, enumerateCaptureMoves } from '../../../shared/engine';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
 import { PlayerInteractionManager } from '../PlayerInteractionManager';
@@ -169,12 +169,7 @@ export async function chooseCaptureDirectionFromState(
   }
 
   const choice: CaptureDirectionChoice = {
-    id: generateUUID(
-      'capture_direction',
-      gameState.id,
-      chainState.segments.length,
-      options.length
-    ),
+    id: generateUUID('capture_direction', gameState.id, chainState.segments.length, options.length),
     gameId: gameState.id,
     playerNumber: chainState.playerNumber,
     type: 'capture_direction',

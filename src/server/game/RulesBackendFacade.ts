@@ -1,5 +1,5 @@
-import { GameState, GameResult, Move } from '../../shared/types/game';
-import { computeProgressSnapshot, hashGameState } from '../../shared/engine/core';
+import type { GameState, GameResult, Move } from '../../shared/engine';
+import { computeProgressSnapshot, hashGameState } from '../../shared/engine';
 import { getRulesMode, isRulesShadowMode } from '../../shared/utils/envFlags';
 import { GameEngine } from './GameEngine';
 import { PythonRulesClient, RulesEvalResponse } from '../services/PythonRulesClient';

@@ -1,49 +1,43 @@
-import {
+import type {
   GameState,
   Move,
   Player,
   BoardType,
   TimeControl,
-  GameResult,
-  BOARD_CONFIGS,
   Position,
   RingStack,
   Territory,
   LineInfo,
-  positionToString,
-  LineOrderChoice,
-  LineRewardChoice,
-  RingEliminationChoice,
-  PlayerChoiceResponseFor,
   GameHistoryEntry,
-} from '../../shared/types/game';
+} from '../../shared/engine';
 import {
+  BOARD_CONFIGS,
+  positionToString,
   calculateCapHeight,
   getPathPositions,
-  getMovementDirectionsForBoardType,
   computeProgressSnapshot,
   summarizeBoard,
   hashGameState,
   countRingsInPlayForPlayer,
-} from '../../shared/engine/core';
-import {
   filterProcessableTerritoryRegions,
   applyTerritoryRegion,
   canProcessTerritoryRegion,
-} from '../../shared/engine/territoryProcessing';
-import {
   enumerateProcessTerritoryRegionMoves,
   applyProcessTerritoryRegionDecision,
-  enumerateTerritoryEliminationMoves,
   applyEliminateRingsFromStackDecision,
-} from '../../shared/engine/territoryDecisionHelpers';
-import {
   enumerateProcessLineMoves,
   enumerateChooseLineRewardMoves,
   applyProcessLineDecision,
   applyChooseLineRewardDecision,
-} from '../../shared/engine/lineDecisionHelpers';
-import { findLinesForPlayer } from '../../shared/engine/lineDetection';
+  findLinesForPlayer,
+} from '../../shared/engine';
+import type {
+  GameResult,
+  LineOrderChoice,
+  LineRewardChoice,
+  RingEliminationChoice,
+  PlayerChoiceResponseFor,
+} from '../../shared/types/game';
 import { BoardManager } from './BoardManager';
 import { RuleEngine } from './RuleEngine';
 import { PlayerInteractionManager } from './PlayerInteractionManager';
@@ -81,15 +75,15 @@ declare const setTimeout: (callback: () => void, ms: number) => any;
 
 declare const clearTimeout: (timer: any) => void;
 
- // Deterministic identifier helper for moves and choice payloads.
- // This deliberately avoids any RNG so that core engine behaviour
- // remains fully deterministic (RR‑CANON R190).
- function generateUUID(...parts: Array<string | number | undefined>): string {
-   return parts
-     .filter((part) => part !== undefined)
-     .map((part) => String(part))
-     .join('|');
- }
+// Deterministic identifier helper for moves and choice payloads.
+// This deliberately avoids any RNG so that core engine behaviour
+// remains fully deterministic (RR‑CANON R190).
+function generateUUID(...parts: Array<string | number | undefined>): string {
+  return parts
+    .filter((part) => part !== undefined)
+    .map((part) => String(part))
+    .join('|');
+}
 
 export class GameEngine {
   private gameState: GameState;
@@ -3281,10 +3275,7 @@ export class GameEngine {
         };
         const movementMoves = this.ruleEngine.getValidMoves(tempMovement);
         hasMovement = movementMoves.some(
-          (m) =>
-            m.type === 'move_stack' ||
-            m.type === 'move_ring' ||
-            m.type === 'build_stack'
+          (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack'
         );
       }
 

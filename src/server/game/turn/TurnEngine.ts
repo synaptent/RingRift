@@ -1,11 +1,14 @@
-import { GameState, Move, GameResult, Position } from '../../../shared/types/game';
-import { BoardManager } from '../BoardManager';
-import { RuleEngine } from '../RuleEngine';
-import {
-  advanceTurnAndPhase,
+import type {
+  GameState,
+  Move,
+  GameResult,
+  Position,
   PerTurnState as SharedPerTurnState,
   TurnLogicDelegates,
-} from '../../../shared/engine/turnLogic';
+} from '../../../shared/engine';
+import { advanceTurnAndPhase } from '../../../shared/engine';
+import { BoardManager } from '../BoardManager';
+import { RuleEngine } from '../RuleEngine';
 
 /**
  * Dependencies required for turn/phase orchestration. This keeps the

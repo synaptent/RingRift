@@ -1,10 +1,5 @@
-import {
-  BoardState,
-  BoardType,
-  Position,
-  RingStack,
-  positionToString,
-} from '../../shared/types/game';
+import type { BoardState, BoardType, Position, RingStack } from '../../shared/engine';
+import { positionToString } from '../../shared/engine';
 import {
   enumerateCaptureSegmentsFromBoard,
   applyCaptureSegmentOnBoard,
@@ -83,7 +78,7 @@ export function findMaxCaptureChains(
   startPos: Position,
   playerNumber: number,
   adapters: CaptureBoardAdapters & CaptureApplyAdapters,
-  options: ChainSearchOptions = {},
+  options: ChainSearchOptions = {}
 ): ChainSearchResult[] {
   const maxDepth = options.maxDepth ?? 32; // defensive default
 
@@ -127,7 +122,7 @@ export function findMaxCaptureChains(
       state.board,
       state.currentPos,
       playerNumber,
-      adapters,
+      adapters
     );
 
     if (segments.length === 0) {
@@ -150,7 +145,7 @@ export function findMaxCaptureChains(
         seg.target,
         seg.landing,
         playerNumber,
-        adapters,
+        adapters
       );
 
       const nextVisited = new Set(state.visited);

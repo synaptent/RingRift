@@ -1,21 +1,19 @@
-import {
+import type {
   BoardState,
   BoardType,
   Position,
   RingStack,
-  positionToString,
-} from '../../shared/types/game';
+  CaptureSegmentBoardView,
+  CaptureBoardAdapters as SharedCaptureBoardAdapters,
+} from '../../shared/engine';
 import {
+  positionToString,
   getMovementDirectionsForBoardType,
   validateCaptureSegmentOnBoard,
-  CaptureSegmentBoardView,
   calculateCapHeight,
   getPathPositions,
-} from '../../shared/engine/core';
-import {
   enumerateCaptureMoves as enumerateCaptureMovesShared,
-  CaptureBoardAdapters as SharedCaptureBoardAdapters,
-} from '../../shared/engine/captureLogic';
+} from '../../shared/engine';
 
 export interface CaptureSegment {
   from: Position;

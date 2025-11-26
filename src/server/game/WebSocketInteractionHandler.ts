@@ -1,16 +1,22 @@
 import { Server as SocketIOServer } from 'socket.io';
-import {
-  PlayerChoice,
-  PlayerChoiceResponse
-} from '../../shared/types/game';
+import { PlayerChoice, PlayerChoiceResponse } from '../../shared/types/game';
 import { PlayerInteractionHandler } from './PlayerInteractionManager';
 import { logger } from '../utils/logger';
+import {
+  type ChoiceStatus,
+  makePendingChoiceStatus,
+  markChoiceCanceled,
+  markChoiceExpired,
+  markChoiceFulfilled,
+  markChoiceRejected,
+} from '../../shared/stateMachines/choice';
 
 interface PendingChoice {
   choice: PlayerChoice;
   resolve: (response: PlayerChoiceResponse<unknown>) => void;
   reject: (err: Error) => void;
   timeoutHandle: NodeJS.Timeout;
+  status: ChoiceStatus;
 }
 
 /**
@@ -25,6 +31,13 @@ interface PendingChoice {
  */
 export class WebSocketInteractionHandler implements PlayerInteractionHandler {
   private readonly pending = new Map<string, PendingChoice>();
+
+  /**
+   * Diagnostic record of the last known lifecycle state for each choice,
+   * keyed by `${gameId}:${playerNumber}:${choiceId}`. This is primarily used
+   * in tests and incident debugging; it does not affect gameplay.
+   */
+  private readonly lastChoiceStatuses = new Map<string, ChoiceStatus>();
 
   constructor(
     private readonly io: SocketIOServer,
@@ -46,9 +59,7 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
     const key = this.getKey(choice.gameId, choice.id, choice.playerNumber);
 
     if (this.pending.has(key)) {
-      throw new Error(
-        `WebSocketInteractionHandler: choice already pending for key ${key}`
-      );
+      throw new Error(`WebSocketInteractionHandler: choice already pending for key ${key}`);
     }
 
     const target = this.getTargetForPlayer(choice.playerNumber);
@@ -65,12 +76,23 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
       playerNumber: choice.playerNumber,
       choiceId: choice.id,
       type: choice.type,
-      timeoutMs
+      timeoutMs,
     });
+
+    const initialStatus = makePendingChoiceStatus(choice, timeoutMs);
+    this.lastChoiceStatuses.set(key, initialStatus);
 
     return new Promise<PlayerChoiceResponse<unknown>>((resolve, reject) => {
       const timeoutHandle = setTimeout(() => {
+        const pending = this.pending.get(key);
+        if (!pending) {
+          return;
+        }
+
+        const expiredStatus = markChoiceExpired(pending.status);
+        this.lastChoiceStatuses.set(key, expiredStatus);
         this.pending.delete(key);
+
         const err = new Error(
           `Player choice timed out after ${timeoutMs}ms (choiceId=${choice.id})`
         );
@@ -78,12 +100,18 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
           gameId: choice.gameId,
           playerNumber: choice.playerNumber,
           choiceId: choice.id,
-          type: choice.type
+          type: choice.type,
         });
         reject(err);
       }, timeoutMs);
 
-      this.pending.set(key, { choice, resolve, reject, timeoutHandle });
+      this.pending.set(key, {
+        choice,
+        resolve,
+        reject,
+        timeoutHandle,
+        status: initialStatus,
+      });
 
       // Emit the choice to the client. This can target a specific socket id,
       // a per-user room, or any other Socket.IO namespace configured by
@@ -125,13 +153,13 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
         logger.warn('WebSocketInteractionHandler: no pending choice for response', {
           gameId: this.gameId,
           choiceId,
-          playerNumber
+          playerNumber,
         });
         return;
       }
     }
 
-    const { choice, resolve, reject, timeoutHandle } = pending;
+    const { choice, resolve, reject, timeoutHandle, status } = pending;
 
     // Optional assertion: log a warning if the response's choiceType
     // is present and does not match the original choice.type. This is
@@ -142,7 +170,7 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
         gameId: this.gameId,
         choiceId,
         expectedType: choice.type,
-        actualType: response.choiceType
+        actualType: response.choiceType,
       });
     }
 
@@ -150,6 +178,10 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
     if (playerNumber !== choice.playerNumber) {
       clearTimeout(timeoutHandle);
       this.pending.delete(key);
+
+      const rejectedStatus = markChoiceRejected(status, 'PLAYER_MISMATCH');
+      this.lastChoiceStatuses.set(key, rejectedStatus);
+
       const err = new Error(
         `playerNumber mismatch for choice ${choiceId}: expected ${choice.playerNumber}, got ${playerNumber}`
       );
@@ -157,7 +189,7 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
         gameId: this.gameId,
         choiceId,
         expectedPlayer: choice.playerNumber,
-        actualPlayer: playerNumber
+        actualPlayer: playerNumber,
       });
       return reject(err);
     }
@@ -166,20 +198,26 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
     if (!this.isValidSelectedOption(choice, response.selectedOption)) {
       clearTimeout(timeoutHandle);
       this.pending.delete(key);
-      const err = new Error(
-        `Invalid selectedOption for choice ${choiceId} (type=${choice.type})`
-      );
+
+      const rejectedStatus = markChoiceRejected(status, 'INVALID_OPTION');
+      this.lastChoiceStatuses.set(key, rejectedStatus);
+
+      const err = new Error(`Invalid selectedOption for choice ${choiceId} (type=${choice.type})`);
       logger.warn('WebSocketInteractionHandler: invalid selectedOption', {
         gameId: this.gameId,
         choiceId,
         playerNumber,
-        type: choice.type
+        type: choice.type,
       });
       return reject(err);
     }
 
     clearTimeout(timeoutHandle);
     this.pending.delete(key);
+
+    const fulfilledStatus = markChoiceFulfilled(status);
+    this.lastChoiceStatuses.set(key, fulfilledStatus);
+
     resolve(response);
   }
 
@@ -193,19 +231,80 @@ export class WebSocketInteractionHandler implements PlayerInteractionHandler {
     const pending = this.pending.get(key);
     if (!pending) return;
 
-    const { timeoutHandle, reject } = pending;
+    const { timeoutHandle, reject, status } = pending;
     clearTimeout(timeoutHandle);
     this.pending.delete(key);
+
+    const canceledStatus = markChoiceCanceled(status, 'SERVER_CANCEL');
+    this.lastChoiceStatuses.set(key, canceledStatus);
+
     reject(new Error(`Choice ${choiceId} was cancelled by server`));
 
     logger.info('WebSocketInteractionHandler: choice cancelled', {
       gameId,
       choiceId,
-      playerNumber
+      playerNumber,
     });
 
     // Notify all clients in the game room so they can clear any UI.
     this.io.to(gameId).emit('player_choice_canceled', choiceId);
+  }
+
+  /**
+   * Cancel all pending choices for a specific player.
+   * Called when a player disconnects and the reconnection window expires.
+   * This ensures stale choices don't block game progression.
+   */
+  cancelAllChoicesForPlayer(playerNumber: number): void {
+    const keysToCancel: string[] = [];
+
+    for (const [key, pending] of this.pending.entries()) {
+      if (pending.choice.playerNumber === playerNumber && pending.choice.gameId === this.gameId) {
+        keysToCancel.push(key);
+      }
+    }
+
+    for (const key of keysToCancel) {
+      const pending = this.pending.get(key);
+      if (!pending) continue;
+
+      const { choice, timeoutHandle, reject, status } = pending;
+      clearTimeout(timeoutHandle);
+      this.pending.delete(key);
+
+      const canceledStatus = markChoiceCanceled(status, 'DISCONNECT');
+      this.lastChoiceStatuses.set(key, canceledStatus);
+
+      reject(new Error(`Choice ${choice.id} was cancelled due to player disconnect`));
+
+      logger.info('WebSocketInteractionHandler: choice cancelled due to disconnect', {
+        gameId: this.gameId,
+        choiceId: choice.id,
+        playerNumber,
+      });
+
+      // Notify all clients in the game room so they can clear any UI.
+      this.io.to(this.gameId).emit('player_choice_canceled', choice.id);
+    }
+  }
+
+  /**
+   * Get count of pending choices (useful for testing and diagnostics)
+   */
+  getPendingCount(): number {
+    return this.pending.size;
+  }
+
+  /**
+   * Expose a narrow diagnostic view for tests so they can assert the
+   * lifecycle of individual choices without reaching into private maps.
+   */
+  public getLastChoiceStatusSnapshotForTesting(
+    choiceId: string,
+    playerNumber: number
+  ): ChoiceStatus | undefined {
+    const key = this.getKey(this.gameId, choiceId, playerNumber);
+    return this.lastChoiceStatuses.get(key);
   }
 
   private getKey(gameId: string, choiceId: string, playerNumber: number): string {

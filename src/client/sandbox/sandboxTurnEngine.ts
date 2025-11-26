@@ -1,17 +1,14 @@
-import {
+import type {
   GamePhase,
   GameResult,
   GameState,
   Position,
-  BOARD_CONFIGS,
-  positionToString,
-} from '../../shared/types/game';
-import { BoardState, RingStack } from '../../shared/types/game';
-import {
-  advanceTurnAndPhase,
+  BoardState,
+  RingStack,
   PerTurnState as SharedPerTurnState,
   TurnLogicDelegates,
-} from '../../shared/engine/turnLogic';
+} from '../../shared/engine';
+import { BOARD_CONFIGS, positionToString, advanceTurnAndPhase } from '../../shared/engine';
 
 /**
  * Internal per-turn state for the sandbox engine. Mirrors

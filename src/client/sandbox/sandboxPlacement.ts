@@ -1,20 +1,18 @@
-import {
+import type {
   BoardState,
   BoardType,
-  BOARD_CONFIGS,
   Position,
   RingStack,
-  positionToString,
-} from '../../shared/types/game';
-import {
-  hasAnyLegalMoveOrCaptureFromOnBoard,
   MovementBoardView,
-  calculateCapHeight,
-} from '../../shared/engine/core';
-import {
-  validatePlacementOnBoard,
   PlacementContext,
-} from '../../shared/engine/validators/PlacementValidator';
+} from '../../shared/engine';
+import {
+  BOARD_CONFIGS,
+  positionToString,
+  hasAnyLegalMoveOrCaptureFromOnBoard,
+  calculateCapHeight,
+  validatePlacementOnBoard,
+} from '../../shared/engine';
 
 export interface PlacementBoardView {
   isValidPosition(pos: Position): boolean;

@@ -1,7 +1,6 @@
-import {
+import type {
   BoardState,
   BoardType,
-  BOARD_CONFIGS,
   GamePhase,
   GameState,
   GameResult,
@@ -10,28 +9,34 @@ import {
   PlayerType,
   Position,
   RingStack,
-  PlayerChoice,
-  PlayerChoiceResponseFor,
-  positionToString,
   LineInfo,
   RegionOrderChoice,
   GameHistoryEntry,
   Territory,
-} from '../../shared/types/game';
-import { isSandboxAiTraceModeEnabled } from '../../shared/utils/envFlags';
+  CaptureSegmentBoardView,
+  MarkerPathHelpers,
+  LocalAIRng,
+} from '../../shared/engine';
 import {
+  BOARD_CONFIGS,
+  positionToString,
   calculateCapHeight,
   calculateDistance,
   getPathPositions,
   validateCaptureSegmentOnBoard,
-  CaptureSegmentBoardView,
   computeProgressSnapshot,
   summarizeBoard,
   hashGameState,
   countRingsInPlayForPlayer,
-} from '../../shared/engine/core';
-import { canProcessTerritoryRegion } from '../../shared/engine/territoryProcessing';
-import { LocalAIRng } from '../../shared/engine/localAIMoveSelection';
+  canProcessTerritoryRegion,
+  applyProcessLineDecision,
+  applyChooseLineRewardDecision,
+  applyProcessTerritoryRegionDecision,
+  applyEliminateRingsFromStackDecision,
+  enumerateTerritoryEliminationMoves,
+} from '../../shared/engine';
+import type { PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
+import { isSandboxAiTraceModeEnabled } from '../../shared/utils/envFlags';
 import { SeededRNG, generateGameSeed } from '../../shared/utils/rng';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { getValidLineProcessingMoves, applyLineDecisionMove } from './sandboxLinesEngine';
@@ -40,7 +45,6 @@ import {
   enumerateSimpleMovementLandings,
   applyMarkerEffectsAlongPathOnBoard,
 } from './sandboxMovement';
-import type { MarkerPathHelpers } from './sandboxMovement';
 import {
   enumerateCaptureSegmentsFromBoard,
   applyCaptureSegmentOnBoard,
@@ -60,15 +64,6 @@ import {
   getValidTerritoryProcessingMoves,
   applyTerritoryDecisionMove,
 } from './sandboxTerritoryEngine';
-import {
-  applyProcessLineDecision,
-  applyChooseLineRewardDecision,
-} from '../../shared/engine/lineDecisionHelpers';
-import {
-  applyProcessTerritoryRegionDecision,
-  applyEliminateRingsFromStackDecision,
-  enumerateTerritoryEliminationMoves,
-} from '../../shared/engine/territoryDecisionHelpers';
 import {
   SandboxGameEndHooks,
   checkAndApplyVictorySandbox,

@@ -1,4 +1,4 @@
-import {
+import type {
   GameState,
   PlayerChoice,
   PlayerChoiceResponseFor,
@@ -6,18 +6,18 @@ import {
   RegionOrderChoice,
   Territory,
   Move,
+} from '../../shared/engine';
+import {
   positionToString,
-} from '../../shared/types/game';
+  enumerateProcessTerritoryRegionMoves,
+  applyProcessTerritoryRegionDecision,
+  applyEliminateRingsFromStackDecision,
+} from '../../shared/engine';
 import {
   findDisconnectedRegionsOnBoard,
   processDisconnectedRegionOnBoard,
   processDisconnectedRegionCoreOnBoard,
 } from './sandboxTerritory';
-import {
-  enumerateProcessTerritoryRegionMoves,
-  applyProcessTerritoryRegionDecision,
-  applyEliminateRingsFromStackDecision,
-} from '../../shared/engine/territoryDecisionHelpers';
 
 const TERRITORY_TRACE_DEBUG =
   typeof process !== 'undefined' &&

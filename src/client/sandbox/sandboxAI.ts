@@ -1,31 +1,27 @@
-import {
+import type {
   GameState,
   Move,
   Position,
-  positionToString,
   RingStack,
   BoardState,
-  BOARD_CONFIGS,
   Territory,
-} from '../../shared/types/game';
-import { hashGameState } from '../../shared/engine/core';
-import {
   LocalAIRng,
+} from '../../shared/engine';
+import {
+  positionToString,
+  BOARD_CONFIGS,
+  hashGameState,
   chooseLocalMoveFromCandidates,
-} from '../../shared/engine/localAIMoveSelection';
+  enumerateProcessLineMoves,
+  enumerateChooseLineRewardMoves,
+  enumerateProcessTerritoryRegionMoves,
+  enumerateTerritoryEliminationMoves,
+} from '../../shared/engine';
 import {
   isSandboxAiCaptureDebugEnabled,
   isSandboxAiStallDiagnosticsEnabled,
   isSandboxAiParityModeEnabled,
 } from '../../shared/utils/envFlags';
-import {
-  enumerateProcessLineMoves,
-  enumerateChooseLineRewardMoves,
-} from '../../shared/engine/lineDecisionHelpers';
-import {
-  enumerateProcessTerritoryRegionMoves,
-  enumerateTerritoryEliminationMoves,
-} from '../../shared/engine/territoryDecisionHelpers';
 
 const SANDBOX_AI_CAPTURE_DEBUG_ENABLED = isSandboxAiCaptureDebugEnabled();
 const SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED = isSandboxAiStallDiagnosticsEnabled();

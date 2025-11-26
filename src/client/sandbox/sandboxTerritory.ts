@@ -22,23 +22,23 @@
  *
  * @module client/sandbox/sandboxTerritory
  */
-import {
+import type {
   BoardState,
   BoardType,
   Player,
   Position,
   Territory,
+  RingStack,
+  TerritoryProcessingContext,
+} from '../../shared/engine';
+import {
   BOARD_CONFIGS,
   positionToString,
-  RingStack,
-} from '../../shared/types/game';
-import { forceEliminateCapOnBoard, ForcedEliminationResult } from './sandboxElimination';
-import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../shared/engine/territoryDetection';
-import { getBorderMarkerPositionsForRegion as getSharedBorderMarkers } from '../../shared/engine/territoryBorders';
-import {
+  findDisconnectedRegions as findDisconnectedRegionsShared,
+  getBorderMarkerPositionsForRegion as getSharedBorderMarkers,
   applyTerritoryRegion,
-  TerritoryProcessingContext,
-} from '../../shared/engine/territoryProcessing';
+} from '../../shared/engine';
+import { forceEliminateCapOnBoard, ForcedEliminationResult } from './sandboxElimination';
 
 const TERRITORY_TRACE_DEBUG =
   typeof process !== 'undefined' &&

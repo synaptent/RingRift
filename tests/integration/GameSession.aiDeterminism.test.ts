@@ -229,6 +229,22 @@ describe('GameSession + AI determinism (per-game rngSeed)', () => {
     expect(diag1.aiQualityMode).toBe('fallbackLocalAI');
     expect(diag2.aiQualityMode).toBe('fallbackLocalAI');
 
+    // Also assert that the derived GameSessionStatus projection stays in
+    // sync with the underlying GameState for both sessions after the
+    // first AI move.
+    const status1 = session1.getSessionStatusSnapshot();
+    const status2 = session2.getSessionStatusSnapshot();
+
+    expect(status1).not.toBeNull();
+    expect(status2).not.toBeNull();
+
+    if (status1 && status2) {
+      expect(status1.kind).toBe('active_turn');
+      expect(status2.kind).toBe('active_turn');
+      expect(status1.gameId).toBe(gameId);
+      expect(status2.gameId).toBe(gameId);
+    }
+
     io.close();
     httpServer.close();
   });

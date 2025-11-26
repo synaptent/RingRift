@@ -1,17 +1,17 @@
-import {
+import type {
   BoardState,
   GameState,
   Position,
   RingStack,
-  positionToString,
-} from '../../shared/types/game';
+  CaptureSegmentBoardView,
+} from '../../shared/engine';
 import {
+  positionToString,
   calculateDistance,
   calculateCapHeight,
   getPathPositions,
   validateCaptureSegmentOnBoard,
-  CaptureSegmentBoardView,
-} from '../../shared/engine/core';
+} from '../../shared/engine';
 import {
   applyCaptureSegmentOnBoard,
   enumerateCaptureSegmentsFromBoard,

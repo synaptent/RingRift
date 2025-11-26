@@ -18,6 +18,12 @@ import {
 import { webSocketConnectionsGauge } from '../utils/rulesParityMetrics';
 import { getMetricsService } from '../services/MetricsService';
 import { verifyToken, validateUser } from '../middleware/auth';
+import {
+  type PlayerConnectionState,
+  markConnected,
+  markDisconnectedExpired,
+  markDisconnectedPendingReconnect,
+} from '../../shared/stateMachines/connection';
 
 export interface AuthenticatedSocket extends Socket<ClientToServerEvents, ServerToClientEvents> {
   userId?: string;
@@ -104,12 +110,35 @@ async function checkChatRateLimit(socket: AuthenticatedSocket, gameId: string): 
   }
 }
 
+// Default reconnection window in milliseconds - players have this long to reconnect
+// before their choices are cleared and they're fully removed from the session
+const RECONNECTION_TIMEOUT_MS = 30_000;
+
 export class WebSocketServer {
   private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
   private gameRooms: Map<string, Set<string>> = new Map();
   private userSockets: Map<string, string> = new Map();
   private sessionManager: GameSessionManager;
   private static LOBBY_ROOM = 'lobby';
+
+  // Track users who have disconnected but might reconnect
+  // Key: `${gameId}:${userId}`, Value: { timeout, playerNumber, gameId, userId }
+  private pendingReconnections: Map<
+    string,
+    {
+      timeout: NodeJS.Timeout;
+      playerNumber: number;
+      gameId: string;
+      userId: string;
+    }
+  > = new Map();
+
+  /**
+   * Diagnostic view of per-player connection state for each game. This is
+   * keyed by `${gameId}:${userId}` and is primarily used for tests and
+   * incident debugging rather than gameplay logic.
+   */
+  private readonly playerConnectionStates = new Map<string, PlayerConnectionState>();
 
   constructor(httpServer: HTTPServer) {
     // Align WebSocket CORS with the HTTP API CORS configuration. Prefer an
@@ -484,6 +513,12 @@ export class WebSocketServer {
           // Game-level authorization: ensure that the responding socket
           // belongs to the human player associated with response.playerNumber.
           const gameState = session.getGameState();
+
+          // Spectator enforcement: strictly reject choice responses from spectators
+          if (socket.userId && gameState.spectators.includes(socket.userId)) {
+            throw new Error('Spectators cannot respond to player choices');
+          }
+
           const player = gameState.players.find((p) => p.playerNumber === response.playerNumber);
 
           if (!player || player.id !== socket.userId) {
@@ -499,7 +534,14 @@ export class WebSocketServer {
 
           const message = error instanceof Error ? error.message : String(error);
 
-          if (
+          if (message === 'Spectators cannot respond to player choices') {
+            this.emitError(
+              socket,
+              'ACCESS_DENIED',
+              'Spectators cannot respond to player choices',
+              'player_choice_response'
+            );
+          } else if (
             message.startsWith('playerNumber mismatch for choice') ||
             message.startsWith('Invalid selectedOption for choice')
           ) {
@@ -616,9 +658,36 @@ export class WebSocketServer {
         throw new Error('Access denied');
       }
 
+      // Check if this is a reconnection - clear any pending disconnect timeout
+      const reconnectionKey = `${gameId}:${socket.userId}`;
+      const pendingReconnection = this.pendingReconnections.get(reconnectionKey);
+      const isReconnection = !!pendingReconnection;
+
+      if (pendingReconnection) {
+        clearTimeout(pendingReconnection.timeout);
+        this.pendingReconnections.delete(reconnectionKey);
+
+        logger.info('Player reconnected within window', {
+          userId: socket.userId,
+          gameId,
+          socketId: socket.id,
+          playerNumber: pendingReconnection.playerNumber,
+        });
+      }
+
       // Get or create game session
       const session = await this.sessionManager.getOrCreateSession(gameId);
       const gameState = session.getGameState();
+
+      // Update per-player connection state diagnostics for this game.
+      if (socket.userId) {
+        const key = `${gameId}:${socket.userId}`;
+        const previous = this.playerConnectionStates.get(key);
+        const player = gameState.players.find((p) => p.id === socket.userId);
+        const playerNumber = player?.playerNumber;
+        const nextState = markConnected(gameId, socket.userId, playerNumber, previous);
+        this.playerConnectionStates.set(key, nextState);
+      }
 
       // Join the game room
       socket.join(gameId);
@@ -641,18 +710,33 @@ export class WebSocketServer {
         timestamp: new Date().toISOString(),
       });
 
-      // Notify others in the room
-      socket.to(gameId).emit('player_joined', {
-        type: 'player_joined',
-        data: {
-          gameId,
-          player: {
-            id: socket.userId!,
-            username: socket.username!,
+      // Notify others in the room - use appropriate event based on reconnection status
+      if (isReconnection && pendingReconnection) {
+        socket.to(gameId).emit('player_reconnected', {
+          type: 'player_reconnected',
+          data: {
+            gameId,
+            player: {
+              id: socket.userId!,
+              username: socket.username!,
+            },
+            playerNumber: pendingReconnection.playerNumber,
           },
-        },
-        timestamp: new Date().toISOString(),
-      });
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        socket.to(gameId).emit('player_joined', {
+          type: 'player_joined',
+          data: {
+            gameId,
+            player: {
+              id: socket.userId!,
+              username: socket.username!,
+            },
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       logger.info('Player joined game room', {
         userId: socket.userId,
@@ -783,7 +867,8 @@ export class WebSocketServer {
       gameId: socket.gameId,
     });
 
-    // Remove from user socket mapping
+    // Remove from user socket mapping immediately
+    // (will be re-added if they reconnect)
     if (socket.userId) {
       this.userSockets.delete(socket.userId);
     }
@@ -807,6 +892,87 @@ export class WebSocketServer {
         },
         timestamp: new Date().toISOString(),
       });
+
+      // Set up reconnection window for players
+      // If they don't reconnect within the window, clear their stale choices
+      const gameId = socket.gameId;
+      const userId = socket.userId;
+
+      if (userId) {
+        const session = this.sessionManager.getSession(gameId);
+        if (session) {
+          const gameState = session.getGameState();
+          const player = gameState.players.find((p) => p.id === userId);
+
+          // Only set up reconnection window for actual players, not spectators
+          if (player && !gameState.spectators.includes(userId)) {
+            const reconnectionKey = `${gameId}:${userId}`;
+
+            // Clear any existing timeout for this user/game combo
+            const existing = this.pendingReconnections.get(reconnectionKey);
+            if (existing) {
+              clearTimeout(existing.timeout);
+            }
+
+            const timeout = setTimeout(() => {
+              this.handleReconnectionTimeout(gameId, userId, player.playerNumber);
+            }, RECONNECTION_TIMEOUT_MS);
+
+            this.pendingReconnections.set(reconnectionKey, {
+              timeout,
+              playerNumber: player.playerNumber,
+              gameId,
+              userId,
+            });
+
+            // Update connection state diagnostics to reflect a pending reconnect window.
+            const key = `${gameId}:${userId}`;
+            const previous = this.playerConnectionStates.get(key);
+            const nextState = markDisconnectedPendingReconnect(
+              previous,
+              gameId,
+              userId,
+              player.playerNumber,
+              RECONNECTION_TIMEOUT_MS
+            );
+            this.playerConnectionStates.set(key, nextState);
+
+            logger.info('Reconnection window started', {
+              userId,
+              gameId,
+              playerNumber: player.playerNumber,
+              timeoutMs: RECONNECTION_TIMEOUT_MS,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Called when a player's reconnection window expires.
+   * Clears any stale pending choices for that player.
+   */
+  private handleReconnectionTimeout(gameId: string, userId: string, playerNumber: number): void {
+    const reconnectionKey = `${gameId}:${userId}`;
+    this.pendingReconnections.delete(reconnectionKey);
+
+    logger.info('Reconnection window expired, clearing stale choices', {
+      userId,
+      gameId,
+      playerNumber,
+    });
+
+    // Update connection state diagnostics to reflect an expired reconnection window.
+    const key = `${gameId}:${userId}`;
+    const previous = this.playerConnectionStates.get(key);
+    const nextState = markDisconnectedExpired(previous, gameId, userId, playerNumber);
+    this.playerConnectionStates.set(key, nextState);
+
+    const session = this.sessionManager.getSession(gameId);
+    if (session) {
+      // Cancel all pending choices for this player
+      session.getInteractionHandler().cancelAllChoicesForPlayer(playerNumber);
     }
   }
 
@@ -828,6 +994,18 @@ export class WebSocketServer {
 
   public getGameRooms(): Map<string, Set<string>> {
     return this.gameRooms;
+  }
+
+  /**
+   * Expose a snapshot of the last known PlayerConnectionState for a given
+   * game/user pair. This is primarily used in tests.
+   */
+  public getPlayerConnectionStateSnapshotForTesting(
+    gameId: string,
+    userId: string
+  ): PlayerConnectionState | undefined {
+    const key = `${gameId}:${userId}`;
+    return this.playerConnectionStates.get(key);
   }
 
   // Lobby broadcast methods

@@ -1,11 +1,5 @@
-import {
-  BoardState,
-  BoardType,
-  LineInfo,
-  Position,
-  positionToString,
-} from '../../shared/types/game';
-import { findAllLines as findAllLinesShared } from '../../shared/engine/lineDetection';
+import type { BoardState, BoardType, LineInfo, Position } from '../../shared/engine';
+import { positionToString, findAllLines as findAllLinesShared } from '../../shared/engine';
 
 export type LineDirection = { x: number; y: number; z?: number };
 

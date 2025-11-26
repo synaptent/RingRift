@@ -1,0 +1,599 @@
+# Rules Engine Surface Audit
+
+**Task:** T1-W1-A  
+**Date:** 2025-11-26  
+**Status:** Complete
+
+## Executive Summary
+
+This audit examines the four rules engine surfaces identified in `ARCHITECTURE_REMEDIATION_PLAN.md` Weakness 1:
+
+1. **Shared Engine** (`src/shared/engine/`) - Canonical rules logic
+2. **Server Game** (`src/server/game/`) - Backend orchestration with player interaction
+3. **Python AI Service** (`ai-service/app/rules/`) - Python port for AI training/evaluation
+4. **Client Sandbox** (`src/client/sandbox/`) - Client-side game orchestration
+
+**Key Finding:** The codebase is actively transitioning toward a single canonical engine in `src/shared/engine/`. Both Server Game and Client Sandbox surfaces now extensively delegate to shared helpers, with explicit documentation stating they are "orchestration layers" only. The Python AI Service duplicates core logic but maintains parity through shadow contract validation.
+
+---
+
+## 1. Surface Inventory Table
+
+| Surface               | Location                | File Count | Approx. Line Count | Key Entry Points                                          | Primary Responsibility                                      |
+| --------------------- | ----------------------- | ---------- | ------------------ | --------------------------------------------------------- | ----------------------------------------------------------- |
+| **Shared Engine**     | `src/shared/engine/`    | 26 files   | ~4,500             | `GameEngine.ts`, `turnLogic.ts`, validators/, mutators/   | Canonical rules definitions, pure functions                 |
+| **Server Game**       | `src/server/game/`      | 12 files   | ~6,000             | `GameEngine.ts`, `RuleEngine.ts`, `RulesBackendFacade.ts` | Backend orchestration, WebSocket interaction, parity bridge |
+| **Python AI Service** | `ai-service/app/rules/` | 14 files   | ~2,000             | `default_engine.py`, validators/, mutators/               | Python port for AI training, parity validation              |
+| **Client Sandbox**    | `src/client/sandbox/`   | 12 files   | ~5,200             | `ClientSandboxEngine.ts`, sandbox\*Engine.ts              | Client-side game hosting, local AI                          |
+
+---
+
+## 2. Surface Analysis
+
+### 2.1 Surface 1: Shared Engine (`src/shared/engine/`)
+
+#### Responsibilities
+
+- **Game Phases:** Ring placement, movement, capture, chain capture, line processing, territory processing
+- **State Transitions:** Turn advancement via `advanceTurnAndPhase()`, phase normalization
+- **Invariants:** Board exclusivity (stack/marker/collapsed mutual exclusion), cap height computation, victory thresholds
+
+#### Key Files and Functions
+
+| File                                                                              | Key Exports                                                                                               | Purpose                                 |
+| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| [`core.ts`](../src/shared/engine/core.ts)                                         | `calculateCapHeight`, `getPathPositions`, `validateCaptureSegmentOnBoard`, `hashGameState`                | Core utilities, geometry, state hashing |
+| [`GameEngine.ts`](../src/shared/engine/GameEngine.ts)                             | `GameEngine` class                                                                                        | Reference stateless implementation      |
+| [`turnLogic.ts`](../src/shared/engine/turnLogic.ts)                               | `advanceTurnAndPhase`, `PerTurnState`                                                                     | Turn/phase state machine                |
+| [`movementLogic.ts`](../src/shared/engine/movementLogic.ts)                       | `enumerateSimpleMoveTargetsFromStack`                                                                     | Movement reachability                   |
+| [`captureLogic.ts`](../src/shared/engine/captureLogic.ts)                         | `enumerateCaptureMoves`, `CaptureBoardAdapters`                                                           | Capture enumeration                     |
+| [`lineDetection.ts`](../src/shared/engine/lineDetection.ts)                       | `findLinesForPlayer`, `findAllLinesShared`                                                                | Line geometry detection                 |
+| [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts)           | `enumerateProcessLineMoves`, `applyProcessLineDecision`                                                   | Line decision moves                     |
+| [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts)             | `findDisconnectedRegions`                                                                                 | Territory region detection              |
+| [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts)           | `applyTerritoryRegion`, `filterProcessableTerritoryRegions`                                               | Territory collapse logic                |
+| [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts) | `enumerateProcessTerritoryRegionMoves`, `applyProcessTerritoryRegionDecision`                             | Territory decision moves                |
+| [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts)                         | `evaluateVictory`                                                                                         | Victory condition evaluation            |
+| `validators/`                                                                     | `PlacementValidator`, `MovementValidator`, `CaptureValidator`, `LineValidator`, `TerritoryValidator`      | Move validation                         |
+| `mutators/`                                                                       | `PlacementMutator`, `MovementMutator`, `CaptureMutator`, `LineMutator`, `TerritoryMutator`, `TurnMutator` | State mutation                          |
+
+#### Public API Pattern
+
+```typescript
+// Pure function pattern - takes state + inputs, returns new state
+function applyProcessLineDecision(state: GameState, move: Move): LineDecisionApplicationOutcome;
+function enumerateCaptureMoves(boardType, from, player, adapters, moveNumber): Move[];
+function evaluateVictory(state: GameState): VictoryVerdict;
+```
+
+#### Dependencies
+
+- Depends only on `src/shared/types/game.ts` and `src/shared/utils/`
+- **Zero dependencies on Server or Client code**
+
+---
+
+### 2.2 Surface 2: Server Game (`src/server/game/`)
+
+#### Responsibilities
+
+- **Game Phases:** All phases (orchestrates shared helpers)
+- **State Transitions:** `advanceGame()` wraps shared `advanceTurnAndPhase()`
+- **Invariants:** Delegates to shared; adds WebSocket/interaction management
+
+#### Key Files and Functions
+
+| File                                                                              | Key Exports                                  | Purpose                                       |
+| --------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------- |
+| [`GameEngine.ts`](../src/server/game/GameEngine.ts) (~3,329 lines)                | `GameEngine` class                           | Stateful orchestrator with player interaction |
+| [`RuleEngine.ts`](../src/server/game/RuleEngine.ts) (~1,564 lines)                | `RuleEngine` class                           | Stateless validation, move enumeration        |
+| [`RulesBackendFacade.ts`](../src/server/game/RulesBackendFacade.ts) (~364 lines)  | `RulesBackendFacade` class                   | Parity bridge (TS/Python shadow modes)        |
+| [`BoardManager.ts`](../src/server/game/BoardManager.ts) (~1,283 lines)            | `BoardManager` class                         | Board state CRUD, adjacency                   |
+| [`rules/captureChainEngine.ts`](../src/server/game/rules/captureChainEngine.ts)   | `updateChainCaptureStateAfterCapture`        | Chain capture state tracking                  |
+| [`rules/lineProcessing.ts`](../src/server/game/rules/lineProcessing.ts)           | `processLinesForCurrentPlayer`               | Line orchestration with interaction           |
+| [`rules/territoryProcessing.ts`](../src/server/game/rules/territoryProcessing.ts) | `processDisconnectedRegionsForCurrentPlayer` | Territory orchestration                       |
+| [`turn/TurnEngine.ts`](../src/server/game/turn/TurnEngine.ts)                     | `advanceGameForCurrentPlayer`                | Turn orchestration                            |
+
+#### Delegation Pattern to Shared Engine
+
+**Explicit documentation in [`territoryProcessing.ts`](../src/server/game/rules/territoryProcessing.ts:1-15):**
+
+```typescript
+/**
+ * Legacy backend territory processing module.
+ * **IMPORTANT:** This file exists primarily to provide the backend-specific
+ * orchestration layer (player interaction, GameState updates) around the
+ * canonical shared territory helpers. The actual territory semantics are defined in:
+ * - shared/engine/territoryDetection.ts - Region detection
+ * - shared/engine/territoryProcessing.ts - Collapse logic
+ * - shared/engine/territoryBorders.ts - Border markers
+ * - shared/engine/territoryDecisionHelpers.ts - Decision helpers
+ * Do NOT add new territory processing logic here; extend the shared helpers instead.
+ */
+```
+
+**Server GameEngine imports from shared:**
+
+```typescript
+import {
+  filterProcessableTerritoryRegions,
+  applyTerritoryRegion,
+} from '../../../shared/engine/territoryProcessing';
+import {
+  enumerateProcessTerritoryRegionMoves,
+  applyProcessTerritoryRegionDecision,
+} from '../../../shared/engine/territoryDecisionHelpers';
+import {
+  enumerateProcessLineMoves,
+  applyProcessLineDecision,
+} from '../../../shared/engine/lineDecisionHelpers';
+import { findLinesForPlayer } from '../../../shared/engine/lineDetection';
+import { evaluateVictory } from '../../../shared/engine/victoryLogic';
+import { enumerateCaptureMoves } from '../../../shared/engine/captureLogic';
+import { enumerateSimpleMoveTargetsFromStack } from '../../../shared/engine/movementLogic';
+import { validatePlacementOnBoard } from '../../../shared/engine/validators/PlacementValidator';
+```
+
+#### RulesBackendFacade Modes
+
+| Mode           | Behavior                                |
+| -------------- | --------------------------------------- |
+| `ts` (default) | TypeScript GameEngine is authoritative  |
+| `shadow`       | TS authoritative + Python parity checks |
+| `python`       | Python validation with TS fallback      |
+
+---
+
+### 2.3 Surface 3: Python AI Service (`ai-service/app/rules/`)
+
+#### Responsibilities
+
+- **Game Phases:** All phases (Python port of TS logic)
+- **State Transitions:** Mirrors TS `GameEngine.apply_move()`
+- **Invariants:** Shadow contract validation against canonical engine
+
+#### Key Files and Functions
+
+| File                                                                          | Key Exports                                                                                               | Purpose                            |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| [`core.py`](../ai-service/app/rules/core.py) (~245 lines)                     | `calculate_cap_height`, `get_path_positions`, `BoardView`                                                 | Python port of TS core utilities   |
+| [`default_engine.py`](../ai-service/app/rules/default_engine.py) (~994 lines) | `DefaultRulesEngine` class                                                                                | Orchestrator with shadow contracts |
+| [`factory.py`](../ai-service/app/rules/factory.py)                            | `get_rules_engine()`                                                                                      | Singleton factory                  |
+| [`geometry.py`](../ai-service/app/rules/geometry.py) (~190 lines)             | `BoardGeometry` class                                                                                     | Board geometry helpers             |
+| [`interfaces.py`](../ai-service/app/rules/interfaces.py)                      | `Validator`, `Mutator`, `RulesEngine` protocols                                                           | Type contracts                     |
+| `validators/`                                                                 | `PlacementValidator`, `MovementValidator`, `CaptureValidator`, `LineValidator`, `TerritoryValidator`      | Move validation                    |
+| `mutators/`                                                                   | `PlacementMutator`, `MovementMutator`, `CaptureMutator`, `LineMutator`, `TerritoryMutator`, `TurnMutator` | State mutation                     |
+
+#### Shadow Contract Pattern
+
+**From [`default_engine.py`](../ai-service/app/rules/default_engine.py:141-160):**
+
+```python
+def apply_move(self, state: GameState, move: Move) -> GameState:
+    # Canonical result: always computed via GameEngine.apply_move
+    next_via_engine = GameEngine.apply_move(state, move)
+
+    # Per-move mutator shadow contracts (board + players only)
+    if move.type == MoveType.PLACE_RING:
+        mutator_state = state.model_copy(deep=True)
+        PlacementMutator().apply(mutator_state, move)
+        # Assert board/player parity...
+
+    # Always return canonical GameEngine state
+    return next_via_engine
+```
+
+**All mutators delegate to Python GameEngine static methods:**
+
+```python
+class PlacementMutator(Mutator):
+    def apply(self, state: GameState, move: Move) -> None:
+        from app.game_engine import GameEngine
+        GameEngine._apply_place_ring(state, move)
+```
+
+#### Duplication Areas
+
+| Python File       | Duplicated From                                 |
+| ----------------- | ----------------------------------------------- |
+| `core.py`         | `src/shared/engine/core.ts`                     |
+| `geometry.py`     | `src/shared/engine/core.ts` (partial)           |
+| `validators/*.py` | `src/shared/engine/validators/` (reimplemented) |
+| `mutators/*.py`   | `src/shared/engine/mutators/` (thin wrappers)   |
+
+---
+
+### 2.4 Surface 4: Client Sandbox (`src/client/sandbox/`)
+
+#### Responsibilities
+
+- **Game Phases:** All phases (client-side hosting)
+- **State Transitions:** Wraps shared turn/phase helpers
+- **Invariants:** Mirrors backend via shared delegation
+
+#### Key Files and Functions
+
+| File                                                                                        | Key Exports                                  | Purpose                          |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------- |
+| [`ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts) (~2,712 lines)     | `ClientSandboxEngine` class                  | Main orchestrator                |
+| [`sandboxTurnEngine.ts`](../src/client/sandbox/sandboxTurnEngine.ts) (~380 lines)           | `advanceTurnAndPhaseForCurrentPlayerSandbox` | Turn orchestration               |
+| [`sandboxPlacement.ts`](../src/client/sandbox/sandboxPlacement.ts) (~222 lines)             | `enumerateLegalRingPlacements`               | Placement helpers                |
+| [`sandboxMovement.ts`](../src/client/sandbox/sandboxMovement.ts) (~70 lines)                | `enumerateSimpleMovementLandings`            | Movement helpers                 |
+| [`sandboxCaptures.ts`](../src/client/sandbox/sandboxCaptures.ts) (~173 lines)               | `enumerateCaptureSegmentsFromBoard`          | Capture helpers                  |
+| [`sandboxLines.ts`](../src/client/sandbox/sandboxLines.ts) (~134 lines)                     | `findAllLinesOnBoard`                        | Line detection                   |
+| [`sandboxLinesEngine.ts`](../src/client/sandbox/sandboxLinesEngine.ts) (~285 lines)         | `getValidLineProcessingMoves`                | Line decision orchestration      |
+| [`sandboxTerritory.ts`](../src/client/sandbox/sandboxTerritory.ts) (~599 lines)             | `findDisconnectedRegionsOnBoard`             | Territory detection              |
+| [`sandboxTerritoryEngine.ts`](../src/client/sandbox/sandboxTerritoryEngine.ts) (~373 lines) | `getValidTerritoryProcessingMoves`           | Territory decision orchestration |
+| [`sandboxVictory.ts`](../src/client/sandbox/sandboxVictory.ts) (~120 lines)                 | `checkSandboxVictory`                        | Victory checking                 |
+
+#### Delegation Pattern to Shared Engine
+
+**Explicit documentation in [`sandboxTerritory.ts`](../src/client/sandbox/sandboxTerritory.ts:1-23):**
+
+```typescript
+/**
+ * Legacy sandbox territory helpers.
+ *
+ * **IMPORTANT:** This file exists primarily as a thin adapter layer between
+ * the sandbox engine (ClientSandboxEngine) and the canonical shared territory
+ * helpers. The actual territory semantics are defined in:
+ * - src/shared/engine/territoryDetection.ts - Region detection
+ * - src/shared/engine/territoryProcessing.ts - Collapse logic
+ * - src/shared/engine/territoryBorders.ts - Border markers
+ * - src/shared/engine/territoryDecisionHelpers.ts - Decision helpers
+ *
+ * Do NOT add new territory processing logic here; extend the shared helpers instead.
+ */
+```
+
+**Sandbox delegates to shared:**
+
+```typescript
+// sandboxVictory.ts
+import { evaluateVictory } from '../../shared/engine/victoryLogic';
+
+// sandboxTerritory.ts
+import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../shared/engine/territoryDetection';
+import { applyTerritoryRegion } from '../../shared/engine/territoryProcessing';
+
+// sandboxLines.ts
+import { findAllLines as findAllLinesShared } from '../../shared/engine/lineDetection';
+
+// sandboxLinesEngine.ts
+import {
+  enumerateProcessLineMoves,
+  applyProcessLineDecision,
+} from '../../shared/engine/lineDecisionHelpers';
+
+// sandboxTurnEngine.ts
+import { advanceTurnAndPhase } from '../../shared/engine/turnLogic';
+
+// sandboxPlacement.ts
+import { validatePlacementOnBoard } from '../../shared/engine/validators/PlacementValidator';
+
+// sandboxMovement.ts
+import { enumerateSimpleMoveTargetsFromStack } from '../../shared/engine/movementLogic';
+
+// sandboxCaptures.ts
+import { enumerateCaptureMoves } from '../../shared/engine/captureLogic';
+```
+
+---
+
+## 3. Overlap Matrix
+
+This matrix shows which rules responsibilities are implemented in each surface:
+
+| Responsibility                | Shared Engine |      Server Game      |      Python AI      | Client Sandbox  |
+| ----------------------------- | :-----------: | :-------------------: | :-----------------: | :-------------: |
+| **Turn/Phase State Machine**  | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Ring Placement Validation** | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Movement Reachability**     | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Capture Enumeration**       | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Line Detection**            | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Line Decision Moves**       | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Territory Detection**       | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Territory Processing**      | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Territory Decision Moves**  | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Victory Evaluation**        | ✅ Canonical  |     ➡️ Delegates      |    🔄 Duplicates    |  ➡️ Delegates   |
+| **Cap Height Computation**    | ✅ Canonical  |        ➡️ Uses        |    🔄 Duplicates    |     ➡️ Uses     |
+| **Board Geometry**            | ✅ Canonical  |        ➡️ Uses        |    🔄 Duplicates    |     ➡️ Uses     |
+| **State Hashing**             | ✅ Canonical  |        ➡️ Uses        |    🔄 Duplicates    |     ➡️ Uses     |
+| **Player Interaction**        |    ❌ None    |        ✅ Owns        |       ❌ None       | ✅ Owns (local) |
+| **WebSocket/Persistence**     |    ❌ None    |        ✅ Owns        |       ❌ None       |     ❌ None     |
+| **AI Move Selection**         |    ❌ None    |     ❌ Delegates      |       ✅ Owns       | ✅ Owns (local) |
+| **Parity Validation**         |    ❌ None    | ✅ RulesBackendFacade | ✅ Shadow contracts |     ❌ None     |
+
+**Legend:**
+
+- ✅ Canonical: Source of truth for this responsibility
+- ➡️ Delegates: Calls shared engine helpers
+- 🔄 Duplicates: Reimplements logic (parity risk)
+- ✅ Owns: Unique to this surface
+
+---
+
+## 4. Dependency Graph
+
+```mermaid
+graph TB
+    subgraph "Shared Engine (Canonical)"
+        SE_Core[core.ts]
+        SE_Types[types.ts]
+        SE_Turn[turnLogic.ts]
+        SE_Movement[movementLogic.ts]
+        SE_Capture[captureLogic.ts]
+        SE_Lines[lineDetection.ts + lineDecisionHelpers.ts]
+        SE_Territory[territoryDetection.ts + territoryProcessing.ts + territoryDecisionHelpers.ts]
+        SE_Victory[victoryLogic.ts]
+        SE_Validators[validators/]
+        SE_Mutators[mutators/]
+        SE_GameEngine[GameEngine.ts]
+    end
+
+    subgraph "Server Game (Backend Orchestrator)"
+        SG_GameEngine[GameEngine.ts]
+        SG_RuleEngine[RuleEngine.ts]
+        SG_Facade[RulesBackendFacade.ts]
+        SG_BoardManager[BoardManager.ts]
+        SG_TurnEngine[TurnEngine.ts]
+        SG_LineProcessing[lineProcessing.ts]
+        SG_TerritoryProcessing[territoryProcessing.ts]
+        SG_CaptureChain[captureChainEngine.ts]
+    end
+
+    subgraph "Python AI Service (Duplicated Port)"
+        PY_Core[core.py]
+        PY_Geometry[geometry.py]
+        PY_Engine[default_engine.py]
+        PY_GameEngine[game_engine.py]
+        PY_Validators[validators/]
+        PY_Mutators[mutators/]
+    end
+
+    subgraph "Client Sandbox (Client Orchestrator)"
+        CS_Engine[ClientSandboxEngine.ts]
+        CS_Turn[sandboxTurnEngine.ts]
+        CS_Placement[sandboxPlacement.ts]
+        CS_Movement[sandboxMovement.ts]
+        CS_Captures[sandboxCaptures.ts]
+        CS_Lines[sandboxLines.ts + sandboxLinesEngine.ts]
+        CS_Territory[sandboxTerritory.ts + sandboxTerritoryEngine.ts]
+        CS_Victory[sandboxVictory.ts]
+    end
+
+    %% Server Game delegates to Shared
+    SG_GameEngine --> SE_Turn
+    SG_GameEngine --> SE_Lines
+    SG_GameEngine --> SE_Territory
+    SG_GameEngine --> SE_Victory
+    SG_GameEngine --> SE_Capture
+    SG_GameEngine --> SE_Movement
+    SG_RuleEngine --> SE_Validators
+    SG_RuleEngine --> SE_Capture
+    SG_RuleEngine --> SE_Movement
+    SG_TurnEngine --> SE_Turn
+    SG_LineProcessing --> SE_Lines
+    SG_TerritoryProcessing --> SE_Territory
+    SG_BoardManager --> SE_Core
+
+    %% Client Sandbox delegates to Shared
+    CS_Turn --> SE_Turn
+    CS_Placement --> SE_Validators
+    CS_Movement --> SE_Movement
+    CS_Captures --> SE_Capture
+    CS_Lines --> SE_Lines
+    CS_Territory --> SE_Territory
+    CS_Victory --> SE_Victory
+    CS_Engine --> SE_Core
+
+    %% Python duplicates Shared (parity risk)
+    PY_Core -.-> SE_Core
+    PY_Geometry -.-> SE_Core
+    PY_Validators -.-> SE_Validators
+    PY_Mutators -.-> SE_Mutators
+    PY_Engine -.-> SE_GameEngine
+
+    %% Parity bridge
+    SG_Facade --> PY_Engine
+
+    style SE_Core fill:#90EE90
+    style SE_Turn fill:#90EE90
+    style SE_Lines fill:#90EE90
+    style SE_Territory fill:#90EE90
+    style SE_Victory fill:#90EE90
+    style PY_Core fill:#FFB6C1
+    style PY_Geometry fill:#FFB6C1
+    style PY_Validators fill:#FFB6C1
+    style PY_Mutators fill:#FFB6C1
+```
+
+**Legend:**
+
+- 🟢 Green: Canonical source of truth
+- 🔴 Pink: Duplicated code (parity risk)
+- Solid arrows: Direct dependency/delegation
+- Dashed arrows: Duplicated reimplementation
+
+---
+
+## 5. Parity Status
+
+### 5.1 Parity Validation Infrastructure
+
+| Surface            | Mechanism                             | Coverage                 |
+| ------------------ | ------------------------------------- | ------------------------ |
+| **Server Game**    | `RulesBackendFacade` shadow mode      | Per-move validation      |
+| **Python AI**      | `DefaultRulesEngine` shadow contracts | Per-move-type validation |
+| **Client Sandbox** | Parity test suite                     | Trace-level replay       |
+
+### 5.2 Known Divergence Risks
+
+| Area                   | Risk                           | Mitigation                                    |
+| ---------------------- | ------------------------------ | --------------------------------------------- |
+| **Python core.py**     | Manual sync with TS core.ts    | Shadow contracts + parity tests               |
+| **Python validators**  | Reimplemented validation logic | Parity test fixtures                          |
+| **Python geometry.py** | Partial duplication of core.ts | Some functions duplicated within Python       |
+| **LPS tracking**       | Per-host implementation        | Eventually converging on shared state machine |
+
+### 5.3 Authoritative Source
+
+**The Shared Engine (`src/shared/engine/`) is the authoritative source for all rules logic.**
+
+Both Server Game and Client Sandbox documentation explicitly reference shared modules as the canonical source. The Python AI Service uses shadow contracts to continuously validate against `GameEngine.apply_move()`.
+
+---
+
+## 6. Recommended Canonical Boundary
+
+### 6.1 What Should Be in the Canonical Engine
+
+**Core Rules Logic (keep in `src/shared/engine/`):**
+
+| Module                        | Status  | Notes                        |
+| ----------------------------- | ------- | ---------------------------- |
+| `turnLogic.ts`                | ✅ Keep | Turn/phase state machine     |
+| `movementLogic.ts`            | ✅ Keep | Movement reachability        |
+| `captureLogic.ts`             | ✅ Keep | Capture enumeration          |
+| `lineDetection.ts`            | ✅ Keep | Line geometry                |
+| `lineDecisionHelpers.ts`      | ✅ Keep | Line decision moves          |
+| `territoryDetection.ts`       | ✅ Keep | Territory region detection   |
+| `territoryProcessing.ts`      | ✅ Keep | Territory collapse logic     |
+| `territoryDecisionHelpers.ts` | ✅ Keep | Territory decision moves     |
+| `victoryLogic.ts`             | ✅ Keep | Victory evaluation           |
+| `core.ts`                     | ✅ Keep | Utilities, geometry, hashing |
+| `validators/`                 | ✅ Keep | Move validation              |
+| `mutators/`                   | ✅ Keep | State mutation               |
+
+**Proposed Additions:**
+
+- `lpsTracker.ts` - Extract LPS tracking from per-host implementations
+- `gameStateMachine.ts` - Unified game lifecycle state machine
+
+### 6.2 What Should Be in Adapter Layers
+
+**Keep as orchestration-only:**
+
+| Surface               | Responsibility                                     | Should NOT contain                   |
+| --------------------- | -------------------------------------------------- | ------------------------------------ |
+| **Server Game**       | WebSocket interaction, player choices, persistence | Rules logic                          |
+| **Client Sandbox**    | Local game hosting, UI interaction                 | Rules logic                          |
+| **Python AI Service** | AI training/evaluation interface                   | Rules logic (should be thin adapter) |
+
+### 6.3 What Can Be Deprecated/Removed
+
+| File/Directory                                            | Action             | Rationale                           |
+| --------------------------------------------------------- | ------------------ | ----------------------------------- |
+| `src/client/sandbox/sandboxTerritory.ts` internal helpers | Remove             | Marked as `@deprecated` DEAD CODE   |
+| `ai-service/app/rules/geometry.py`                        | Merge into core.py | Duplicates core.py functions        |
+| `ai-service/app/rules/validators/*`                       | Thin adapter only  | Currently reimplements validation   |
+| `src/server/game/rules/lineProcessing.ts`                 | Further delegate   | Keep only interaction orchestration |
+| `src/server/game/rules/territoryProcessing.ts`            | Further delegate   | Keep only interaction orchestration |
+
+---
+
+## 7. Recommendations for Remediation
+
+### 7.1 Short-Term (T1 Tasks)
+
+1. **Extract LPS tracking** to shared engine (currently duplicated in Server and Sandbox)
+2. **Document canonical boundary** in `RULES_ENGINE_ARCHITECTURE.md`
+3. **Add eslint rule** to prevent rules logic in orchestration layers
+4. **Clean up deprecated code** in sandboxTerritory.ts
+
+### 7.2 Medium-Term (T2 Tasks)
+
+1. **Python parity layer refactor:**
+   - Replace reimplemented validators with thin adapters over TS-generated JSON schema
+   - Consider code generation or WASM compilation for perfect parity
+
+2. **Server Game simplification:**
+   - Complete migration of remaining orchestration to shared helpers
+   - BoardManager should become a pure state container
+
+3. **Client Sandbox consolidation:**
+   - Complete the adapter pattern already started
+   - Remove all local rules implementations
+
+### 7.3 Long-Term Vision
+
+**Single Canonical Engine Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Canonical Rules Engine                    │
+│                   (src/shared/engine/)                       │
+│                                                              │
+│  • Pure functions: state → state                            │
+│  • Zero I/O, zero side effects                              │
+│  • Complete rules semantics                                  │
+│  • Generated from single source (TypeScript)                │
+└─────────────────────────────────────────────────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         │                    │                    │
+         ▼                    ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+│   TS Adapter    │  │  Python Adapter │  │   Rust Adapter  │
+│  (Server/Web)   │  │  (AI Training)  │  │   (Future)      │
+│                 │  │                 │  │                 │
+│ • Orchestration │  │ • Generated/    │  │ • WASM target   │
+│ • Interaction   │  │   transpiled    │  │ • High-perf     │
+│ • Persistence   │  │ • Parity tests  │  │   inference     │
+└─────────────────┘  └─────────────────┘  └─────────────────┘
+```
+
+---
+
+## 8. Audit Appendix
+
+### 8.1 File Line Counts
+
+| Surface     | File                        | Lines  |
+| ----------- | --------------------------- | ------ |
+| **Shared**  | core.ts                     | ~650   |
+| **Shared**  | turnLogic.ts                | ~250   |
+| **Shared**  | movementLogic.ts            | ~200   |
+| **Shared**  | captureLogic.ts             | ~350   |
+| **Shared**  | lineDetection.ts            | ~200   |
+| **Shared**  | lineDecisionHelpers.ts      | ~400   |
+| **Shared**  | territoryDetection.ts       | ~250   |
+| **Shared**  | territoryProcessing.ts      | ~300   |
+| **Shared**  | territoryDecisionHelpers.ts | ~400   |
+| **Shared**  | victoryLogic.ts             | ~150   |
+| **Server**  | GameEngine.ts               | ~3,329 |
+| **Server**  | RuleEngine.ts               | ~1,564 |
+| **Server**  | BoardManager.ts             | ~1,283 |
+| **Python**  | default_engine.py           | ~994   |
+| **Python**  | core.py                     | ~245   |
+| **Sandbox** | ClientSandboxEngine.ts      | ~2,712 |
+| **Sandbox** | sandboxTerritory.ts         | ~599   |
+| **Sandbox** | sandboxTurnEngine.ts        | ~380   |
+
+### 8.2 Import Analysis Summary
+
+**Server GameEngine imports from shared:** 15+ shared modules  
+**Client Sandbox imports from shared:** 10+ shared modules  
+**Python imports from shared:** 0 (must reimplement)
+
+### 8.3 Test Coverage for Parity
+
+| Test Suite                     | Location                   | Purpose                   |
+| ------------------------------ | -------------------------- | ------------------------- |
+| `test_rules_parity.py`         | `ai-service/tests/parity/` | Python vs TS parity       |
+| `RulesMatrix.*.test.ts`        | `tests/scenarios/`         | Cross-engine scenarios    |
+| `Backend_vs_Sandbox.*.test.ts` | `tests/unit/`              | Backend vs Sandbox parity |
+| `TraceParity.*.test.ts`        | `tests/unit/`              | Move-by-move trace parity |
+
+---
+
+## Conclusion
+
+The codebase has made significant progress toward a single canonical rules engine in `src/shared/engine/`. Both Server Game and Client Sandbox surfaces now explicitly document themselves as "orchestration layers" that delegate to shared helpers.
+
+**The primary remaining parity risk is the Python AI Service**, which must reimplement rules logic due to language boundary. The shadow contract system provides runtime parity validation, but a more sustainable long-term solution would be code generation or WASM compilation.
+
+**Next Steps:**
+
+1. Complete T1-W1-B: Define narrow stable API boundary in shared engine
+2. Complete T1-W1-C: Create adapter layer specifications
+3. Address Python parity layer in T2 phase

@@ -1,48 +1,40 @@
-import {
+import type {
   GameState,
   Move,
   Position,
   BoardState,
   RingStack,
-  positionToString,
-  positionsEqual,
-  BOARD_CONFIGS,
   Territory,
-} from '../../shared/types/game';
-import { BoardManager } from './BoardManager';
-import {
-  calculateCapHeight,
-  calculateDistance,
-  getMovementDirectionsForBoardType,
-  getPathPositions,
-  validateCaptureSegmentOnBoard,
   CaptureSegmentBoardView,
   MovementBoardView,
+  MarkerPathHelpers,
+  CaptureBoardAdapters,
+  PlacementContext,
+} from '../../shared/engine';
+import {
+  BOARD_CONFIGS,
+  positionToString,
+  positionsEqual,
+  calculateCapHeight,
+  calculateDistance,
+  getPathPositions,
+  validateCaptureSegmentOnBoard,
   hasAnyLegalMoveOrCaptureFromOnBoard,
   applyMarkerEffectsAlongPathOnBoard,
-  MarkerPathHelpers,
   countRingsInPlayForPlayer,
-} from '../../shared/engine/core';
-import { evaluateVictory } from '../../shared/engine/victoryLogic';
-import { enumerateCaptureMoves, CaptureBoardAdapters } from '../../shared/engine/captureLogic';
-import { enumerateSimpleMoveTargetsFromStack } from '../../shared/engine/movementLogic';
-import {
-  filterProcessableTerritoryRegions,
+  evaluateVictory,
+  enumerateCaptureMoves,
+  enumerateSimpleMoveTargetsFromStack,
   canProcessTerritoryRegion,
-} from '../../shared/engine/territoryProcessing';
-import {
   enumerateProcessTerritoryRegionMoves,
   enumerateTerritoryEliminationMoves,
-} from '../../shared/engine/territoryDecisionHelpers';
-import {
   validatePlacementOnBoard,
-  PlacementContext,
-} from '../../shared/engine/validators/PlacementValidator';
-import {
   enumerateProcessLineMoves,
   enumerateChooseLineRewardMoves,
-} from '../../shared/engine/lineDecisionHelpers';
-import { findLinesForPlayer } from '../../shared/engine/lineDetection';
+  findLinesForPlayer,
+} from '../../shared/engine';
+import { getMovementDirectionsForBoardType } from '../../shared/engine/core';
+import { BoardManager } from './BoardManager';
 
 export class RuleEngine {
   private boardManager: BoardManager;

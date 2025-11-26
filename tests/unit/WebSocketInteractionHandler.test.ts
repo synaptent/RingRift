@@ -1,151 +1,292 @@
-import { EventEmitter } from 'events';
 import { WebSocketInteractionHandler } from '../../src/server/game/WebSocketInteractionHandler';
-import {
-  PlayerChoice,
-  PlayerChoiceResponse,
-  Position
-} from '../../src/shared/types/game';
-
-// Minimal Socket.IO Server stub for testing
-class FakeSocketIOServer extends EventEmitter {
-  public toCalls: Array<{ target: string; event: string; payload: any }> = [];
-
-  to(target: string) {
-    return {
-      emit: (event: string, payload: any) => {
-        this.toCalls.push({ target, event, payload });
-        this.emit(event, payload);
-      }
-    };
-  }
-}
+import type { LineOrderChoice } from '../../src/shared/types/game';
 
 describe('WebSocketInteractionHandler', () => {
-  const gameId = 'game-1';
-  const playerNumber = 1;
+  let handler: WebSocketInteractionHandler;
+  let mockIo: any;
+  let mockGetTargetForPlayer: jest.Mock<string | undefined, [number]>;
+  const gameId = 'test-game-123';
 
-  const samplePositions: Position[] = [
-    { x: 0, y: 0 },
-    { x: 1, y: 1 }
-  ];
-
-  const baseChoice: PlayerChoice = {
-    id: 'choice-1',
-    gameId,
-    playerNumber,
-    type: 'line_order',
-    prompt: 'Choose a line',
-    options: [
-      { lineId: '0', markerPositions: samplePositions },
-      { lineId: '1', markerPositions: samplePositions }
-    ]
-  } as const;
-
-  it('emits player_choice_required and resolves on valid response', async () => {
-    const io = new FakeSocketIOServer();
-    const getTargetForPlayer = jest.fn().mockReturnValue('socket-1');
-
-    const handler = new WebSocketInteractionHandler(
-      io as any,
+  // Helper to create valid PlayerChoice test data
+  function createLineOrderChoice(
+    id: string,
+    playerNumber: number,
+    overrides: Partial<LineOrderChoice> = {}
+  ): LineOrderChoice {
+    return {
+      id,
       gameId,
-      getTargetForPlayer,
-      30_000
-    );
+      playerNumber,
+      type: 'line_order' as const,
+      prompt: 'Choose which line to process first',
+      options: [{ lineId: 'line-1', markerPositions: [{ x: 0, y: 0 }], moveId: 'move-1' }],
+      ...overrides,
+    };
+  }
 
-    const promise = handler.requestChoice(baseChoice);
+  beforeEach(() => {
+    mockIo = {
+      to: jest.fn().mockReturnThis(),
+      emit: jest.fn(),
+    };
+    // Mock function to return socket IDs for players
+    mockGetTargetForPlayer = jest.fn((playerNumber: number) => `socket-${playerNumber}`);
+    // Constructor signature: (io, gameId, getTargetForPlayer, defaultTimeoutMs?)
+    handler = new WebSocketInteractionHandler(mockIo, gameId, mockGetTargetForPlayer);
+  });
 
-    // Verify that the choice was emitted to the correct target
-    expect(getTargetForPlayer).toHaveBeenCalledWith(playerNumber);
-    expect(io.toCalls).toHaveLength(1);
-    expect(io.toCalls[0]).toMatchObject({
-      target: 'socket-1',
-      event: 'player_choice_required',
-      payload: baseChoice
+  describe('cancelAllChoicesForPlayer', () => {
+    it('should cancel all pending choices for a specific player number', async () => {
+      // First, add some pending choices for different players
+      const choice1 = createLineOrderChoice('choice-1', 1);
+      const choice2 = createLineOrderChoice('choice-2', 1);
+      const choice3 = createLineOrderChoice('choice-3', 2);
+
+      // Start choice requests - don't await them as they're meant to wait for responses
+      const promise1 = handler.requestChoice(choice1);
+      const promise2 = handler.requestChoice(choice2);
+      const promise3 = handler.requestChoice(choice3);
+
+      // Verify we have 3 pending choices
+      expect(handler.getPendingCount()).toBe(3);
+
+      // Cancel all choices for player 1
+      handler.cancelAllChoicesForPlayer(1);
+
+      // Verify only player 2's choice remains
+      expect(handler.getPendingCount()).toBe(1);
+
+      // The canceled promises should reject with disconnect message
+      await expect(promise1).rejects.toThrow('cancelled due to player disconnect');
+      await expect(promise2).rejects.toThrow('cancelled due to player disconnect');
+
+      // Player 2's choice is still pending - cancel it too for cleanup
+      handler.cancelAllChoicesForPlayer(2);
+      await expect(promise3).rejects.toThrow('cancelled due to player disconnect');
+
+      expect(handler.getPendingCount()).toBe(0);
     });
 
-    const response: PlayerChoiceResponse<(typeof baseChoice.options)[number]> = {
-      choiceId: baseChoice.id,
-      playerNumber,
-      selectedOption: baseChoice.options[0]
-    };
+    it('should emit player_choice_canceled for each canceled choice', () => {
+      const choice = createLineOrderChoice('choice-1', 1);
 
-    handler.handleChoiceResponse(response);
+      // Start a choice request
+      const choicePromise = handler.requestChoice(choice);
 
-    await expect(promise).resolves.toEqual(response);
+      // Verify emitted player_choice_required event (not player_choice)
+      expect(mockIo.to).toHaveBeenCalledWith('socket-1');
+      expect(mockIo.emit).toHaveBeenCalledWith(
+        'player_choice_required',
+        expect.objectContaining({
+          id: 'choice-1',
+          gameId,
+          playerNumber: 1,
+        })
+      );
+
+      // Clear mocks for the cancel emit
+      mockIo.to.mockClear();
+      mockIo.emit.mockClear();
+
+      // Cancel the choice
+      handler.cancelAllChoicesForPlayer(1);
+
+      // Verify player_choice_canceled was emitted to the game room
+      expect(mockIo.to).toHaveBeenCalledWith(gameId);
+      expect(mockIo.emit).toHaveBeenCalledWith('player_choice_canceled', 'choice-1');
+
+      // Cleanup - catch the rejection
+      choicePromise.catch(() => {
+        /* expected */
+      });
+    });
+
+    it('should not cancel choices for other players in the same game', async () => {
+      const choiceP1 = createLineOrderChoice('choice-1', 1);
+      const choiceP2 = createLineOrderChoice('choice-2', 2);
+
+      const promise1 = handler.requestChoice(choiceP1);
+      const promise2 = handler.requestChoice(choiceP2);
+
+      expect(handler.getPendingCount()).toBe(2);
+
+      // Cancel only player 1
+      handler.cancelAllChoicesForPlayer(1);
+
+      // Player 2's choice should still be pending
+      expect(handler.getPendingCount()).toBe(1);
+
+      // Clean up
+      handler.cancelAllChoicesForPlayer(2);
+      await expect(promise1).rejects.toThrow('cancelled due to player disconnect');
+      await expect(promise2).rejects.toThrow('cancelled due to player disconnect');
+    });
+
+    it('should handle case where player has no pending choices', () => {
+      // No choices for player 3
+      handler.cancelAllChoicesForPlayer(3);
+      expect(handler.getPendingCount()).toBe(0);
+      // Should not throw
+    });
   });
 
-  it('rejects when selectedOption is not one of the original options', async () => {
-    const io = new FakeSocketIOServer();
-    const getTargetForPlayer = jest.fn().mockReturnValue('socket-1');
+  describe('getPendingCount', () => {
+    it('should return 0 when no choices are pending', () => {
+      expect(handler.getPendingCount()).toBe(0);
+    });
 
-    const handler = new WebSocketInteractionHandler(
-      io as any,
-      gameId,
-      getTargetForPlayer,
-      30_000
-    );
+    it('should return correct count of pending choices', () => {
+      const choice1 = createLineOrderChoice('choice-1', 1);
+      const choice2 = createLineOrderChoice('choice-2', 2);
 
-    const promise = handler.requestChoice(baseChoice);
+      const p1 = handler.requestChoice(choice1);
+      expect(handler.getPendingCount()).toBe(1);
 
-    const invalidResponse: PlayerChoiceResponse<any> = {
-      choiceId: baseChoice.id,
-      playerNumber,
-      selectedOption: {
-        lineId: '999',
-        markerPositions: []
+      const p2 = handler.requestChoice(choice2);
+      expect(handler.getPendingCount()).toBe(2);
+
+      // Cancel all for cleanup
+      handler.cancelAllChoicesForPlayer(1);
+      handler.cancelAllChoicesForPlayer(2);
+      p1.catch(() => {});
+      p2.catch(() => {});
+    });
+  });
+
+  describe('ChoiceStatus lifecycle', () => {
+    it('marks choice as fulfilled on valid response', async () => {
+      const choice = createLineOrderChoice('choice-fulfilled', 1);
+
+      const promise = handler.requestChoice(choice);
+
+      const response: import('../../src/shared/types/game').PlayerChoiceResponseFor<LineOrderChoice> =
+        {
+          choiceId: choice.id,
+          playerNumber: choice.playerNumber,
+          choiceType: choice.type,
+          selectedOption: choice.options[0],
+        };
+
+      handler.handleChoiceResponse(response);
+
+      await expect(promise).resolves.toEqual(
+        expect.objectContaining({
+          choiceId: choice.id,
+          playerNumber: choice.playerNumber,
+        })
+      );
+
+      const status = handler.getLastChoiceStatusSnapshotForTesting(choice.id, choice.playerNumber);
+      expect(status).toBeDefined();
+      expect(status!.kind).toBe('fulfilled');
+      expect(status!.gameId).toBe(gameId);
+      expect(status!.choiceId).toBe(choice.id);
+    });
+
+    it('marks choice as rejected with INVALID_OPTION when response option is invalid', async () => {
+      const choice = createLineOrderChoice('choice-invalid-option', 1);
+
+      const promise = handler.requestChoice(choice);
+
+      const invalidOption = {
+        lineId: 'non-existent-line',
+        markerPositions: [],
+        moveId: 'invalid-move-id',
+      };
+
+      const response: import('../../src/shared/types/game').PlayerChoiceResponse = {
+        choiceId: choice.id,
+        playerNumber: choice.playerNumber,
+        selectedOption: invalidOption,
+      };
+
+      handler.handleChoiceResponse(response);
+
+      await expect(promise).rejects.toThrow('Invalid selectedOption for choice');
+
+      const status = handler.getLastChoiceStatusSnapshotForTesting(choice.id, choice.playerNumber);
+      expect(status).toBeDefined();
+      expect(status!.kind).toBe('rejected');
+      expect(status!.gameId).toBe(gameId);
+      expect(status!.choiceId).toBe(choice.id);
+      expect(status!.reason).toBe('INVALID_OPTION');
+    });
+
+    it('marks choice as rejected with PLAYER_MISMATCH when a different player responds', async () => {
+      const choice = createLineOrderChoice('choice-player-mismatch', 1);
+
+      const promise = handler.requestChoice(choice);
+
+      const response: import('../../src/shared/types/game').PlayerChoiceResponseFor<LineOrderChoice> =
+        {
+          choiceId: choice.id,
+          playerNumber: choice.playerNumber + 1,
+          choiceType: choice.type,
+          selectedOption: choice.options[0],
+        };
+
+      handler.handleChoiceResponse(response);
+
+      await expect(promise).rejects.toThrow('playerNumber mismatch for choice');
+
+      const status = handler.getLastChoiceStatusSnapshotForTesting(choice.id, choice.playerNumber);
+      expect(status).toBeDefined();
+      expect(status!.kind).toBe('rejected');
+      expect(status!.reason).toBe('PLAYER_MISMATCH');
+    });
+
+    it('marks choice as expired after the timeout elapses', async () => {
+      jest.useFakeTimers();
+
+      const timeoutMs = 1000;
+      const choice = createLineOrderChoice('choice-expired', 1, { timeoutMs });
+
+      const promise = handler.requestChoice(choice);
+
+      // Advance timers past the timeout to trigger the expiration path.
+      jest.advanceTimersByTime(timeoutMs + 1);
+
+      await expect(promise).rejects.toThrow('Player choice timed out');
+
+      const status = handler.getLastChoiceStatusSnapshotForTesting(choice.id, choice.playerNumber);
+      expect(status).toBeDefined();
+      expect(status!.kind).toBe('expired');
+      expect(status!.gameId).toBe(gameId);
+      expect(status!.choiceId).toBe(choice.id);
+
+      jest.useRealTimers();
+    });
+
+    it('marks choice as canceled with SERVER_CANCEL when cancelChoice is called', async () => {
+      const choice = createLineOrderChoice('choice-server-cancel', 1);
+
+      const promise = handler.requestChoice(choice);
+
+      handler.cancelChoice(gameId, choice.id, choice.playerNumber);
+
+      await expect(promise).rejects.toThrow('was cancelled by server');
+
+      const status = handler.getLastChoiceStatusSnapshotForTesting(choice.id, choice.playerNumber);
+      expect(status).toBeDefined();
+      expect(status!.kind).toBe('canceled');
+      expect(status!.reason).toBe('SERVER_CANCEL');
+    });
+
+    it('marks choices as canceled with DISCONNECT when cancelAllChoicesForPlayer is called', async () => {
+      const choice = createLineOrderChoice('choice-disconnect-cancel', 1);
+
+      const promise = handler.requestChoice(choice);
+
+      handler.cancelAllChoicesForPlayer(1);
+
+      await expect(promise).rejects.toThrow('cancelled due to player disconnect');
+
+      const status = handler.getLastChoiceStatusSnapshotForTesting(choice.id, choice.playerNumber);
+      expect(status).toBeDefined();
+      if (!status || status.kind !== 'canceled') {
+        throw new Error('Expected canceled ChoiceStatus with DISCONNECT reason');
       }
-    };
-
-    handler.handleChoiceResponse(invalidResponse);
-
-    await expect(promise).rejects.toThrow(/Invalid selectedOption/);
-  });
-
-  it('rejects when response playerNumber does not match choice.playerNumber', async () => {
-    const io = new FakeSocketIOServer();
-    const getTargetForPlayer = jest.fn().mockReturnValue('socket-1');
-
-    const handler = new WebSocketInteractionHandler(
-      io as any,
-      gameId,
-      getTargetForPlayer,
-      30_000
-    );
-
-    const promise = handler.requestChoice(baseChoice);
-
-    const wrongPlayerResponse: PlayerChoiceResponse<(typeof baseChoice.options)[number]> = {
-      choiceId: baseChoice.id,
-      playerNumber: playerNumber + 1,
-      selectedOption: baseChoice.options[0]
-    };
-
-    handler.handleChoiceResponse(wrongPlayerResponse);
-
-    await expect(promise).rejects.toThrow(/playerNumber mismatch/);
-  });
-
-  it('rejects with a timeout error when no response is received in time', async () => {
-    jest.useFakeTimers();
-
-    const io = new FakeSocketIOServer();
-    const getTargetForPlayer = jest.fn().mockReturnValue('socket-1');
-
-    // Use a very small timeout to keep the test fast.
-    const handler = new WebSocketInteractionHandler(
-      io as any,
-      gameId,
-      getTargetForPlayer,
-      10
-    );
-
-    const promise = handler.requestChoice(baseChoice);
-
-    // Advance timers past the timeout without sending any response.
-    jest.advanceTimersByTime(11);
-
-    await expect(promise).rejects.toThrow(/timed out/i);
-
-    jest.useRealTimers();
+      expect(status.reason).toBe('DISCONNECT');
+    });
   });
 });

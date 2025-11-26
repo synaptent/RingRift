@@ -16,13 +16,18 @@
  *
  * @module server/game/rules/territoryProcessing
  */
-import {
+import type {
   GameState,
   Territory,
-  positionToString,
   PlayerChoiceResponseFor,
   RegionOrderChoice,
-} from '../../../shared/types/game';
+  TerritoryProcessingContext,
+} from '../../../shared/engine';
+import {
+  positionToString,
+  filterProcessableTerritoryRegions,
+  applyTerritoryRegion,
+} from '../../../shared/engine';
 import { BoardManager } from '../BoardManager';
 import { PlayerInteractionManager } from '../PlayerInteractionManager';
 import {
@@ -30,11 +35,6 @@ import {
   updatePlayerEliminatedRings,
   updatePlayerTerritorySpaces,
 } from './lineProcessing';
-import {
-  TerritoryProcessingContext,
-  filterProcessableTerritoryRegions,
-  applyTerritoryRegion,
-} from '../../../shared/engine/territoryProcessing';
 
 export interface TerritoryProcessingDeps {
   boardManager: BoardManager;

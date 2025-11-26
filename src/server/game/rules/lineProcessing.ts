@@ -1,19 +1,15 @@
-import {
+import type {
   GameState,
   Position,
   LineInfo,
-  BOARD_CONFIGS,
-  positionToString,
-} from '../../../shared/types/game';
-import { calculateCapHeight } from '../../../shared/engine/core';
-import { BoardManager } from '../BoardManager';
-import { PlayerInteractionManager } from '../PlayerInteractionManager';
-import {
   PlayerChoiceResponseFor,
   LineOrderChoice,
   LineRewardChoice,
   RingEliminationChoice,
-} from '../../../shared/types/game';
+} from '../../../shared/engine';
+import { BOARD_CONFIGS, positionToString, calculateCapHeight } from '../../../shared/engine';
+import { BoardManager } from '../BoardManager';
+import { PlayerInteractionManager } from '../PlayerInteractionManager';
 
 export interface LineProcessingDeps {
   boardManager: BoardManager;
@@ -50,12 +46,7 @@ export async function processLinesForCurrentPlayer(
       lineToProcess = playerLines[0];
     } else {
       const choice: LineOrderChoice = {
-        id: generateUUID(
-          'line_order',
-          gameState.id,
-          gameState.history.length,
-          playerLines.length
-        ),
+        id: generateUUID('line_order', gameState.id, gameState.history.length, playerLines.length),
         gameId: gameState.id,
         playerNumber: gameState.currentPlayer,
         type: 'line_order',

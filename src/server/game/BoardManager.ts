@@ -1,4 +1,4 @@
-import {
+import type {
   Position,
   BoardType,
   BoardState,
@@ -6,16 +6,16 @@ import {
   Territory,
   LineInfo,
   AdjacencyType,
+} from '../../shared/engine';
+import {
   BOARD_CONFIGS,
   positionToString,
   stringToPosition,
-} from '../../shared/types/game';
-import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../shared/engine/territoryDetection';
-import { getBorderMarkerPositionsForRegion as getSharedBorderMarkers } from '../../shared/engine/territoryBorders';
-import {
+  findDisconnectedRegions as findDisconnectedRegionsShared,
   findAllLines as findAllLinesShared,
   findLinesForPlayer as findLinesForPlayerShared,
-} from '../../shared/engine/lineDetection';
+} from '../../shared/engine';
+import { getBorderMarkerPositionsForRegion as getSharedBorderMarkers } from '../../shared/engine/territoryBorders';
 
 const TERRITORY_TRACE_DEBUG =
   typeof process !== 'undefined' &&

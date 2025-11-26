@@ -12,25 +12,37 @@ import { getDatabaseClient } from '../database/connection';
 import { logger } from '../utils/logger';
 import { gameMoveLatencyHistogram } from '../utils/rulesParityMetrics';
 import { config } from '../config';
-import {
+import type {
   Move,
   Player,
   GameState,
   GamePhase,
   Position,
   AIProfile,
-  BOARD_CONFIGS,
   TimeControl,
   GameResult,
-} from '../../shared/types/game';
+} from '../../shared/engine';
+import { BOARD_CONFIGS, hashGameState } from '../../shared/engine';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
   DecisionPhaseTimeoutWarningPayload,
   DecisionPhaseTimedOutPayload,
 } from '../../shared/types/websocket';
-import { hashGameState } from '../../shared/engine/core';
 import { SeededRNG, generateGameSeed } from '../../shared/utils/rng';
+import {
+  deriveGameSessionStatus,
+  type GameSessionStatus,
+} from '../../shared/stateMachines/gameSession';
+import {
+  idleAIRequest,
+  type AIRequestState,
+  markQueued as markAIRequestQueued,
+  markInFlight as markAIRequestInFlight,
+  markFallbackLocal as markAIRequestFallbackLocal,
+  markCompleted as markAIRequestCompleted,
+  markFailed as markAIRequestFailed,
+} from '../../shared/stateMachines/aiRequest';
 
 export class GameSession {
   public readonly gameId: string;
@@ -43,6 +55,21 @@ export class GameSession {
   private userSockets: Map<string, string>; // userId -> socketId
   private rng: SeededRNG; // Per-game RNG for deterministic AI behavior
   private turnTimerId: NodeJS.Timeout | null = null; // Timer for turn countdown
+
+  /**
+   * Derived, session-level view of the current GameState used for
+   * orchestrating timers, AI turns, and WebSocket flows. This mirrors
+   * GameEngine.getGameState() but is intentionally smaller and more
+   * intent-focused. It is exposed for tests/diagnostics and future
+   * state-machine-driven orchestration.
+   */
+  private sessionStatus: GameSessionStatus | null = null;
+
+  /**
+   * Per-turn snapshot of the most recent AI request lifecycle. This is
+   * used for diagnostics and tests and does not affect game behavior.
+   */
+  private lastAIRequestState: AIRequestState = idleAIRequest;
 
   // Decision phase timeout tracking
   private decisionPhaseTimeoutId: NodeJS.Timeout | null = null;
@@ -247,6 +274,10 @@ export class GameSession {
 
     this.rulesFacade = new RulesBackendFacade(this.gameEngine, this.pythonRulesClient);
 
+    // Initialise the derived session status from the current GameState so
+    // callers can inspect a lightweight view of the session lifecycle.
+    this.recomputeSessionStatus();
+
     // Auto-start logic
     if ((game.status as any) === 'waiting' && players.length >= (game.maxPlayers ?? 2)) {
       const allReady = players.every((p) => p.isReady);
@@ -354,6 +385,26 @@ export class GameSession {
 
   public getInteractionHandler(): WebSocketInteractionHandler {
     return this.wsHandler;
+  }
+
+  /**
+   * Exposed for tests/diagnostics: snapshot of the derived session status.
+   * GameState remains the canonical source of truth; this is a
+   * convenience view over its lifecycle-relevant fields.
+   */
+  public getSessionStatusSnapshot(): GameSessionStatus | null {
+    return this.sessionStatus;
+  }
+
+  /**
+   * Internal helper to keep the derived sessionStatus in sync with the
+   * underlying GameState and any terminal GameResult. This does not
+   * mutate the GameEngine; it is purely a projection for diagnostics
+   * and future orchestration.
+   */
+  private recomputeSessionStatus(gameState?: GameState, gameResult?: GameResult): void {
+    const state = gameState ?? this.gameEngine.getGameState();
+    this.sessionStatus = deriveGameSessionStatus(state, gameResult);
   }
 
   public async handlePlayerMove(socket: any, moveData: any): Promise<void> {
@@ -534,6 +585,7 @@ export class GameSession {
 
   private async broadcastUpdate(result: any) {
     const updatedState = this.gameEngine.getGameState();
+    this.recomputeSessionStatus(updatedState, result.gameResult);
 
     if (result.gameResult) {
       // Stop timers when game ends
@@ -648,17 +700,25 @@ export class GameSession {
       }
 
       // Move-generating AI path (Python service first, then local fallback).
+      let aiRequestState: AIRequestState = markAIRequestQueued();
+      this.lastAIRequestState = aiRequestState;
+
       const MAX_SERVICE_RETRIES = 2;
       let stateForAI = initialState;
       let lastError: string | undefined;
 
       for (let attempt = 0; attempt <= MAX_SERVICE_RETRIES; attempt++) {
+        aiRequestState = markAIRequestInFlight(aiRequestState);
+        this.lastAIRequestState = aiRequestState;
+
         const aiMove = await globalAIEngine.getAIMove(currentPlayerNumber, stateForAI, () =>
           this.rng.next()
         );
         if (!aiMove) {
           lastError =
             lastError ?? 'AI service returned no move after retries (see earlier logs for details)';
+          aiRequestState = markAIRequestFailed('AI_SERVICE_OVERLOADED', 'NO_MOVE');
+          this.lastAIRequestState = aiRequestState;
           break;
         }
 
@@ -669,6 +729,9 @@ export class GameSession {
         const result = await this.rulesFacade.applyMove(engineMove);
 
         if (result.success) {
+          aiRequestState = markAIRequestCompleted();
+          this.lastAIRequestState = aiRequestState;
+
           await this.handleAIMoveResult(result, currentPlayerNumber, appliedMoveType);
           return;
         }
@@ -689,6 +752,9 @@ export class GameSession {
       }
 
       // Local fallback heuristic when the AI service repeatedly fails.
+      aiRequestState = markAIRequestFallbackLocal(aiRequestState);
+      this.lastAIRequestState = aiRequestState;
+
       const fallbackMove = globalAIEngine.getLocalFallbackMove(
         currentPlayerNumber,
         stateForAI,
@@ -709,9 +775,15 @@ export class GameSession {
 
         const result = await this.rulesFacade.applyMove(engineMove);
         if (result.success) {
+          aiRequestState = markAIRequestCompleted();
+          this.lastAIRequestState = aiRequestState;
+
           await this.handleAIMoveResult(result, currentPlayerNumber, appliedMoveType);
           return;
         }
+
+        aiRequestState = markAIRequestFailed('AI_SERVICE_OVERLOADED', 'LOCAL_FALLBACK_REJECTED');
+        this.lastAIRequestState = aiRequestState;
 
         logger.error('Local fallback AI move was rejected by rules engine', {
           gameId: this.gameId,
@@ -727,6 +799,9 @@ export class GameSession {
         return;
       }
 
+      aiRequestState = markAIRequestFailed('AI_SERVICE_OVERLOADED', 'NO_FALLBACK_CANDIDATE');
+      this.lastAIRequestState = aiRequestState;
+
       // No valid local fallback move exists; abandon the game with a clear
       // failure reason so that operators can investigate.
       await this.handleAIFatalFailure(currentPlayerNumber, {
@@ -734,6 +809,11 @@ export class GameSession {
           lastError ?? 'AI service produced no valid moves and local fallback had no candidates',
       });
     } catch (error) {
+      // Unexpected errors in the AI turn pipeline are treated as a
+      // terminal failure for the current request from the perspective
+      // of diagnostics, without altering existing game behavior.
+      this.lastAIRequestState = markAIRequestFailed('AI_SERVICE_OVERLOADED', 'UNEXPECTED_ERROR');
+
       logger.error('Error during AI turn', {
         gameId: this.gameId,
         error: error instanceof Error ? error.message : String(error),
@@ -870,6 +950,10 @@ export class GameSession {
       },
     };
 
+    // Update the derived session status to reflect an abandoned game.
+    const abandonedState: GameState = { ...updatedState, gameStatus: 'abandoned' };
+    this.recomputeSessionStatus(abandonedState, gameResult);
+
     // Emit game_error for active players to show error UI
     this.io.to(this.gameId).emit('game_error', {
       type: 'game_error',
@@ -920,6 +1004,15 @@ export class GameSession {
       rulesServiceFailureCount: this.rulesServiceFailureCount,
       rulesShadowErrorCount: this.rulesShadowErrorCount,
     };
+  }
+
+  /**
+   * Exposed for tests/diagnostics: snapshot of the most recent
+   * AIRequestState for this session. This is intentionally read-only
+   * and reset on each AI turn.
+   */
+  public getLastAIRequestStateForTesting(): AIRequestState {
+    return this.lastAIRequestState;
   }
 
   /**

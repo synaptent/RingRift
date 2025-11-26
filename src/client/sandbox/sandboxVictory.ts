@@ -1,5 +1,5 @@
-import { GameResult, GameState } from '../../shared/types/game';
-import { evaluateVictory } from '../../shared/engine/victoryLogic';
+import type { GameResult, GameState } from '../../shared/engine';
+import { evaluateVictory } from '../../shared/engine';
 
 /**
  * Pure victory-condition helpers for the client sandbox.

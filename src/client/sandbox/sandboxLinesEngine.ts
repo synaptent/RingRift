@@ -1,24 +1,24 @@
-import {
+import type {
   BoardState,
   BoardType,
-  BOARD_CONFIGS,
   GameState,
   LineInfo,
   Player,
   Position,
   RingStack,
   Move,
-  positionToString,
-} from '../../shared/types/game';
-import { calculateCapHeight } from '../../shared/engine/core';
+  LineDecisionApplicationOutcome,
+} from '../../shared/engine';
 import {
+  BOARD_CONFIGS,
+  positionToString,
+  calculateCapHeight,
   enumerateProcessLineMoves,
   enumerateChooseLineRewardMoves,
   applyProcessLineDecision,
   applyChooseLineRewardDecision,
-} from '../../shared/engine/lineDecisionHelpers';
-import type { LineDecisionApplicationOutcome } from '../../shared/engine/lineDecisionHelpers';
-import { findLinesForPlayer } from '../../shared/engine/lineDetection';
+  findLinesForPlayer,
+} from '../../shared/engine';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { forceEliminateCapOnBoard } from './sandboxElimination';
 

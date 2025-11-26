@@ -1,5 +1,5 @@
-import { BoardState, Player, Position, RingStack, positionToString } from '../../shared/types/game';
-import { calculateCapHeight } from '../../shared/engine/core';
+import type { BoardState, Player, Position, RingStack } from '../../shared/engine';
+import { positionToString, calculateCapHeight } from '../../shared/engine';
 
 const TERRITORY_TRACE_DEBUG =
   typeof process !== 'undefined' &&

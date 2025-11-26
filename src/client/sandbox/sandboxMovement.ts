@@ -1,13 +1,12 @@
-import { BoardState, BoardType, Position, positionToString } from '../../shared/types/game';
-import { MovementBoardView } from '../../shared/engine/core';
-import { enumerateSimpleMoveTargetsFromStack } from '../../shared/engine/movementLogic';
+import type { BoardState, BoardType, Position, MovementBoardView } from '../../shared/engine';
+import { positionToString, enumerateSimpleMoveTargetsFromStack } from '../../shared/engine';
 
 // Re-export marker-path helpers: MarkerPathHelpers is a TypeScript-only
 // interface, so we export it as a type to avoid creating a runtime import
 // that bundlers expect from core.ts. The function helper remains a normal
 // value export.
-export type { MarkerPathHelpers } from '../../shared/engine/core';
-export { applyMarkerEffectsAlongPathOnBoard } from '../../shared/engine/core';
+export type { MarkerPathHelpers } from '../../shared/engine';
+export { applyMarkerEffectsAlongPathOnBoard } from '../../shared/engine';
 
 export interface SimpleLanding {
   fromKey: string;

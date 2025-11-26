@@ -134,6 +134,9 @@ export type PlayerDisconnectedPayload = GamePlayerRoomEventPayload & {
 
 export type PlayerReconnectedPayload = GamePlayerRoomEventPayload & {
   type: 'player_reconnected';
+  data: GamePlayerRoomEventPayload['data'] & {
+    playerNumber: number;
+  };
 };
 
 /**
@@ -210,6 +213,7 @@ export interface ServerToClientEvents {
   player_joined: (payload: PlayerJoinedPayload) => void;
   player_left: (payload: PlayerLeftPayload) => void;
   player_disconnected: (payload: PlayerDisconnectedPayload) => void;
+  player_reconnected: (payload: PlayerReconnectedPayload) => void;
 
   // Chat
   chat_message: (payload: ChatMessageServerPayload) => void;
