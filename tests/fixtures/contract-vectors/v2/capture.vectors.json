@@ -1,0 +1,175 @@
+{
+  "version": "v2",
+  "generated": "2025-11-26T04:00:00.000Z",
+  "count": 2,
+  "categories": ["capture"],
+  "description": "Test vectors for overtaking capture moves",
+  "vectors": [
+    {
+      "id": "capture.overtaking.simple",
+      "version": "v2",
+      "category": "capture",
+      "description": "Simple overtaking capture - 2-high stack captures 1-high opponent",
+      "tags": ["smoke", "capture", "overtaking"],
+      "source": "manual",
+      "createdAt": "2025-11-26T04:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-capture-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1, 1],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 1
+              },
+              "3,4": {
+                "position": { "x": 3, "y": 4 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 16,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-201",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "captureTarget": { "x": 3, "y": 4 },
+          "to": { "x": 3, "y": 5 },
+          "timestamp": "2025-11-26T04:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "capture.overtaking.adjacent",
+      "version": "v2",
+      "category": "capture",
+      "description": "Adjacent overtaking capture - 2-high stack captures adjacent 1-high opponent",
+      "tags": ["capture", "adjacent"],
+      "source": "manual",
+      "createdAt": "2025-11-26T04:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-capture-002",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "4,3": {
+                "position": { "x": 4, "y": 3 },
+                "rings": [1, 1],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 1
+              },
+              "4,4": {
+                "position": { "x": 4, "y": 4 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 16,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 3,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-202",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 4, "y": 3 },
+          "captureTarget": { "x": 4, "y": 4 },
+          "to": { "x": 4, "y": 5 },
+          "timestamp": "2025-11-26T04:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 3
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    }
+  ]
+}

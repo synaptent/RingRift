@@ -1,0 +1,1 @@
+"""Contract test module for cross-language parity validation."""

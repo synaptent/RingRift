@@ -26,7 +26,8 @@ examples (one per player perspective)::
       "time_weight": gamma^(T - t)
     }
 
-where ``gamma`` is a discount factor (currently 0.99), ``T`` is the
+where ``gamma`` is a discount factor (default 0.99, configurable via
+``--gamma`` CLI flag), ``T`` is the
 trajectory length in states, and ``t`` is the index of the state within
 that trajectory. ``game_state`` is serialized via
 ``GameState.model_dump(by_alias=True, mode="json")`` so it can be
@@ -112,6 +113,7 @@ def generate_territory_dataset(
     seed: Optional[int] = None,
     engine_mode: str = "descent-only",
     num_players: int = 2,
+    gamma: float = 0.99,
 ) -> None:
     """Self-play generator for combined territory+elimination data.
 
@@ -326,7 +328,6 @@ def generate_territory_dataset(
             player_numbers_sorted = sorted(margins.keys())
 
             T = len(trajectory_states)
-            gamma = 0.99
 
             for t, snapshot in enumerate(trajectory_states, start=1):
                 # Training-time weight w_t = gamma^(T - t)
@@ -426,6 +427,12 @@ def _parse_args() -> argparse.Namespace:
             "Defaults to 2 to preserve existing behaviour."
         ),
     )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="Discount factor for time weighting (default: 0.99).",
+    )
     return parser.parse_args()
 
 
@@ -443,6 +450,12 @@ def main() -> None:
     args = _parse_args()
     board_type = _board_type_from_str(args.board_type)
 
+    # Validate gamma is in valid range
+    if not (0.0 <= args.gamma <= 1.0):
+        raise ValueError(
+            f"--gamma must be between 0.0 and 1.0 inclusive, got {args.gamma}"
+        )
+
     generate_territory_dataset(
         num_games=args.num_games,
         output_path=args.output,
@@ -451,6 +464,7 @@ def main() -> None:
         seed=args.seed,
         engine_mode=args.engine_mode,
         num_players=args.num_players,
+        gamma=args.gamma,
     )
 
 

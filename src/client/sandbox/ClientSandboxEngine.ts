@@ -83,6 +83,12 @@ import {
   PlacementBoardView,
 } from './sandboxPlacement';
 import { maybeRunAITurnSandbox, SandboxAIHooks } from './sandboxAI';
+import {
+  SandboxOrchestratorAdapter,
+  SandboxStateAccessor,
+  SandboxDecisionHandler,
+  SandboxMoveResult,
+} from './SandboxOrchestratorAdapter';
 
 /**
  * Client-local engine harness for the /sandbox route.
@@ -138,6 +144,22 @@ export class ClientSandboxEngine {
   // is currently reserved for future parity-specific behaviour and does
   // not alter normal sandbox rules or AI policy.
   private readonly traceMode: boolean;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Orchestrator Adapter Integration
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Feature flag: when true, applyCanonicalMoveInternal delegates to the
+   * shared orchestrator via SandboxOrchestratorAdapter instead of using
+   * the legacy sandbox-specific logic.
+   *
+   * Default: false (gradual rollout - enable explicitly for testing)
+   */
+  private useOrchestratorAdapter: boolean = false;
+
+  /** Lazily-initialized adapter instance */
+  private orchestratorAdapter: SandboxOrchestratorAdapter | null = null;
 
   // Per-game RNG for deterministic AI behavior
   private rng: SeededRNG;
@@ -373,6 +395,288 @@ export class ClientSandboxEngine {
       victoryThreshold: Math.floor((boardConfig.ringsPerPlayer * config.numPlayers) / 2) + 1,
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
     };
+
+    // Initialize orchestrator adapter lazily when first needed
+    this.orchestratorAdapter = null;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Orchestrator Adapter Public API
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Enable delegation to the shared orchestrator adapter.
+   *
+   * When enabled, applyCanonicalMoveInternal() will delegate rules logic
+   * to the shared orchestrator (processTurnAsync), keeping only sandbox-
+   * specific concerns (state management, decision UI, callbacks) local.
+   *
+   * This is designed for:
+   * - Gradual rollout and validation of the unified orchestrator
+   * - Parity testing between legacy sandbox logic and orchestrator
+   * - Future removal of duplicated sandbox rules code
+   *
+   * Usage:
+   * ```typescript
+   * const engine = new ClientSandboxEngine(opts);
+   * engine.enableOrchestratorAdapter();
+   * await engine.applyCanonicalMove(move); // Now uses orchestrator
+   * ```
+   */
+  public enableOrchestratorAdapter(): void {
+    this.useOrchestratorAdapter = true;
+    // Ensure adapter is initialized
+    this.getOrchestratorAdapter();
+  }
+
+  /**
+   * Disable delegation to the shared orchestrator adapter.
+   * Returns to using legacy sandbox-specific rules logic.
+   */
+  public disableOrchestratorAdapter(): void {
+    this.useOrchestratorAdapter = false;
+  }
+
+  /**
+   * Check whether the orchestrator adapter is enabled.
+   */
+  public isOrchestratorAdapterEnabled(): boolean {
+    return this.useOrchestratorAdapter;
+  }
+
+  /**
+   * Get or create the orchestrator adapter instance.
+   */
+  private getOrchestratorAdapter(): SandboxOrchestratorAdapter {
+    if (!this.orchestratorAdapter) {
+      this.orchestratorAdapter = this.createOrchestratorAdapter();
+    }
+    return this.orchestratorAdapter;
+  }
+
+  /**
+   * Create a new SandboxOrchestratorAdapter wired to this engine.
+   */
+  private createOrchestratorAdapter(): SandboxOrchestratorAdapter {
+    const stateAccessor: SandboxStateAccessor = {
+      getGameState: () => this.getGameState(),
+      updateGameState: (state: GameState) => {
+        this.gameState = state;
+      },
+      getPlayerInfo: (playerId: string): { type: 'human' | 'ai'; aiDifficulty?: number } => {
+        // Extract player number from playerId (format: "player-N" or "sandbox-N")
+        const match = playerId.match(/(\d+)$/);
+        const playerNumber = match ? parseInt(match[1], 10) : 1;
+        const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
+        if (player?.type === 'ai') {
+          return { type: 'ai', aiDifficulty: player.aiDifficulty };
+        }
+        return { type: 'human' };
+      },
+    };
+
+    const decisionHandler: SandboxDecisionHandler = {
+      requestDecision: async (decision) => {
+        // Map PendingDecision to sandbox interaction handler format
+        // The sandbox interaction handler uses PlayerChoice format
+        const playerChoice = this.mapPendingDecisionToPlayerChoice(decision);
+        const response = await this.interactionHandler.requestChoice(playerChoice);
+        return this.mapPlayerChoiceResponseToMove(decision, response);
+      },
+    };
+
+    return new SandboxOrchestratorAdapter({
+      stateAccessor,
+      decisionHandler,
+      callbacks: {
+        debugHook: this._debugCheckpointHook
+          ? (label: string, state: GameState) => {
+              this._debugCheckpointHook!(label, state);
+            }
+          : undefined,
+        onError: (error: Error, context: string) => {
+          // eslint-disable-next-line no-console
+          console.error(`[SandboxOrchestratorAdapter] Error in ${context}:`, error);
+        },
+      },
+    });
+  }
+
+  /**
+   * Map a PendingDecision from the orchestrator to a PlayerChoice for
+   * the sandbox interaction handler.
+   */
+  private mapPendingDecisionToPlayerChoice(decision: any): PlayerChoice {
+    const decisionType = decision.type;
+    const options = decision.options as Move[];
+
+    switch (decisionType) {
+      case 'line_order':
+        return {
+          id: `sandbox-line-order-${Date.now()}`,
+          gameId: this.gameState.id,
+          playerNumber: decision.player,
+          type: 'line_order',
+          prompt: 'Select which line to process first',
+          options: options.map((opt: Move, idx: number) => ({
+            lineId: `line-${idx}`,
+            markerPositions: opt.formedLines?.[0]?.positions ?? [],
+            moveId: opt.id || `move-${idx}`,
+          })),
+        };
+
+      case 'line_reward':
+        return {
+          id: `sandbox-line-reward-${Date.now()}`,
+          gameId: this.gameState.id,
+          playerNumber: decision.player,
+          type: 'line_reward_option',
+          prompt: 'Choose reward for overlength line',
+          options: options.map((opt: Move) => {
+            const isCollapseAll =
+              opt.collapsedMarkers?.length === opt.formedLines?.[0]?.positions?.length;
+            return isCollapseAll
+              ? ('option_1_collapse_all_and_eliminate' as const)
+              : ('option_2_min_collapse_no_elimination' as const);
+          }),
+          moveIds: options.reduce(
+            (acc, opt: Move, idx: number) => {
+              const isCollapseAll =
+                opt.collapsedMarkers?.length === opt.formedLines?.[0]?.positions?.length;
+              const key = isCollapseAll
+                ? 'option_1_collapse_all_and_eliminate'
+                : 'option_2_min_collapse_no_elimination';
+              acc[key] = opt.id || `move-${idx}`;
+              return acc;
+            },
+            {} as Record<string, string>
+          ),
+        };
+
+      case 'region_order':
+        return {
+          id: `sandbox-region-order-${Date.now()}`,
+          gameId: this.gameState.id,
+          playerNumber: decision.player,
+          type: 'region_order',
+          prompt: 'Select which region to process first',
+          options: options.map((opt: Move, idx: number) => {
+            const region = opt.disconnectedRegions?.[0];
+            return {
+              regionId: `region-${idx}`,
+              size: region?.spaces?.length ?? 0,
+              representativePosition: region?.spaces?.[0] ?? { x: 0, y: 0 },
+              moveId: opt.id || `move-${idx}`,
+            };
+          }),
+        };
+
+      case 'capture_direction':
+        return {
+          id: `sandbox-capture-${Date.now()}`,
+          gameId: this.gameState.id,
+          playerNumber: decision.player,
+          type: 'capture_direction',
+          prompt: 'Select capture direction',
+          options: options.map((opt: Move) => ({
+            targetPosition: opt.captureTarget!,
+            landingPosition: opt.to,
+            capturedCapHeight:
+              this.gameState.board.stacks.get(positionToString(opt.captureTarget!))?.capHeight ?? 0,
+          })),
+        };
+
+      default:
+        // Generic fallback - use line_order as default
+        return {
+          id: `sandbox-decision-${Date.now()}`,
+          gameId: this.gameState.id,
+          playerNumber: decision.player,
+          type: 'line_order',
+          prompt: String(decision.type),
+          options: [],
+        };
+    }
+  }
+
+  /**
+   * Map a PlayerChoice response back to a Move for the orchestrator.
+   */
+  private mapPlayerChoiceResponseToMove(decision: any, response: any): Move {
+    // Find the matching option from the original decision
+    const options = decision.options as Move[];
+
+    // Try to match based on response content
+    if (response.selectedLineIndex !== undefined && options[response.selectedLineIndex]) {
+      return options[response.selectedLineIndex];
+    }
+
+    if (response.selectedRegionIndex !== undefined && options[response.selectedRegionIndex]) {
+      return options[response.selectedRegionIndex];
+    }
+
+    if (response.selectedOption) {
+      // Match by position for capture direction
+      const selected = options.find((opt: Move) => {
+        if (opt.captureTarget && response.selectedOption.targetPosition) {
+          return (
+            positionToString(opt.captureTarget) ===
+              positionToString(response.selectedOption.targetPosition) &&
+            positionToString(opt.to!) === positionToString(response.selectedOption.landingPosition)
+          );
+        }
+        return false;
+      });
+      if (selected) return selected;
+    }
+
+    // Default to first option
+    return options[0];
+  }
+
+  /**
+   * Process a move via the orchestrator adapter.
+   *
+   * This method delegates to the shared orchestrator for rules logic,
+   * handling sandbox-specific concerns like history recording.
+   */
+  private async processMoveViaAdapter(
+    move: Move,
+    beforeStateForHistory: GameState
+  ): Promise<boolean> {
+    const adapter = this.getOrchestratorAdapter();
+    const result = await adapter.processMove(move);
+
+    if (!result.success) {
+      return false;
+    }
+
+    // Update victory result if game ended
+    if (result.victoryResult) {
+      this.victoryResult = result.victoryResult;
+    }
+
+    // Update internal turn state based on move type
+    if (move.type === 'place_ring' && move.to) {
+      this._hasPlacedThisTurn = true;
+      this._mustMoveFromStackKey = positionToString(move.to);
+      this._selectedStackKey = positionToString(move.to);
+    } else if (
+      move.type === 'move_stack' ||
+      move.type === 'move_ring' ||
+      move.type === 'overtaking_capture' ||
+      move.type === 'continue_capture_segment'
+    ) {
+      this._selectedStackKey = undefined;
+    }
+
+    // Clear pending flags based on move type
+    if (move.type === 'eliminate_rings_from_stack') {
+      this._pendingLineRewardElimination = false;
+      this._pendingTerritorySelfElimination = false;
+    }
+
+    return result.metadata?.stateChanged ?? true;
   }
 
   /**
@@ -2137,6 +2441,10 @@ export class ClientSandboxEngine {
    * Internal canonical move-applier used by both AI turns and
    * applyCanonicalMove. It mutates this.gameState according to the given
    * Move and returns true when the move was applied and changed state.
+   *
+   * When useOrchestratorAdapter is enabled, this method delegates to the
+   * shared orchestrator via SandboxOrchestratorAdapter, falling back to
+   * legacy sandbox logic only when the adapter is disabled.
    */
   private async applyCanonicalMoveInternal(
     move: Move,
@@ -2144,6 +2452,28 @@ export class ClientSandboxEngine {
   ): Promise<boolean> {
     this.debugCheckpoint(`before-applyCanonicalMoveInternal-${move.type}`);
     const beforeHash = hashGameState(this.getGameState());
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Orchestrator Adapter Delegation
+    // ═══════════════════════════════════════════════════════════════════════
+    // When the orchestrator adapter is enabled, delegate all rules logic
+    // to the shared orchestrator. This eliminates duplicated logic and
+    // ensures sandbox and backend use identical rules processing.
+    if (this.useOrchestratorAdapter) {
+      const beforeState = this.getGameState();
+      const changed = await this.processMoveViaAdapter(move, beforeState);
+
+      // Debug checkpoint after adapter processing
+      this.debugCheckpoint(`after-applyCanonicalMoveInternal-adapter-${move.type}`);
+
+      // Verify state actually changed
+      const afterHash = hashGameState(this.getGameState());
+      return changed && beforeHash !== afterHash;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Legacy Sandbox Logic (when adapter is disabled)
+    // ═══════════════════════════════════════════════════════════════════════
 
     // Ensure currentPlayer matches the move's player for the purposes of
     // canonical application.

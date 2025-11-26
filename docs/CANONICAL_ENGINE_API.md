@@ -1,12 +1,16 @@
 # Canonical Engine Public API
 
-**Task:** T1-W1-B  
-**Date:** 2025-11-26  
-**Status:** Complete
+**Task:** T1-W1-B
+**Date:** 2025-11-26
+**Status:** Complete (Updated with Orchestration Layer)
 
 ## 1. Overview
 
-This document defines the narrow, stable public API boundary for the canonical RingRift rules engine located in [`src/shared/engine/`](../src/shared/engine/). This API is designed to be:
+This document defines the narrow, stable public API boundary for the canonical RingRift rules engine located in [`src/shared/engine/`](../src/shared/engine/).
+
+> **Note (November 2025):** A new canonical **Turn Orchestrator** layer has been added in [`src/shared/engine/orchestration/`](../src/shared/engine/orchestration/README.md). This provides `processTurn()` and `processTurnAsync()` as single entry points for turn processing. See [Section 3.9](#39-orchestration-domain-new) for details.
+
+This API is designed to be:
 
 1. **Narrow** - Only essential functions are exported
 2. **Stable** - Changes inside the engine don't break adapters
@@ -553,6 +557,126 @@ computeProgressSnapshot(state: GameState): ProgressSnapshot
 
 ---
 
+### 3.9 Orchestration Domain (NEW)
+
+**Location:** [`orchestration/`](../src/shared/engine/orchestration/)
+
+The orchestration layer provides a single entry point for all turn processing, delegating to domain aggregates in deterministic order.
+
+```typescript
+// Main Entry Points
+processTurn(
+  state: GameState,
+  move: Move,
+  options?: ProcessTurnOptions
+): TurnResult
+
+processTurnAsync(
+  state: GameState,
+  move: Move,
+  options?: ProcessTurnOptions
+): Promise<TurnResult>
+
+// Phase State Machine
+advancePhase(state: GameState, currentPhase: GamePhase): PhaseTransition
+getNextPhase(currentPhase: GamePhase, context: PhaseContext): GamePhase
+```
+
+**Result Types:**
+
+```typescript
+interface TurnResult {
+  nextState: GameState;
+  pendingDecision?: PendingDecision;
+  phaseTransitions: PhaseTransition[];
+  victory?: VictoryResult;
+  events: GameEvent[];
+}
+
+interface PendingDecision {
+  type: 'line_order' | 'line_reward' | 'region_order' | 'elimination' | 'capture_direction';
+  options: Move[];
+  player: number;
+}
+
+interface PhaseTransition {
+  from: GamePhase;
+  to: GamePhase;
+  reason: string;
+}
+```
+
+**Usage Pattern:**
+
+```typescript
+import { processTurn, TurnResult } from '@shared/engine/orchestration';
+
+// Process a move through all phases
+const result: TurnResult = processTurn(currentState, playerMove);
+
+if (result.pendingDecision) {
+  // Present choices to player/AI
+  const choice = await getPlayerChoice(result.pendingDecision.options);
+  const nextResult = processTurn(result.nextState, choice);
+} else if (result.victory) {
+  // Game is over
+  handleGameEnd(result.victory);
+} else {
+  // Move to next player's turn
+  currentState = result.nextState;
+}
+```
+
+**Adapters:**
+
+Two adapters wrap the orchestrator for specific runtime contexts:
+
+1. **Backend Adapter:** [`TurnEngineAdapter.ts`](../src/server/game/turn/TurnEngineAdapter.ts)
+   - Wraps orchestrator with WebSocket and session concerns
+   - Handles player interaction via `PlayerInteractionManager`
+   - Manages AI turn integration
+   - Controlled by `useOrchestratorAdapter` feature flag
+
+2. **Sandbox Adapter:** [`SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)
+   - Wraps orchestrator for browser-local simulation
+   - Provides same interface as `ClientSandboxEngine`
+   - Controlled by `useOrchestratorAdapter` feature flag
+
+---
+
+### 3.10 Contract Testing Domain (NEW)
+
+**Location:** [`contracts/`](../src/shared/engine/contracts/)
+
+Contract testing ensures cross-language parity between TypeScript and Python engines.
+
+```typescript
+// Schema definitions
+export type { ContractTestVector, ContractInput, ContractOutput } from './schemas';
+
+// Serialization (deterministic JSON output)
+serializeGameState(state: GameState): string
+serializeMove(move: Move): string
+serializeTurnResult(result: TurnResult): string
+
+// Test vector generation
+generateTestVector(
+  category: string,
+  name: string,
+  inputState: GameState,
+  move: Move
+): ContractTestVector
+```
+
+**Test Vectors Location:** [`tests/fixtures/contract-vectors/v2/`](../tests/fixtures/contract-vectors/v2/)
+
+**Test Runners:**
+
+- TypeScript: [`tests/contracts/contractVectorRunner.test.ts`](../tests/contracts/contractVectorRunner.test.ts)
+- Python: [`ai-service/tests/contracts/test_contract_vectors.py`](../ai-service/tests/contracts/test_contract_vectors.py)
+
+---
+
 ## 4. Internal vs External Boundary
 
 ### 4.1 Internal (Not Exported)
@@ -576,6 +700,17 @@ The following remain internal implementation details:
 | `lpsTracker.ts` (proposed)        | Last Player Standing state machine   |
 | `gameStateMachine.ts` (proposed)  | Unified game lifecycle state machine |
 | `chainCaptureLogic.ts` (proposed) | Chain capture state management       |
+
+### 4.3 New Modules (Implemented)
+
+| Module                               | Purpose                                | Status      |
+| ------------------------------------ | -------------------------------------- | ----------- |
+| `orchestration/turnOrchestrator.ts`  | Single entry point for turn processing | ✅ Complete |
+| `orchestration/phaseStateMachine.ts` | Phase transition logic                 | ✅ Complete |
+| `orchestration/types.ts`             | Orchestration type definitions         | ✅ Complete |
+| `contracts/schemas.ts`               | Contract test vector schemas           | ✅ Complete |
+| `contracts/serialization.ts`         | Deterministic JSON serialization       | ✅ Complete |
+| `contracts/testVectorGenerator.ts`   | Test vector generation utilities       | ✅ Complete |
 
 ---
 
@@ -739,8 +874,16 @@ The Python AI Service currently duplicates rules logic. Long-term options:
 
 This API specification defines a stable, narrow boundary for the canonical RingRift rules engine. By organizing exports by game domain and maintaining pure function semantics, adapters can rely on predictable behavior while the internal implementation evolves.
 
+**Completed (November 2025):**
+
+1. ✅ T1-W1-C: Implement stubbed functions (`applyPlacementMove`, `evaluateSkipPlacementEligibility`)
+2. ✅ T1-W1-D: Create adapter layer specifications for each host
+3. ✅ Orchestration layer complete with `processTurn()` / `processTurnAsync()`
+4. ✅ Backend and sandbox adapters implemented
+5. ✅ Contract testing framework with Python parity (100% on 12 test vectors)
+
 **Next Steps:**
 
-1. T1-W1-C: Implement stubbed functions (`applyPlacementMove`, `evaluateSkipPlacementEligibility`)
-2. T1-W1-D: Create adapter layer specifications for each host
-3. T2: Address Python parity via code generation or WASM
+1. Enable orchestrator adapters in production (feature flag rollout)
+2. Extend contract test vector coverage
+3. Consider WASM compilation for Python consumption (long-term)

@@ -1,7 +1,7 @@
 # RingRift Rules Engine Architecture & Rollout Strategy
 
-**Last Updated:** November 24, 2025
-**Scope:** Python Rules Engine, TypeScript Parity, and Rollout Plan
+**Last Updated:** November 26, 2025
+**Scope:** Python Rules Engine, TypeScript Parity, Canonical Orchestrator, and Rollout Plan
 
 This document defines the architecture of the Python rules engine within the AI service, its relationship to the canonical TypeScript engine, and the strategy for rolling it out as an authoritative validation source.
 
@@ -11,10 +11,11 @@ This document defines the architecture of the Python rules engine within the AI 
 
 ### Core Concept
 
-RingRift maintains two implementations of the game rules:
+RingRift maintains two implementations of the game rules with a new canonical orchestration layer:
 
 1.  **TypeScript Engine (Canonical):** Located in `src/shared/engine/`. Used by the Node.js backend (`GameEngine.ts`) and the client sandbox (`ClientSandboxEngine.ts`). This is the current source of truth.
-- **Python Engine (AI/Shadow):** Located in `ai-service/app/game_engine.py`. Used for AI search/evaluation and currently being rolled out as a shadow validator for the backend.
+2.  **Canonical Turn Orchestrator (NEW):** Located in `src/shared/engine/orchestration/`. Provides a single entry point (`processTurn()`) that orchestrates all domain aggregates in a deterministic sequence. Backend and sandbox adapters delegate to this layer.
+3.  **Python Engine (AI/Shadow):** Located in `ai-service/app/game_engine.py`. Used for AI search/evaluation and currently being rolled out as a shadow validator for the backend. Contract tests ensure cross-language parity.
 
 ### Shared Rules Engine as Single Source of Truth
 
@@ -53,10 +54,26 @@ important groups are:
   - Shared phase/turn state machine: [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132)
   - Turn/phase mutators used by hosts: [`TurnMutator.ts`](src/shared/engine/mutators/TurnMutator.ts:1)
   - Shared orchestrating GameEngine used in parity tests: [`GameEngine.ts`](src/shared/engine/GameEngine.ts:37)
+  - **Canonical Turn Orchestrator (NEW):** [`turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts:1) – single entry point for all turn processing, delegating to domain aggregates
 
-### Backend, Shared Engine, and Sandbox Roles
+- **Orchestration (NEW - Phases 1-4 Complete)**
+  - Canonical orchestrator: [`src/shared/engine/orchestration/`](src/shared/engine/orchestration/README.md:1)
+  - Phase state machine: [`phaseStateMachine.ts`](src/shared/engine/orchestration/phaseStateMachine.ts:1)
+  - Orchestration types: [`types.ts`](src/shared/engine/orchestration/types.ts:1)
+  - Backend adapter: [`TurnEngineAdapter.ts`](src/server/game/turn/TurnEngineAdapter.ts:1)
+  - Client adapter: [`SandboxOrchestratorAdapter.ts`](src/client/sandbox/SandboxOrchestratorAdapter.ts:1)
 
-At runtime there are three TypeScript layers:
+- **Contract Testing (NEW)**
+  - Contract schemas: [`src/shared/engine/contracts/schemas.ts`](src/shared/engine/contracts/schemas.ts:1)
+  - Contract serialization: [`src/shared/engine/contracts/serialization.ts`](src/shared/engine/contracts/serialization.ts:1)
+  - Test vector generator: [`src/shared/engine/contracts/testVectorGenerator.ts`](src/shared/engine/contracts/testVectorGenerator.ts:1)
+  - Contract test runner (TS): [`tests/contracts/contractVectorRunner.test.ts`](tests/contracts/contractVectorRunner.test.ts:1)
+  - Contract test runner (Python): [`ai-service/tests/contracts/test_contract_vectors.py`](ai-service/tests/contracts/test_contract_vectors.py:1)
+  - Test vectors: [`tests/fixtures/contract-vectors/v2/`](tests/fixtures/contract-vectors/v2/) (12 vectors across 5 categories)
+
+### Backend, Shared Engine, Orchestrator, and Sandbox Roles
+
+At runtime there are four TypeScript layers:
 
 - **Shared engine (pure helpers)** – modules under
   [`src/shared/engine`](src/shared/engine/types.ts:1) implement geometry,
@@ -64,22 +81,31 @@ At runtime there are three TypeScript layers:
   side‑effect free except for returning updated state/board structures and are
   used as the single source of truth for rules semantics.
 
-- **Backend host (`RuleEngine` / `GameEngine`)** – server‑side orchestrators in
-  [`RuleEngine.ts`](src/server/game/RuleEngine.ts:1) and
-  [`GameEngine.ts`](src/server/game/GameEngine.ts:1) that:
-  - Adapt persistent `GameSession` state into the shared helpers.
-  - Call validators/mutators from the shared engine to apply canonical moves.
-  - Handle IO concerns: WebSockets, HTTP APIs, database persistence, Python
-    Rules/AI Service calls, metrics, etc.
+- **Canonical Turn Orchestrator (NEW)** – the orchestration layer in
+  [`src/shared/engine/orchestration/`](src/shared/engine/orchestration/README.md:1) that:
+  - Provides `processTurn()` and `processTurnAsync()` as single entry points for turn processing.
+  - Calls domain aggregates (Placement, Movement, Capture, Line, Territory, Victory) in deterministic order.
+  - Implements a phase state machine that advances through turn phases automatically.
+  - Returns `TurnResult` with pending decisions, state changes, and victory conditions.
+  - Is used directly by both backend and sandbox adapters.
 
-- **Client sandbox host (`ClientSandboxEngine`)** – browser‑side engine in
-  [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts:1) that:
+- **Backend host (`TurnEngineAdapter`)** – server‑side adapter in
+  [`TurnEngineAdapter.ts`](src/server/game/turn/TurnEngineAdapter.ts:1) that:
+  - Wraps the canonical orchestrator with WebSocket and session concerns.
+  - Handles player interaction delegation via `PlayerInteractionManager`.
+  - Manages AI turn integration and timeout handling.
+  - Calls through to the underlying `RuleEngine` / `GameEngine` for legacy flows.
+  - Controlled by `useOrchestratorAdapter` feature flag.
+
+- **Client sandbox host (`SandboxOrchestratorAdapter`)** – browser‑side adapter in
+  [`SandboxOrchestratorAdapter.ts`](src/client/sandbox/SandboxOrchestratorAdapter.ts:1) that:
+  - Wraps the canonical orchestrator for local simulation.
+  - Provides the same interface as `ClientSandboxEngine` for seamless switching.
   - Uses the same shared helpers for movement, captures, lines, Territory,
     victory, and turn progression.
+  - Controlled by `useOrchestratorAdapter` feature flag.
   - Provides local experimentation, AI‑vs‑AI simulations, and RulesMatrix / FAQ
     scenario playback.
-  - Mirrors backend behaviour and is validated via parity tests (see
-    [`tests/README.md`](tests/README.md:1)).
 
 ### How to Change or Extend Rules Safely
 

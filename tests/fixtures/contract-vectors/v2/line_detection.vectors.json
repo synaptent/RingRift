@@ -1,0 +1,159 @@
+{
+  "version": "v2",
+  "generated": "2025-11-26T04:00:00.000Z",
+  "count": 2,
+  "categories": ["line_detection"],
+  "description": "Test vectors for line detection and processing scenarios",
+  "vectors": [
+    {
+      "id": "line.movement.creates_marker",
+      "version": "v2",
+      "category": "line_detection",
+      "description": "Movement creates a departure marker",
+      "tags": ["smoke", "line_detection", "movement"],
+      "source": "manual",
+      "createdAt": "2025-11-26T04:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-line-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-301",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "to": { "x": 3, "y": 4 },
+          "timestamp": "2025-11-26T04:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "line.diagonal.no_line",
+      "version": "v2",
+      "category": "line_detection",
+      "description": "Diagonal movement with two markers, no line formed",
+      "tags": ["line_detection", "diagonal"],
+      "source": "manual",
+      "createdAt": "2025-11-26T04:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-line-002",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "2,2": {
+                "position": { "x": 2, "y": 2 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {
+              "4,4": { "position": { "x": 4, "y": 4 }, "player": 1 }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 3,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-302",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 2, "y": 2 },
+          "to": { "x": 3, "y": 3 },
+          "timestamp": "2025-11-26T04:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 3
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 2,
+          "sInvariantDelta": 1
+        }
+      }
+    }
+  ]
+}

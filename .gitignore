@@ -89,3 +89,4 @@ ai-service/ai-service/app/training/**/data/
 ai-service/ai-service/app/models/
 ai-service/ai-service/**/*.pth
 ai-service/ai-service/**/*.npz
+ai-service/checkpoints/

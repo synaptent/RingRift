@@ -3,10 +3,14 @@ Self-play data generation script for RingRift
 Uses MCTS to generate high-quality training data with data augmentation
 """
 
-import sys
+import argparse
 import os
-import numpy as np
+import random as py_random
+import sys
 from datetime import datetime
+from typing import Optional
+
+import numpy as np
 
 from app.ai.descent_ai import DescentAI  # noqa: E402
 from app.ai.neural_net import INVALID_MOVE_INDEX  # noqa: E402
@@ -335,20 +339,47 @@ def augment_data(
 
 
 def generate_dataset(
-    num_games=10, output_file="data/dataset.npz",
-    ai1=None, ai2=None, board_type=BoardType.SQUARE8,
-    seed=None
-):
+    num_games: int = 10,
+    output_file: str = "data/dataset.npz",
+    ai1=None,
+    ai2=None,
+    board_type: BoardType = BoardType.SQUARE8,
+    seed: Optional[int] = None,
+    max_moves: int = 200,
+    batch_size: Optional[int] = None,
+) -> None:
     """
     Generate self-play data using DescentAI and RingRiftEnv.
     Logs (state, best_move, root_value) for training.
+
+    Parameters
+    ----------
+    num_games:
+        Number of self-play games to generate.
+    output_file:
+        Path to the output NPZ file for training data.
+    ai1:
+        Optional pre-configured AI instance for player 1.
+    ai2:
+        Optional pre-configured AI instance for player 2.
+    board_type:
+        Board geometry to use (square8, square19, hexagonal).
+    seed:
+        Optional random seed for reproducibility.
+    max_moves:
+        Maximum moves per game before forcing termination.
+    batch_size:
+        Optional batch size for buffer flushing (currently unused,
+        reserved for future streaming implementation).
     """
     if seed is not None:
-        import random
         import torch
-        random.seed(seed)
+        py_random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
+
+    # batch_size is accepted for future use but not currently implemented
+    _ = batch_size
 
     # Accumulate data in separate lists
     new_features = []
@@ -375,7 +406,7 @@ def generate_dataset(
     print(f"Generating {num_games} games on {board_type}...")
 
     env = RingRiftEnv(
-        board_type=board_type, max_moves=200, reward_on="terminal"
+        board_type=board_type, max_moves=max_moves, reward_on="terminal"
     )
 
     for game_idx in range(num_games):
@@ -493,8 +524,8 @@ def generate_dataset(
                 p_indices = []
                 p_values = []
                 
-                if state_key in ai.transposition_table:
-                    entry = ai.transposition_table[state_key]
+                entry = ai.transposition_table.get(state_key)
+                if entry is not None:
                     if len(entry) == 3:
                         _, children_values, _ = entry
                     else:
@@ -695,5 +726,93 @@ def generate_dataset(
     )
 
 
-if __name__ == "__main__":
-    generate_dataset(num_games=2)
+def _parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for data generation."""
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate self-play training data for RingRift neural network. "
+            "Uses DescentAI to play games and collects (state, policy, value) "
+            "tuples with data augmentation."
+        ),
+    )
+    parser.add_argument(
+        "--num-games",
+        type=int,
+        default=100,
+        help="Number of self-play games to generate (default: 100).",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="logs/training_data.npz",
+        help="Output file path for training data (default: logs/training_data.npz).",
+    )
+    parser.add_argument(
+        "--board-type",
+        choices=["square8", "square19", "hexagonal"],
+        default="square8",
+        help="Board type for self-play games (default: square8).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42).",
+    )
+    parser.add_argument(
+        "--max-moves",
+        type=int,
+        default=200,
+        help="Maximum moves per game before forcing termination (default: 200).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Batch size for buffer flushing (optional, reserved for future use).",
+    )
+    return parser.parse_args()
+
+
+def _board_type_from_str(name: str) -> BoardType:
+    """Convert board type string to BoardType enum."""
+    if name == "square8":
+        return BoardType.SQUARE8
+    if name == "square19":
+        return BoardType.SQUARE19
+    if name == "hexagonal":
+        return BoardType.HEXAGONAL
+    raise ValueError(f"Unknown board type: {name!r}")
+
+
+def main() -> None:
+    """Entry point for CLI-based data generation."""
+    args = _parse_args()
+    board_type = _board_type_from_str(args.board_type)
+
+    # Validate numeric arguments
+    if args.num_games < 1:
+        raise ValueError(
+            f"--num-games must be at least 1, got {args.num_games}"
+        )
+    if args.max_moves < 1:
+        raise ValueError(
+            f"--max-moves must be at least 1, got {args.max_moves}"
+        )
+    if args.batch_size is not None and args.batch_size < 1:
+        raise ValueError(
+            f"--batch-size must be at least 1, got {args.batch_size}"
+        )
+
+    generate_dataset(
+        num_games=args.num_games,
+        output_file=args.output,
+        board_type=board_type,
+        seed=args.seed,
+        max_moves=args.max_moves,
+        batch_size=args.batch_size,
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
+    main()

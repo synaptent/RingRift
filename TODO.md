@@ -1,6 +1,6 @@
 # RingRift TODO / Task Tracker
 
-**Last Updated:** November 21, 2025
+**Last Updated:** November 26, 2025
 
 This file is the canonical high-level task tracker for the project.
 When it disagrees with older planning docs (for example files under
@@ -21,6 +21,51 @@ Priorities:
 - **P0** – Critical for rules correctness / engine parity.
 - **P1** – High-value for playable, stable online games.
 - **P2** – Important but can follow P0/P1.
+
+## Phase 1.5 – Architecture Remediation (COMPLETED) ✅
+
+**Completed:** November 26, 2025
+
+This phase consolidated the rules engine architecture across 4 sub-phases:
+
+### Phase 1: Architecture & Design ✅
+
+- [x] Created canonical turn orchestrator in `src/shared/engine/orchestration/`
+  - [`turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts) – main entry point
+  - [`phaseStateMachine.ts`](src/shared/engine/orchestration/phaseStateMachine.ts) – phase transitions
+  - [`types.ts`](src/shared/engine/orchestration/types.ts) – orchestration types
+- [x] Added contract schemas in `src/shared/engine/contracts/`
+  - [`schemas.ts`](src/shared/engine/contracts/schemas.ts), [`serialization.ts`](src/shared/engine/contracts/serialization.ts)
+- [x] Created initial test vectors in `tests/fixtures/contract-vectors/v2/`
+
+### Phase 2: Rules Engine Consolidation ✅
+
+- [x] Wired orchestrator to all 6 domain aggregates (Placement, Movement, Capture, Line, Territory, Victory)
+- [x] Added line detection and territory test vectors
+- [x] 14 contract tests passing
+
+### Phase 3: Backend/Sandbox Adapter Migration ✅
+
+- [x] Created [`TurnEngineAdapter.ts`](src/server/game/turn/TurnEngineAdapter.ts) for backend (326 lines)
+- [x] Created [`SandboxOrchestratorAdapter.ts`](src/client/sandbox/SandboxOrchestratorAdapter.ts) for client (476 lines)
+- [x] 46 adapter/contract tests passing
+- [x] Feature flags (`useOrchestratorAdapter`) for gradual rollout
+
+### Phase 4: Python Contract Test Runner ✅
+
+- [x] Created Python serialization matching TS format ([`serialization.py`](ai-service/app/rules/serialization.py))
+- [x] Created contract test runner ([`test_contract_vectors.py`](ai-service/tests/contracts/test_contract_vectors.py))
+- [x] 100% cross-language parity on 12 test vectors
+- [x] Python: 245 tests passing, 15 contract tests
+
+**Documentation produced:**
+
+- [`docs/drafts/PHASE1_REMEDIATION_PLAN.md`](docs/drafts/PHASE1_REMEDIATION_PLAN.md)
+- [`docs/drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md`](docs/drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md)
+- [`docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md`](docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md)
+- [`src/shared/engine/orchestration/README.md`](src/shared/engine/orchestration/README.md)
+
+---
 
 ## Phase 2 – Robustness & Testing (IN PROGRESS, P0)
 
@@ -188,7 +233,9 @@ Planned work:
 - [ ] Once chain capture is stable across backend and sandbox, extend the same Move/phase unification to line-processing and territory-processing (as described above).
 - [ ] Keep `tests/integration/FullGameFlow.test.ts` green by ensuring AI-vs-AI backend games using local AI fallback always reach a terminal `gameStatus` (e.g. `completed`/`finished`) within the configured move budget. Treat regressions here as part of P0.4 since they exercise the unified Move model end-to-end.
 
-### P0.5 – Python AI-service rules engine parity (P0)
+### P0.5 – Python AI-service rules engine parity (P0) ✅
+
+**Note:** Phase 4 of the Architecture Remediation added contract tests that validate cross-language parity. The Python engine now passes 100% of contract test vectors with TS engine output.
 
 - [x] Audit mismatches between Python [`GameEngine`](ai-service/app/game_engine.py) /
       [`BoardManager`](ai-service/app/board_manager.py) /
@@ -260,6 +307,17 @@ Planned work:
         Pydantic alias patterns (e.g. `capture_target`, `collapsed_markers`) where
         Pylance cannot infer the dynamic `__init__` parameters, to keep the
         signal-to-noise ratio of editor diagnostics high.
+
+### P0.6 – Canonical Orchestrator Production Hardening (NEW)
+
+Post-remediation work to fully enable the orchestrator in production:
+
+- [ ] Enable `useOrchestratorAdapter` feature flag in staging environment
+- [ ] Run comprehensive parity tests with orchestrator enabled
+- [ ] Monitor for any divergences in game outcomes
+- [ ] Enable `useOrchestratorAdapter` in production after validation
+- [ ] Remove legacy turn processing code paths once orchestrator is stable
+- [ ] Add orchestrator-specific metrics and observability
 
 ## Phase 3 – Multiplayer Polish (P1)
 

@@ -3,6 +3,7 @@ Descent AI implementation for RingRift
 Based on "A Simple AlphaZero" (arXiv:2008.01188v4)
 """
 
+import logging
 from typing import Optional, List, Dict, Any, Tuple
 import time
 from enum import Enum
@@ -11,6 +12,7 @@ import numpy as np
 import torch
 
 from .base import BaseAI
+from .bounded_transposition_table import BoundedTranspositionTable
 from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
@@ -18,6 +20,9 @@ from .neural_net import (
     HexNeuralNet,
 )
 from ..models import GameState, Move, AIConfig, BoardType
+from ..utils.memory_config import MemoryConfig
+
+logger = logging.getLogger(__name__)
 
 
 class NodeStatus(Enum):
@@ -34,7 +39,12 @@ class DescentAI(BaseAI):
     It iteratively extends the best sequence of actions to the terminal states.
     """
     
-    def __init__(self, player_number: int, config: AIConfig):
+    def __init__(
+        self,
+        player_number: int,
+        config: AIConfig,
+        memory_config: Optional[MemoryConfig] = None,
+    ):
         super().__init__(player_number, config)
         # Try to load neural net for evaluation
         try:
@@ -60,9 +70,17 @@ class DescentAI(BaseAI):
             self.hex_encoder = None
             self.hex_model = None
 
-        # Transposition table to store values
+        # Memory configuration for bounded structures
+        self.memory_config = memory_config or MemoryConfig.from_env()
+        
+        # Transposition table to store values with bounded memory
         # Key: state_hash, Value: (value, children_values, status)
-        self.transposition_table = {}
+        # Entry size estimate: ~200 bytes per entry (hash + tuple of values)
+        tt_limit = self.memory_config.get_transposition_table_limit_bytes()
+        self.transposition_table = BoundedTranspositionTable.from_memory_limit(
+            tt_limit,
+            entry_size_estimate=200,
+        )
         
         # Search log for Tree Learning
         # List of (features, value)
@@ -116,8 +134,8 @@ class DescentAI(BaseAI):
             
             # Completion: Stop if root is solved
             state_key = self._get_state_key(game_state)
-            if state_key in self.transposition_table:
-                entry = self.transposition_table[state_key]
+            entry = self.transposition_table.get(state_key)
+            if entry is not None:
                 if len(entry) == 3:
                     _, _, status = entry
                     if status in (
@@ -128,8 +146,8 @@ class DescentAI(BaseAI):
             
         # Select best move from root
         state_key = self._get_state_key(game_state)
-        if state_key in self.transposition_table:
-            entry = self.transposition_table[state_key]
+        entry = self.transposition_table.get(state_key)
+        if entry is not None:
             if len(entry) == 3:
                 _, children_values, _ = entry
             else:
@@ -147,6 +165,20 @@ class DescentAI(BaseAI):
                         key=lambda x: x[1][1],
                     )[0]
                 return children_values[best_move_key][0]
+        
+        # Log transposition table stats at end of search
+        if logger.isEnabledFor(logging.DEBUG):
+            stats = self.transposition_table.stats()
+            logger.debug(
+                "Descent search completed: iterations=%d, tt_entries=%d, "
+                "tt_hits=%d, tt_misses=%d, tt_evictions=%d, hit_rate=%.2f%%",
+                iterations,
+                stats["entries"],
+                stats["hits"],
+                stats["misses"],
+                stats["evictions"],
+                stats["hit_rate"] * 100,
+            )
         
         # Fallback if something went wrong or no search happened. Use the
         # per-instance RNG for reproducible behaviour under a fixed seed.
@@ -182,8 +214,8 @@ class DescentAI(BaseAI):
         state_key = self._get_state_key(state)
         
         # Check if state is in transposition table
-        if state_key in self.transposition_table:
-            entry = self.transposition_table[state_key]
+        entry = self.transposition_table.get(state_key)
+        if entry is not None:
             if len(entry) == 3:
                 current_val, children_values, status = entry
             else:
@@ -265,10 +297,9 @@ class DescentAI(BaseAI):
                 else:
                     new_status = NodeStatus.HEURISTIC
 
-            self.transposition_table[state_key] = (
-                new_best_val,
-                children_values,
-                new_status,
+            self.transposition_table.put(
+                state_key,
+                (new_best_val, children_values, new_status),
             )
 
             # Log update
@@ -427,10 +458,9 @@ class DescentAI(BaseAI):
             ):
                 status = NodeStatus.PROVEN_LOSS
 
-            self.transposition_table[state_key] = (
-                best_val,
-                children_values,
-                status,
+            self.transposition_table.put(
+                state_key,
+                (best_val, children_values, status),
             )
 
             # Log initial visit

@@ -56,6 +56,13 @@ import {
   TurnEngineDeps,
   TurnEngineHooks,
 } from './turn/TurnEngine';
+import {
+  TurnEngineAdapter,
+  StateAccessor,
+  DecisionHandler,
+  EventEmitter as AdapterEventEmitter,
+  AdapterMoveResult,
+} from './turn/TurnEngineAdapter';
 
 /**
  * Internal state for enforcing mandatory chain captures during the capture phase.
@@ -102,6 +109,16 @@ export class GameEngine {
    * while WebSocket/AI integrations migrate to the unified Move model.
    */
   private useMoveDrivenDecisionPhases: boolean = false;
+  /**
+   * When true, makeMove() delegates to TurnEngineAdapter which wraps the
+   * canonical shared orchestrator (processTurnAsync). This flag enables
+   * gradual migration of rules logic from GameEngine to the shared engine.
+   *
+   * Phase 3 Rules Engine Consolidation - see:
+   * - docs/drafts/RULES_ENGINE_CONSOLIDATION_DESIGN.md
+   * - docs/drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md
+   */
+  private useOrchestratorAdapter: boolean = false;
   /**
    * Per-turn placement state: when a ring placement occurs, we track that
    * fact and remember which stack must be moved this turn. This mirrors
@@ -226,6 +243,156 @@ export class GameEngine {
    */
   public enableMoveDrivenDecisionPhases(): void {
     this.useMoveDrivenDecisionPhases = true;
+  }
+
+  /**
+   * Enable delegation to the shared orchestrator via TurnEngineAdapter.
+   * When enabled, makeMove() delegates rules processing to the canonical
+   * shared engine, keeping GameEngine as a thin adapter for backend concerns.
+   *
+   * This is part of Phase 3 Rules Engine Consolidation.
+   */
+  public enableOrchestratorAdapter(): void {
+    this.useOrchestratorAdapter = true;
+    // Orchestrator adapter requires move-driven decision phases
+    this.useMoveDrivenDecisionPhases = true;
+  }
+
+  /**
+   * Check if orchestrator adapter is enabled.
+   */
+  public isOrchestratorAdapterEnabled(): boolean {
+    return this.useOrchestratorAdapter;
+  }
+
+  /**
+   * Create a TurnEngineAdapter instance wired to this GameEngine's state.
+   * This is used when orchestrator delegation is enabled.
+   */
+  private createAdapterForCurrentGame(): TurnEngineAdapter {
+    // StateAccessor implementation that reads/writes this.gameState
+    const stateAccessor: StateAccessor = {
+      getGameState: () => this.gameState,
+      updateGameState: (newState: GameState) => {
+        this.gameState = newState;
+      },
+      getPlayerInfo: (playerNumber: number) => {
+        const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
+        if (!player) {
+          return undefined;
+        }
+        return { type: player.type };
+      },
+    };
+
+    // DecisionHandler that uses the PlayerInteractionManager when available,
+    // otherwise throws (forcing callers to handle decisions via explicit Moves)
+    const decisionHandler: DecisionHandler = {
+      requestDecision: async (decision) => {
+        // In move-driven decision phases, decisions should be expressed as
+        // explicit Moves via getValidMoves() and makeMove(), not via this
+        // callback. If we reach here, it means the orchestrator encountered
+        // a PendingDecision that should have been handled externally.
+        throw new Error(
+          `DecisionHandler.requestDecision called for ${decision.type} - ` +
+            `decisions should be handled via explicit Moves in move-driven mode`
+        );
+      },
+    };
+
+    // EventEmitter for adapter events (currently no-op, can be wired to
+    // WebSocket notifications in future)
+    const eventEmitter: AdapterEventEmitter = {
+      emit: (_event: string, _payload?: unknown) => {
+        // No-op for now. Future: emit to WebSocket spectators
+      },
+    };
+
+    // Build deps object - only include debugHook if defined (for exactOptionalPropertyTypes)
+    const deps = {
+      stateAccessor,
+      decisionHandler,
+      eventEmitter,
+      ...(this.debugCheckpointHook ? { debugHook: this.debugCheckpointHook } : {}),
+    };
+
+    return new TurnEngineAdapter(deps);
+  }
+
+  /**
+   * Process a move via the TurnEngineAdapter, delegating rules logic to
+   * the shared orchestrator. This is called when useOrchestratorAdapter is true.
+   */
+  private async processMoveViaAdapter(
+    move: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    gameState?: GameState;
+    gameResult?: GameResult;
+  }> {
+    const beforeStateForHistory = this.getGameState();
+
+    // Create the full move with generated fields
+    const fullMove: Move = {
+      ...move,
+      id: generateUUID(),
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: this.gameState.moveHistory.length + 1,
+    };
+
+    // Create the adapter and process the move
+    const adapter = this.createAdapterForCurrentGame();
+
+    try {
+      const result = await adapter.processMove(fullMove);
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || 'Move rejected by orchestrator',
+          gameState: this.getGameState(),
+        };
+      }
+
+      // The adapter has already updated this.gameState via stateAccessor.
+      // Now handle post-processing that GameEngine is responsible for:
+
+      // Add move to history
+      this.gameState.moveHistory.push(fullMove);
+      this.gameState.lastMoveAt = new Date();
+
+      // Record structured history entry
+      this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+      // Check for game end - victoryResult is set if game is over
+      if (result.victoryResult) {
+        // Start next player's timer (no-op since game is over, but maintain consistency)
+        this.startPlayerTimer(this.gameState.currentPlayer);
+
+        return {
+          success: true,
+          gameState: this.getGameState(),
+          gameResult: result.victoryResult,
+        };
+      }
+
+      // Start next player's timer
+      this.startPlayerTimer(this.gameState.currentPlayer);
+
+      return {
+        success: true,
+        gameState: this.getGameState(),
+      };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      return {
+        success: false,
+        error: `Adapter error: ${errorMessage}`,
+        gameState: this.getGameState(),
+      };
+    }
   }
 
   getGameState(): GameState {
@@ -470,6 +637,15 @@ export class GameEngine {
           error: 'You must move the stack that was just placed or updated this turn',
         };
       }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ORCHESTRATOR ADAPTER DELEGATION
+    // When enabled, delegate all rules processing to the shared orchestrator
+    // via TurnEngineAdapter. This is part of Phase 3 Rules Engine Consolidation.
+    // ═══════════════════════════════════════════════════════════════════════
+    if (this.useOrchestratorAdapter) {
+      return this.processMoveViaAdapter(move);
     }
 
     // Capture a pre-move snapshot for history/event-sourcing. This uses the

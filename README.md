@@ -174,6 +174,55 @@ RingRift is a sophisticated turn-based strategy game featuring:
                         └─────────────────┘
 ```
 
+### Canonical Turn Orchestrator
+
+The rules engine has been consolidated into a single canonical implementation with clean adapter patterns:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                 Canonical Turn Orchestrator                      │
+│           src/shared/engine/orchestration/                       │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌──────────┬──────────┬──────────┬──────────┬────────────────┐ │
+│  │Placement │Movement  │Capture   │Line      │Territory       │ │
+│  │Aggregate │Aggregate │Aggregate │Aggregate │Aggregate       │ │
+│  └──────────┴──────────┴──────────┴──────────┴────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+ ┌───────────────┐   ┌───────────────┐   ┌───────────────────┐
+ │TurnEngineAdapter│ │SandboxAdapter │   │Python Contract    │
+ │   (Backend)   │   │   (Client)    │   │   Test Runner     │
+ └───────────────┘   └───────────────┘   └───────────────────┘
+```
+
+- **Single Source of Truth**: All rules logic in [`src/shared/engine/`](src/shared/engine/)
+- **Orchestration Layer**: [`src/shared/engine/orchestration/`](src/shared/engine/orchestration/) contains [`turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts)
+- **Backend Adapter**: [`TurnEngineAdapter.ts`](src/server/game/turn/TurnEngineAdapter.ts) wraps orchestrator for WebSocket/session concerns
+- **Client Adapter**: [`SandboxOrchestratorAdapter.ts`](src/client/sandbox/SandboxOrchestratorAdapter.ts) wraps orchestrator for local simulation
+- **Cross-Language Parity**: Contract test vectors validate Python engine matches TypeScript behavior
+
+### Contract Tests
+
+Contract tests ensure parity between TypeScript and Python implementations:
+
+```bash
+# TypeScript contract tests (14 vectors)
+npm test -- tests/contracts/contractVectorRunner.test.ts
+
+# Python contract tests (15 tests, 12 vectors)
+./scripts/run-python-contract-tests.sh
+```
+
+Test vectors are located in [`tests/fixtures/contract-vectors/v2/`](tests/fixtures/contract-vectors/v2/) and cover:
+
+- Placement (3 vectors)
+- Movement (3 vectors)
+- Capture (2 vectors)
+- Line detection (2 vectors)
+- Territory (2 vectors)
+
 ## ⚠️ Development Notice
 
 **This application is not yet production-ready.** The current codebase includes a working backend game loop and a minimal but functional React client for playing backend-driven games, but the overall UX, multiplayer flows, observability, and test coverage are still incomplete. In its current state, the project is best suited for engine/AI development, rules validation, and early playtesting rather than public release.
@@ -358,16 +407,16 @@ For contributors looking for the most impactful work, the near-term focus areas 
      - Combined line + Territory situations that involve multiple PlayerChoices in one turn.
      - Hex-board edge cases for lines, Territory, and forced elimination.
      - Mirror high-value Rust tests from `RingRift Rust/ringrift/tests/` (starting with chain capture and Territory) into Jest where feasible.
-     
      2. **HUD & game lifecycle polish (GamePage/GameHUD)**
         - Implement a richer HUD in `GameHUD` for both backend and sandbox games:
           - Clear current player + phase indicators.
           - Ring counts (in hand/on board/eliminated) per player.
           - Territory-space counts, driven from `board.collapsedSpaces` and GameState.
           - Timers (display-only for now) based on `timeControl` and per-player `timeRemaining`.
+
    - Improve end-of-game UX using `VictoryModal` for both backend and sandbox modes, with a clear route back to the lobby.
 
-3. **AI boundary hardening & observability**
+2. **AI boundary hardening & observability**
    - Extend `AIEngine`/`AIServiceClient` tests to cover failures, timeouts, and fallback behaviour for move and choice endpoints.
    - Add lightweight logging/metrics around AI calls so we can see latency, error rates, and fallback usage in development.
 

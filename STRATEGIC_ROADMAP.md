@@ -1,18 +1,24 @@
 # RingRift Strategic Roadmap
 
-**Version:** 3.1
-**Last Updated:** November 24, 2025
-**Status:** Engine/Rules Beta (Playable, not yet fully stable)
+**Version:** 3.2
+**Last Updated:** November 26, 2025
+**Status:** Engine/Rules Beta (Playable, architecture consolidated)
 **Philosophy:** Robustness, Parity, and Scale
 
 ---
 
 ## 🎯 Executive Summary
 
-**Current State:** Engine/Rules Beta (Core loop implemented; unified `chain_capture`/`continue_capture_segment` model live on the backend; shared TypeScript rules engine under `src/shared/engine/` established as the canonical rules source with an initial backend-vs-shared parity harness in [`RefactoredEngineParity.test.ts`](tests/unit/RefactoredEngineParity.test.ts:1); sandbox + AI parity and end-to-end termination still under active work—see [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md:1) and [`TODO.md`](TODO.md:73) for current P0 gaps).
+**Current State:** Engine/Rules Beta with consolidated architecture. The 4-phase architecture remediation is complete:
+
+- ✅ Canonical turn orchestrator in `src/shared/engine/orchestration/`
+- ✅ Backend and sandbox adapters for gradual rollout
+- ✅ Contract testing framework with 100% Python parity on 12 test vectors
+- ✅ TypeScript: 1195+ tests passing, Python: 245 tests passing
+
 **Goal:** Production-Ready Multiplayer Game
-**Timeline:** 4-8 weeks to v1.0 (assuming P0 rules/parity/termination items are resolved first)
-**Strategy:** Harden testing & parity → Polish UX → Expand Multiplayer Features
+**Timeline:** 4-8 weeks to v1.0 (assuming P0 production hardening items are completed)
+**Strategy:** Enable orchestrator in production → Polish UX → Expand Multiplayer Features
 
 > Note on rules authority: when there is any question about what the correct
 > behaviour _should_ be (for example, when parity harnesses or engines
@@ -33,6 +39,22 @@
 - [x] Basic AI Integration (Service + Fallback)
 - [x] Frontend Basics (Board, Lobby, HUD, Victory)
 - [x] Infrastructure (Docker, DB, WebSocket)
+
+### **PHASE 1.5: Architecture Remediation (COMPLETED)** ✅
+
+**Completed:** November 26, 2025
+
+- [x] **Phase 1:** Created canonical turn orchestrator in `src/shared/engine/orchestration/`
+- [x] **Phase 2:** Wired orchestrator to all 6 domain aggregates (Placement, Movement, Capture, Line, Territory, Victory)
+- [x] **Phase 3:** Created backend adapter (`TurnEngineAdapter.ts`, 326 lines) and sandbox adapter (`SandboxOrchestratorAdapter.ts`, 476 lines)
+- [x] **Phase 4:** Created Python contract test runner with 100% parity on 12 test vectors
+
+**Key Deliverables:**
+
+- Orchestrator entry points: `processTurn()`, `processTurnAsync()`
+- Contract schemas and serialization for cross-language parity
+- Feature flags for gradual rollout (`useOrchestratorAdapter`)
+- Comprehensive documentation in `src/shared/engine/orchestration/README.md`
 
 ### **PHASE 2: Robustness & Testing (IN PROGRESS)**
 
@@ -130,9 +152,21 @@ list of tasks that roll up into these phases.
 
 ## 📋 Implementation Roadmap (Post-Audit)
 
+**P0: Architecture Production Hardening (Critical)**
+
+- [x] **Complete architecture remediation (Phases 1-4)** – Canonical turn orchestrator, adapters, and contract tests are complete. See [`docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md`](docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md:1) for final status.
+
+- [ ] **Enable orchestrator adapters in staging** – Enable `useOrchestratorAdapter` feature flag in staging environment and run comprehensive parity tests.
+
+- [ ] **Enable orchestrator adapters in production** – After staging validation, enable orchestrator adapters in production with monitoring for any behavioral changes.
+
+- [ ] **Remove legacy turn processing code** – Once orchestrator is stable in production, remove deprecated turn processing paths to reduce maintenance burden.
+
 **P0: Rules Fidelity & Parity (Critical)**
 
 - [x] **Fix forced elimination divergence for territory processing** – Align explicit `ELIMINATE_RINGS_FROM_STACK` moves and host-level forced elimination sequences between Python and TypeScript engines. Implementation complete; see [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1) and tests under [`ai-service/tests/test_territory_forced_elimination_divergence.py`](ai-service/tests/test_territory_forced_elimination_divergence.py:1) and [`ai-service/tests/test_generate_territory_dataset_smoke.py`](ai-service/tests/test_generate_territory_dataset_smoke.py:1). **Owner modes:** Debug + Code.
+
+- [x] **Contract test framework for cross-language parity** – Contract test infrastructure complete with 12 test vectors across 5 categories and 100% Python parity. See [`tests/contracts/contractVectorRunner.test.ts`](tests/contracts/contractVectorRunner.test.ts:1) and [`ai-service/tests/contracts/test_contract_vectors.py`](ai-service/tests/contracts/test_contract_vectors.py:1).
 
 - [ ] **Strengthen TS↔Python parity for territory detection and processing** – Expand parity suites to cover a matrix of board types and region patterns across [`src/shared/engine/territoryDetection.ts`](src/shared/engine/territoryDetection.ts:1), [`src/shared/engine/territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1), and the Python rules stack in [`ai-service/app/game_engine.py`](ai-service/app/game_engine.py:1) and [`ai-service/app/board_manager.py`](ai-service/app/board_manager.py:1). Include fixtures derived from [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md:1) and existing Jest territory tests such as [`tests/unit/GameEngine.territoryDisconnection.test.ts`](tests/unit/GameEngine.territoryDisconnection.test.ts:1) and [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1). **Owner modes:** Debug (test design) + Code (implementation).
 

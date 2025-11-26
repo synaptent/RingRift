@@ -1,0 +1,233 @@
+{
+  "version": "v2",
+  "generated": "2025-11-26T03:25:00.000Z",
+  "count": 3,
+  "categories": ["placement"],
+  "description": "Test vectors for ring placement moves",
+  "vectors": [
+    {
+      "id": "placement.initial.center",
+      "version": "v2",
+      "category": "placement",
+      "description": "Initial placement at center (3,3) on empty board",
+      "tags": ["smoke", "placement", "initial"],
+      "source": "manual",
+      "createdAt": "2025-11-26T03:25:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-placement-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {},
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "ring_placement",
+          "turnNumber": 1,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-001",
+          "type": "place_ring",
+          "player": 1,
+          "to": { "x": 3, "y": 3 },
+          "placedOnStack": false,
+          "placementCount": 1,
+          "timestamp": "2025-11-26T03:25:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 0,
+          "collapsedCount": 0,
+          "player1RingsInHand": 17,
+          "player1EliminatedRings": 0,
+          "sInvariantDelta": 0
+        }
+      }
+    },
+    {
+      "id": "placement.skip.with_stacks",
+      "version": "v2",
+      "category": "placement",
+      "description": "Skip placement when player has stacks on board",
+      "tags": ["smoke", "placement", "skip"],
+      "source": "manual",
+      "createdAt": "2025-11-26T03:25:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-placement-002",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "ring_placement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-002",
+          "type": "skip_placement",
+          "player": 1,
+          "to": { "x": 0, "y": 0 },
+          "timestamp": "2025-11-26T03:25:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 0,
+          "collapsedCount": 0,
+          "player1RingsInHand": 17,
+          "player1EliminatedRings": 0,
+          "sInvariantDelta": 0
+        }
+      }
+    },
+    {
+      "id": "placement.onto_existing_stack",
+      "version": "v2",
+      "category": "placement",
+      "description": "Place ring onto existing friendly stack",
+      "tags": ["placement", "stacking"],
+      "source": "manual",
+      "createdAt": "2025-11-26T03:25:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-placement-003",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "ring_placement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-003",
+          "type": "place_ring",
+          "player": 1,
+          "to": { "x": 3, "y": 3 },
+          "placedOnStack": true,
+          "placementCount": 1,
+          "timestamp": "2025-11-26T03:25:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 0,
+          "collapsedCount": 0,
+          "player1RingsInHand": 16,
+          "player1EliminatedRings": 0,
+          "sInvariantDelta": 0
+        }
+      }
+    }
+  ]
+}

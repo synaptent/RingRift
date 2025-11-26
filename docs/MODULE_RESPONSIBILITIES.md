@@ -2,13 +2,17 @@
 
 This document catalogs the responsibilities of each module in the canonical shared engine to inform the domain aggregate refactoring planned in T1-W2-B.
 
+> **Updated November 2025:** Added new orchestration and contracts modules from the 4-phase architecture remediation.
+
 ## Overview
 
-The `src/shared/engine/` directory contains **36 files** across three locations:
+The `src/shared/engine/` directory contains **44 files** across five locations:
 
 - **24 top-level modules** (`.ts` files)
 - **7 validator modules** (`validators/`)
 - **6 mutator modules** (`mutators/`)
+- **4 orchestration modules** (`orchestration/`) - NEW
+- **4 contracts modules** (`contracts/`) - NEW
 
 ---
 
@@ -411,6 +415,98 @@ The `src/shared/engine/` directory contains **36 files** across three locations:
 
 ---
 
+### 8.5 Orchestration Domain (NEW)
+
+#### [`orchestration/turnOrchestrator.ts`](../src/shared/engine/orchestration/turnOrchestrator.ts)
+
+- **Primary Responsibility**: Single entry point for all turn processing
+- **Key Functions**:
+  - `processTurn()` - Synchronous turn processing through all phases
+  - `processTurnAsync()` - Async version for player interaction
+  - `processPhase()` - Process a single phase
+- **Key Types**:
+  - `TurnResult` - Complete result of turn processing
+  - `ProcessTurnOptions` - Configuration options
+- **Dependencies**: All domain aggregates, `phaseStateMachine`
+- **Dependents**: `TurnEngineAdapter`, `SandboxOrchestratorAdapter`
+- **Concern Type**: **ORCHESTRATION**
+
+#### [`orchestration/phaseStateMachine.ts`](../src/shared/engine/orchestration/phaseStateMachine.ts)
+
+- **Primary Responsibility**: Game phase transition logic
+- **Key Functions**:
+  - `advancePhase()` - Advance to next phase based on context
+  - `getNextPhase()` - Determine next phase
+  - `isPhaseComplete()` - Check if current phase is finished
+- **Key Types**:
+  - `PhaseTransition` - Record of phase change
+  - `PhaseContext` - Context for phase decisions
+- **Dependencies**: `../types/game`
+- **Dependents**: `turnOrchestrator`
+- **Concern Type**: **ORCHESTRATION**
+
+#### [`orchestration/types.ts`](../src/shared/engine/orchestration/types.ts)
+
+- **Primary Responsibility**: Type definitions for orchestration layer
+- **Key Types**:
+  - `TurnResult` - Complete turn processing result
+  - `PendingDecision` - Player choice required
+  - `PhaseTransition` - Phase change record
+  - `ProcessTurnOptions` - Turn processing configuration
+- **Dependencies**: `../types/game`
+- **Dependents**: All orchestration modules, adapters
+- **Concern Type**: **HELPER** (type definitions)
+
+#### [`orchestration/index.ts`](../src/shared/engine/orchestration/index.ts)
+
+- **Primary Responsibility**: Public API barrel file for orchestration
+- **Concern Type**: **HELPER** (re-exports)
+
+---
+
+### 8.6 Contracts Domain (NEW)
+
+#### [`contracts/schemas.ts`](../src/shared/engine/contracts/schemas.ts)
+
+- **Primary Responsibility**: Contract test vector schema definitions
+- **Key Types**:
+  - `ContractTestVector` - Complete test vector structure
+  - `ContractInput` - Input state and move
+  - `ContractOutput` - Expected output state
+  - `ContractMetadata` - Vector metadata
+- **Dependencies**: `../types/game`
+- **Dependents**: `serialization`, `testVectorGenerator`, test runners
+- **Concern Type**: **HELPER** (type definitions)
+
+#### [`contracts/serialization.ts`](../src/shared/engine/contracts/serialization.ts)
+
+- **Primary Responsibility**: Deterministic JSON serialization for cross-language parity
+- **Key Functions**:
+  - `serializeGameState()` - Serialize GameState to deterministic JSON
+  - `serializeMove()` - Serialize Move to deterministic JSON
+  - `serializeTurnResult()` - Serialize TurnResult to deterministic JSON
+  - `deserializeGameState()` - Parse JSON back to GameState
+- **Dependencies**: `./schemas`, `../types/game`
+- **Dependents**: Test vector generators, contract test runners
+- **Concern Type**: **HELPER**
+
+#### [`contracts/testVectorGenerator.ts`](../src/shared/engine/contracts/testVectorGenerator.ts)
+
+- **Primary Responsibility**: Generate contract test vectors from game states
+- **Key Functions**:
+  - `generateTestVector()` - Create test vector from state + move
+  - `generateVectorSet()` - Create category of vectors
+- **Dependencies**: `./schemas`, `./serialization`, orchestrator
+- **Dependents**: Test fixture generation scripts
+- **Concern Type**: **HELPER**
+
+#### [`contracts/index.ts`](../src/shared/engine/contracts/index.ts)
+
+- **Primary Responsibility**: Public API barrel file for contracts
+- **Concern Type**: **HELPER** (re-exports)
+
+---
+
 ### 9. AI Domain
 
 #### [`heuristicEvaluation.ts`](../src/shared/engine/heuristicEvaluation.ts)
@@ -488,16 +584,17 @@ The `src/shared/engine/` directory contains **36 files** across three locations:
 
 ## Concern Type Summary
 
-| Concern Type      | Count | Modules                                                                                                                                                                        |
-| ----------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **VALIDATION**    | 5     | PlacementValidator, MovementValidator, CaptureValidator, LineValidator, TerritoryValidator                                                                                     |
-| **DETECTION**     | 2     | lineDetection, territoryDetection                                                                                                                                              |
-| **MUTATION**      | 9     | initialState, PlacementMutator, MovementMutator, CaptureMutator, LineMutator, TerritoryMutator, TurnMutator, placementHelpers*, movementApplication*                           |
-| **QUERY**         | 8     | movementLogic, captureLogic, victoryLogic, territoryBorders, territoryProcessing*, lineDecisionHelpers*, territoryDecisionHelpers\*, heuristicEvaluation, localAIMoveSelection |
-| **ORCHESTRATION** | 5     | GameEngine, index, turnLogic, turnLifecycle, turnDelegateHelpers*, captureChainHelpers*                                                                                        |
-| **HELPER**        | 5     | core, types, notation, moveActionAdapter, validators/utils                                                                                                                     |
+| Concern Type      | Count | Modules                                                                                                                                                                                                                  |
+| ----------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **VALIDATION**    | 5     | PlacementValidator, MovementValidator, CaptureValidator, LineValidator, TerritoryValidator                                                                                                                               |
+| **DETECTION**     | 2     | lineDetection, territoryDetection                                                                                                                                                                                        |
+| **MUTATION**      | 9     | initialState, PlacementMutator, MovementMutator, CaptureMutator, LineMutator, TerritoryMutator, TurnMutator, placementHelpers*, movementApplication*                                                                     |
+| **QUERY**         | 8     | movementLogic, captureLogic, victoryLogic, territoryBorders, territoryProcessing*, lineDecisionHelpers*, territoryDecisionHelpers\*, heuristicEvaluation, localAIMoveSelection                                           |
+| **ORCHESTRATION** | 7     | GameEngine, index, turnLogic, turnLifecycle, turnDelegateHelpers*, captureChainHelpers*, **turnOrchestrator**, **phaseStateMachine**                                                                                     |
+| **HELPER**        | 11    | core, types, notation, moveActionAdapter, validators/utils, **orchestration/types**, **orchestration/index**, **contracts/schemas**, **contracts/serialization**, **contracts/testVectorGenerator**, **contracts/index** |
 
 \*Some modules have multiple concern types or contain design-time stubs
+**Bold** = New modules from Phase 1-4 remediation
 
 ---
 
@@ -703,19 +800,52 @@ Modules: `core`, `types`, `index`, `notation`, `moveActionAdapter`, `validators/
 
 ## File Counts by Domain
 
-| Domain    | Files  | Concern Distribution                                      |
-| --------- | ------ | --------------------------------------------------------- |
-| Placement | 3      | 1 Validation, 1 Mutation, 1 Helper                        |
-| Movement  | 4      | 1 Validation, 1 Mutation, 1 Query, 1 Helper               |
-| Capture   | 4      | 1 Validation, 1 Mutation, 2 Query                         |
-| Line      | 4      | 1 Validation, 1 Mutation, 1 Detection, 1 Query+Mutation   |
-| Territory | 6      | 1 Validation, 1 Mutation, 1 Detection, 3 Query+Processing |
-| Victory   | 1      | 1 Query                                                   |
-| Turn/Core | 6      | 1 Mutation, 5 Orchestration                               |
-| AI        | 2      | 2 Query                                                   |
-| Shared    | 6      | 6 Helper                                                  |
-| **Total** | **36** |                                                           |
+| Domain        | Files  | Concern Distribution                                      |
+| ------------- | ------ | --------------------------------------------------------- |
+| Placement     | 3      | 1 Validation, 1 Mutation, 1 Helper                        |
+| Movement      | 4      | 1 Validation, 1 Mutation, 1 Query, 1 Helper               |
+| Capture       | 4      | 1 Validation, 1 Mutation, 2 Query                         |
+| Line          | 4      | 1 Validation, 1 Mutation, 1 Detection, 1 Query+Mutation   |
+| Territory     | 6      | 1 Validation, 1 Mutation, 1 Detection, 3 Query+Processing |
+| Victory       | 1      | 1 Query                                                   |
+| Turn/Core     | 6      | 1 Mutation, 5 Orchestration                               |
+| AI            | 2      | 2 Query                                                   |
+| Shared        | 6      | 6 Helper                                                  |
+| Orchestration | 4      | 2 Orchestration, 2 Helper (NEW)                           |
+| Contracts     | 4      | 4 Helper (NEW)                                            |
+| **Total**     | **44** |                                                           |
+
+---
+
+## Adapters (External to Shared Engine)
+
+The following adapters wrap the shared engine for specific runtime contexts:
+
+### Backend Adapter
+
+**File:** [`src/server/game/turn/TurnEngineAdapter.ts`](../src/server/game/turn/TurnEngineAdapter.ts)
+
+- **Lines:** 326
+- **Purpose:** Wraps canonical orchestrator with WebSocket/session concerns
+- **Key Responsibilities:**
+  - Player interaction delegation via `PlayerInteractionManager`
+  - AI turn integration
+  - Timeout handling
+  - Feature flag support (`useOrchestratorAdapter`)
+
+### Sandbox Adapter
+
+**File:** [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)
+
+- **Lines:** 476
+- **Purpose:** Wraps canonical orchestrator for browser-local simulation
+- **Key Responsibilities:**
+  - Same interface as `ClientSandboxEngine`
+  - Local AI decision-making
+  - Scenario playback support
+  - Feature flag support (`useOrchestratorAdapter`)
 
 ---
 
 _Generated for T1-W2-A: Document Current Module Responsibilities_
+_Updated November 2025: Added orchestration and contracts modules from Phase 1-4 remediation_

@@ -7,6 +7,7 @@
 - **Setup & Run:** [QUICKSTART.md](../QUICKSTART.md:1) - How to install and run the project.
 - **Current Status:** [CURRENT_STATE_ASSESSMENT.md](../CURRENT_STATE_ASSESSMENT.md:1) - What works, what doesn't, and verified code status.
 - **Roadmap:** [STRATEGIC_ROADMAP.md](../STRATEGIC_ROADMAP.md:1) - Future plans and milestones.
+- **Rules Engine:** [RULES_ENGINE_ARCHITECTURE.md](../RULES_ENGINE_ARCHITECTURE.md:1) – Complete rules engine architecture including orchestration layer.
 - **AI, Rules & Training:** [AI_ARCHITECTURE.md](../AI_ARCHITECTURE.md:1) – High-level AI/rules/training architecture; [docs/AI_TRAINING_AND_DATASETS.md](./AI_TRAINING_AND_DATASETS.md:1) – AI service training & dataset pipelines; [docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md](./INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1) – incident report and fix for the TerritoryMutator divergence.
 
 ## 📖 Rules & Design
@@ -21,9 +22,29 @@
 - [docs/supplementary/RULES_RULESET_CLARIFICATIONS.md](./supplementary/RULES_RULESET_CLARIFICATIONS.md) - Clarifications for ambiguous rules.
 - [docs/supplementary/AI_IMPROVEMENT_BACKLOG.md](./supplementary/AI_IMPROVEMENT_BACKLOG.md) - Backlog for AI improvements.
 
-### Drafts
+### Architecture Remediation Reports (NEW)
 
-- [docs/drafts/PHASE1_REMEDIATION_PLAN.md](./drafts/PHASE1_REMEDIATION_PLAN.md) - Remediation plan for Phase 1.
+The following documents record the 4-phase architecture remediation completed November 2025:
+
+- [docs/drafts/RULES_ENGINE_CONSOLIDATION_DESIGN.md](./drafts/RULES_ENGINE_CONSOLIDATION_DESIGN.md) - Original consolidation design document.
+- [docs/drafts/PHASE1_REMEDIATION_PLAN.md](./drafts/PHASE1_REMEDIATION_PLAN.md) - Production hardening tasks.
+- [docs/drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md](./drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md) - Backend and sandbox adapter migration.
+- [docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md](./drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md) - Python contract test runner with 100% parity.
+
+### Canonical Orchestrator (NEW)
+
+- [src/shared/engine/orchestration/README.md](../src/shared/engine/orchestration/README.md) - Orchestrator usage and API documentation.
+- [docs/CANONICAL_ENGINE_API.md](./CANONICAL_ENGINE_API.md) - Canonical engine public API specification.
+- [docs/MODULE_RESPONSIBILITIES.md](./MODULE_RESPONSIBILITIES.md) - Module catalog for shared engine.
+
+### Contract Testing (NEW)
+
+- **Contract Schemas:** [src/shared/engine/contracts/](../src/shared/engine/contracts/) - Contract types and serialization.
+- **Test Vectors:** [tests/fixtures/contract-vectors/v2/](../tests/fixtures/contract-vectors/v2/) - 12 test vectors across 5 categories.
+- **TS Runner:** [tests/contracts/contractVectorRunner.test.ts](../tests/contracts/contractVectorRunner.test.ts) - TypeScript contract test runner.
+- **Python Runner:** [ai-service/tests/contracts/test_contract_vectors.py](../ai-service/tests/contracts/test_contract_vectors.py) - Python contract test runner.
+
+### Drafts
 
 ## 🏗️ Project Structure
 

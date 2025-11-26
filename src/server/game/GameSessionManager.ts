@@ -3,6 +3,7 @@ import { GameSession } from './GameSession';
 import { PythonRulesClient } from '../services/PythonRulesClient';
 import { getCacheService } from '../cache/redis';
 import { logger } from '../utils/logger';
+import { getMetricsService } from '../services/MetricsService';
 import type { ClientToServerEvents, ServerToClientEvents } from '../../shared/types/websocket';
 
 export class GameSessionManager {
@@ -33,6 +34,26 @@ export class GameSessionManager {
   }
 
   public removeSession(gameId: string): void {
+    const session = this.sessions.get(gameId);
+
+    // Keep the ringrift_game_session_status_current gauge in sync when a
+    // session is explicitly torn down. We decrement the gauge for the
+    // session's last known derived status kind, if available.
+    if (session && typeof (session as any).getSessionStatusSnapshot === 'function') {
+      try {
+        const snapshot = (session as any).getSessionStatusSnapshot() as { kind: string } | null;
+        const currentKind = snapshot?.kind ?? null;
+        if (currentKind) {
+          getMetricsService().updateGameSessionStatusCurrent(currentKind, null);
+        }
+      } catch (err) {
+        logger.warn('Failed to update session status gauge on removeSession', {
+          gameId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
     this.sessions.delete(gameId);
   }
 

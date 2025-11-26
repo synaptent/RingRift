@@ -124,6 +124,19 @@ export class MetricsService {
   public readonly gameMoveLatency: Histogram<'board_type' | 'phase'>;
 
   // ===================
+  // Game Session / AI Turn Metrics
+  // ===================
+
+  /** Gauge: Current in-memory game sessions by derived status kind */
+  public readonly gameSessionStatusCurrent: Gauge<'status'>;
+
+  /** Counter: Game session status transitions (from -> to) */
+  public readonly gameSessionStatusTransitions: Counter<'from' | 'to'>;
+
+  /** Counter: AI turn request terminal outcomes keyed by final state */
+  public readonly aiTurnRequestTerminals: Counter<'kind' | 'code' | 'ai_error_type'>;
+
+  // ===================
   // Rules Parity Metrics (already exist, re-exported for convenience)
   // ===================
 
@@ -282,6 +295,28 @@ export class MetricsService {
     });
 
     // ===================
+    // Game Session / AI Turn Metrics
+    // ===================
+
+    this.gameSessionStatusCurrent = new Gauge({
+      name: 'ringrift_game_session_status_current',
+      help: 'Number of in-memory game sessions by derived status kind',
+      labelNames: ['status'] as const,
+    });
+
+    this.gameSessionStatusTransitions = new Counter({
+      name: 'ringrift_game_session_status_transitions_total',
+      help: 'Total number of game session status transitions (from -> to)',
+      labelNames: ['from', 'to'] as const,
+    });
+
+    this.aiTurnRequestTerminals = new Counter({
+      name: 'ringrift_ai_turn_request_terminal_total',
+      help: 'Total number of AI turn requests reaching a terminal state',
+      labelNames: ['kind', 'code', 'ai_error_type'] as const,
+    });
+
+    // ===================
     // Rules Parity Metrics
     // ===================
 
@@ -390,15 +425,17 @@ export class MetricsService {
     const pathWithoutQuery = path.split('?')[0];
 
     // Normalize common dynamic path patterns
-    return pathWithoutQuery
-      // UUID patterns (with or without hyphens)
-      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ':id')
-      .replace(/[0-9a-f]{32}/gi, ':id')
-      // Generic ID patterns (numeric IDs, MongoDB ObjectIds, etc.)
-      .replace(/\/[0-9]+(?=\/|$)/g, '/:id')
-      .replace(/\/[0-9a-f]{24}(?=\/|$)/gi, '/:id')
-      // General alphanumeric IDs (e.g., short game IDs)
-      .replace(/\/[a-zA-Z0-9]{8,}(?=\/|$)/g, '/:id');
+    return (
+      pathWithoutQuery
+        // UUID patterns (with or without hyphens)
+        .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ':id')
+        .replace(/[0-9a-f]{32}/gi, ':id')
+        // Generic ID patterns (numeric IDs, MongoDB ObjectIds, etc.)
+        .replace(/\/[0-9]+(?=\/|$)/g, '/:id')
+        .replace(/\/[0-9a-f]{24}(?=\/|$)/gi, '/:id')
+        // General alphanumeric IDs (e.g., short game IDs)
+        .replace(/\/[a-zA-Z0-9]{8,}(?=\/|$)/g, '/:id')
+    );
   }
 
   // ===================
@@ -542,12 +579,46 @@ export class MetricsService {
   /**
    * Record game move processing latency.
    */
-  public recordGameMoveLatency(
-    boardType: string,
-    phase: string,
-    durationSeconds: number
-  ): void {
+  public recordGameMoveLatency(boardType: string, phase: string, durationSeconds: number): void {
     this.gameMoveLatency.labels(boardType, phase).observe(durationSeconds);
+  }
+
+  // ===================
+  // Game Session / AI Turn Helpers
+  // ===================
+
+  /**
+   * Record a transition between two high-level GameSessionStatus kinds.
+   *
+   * The `from` label uses a sentinel value of `none` for initial projections
+   * when no prior status was available.
+   */
+  public recordGameSessionStatusTransition(from: string, to: string): void {
+    this.gameSessionStatusTransitions.labels(from, to).inc();
+  }
+
+  /**
+   * Update the gauge that tracks the current number of in-memory game
+   * sessions by derived status kind. Callers should pass `null` for
+   * `from` when initializing a session and `null` for `to` when a
+   * session is being torn down.
+   */
+  public updateGameSessionStatusCurrent(from: string | null, to: string | null): void {
+    if (from) {
+      this.gameSessionStatusCurrent.labels(from).dec();
+    }
+    if (to) {
+      this.gameSessionStatusCurrent.labels(to).inc();
+    }
+  }
+
+  /**
+   * Record the terminal outcome for an AI turn request as modeled by
+   * AIRequestState. For non-failed terminals, `code` and `ai_error_type`
+   * should typically be omitted.
+   */
+  public recordAITurnRequestTerminal(kind: string, code?: string, aiErrorType?: string): void {
+    this.aiTurnRequestTerminals.labels(kind, code ?? 'none', aiErrorType ?? 'none').inc();
   }
 }
 

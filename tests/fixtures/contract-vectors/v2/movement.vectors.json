@@ -1,0 +1,240 @@
+{
+  "version": "v2",
+  "generated": "2025-11-26T03:25:00.000Z",
+  "count": 3,
+  "categories": ["movement"],
+  "description": "Test vectors for stack movement moves",
+  "vectors": [
+    {
+      "id": "movement.simple.one_space",
+      "version": "v2",
+      "category": "movement",
+      "description": "Move stack one space forward (height 1 = distance 1)",
+      "tags": ["smoke", "movement"],
+      "source": "manual",
+      "createdAt": "2025-11-26T03:25:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-movement-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 1,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-101",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "to": { "x": 3, "y": 4 },
+          "timestamp": "2025-11-26T03:25:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "player1RingsInHand": 17,
+          "player1EliminatedRings": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "movement.diagonal",
+      "version": "v2",
+      "category": "movement",
+      "description": "Move stack diagonally (Moore adjacency)",
+      "tags": ["movement", "diagonal"],
+      "source": "manual",
+      "createdAt": "2025-11-26T03:25:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-movement-002",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 1,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-102",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "to": { "x": 4, "y": 4 },
+          "timestamp": "2025-11-26T03:25:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "player1RingsInHand": 17,
+          "player1EliminatedRings": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "movement.tall_stack.exact_distance",
+      "version": "v2",
+      "category": "movement",
+      "description": "Move stack of height 3 exactly 3 spaces",
+      "tags": ["movement", "tall_stack"],
+      "source": "manual",
+      "createdAt": "2025-11-26T03:25:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-movement-003",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1, 1, 1],
+                "stackHeight": 3,
+                "capHeight": 3,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 15,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 1,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-103",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "to": { "x": 3, "y": 6 },
+          "timestamp": "2025-11-26T03:25:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "player1RingsInHand": 15,
+          "player1EliminatedRings": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    }
+  ]
+}

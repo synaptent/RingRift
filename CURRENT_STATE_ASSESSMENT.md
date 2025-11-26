@@ -1,7 +1,7 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** November 25, 2025
-**Last Test Run:** November 25, 2025 (32/201 tests completed - in progress, majority passing)
+**Assessment Date:** November 26, 2025
+**Last Test Run:** November 26, 2025 (TypeScript: 1195+ tests passing, Python: 245 tests passing)
 **Assessor:** Code + Test Review + CI Analysis
 **Purpose:** Factual status of the codebase as it exists today
 
@@ -18,17 +18,23 @@ The intent here is accuracy, not optimism. When in doubt, the **code and tests**
 
 ## 📊 Executive Summary
 
-**Overall:** Strong architectural foundation and rules implementation; **stable beta for developers and testers**.
+**Overall:** Strong architectural foundation with consolidated rules engine; **stable beta approaching production readiness**.
+
+- **Architecture Remediation Complete:** The 4-phase architecture remediation (November 2025) consolidated the rules engine:
+  - Canonical turn orchestrator in `src/shared/engine/orchestration/`
+  - Backend adapter (`TurnEngineAdapter.ts`) and sandbox adapter (`SandboxOrchestratorAdapter.ts`)
+  - Contract testing framework with 100% Python parity on 12 test vectors
+  - Feature flags for gradual production rollout
 
 - **Core Rules:** Movement, markers, captures (including chains), lines, territory, forced elimination, and victory are implemented in the shared TypeScript rules engine under [`src/shared/engine`](src/shared/engine/types.ts) and reused by backend and sandbox hosts. These helpers are exercised by focused Jest suites with 200+ test files providing comprehensive coverage.
 - **Backend & Sandbox Hosts:** The backend `RuleEngine` / `GameEngine` and the client `ClientSandboxEngine` act as thin adapters over the shared helpers, wiring in IO (WebSockets/HTTP, persistence, AI) while delegating core game mechanics to shared validators/mutators and geometry helpers.
 - **Backend Play:** WebSocket-backed games work end-to-end, including AI turns via the Python service / local fallback and server-driven PlayerChoices surfaced to the client.
 - **Session Management:** `GameSessionManager` and `GameSession` provide robust, lock-protected game state access with Redis caching.
 - **Frontend:** The React client has a usable lobby, backend GamePage (board + HUD + victory modal), and a rich local sandbox harness with full rules implementation.
-- **Testing:** Comprehensive coverage with 200+ test files across shared helpers, host parity, AI integration, and rules/FAQ scenario matrix covering Q1–Q24.
+- **Testing:** Comprehensive coverage with 200+ test files across shared helpers, host parity, AI integration, and rules/FAQ scenario matrix covering Q1–Q24. Contract tests ensure cross-language parity.
 - **CI/CD:** Mature GitHub Actions workflow with separated job types (lint, test, build, security scan, Docker, E2E) and proper timeout protections.
 
-A reasonable label for the current state is: **stable beta suitable for developers, AI work, and comprehensive playtesting**, approaching production readiness.
+A reasonable label for the current state is: **stable beta with consolidated architecture, suitable for developers, AI work, and comprehensive playtesting**, ready for production hardening.
 
 ---
 
@@ -44,6 +50,17 @@ A reasonable label for the current state is: **stable beta suitable for develope
   - **Victory & placement:** [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts), [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts) with no-dead-placement validation
   - **Turn lifecycle:** [`turnLogic.ts`](src/shared/engine/turnLogic.ts), [`turnLifecycle.ts`](src/shared/engine/turnLifecycle.ts) with canonical phase transitions
 
+- **Canonical Turn Orchestrator (`src/shared/engine/orchestration/`)** (NEW)
+  - **Complete:** Single entry point for turn processing via `processTurn()` / `processTurnAsync()`
+  - **Phase state machine:** [`phaseStateMachine.ts`](src/shared/engine/orchestration/phaseStateMachine.ts) handles phase transitions
+  - **Domain aggregates:** Orchestrator calls all 6 aggregates (Placement, Movement, Capture, Line, Territory, Victory) in deterministic order
+  - **Documentation:** Comprehensive usage guide in [`orchestration/README.md`](src/shared/engine/orchestration/README.md)
+
+- **Contract Testing (`src/shared/engine/contracts/`)** (NEW)
+  - **Complete:** Contract schemas and deterministic serialization for cross-language parity
+  - **Test vectors:** 12 vectors across 5 categories (placement, movement, capture, line, territory)
+  - **Python parity:** 100% pass rate on contract tests between TypeScript and Python engines
+
 - **BoardManager & Geometry**
   - **Complete:** Full support for 8×8, 19×19, and hexagonal boards
   - **Topology:** Position generation, adjacency, distance calculations, and pathfinding
@@ -56,12 +73,14 @@ A reasonable label for the current state is: **stable beta suitable for develope
   - **Decision integration:** Uses shared validators/mutators plus `PlayerInteractionManager` for all rule-driven decisions
   - **AI integration:** Seamless AI turns via `globalAIEngine` and `AIServiceClient`
   - **Chain captures:** Unified `chain_capture`/`continue_capture_segment` model live and tested
+  - **Orchestrator adapter:** [`TurnEngineAdapter.ts`](src/server/game/turn/TurnEngineAdapter.ts) (326 lines) wraps orchestrator with session/WebSocket concerns
 
 - **ClientSandboxEngine & Local Play**
   - **Complete:** Client-local sandbox engine as thin host over shared helpers
   - **Canonical moves:** Emits proper `Move` history for both AI and human flows
   - **Mixed games:** Supports human/AI combinations with unified turn semantics
   - **Parity:** Strong semantic alignment with backend engine, validated by comprehensive test suites
+  - **Orchestrator adapter:** [`SandboxOrchestratorAdapter.ts`](src/client/sandbox/SandboxOrchestratorAdapter.ts) (476 lines) wraps orchestrator for local simulation
 
 ### 2. Backend Infrastructure
 
@@ -139,9 +158,18 @@ A reasonable label for the current state is: **stable beta suitable for develope
 
 ## ❌ Major Gaps & Current Limitations
 
+### P0 – Production Hardening (NEW)
+
+- **Orchestrator production rollout:** The canonical orchestrator is complete but currently behind feature flags (`useOrchestratorAdapter`). Production enablement pending:
+  - [ ] Enable in staging environment
+  - [ ] Run comprehensive parity tests
+  - [ ] Enable in production
+  - [ ] Remove legacy code paths
+
 ### P0 – Engine Parity & Rules Coverage
 
 - **Backend ↔ Sandbox trace parity:** Major divergences DIV-001 (capture enumeration) and DIV-002 (territory processing) have been **RESOLVED** through unified shared engine helpers. Remaining semantic gaps (DIV-003 through DIV-007) are open but lower priority. DIV-008 (late-game phase/player tracking) is deferred as within tolerance.
+- **Cross-language parity:** Contract tests now ensure 100% parity between TypeScript and Python engines on 12 test vectors. Expand coverage as new edge cases are discovered.
 - **Decision phase timeout guards:** Implemented for territory and line processing decision phases, preventing infinite waits during player choice scenarios.
 - **Complex scenario coverage:** Core mechanics well-tested, but some complex composite scenarios (deeply nested capture + line + territory chains) rely on trace harnesses rather than focused scenario tests
 - **Chain capture edge cases:** 180-degree reversal and cyclic capture patterns supported but need additional test coverage for complete confidence
@@ -191,20 +219,29 @@ Key remaining work for production deployment:
 
 ## 📈 Test Coverage Status
 
-**Current Test Run:** 201 test files (majority passing)
+**Current Test Run:** 200+ test files
+
+- **TypeScript tests:** 1195+ tests passing
+- **Python tests:** 245 tests passing, 15 contract tests
+- **Contract tests:** 12 test vectors with 100% cross-language parity
+
+**Test Categories:**
 
 - **Integration tests:** ✅ Passing (AIResilience, GameReconnection, GameSession.aiDeterminism)
 - **Scenario tests:** ✅ Passing (FAQ Q1-Q24 suites, RulesMatrix scenarios)
-- **Unit tests:** ✅ Majority passing (comprehensive coverage of core mechanics)
-- **Parity tests:** ⚠️ Some diagnostic tests still showing intermittent failures (expected during development)
+- **Unit tests:** ✅ Comprehensive coverage of core mechanics
+- **Parity tests:** ✅ Major divergences resolved, remaining diagnostics lower priority
+- **Contract tests:** ✅ 100% pass rate on 12 vectors across TypeScript and Python
 - **Decision phase tests:** ✅ Timeout guards verified via `GameSession.decisionPhaseTimeout.test.ts`
+- **Adapter tests:** ✅ 46 tests for orchestrator adapters
 
 **Test Infrastructure:**
 
-- **201 total test files** providing comprehensive coverage
+- **200+ total test files** providing comprehensive coverage
 - **Timeout protection** via `scripts/run-tests-with-timeout.sh` preventing CI hangs
 - **Categorized execution** with `test:core`, `test:diagnostics`, `test:ts-rules-engine` scripts
 - **Coverage reporting** integrated with Codecov for PR feedback
+- **Contract testing** via `npm run test:contracts` and `scripts/run-python-contract-tests.sh`
 - **MCTS tests:** Gated behind `ENABLE_MCTS_TESTS=1` with configurable timeout via `MCTS_TEST_TIMEOUT`
 - **E2E tests:** Playwright configuration with `E2E_BASE_URL` and `PLAYWRIGHT_WORKERS` support
 
@@ -212,11 +249,13 @@ Key remaining work for production deployment:
 
 ## 🔄 Recommended Next Steps
 
-Based on current state and test progress:
+Based on current state and completed architecture remediation:
 
-1. **Complete scenario test conversion** - Convert remaining diagnostic/trace tests to focused rules scenarios
-2. **Polish multiplayer UX** - Enhanced HUD, spectator improvements, better reconnection flows
-3. **Performance validation** - Load testing with the existing timeout-protected test infrastructure
-4. **Production monitoring** - Extend existing metrics/logging to production-grade observability
+1. **Enable orchestrator in production** - Roll out `useOrchestratorAdapter` feature flag in staging, then production
+2. **Expand contract test coverage** - Add more test vectors for edge cases as they're discovered
+3. **Remove legacy code paths** - Once orchestrator is stable, remove deprecated turn processing code
+4. **Polish multiplayer UX** - Enhanced HUD, spectator improvements, better reconnection flows
+5. **Performance validation** - Load testing with the existing timeout-protected test infrastructure
+6. **Production monitoring** - Extend existing metrics/logging to production-grade observability
 
-The project has reached a mature beta state with strong foundations across all major components. The testing infrastructure demonstrates production-quality practices, and the shared engine architecture provides excellent maintainability for continued development.
+The project has reached a mature beta state with consolidated architecture. The 4-phase remediation provides a clean separation between orchestration and host concerns, and the contract testing framework ensures cross-language parity. The codebase is ready for production hardening.

@@ -3,22 +3,26 @@ MCTS AI implementation for RingRift
 Uses Monte Carlo Tree Search for move selection
 """
 
-from typing import Optional, Dict
+import logging
+from typing import Optional, Dict, Any, cast
 import math
 import time
 
 import numpy as np
 import torch
 
+from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
 from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
     ActionEncoderHex,
     HexNeuralNet,
-    P_HEX,
 )
 from ..models import GameState, Move, AIConfig, BoardType
+from ..utils.memory_config import MemoryConfig
+
+logger = logging.getLogger(__name__)
 
 
 class MCTSNode:
@@ -105,7 +109,12 @@ class MCTSNode:
 class MCTSAI(HeuristicAI):
     """AI that uses Monte Carlo Tree Search"""
     
-    def __init__(self, player_number: int, config: AIConfig):
+    def __init__(
+        self,
+        player_number: int,
+        config: AIConfig,
+        memory_config: Optional[MemoryConfig] = None,
+    ):
         super().__init__(player_number, config)
         # Try to load neural net for evaluation
         try:
@@ -130,6 +139,18 @@ class MCTSAI(HeuristicAI):
         else:
             self.hex_encoder = None
             self.hex_model = None
+
+        # Memory configuration for bounded structures
+        self.memory_config = memory_config or MemoryConfig.from_env()
+        
+        # Transposition table to cache neural network evaluations
+        # Key: state_hash, Value: (value, policy)
+        # Entry size estimate: ~400 bytes (MCTS stores larger policies)
+        tt_limit = self.memory_config.get_transposition_table_limit_bytes()
+        self.transposition_table = BoundedTranspositionTable.from_memory_limit(
+            tt_limit,
+            entry_size_estimate=400,
+        )
 
     def simulate_thinking(self, min_ms: int = 100, max_ms: int = 2000) -> None:
         """Override BaseAI.simulate_thinking.
@@ -226,7 +247,7 @@ class MCTSAI(HeuristicAI):
 
                 # Expansion
                 if node.untried_moves:
-                    m = self.get_random_element(node.untried_moves)
+                    m = cast(Move, self.get_random_element(node.untried_moves))
                     state = self.rules_engine.apply_move(state, m)
 
                     # Get prior from parent's policy if available
@@ -249,8 +270,31 @@ class MCTSAI(HeuristicAI):
 
             # Evaluation Phase (Batched)
             if self.neural_net:
-                # Prepare batch
+                # Prepare batch - check transposition table first
                 states = [leaf[1] for leaf in leaves]
+                
+                # Check cache for already-evaluated states
+                cached_results = []
+                uncached_indices = []
+                uncached_states = []
+                
+                for i, state in enumerate(states):
+                    state_hash = hash(state)
+                    cached = self.transposition_table.get(state_hash)
+                    if cached is not None:
+                        cached_results.append((i, cached[0], cached[1]))
+                    else:
+                        uncached_indices.append(i)
+                        uncached_states.append(state)
+                
+                # Initialize result arrays with proper types
+                values: list = [0.0] * len(states)
+                policies: list = [None] * len(states)
+                
+                # Fill in cached results
+                for idx, val, pol in cached_results:
+                    values[idx] = val
+                    policies[idx] = pol
 
                 # Decide whether to use the hex-specific network based on
                 # the current board geometry. All states in a batch share
@@ -261,43 +305,65 @@ class MCTSAI(HeuristicAI):
                     and states
                     and states[0].board.type == BoardType.HEXAGONAL
                 )
+                
+                # Only evaluate uncached states
+                if uncached_states:
+                    if use_hex_nn:
+                        # Build feature and global tensors compatible with
+                        # HexNeuralNet using NeuralNetAI's encoder.
+                        feature_batches = []
+                        globals_batches = []
+                        for s in uncached_states:
+                            feats, globs = self.neural_net._extract_features(s)
+                            feature_batches.append(feats)
+                            globals_batches.append(globs)
 
-                if use_hex_nn:
-                    # Build feature and global tensors compatible with
-                    # HexNeuralNet using NeuralNetAI's encoder.
-                    feature_batches = []
-                    globals_batches = []
-                    for s in states:
-                        feats, globs = self.neural_net._extract_features(s)
-                        feature_batches.append(feats)
-                        globals_batches.append(globs)
-
-                    tensor_input = torch.FloatTensor(
-                        np.array(feature_batches)
-                    )
-                    globals_input = torch.FloatTensor(
-                        np.array(globals_batches)
-                    )
-
-                    with torch.no_grad():
-                        values_tensor, policy_logits = self.hex_model(
-                            tensor_input, globals_input, hex_mask=None
+                        tensor_input = torch.FloatTensor(
+                            np.array(feature_batches)
                         )
-                        policy_probs = torch.softmax(policy_logits, dim=1)
+                        globals_input = torch.FloatTensor(
+                            np.array(globals_batches)
+                        )
 
-                    values = (
-                        values_tensor.cpu().numpy().flatten().tolist()
-                    )
-                    policies = policy_probs.cpu().numpy()
-                else:
-                    # Use the square/shared network path.
-                    values, policies = self.neural_net.evaluate_batch(states)
+                        # hex_model is not None when use_hex_nn is True
+                        hex_model = cast(HexNeuralNet, self.hex_model)
+                        with torch.no_grad():
+                            values_tensor, policy_logits = hex_model(
+                                tensor_input, globals_input, hex_mask=None
+                            )
+                            policy_probs = torch.softmax(policy_logits, dim=1)
+
+                        eval_values = (
+                            values_tensor.cpu().numpy().flatten().tolist()
+                        )
+                        eval_policies = policy_probs.cpu().numpy()
+                    else:
+                        # Use the square/shared network path.
+                        eval_values, eval_policies = (
+                            self.neural_net.evaluate_batch(uncached_states)
+                        )
+                    
+                    # Store uncached results and cache them
+                    for j, orig_idx in enumerate(uncached_indices):
+                        values[orig_idx] = eval_values[j]
+                        policies[orig_idx] = eval_policies[j]
+                        
+                        # Cache the result
+                        state_hash = hash(uncached_states[j])
+                        self.transposition_table.put(
+                            state_hash,
+                            (eval_values[j], eval_policies[j]),
+                        )
 
                 # Process results
                 for i in range(len(leaves)):
                     value = values[i]
                     policy = policies[i]
                     node, state, played_moves = leaves[i]
+
+                    # Skip if policy wasn't computed (shouldn't happen)
+                    if policy is None:
+                        continue
 
                     # Store policy priors
                     valid_moves_state = self.rules_engine.get_valid_moves(
@@ -310,25 +376,27 @@ class MCTSAI(HeuristicAI):
 
                         total_prob = 0.0
                         for move in valid_moves_state:
-                            if use_hex_nn:
+                            if use_hex_nn and self.hex_encoder is not None:
                                 idx = self.hex_encoder.encode_move(
                                     move, state.board
                                 )
-                            else:
+                            elif self.neural_net is not None:
                                 # Encode using canonical coordinates
-                                # derived from the current board
-                                # geometry. Moves that fall outside the
-                                # fixed 19×19 policy grid return
-                                # INVALID_MOVE_INDEX and are skipped.
+                                # derived from current board geometry.
+                                # Moves outside the fixed 19×19 policy
+                                # grid return INVALID_MOVE_INDEX.
                                 idx = self.neural_net.encode_move(
                                     move, state.board
                                 )
+                            else:
+                                idx = INVALID_MOVE_INDEX
 
                             if (
                                 idx != INVALID_MOVE_INDEX
                                 and 0 <= idx < len(policy)
                             ):
-                                prob = float(policy[idx])
+                                # policy is numpy array, idx is int
+                                prob = float(cast(Any, policy)[idx])
                                 # Use string key for dict
                                 node.policy_map[str(move)] = prob
                                 total_prob += prob
@@ -342,7 +410,7 @@ class MCTSAI(HeuristicAI):
                                 node.policy_map[str(move)] = uniform
 
                     # Backpropagation
-                    current_val = value
+                    current_val = float(value) if value is not None else 0.0
                     curr_node = node
 
                     while curr_node is not None:
@@ -367,8 +435,8 @@ class MCTSAI(HeuristicAI):
                         if not moves:
                             break
 
-                        # Weighted selection with domain knowledge (Light Playout)
-                        # Prioritize moves that are likely good to avoid random-walk bias
+                        # Light playout: weight moves by domain knowledge
+                        # to avoid random-walk bias
                         weights = []
                         for m in moves:
                             w = 1.0
@@ -381,15 +449,15 @@ class MCTSAI(HeuristicAI):
                             elif m.type == "overtaking_capture":
                                 w = 10.0
                             elif m.type == "move_stack":
-                                # Prefer moves that land on stacks (merges) or capture targets
-                                # Simple heuristic: if to-space has stack, it's a merge
+                                # Prefer stacks (merges) or captures
+                                # If to-space has stack, it's a merge
                                 to_key = m.to.to_key()
                                 if to_key in rollout_state.board.stacks:
                                     w = 5.0
                                 else:
                                     w = 2.0
                             elif m.type == "place_ring":
-                                # Prefer placing near own stacks/markers
+                                # Prefer placing near own stacks
                                 w = 1.5
                             weights.append(w)
 
@@ -417,6 +485,22 @@ class MCTSAI(HeuristicAI):
                         curr_node.update(current_val, played_moves)
                         current_val = -current_val
                         curr_node = curr_node.parent
+        
+        # Log transposition table stats at DEBUG level
+        if logger.isEnabledFor(logging.DEBUG):
+            tt_stats = self.transposition_table.stats()
+            logger.debug(
+                "MCTS transposition table stats: entries=%d/%d, "
+                "hits=%d, misses=%d, hit_rate=%.2f%%, evictions=%d, "
+                "est_memory=%.2fMB",
+                tt_stats["entries"],
+                tt_stats["max_entries"],
+                tt_stats["hits"],
+                tt_stats["misses"],
+                tt_stats["hit_rate"] * 100,
+                tt_stats["evictions"],
+                tt_stats["estimated_memory_mb"],
+            )
         
         # Select best move based on visits
         if root.children:
