@@ -154,7 +154,14 @@ export class ClientSandboxEngine {
    * shared orchestrator via SandboxOrchestratorAdapter instead of using
    * the legacy sandbox-specific logic.
    *
-   * Default: false (gradual rollout - enable explicitly for testing)
+   * Default: false (parity issues discovered in Phase 6 - see LEGACY_CODE_ELIMINATION_PLAN.md)
+   *
+   * Known parity issues blocking full elimination:
+   * - "Landing on own marker eliminates bottom ring" rule not triggered via adapter
+   * - Some movement tests require legacy path for correct semantics
+   *
+   * Enable explicitly for testing adapter behavior:
+   *   engine.enableOrchestratorAdapter();
    */
   private useOrchestratorAdapter: boolean = false;
 
@@ -1763,6 +1770,44 @@ export class ClientSandboxEngine {
 
   // Removed unused handleRingPlacementClick helper to fix TS6133
 
+  /**
+   * Helper method to prompt for capture direction when multiple capture
+   * options are available for the same landing position.
+   */
+  private async promptForCaptureDirection(captureOptions: Move[]): Promise<Move> {
+    if (captureOptions.length <= 1) {
+      return captureOptions[0];
+    }
+
+    const choice = {
+      id: `sandbox-capture-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      gameId: this.gameState.id,
+      playerNumber: this.gameState.currentPlayer,
+      type: 'capture_direction' as const,
+      prompt: 'Select capture direction',
+      options: captureOptions.map((move) => ({
+        targetPosition: move.captureTarget!,
+        landingPosition: move.to!,
+        capturedCapHeight:
+          this.gameState.board.stacks.get(positionToString(move.captureTarget!))?.capHeight ?? 0,
+      })),
+    };
+
+    const response = await this.interactionHandler.requestChoice(choice as any);
+
+    // Find the matching move based on response
+    const selected = captureOptions.find((move) => {
+      const opt = (response as any).selectedOption;
+      return (
+        opt &&
+        positionToString(opt.targetPosition) === positionToString(move.captureTarget!) &&
+        positionToString(opt.landingPosition) === positionToString(move.to!)
+      );
+    });
+
+    return selected ?? captureOptions[0];
+  }
+
   private async handleMovementClick(position: Position): Promise<void> {
     const board = this.gameState.board;
     const key = positionToString(position);
@@ -1789,6 +1834,46 @@ export class ClientSandboxEngine {
       return;
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Adapter-based movement (when orchestrator adapter is enabled)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (this.useOrchestratorAdapter) {
+      const adapter = this.getOrchestratorAdapter();
+      const validMoves = adapter.getValidMoves();
+
+      // Find moves from selected stack to clicked position
+      const matchingMoves = validMoves.filter(
+        (m) =>
+          m.from &&
+          positionToString(m.from) === this._selectedStackKey &&
+          m.to &&
+          positionToString(m.to) === key
+      );
+
+      if (matchingMoves.length === 0) {
+        // No valid move to this position - leave selection unchanged
+        return;
+      }
+
+      let moveToApply: Move = matchingMoves[0];
+
+      // Handle multiple capture options (same from/to but different targets)
+      if (matchingMoves.length > 1) {
+        const captureOptions = matchingMoves.filter((m) => m.captureTarget);
+        if (captureOptions.length > 1) {
+          moveToApply = await this.promptForCaptureDirection(captureOptions);
+        }
+      }
+
+      // Apply via applyCanonicalMove which handles history recording
+      await this.applyCanonicalMove(moveToApply);
+      this._selectedStackKey = undefined;
+      return;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Legacy movement (when orchestrator adapter is disabled)
+    // ═══════════════════════════════════════════════════════════════════════
     const isCanonicalReplay = this._movementInvocationContext === 'canonical';
 
     // Delegate actual movement / capture application to the shared

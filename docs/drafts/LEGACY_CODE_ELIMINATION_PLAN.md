@@ -1,8 +1,59 @@
 # Legacy Code Elimination Plan
 
-> **Phase 5.4 Deliverable** - Architecture Remediation Plan  
-> **Status:** Documentation Complete  
+> **Phase 5.4 Deliverable** - Architecture Remediation Plan
+> **Status:** Blocked - Parity Issues Discovered
 > **Last Updated:** 2025-11-26
+> **Phase 6 Attempt:** 2025-11-26
+
+## Phase 6 Execution Summary
+
+Phase 6 attempted to eliminate Tier 1 legacy code (~1,713 lines). The following work was completed:
+
+### Completed Work
+
+1. **Adapter Infrastructure Verified** - `SandboxOrchestratorAdapter.ts` correctly wraps the shared orchestrator
+2. **Feature Flag In Place** - `useOrchestratorAdapter` flag in `ClientSandboxEngine.ts` controls rollout
+3. **Adapter Path Added to handleMovementClick** - When enabled, movement clicks route through adapter
+4. **Helper Method Added** - `promptForCaptureDirection()` for multi-capture scenarios via adapter
+
+### Blockers Discovered
+
+#### Parity Issue: "Landing on Own Marker" Rule
+
+When the orchestrator adapter is enabled, the "landing on own marker eliminates bottom ring" rule does not trigger correctly.
+
+**Test Case:** `ClientSandboxEngine.landingOnOwnMarker.test.ts`
+
+- **Expected:** Stack height 2 → 1 (one ring eliminated)
+- **Actual via adapter:** Stack height stays 2 (no elimination)
+- **Actual via legacy:** Correct behavior (height 1)
+
+**Root Cause:** The shared orchestrator's movement processing doesn't apply this rule. The rule IS implemented in:
+
+- `src/shared/engine/movementApplication.ts`
+- `src/shared/engine/aggregates/MovementAggregate.ts`
+
+But the orchestrator's `processTurn`/`processTurnAsync` doesn't invoke it correctly for simple `move_stack` moves.
+
+#### Test Compatibility Issues
+
+Some tests call `handleMovementClick()` without awaiting (legacy had synchronous-ish behavior):
+
+- Legacy path: State mutations happen synchronously within `handleMovementClickSandbox`
+- Adapter path: State mutations are async via `applyCanonicalMove`
+
+### Decision: Keep Legacy Code
+
+Due to parity issues, the adapter is **disabled by default** (`useOrchestratorAdapter = false`). Legacy code is retained as the stable path.
+
+### Remediation Steps Required Before Elimination
+
+1. **Fix Orchestrator Movement Processing**: Ensure `processTurn` applies landing-on-own-marker rule
+2. **Add Integration Tests**: Verify adapter parity with legacy for all movement scenarios
+3. **Update Blocking Tests**: Make tests async-aware where needed
+4. **Re-attempt Elimination**: After parity is achieved
+
+---
 
 ## Overview
 
