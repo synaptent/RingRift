@@ -40,8 +40,7 @@ import {
   createTestPlayer,
 } from '../utils/fixtures';
 import { BoardManager } from '../../src/server/game/BoardManager';
-import { RuleEngine } from '../../src/server/game/RuleEngine';
-import { getCaptureOptionsFromPosition as getBackendCaptureOptions } from '../../src/server/game/rules/captureChainEngine';
+import { getChainCaptureContinuationInfo } from '../../src/shared/engine/aggregates/CaptureAggregate';
 
 // =============================================================================
 // COMPLEXITY BOUNDS
@@ -202,11 +201,24 @@ function enumerateSequencesSandbox(
 
       const applyAdapters: CaptureApplyAdapters = {
         applyMarkerEffectsAlongPath: (fromPos, toPos, playerNumber) => {
-          applyMarkerEffectsAlongPathOnBoard(boardClone, fromPos, toPos, playerNumber, markerHelpers);
+          applyMarkerEffectsAlongPathOnBoard(
+            boardClone,
+            fromPos,
+            toPos,
+            playerNumber,
+            markerHelpers
+          );
         },
       };
 
-      applyCaptureSegmentOnBoard(boardClone, seg.from, seg.target, seg.landing, player, applyAdapters);
+      applyCaptureSegmentOnBoard(
+        boardClone,
+        seg.from,
+        seg.target,
+        seg.landing,
+        player,
+        applyAdapters
+      );
 
       stack.push({
         board: boardClone,
@@ -222,7 +234,7 @@ function enumerateSequencesSandbox(
 }
 
 /**
- * Enumerate capture sequences using backend RuleEngine with strict bounds.
+ * Enumerate capture sequences using CaptureAggregate with strict bounds.
  */
 function enumerateSequencesBackend(
   boardType: BoardType,
@@ -234,7 +246,6 @@ function enumerateSequencesBackend(
 ): CaptureSequence[] {
   const sequences: CaptureSequence[] = [];
   const bm = new BoardManager(boardType);
-  const engine = new RuleEngine(bm as any, boardType as any);
 
   type Frame = {
     board: BoardState;
@@ -266,17 +277,18 @@ function enumerateSequencesBackend(
 
     const gameState = createTestGameState({
       boardType,
-      board,
+      board: { ...board, type: boardType, size: board.size },
       currentPlayer: player,
       currentPhase: 'capture',
       players: [createTestPlayer(1), createTestPlayer(2)],
       moveHistory: [],
     });
 
-    const moves = getBackendCaptureOptions(currentPos, player, gameState, {
-      boardManager: bm,
-      ruleEngine: engine,
-    });
+    const { availableContinuations: moves } = getChainCaptureContinuationInfo(
+      gameState,
+      player,
+      currentPos
+    );
 
     if (moves.length === 0) {
       if (segments.length > 0) {
@@ -299,7 +311,13 @@ function enumerateSequencesBackend(
 
       const applyAdapters: CaptureApplyAdapters = {
         applyMarkerEffectsAlongPath: (fromPos, toPos, playerNumber) => {
-          applyMarkerEffectsAlongPathOnBoard(boardClone, fromPos, toPos, playerNumber, markerHelpers);
+          applyMarkerEffectsAlongPathOnBoard(
+            boardClone,
+            fromPos,
+            toPos,
+            playerNumber,
+            markerHelpers
+          );
         },
       };
 
@@ -572,7 +590,10 @@ function runParityTest(testCase: NamedCaptureTestCase): void {
   }
 
   // Validate chain lengths if specified
-  if (testCase.expectedMinChainLength !== undefined || testCase.expectedMaxChainLength !== undefined) {
+  if (
+    testCase.expectedMinChainLength !== undefined ||
+    testCase.expectedMaxChainLength !== undefined
+  ) {
     const chainLengths = sandboxSeqs.map((s) => s.segments.length);
     if (chainLengths.length > 0) {
       const minLen = Math.min(...chainLengths);
@@ -706,7 +727,8 @@ describe('capture sequence enumeration parity (bounded random)', () => {
       for (let attempts = 0; attempts < 50; attempts++) {
         const direction = Math.floor(rng() * 4);
         const distance = 2;
-        let dx = 0, dy = 0;
+        let dx = 0,
+          dy = 0;
         if (direction === 0) dx = distance;
         else if (direction === 1) dx = -distance;
         else if (direction === 2) dy = distance;

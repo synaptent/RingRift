@@ -245,7 +245,7 @@ divergence** around automatic repair of stack/marker overlaps.
   - Mirrors the same placement, capture, and elimination logic via:
     - [`TypeScript.ClientSandboxEngine.tryPlaceRings()`](src/client/sandbox/ClientSandboxEngine.ts:1615),
     - capture application in
-      [`TypeScript.sandboxMovementEngine.applyCaptureSegmentWithHooks()`](src/client/sandbox/sandboxMovementEngine.ts:574),
+      ~~[`TypeScript.sandboxMovementEngine.applyCaptureSegmentWithHooks()`](src/client/sandbox/sandboxMovementEngine.ts:574)~~ (legacy, removed; capture chains now orchestrated via [`TypeScript.ClientSandboxEngine.performCaptureChainInternal`](src/client/sandbox/ClientSandboxEngine.ts:2229)),
     - elimination helpers such as
       [`TypeScript.ClientSandboxEngine.forceEliminateCap()`](src/client/sandbox/ClientSandboxEngine.ts:888).
 

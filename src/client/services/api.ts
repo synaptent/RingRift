@@ -1,6 +1,79 @@
 import axios from 'axios';
 import { User } from '../../shared/types/user';
-import { Game, CreateGameRequest } from '../../shared/types/game';
+import { Game, CreateGameRequest, BoardType, GameStatus } from '../../shared/types/game';
+
+/**
+ * Response format for game history endpoint
+ */
+export interface GameHistoryMove {
+  moveNumber: number;
+  playerId: string;
+  playerName: string;
+  moveType: string;
+  moveData: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface GameHistoryResponse {
+  gameId: string;
+  moves: GameHistoryMove[];
+  totalMoves: number;
+}
+
+/**
+ * Response format for game details endpoint
+ */
+export interface GameDetailsResponse {
+  id: string;
+  status: string;
+  boardType: string;
+  maxPlayers: number;
+  isRated: boolean;
+  allowSpectators: boolean;
+  players: {
+    id: string;
+    username: string;
+    rating: number;
+  }[];
+  winner?: {
+    id: string;
+    username: string;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  moveCount: number;
+}
+
+/**
+ * Summary of a game for listing purposes
+ */
+export interface GameSummary {
+  id: string;
+  boardType: BoardType;
+  status: GameStatus;
+  playerCount: number;
+  maxPlayers: number;
+  winnerId?: string | null;
+  winnerName?: string | null;
+  createdAt: string;
+  endedAt?: string | null;
+  moveCount: number;
+}
+
+/**
+ * Response format for user games endpoint
+ */
+export interface UserGamesResponse {
+  games: GameSummary[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
 
 /**
  * API base URL:
@@ -165,6 +238,69 @@ export const gameApi = {
 
   async makeMove(gameId: string, move: any): Promise<void> {
     await api.post(`/games/${gameId}/moves`, { move });
+  },
+
+  /**
+   * Get the complete move history for a game
+   * @param gameId - The ID of the game
+   * @returns GameHistoryResponse with all moves
+   */
+  async getGameHistory(gameId: string): Promise<GameHistoryResponse> {
+    const response = await api.get(`/games/${gameId}/history`);
+    return response.data.data as GameHistoryResponse;
+  },
+
+  /**
+   * Get detailed information about a specific game
+   * @param gameId - The ID of the game
+   * @returns GameDetailsResponse with full game details
+   */
+  async getGameDetails(gameId: string): Promise<GameDetailsResponse> {
+    const response = await api.get(`/games/${gameId}`);
+    const game = response.data.data.game;
+
+    // Transform the response to match our typed format
+    const players = [game.player1, game.player2, game.player3, game.player4].filter(Boolean);
+
+    return {
+      id: game.id,
+      status: game.status,
+      boardType: game.boardType,
+      maxPlayers: game.maxPlayers,
+      isRated: game.isRated,
+      allowSpectators: game.allowSpectators,
+      players,
+      winner: game.winner || null,
+      createdAt: game.createdAt,
+      updatedAt: game.updatedAt,
+      startedAt: game.startedAt || null,
+      endedAt: game.endedAt || null,
+      moveCount: game.moves?.length || 0,
+    };
+  },
+
+  /**
+   * Get list of games for a specific user
+   * @param userId - The ID of the user
+   * @param options - Optional pagination and filtering options
+   * @returns UserGamesResponse with games list and pagination info
+   */
+  async getUserGames(
+    userId: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+      status?: string;
+    }
+  ): Promise<UserGamesResponse> {
+    const params = new URLSearchParams();
+    if (options?.limit) params.set('limit', options.limit.toString());
+    if (options?.offset) params.set('offset', options.offset.toString());
+    if (options?.status) params.set('status', options.status);
+
+    const url = `/games/user/${userId}${params.toString() ? `?${params.toString()}` : ''}`;
+    const response = await api.get(url);
+    return response.data.data as UserGamesResponse;
   },
 };
 

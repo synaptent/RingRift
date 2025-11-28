@@ -9,15 +9,15 @@ import {
   pos,
 } from '../utils/fixtures';
 import {
-  processDisconnectedRegionsForCurrentPlayerEngine,
-  TerritoryInteractionHandler,
-} from '../../src/client/sandbox/sandboxTerritoryEngine';
+  ClientSandboxEngine,
+  SandboxInteractionHandler,
+} from '../../src/client/sandbox/ClientSandboxEngine';
 
 /**
  * Focused rules-layer tests for sandbox territory engine invariants.
  *
- * These tests bypass ClientSandboxEngine and drive the pure
- * `processDisconnectedRegionsForCurrentPlayerEngine` helper directly on a
+ * These tests drive the sandbox territory processing logic via
+ * `ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer` on a
  * handcrafted GameState with a sandbox-specific canProcessRegion predicate.
  *
  * Compact Q23 mini-region reference:
@@ -71,9 +71,9 @@ describe('sandboxTerritoryEngine.rules – Q23 self-elimination prerequisite (sq
   /**
    * Negative Q23 case at sandbox engine level: moving player controls a
    * disconnected region but has no stacks outside that region. The
-   * canProcessRegion predicate should return false and
-   * processDisconnectedRegionsForCurrentPlayerEngine must leave the state
-   * unchanged (no region collapse, no eliminations, S-invariant constant).
+   * canProcessRegion predicate should return false and sandbox territory
+   * processing must leave the state unchanged (no region collapse, no
+   * eliminations, S-invariant constant).
    */
   it('does not process region when moving player has no outside stack (Q23 negative mini-region)', async () => {
     const { board, players, regionSpaces } = makeMiniRegionGeometry();
@@ -110,7 +110,18 @@ describe('sandboxTerritoryEngine.rules – Q23 self-elimination prerequisite (sq
     };
 
     // No interaction needed for a single-region scenario.
-    const interactionHandler: TerritoryInteractionHandler | null = null;
+    const interactionHandler: SandboxInteractionHandler = {
+      async requestChoice<TChoice extends PlayerChoice>(
+        choice: TChoice
+      ): Promise<PlayerChoiceResponseFor<TChoice>> {
+        return {
+          choiceId: (choice as any).id,
+          playerNumber: (choice as any).playerNumber,
+          choiceType: (choice as any).type,
+          selectedOption: (choice as any).options ? (choice as any).options[0] : undefined,
+        } as PlayerChoiceResponseFor<TChoice>;
+      },
+    };
 
     const snapshotBefore = computeProgressSnapshot(gameStateBefore);
     const SBefore = snapshotBefore.S;
@@ -121,11 +132,21 @@ describe('sandboxTerritoryEngine.rules – Q23 self-elimination prerequisite (sq
     const boardElimBefore = gameStateBefore.board.eliminatedRings[movingPlayer] ?? 0;
     const collapsedBefore = gameStateBefore.board.collapsedSpaces.size;
 
-    const { state: stateAfter } = await processDisconnectedRegionsForCurrentPlayerEngine(
-      gameStateBefore,
+    const engine = new ClientSandboxEngine({
+      config: {
+        boardType,
+        numPlayers: players.length,
+        playerKinds: players.map(() => 'human'),
+      },
       interactionHandler,
-      canProcessRegion
-    );
+    });
+
+    const engineAny = engine as any;
+    engineAny.gameState = gameStateBefore;
+
+    await engineAny.processDisconnectedRegionsForCurrentPlayer();
+
+    const stateAfter: GameState = engine.getGameState();
 
     const snapshotAfter = computeProgressSnapshot(stateAfter);
     const SAfter = snapshotAfter.S;

@@ -1,5 +1,10 @@
 # Known Issues & Bugs
 
+> **Doc Status (2025-11-27): Active (code-verified issue tracker)**
+>
+> - Canonical list of current, code-verified issues and gaps.
+> - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+
 **Last Updated:** November 25, 2025
 **Status:** Code-verified assessment based on actual implementation
 **Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [docs/PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md)
@@ -407,6 +412,17 @@ work (stronger heuristics, search/ML) plus potentially additional endpoints.
     robustness work, rather than gating CI.
 
 - Until those tests are updated, the failing **aiSimulation** cases should be interpreted as a **known, expected discrepancy in test semantics**, not as an engine correctness failure.
+
+* +In particular, for the historically problematic square8/2‑AI plateau around seed 1:
+* +- Treat the following suites as the **current, canonical diagnostics** for sandbox AI plateau/stall behaviour (anchored to the shared S‑invariant and rules SSoTs):
+* - `tests/unit/ClientSandboxEngine.aiSimulation.test.ts`
+* - `tests/utils/aiSeedSnapshots.ts`
+* - `tests/unit/ClientSandboxEngine.aiStallRegression.test.ts`
+* - `tests/scenarios/AI_TerminationFromSeed1Plateau.test.ts`
+* - `tests/unit/ClientSandboxEngine.aiSingleSeedDebug.test.ts`
+    +- Earlier harnesses like `tests/unit/ClientSandboxEngine.aiStall.seed1.test.ts` and browser‑driven `/sandbox` stall watchdog traces should now be treated as **historical debugging artifacts** (see `archive/AI_STALL_DEBUG_SUMMARY.md`). If they ever disagree with rules‑level suites, S‑invariant tests, or the modern plateau/stall diagnostics above, defer to the rules and lifecycle SSoTs and update or retire the legacy harnesses accordingly.
+
+---
 
 ---
 

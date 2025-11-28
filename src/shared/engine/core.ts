@@ -476,8 +476,10 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
           return true;
         }
       } else {
-        // Landing on a stack (for merging) is also a legal move
-        return true;
+        // Landing on a stack is NOT allowed - stacks block the ray.
+        // Rule 8.1: "Cannot pass through other rings or stacks"
+        // Rule 8.2: "Landing on ... empty or occupied by a single marker"
+        break;
       }
     }
   }

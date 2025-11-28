@@ -174,7 +174,7 @@ export interface Player {
 // Ring stack representation
 export interface RingStack {
   position: Position;
-  rings: number[]; // Array of player numbers, bottom to top
+  rings: number[]; // Array of player numbers, top to bottom (rings[0] is top/controlling ring)
   stackHeight: number; // Total rings in stack
   capHeight: number; // Consecutive rings of same color from top
   controllingPlayer: number; // Player number of top ring

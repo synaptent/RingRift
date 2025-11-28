@@ -9,6 +9,20 @@ import {
   UserSearchQuerySchema,
   LeaderboardQuerySchema,
 } from '../../shared/validation/schemas';
+import { RatingService } from '../services/RatingService';
+import { RATING_CONSTANTS } from '../../shared/types/user';
+import type { WebSocketServer } from '../websocket/server';
+
+// Module-level reference to the WebSocket server for session termination
+let wsServer: WebSocketServer | null = null;
+
+/**
+ * Set the WebSocket server reference for this route module.
+ * Called during route setup to enable WebSocket session termination.
+ */
+export function setWebSocketServer(server: WebSocketServer): void {
+  wsServer = server;
+}
 
 const router = Router();
 
@@ -173,12 +187,13 @@ router.put(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    // Check if username is already taken (if provided)
+    // Check if username is already taken (if provided, exclude soft-deleted users)
     if (username) {
       const existingUser = await prisma.user.findFirst({
         where: {
           username,
           NOT: { id: userId },
+          deletedAt: null,
         },
       });
 
@@ -187,12 +202,13 @@ router.put(
       }
     }
 
-    // Check if email is already taken (if provided)
+    // Check if email is already taken (if provided, exclude soft-deleted users)
     if (email) {
       const existingUser = await prisma.user.findFirst({
         where: {
           email,
           NOT: { id: userId },
+          deletedAt: null,
         },
       });
 
@@ -588,12 +604,62 @@ router.get(
   })
 );
 
+/**
+ * Placeholder username prefix for deleted users.
+ * Used to identify anonymized accounts in game history displays.
+ */
+export const DELETED_USER_PREFIX = 'DeletedPlayer_';
+
+/**
+ * Display name shown in UI for deleted/anonymized users.
+ */
+export const DELETED_USER_DISPLAY_NAME = 'Deleted Player';
+
 function anonymizedEmail(user: { id: string; email: string }): string {
   return `deleted+${user.id}@example.invalid`;
 }
 
 function anonymizedUsername(user: { id: string; username: string }): string {
-  return `DeletedPlayer_${user.id.slice(0, 8)}`;
+  return `${DELETED_USER_PREFIX}${user.id.slice(0, 8)}`;
+}
+
+/**
+ * Check if a username represents a deleted/anonymized user.
+ */
+export function isDeletedUserUsername(username: string): boolean {
+  return username.startsWith(DELETED_USER_PREFIX);
+}
+
+/**
+ * Get a user-friendly display name, showing "Deleted Player" for anonymized users.
+ * @param username The username to format
+ * @returns The display-friendly name
+ */
+export function getDisplayUsername(username: string | null | undefined): string {
+  if (!username) {
+    return DELETED_USER_DISPLAY_NAME;
+  }
+  if (isDeletedUserUsername(username)) {
+    return DELETED_USER_DISPLAY_NAME;
+  }
+  return username;
+}
+
+/**
+ * Format a player object for display, handling deleted users.
+ * @param player Player data from database query
+ * @returns Player object with display-friendly username
+ */
+export function formatPlayerForDisplay<T extends { username: string } | null | undefined>(
+  player: T
+): T extends null | undefined ? null : T & { displayName: string } {
+  if (!player) {
+    return null as any;
+  }
+  return {
+    ...player,
+    displayName: getDisplayUsername(player.username),
+  } as any;
 }
 
 /**
@@ -723,6 +789,115 @@ router.get(
 
 /**
  * @openapi
+ * /users/{userId}/rating:
+ *   get:
+ *     summary: Get user rating and rank
+ *     description: |
+ *       Returns the rating information for a specific user, including their
+ *       current rating, rank on the leaderboard, and whether the rating is
+ *       provisional (fewer than 20 games played).
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The user's ID
+ *     responses:
+ *       200:
+ *         description: Rating information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     userId:
+ *                       type: string
+ *                       example: "clxyz123"
+ *                     username:
+ *                       type: string
+ *                       example: "player1"
+ *                     rating:
+ *                       type: integer
+ *                       example: 1350
+ *                     rank:
+ *                       type: integer
+ *                       example: 42
+ *                     gamesPlayed:
+ *                       type: integer
+ *                       example: 25
+ *                     gamesWon:
+ *                       type: integer
+ *                       example: 15
+ *                     winRate:
+ *                       type: number
+ *                       example: 60.0
+ *                     isProvisional:
+ *                       type: boolean
+ *                       example: false
+ *                       description: True if player has fewer than 20 games
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       503:
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+router.get(
+  '/:userId/rating',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { userId } = req.params;
+
+    if (!userId) {
+      throw createError('User ID is required', 400, 'INVALID_USER_ID');
+    }
+
+    try {
+      const ratingInfo = await RatingService.getPlayerRating(userId);
+
+      if (!ratingInfo) {
+        throw createError('User not found', 404, 'USER_NOT_FOUND');
+      }
+
+      // Calculate win rate
+      const winRate =
+        ratingInfo.gamesPlayed > 0
+          ? Math.round((ratingInfo.gamesWon / ratingInfo.gamesPlayed) * 10000) / 100
+          : 0;
+
+      res.json({
+        success: true,
+        data: {
+          userId: ratingInfo.userId,
+          username: ratingInfo.username,
+          rating: ratingInfo.rating,
+          rank: ratingInfo.rank,
+          gamesPlayed: ratingInfo.gamesPlayed,
+          gamesWon: ratingInfo.gamesWon,
+          winRate,
+          isProvisional: ratingInfo.isProvisional,
+        },
+      });
+    } catch (error) {
+      if ((error as any)?.code === 'USER_NOT_FOUND') {
+        throw error;
+      }
+      throw createError('Database not available', 503, 'DATABASE_UNAVAILABLE');
+    }
+  })
+);
+
+/**
+ * @openapi
  * /users/me:
  *   delete:
  *     summary: Delete current user account
@@ -732,11 +907,23 @@ router.get(
  *       - Sets deletedAt timestamp
  *       - Invalidates all tokens (tokenVersion incremented)
  *       - Clears sensitive tokens (verification, reset)
- *       - Anonymizes email and username
+ *       - Anonymizes email and username to prevent PII exposure
  *       - Revokes all refresh tokens
+ *       - Terminates active WebSocket connections
+ *
+ *       **Game History Preservation:**
+ *       Game records are preserved with the user's player slot intact (player1Id, etc.)
+ *       but the User record is anonymized. When games are displayed, the anonymized
+ *       username ("DeletedPlayer_xxx") is shown, which the UI should display as
+ *       "Deleted Player" for a user-friendly experience.
+ *
+ *       This approach ensures:
+ *       - Opponents can still see their complete game history
+ *       - Game statistics remain accurate
+ *       - Move history is preserved (moves contain no PII)
+ *       - No personally identifiable information is exposed
  *
  *       The account cannot be recovered after deletion.
- *       Game history is preserved for other players.
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -785,6 +972,12 @@ router.delete(
         return;
       }
 
+      // Soft-delete and anonymize the user record.
+      // Game history is preserved: Game.player1Id/player2Id/etc. still reference this user,
+      // but queries that JOIN to User will receive the anonymized username.
+      // This ensures opponents can still see their game history while protecting
+      // the deleted user's PII. The Move table retains playerId references but
+      // moves contain no PII (just game positions and actions).
       await tx.user.update({
         where: { id: userId },
         data: {
@@ -809,6 +1002,20 @@ router.delete(
       }
     });
 
+    // Terminate any active WebSocket connections for the deleted user.
+    // This is done outside the transaction to ensure the DB changes are committed
+    // before we disconnect the user's sessions. The tokenVersion increment within
+    // the transaction ensures that even if this call fails, the user cannot
+    // establish new connections.
+    if (wsServer) {
+      const terminatedCount = wsServer.terminateUserSessions(userId, 'Account deleted');
+      httpLogger.info(req, 'WebSocket sessions terminated for deleted user', {
+        event: 'user_delete_ws_termination',
+        userId,
+        terminatedCount,
+      });
+    }
+
     httpLogger.info(req, 'User account deleted (soft-delete)', {
       event: 'user_delete',
       userId,
@@ -818,6 +1025,324 @@ router.delete(
       success: true,
       message: 'Account deleted successfully',
     });
+  })
+);
+
+/**
+ * @openapi
+ * /users/me/export:
+ *   get:
+ *     summary: Export all user data (GDPR Data Portability)
+ *     description: |
+ *       Returns all user data in JSON format for GDPR data portability compliance.
+ *       The response includes:
+ *       - Profile information (excluding password and internal tokens)
+ *       - Complete game history with move details
+ *       - Statistics (rating, win/loss record)
+ *       - Any stored preferences
+ *
+ *       The response is formatted as a downloadable JSON file.
+ *
+ *       **Rate Limiting:** This endpoint is rate-limited to prevent abuse.
+ *       Users may request their data export once per hour.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User data exported successfully
+ *         headers:
+ *           Content-Disposition:
+ *             schema:
+ *               type: string
+ *             description: Attachment header for file download
+ *             example: 'attachment; filename="ringrift-data-export-user123.json"'
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 exportedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00Z"
+ *                 exportFormat:
+ *                   type: string
+ *                   example: "1.0"
+ *                 profile:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "user-123"
+ *                     username:
+ *                       type: string
+ *                       example: "PlayerOne"
+ *                     email:
+ *                       type: string
+ *                       format: email
+ *                       example: "player@example.com"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                     emailVerified:
+ *                       type: boolean
+ *                     role:
+ *                       type: string
+ *                       enum: [USER, ADMIN, MODERATOR]
+ *                 statistics:
+ *                   type: object
+ *                   properties:
+ *                     rating:
+ *                       type: integer
+ *                       example: 1250
+ *                     gamesPlayed:
+ *                       type: integer
+ *                       example: 50
+ *                     wins:
+ *                       type: integer
+ *                       example: 28
+ *                     losses:
+ *                       type: integer
+ *                       example: 22
+ *                     winRate:
+ *                       type: number
+ *                       example: 56.0
+ *                 games:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                       completedAt:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *                       status:
+ *                         type: string
+ *                       result:
+ *                         type: string
+ *                         enum: [win, loss, draw, in_progress, abandoned]
+ *                       boardType:
+ *                         type: string
+ *                       opponent:
+ *                         type: string
+ *                         nullable: true
+ *                       moves:
+ *                         type: array
+ *                         items:
+ *                           type: object
+ *                           properties:
+ *                             moveNumber:
+ *                               type: integer
+ *                             moveType:
+ *                               type: string
+ *                             timestamp:
+ *                               type: string
+ *                               format: date-time
+ *                             isUserMove:
+ *                               type: boolean
+ *                 preferences:
+ *                   type: object
+ *                   description: User preferences (if any stored)
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       429:
+ *         description: Rate limit exceeded - try again later
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               success: false
+ *               error:
+ *                 code: RATE_LIMIT_EXCEEDED
+ *                 message: Data export rate limit exceeded. Please try again in 1 hour.
+ *       503:
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+router.get(
+  '/me/export',
+  // TODO: Add specific rate limiting for data export (1 request per hour)
+  // Example: rateLimiter({ windowMs: 60 * 60 * 1000, max: 1, keyPrefix: 'export' })
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.id;
+
+    const prisma = getDatabaseClient();
+    if (!prisma) {
+      throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
+    }
+
+    // Fetch user profile data (excluding sensitive fields)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        role: true,
+        rating: true,
+        gamesPlayed: true,
+        gamesWon: true,
+        createdAt: true,
+        lastLoginAt: true,
+        emailVerified: true,
+        isActive: true,
+        updatedAt: true,
+        // Note: We intentionally exclude:
+        // - passwordHash (security)
+        // - tokenVersion (internal)
+        // - verificationToken, passwordResetToken (security)
+        // - deletedAt (internal)
+      },
+    });
+
+    if (!user) {
+      throw createError('User not found', 404, 'USER_NOT_FOUND');
+    }
+
+    // Fetch all games where user participated
+    const games = await prisma.game.findMany({
+      where: {
+        OR: [
+          { player1Id: userId },
+          { player2Id: userId },
+          { player3Id: userId },
+          { player4Id: userId },
+        ],
+      },
+      select: {
+        id: true,
+        createdAt: true,
+        startedAt: true,
+        endedAt: true,
+        status: true,
+        winnerId: true,
+        boardType: true,
+        maxPlayers: true,
+        isRated: true,
+        player1Id: true,
+        player2Id: true,
+        player3Id: true,
+        player4Id: true,
+        player1: { select: { id: true, username: true } },
+        player2: { select: { id: true, username: true } },
+        player3: { select: { id: true, username: true } },
+        player4: { select: { id: true, username: true } },
+        moves: {
+          select: {
+            moveNumber: true,
+            moveType: true,
+            timestamp: true,
+            playerId: true,
+            position: true,
+          },
+          orderBy: { moveNumber: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Transform games to user-friendly format
+    const formattedGames = games.map((game: any) => {
+      // Determine user's result in this game
+      let result: 'win' | 'loss' | 'draw' | 'in_progress' | 'abandoned' = 'in_progress';
+      if (game.status === 'completed' || game.status === 'finished') {
+        if (game.winnerId === null) {
+          result = 'draw';
+        } else if (game.winnerId === userId) {
+          result = 'win';
+        } else {
+          result = 'loss';
+        }
+      } else if (game.status === 'abandoned' || game.status === 'cancelled') {
+        result = 'abandoned';
+      }
+
+      // Find opponent(s) - get usernames of other players
+      const playerSlots = [
+        { id: game.player1Id, user: game.player1 },
+        { id: game.player2Id, user: game.player2 },
+        { id: game.player3Id, user: game.player3 },
+        { id: game.player4Id, user: game.player4 },
+      ];
+
+      const opponents = playerSlots
+        .filter((slot: any) => slot.id && slot.id !== userId)
+        .map((slot: any) => getDisplayUsername(slot.user?.username));
+
+      // Format moves with user context
+      const formattedMoves = game.moves.map((move: any) => ({
+        moveNumber: move.moveNumber,
+        moveType: move.moveType,
+        timestamp: move.timestamp,
+        isUserMove: move.playerId === userId,
+      }));
+
+      return {
+        id: game.id,
+        createdAt: game.createdAt,
+        startedAt: game.startedAt,
+        completedAt: game.endedAt,
+        status: game.status,
+        result,
+        boardType: game.boardType,
+        isRated: game.isRated,
+        opponent: opponents.length === 1 ? opponents[0] : opponents.length > 0 ? opponents : null,
+        moves: formattedMoves,
+      };
+    });
+
+    // Calculate statistics
+    const losses = user.gamesPlayed - user.gamesWon;
+    const winRate =
+      user.gamesPlayed > 0 ? Math.round((user.gamesWon / user.gamesPlayed) * 10000) / 100 : 0;
+
+    // Build export data structure
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      exportFormat: '1.0',
+      profile: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        createdAt: user.createdAt,
+        emailVerified: user.emailVerified,
+        role: user.role,
+        isActive: user.isActive,
+        lastLoginAt: user.lastLoginAt,
+        updatedAt: user.updatedAt,
+      },
+      statistics: {
+        rating: user.rating,
+        gamesPlayed: user.gamesPlayed,
+        wins: user.gamesWon,
+        losses,
+        winRate,
+      },
+      games: formattedGames,
+      preferences: {}, // Placeholder for future preferences storage
+    };
+
+    // Set headers for file download
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="ringrift-data-export-${userId}.json"`
+    );
+
+    httpLogger.info(req, 'User data exported', {
+      userId,
+      gamesCount: formattedGames.length,
+    });
+
+    res.json(exportData);
   })
 );
 

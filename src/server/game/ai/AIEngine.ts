@@ -15,6 +15,7 @@ import {
   Position,
   positionToString,
 } from '../../../shared/types/game';
+import type { CancellationToken } from '../../../shared/utils/cancellation';
 import { getAIServiceClient, AIType as ServiceAIType } from '../../services/AIServiceClient';
 import { logger } from '../../utils/logger';
 import { BoardManager } from '../BoardManager';
@@ -230,7 +231,8 @@ export class AIEngine {
   async getAIMove(
     playerNumber: number,
     gameState: GameState,
-    rng?: LocalAIRng
+    rng?: LocalAIRng,
+    options?: { token?: CancellationToken }
   ): Promise<Move | null> {
     const config = this.aiConfigs.get(playerNumber);
 
@@ -270,7 +272,9 @@ export class AIEngine {
           gameState,
           playerNumber,
           config.difficulty,
-          serviceAIType
+          serviceAIType,
+          undefined,
+          options?.token ? { token: options.token } : undefined
         );
 
         const normalizedMove = this.normalizeServiceMove(response.move, gameState, playerNumber);

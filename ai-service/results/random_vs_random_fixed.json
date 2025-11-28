@@ -1,0 +1,132 @@
+{
+  "config": {
+    "player1": "random",
+    "player2": "random",
+    "games": 10,
+    "board": "square8",
+    "seed": 42,
+    "max_moves_per_game": 200,
+    "minimax_depth": 3,
+    "timestamp": "2025-11-27T01:03:30.607563"
+  },
+  "results": {
+    "player1_wins": 4,
+    "player2_wins": 6,
+    "draws": 0,
+    "player1_win_rate": 0.4,
+    "player1_win_rate_ci95": [0.1682, 0.6873],
+    "avg_game_length": 50.9,
+    "avg_game_length_std": 7.06,
+    "avg_decision_time_p1": 0.0304,
+    "avg_decision_time_p2": 0.0315,
+    "total_runtime_seconds": 48.26,
+    "victory_types": {
+      "elimination": 10
+    },
+    "avg_p1_final_pieces": 8.0,
+    "avg_p2_final_pieces": 7.3,
+    "piece_advantage_p1": 0.7
+  },
+  "games": [
+    {
+      "game_number": 1,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 56,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 2,
+      "winner": "random",
+      "winner_number": 1,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 3,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 4,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 5,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 50,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 6,
+      "winner": "random",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 7,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 8,
+      "winner": "random",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 9,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 53,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 10,
+      "winner": "random",
+      "winner_number": 1,
+      "length": 68,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "random",
+      "error": null
+    }
+  ]
+}

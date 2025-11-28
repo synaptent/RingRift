@@ -1,8 +1,15 @@
 # RingRift Supply Chain & CI/CD Security (S-05.F)
 
-**Status:** Design-only (future work under S-05.F.x; no CI/Docker changes applied yet)
+> **SSoT alignment:** This document is a derived design/plan over the following canonical operational and semantics sources:
+>
+> - **Operational SSoT:** CI workflows under `.github/workflows/*.yml` (especially `ci.yml`), Dockerfiles (`Dockerfile`, `ai-service/Dockerfile`), docker-compose stacks (`docker-compose*.yml`), monitoring and alerting configs under `monitoring/**`, and runtime env/config validation in `src/server/config/**`, `src/shared/utils/envFlags.ts`, and `scripts/validate-deployment-config.ts`.
+> - **Rules semantics & lifecycle SSoTs:** Shared TS rules engine under `src/shared/engine/**` plus v2 contract vectors, and lifecycle/API contracts described in `docs/CANONICAL_ENGINE_API.md` and implemented in `src/shared/types/**`, `src/shared/engine/orchestration/types.ts`, and `src/shared/validation/websocketSchemas.ts`. This doc is **downstream** of those semantics; it does not define rules or Move semantics.
+> - **Precedence:** If this document ever conflicts with CI configs, Dockerfiles, monitoring/alerting configs, or validated env/config code, **code + tests + live configs win**, and this document must be updated to match them.
+>
+> **Doc Status (2025-11-27): Active (with historical/aspirational content)** \
+> Design and plan for supply-chain and CI/CD hardening (S-05.F.x). Describes intended safeguards and tracks; some controls are already implemented in `ci.yml` and Dockerfiles, others remain backlog. This is not a rules or lifecycle SSoT; it complements `SECURITY_THREAT_MODEL.md`, `DATA_LIFECYCLE_AND_PRIVACY.md`, and `DOCUMENTATION_INDEX.md` for overall security posture, and it is downstream of the rules semantics SSoT (shared TS engine + contracts + vectors) and lifecycle/API SSoT (`CANONICAL_ENGINE_API.md` + shared types/schemas).
 
-**Related docs:** [`docs/SECURITY_THREAT_MODEL.md`](./SECURITY_THREAT_MODEL.md:1), [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:155), [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](./DATA_LIFECYCLE_AND_PRIVACY.md:1), [`docs/OPERATIONS_DB.md`](./OPERATIONS_DB.md:1), [`archive/FINAL_ARCHITECT_REPORT.md`](../archive/FINAL_ARCHITECT_REPORT.md:1)
+**Related docs:** [`docs/SECURITY_THREAT_MODEL.md`](./SECURITY_THREAT_MODEL.md:1), [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:155), [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](./DATA_LIFECYCLE_AND_PRIVACY.md:1), [`docs/OPERATIONS_DB.md`](./OPERATIONS_DB.md:1), [`archive/FINAL_ARCHITECT_REPORT.md`](../archive/FINAL_ARCHITE_REPORT.md:1), [`tests/README.md`](../tests/README.md:1), [`tests/TEST_LAYERS.md`](../tests/TEST_LAYERS.md:1), [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md:1)
 
 This document defines a focused plan for hardening RingRift’s supply chain and CI/CD pipeline. It elaborates on the S-05.F backlog item from [`docs/SECURITY_THREAT_MODEL.md`](./SECURITY_THREAT_MODEL.md:188) and is scoped to:
 
@@ -68,6 +75,43 @@ These threats are not independent; an attacker who compromises dependencies or C
 
 RingRift already implements several meaningful controls for S-05.F, especially around dependency audits and Docker-based builds. This section maps the threats above to current controls and the most important gaps.
 
+### 2.1 CI job map (from `.github/workflows/ci.yml`)
+
+For reference when working on S‑05.F.x tracks, this is the current CI job set as defined in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:1), grouped by concern:
+
+The CI workflow currently defines the following human‑readable job display names (as they appear under `name:` in `.github/workflows/ci.yml`):
+
+- Lint and Type Check
+- Run Tests
+- TS Rules Engine (rules-level)
+- Build Application
+- Security Scan
+- Docker Build Test
+- Python Rules Parity (fixture-based)
+- Python Dependency Audit
+- Playwright E2E Tests
+
+- **Lint & type safety**
+  - `lint-and-typecheck` (**"Lint and Type Check" job**) – ESLint plus TypeScript compilation for root, server, and client (`npx tsc`, `npx tsc -p tsconfig.server.json`, `npx tsc -p tsconfig.client.json`).
+- **General Jest tests & coverage**
+  - `test` (**"Run Tests" job**) – `npm run test:coverage` over the Jest suite (see `tests/README.md`, `tests/TEST_LAYERS.md`, and `tests/TEST_SUITE_PARITY_PLAN.md` for the core vs diagnostics split and rules/trace/integration taxonomy). Uploads coverage to Codecov and posts an LCOV summary comment on PRs.
+- **Rules-level Jest focus**
+  - `ts-rules-engine` (**"TS Rules Engine (rules-level)" job**) – `npm run test:ts-rules-engine` targeting the shared‑engine / rules‑level suites (helpers → aggregates → orchestrator → contracts). This job is the primary TS rules semantics signal for CI.
+- **Build & artefact packaging**
+  - `build` (**"Build Application" job**) – `npm run build` for server and client, then archives `dist/` as an artefact.
+- **Node dependency & supply‑chain scans**
+  - `security-scan` (**"Security Scan" job**) – `npm audit --production --audit-level=high` plus a Snyk scan (`snyk/actions/node`) with `--severity-threshold=high` against the Node/TypeScript dependency graph.
+- **Docker build sanity check**
+  - `docker-build` (**"Docker Build Test" job**) – Docker Buildx build of the main `Dockerfile` (tagged `ringrift:test`, push disabled) to ensure the multi‑stage image still builds inside CI.
+- **Python rules parity (TS→Python fixtures)**
+  - `python-rules-parity` (**"Python Rules Parity (fixture-based)" job**) – generates TS→Python rules‑parity fixtures via `tests/scripts/generate_rules_parity_fixtures.ts`, then runs `python -m pytest ai-service/tests/parity/test_rules_parity_fixtures.py` under Python 3.11. This is the primary SSoT‑backed TS↔Python rules parity signal.
+- **Python dependency audit**
+  - `python-dependency-audit` (**"Python Dependency Audit" job**) – installs `ai-service/requirements.txt`, then runs `pip-audit -r requirements.txt --severity HIGH` to fail on known HIGH/CRITICAL dependency vulnerabilities.
+- **E2E/browser‐level tests (currently non‑gating)**
+  - `e2e-tests` (**"Playwright E2E Tests" job**) – stand‑up of Postgres+Redis via CI services, then Playwright E2E tests (`npm run test:e2e`) against a locally built app. Marked `continue-on-error: true` while the full infra stack is still being hardened; artefacts (Playwright reports) are uploaded for inspection.
+
+When S‑05.F.1 is implemented, this job map should be used to define which jobs are **required gates** for `main`/`develop` merges (for example `lint-and-typecheck`, `test`, `ts-rules-engine`, `security-scan`, `docker-build`, `python-rules-parity`, `python-dependency-audit`) and which are optional/diagnostic (for example `e2e-tests`).
+
 | Threat                                          | Current controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Gaps / improvement opportunities                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **T1 – Dependency compromise**                  | Node dependencies are locked via [`package-lock.json`](../package-lock.json:1). CI job `security-scan` in [`ci.yml`](../.github/workflows/ci.yml:169) runs `npm audit --production --audit-level=high` and a Snyk scan with `--severity-threshold=high`. Python dependencies for the AI service are pinned with exact versions in [`ai-service/requirements.txt`](../ai-service/requirements.txt:1), and the `python-dependency-audit` job runs `pip-audit -r requirements.txt --severity HIGH` (see [`ci.yml`](../.github/workflows/ci.yml:252)).                                                                             | No documented policy for when and how dependency updates are performed (for example monthly patch window vs ad-hoc). No consolidated SBOM or dependency inventory for the stack. Audit results are not yet summarized in docs or release notes.                                                                                                                                                                                                                                                                  |
@@ -107,8 +151,10 @@ This section defines concrete, narrow S-05.F.x tracks that can be implemented as
 - **Implementation outline:**
   - Define a simple cadence for dependency updates (for example "apply non-breaking updates monthly; review major upgrades explicitly") and document it in [`CONTRIBUTING.md`](../CONTRIBUTING.md:1).
   - Extend the existing `security-scan` and `python-dependency-audit` jobs in [`ci.yml`](../.github/workflows/ci.yml:1) to:
-    - Generate SBOMs for Node (for example via a CycloneDX npm plugin) and Python (for example via `pip-audit` or a CycloneDX generator).
-    - Upload SBOM artefacts using `actions/upload-artifact` for later inspection and incident response.
+    - **(Implemented, 2025-11-27 – Node)** Generate a CycloneDX SBOM for the Node/TypeScript dependency graph in the `security-scan` job using `npx @cyclonedx/cyclonedx-npm --output-format JSON --output-file sbom-node.json`, and upload it as a `sbom-node` artefact via `actions/upload-artifact` (current retention: 7 days).
+    - **(Implemented, 2025-11-27 – Python)** Generate a CycloneDX SBOM for the AI-service Python environment in the `python-dependency-audit` job by installing `cyclonedx-bom` and running `python -m cyclonedx_py environment --output-format json --output-file sbom-python.json` from `ai-service/`, and upload it as a `sbom-python` artefact (current retention: 7 days).
+    - **(Planned)** Add lightweight guidance for operators and incident responders on how to retrieve and inspect these SBOM artefacts when triaging CVEs or doing post-incident analysis.
+  - Keep SBOM generation strictly **observational** (non-gating) so that it does not change build or test outcomes; treat SBOMs as supporting artefacts for incident response, audits, and future tooling.
   - Optionally, add a brief summary of dependency risks (for example high-severity findings from `npm audit` / `pip-audit`) to release notes or a changelog document.
 - **Dependencies:** Builds on existing dependency-audit jobs already wired in [`ci.yml`](../.github/workflows/ci.yml:169) and Python tooling choices documented in [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md:1).
 

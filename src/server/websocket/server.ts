@@ -992,6 +992,67 @@ export class WebSocketServer {
     }
   }
 
+  /**
+   * Terminate all WebSocket connections for a given user.
+   * Used when a user's account is deleted or their sessions need to be forcibly ended.
+   * The connection is closed with a custom close code (4001) and reason message.
+   *
+   * @param userId - The ID of the user whose sessions should be terminated
+   * @param reason - Optional reason string sent to the client (default: 'Session terminated')
+   * @returns The number of connections that were terminated
+   */
+  public terminateUserSessions(userId: string, reason: string = 'Session terminated'): number {
+    const socketId = this.userSockets.get(userId);
+    if (!socketId) {
+      logger.info('No active WebSocket connections found for user', { userId, reason });
+      return 0;
+    }
+
+    const socket = this.io.sockets.sockets.get(socketId) as AuthenticatedSocket | undefined;
+    if (!socket) {
+      // Socket ID was tracked but socket is no longer in the server's collection
+      // Clean up the stale mapping
+      this.userSockets.delete(userId);
+      logger.info('Stale socket mapping cleaned up for user', { userId, socketId, reason });
+      return 0;
+    }
+
+    // Emit an error event to inform the client before disconnecting
+    const payload: WebSocketErrorPayload = {
+      type: 'error',
+      code: 'ACCESS_DENIED',
+      message: reason,
+    };
+    socket.emit('error', payload);
+
+    // Disconnect the socket - the second parameter (true) forces immediate disconnection
+    socket.disconnect(true);
+
+    // Clean up tracking maps
+    this.userSockets.delete(userId);
+
+    // Clean up any pending reconnection timeouts for this user
+    for (const [key, pending] of this.pendingReconnections.entries()) {
+      if (pending.userId === userId) {
+        clearTimeout(pending.timeout);
+        this.pendingReconnections.delete(key);
+        logger.info('Cleared pending reconnection for terminated user', {
+          userId,
+          gameId: pending.gameId,
+        });
+      }
+    }
+
+    logger.info('WebSocket session terminated', {
+      userId,
+      socketId,
+      reason,
+      terminatedCount: 1,
+    });
+
+    return 1;
+  }
+
   public sendToGame(gameId: string, event: keyof ServerToClientEvents, data: any) {
     this.io.to(gameId).emit(event, data);
   }

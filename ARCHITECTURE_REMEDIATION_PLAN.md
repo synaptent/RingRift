@@ -2,6 +2,22 @@
 
 This document outlines a comprehensive, prioritized set of subtasks to address seven identified architectural weaknesses in the RingRift codebase. The weaknesses are organized into five priority tiers based on the synthesis assessment.
 
+> **SSoT alignment:** This remediation plan is a derived roadmap over the following canonical sources:
+>
+> - **Rules semantics SSoT:** Shared TypeScript rules engine under `src/shared/engine/**` (helpers → domain aggregates → turn orchestrator → contracts) plus v2 contract vectors and runners (`tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) and rules docs (`RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`).
+> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/**`, `src/shared/engine/orchestration/types.ts`, and `src/shared/validation/websocketSchemas.ts` for the executable Move/orchestrator/WebSocket lifecycle.
+> - **Operational SSoT:** CI workflows (`.github/workflows/*.yml`), Dockerfiles, docker-compose stacks, monitoring configs under `monitoring/**`, and runtime config/env validation code under `src/server/config/**`, `src/shared/utils/envFlags.ts`, and `scripts/validate-deployment-config.ts`.
+> - **Precedence:** If this plan ever conflicts with those specs, engines, types, or configs, **code + tests win**, and this document must be updated to match them.
+>
+> **Doc Status (2025-11-26): Active (Tiers 1–2 Complete; Tiers 3–5 Planned / In Progress / Partially Historical)**
+>
+> - Tiers 1–2 describe the **canonical helpers + aggregates + orchestrator + contracts** stack and the backend/client adapters over it; these tiers are now **implemented and verified**.
+> - Tiers 3–5 capture **planned or partially implemented** work around async state machines, configuration/test consolidation, and client architecture separation.
+> - Some Tier 3–5 subtasks are aspirational or superseded by later designs; they are kept here for historical context and as a planning backlog, not as a strict implementation contract.
+> - A few subtask rows mention conceptual modules (for example `src/server/game/PlayerInteractionManager.ts` and additional `validators/*` / `mutators/*` files). These were used as design handles and were never created; on conflict, always defer to the concrete modules and paths documented in `RULES_IMPLEMENTATION_MAPPING.md` and `docs/RULES_ENGINE_SURFACE_AUDIT.md`.
+>
+> Readers should treat this document as the **authoritative roadmap for past and future remediation work**, with Tiers 1–2 reflecting the completed orchestrator-centric architecture and Tiers 3–5 serving as structured planning guidance.
+>
 > **🎉 Status Update (2025-11-26)**: Tiers 1 and 2 are now COMPLETE. The canonical turn orchestrator has been implemented with backend and client adapters, and cross-language contract tests achieve 100% parity.
 
 ## Executive Summary
@@ -79,15 +95,15 @@ The client sandbox currently mirrors server game orchestration for phases, terri
 
 ### Subtasks
 
-| Subtask ID | Weakness # | Description                                                                                                                             | Deliverable/Outcome                                                         | Files/Modules in Scope                                                                                                                       | Dependencies               | Complexity | Agent     |
-| ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------- | --------- |
-| T2-W3-A    | 3          | **Audit Backend/Sandbox code duplication** - Catalog all duplicated logic between server GameEngine and ClientSandboxEngine             | Duplication matrix showing line-by-line correspondence and divergence       | `src/server/game/GameEngine.ts` (~3,329 lines), `src/client/sandbox/ClientSandboxEngine.ts` (~2,712 lines), `src/client/sandbox/sandbox*.ts` | T1-W1-A                    | M          | Architect |
-| T2-W3-B    | 3          | **Define shared turn engine interface** - Create a minimal interface that both server and sandbox can implement                         | `TurnEngine` interface in `src/shared/engine/TurnEngine.ts`                 | `src/shared/engine/TurnEngine.ts` (new), `src/shared/engine/types.ts`                                                                        | T2-W3-A, Tier 1 completion | M          | Architect |
-| T2-W3-C    | 3          | **Extract shared turn orchestration** - Create shared turn orchestration module used by both server and sandbox                         | `src/shared/engine/TurnOrchestrator.ts` implementing `TurnEngine` interface | `src/shared/engine/TurnOrchestrator.ts` (new), `src/shared/engine/turnLifecycle.ts`, `src/shared/engine/turnLogic.ts`                        | T2-W3-B                    | XL         | Code      |
-| T2-W3-D    | 3          | **Refactor server GameEngine to use TurnOrchestrator** - Server delegates turn logic to shared orchestrator                             | Server GameEngine reduced to ~1,000 lines, uses `TurnOrchestrator`          | `src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`                                                                             | T2-W3-C                    | XL         | Code      |
-| T2-W3-E    | 3          | **Refactor sandbox to thin adapter** - Replace sandbox rule implementations with calls to TurnOrchestrator                              | ClientSandboxEngine reduced to ~500 lines adapter code                      | `src/client/sandbox/ClientSandboxEngine.ts`, all `src/client/sandbox/sandbox*.ts` files                                                      | T2-W3-C                    | XL         | Code      |
-| T2-W3-F    | 3          | **Document adapter responsibilities** - Clearly document what sandbox adapter handles vs shared engine                                  | Updated README in `src/client/sandbox/` defining UX-only concerns           | `src/client/sandbox/README.md` (new)                                                                                                         | T2-W3-E                    | S          | Architect |
-| T2-W3-G    | 3          | **Update parity tests for adapter compliance** - Refactor parity tests to validate sandbox adapter correctly delegates to shared engine | Simplified parity test suite in `tests/unit/SandboxAdapter.*.test.ts`       | `tests/unit/Backend_vs_Sandbox.*.test.ts` → `tests/unit/SandboxAdapter.*.test.ts`                                                            | T2-W3-E                    | L          | Code      |
+| Subtask ID | Weakness # | Description                                                                                                                             | Deliverable/Outcome                                                                       | Files/Modules in Scope                                                                                                                       | Dependencies               | Complexity | Agent     |
+| ---------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ---------- | --------- |
+| T2-W3-A    | 3          | **Audit Backend/Sandbox code duplication** - Catalog all duplicated logic between server GameEngine and ClientSandboxEngine             | Duplication matrix showing line-by-line correspondence and divergence                     | `src/server/game/GameEngine.ts` (~3,329 lines), `src/client/sandbox/ClientSandboxEngine.ts` (~2,712 lines), `src/client/sandbox/sandbox*.ts` | T1-W1-A                    | M          | Architect |
+| T2-W3-B    | 3          | **Define shared turn engine interface** - Create a minimal interface that both server and sandbox can implement                         | `TurnEngine` interface in `src/shared/engine/orchestration/types.ts`                      | `src/shared/engine/orchestration/types.ts` (new), `src/shared/engine/types.ts`                                                               | T2-W3-A, Tier 1 completion | M          | Architect |
+| T2-W3-C    | 3          | **Extract shared turn orchestration** - Create shared turn orchestration module used by both server and sandbox                         | `src/shared/engine/orchestration/turnOrchestrator.ts` implementing `TurnEngine` interface | `src/shared/engine/orchestration/turnOrchestrator.ts` (new), `src/shared/engine/turnLifecycle.ts`, `src/shared/engine/turnLogic.ts`          | T2-W3-B                    | XL         | Code      |
+| T2-W3-D    | 3          | **Refactor server GameEngine to use TurnOrchestrator** - Server delegates turn logic to shared orchestrator                             | Server GameEngine reduced to ~1,000 lines, uses `TurnOrchestrator`                        | `src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`                                                                             | T2-W3-C                    | XL         | Code      |
+| T2-W3-E    | 3          | **Refactor sandbox to thin adapter** - Replace sandbox rule implementations with calls to TurnOrchestrator                              | ClientSandboxEngine reduced to ~500 lines adapter code                                    | `src/client/sandbox/ClientSandboxEngine.ts`, all `src/client/sandbox/sandbox*.ts` files                                                      | T2-W3-C                    | XL         | Code      |
+| T2-W3-F    | 3          | **Document adapter responsibilities** - Clearly document what sandbox adapter handles vs shared engine                                  | Updated README in `src/client/sandbox/` defining UX-only concerns                         | `src/client/sandbox/README.md` (new)                                                                                                         | T2-W3-E                    | S          | Architect |
+| T2-W3-G    | 3          | **Update parity tests for adapter compliance** - Refactor parity tests to validate sandbox adapter correctly delegates to shared engine | Simplified parity test suite in `tests/unit/SandboxAdapter.*.test.ts`                     | `tests/unit/Backend_vs_Sandbox.*.test.ts` → `tests/unit/SandboxAdapter.*.test.ts`                                                            | T2-W3-E                    | L          | Code      |
 
 ### Completion Criteria
 
@@ -114,6 +130,17 @@ The client sandbox currently mirrors server game orchestration for phases, terri
 
 Game sessions, AI service calls, and WebSocket events form a distributed state machine without explicit transition modeling. This tier elevates these async flows into a documented state machine with proper timeout, cancellation, and error handling patterns.
 
+**Status Notes (2025-11-26): Planned / Partially Implemented / Aspirational**
+
+- **Partially implemented:**
+  - Shared state machines already exist under `src/shared/stateMachines/` (e.g. `gameSession.ts`, `aiRequest.ts`, `choice.ts`, `connection.ts`) and are exercised by tests such as `tests/unit/GameSession.gameSessionStatus.test.ts`, `tests/unit/GameSession.aiRequestState.test.ts`, `tests/unit/WebSocketServer.connectionState.test.ts`, and `tests/unit/AIWebSocketResilience.test.ts`.
+  - AI/WebSocket resilience and timeout behaviour are covered by integration tests like `tests/integration/AIResilience.test.ts` and `tests/unit/AIServiceClient.concurrency.test.ts`.
+- **Planned / aspirational:**
+  - Consolidating these patterns into an explicit, documented state-machine model (with Mermaid diagrams and a single `docs/STATE_MACHINES.md`).
+  - Introducing shared cancellation/timeout utilities where ad-hoc patterns still exist.
+
+Treat the subtasks in this tier as **planning guidance** and a refinement backlog over the existing `src/shared/stateMachines/**` foundations, rather than a claim that no state machines exist today.
+
 **Expected Outcomes:**
 
 - Explicit game session state machine in TypeScript types
@@ -129,9 +156,9 @@ Game sessions, AI service calls, and WebSocket events form a distributed state m
 | T3-W5-B    | 5          | **Define AI request lifecycle states** - Create explicit state types for AI request lifecycle                  | `AIRequestState` discriminated union: `pending`, `in_progress`, `completed`, `failed`, `cancelled`, `timed_out` | `src/server/services/AIServiceClient.ts`, `src/server/game/ai/AIEngine.ts`         | T3-W5-A                 | M          | Architect |
 | T3-W5-C    | 5          | **Implement AI request state machine** - Refactor AIServiceClient to use explicit state transitions            | `AIRequestStateMachine` class managing request lifecycle                                                        | `src/server/services/AIServiceClient.ts`                                           | T3-W5-B                 | L          | Code      |
 | T3-W5-D    | 5          | **Add cancellation token pattern** - Implement cancellation tokens for all async game operations               | `CancellationToken` utility in `src/shared/utils/cancellation.ts`                                               | `src/shared/utils/cancellation.ts` (new), `src/server/services/AIServiceClient.ts` | T3-W5-C                 | M          | Code      |
-| T3-W5-E    | 5          | **Integrate cancellation with WebSocket flows** - Use cancellation tokens for pending choices and reconnection | WebSocket handlers check cancellation before processing                                                         | `src/server/websocket/server.ts`, `src/server/game/PlayerInteractionManager.ts`    | T3-W5-D                 | L          | Code      |
+| T3-W5-E    | 5          | **Integrate cancellation with WebSocket flows** - Use cancellation tokens for pending choices and reconnection | WebSocket handlers check cancellation before processing                                                         | `src/server/websocket/server.ts`, `src/server/game/WebSocketInteractionHandler.ts` | T3-W5-D                 | L          | Code      |
 | T3-W5-F    | 5          | **Explicit timeout modeling** - Replace setTimeout patterns with typed timeout handling                        | `TimedOperation<T>` wrapper with explicit timeout types                                                         | `src/shared/utils/timeout.ts` (new), `src/server/websocket/server.ts`              | T3-W5-D                 | M          | Code      |
-| T3-W5-G    | 5          | **Document state machine transitions** - Create Mermaid diagrams for all state machines                        | `docs/STATE_MACHINES.md` with session, AI request, and WebSocket lifecycle diagrams                             | `docs/STATE_MACHINES.md` (new)                                                     | T3-W5-A through T3-W5-F | S          | Architect |
+| T3-W5-G    | 5          | **Document state machine transitions** - Create Mermaid diagrams for all state machines                        | `docs/STATE_MACHINES.md` with session, AI request, and WebSocket lifecycle diagrams                             | `docs/STATE_MACHINES.md`                                                           | T3-W5-A through T3-W5-F | S          | Architect |
 | T3-W5-H    | 5          | **Create resilience test suite** - Test error recovery, timeouts, and cancellation paths                       | `tests/integration/Resilience.*.test.ts` covering all async failure modes                                       | `tests/integration/AIResilience.test.ts` (extend), new resilience tests            | T3-W5-G                 | L          | Code      |
 
 ### Completion Criteria
@@ -176,17 +203,27 @@ This tier simplifies configuration management by consolidating multiple config e
 | T4-W4-C    | 4          | **Document topology modes** - Create documentation for topology enforcement modes                     | `docs/TOPOLOGY_MODES.md` explaining square8, square19, hexagonal modes                 | `docs/TOPOLOGY_MODES.md` (new)                                                                   | None             | S          | Architect |
 | T4-W4-D    | 4          | **Extract topology as runtime module** - Move topology logic to dedicated module with clear interface | `src/shared/engine/topology/` with `TopologyConfig` and board-specific implementations | `src/shared/engine/core.ts` topology sections, new `src/shared/engine/topology/`                 | T4-W4-C          | M          | Code      |
 | T4-W6-A    | 6          | **Audit test coverage overlaps** - Identify tests covering identical behavior                         | Test overlap matrix document                                                           | `tests/unit/`, `tests/scenarios/`, `tests/integration/`                                          | None             | M          | Architect |
-| T4-W6-B    | 6          | **Define test layering strategy** - Document test layer responsibilities                              | `tests/TEST_STRATEGY.md` defining unit, contract, integration, e2e layers              | `tests/TEST_STRATEGY.md` (new)                                                                   | T4-W6-A          | S          | Architect |
+| T4-W6-B    | 6          | **Define test layering strategy** - Document test layer responsibilities                              | `tests/TEST_LAYERS.md` defining unit, contract, integration, e2e layers                | `tests/TEST_LAYERS.md`                                                                           | T4-W6-A          | S          | Architect |
 | T4-W6-C    | 6          | **Identify redundant tests for removal** - List tests that duplicate coverage                         | Deprecation list for redundant tests                                                   | Analysis of `tests/unit/*.test.ts`                                                               | T4-W6-A, T4-W6-B | M          | Architect |
 | T4-W6-D    | 6          | **Remove or consolidate redundant tests** - Execute test suite trimming                               | Reduced test count, faster CI                                                          | Files identified in T4-W6-C                                                                      | T4-W6-C          | L          | Code      |
 | T4-W6-E    | 6          | **Optimize parity test fixtures** - Reduce fixture size and brittleness                               | Smaller, more focused fixtures in `tests/fixtures/`                                    | `tests/fixtures/rules-parity/`                                                                   | T4-W6-D          | M          | Code      |
 | T4-W6-F    | 6          | **Add test timing CI check** - Fail CI if test suite exceeds time budget                              | GitHub Actions step checking total test time                                           | `.github/workflows/` CI config                                                                   | T4-W6-D          | S          | Code      |
 
+**Status Update (2025-11-28 – Test Archival Pattern):**
+
+- Introduced explicit archival locations for superseded parity/trace suites:
+  - TS: `archive/tests/**` (for example `archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`, `archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts`).
+  - Python: `ai-service/tests/archive/**` (for example `ai-service/tests/archive/archived_test_rules_parity.py`).
+- Archived suites:
+  - Are no longer discovered by Jest/pytest in normal profiles.
+  - Remain available for historical/diagnostic reference.
+  - Are only populated once equivalent or stronger coverage exists via `*.shared.test.ts` + contracts + RulesMatrix/FAQ suites, in line with T4-W6-C/D.
+
 ### Completion Criteria
 
 - [ ] Single config entrypoint at `src/server/config/index.ts`
 - [ ] Topology documented and extracted to dedicated module
-- [ ] Test strategy document defines clear layer responsibilities
+- [x] Test strategy document defines clear layer responsibilities (`tests/TEST_LAYERS.md`)
 - [ ] Redundant tests removed or consolidated (≥20% reduction target)
 - [ ] CI includes test timing check
 
@@ -195,7 +232,7 @@ This tier simplifies configuration management by consolidating multiple config e
 1. Config import check: `grep -r "from.*config" src/server | grep -v "config/index"` returns no hits
 2. Run all tests: `npm test` - passes with reduced runtime
 3. CI timing: Check GitHub Actions run time before/after
-4. Documentation review: `docs/TOPOLOGY_MODES.md` and `tests/TEST_STRATEGY.md` exist
+4. Documentation review: `docs/TOPOLOGY_MODES.md` and `tests/TEST_LAYERS.md` exist
 
 ---
 
@@ -372,13 +409,13 @@ Each tier should be deployable independently with feature flags:
 | `tests/fixtures/contract-vectors/v2/*.json`            | Contract test vectors          | 2    | ✅ Complete (12 vectors)   |
 | `src/shared/utils/cancellation.ts`                     | Cancellation token utility     | 3    | Pending                    |
 | `src/shared/utils/timeout.ts`                          | Typed timeout handling         | 3    | Pending                    |
-| `src/client/domain/GameAPI.ts`                         | Client domain API              | 5    | Pending                    |
-| `src/client/services/GameConnection.ts`                | WebSocket handling             | 5    | Pending                    |
+| `src/client/domain/GameAPI.ts`                         | Client domain API              | 5    | In Progress                |
+| `src/client/services/GameConnection.ts`                | WebSocket handling             | 5    | In Progress                |
 | `src/client/contexts/SandboxContext.tsx`               | Sandbox state                  | 5    | Pending                    |
 | `src/client/adapters/GameViewModels.ts`                | View model adapters            | 5    | Pending                    |
-| `docs/STATE_MACHINES.md`                               | State machine documentation    | 3    | Pending                    |
-| `docs/TOPOLOGY_MODES.md`                               | Topology documentation         | 4    | Pending                    |
-| `tests/TEST_STRATEGY.md`                               | Test layer strategy            | 4    | Pending                    |
+| `docs/STATE_MACHINES.md`                               | State machine documentation    | 3    | ✅ Complete                |
+| `docs/TOPOLOGY_MODES.md`                               | Topology documentation         | 4    | ✅ Complete                |
+| `tests/TEST_LAYERS.md`                                 | Test layer strategy            | 4    | ✅ Complete                |
 
 ---
 

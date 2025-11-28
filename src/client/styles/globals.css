@@ -148,3 +148,359 @@ code {
 .card {
   @apply bg-white rounded-lg shadow-md p-6;
 }
+
+/* ==========================================================================
+   Animation CSS Custom Properties
+   ========================================================================== */
+
+:root {
+  /* Animation colors for ring selection pulse */
+  --ring-color-player1: 220, 38, 38;    /* red-600 RGB */
+  --ring-color-player2: 37, 99, 235;    /* blue-600 RGB */
+  --ring-color-player3: 22, 163, 74;    /* green-600 RGB */
+  --ring-color-player4: 202, 138, 4;    /* yellow-600 RGB */
+  
+  /* Animation position variables (set via JS) */
+  --from-x: 0px;
+  --from-y: 0px;
+  
+  /* Animation timing */
+  --move-duration: 300ms;
+  --selection-duration: 1.5s;
+  --capture-duration: 400ms;
+  --appear-duration: 200ms;
+  --celebrate-duration: 500ms;
+}
+
+/* ==========================================================================
+   Game-Specific Animation Utilities
+   ========================================================================== */
+
+/* Piece movement animation helper */
+.piece-moving {
+  animation: piece-move var(--move-duration) ease-out forwards;
+}
+
+/* Selection states with player-specific colors */
+.selected-piece {
+  animation: selection-pulse var(--selection-duration) ease-in-out infinite;
+}
+
+.selected-piece.player-1 {
+  --ring-color: var(--ring-color-player1);
+}
+
+.selected-piece.player-2 {
+  --ring-color: var(--ring-color-player2);
+}
+
+.selected-piece.player-3 {
+  --ring-color: var(--ring-color-player3);
+}
+
+.selected-piece.player-4 {
+  --ring-color: var(--ring-color-player4);
+}
+
+/* Capture animation */
+.capturing {
+  animation: capture-bounce var(--capture-duration) ease-out;
+}
+
+/* New piece appearance */
+.piece-new {
+  animation: piece-appear var(--appear-duration) ease-out;
+}
+
+/* Victory celebration */
+.celebrating {
+  animation: celebrate var(--celebrate-duration) ease-in-out;
+}
+
+/* Valid move indicator with subtle pulse */
+.valid-move-cell {
+  @apply transition-colors-shadow duration-250;
+  animation: selection-pulse 2s ease-in-out infinite;
+  --ring-color: 34, 197, 94; /* green-500 RGB */
+}
+
+/* Smooth position transitions for drag/drop */
+.position-transition {
+  @apply transition-position duration-300 ease-bounce-out;
+}
+
+/* Hover state improvements */
+.interactive-piece {
+  @apply transition-transform duration-200 ease-out;
+}
+
+.interactive-piece:hover {
+  transform: scale(1.08);
+}
+
+/* Disabled/non-interactive state */
+.non-interactive {
+  @apply pointer-events-none opacity-60;
+}
+
+/* ==========================================================================
+   Victory Modal Celebration Animations
+   ========================================================================== */
+
+/* Modal backdrop fade-in */
+@keyframes modal-fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.modal-backdrop-animate {
+  animation: modal-fade-in 300ms ease-out forwards;
+}
+
+/* Modal content slide-up and scale */
+@keyframes modal-entrance {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-content-animate {
+  animation: modal-entrance 400ms ease-out forwards;
+}
+
+/* Trophy bounce animation */
+@keyframes trophy-bounce {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+  }
+  15% {
+    transform: scale(1.2) rotate(-10deg);
+  }
+  30% {
+    transform: scale(1.15) rotate(10deg);
+  }
+  45% {
+    transform: scale(1.1) rotate(-5deg);
+  }
+  60% {
+    transform: scale(1.05) rotate(5deg);
+  }
+  75% {
+    transform: scale(1.02) rotate(-2deg);
+  }
+}
+
+.trophy-animate {
+  animation: trophy-bounce 800ms ease-out forwards;
+  display: inline-block;
+}
+
+/* Winner text entrance */
+@keyframes winner-text-entrance {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.winner-text-animate {
+  animation: winner-text-entrance 400ms ease-out forwards;
+  animation-delay: 200ms;
+  opacity: 0;
+}
+
+/* Stats section fade-in */
+@keyframes stats-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stats-animate {
+  animation: stats-fade-in 400ms ease-out forwards;
+  animation-delay: 400ms;
+  opacity: 0;
+}
+
+.summary-animate {
+  animation: stats-fade-in 400ms ease-out forwards;
+  animation-delay: 500ms;
+  opacity: 0;
+}
+
+.buttons-animate {
+  animation: stats-fade-in 400ms ease-out forwards;
+  animation-delay: 600ms;
+  opacity: 0;
+}
+
+/* Confetti particle animations */
+@keyframes confetti-fall-1 {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%) rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(400%) rotate(720deg);
+  }
+}
+
+@keyframes confetti-fall-2 {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%) translateX(-20px) rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(450%) translateX(30px) rotate(-540deg);
+  }
+}
+
+@keyframes confetti-fall-3 {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%) translateX(10px) rotate(0deg);
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(500%) translateX(-40px) rotate(900deg);
+  }
+}
+
+.confetti-particle {
+  position: absolute;
+  font-size: 1.5rem;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.confetti-1 { animation: confetti-fall-1 3s ease-out forwards; left: 10%; top: 0; animation-delay: 0ms; }
+.confetti-2 { animation: confetti-fall-2 3.2s ease-out forwards; left: 25%; top: 0; animation-delay: 100ms; }
+.confetti-3 { animation: confetti-fall-3 2.8s ease-out forwards; left: 40%; top: 0; animation-delay: 200ms; }
+.confetti-4 { animation: confetti-fall-1 3.5s ease-out forwards; left: 55%; top: 0; animation-delay: 150ms; }
+.confetti-5 { animation: confetti-fall-2 3s ease-out forwards; left: 70%; top: 0; animation-delay: 50ms; }
+.confetti-6 { animation: confetti-fall-3 3.3s ease-out forwards; left: 85%; top: 0; animation-delay: 250ms; }
+.confetti-7 { animation: confetti-fall-1 2.9s ease-out forwards; left: 15%; top: 0; animation-delay: 300ms; }
+.confetti-8 { animation: confetti-fall-2 3.1s ease-out forwards; left: 60%; top: 0; animation-delay: 350ms; }
+
+/* Victory shimmer gradient effect */
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+.victory-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 215, 0, 0.1) 25%,
+    rgba(255, 215, 0, 0.2) 50%,
+    rgba(255, 215, 0, 0.1) 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Glow effect for winner */
+@keyframes winner-glow {
+  0%, 100% {
+    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+  50% {
+    text-shadow: 0 0 20px currentColor, 0 0 40px currentColor, 0 0 60px currentColor;
+  }
+}
+
+.winner-glow {
+  animation: winner-glow 2s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   Accessibility Utilities
+   ========================================================================== */
+
+/* Screen reader only - hides visually but keeps accessible to screen readers */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus indicator for board cells - amber color distinct from selection */
+.board-cell-focused {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.3);
+}
+
+/* Enhanced focus visibility for buttons and interactive elements */
+button:focus-visible,
+[role="gridcell"]:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+/* High contrast focus mode support */
+@media (prefers-contrast: high) {
+  button:focus-visible,
+  [role="gridcell"]:focus-visible {
+    outline: 3px solid currentColor;
+    outline-offset: 3px;
+  }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  .valid-move-cell,
+  .selected-piece,
+  .piece-moving,
+  .capturing,
+  .piece-new,
+  .celebrating {
+    animation: none;
+  }
+  
+  .position-transition,
+  .interactive-piece {
+    transition: none;
+  }
+}

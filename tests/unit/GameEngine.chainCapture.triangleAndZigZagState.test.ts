@@ -9,9 +9,8 @@ import {
   TimeControl,
   positionToString,
 } from '../../src/shared/types/game';
-import { getCaptureOptionsFromPosition as getCaptureOptionsFromPositionShared } from '../../src/server/game/rules/captureChainEngine';
+import { getChainCaptureContinuationInfo } from '../../src/shared/engine/aggregates/CaptureAggregate';
 import { BoardManager } from '../../src/server/game/BoardManager';
-import { RuleEngine } from '../../src/server/game/RuleEngine';
 
 describe('GameEngine chain-capture state and enumeration (triangle & zig-zag scenarios)', () => {
   const boardType: BoardType = 'square8';
@@ -46,14 +45,12 @@ describe('GameEngine chain-capture state and enumeration (triangle & zig-zag sce
     engine: GameEngine;
     gameState: GameState;
     boardManager: BoardManager;
-    ruleEngine: RuleEngine;
   } {
     const engine = new GameEngine('triangle-zigzag', boardType, basePlayers, timeControl, false);
     const engineAny: any = engine;
     const gameState: GameState = engineAny.gameState as GameState;
     const boardManager: BoardManager = engineAny.boardManager as BoardManager;
-    const ruleEngine: RuleEngine = engineAny.ruleEngine as RuleEngine;
-    return { engine, gameState, boardManager, ruleEngine };
+    return { engine, gameState, boardManager };
   }
 
   function setStack(
@@ -75,7 +72,7 @@ describe('GameEngine chain-capture state and enumeration (triangle & zig-zag sce
   }
 
   test('triangle loop: chainCaptureState and enumerator after first segment', async () => {
-    const { engine, gameState, boardManager, ruleEngine } = createEngine();
+    const { engine, gameState, boardManager } = createEngine();
 
     // Initial triangle setup (mirrors ComplexChainCaptures + rulesMatrix):
     // P1 at (3,3) H1
@@ -147,16 +144,11 @@ describe('GameEngine chain-capture state and enumeration (triangle & zig-zag sce
     expect(stackAt43.controllingPlayer).toBe(2);
     expect(stackAt43.stackHeight).toBe(1);
 
-    // Directly query the shared enumerator from the chain position, using the
-    // same deps that GameEngine.getCaptureOptionsFromPositionShared uses.
-    const followUps = getCaptureOptionsFromPositionShared(
-      chainState!.currentPosition,
-      1,
+    // Directly query the shared enumerator from the chain position
+    const { availableContinuations: followUps } = getChainCaptureContinuationInfo(
       stateAfter,
-      {
-        boardManager,
-        ruleEngine,
-      }
+      1,
+      chainState!.currentPosition
     );
 
     expect(followUps.length).toBeGreaterThan(0);
@@ -179,7 +171,7 @@ describe('GameEngine chain-capture state and enumeration (triangle & zig-zag sce
   });
 
   test('zig-zag chain: chainCaptureState and enumerator after first segment', async () => {
-    const { engine, gameState, boardManager, ruleEngine } = createEngine();
+    const { engine, gameState, boardManager } = createEngine();
 
     // Zig-zag setup (mirrors ComplexChainCaptures.Multi_Directional_ZigZag_Chain):
     // P1 at (0,0) H1
@@ -250,14 +242,10 @@ describe('GameEngine chain-capture state and enumeration (triangle & zig-zag sce
     expect(stackAt43.stackHeight).toBe(1);
 
     // Enumerate follow-up segments from (2,2).
-    const followUps = getCaptureOptionsFromPositionShared(
-      chainState!.currentPosition,
-      1,
+    const { availableContinuations: followUps } = getChainCaptureContinuationInfo(
       stateAfter,
-      {
-        boardManager,
-        ruleEngine,
-      }
+      1,
+      chainState!.currentPosition
     );
 
     expect(followUps.length).toBeGreaterThan(0);

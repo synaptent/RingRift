@@ -3,6 +3,53 @@ from app.models import GameState, Move, BoardType, GameStatus
 from app.game_engine import GameEngine
 
 
+# Canonical default evaluation configuration for heuristic
+# training (GA, CMA-ES). This configuration is intended for
+# multi-board, multi-start evaluation runs using the CMA-ES
+# and GA heuristic scripts under ``ai-service/scripts``.
+# It serves as a single source of truth for default board
+# sets and evaluation kwargs.
+DEFAULT_TRAINING_EVAL_CONFIG: Dict[str, Any] = {
+    "boards": [
+        BoardType.SQUARE8,
+        BoardType.SQUARE19,
+        BoardType.HEXAGONAL,
+    ],
+    "eval_mode": "multi-start",
+    "state_pool_id": "v1",
+    "games_per_eval": 16,
+    "max_moves": 200,
+    "eval_randomness": 0.0,
+    # RNG seed is supplied by calling code; see `build_training_eval_kwargs`.
+}
+
+
+def build_training_eval_kwargs(
+    games_per_eval: Optional[int] = None,
+    eval_randomness: Optional[float] = None,
+    seed: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Build canonical kwargs for heuristic training evaluation.
+
+    This helper centralises defaults for multi-board, multi-start
+    heuristic evaluation, returning a dict that can be splatted into
+    calls such as ``evaluate_fitness_over_boards(...)`` and
+    higher-level GA / CMA-ES harnesses.
+
+    It is not a mandatory API; scripts may construct kwargs manually,
+    but should keep semantics aligned with DEFAULT_TRAINING_EVAL_CONFIG
+    to ensure comparable results across runs.
+    """
+    cfg: Dict[str, Any] = dict(DEFAULT_TRAINING_EVAL_CONFIG)
+    if games_per_eval is not None:
+        cfg["games_per_eval"] = games_per_eval
+    if eval_randomness is not None:
+        cfg["eval_randomness"] = eval_randomness
+    # Always thread the seed explicitly so callers can control reproducibility.
+    cfg["seed"] = seed
+    return cfg
+
+
 class RingRiftEnv:
     """RL-style environment wrapper for RingRift.
 

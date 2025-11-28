@@ -1,3 +1,15 @@
+> **Doc Status (2025-11-28): Active (supplementary, derived)**  
+> **Role:** Deep-dive analysis of rules interactions and edge cases across hosts (backend, sandbox, Python), sitting on top of the canonical rules semantics and implementation mapping.
+>
+> **SSoT alignment:** This report is a derived analytical view over the **Rules/invariants semantics SSoT**:
+>
+> - Canonical rules docs: `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `ringrift_compact_rules.md`.
+> - Shared TypeScript rules engine helpers, aggregates, and orchestrator under `src/shared/engine/**` plus v2 contract vectors under `tests/fixtures/contract-vectors/v2/**` and their TS/Python runners.
+> - Derived implementation and architecture docs: `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`, `docs/MODULE_RESPONSIBILITIES.md`, and `docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md`.
+> - Historical parity/trace harnesses: selected superseded suites are archived under `archive/tests/**` (TS) and `ai-service/tests/archive/**` (Python) for diagnostic reference only; semantics are always taken from the shared engine, contracts, and the active `*.shared.test.ts` + RulesMatrix/FAQ suites.
+>
+> **Precedence:** This document is **not** a semantics SSoT. If any description here conflicts with the shared TS engine/orchestrator, contract vectors, or their tests (including Python parity/invariant suites), **code + tests + canonical docs win** and this report must be updated.
+
 # RingRift Rules Consistency & Edge-Case Report
 
 ## 1. Overview & Methodology
@@ -19,7 +31,9 @@ Code behaviour is inferred primarily from the shared engine and orchestration:
 - Territory via [`TypeScript.territoryDetection`](src/shared/engine/territoryDetection.ts:36), [`TypeScript.territoryProcessing`](src/shared/engine/territoryProcessing.ts:1), and [`TypeScript.territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:1).
 - Victory / stalemate via [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45).
 - Board invariants and repairs via [`TypeScript.BoardManager`](src/server/game/BoardManager.ts:94).
-- Sandbox turn orchestration via [`TypeScript.sandboxTurnEngine`](src/client/sandbox/sandboxTurnEngine.ts:164).
+- Sandbox turn orchestration via [`TypeScript.ClientSandboxEngine` turn helpers](src/client/sandbox/ClientSandboxEngine.ts:1606) composed with [`TypeScript.turnLogic.advanceTurnAndPhase`](src/shared/engine/turnLogic.ts:135).
+
+> **Note on legacy module references:** Throughout this report, some references point to historical modules such as `src/client/sandbox/sandboxTurnEngine.ts`, `sandboxMovementEngine.ts`, `sandboxLinesEngine.ts`, `sandboxTerritoryEngine.ts`, or backend helpers under `src/server/game/rules/*.ts` (e.g. `captureChainEngine.ts`). These files have been removed as part of the shared-engine consolidation and now exist only as historical anchors; their responsibilities live in the shared TS engine/orchestrator plus `ClientSandboxEngine.ts`, `SandboxOrchestratorAdapter.ts`, `GameEngine.ts`, `TurnEngineAdapter.ts`, and the Python rules/AI adapters described in the current architecture docs.
 
 The main interaction domains covered are:
 
@@ -47,7 +61,7 @@ Each subsection lists:
 ### 2.1 Turn / Phase / Forced Elimination Interactions
 
 **RR‑CANON rules:** `R070–R072`, `R080–R082`, `R100`, `R170–R173` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:181)).  
-**Key implementations:** [`TypeScript.turnLogic.advanceTurnAndPhase()`](src/shared/engine/turnLogic.ts:135), [`TypeScript.advanceGameForCurrentPlayer`](src/server/game/turn/TurnEngine.ts:91), [`TypeScript.RuleEngine`](src/server/game/RuleEngine.ts:752), [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:164), [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228), Python strict invariants (`ai-service/tests/invariants/**`).
+**Key implementations:** [`TypeScript.turnLogic.advanceTurnAndPhase()`](src/shared/engine/turnLogic.ts:135), [`TypeScript.advanceGameForCurrentPlayer`](src/server/game/turn/TurnEngine.ts:91), [`TypeScript.RuleEngine`](src/server/game/RuleEngine.ts:752), [`TypeScript.ClientSandboxEngine.startTurnForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1606), [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1715), Python strict invariants (`ai-service/tests/invariants/**`).
 
 #### 2.1.1 Intended interaction
 
@@ -66,9 +80,10 @@ Each subsection lists:
   - Forced elimination eligibility uses delegates `hasAnyPlacement`, `hasAnyMovement`, `hasAnyCapture`. Backend implementations in [`TypeScript.TurnEngine.hasValidPlacements`](src/server/game/turn/TurnEngine.ts:208) and siblings query [`TypeScript.RuleEngine.getValidMoves`](src/server/game/RuleEngine.ts:752), so “no actions” is defined in terms of actual move enumeration, including `skip_placement`.
   - If a player has stacks but `hasAnyPlacement == hasAnyMovement == hasAnyCapture == false`, `advanceTurnAndPhase` calls `applyForcedElimination`, which in backend is [`TypeScript.turn.processForcedElimination()`](src/server/game/turn/TurnEngine.ts:286) eliminating an entire cap from a chosen stack and then re‑running victory checks. This is consistent with [`RR‑CANON‑R100`](RULES_CANONICAL_SPEC.md:269).
   - Line and territory processing are always entered **after** movement / capture (including chains) and always completed **before** turn rotation. Forced elimination is only considered after `territory_processing`, so pending lines/regions never block it.
-- **Sandbox**
-  - Sandbox phase advancement uses the same shared sequencer via [`TypeScript.sandboxTurnEngine.advanceTurnAndPhaseForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:81) but wraps it with start‑of‑turn helpers.
-  - At the beginning of a turn, [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:164) calls [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228), which:
+- **Sandbox (historical path; legacy `sandboxTurnEngine`, now removed)**
+  - In pre‑consolidation builds, sandbox phase advancement used the shared sequencer via [`TypeScript.sandboxTurnEngine.advanceTurnAndPhaseForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:81) but wrapped it with start‑of‑turn helpers.
+  - At the beginning of a turn, [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:164) called [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228), which:
+  - In the current architecture, the same semantics are implemented by [`TypeScript.ClientSandboxEngine` turn helpers](src/client/sandbox/ClientSandboxEngine.ts:1606) composed with the shared [`TypeScript.turnLogic.advanceTurnAndPhase`](src/shared/engine/turnLogic.ts:135); sandbox no longer uses a separate consolidated `sandboxTurnEngine.ts` module.
     - Computes controlled stacks and approximated ring cap usage.
     - Uses `hooks.hasAnyLegalMoveOrCaptureFrom` and `hooks.enumerateLegalRingPlacements` (both wired back to shared helpers) to decide whether any move/capture/placement exists.
     - If no placements/movements/captures exist but stacks do, calls `forceEliminateCap` and immediately advances to the next player.
@@ -267,7 +282,7 @@ This section answers the five explicitly requested questions, with cross‑refer
 - **RR‑CANON:** Ring counts and caps (`R020–R023`, `R060–R062`, `R080–R082`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61).
 - **Code:** `ringsPerPlayer` cap enforced using **total height of stacks controlled by the player**, not the count of rings of that colour, in:
   - Backend placement validator and enumeration (see [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755)).
-  - Sandbox `hasAnyPlacement` and forced‑elimination gating via [`TypeScript.sandboxTurnEngine`](src/client/sandbox/sandboxTurnEngine.ts:122,278).
+  - Sandbox `hasAnyPlacement` and forced‑elimination gating via [`TypeScript.ClientSandboxEngine` turn helpers](src/client/sandbox/ClientSandboxEngine.ts:1606).
 - **Assessment:**
   - The implementation counts **all rings in stacks whose top ring the player controls**, including buried opponent rings, when enforcing a per‑player cap based on `BOARD_CONFIGS[boardType].ringsPerPlayer`.
   - This is a **conservative approximation**: it can only **forbid** some placements that would be legal under a strict “by‑colour rings on board” reading; it cannot create extra rings or allow over‑cap placements.
@@ -281,7 +296,7 @@ This section answers the five explicitly requested questions, with cross‑refer
 ### 3.3 Sandbox phase / skip semantics vs backend (`CCE‑003`)
 
 - **RR‑CANON:** Placement optionality and turn phases (`R070–R072`, `R080–R082`) in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:181).
-- **Code:** Backend `skip_placement` moves in [`TypeScript.RuleEngine`](src/server/game/RuleEngine.ts:116) and backend turn logic, vs sandbox heuristics in [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:164) and [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228).
+- **Code:** Backend `skip_placement` moves in [`TypeScript.RuleEngine`](src/server/game/RuleEngine.ts:116) and backend turn logic, vs sandbox heuristics in [`TypeScript.ClientSandboxEngine.startTurnForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1606) and [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1715).
 - **Assessment:**
   - Backend expresses optional placement explicitly via `skip_placement` moves; move logs and AI policies see a clear distinction between “chose not to place” and “could not place”.
   - Sandbox never surfaces `skip_placement` as a Move; it:
@@ -397,7 +412,7 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 ### CCE‑004 – Shared `captureChainHelpers` unimplemented while hosts are live
 
 - **RR‑CANON rules:** `R101–R103` ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:281)).
-- **Code / tests:** [`TypeScript.captureChainHelpers`](src/shared/engine/captureChainHelpers.ts:134), backend [`TypeScript.captureChainEngine`](src/server/game/rules/captureChainEngine.ts:45), sandbox [`TypeScript.sandboxMovementEngine.performCaptureChainSandbox`](src/client/sandbox/sandboxMovementEngine.ts:400), FAQ Q15 and cyclic capture tests in [`tests/scenarios/FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts:1) and `tests/unit/GameEngine.cyclicCapture.*.test.ts`.
+- **Code / tests:** [`TypeScript.captureChainHelpers`](src/shared/engine/captureChainHelpers.ts:134), backend [`TypeScript.captureChainEngine`](src/server/game/rules/captureChainEngine.ts:45), sandbox [`TypeScript.ClientSandboxEngine.performCaptureChainInternal`](src/client/sandbox/ClientSandboxEngine.ts:2229), FAQ Q15 and cyclic capture tests in [`tests/scenarios/FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts:1) and `tests/unit/GameEngine.cyclicCapture.*.test.ts`.
 - **Interaction / edge case:** Complex capture chains (180° reversal, revisiting stacks, long cycles) where refactoring to shared helpers could subtly change continuation sets or mandatory‑continuation semantics.
 - **Intended behaviour (RR‑CANON):** Chains must continue while any legal capture exists; direction changes and revisiting stacks are allowed as long as each segment is legal; lines and territory are deferred until the chain ends.
 - **Observed behaviour:** Current engines obey these rules at the GameEngine / sandbox level. The shared `enumerateChainCaptureSegments` helper is a stub that throws, and is **not** used in production flows yet.

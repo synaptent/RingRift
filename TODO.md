@@ -1,6 +1,11 @@
 # RingRift TODO / Task Tracker
 
-**Last Updated:** November 26, 2025
+> **Doc Status (2025-11-28): Active (execution/backlog tracker)**
+>
+> - Canonical high-level task/backlog tracker for near- and mid-term work.
+> - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+
+**Last Updated:** November 28, 2025
 
 This file is the canonical high-level task tracker for the project.
 When it disagrees with older planning docs (for example files under
@@ -186,9 +191,8 @@ Planned work:
   - [ ] Importing the same extended `Move` types.
   - [ ] Mirroring the new interactive phases and decision-move handling in
         the sandbox (e.g., chain capture, line processing, territory
-        processing, elimination) using the existing sandbox engines
-        (`sandboxMovementEngine`, `sandboxLinesEngine`, `sandboxTerritoryEngine`,
-        `sandboxElimination`).
+        processing, elimination) using the existing sandbox helpers
+        (`sandboxMovement.ts`, `sandboxElimination`).
   - [ ] Updating `sandboxAI` to select among these richer `Move` sets,
         staying in lockstep with backend `getValidMoves`.
 - [ ] Align sandbox Move/phase handling with backend:
@@ -335,16 +339,16 @@ Post-remediation work to fully enable the orchestrator in production:
 
 ### P1.2 – Game HUD & GamePage UX
 
-- [ ] Enhance [`GameHUD`](src/client/components/GameHUD.tsx) to show:
+- [x] Enhance [`GameHUD`](src/client/components/GameHUD.tsx) to show:
   - Current player and phase.
   - Per-player ring counts (in hand / on board / eliminated).
   - Territory spaces per player.
   - Basic timer readout derived from `timeControl` and `timeRemaining`.
 - [ ] Ensure the same HUD behaviour is shared between backend games
       (`/game/:gameId`) and sandbox games (`/sandbox`).
-- [ ] Add a minimal per-game event log in
+- [x] Add a minimal per-game event log in
       [`GamePage`](src/client/pages/GamePage.tsx) for moves, PlayerChoices,
-      and `game_over` events.
+      and `game_over` events (using `GameEventLog` + system events).
 
 ### P1.3 – Lobby, Spectators, and Chat
 
@@ -353,8 +357,29 @@ Post-remediation work to fully enable the orchestrator in production:
       filters, and navigation.
 - [x] Implement a basic spectator UI (read-only board + HUD) that uses
       the same `GameContext` as players but disables input.
-- [ ] Wire a simple in-game chat panel to the existing `chat_message`
-      events in the WebSocket server.
+- [x] Wire a simple in-game chat panel to the existing `chat_message`
+      events in the WebSocket server (see `GamePage` + `GameContext` chat tests).
+
+### P1.4 – Client Component & View-Model Unit Tests
+
+> **Context:** Pass 15 identified client component unit testing as the primary remaining weakness (~2.5/5), despite strong E2E coverage. The goal here is to raise confidence for key UI surfaces without duplicating full end-to-end flows.
+
+- [x] Add comprehensive unit tests for the pure view-model adapters in
+      [`gameViewModels.ts`](src/client/adapters/gameViewModels.ts)  
+       (see `tests/unit/adapters/gameViewModels.test.ts`).
+- [ ] Add focused React tests for complex HUD/log components:
+  - [ ] [`GameHUD.tsx`](src/client/components/GameHUD.tsx) – verify ring/territory stats, timers, spectator badge, connection status.
+  - [x] [`GameEventLog.tsx`](src/client/components/GameEventLog.tsx) – verify rendering of moves, system events, and victory messages from the view model.
+  - [x] [`GameHistoryPanel.tsx`](src/client/components/GameHistoryPanel.tsx) – history list and selection behaviour.
+- [ ] Add light-weight tests for supporting components:
+  - [ ] [`AIDebugView.tsx`](src/client/components/AIDebugView.tsx).
+  - [ ] [`LoadingSpinner.tsx`](src/client/components/LoadingSpinner.tsx) and small UI primitives under `src/client/components/ui/`.
+- [ ] Add targeted unit tests for key pages that currently rely primarily on E2E coverage:
+  - [ ] [`LobbyPage.tsx`](src/client/pages/LobbyPage.tsx) – lobby filters, game list, and navigation wiring.
+  - [ ] [`GamePage.tsx`](src/client/pages/GamePage.tsx) – HUD + event log sidebar wiring (including `GameEventLog` and chat panel toggles).
+
+For the full gap analysis, see **Focus Area 5: Test Coverage Gaps** in
+[`docs/PASS15_ASSESSMENT_REPORT.md`](docs/PASS15_ASSESSMENT_REPORT.md).
 
 ## Phase 4 – Advanced AI (P2)
 
@@ -451,9 +476,8 @@ latest project assessment. They should be kept in sync with
   - [ ] In `WebSocketServer` + `WebSocketInteractionHandler`, ensure that
         reconnecting clients re-emit `join_game`, rehydrate state from the
         DB + `GameEngine`, and clear any stale choices.
-  - [ ] Add focused Jest integration tests for reconnect flows and
-        `game_over` handling in `tests/unit/` and cross-link from
-        `tests/README.md`.
+  - [x] Add focused Jest coverage for the connection state machine and reconnection window in `WebSocketServer.connectionState.test.ts`.
+  - [ ] Extend coverage with integration-style reconnect + `game_over` flows and cross-link the relevant suites from `tests/README.md`.
 - [x] Clarify and enforce spectator semantics:
   - [x] Ensure spectators are always read-only at the server level.
   - [x] Provide a dedicated spectator view in the client (using
@@ -558,8 +582,9 @@ reflected by checking off the above track items.
 - [ ] **Week 4 – Persistence/Polish & Buffer (Track 5 + cleanup)**
   - [ ] Introduce a minimal move history/replay panel in GamePage or a
         dedicated route.
-  - [ ] Update docs (`CURRENT_STATE_ASSESSMENT`, `IMPLEMENTATION_STATUS`,
-        `TODO`, `STRATEGIC_ROADMAP`) to reflect new coverage and UX.
+  - [ ] Update docs (`CURRENT_STATE_ASSESSMENT`, `TODO`,
+        `STRATEGIC_ROADMAP`, `DOCUMENTATION_INDEX`) to reflect new coverage
+        and UX.
   - [ ] Use remaining time to close lingering P0 items and fix UX
         papercuts discovered via playtesting.
 

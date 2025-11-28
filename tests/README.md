@@ -1,5 +1,13 @@
 # RingRift Testing Guide
 
+> **Doc Status (2025-11-27): Active (test meta-doc, non-semantics)**
+>
+> **Role:** High-level guide to the RingRift TS+Python test suites: how they are structured, how to run them in different profiles (core/diagnostics/CI), and where to start when adding or debugging tests. This doc is a **test/meta reference only** – it explains how tests are organised and which commands/environments to use; it does **not** define game rules or lifecycle semantics.
+>
+> **Not a semantics SSoT:** Canonical rules and lifecycle semantics are owned by the shared TypeScript rules engine and contracts/vectors (`src/shared/engine/**`, `src/shared/engine/contracts/**`, `tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) together with the written rules and lifecycle docs (`RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `docs/CANONICAL_ENGINE_API.md`). When this guide refers to “canonical semantics” or “authoritative tests”, it is pointing back to those SSoTs and to the rules-level suites that exercise them.
+>
+> **Related docs:** `tests/TEST_LAYERS.md`, `tests/TEST_SUITE_PARITY_PLAN.md`, `docs/PARITY_SEED_TRIAGE.md`, `RULES_SCENARIO_MATRIX.md`, `RULES_ENGINE_ARCHITECTURE.md`, `AI_ARCHITECTURE.md`, and `DOCUMENTATION_INDEX.md`.
+
 ## Overview
 
 This directory contains the comprehensive testing framework for RingRift. The testing infrastructure uses **Jest** with **TypeScript** support via ts-jest.
@@ -11,15 +19,34 @@ tests/
 ├── README.md                 # This file - testing documentation
 ├── setup.ts                  # Jest setup - runs AFTER test framework
 ├── setup-env.ts              # Jest env setup (dotenv, timers, etc.)
+├── setup-jsdom.ts            # JSDOM-specific setup for React tests
 ├── test-environment.js       # Custom Jest environment (fixes localStorage)
+├── jest-environment-jsdom.js # Custom JSDOM environment
+├── TEST_LAYERS.md            # Test layer documentation
+├── TEST_SUITE_PARITY_PLAN.md # Parity test planning
+├── __mocks__/                # Jest module mocks
+├── contracts/                # Contract test runners (TS side)
+├── e2e/                      # End-to-end Playwright tests
+├── fixtures/                 # Test fixtures and contract vectors
+│   └── contract-vectors/v2/  # Contract test vectors (placement, movement, capture, etc.)
+├── integration/              # Integration tests (full game flows, WebSocket)
+├── scenarios/                # Rules/FAQ scenario tests
+│   ├── FAQ_*.test.ts         # FAQ question coverage (Q1-Q24)
+│   └── RulesMatrix.*.test.ts # Rules section coverage
+├── scripts/                  # Test helper scripts
 ├── utils/
-│   └── fixtures.ts          # Test utilities and fixture creators
+│   ├── fixtures.ts           # Test utilities and fixture creators
+│   ├── traces.ts             # GameTrace utilities for parity tests
+│   ├── prismaTestUtils.ts    # Prisma stub for route tests
+│   └── ...                   # Additional test utilities
 └── unit/
     ├── BoardManager.*.test.ts                 # Board geometry, lines, territory
     ├── GameEngine.*.test.ts                   # Core rules, chain capture, choices
     ├── ClientSandboxEngine.*.test.ts          # Client-local sandbox engine: movement, captures, lines, territory, victory
     ├── AIEngine.*.test.ts                     # AI service client + heuristics
     ├── WebSocket*.test.ts                     # WebSocket & PlayerInteractionManager flows
+    ├── *Parity*.test.ts                       # Backend ↔ Sandbox parity tests
+    ├── *.shared.test.ts                       # Shared engine helper tests
     └── ...                                    # Additional focused rule/interaction suites
 ```
 
@@ -30,18 +57,28 @@ tests/
 The test suite is split into two profiles to ensure CI reliability:
 
 #### Core Profile (`npm run test:core`)
+
 - **Purpose**: Fast, reliable tests for PR gates
 - **Runs**: All unit and integration tests EXCEPT heavy suites
 - **Duration**: Should complete in under 5 minutes
 - **Used by**: `npm run test:ci`
 
 #### Diagnostics Profile (`npm run test:diagnostics`)
+
 - **Purpose**: Heavy combinatorial/enumeration suites
 - **Runs**: Only the heavy diagnostic suites
 - **Duration**: May take 10+ minutes and require increased heap size
 - **Used by**: Nightly CI runs, manual debugging
 
+> **Orchestrator defaults:** Unless explicitly overridden, both profiles are
+> expected to run with `ORCHESTRATOR_ADAPTER_ENABLED=true` and
+> `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, treating the shared turn orchestrator
+> as the default rules path. Legacy/SHADOW modes and any tests that require
+> `ORCHESTRATOR_ADAPTER_ENABLED=false` should be considered **diagnostic
+> only** and are documented in `tests/TEST_LAYERS.md` / `tests/TEST_SUITE_PARITY_PLAN.md`.
+
 #### Heavy Suites (excluded from core)
+
 The following suites are excluded from `test:core` due to OOM/crash issues:
 
 1. **`captureSequenceEnumeration.test.ts`**
@@ -53,6 +90,7 @@ The following suites are excluded from `test:core` due to OOM/crash issues:
    - Causes: Node heap OOM (`Allocation failed - JavaScript heap out of memory`)
 
 To run diagnostics with increased heap:
+
 ```bash
 NODE_OPTIONS="--max-old-space-size=8192" npm run test:diagnostics
 ```
@@ -150,11 +188,12 @@ These suites ensure that backend `GameEngine`/`RuleEngine`, `ClientSandboxEngine
 and Python rules behave identically for a given ruleset:
 
 - **Movement / capture / placement**
-  - [`MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts:1)
-  - [`PlacementParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/PlacementParity.RuleEngine_vs_Sandbox.test.ts:1)
-  - [`movementReachabilityParity.test.ts`](tests/unit/movementReachabilityParity.test.ts:1)
-  - [`reachabilityParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/reachabilityParity.RuleEngine_vs_Sandbox.test.ts:1)
-  - [`ClientSandboxEngine.moveParity.test.ts`](tests/unit/ClientSandboxEngine.moveParity.test.ts:1)
+  - [`RuleEngine.movementCapture.test.ts`](tests/unit/RuleEngine.movementCapture.test.ts:1) – backend adapter alignment with shared movement/capture helpers.
+  - [`archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts`](archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1) – **archived** seeded trace parity harness for movement/capture/placement between backend and sandbox (**diagnostic only; non‑canonical and not a CI gate**).
+  - [`Backend_vs_Sandbox.eliminationTrace.test.ts`](tests/unit/Backend_vs_Sandbox.eliminationTrace.test.ts:1) – elimination and capture/placement consequence traces.
+  - [`Backend_vs_Sandbox.seed5.internalStateParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.internalStateParity.test.ts:1), [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.checkpoints.test.ts:1) – deep internal-state parity for a canonical seed.
+  - [`Backend_vs_Sandbox.seed1.snapshotParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed1.snapshotParity.test.ts:1), [`Backend_vs_Sandbox.seed18.snapshotParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed18.snapshotParity.test.ts:1) – snapshot‑level regression nets.
+  - [`MarkerPath.GameEngine_vs_Sandbox.test.ts`](tests/unit/MarkerPath.GameEngine_vs_Sandbox.test.ts:1), [`CaptureMarker.GameEngine_vs_Sandbox.test.ts`](tests/unit/CaptureMarker.GameEngine_vs_Sandbox.test.ts:1) – marker‑path and capture/elimination parity harnesses.
 - **Territory & borders**
   - Board‑level region‑detection geometry:
     - [`BoardManager.territoryDisconnection.square8.test.ts`](tests/unit/BoardManager.territoryDisconnection.square8.test.ts:1)
@@ -167,7 +206,7 @@ and Python rules behave identically for a given ruleset:
     - [`TerritoryBorders.Backend_vs_Sandbox.test.ts`](tests/unit/TerritoryBorders.Backend_vs_Sandbox.test.ts:1)
     - [`TerritoryCore.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts:1)
     - [`TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts:1)
-    - [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1) – **diagnostic 19×19 parity harness**; canonical territory decision semantics now live in [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) and the RulesMatrix/FAQ Q23 suites.
+    - [`archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`](archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1) – **archived diagnostic 19×19 parity harness**; canonical territory decision semantics now live in [`territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts:1) and the RulesMatrix/FAQ Q23 suites.
     - [`TerritoryDecision.seed5Move45.parity.test.ts`](tests/unit/TerritoryDecision.seed5Move45.parity.test.ts:1),
       [`TerritoryDetection.seed5Move45.parity.test.ts`](tests/unit/TerritoryDetection.seed5Move45.parity.test.ts:1),
       [`TerritoryDecisions.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryDecisions.GameEngine_vs_Sandbox.test.ts:1) – seed‑based diagnostics around specific territory scenarios (**diagnostic, may be skipped in CI**).
@@ -175,7 +214,7 @@ and Python rules behave identically for a given ruleset:
   - [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1)
 - **Trace/fixture parity (shared engine vs hosts, TS vs Python)**
   - [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1) – shared `GameEngine` vs backend.
-  - [`Backend_vs_Sandbox.traceParity.test.ts`](tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1) – curated seeded trace parity between backend and sandbox.
+  - [`archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts`](archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1) – **archived** seeded trace parity harness between backend and sandbox (**diagnostic only; semantics anchored in shared‑engine rules tests and contract vectors**).
   - [`Sandbox_vs_Backend.aiRngParity.test.ts`](tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1),
     [`Sandbox_vs_Backend.aiRngFullParity.test.ts`](tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts:1) – RNG‑driven AI parity harnesses (**diagnostic; `Sandbox_vs_Backend.aiRngFullParity` is `describe.skip` by default and not a CI gate**).
   - [`Python_vs_TS.traceParity.test.ts`](tests/unit/Python_vs_TS.traceParity.test.ts:1) plus the Python‑side parity suites under
@@ -608,7 +647,7 @@ To keep a rapidly growing suite coherent (TS backend, client sandbox, and Python
     - Generate sandbox AI traces (`runSandboxAITrace`).
     - Replay them on backend or sandbox (`replayTraceOnBackend`, `replayTraceOnSandbox`).
   - Examples:
-    - `tests/unit/Backend_vs_Sandbox.traceParity.test.ts`
+    - `archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts` (archived trace‑parity harness; diagnostic only)
     - `tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts`
     - `tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts`
     - `tests/unit/Sandbox_vs_Backend.aiHeuristicCoverage.test.ts`
@@ -662,7 +701,7 @@ When a trace-based parity test fails:
    Many historic traces were recorded before rules fixes (e.g. line detection, territory, elimination). If the trace expects behaviour that now violates the canonical rules, the trace itself is outdated.
 
 3. **Apply the seed‑14 pattern:**
-   - Example: historical **seed 14** sandbox trace in `Backend_vs_Sandbox.traceParity.test.ts` contained a `process_line` move at step 35.
+   - Example: historical **seed 14** sandbox trace in the (now archived) `Backend_vs_Sandbox.traceParity.test.ts` harness contained a `process_line` move at step 35.
    - After fixing line detection and reconciling backend/sandbox detectors with `ringrift_complete_rules.md` Section 11.1, the shared engine and detectors both agree that **no valid lines exist** in that state.
    - `tests/unit/Seed14Move35LineParity.test.ts` codifies this as a rules‑level assertion, and seed 14 was removed from the generic trace parity harness (now only exercising seed 5).
 
@@ -699,10 +738,16 @@ When you change or extend **game rules**, use the following workflow (see also
 
 3. **Run and, if needed, extend parity suites.**
    - Ensure backend vs sandbox vs shared parity suites still pass (for example
-     [`MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts:1),
-     [`PlacementParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/PlacementParity.RuleEngine_vs_Sandbox.test.ts:1),
-     [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
-     [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1),
+     [`archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts`](archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1) (archived diagnostic harness),
+     [`Backend_vs_Sandbox.eliminationTrace.test.ts`](tests/unit/Backend_vs_Sandbox.eliminationTrace.test.ts:1),
+     [`Backend_vs_Sandbox.seed5.internalStateParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.internalStateParity.test.ts:1),
+     [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.checkpoints.test.ts:1),
+     [`Backend_vs_Sandbox.seed1.snapshotParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed1.snapshotParity.test.ts:1),
+     [`Backend_vs_Sandbox.seed18.snapshotParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed18.snapshotParity.test.ts:1),
+     [`archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`](archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
+     [`TerritoryCore.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts:1),
+     [`TerritoryBorders.Backend_vs_Sandbox.test.ts`](tests/unit/TerritoryBorders.Backend_vs_Sandbox.test.ts:1),
+     [`MarkerPath.GameEngine_vs_Sandbox.test.ts`](tests/unit/MarkerPath.GameEngine_vs_Sandbox.test.ts:1),
      and [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1)).
    - If a parity suite fails but rules‑level tests (including the decision‑helper suites) are green, treat the failing trace/fixture as **stale** and update or regenerate it rather than changing the shared helpers to match old traces.
 
@@ -750,9 +795,9 @@ Several AI-heavy suites use a shared **GameTrace** abstraction and trace replay 
 
 These helpers are used by suites like:
 
-- `tests/unit/Backend_vs_Sandbox.traceParity.test.ts`
+- `archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts` (archived diagnostic harness)
 - `tests/unit/Sandbox_vs_Backend.seed5.traceDebug.test.ts`
-- `tests/unit/Backend_vs_Sandbox.aiParallelDebug.test.ts`
+- `archive/tests/unit/Backend_vs_Sandbox.aiParallelDebug.test.ts` (archived diagnostic harness)
 
 **Debug/diagnostic environment variables:**
 
@@ -779,7 +824,7 @@ Trace mode is wired through the trace utilities in `tests/utils/traces.ts` (see 
 To debug a tricky AI/parity failure locally:
 
 1. Set `RINGRIFT_TRACE_DEBUG=1 RINGRIFT_AI_DEBUG=1` in your test environment.
-2. Re-run the relevant trace/parity test (for example `Backend_vs_Sandbox.traceParity.test.ts`).
+2. Re-run the relevant trace/parity test (for example `archive/tests/unit/Backend_vs_Sandbox.traceParity.test.ts`, which is an archived diagnostic harness).
 3. Inspect `logs/ai/trace-parity.log` for the structured JSON entries referenced in the failing test output.
 
 ## Sandbox AI simulation diagnostics
@@ -817,29 +862,27 @@ These tests are safe to run in normal CI and serve as targeted, reproducible gua
 
 ## Sandbox AI stall diagnostics (engine parity and repro)
 
-In addition to the general aiSimulation harness above, there is a focused regression test for a previously observed sandbox AI stall:
-
-- File: `tests/unit/ClientSandboxEngine.aiStall.seed1.test.ts`
-- Scenario: `square8`, 2 AI players, deterministic seed `1`
-- Behaviour: Asserts that the sandbox engine does **not** get stuck in a long run of consecutive AI turns with no state change for this seed.
-
-This suite is intentionally **opt-in** and gated by environment flags so that it does not run in normal CI:
-
-```bash
-RINGRIFT_ENABLE_SANDBOX_AI_STALL_REPRO=1 \
-RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS=1 \
-npm test -- ClientSandboxEngine.aiStall.seed1
-```
-
-- `RINGRIFT_ENABLE_SANDBOX_AI_STALL_REPRO=1`
-  Enables the stall-repro suite itself (the test will be skipped when this flag is unset).
-- `RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS=1`
-  Turns on additional sandbox AI stall diagnostics inside `sandboxAI.maybeRunAITurnSandbox`, including:
-  - Hash-based detection of repeated no-op AI turns (unchanged `GameState` hash with the same AI player to move).
-  - Emission of `[Sandbox AI Stall Diagnostic]` and `[Sandbox AI Stall Detector]` warnings to the console.
-  - Structured per-turn/stall entries appended to `window.__RINGRIFT_SANDBOX_TRACE__` for later analysis or replay.
-
-These diagnostics are especially useful when combined with the browser-based `/sandbox` UI, which can surface potential stalls and export `__RINGRIFT_SANDBOX_TRACE__` snapshots via the local stall watchdog.
+> **Historical harness (diagnostic, superseded):**
+>
+> Older documentation and debug reports referred to a dedicated stall‑repro suite
+> `tests/unit/ClientSandboxEngine.aiStall.seed1.test.ts` and a browser‑driven
+> `/sandbox` stall watchdog. That harness is now treated as **historical
+> debugging infrastructure**:
+>
+> - The modern, reproducible plateau/stall diagnostics are the suites listed in
+>   the previous section:
+>   - `tests/unit/ClientSandboxEngine.aiSimulation.test.ts`
+>   - `tests/utils/aiSeedSnapshots.ts`
+>   - `tests/unit/ClientSandboxEngine.aiStallRegression.test.ts`
+>   - `tests/scenarios/AI_TerminationFromSeed1Plateau.test.ts`
+>   - `tests/unit/ClientSandboxEngine.aiSingleSeedDebug.test.ts`
+> - For a narrative of the original stall investigation and the legacy
+>   `aiStall.seed1` harness, see `archive/AI_STALL_DEBUG_SUMMARY.md`.
+>
+> When these historical traces or harnesses disagree with rules‑level suites or
+> the shared invariants, treat the **rules SSoTs and modern plateau/stall
+> regressions as authoritative**, and update or retire the legacy harnesses as
+> needed.
 
 ## Scenario Matrix (Rules/FAQ → Jest suites)
 
@@ -896,7 +939,7 @@ This matrix links key sections of `ringrift_complete_rules.md` and FAQ entries t
   - (existing) `tests/unit/ClientSandboxEngine.territoryDisconnection.test.ts` / `.hex.test.ts` — sandbox parity.
   - (existing) `tests/unit/ClientSandboxEngine.regionOrderChoice.test.ts` — region‑order PlayerChoice in sandbox.
   - (existing) `tests/unit/GameEngine.territory.scenarios.test.ts` — explicit self‑elimination prerequisite and multi‑region chain reactions mapped to Q15, Q20, Q23.
-  - (existing, diagnostic) `tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`, `tests/unit/TerritoryDecisions.GameEngine_vs_Sandbox.test.ts`, and related seed‑based parity suites — backend↔sandbox Q23 parity on larger boards and specific seeds (**diagnostic; canonical semantics live in the shared decision‑helper tests and RulesMatrix/FAQ territory suites such as `RulesMatrix.Territory.MiniRegion.test.ts` and `FAQ_Q22_Q23.test.ts`**).
+  - (existing, diagnostic; `TerritoryParity` archived) `archive/tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`, `tests/unit/TerritoryDecisions.GameEngine_vs_Sandbox.test.ts`, and related seed‑based parity suites — backend↔sandbox Q23 parity on larger boards and specific seeds (**diagnostic; canonical semantics live in the shared decision‑helper tests and RulesMatrix/FAQ territory suites such as `RulesMatrix.Territory.MiniRegion.test.ts` and `FAQ_Q22_Q23.test.ts`**).
 
 ### Victory conditions & stalemate
 
@@ -1112,6 +1155,11 @@ move = ai.select_move(game_state)
    - Different seeds → different outputs (where applicable)
 5. **Use seeds for debugging** - when a test fails, the seed can reproduce the exact scenario
 
+> **Historical Python diagnostics (archived):**
+>
+> - `ai-service/tests/archive/archived_test_determinism.py` – legacy determinism helper, now archived and superseded by `test_engine_determinism.py` and `test_no_random_in_rules_core.py`; kept only as a non‑canonical diagnostic reference.
+> - `ai-service/tests/archive/archived_test_rules_parity.py` – historical TS↔Python rules‑parity harness, archived in favour of the fixture‑driven suites under `ai-service/tests/parity/*`; useful for archaeology, but not a CI gate or semantic authority.
+
 ---
 
 ## RNG hooks and AI parity tests
@@ -1158,7 +1206,7 @@ To support trace-mode debugging and backend↔sandbox AI comparisons under a **s
 
 The client‑local sandbox engine (`ClientSandboxEngine`) now emits canonical capture‑chain history for **human** flows that aligns with backend semantics:
 
-- Human clicks go through `ClientSandboxEngine.handleHumanCellClick`, which delegates capture/movement to `sandboxMovementEngine` with history‑aware hooks.
+- Human clicks go through `ClientSandboxEngine.handleHumanCellClick`, whose movement path now calls `ClientSandboxEngine.handleMovementClick` / `handleLegacyMovementClick`, layering sandbox‑specific history over shared Movement/Capture aggregates and the orchestrator adapter.
 - Each capture chain is recorded as:
   - One `overtaking_capture` `Move` for the first segment.
   - One or more `continue_capture_segment` `Move`s for follow‑up segments while `currentPhase === 'chain_capture'`.

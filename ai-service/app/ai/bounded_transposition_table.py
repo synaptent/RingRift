@@ -8,13 +8,15 @@ class BoundedTranspositionTable:
     """LRU-evicting transposition table with configurable memory limit."""
 
     def __init__(
-        self, max_entries: int = 100_000, entry_size_estimate: int = 200
+        self, max_entries: int = 100_000, entry_size_estimate: int = 4000
     ) -> None:
         """Initialize the transposition table.
 
         Args:
             max_entries: Maximum number of entries before eviction
             entry_size_estimate: Approximate bytes per entry for memory calc
+                Note: entries include children_values dict which can contain
+                50+ (move, value) pairs. Realistic sizes are 2-10KB per entry.
         """
         self._table: OrderedDict[Hashable, Any] = OrderedDict()
         self.max_entries = max_entries
@@ -25,13 +27,15 @@ class BoundedTranspositionTable:
 
     @classmethod
     def from_memory_limit(
-        cls, memory_limit_bytes: int, entry_size_estimate: int = 200
+        cls, memory_limit_bytes: int, entry_size_estimate: int = 4000
     ) -> "BoundedTranspositionTable":
         """Create table with entries capped by memory limit.
 
         Args:
             memory_limit_bytes: Maximum memory to use in bytes
-            entry_size_estimate: Approximate bytes per entry
+            entry_size_estimate: Approximate bytes per entry (default: 4000)
+                Note: entries include children_values dict which can contain
+                50+ (move, value) pairs. Realistic sizes are 2-10KB per entry.
 
         Returns:
             BoundedTranspositionTable configured for the memory limit

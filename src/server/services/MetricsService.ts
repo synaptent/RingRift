@@ -16,6 +16,8 @@
 import client, { Registry, Counter, Histogram, Gauge, Summary } from 'prom-client';
 import { logger } from '../utils/logger';
 import { DegradationLevel, ServiceName, ServiceHealthStatus } from './ServiceStatusManager';
+import { shadowComparator } from './ShadowModeComparator';
+import type { ShadowMetrics } from './ShadowModeComparator';
 
 /**
  * HTTP request method type for labels.
@@ -163,6 +165,50 @@ export class MetricsService {
 
   /** Counter: TS vs Python rules gameStatus mismatch */
   public readonly rulesParityGameStatusMismatch: Counter<string>;
+
+  // ===================
+  // Orchestrator Shadow Mode Metrics
+  // ===================
+
+  /** Gauge: Current number of shadow mode comparisons held in memory */
+  public readonly orchestratorShadowComparisonsCurrent: Gauge<string>;
+
+  /** Gauge: Current number of mismatches observed in shadow mode */
+  public readonly orchestratorShadowMismatchesCurrent: Gauge<string>;
+
+  /** Gauge: Current shadow mode mismatch rate (0.0–1.0) */
+  public readonly orchestratorShadowMismatchRate: Gauge<string>;
+
+  /** Gauge: Current number of orchestrator errors observed in shadow mode */
+  public readonly orchestratorShadowOrchestratorErrorsCurrent: Gauge<string>;
+
+  /** Gauge: Current orchestrator error rate in shadow mode (0.0–1.0) */
+  public readonly orchestratorShadowOrchestratorErrorRate: Gauge<string>;
+
+  /** Gauge: Average legacy engine latency in shadow comparisons (ms, rolling window) */
+  public readonly orchestratorShadowAvgLegacyLatencyMs: Gauge<string>;
+
+  /** Gauge: Average orchestrator latency in shadow comparisons (ms, rolling window) */
+  public readonly orchestratorShadowAvgOrchestratorLatencyMs: Gauge<string>;
+
+  // ===================
+  // Orchestrator Rollout Metrics
+  // ===================
+
+  /** Counter: Total game sessions by engine selection and reason */
+  public readonly orchestratorSessionsTotal: Counter<'engine' | 'selection_reason'>;
+
+  /** Counter: Total moves processed by engine and outcome */
+  public readonly orchestratorMovesTotal: Counter<'engine' | 'outcome'>;
+
+  /** Gauge: Orchestrator circuit breaker state (0=closed, 1=open) */
+  public readonly orchestratorCircuitBreakerState: Gauge<string>;
+
+  /** Gauge: Current orchestrator error rate (0.0–1.0) */
+  public readonly orchestratorErrorRate: Gauge<string>;
+
+  /** Gauge: Configured orchestrator rollout percentage (0–100) */
+  public readonly orchestratorRolloutPercentage: Gauge<string>;
 
   /**
    * Private constructor - use getInstance() instead.
@@ -376,6 +422,76 @@ export class MetricsService {
       help: 'TS vs Python rules: gameStatus mismatch count',
     });
 
+    // ===================
+    // Orchestrator Shadow Mode Metrics
+    // ===================
+
+    this.orchestratorShadowComparisonsCurrent = new Gauge({
+      name: 'ringrift_orchestrator_shadow_comparisons_current',
+      help: 'Current number of shadow mode comparisons held in memory',
+    });
+
+    this.orchestratorShadowMismatchesCurrent = new Gauge({
+      name: 'ringrift_orchestrator_shadow_mismatches_current',
+      help: 'Current number of shadow mode mismatches held in memory',
+    });
+
+    this.orchestratorShadowMismatchRate = new Gauge({
+      name: 'ringrift_orchestrator_shadow_mismatch_rate',
+      help: 'Current mismatch rate for orchestrator shadow comparisons (0.0–1.0)',
+    });
+
+    this.orchestratorShadowOrchestratorErrorsCurrent = new Gauge({
+      name: 'ringrift_orchestrator_shadow_orchestrator_errors_current',
+      help: 'Current number of orchestrator errors in shadow comparisons',
+    });
+
+    this.orchestratorShadowOrchestratorErrorRate = new Gauge({
+      name: 'ringrift_orchestrator_shadow_orchestrator_error_rate',
+      help: 'Current orchestrator error rate in shadow comparisons (0.0–1.0)',
+    });
+
+    this.orchestratorShadowAvgLegacyLatencyMs = new Gauge({
+      name: 'ringrift_orchestrator_shadow_avg_legacy_latency_ms',
+      help: 'Average legacy engine latency across shadow comparisons (milliseconds, rolling window)',
+    });
+
+    this.orchestratorShadowAvgOrchestratorLatencyMs = new Gauge({
+      name: 'ringrift_orchestrator_shadow_avg_orchestrator_latency_ms',
+      help: 'Average orchestrator latency across shadow comparisons (milliseconds, rolling window)',
+    });
+
+    // ===================
+    // Orchestrator Rollout Metrics
+    // ===================
+
+    this.orchestratorSessionsTotal = new Counter({
+      name: 'ringrift_orchestrator_sessions_total',
+      help: 'Total number of game sessions by engine selection and reason',
+      labelNames: ['engine', 'selection_reason'] as const,
+    });
+
+    this.orchestratorMovesTotal = new Counter({
+      name: 'ringrift_orchestrator_moves_total',
+      help: 'Total number of moves processed by engine and outcome',
+      labelNames: ['engine', 'outcome'] as const,
+    });
+
+    this.orchestratorCircuitBreakerState = new Gauge({
+      name: 'ringrift_orchestrator_circuit_breaker_state',
+      help: 'Orchestrator circuit breaker state (0=closed, 1=open)',
+    });
+
+    this.orchestratorErrorRate = new Gauge({
+      name: 'ringrift_orchestrator_error_rate',
+      help: 'Current orchestrator error rate (0.0–1.0)',
+    });
+
+    this.orchestratorRolloutPercentage = new Gauge({
+      name: 'ringrift_orchestrator_rollout_percentage',
+      help: 'Configured orchestrator rollout percentage (0–100)',
+    });
+
     this.initialized = true;
     logger.info('MetricsService initialized');
   }
@@ -405,6 +521,9 @@ export class MetricsService {
    * Get metrics in Prometheus text format.
    */
   public async getMetrics(): Promise<string> {
+    // Refresh orchestrator shadow-mode gauges before snapshotting the registry
+    // so that /metrics reflects the latest comparison statistics.
+    this.refreshOrchestratorShadowMetrics();
     return this.registry.metrics();
   }
 
@@ -698,6 +817,77 @@ export class MetricsService {
    */
   public recordAIRequestTimeout(): void {
     this.aiRequestTimeoutTotal.inc();
+  }
+
+  // ===================
+  // Orchestrator Shadow Mode Helpers
+  // ===================
+
+  /**
+   * Refresh the orchestrator shadow-mode gauges from the latest
+   * ShadowModeComparator snapshot. This is called from getMetrics()
+   * so that /metrics always exposes up-to-date comparison statistics.
+   */
+  public refreshOrchestratorShadowMetrics(): void {
+    let snapshot: ShadowMetrics;
+    try {
+      snapshot = shadowComparator.getMetrics();
+    } catch (err) {
+      logger.warn('Failed to refresh orchestrator shadow metrics', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    this.orchestratorShadowComparisonsCurrent.set(snapshot.totalComparisons);
+    this.orchestratorShadowMismatchesCurrent.set(snapshot.mismatches);
+    this.orchestratorShadowMismatchRate.set(snapshot.mismatchRate);
+    this.orchestratorShadowOrchestratorErrorsCurrent.set(snapshot.orchestratorErrors);
+    this.orchestratorShadowOrchestratorErrorRate.set(snapshot.orchestratorErrorRate);
+    this.orchestratorShadowAvgLegacyLatencyMs.set(snapshot.avgLegacyLatencyMs);
+    this.orchestratorShadowAvgOrchestratorLatencyMs.set(snapshot.avgOrchestratorLatencyMs);
+  }
+
+  // ===================
+  // Orchestrator Rollout Helpers
+  // ===================
+
+  /**
+   * Record a new game session selection for orchestrator rollout metrics.
+   */
+  public recordOrchestratorSession(engine: string, selectionReason: string): void {
+    this.orchestratorSessionsTotal.labels(engine, selectionReason).inc();
+  }
+
+  /**
+   * Record a move processed by a given engine and outcome.
+   */
+  public recordOrchestratorMove(
+    engine: 'legacy' | 'orchestrator',
+    outcome: 'success' | 'error'
+  ): void {
+    this.orchestratorMovesTotal.labels(engine, outcome).inc();
+  }
+
+  /**
+   * Update the circuit breaker state gauge (0=closed, 1=open).
+   */
+  public setOrchestratorCircuitBreakerState(isOpen: boolean): void {
+    this.orchestratorCircuitBreakerState.set(isOpen ? 1 : 0);
+  }
+
+  /**
+   * Update the orchestrator error-rate gauge (0.0–1.0).
+   */
+  public setOrchestratorErrorRate(rate: number): void {
+    this.orchestratorErrorRate.set(rate);
+  }
+
+  /**
+   * Set the configured orchestrator rollout percentage (0–100).
+   */
+  public setOrchestratorRolloutPercentage(percent: number): void {
+    this.orchestratorRolloutPercentage.set(percent);
   }
 }
 

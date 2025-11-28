@@ -1,57 +1,55 @@
 # Legacy Code Elimination Plan
 
 > **Phase 5.4 Deliverable** - Architecture Remediation Plan
-> **Status:** Blocked - Parity Issues Discovered
+> **Status:** Phase 6.1 Complete - Adapters Enabled by Default
 > **Last Updated:** 2025-11-26
-> **Phase 6 Attempt:** 2025-11-26
+> **Phase 6.1 Complete:** 2025-11-26
 
-## Phase 6 Execution Summary
+## Phase 6.1 Summary
 
-Phase 6 attempted to eliminate Tier 1 legacy code (~1,713 lines). The following work was completed:
+The parity bugs blocking orchestrator adapter enablement have been fixed:
 
-### Completed Work
+1. ✅ **Race condition in MovementAggregate.ts** - Fixed marker read before deletion
+2. ✅ **Top ring elimination** - Corrected from bottom ring to top ring
 
-1. **Adapter Infrastructure Verified** - `SandboxOrchestratorAdapter.ts` correctly wraps the shared orchestrator
-2. **Feature Flag In Place** - `useOrchestratorAdapter` flag in `ClientSandboxEngine.ts` controls rollout
-3. **Adapter Path Added to handleMovementClick** - When enabled, movement clicks route through adapter
-4. **Helper Method Added** - `promptForCaptureDirection()` for multi-capture scenarios via adapter
+### Changes Made in Phase 6.1
 
-### Blockers Discovered
+**Client (`ClientSandboxEngine.ts`):**
 
-#### Parity Issue: "Landing on Own Marker" Rule
+- `useOrchestratorAdapter` now defaults to `true`
 
-When the orchestrator adapter is enabled, the "landing on own marker eliminates bottom ring" rule does not trigger correctly.
+**Backend (`env.ts`):**
 
-**Test Case:** `ClientSandboxEngine.landingOnOwnMarker.test.ts`
+- `ORCHESTRATOR_ADAPTER_ENABLED` environment variable now defaults to `true`
+- Transform logic inverted: `val !== 'false' && val !== '0'` (opt-out instead of opt-in)
 
-- **Expected:** Stack height 2 → 1 (one ring eliminated)
-- **Actual via adapter:** Stack height stays 2 (no elimination)
-- **Actual via legacy:** Correct behavior (height 1)
+### Rollback Procedure
 
-**Root Cause:** The shared orchestrator's movement processing doesn't apply this rule. The rule IS implemented in:
+To disable orchestrator adapters if issues arise:
 
-- `src/shared/engine/movementApplication.ts`
-- `src/shared/engine/aggregates/MovementAggregate.ts`
+**Client:** Call `engine.disableOrchestratorAdapter()` or modify the default in `ClientSandboxEngine.ts`
 
-But the orchestrator's `processTurn`/`processTurnAsync` doesn't invoke it correctly for simple `move_stack` moves.
+**Backend:** Set environment variable `ORCHESTRATOR_ADAPTER_ENABLED=false`
 
-#### Test Compatibility Issues
+## Historical Context (Phase 6 Attempt)
 
-Some tests call `handleMovementClick()` without awaiting (legacy had synchronous-ish behavior):
+Phase 6 attempted to eliminate Tier 1 legacy code (~1,713 lines). The following blockers were discovered and subsequently fixed:
 
-- Legacy path: State mutations happen synchronously within `handleMovementClickSandbox`
-- Adapter path: State mutations are async via `applyCanonicalMove`
+### Parity Issues (Now Resolved)
 
-### Decision: Keep Legacy Code
+#### Issue 1: "Landing on Own Marker" Rule
 
-Due to parity issues, the adapter is **disabled by default** (`useOrchestratorAdapter = false`). Legacy code is retained as the stable path.
+When the orchestrator adapter was enabled, the "landing on own marker eliminates top ring" rule did not trigger correctly.
 
-### Remediation Steps Required Before Elimination
+**Root Cause:** Race condition in `MovementAggregate.ts` where the marker was read after being deleted.
 
-1. **Fix Orchestrator Movement Processing**: Ensure `processTurn` applies landing-on-own-marker rule
-2. **Add Integration Tests**: Verify adapter parity with legacy for all movement scenarios
-3. **Update Blocking Tests**: Make tests async-aware where needed
-4. **Re-attempt Elimination**: After parity is achieved
+**Fix:** Capture marker owner before removal in `applyMovementStep()`.
+
+#### Issue 2: Ring Elimination Direction
+
+The elimination was incorrectly removing the bottom ring instead of the top ring.
+
+**Fix:** Corrected the slice operation in `MovementAggregate.ts`.
 
 ---
 
@@ -74,12 +72,12 @@ Before eliminating legacy code:
 
 These modules duplicate rules logic that is now handled by `src/shared/engine/orchestration/turnOrchestrator.ts`:
 
-| Module                                                                                               | Lines | Replacement                                                       | Dependencies                                    |
-| ---------------------------------------------------------------------------------------------------- | ----- | ----------------------------------------------------------------- | ----------------------------------------------- |
-| [`src/client/sandbox/sandboxTurnEngine.ts`](../../src/client/sandbox/sandboxTurnEngine.ts)           | 377   | `turnOrchestrator.processTurn()` via `SandboxOrchestratorAdapter` | `ClientSandboxEngine.ts`, tests                 |
-| [`src/client/sandbox/sandboxMovementEngine.ts`](../../src/client/sandbox/sandboxMovementEngine.ts)   | 678   | `MovementMutator` via orchestrator                                | `ClientSandboxEngine.ts`, tests                 |
-| [`src/client/sandbox/sandboxLinesEngine.ts`](../../src/client/sandbox/sandboxLinesEngine.ts)         | 285   | `LineMutator` via orchestrator                                    | `ClientSandboxEngine.ts`, `sandboxLines.ts`     |
-| [`src/client/sandbox/sandboxTerritoryEngine.ts`](../../src/client/sandbox/sandboxTerritoryEngine.ts) | 373   | `TerritoryMutator` via orchestrator                               | `ClientSandboxEngine.ts`, `sandboxTerritory.ts` |
+| Module                                                                                                   | Lines | Replacement                                                                                                                                                                                                    | Dependencies                                           |
+| -------------------------------------------------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| ~~[`src/client/sandbox/sandboxTurnEngine.ts`](../../src/client/sandbox/sandboxTurnEngine.ts)~~           | 377   | **Removed in Phase 6.2** – responsibilities now live in shared `turnLogic` and `ClientSandboxEngine` turn helpers                                                                                              | (was: `ClientSandboxEngine.ts`, tests)                 |
+| ~~[`src/client/sandbox/sandboxMovementEngine.ts`](../../src/client/sandbox/sandboxMovementEngine.ts)~~   | 678   | **Removed in Phase 6.2** – movement/capture orchestration now lives in MovementAggregate/CaptureAggregate plus `ClientSandboxEngine` helpers                                                                   | (was: `ClientSandboxEngine.ts`, tests)                 |
+| ~~[`src/client/sandbox/sandboxLinesEngine.ts`](../../src/client/sandbox/sandboxLinesEngine.ts)~~         | 285   | **Removed in Phase 6.2** – responsibilities now live in shared `lineDecisionHelpers` and `ClientSandboxEngine.processLinesForCurrentPlayer()`                                                                  | (was: `ClientSandboxEngine.ts`, `sandboxLines.ts`)     |
+| ~~[`src/client/sandbox/sandboxTerritoryEngine.ts`](../../src/client/sandbox/sandboxTerritoryEngine.ts)~~ | 373   | **Removed in Phase 6.2** – responsibilities now live in shared territory helpers and `ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer()` / `getValidTerritoryProcessingMovesForCurrentPlayer()` | (was: `ClientSandboxEngine.ts`, `sandboxTerritory.ts`) |
 
 **Subtotal Tier 1:** ~1,713 lines
 
@@ -135,18 +133,18 @@ Legacy backend rules code that parallels shared engine after adapter migration:
 
 ### Phase B: Tier 1 Elimination
 
-1. **Remove `sandboxTurnEngine.ts`**
-   - Update `ClientSandboxEngine.ts` to use adapter for all turn logic
-   - Delete phase management code from sandbox
-2. **Remove `sandboxMovementEngine.ts`**
-   - Update movement click handling to use adapter
-   - Delete `handleMovementClickSandbox()`
-3. **Remove `sandboxLinesEngine.ts`**
-   - Confirm all line processing routes through adapter
-   - Delete `processLinesForCurrentPlayer()`
-4. **Remove `sandboxTerritoryEngine.ts`**
-   - Confirm all territory processing routes through adapter
-   - Delete `processDisconnectedRegionsForCurrentPlayerEngine()`
+1. **Remove `sandboxTurnEngine.ts`** ✅
+   - `ClientSandboxEngine.ts` now calls shared `advanceTurnAndPhase` directly with sandbox-specific delegates for placements, movement/capture, and forced elimination.
+   - Legacy `sandboxTurnEngine.ts` has been deleted; phase management remains in `ClientSandboxEngine` as a host adapter over shared turn logic.
+2. **Remove `sandboxMovementEngine.ts`** ✅
+   - Movement click handling now lives entirely in `ClientSandboxEngine.handleMovementClick` / `handleLegacyMovementClick`, which delegate to MovementAggregate/CaptureAggregate and orchestrator where enabled.
+   - Legacy `sandboxMovementEngine.ts` (handleMovementClickSandbox/performCaptureChainSandbox) has been deleted.
+3. **Remove `sandboxLinesEngine.ts`** ✅
+   - Line processing in the sandbox now routes directly through shared `lineDecisionHelpers` via `ClientSandboxEngine.getValidLineProcessingMovesForCurrentPlayer()` and `processLinesForCurrentPlayer()`.
+   - Module `sandboxLinesEngine.ts` has been deleted; remaining sandbox line helpers are thin adapters over the shared engine.
+4. **Remove `sandboxTerritoryEngine.ts`** ✅
+   - Territory processing in the sandbox now routes directly through shared territory helpers via `ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer()` and `getValidTerritoryProcessingMovesForCurrentPlayer()`.
+   - Module `sandboxTerritoryEngine.ts` has been deleted; remaining sandbox territory helpers are thin adapters over the shared engine.
 
 **Dependencies to Update:**
 

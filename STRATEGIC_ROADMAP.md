@@ -1,5 +1,10 @@
 # RingRift Strategic Roadmap
 
+> **Doc Status (2025-11-27): Active (roadmap & SLOs)**
+>
+> - Canonical phased roadmap and performance/scale SLO reference.
+> - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+
 **Version:** 3.2
 **Last Updated:** November 26, 2025
 **Status:** Engine/Rules Beta (Playable, architecture consolidated)

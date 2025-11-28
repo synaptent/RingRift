@@ -415,6 +415,31 @@ describe('MetricsService', () => {
     });
   });
 
+  describe('Orchestrator rollout metrics', () => {
+    it('should expose orchestrator rollout gauges and counters', async () => {
+      const metrics = getMetricsService();
+
+      metrics.recordOrchestratorSession('orchestrator', 'percentage_rollout');
+      metrics.recordOrchestratorMove('orchestrator', 'success');
+      metrics.setOrchestratorCircuitBreakerState(false);
+      metrics.setOrchestratorErrorRate(0.05);
+      metrics.setOrchestratorRolloutPercentage(25);
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('ringrift_orchestrator_sessions_total');
+      expect(output).toContain('engine="orchestrator"');
+      expect(output).toContain('selection_reason="percentage_rollout"');
+
+      expect(output).toContain('ringrift_orchestrator_moves_total');
+      expect(output).toContain('outcome="success"');
+
+      expect(output).toContain('ringrift_orchestrator_circuit_breaker_state');
+      expect(output).toContain('ringrift_orchestrator_error_rate');
+      expect(output).toContain('ringrift_orchestrator_rollout_percentage');
+    });
+  });
+
   describe('Default Node.js Metrics', () => {
     it('should include default Node.js metrics when collected', async () => {
       // Collect default metrics (this is done in server startup)

@@ -4,6 +4,14 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 **Last Updated:** November 25, 2025
 
+> **Doc Status (2025-11-27): Active (with historical appendix)**  
+> Index and navigation guide to rules specifications, implementation mapping, and verification/audit docs. This file is **not** a rules semantics SSoT; it points to the true SSoTs and their verification harnesses.
+>
+> - **Rules semantics SSoT:** Shared TypeScript engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts) plus cross-language contracts and vectors (`src/shared/engine/contracts/**`, `tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) and rules docs (`RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`, `RULES_SCENARIO_MATRIX.md`, `docs/STRICT_INVARIANT_SOAKS.md`).
+> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+> - Some linked documents (especially under `archive/` and older UX/audit reports) are **partially historical**; this file is kept current but intentionally points at both active and archived material.
+> - For high-level architecture/topology, see `ARCHITECTURE_ASSESSMENT.md`, `ARCHITECTURE_REMEDIATION_PLAN.md`, and `DOCUMENTATION_INDEX.md`.
+
 ---
 
 ## Quick Status Summary
@@ -46,10 +54,10 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 ### Process & Tools
 
-| Document                                                                     | Description               | When to Use                             |
-| ---------------------------------------------------------------------------- | ------------------------- | --------------------------------------- |
-| [deprecated/RULES_CHANGE_CHECKLIST.md](deprecated/RULES_CHANGE_CHECKLIST.md) | Change workflow checklist | Before making any rules-related changes |
-| [scripts/rules-health-report.sh](scripts/rules-health-report.sh)             | Health report script      | Automated compliance verification       |
+| Document                                                               | Description                                    | When to Use                                                       |
+| ---------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------- |
+| [archive/RULES_CHANGE_CHECKLIST.md](archive/RULES_CHANGE_CHECKLIST.md) | Change workflow checklist (archived reference) | Historical reference before making major rules-related changes    |
+| [scripts/rules-health-report.sh](scripts/rules-health-report.sh)       | Health report script                           | Automated compliance verification (runs core rules/parity suites) |
 
 ### AI & Training
 
@@ -63,12 +71,14 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 ### TypeScript Shared Engine
 
-| Module                            | Purpose                |
-| --------------------------------- | ---------------------- |
-| `src/shared/engine/core.ts`       | Core helpers and types |
-| `src/shared/engine/validators/`   | Move validation logic  |
-| `src/shared/engine/mutators/`     | State mutation logic   |
-| `src/shared/engine/GameEngine.ts` | Shared game engine     |
+| Module                             | Purpose                                                  |
+| ---------------------------------- | -------------------------------------------------------- |
+| `src/shared/engine/core.ts`        | Core board helpers, S‑invariant, and progress snapshot   |
+| `src/shared/engine/validators/`    | Pure move and placement validation logic                 |
+| `src/shared/engine/mutators/`      | Low-level state mutation helpers                         |
+| `src/shared/engine/aggregates/`    | Aggregates for placement, movement, capture, lines, etc. |
+| `src/shared/engine/orchestration/` | Turn/phase state machine and canonical orchestrator      |
+| `src/shared/engine/index.ts`       | Canonical shared-engine entry point and exports          |
 
 ### TypeScript Backend
 
@@ -88,12 +98,13 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 ## Test Suites
 
-| Test Category          | Location                                                        |
-| ---------------------- | --------------------------------------------------------------- |
-| Unit tests             | `tests/unit/*.shared.test.ts`                                   |
-| Scenario tests         | `tests/scenarios/`                                              |
-| TS/Python parity tests | `tests/unit/Python_vs_TS.*.test.ts`, `ai-service/tests/parity/` |
-| Determinism tests      | See `./scripts/rules-health-report.sh`                          |
+| Test Category            | Location / Examples                                                                                                                                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit tests               | Core shared-engine and rules tests under `tests/unit/**` (e.g. `movement.shared.test.ts`, `captureLogic.shared.test.ts`)                                                                                        |
+| Scenario tests           | Behavioural and FAQ/RulesMatrix scenarios under `tests/scenarios/**`                                                                                                                                            |
+| Host parity tests        | Backend vs sandbox parity suites under `tests/unit/Backend_vs_Sandbox.*.test.ts` and related trace/parity tests                                                                                                 |
+| TS/Python parity tests   | TS↔Python integration harness in `src/server/game/test-python-rules-integration.ts` and Python suites in `ai-service/tests/parity/**`                                                                          |
+| Determinism & invariants | Determinism/invariant suites in `tests/unit/EngineDeterminism.shared.test.ts`, `tests/unit/NoRandomInCoreRules.test.ts`, `ai-service/tests/test_engine_determinism.py`, plus `./scripts/rules-health-report.sh` |
 
 ---
 
@@ -101,6 +112,6 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 1. **Understand the rules:** Start with [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md) for authoritative rule definitions.
 2. **Find relevant code:** Check [RULES_IMPLEMENTATION_MAPPING.md](RULES_IMPLEMENTATION_MAPPING.md) to locate implementation.
-3. **Before making changes:** Follow [deprecated/RULES_CHANGE_CHECKLIST.md](deprecated/RULES_CHANGE_CHECKLIST.md) workflow.
+3. **Before making changes:** Review the historical checklist in [archive/RULES_CHANGE_CHECKLIST.md](archive/RULES_CHANGE_CHECKLIST.md) for context on the rules-change workflow.
 4. **Verify compliance:** Run `./scripts/rules-health-report.sh` to check rules health.
 5. **Review context:** See [archive/FINAL_RULES_AUDIT_REPORT.md](archive/FINAL_RULES_AUDIT_REPORT.md) for audit findings and resolution status.

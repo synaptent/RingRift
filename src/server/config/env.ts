@@ -318,12 +318,45 @@ export const EnvSchema = z.object({
   /** Rules engine mode */
   RINGRIFT_RULES_MODE: RulesModeSchema.optional(),
 
-  /** Enable orchestrator adapter for turn processing */
+  /** Enable orchestrator adapter for turn processing (Phase 3 migration - now default) */
   ORCHESTRATOR_ADAPTER_ENABLED: z
     .string()
-    .optional()
-    .transform((val) => val === 'true' || val === '1')
-    .default('false'),
+    .default('true')
+    .transform((val) => val === 'true' || val === '1'),
+
+  // ===================================================================
+  // ORCHESTRATOR ROLLOUT CONFIGURATION
+  // ===================================================================
+
+  /** Percentage of sessions to route through orchestrator (0-100) */
+  ORCHESTRATOR_ROLLOUT_PERCENTAGE: z.coerce.number().int().min(0).max(100).default(100),
+
+  /** Enable shadow mode - run both engines, compare results */
+  ORCHESTRATOR_SHADOW_MODE_ENABLED: z
+    .string()
+    .default('false')
+    .transform((val) => val === 'true' || val === '1'),
+
+  /** Comma-separated list of user IDs to force-enable orchestrator */
+  ORCHESTRATOR_ALLOWLIST_USERS: z.string().default(''),
+
+  /** Comma-separated list of user IDs to force-disable orchestrator */
+  ORCHESTRATOR_DENYLIST_USERS: z.string().default(''),
+
+  /** Enable circuit breaker for auto-disable on errors */
+  ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED: z
+    .string()
+    .default('true')
+    .transform((val) => val === 'true' || val === '1'),
+
+  /** Error rate percentage to trip circuit breaker */
+  ORCHESTRATOR_ERROR_THRESHOLD_PERCENT: z.coerce.number().int().min(0).max(100).default(5),
+
+  /** Time window in seconds for error rate calculation */
+  ORCHESTRATOR_ERROR_WINDOW_SECONDS: z.coerce.number().int().positive().default(300),
+
+  /** P99 latency threshold in milliseconds for warnings */
+  ORCHESTRATOR_LATENCY_THRESHOLD_MS: z.coerce.number().int().positive().default(500),
 
   // ===================================================================
   // GAME CONFIGURATION

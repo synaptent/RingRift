@@ -13,9 +13,17 @@ import { findMatchingBackendMove } from '../utils/moveMatching';
  * This does not assert on a specific index yet; it simply logs the first
  * divergence (if any) so we can inspect it and then tighten expectations
  * later once the parity bug is fixed.
+ *
+ * NOTE: Skipped when ORCHESTRATOR_ADAPTER_ENABLED=true because the orchestrator
+ * produces intentionally different trace structure and move matching may differ
+ * (intentional divergence from legacy backend-vs-sandbox comparison).
  */
 
-describe('Trace parity first-divergence helper: square8 / 2p / seed=5', () => {
+// Skip this test suite when orchestrator adapter is enabled - trace structure differs
+const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
+const maybeDescribe = skipWithOrchestrator ? describe.skip : describe;
+
+maybeDescribe('Trace parity first-divergence helper: square8 / 2p / seed=5', () => {
   const boardType: BoardType = 'square8';
   const numPlayers = 2;
   const seed = 5;

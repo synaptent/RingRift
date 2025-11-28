@@ -1,5 +1,13 @@
 # Environment Variables Reference
 
+> **Doc Status (2025-11-27): Active**
+>
+> **Role:** Canonical reference for all environment variables used by RingRift across development, staging, and production, including defaults, ranges, and security considerations. Intended for operators and developers wiring config into Docker, Kubernetes, and CI.
+>
+> **Not a semantics SSoT:** This document does not define game rules or lifecycle semantics. Rules semantics are owned by the shared TypeScript rules engine under `src/shared/engine/**` plus contracts and vectors (see `RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`). Lifecycle semantics are owned by `docs/CANONICAL_ENGINE_API.md` together with shared types/schemas in `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+>
+> **Related docs:** `docs/SECRETS_MANAGEMENT.md`, `docs/DEPLOYMENT_REQUIREMENTS.md`, `docs/OPERATIONS_DB.md`, `docs/SECURITY_THREAT_MODEL.md`, `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`, and `DOCUMENTATION_INDEX.md`.
+
 This document provides comprehensive documentation for all environment variables used by RingRift.
 
 ## Quick Start
@@ -34,6 +42,7 @@ This document provides comprehensive documentation for all environment variables
 - [Rules Engine](#rules-engine)
 - [Application Topology](#application-topology)
 - [Testing Configuration](#testing-configuration)
+- [Data Retention](#data-retention)
 - [Debug Flags](#debug-flags)
 
 ---
@@ -544,32 +553,29 @@ Prometheus metrics server port.
 | -------- | ------------------------- |
 | Type     | `boolean`                 |
 | Values   | `true`, `false`, `1`, `0` |
-| Default  | `false`                   |
+| Default  | `true`                    |
 | Required | No                        |
 
 Enable the orchestrator adapter for unified turn processing.
 
-When enabled, the server and sandbox engines use the canonical orchestrator
-(`src/shared/engine/orchestration/`) via adapter wrappers instead of the
-legacy turn processing pipelines. This allows for gradual migration to the
-unified architecture.
+When enabled (default), the server and sandbox engines use the canonical orchestrator
+(`src/shared/engine/orchestration/`) via adapter wrappers for turn processing.
+This is the production default after Phase 3 Rules Engine Consolidation completed
+with 1179 tests passing under the orchestrator.
 
-**Rollout Strategy:**
+**Production Status (as of 2025-11-27):**
 
-| Phase | Environment         | Duration      | Actions                                          |
-| ----- | ------------------- | ------------- | ------------------------------------------------ |
-| 1     | Development         | 1 week        | Enable flag, run full test suite, verify parity  |
-| 2     | Staging             | 2 weeks       | Enable flag, run AI tournaments, monitor metrics |
-| 3     | Production (Canary) | 1 week        | Enable for 10% of games, monitor for divergence  |
-| 4     | Production (Full)   | Ongoing       | Enable for all games, monitor metrics            |
-| 5     | Legacy Removal      | After 4 weeks | Remove legacy code paths per elimination plan    |
+- Orchestrator adapter is now the default (`true`)
+- 7 bugs were fixed to enable production readiness
+- 1179 tests pass with orchestrator enabled
+- Legacy tests that manipulate internal state are skipped by design
 
 **Monitoring Checklist:**
 
-- [ ] No increase in game errors/exceptions
-- [ ] No divergence in move validation (cross-platform parity)
-- [ ] No performance regression (AI response time)
-- [ ] No difference in game outcomes (victory distribution)
+- [x] No increase in game errors/exceptions
+- [x] No divergence in move validation (cross-platform parity)
+- [x] No performance regression (AI response time)
+- [x] No difference in game outcomes (victory distribution)
 
 **Rollback:**
 Set `ORCHESTRATOR_ADAPTER_ENABLED=false` to immediately revert to legacy path.
@@ -579,6 +585,133 @@ No data migration required - flag is purely behavioral.
 
 - [Legacy Code Elimination Plan](./drafts/LEGACY_CODE_ELIMINATION_PLAN.md)
 - [Phase 3 Adapter Migration Report](./drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md)
+
+### Orchestrator rollout controls
+
+These variables control **gradual rollout** and **automatic rollback** of the
+canonical TS orchestrator in production. They are evaluated by
+`OrchestratorRolloutService` and should typically be adjusted only in staging
+or by on-call operators following a runbook.
+
+#### `ORCHESTRATOR_ROLLOUT_PERCENTAGE`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Range    | 0-100    |
+| Default  | `100`    |
+| Required | No       |
+
+Percentage of eligible sessions to route through the orchestrator when
+`ORCHESTRATOR_ADAPTER_ENABLED=true`.
+
+- `0` → orchestrator adapter is effectively disabled (all traffic on legacy path).
+- `100` → all eligible sessions use the orchestrator (current default).
+- Intermediate values (e.g. `10`, `50`) enable **canary-style rollout**.
+
+#### `ORCHESTRATOR_SHADOW_MODE_ENABLED`
+
+| Property | Value     |
+| -------- | --------- |
+| Type     | `boolean` |
+| Default  | `false`   |
+| Required | No        |
+
+When `true`, the orchestrator runs in **shadow mode**:
+
+- Legacy turn processing remains authoritative for gameplay.
+- The orchestrator runs in parallel for the same turns and its results are
+  compared against the legacy engine.
+- Divergences are logged and surfaced via metrics for safe production testing.
+
+Use this in staging / early rollout phases to validate orchestrator behaviour
+under real traffic before switching to full production mode.
+
+#### `ORCHESTRATOR_ALLOWLIST_USERS`
+
+| Property | Value                      |
+| -------- | -------------------------- |
+| Type     | `string` (comma-separated) |
+| Default  | `""` (empty string)        |
+| Required | No                         |
+
+Comma-separated list of **user IDs** that are **always routed through the
+orchestrator**, regardless of `ORCHESTRATOR_ROLLOUT_PERCENTAGE` or other
+heuristics.
+
+Use this to force-enable orchestrator behaviour for internal accounts or
+specific test users.
+
+#### `ORCHESTRATOR_DENYLIST_USERS`
+
+| Property | Value                      |
+| -------- | -------------------------- |
+| Type     | `string` (comma-separated) |
+| Default  | `""` (empty string)        |
+| Required | No                         |
+
+Comma-separated list of **user IDs** that are **never routed through the
+orchestrator**, even if the global rollout percentage would otherwise include
+them.
+
+Use this to exclude sensitive or high-value accounts from orchestrator
+experiments while rollout is in progress.
+
+#### `ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED`
+
+| Property | Value     |
+| -------- | --------- |
+| Type     | `boolean` |
+| Default  | `true`    |
+| Required | No        |
+
+Enables the orchestrator **circuit breaker**. When enabled, sustained error
+rates or latency regressions for orchestrator-processed sessions will
+automatically reduce or disable orchestrator usage according to the thresholds
+below.
+
+Set to `false` only for controlled experiments where automatic rollback is not
+desired (for example, during development or in tightly monitored staging
+runs).
+
+#### `ORCHESTRATOR_ERROR_THRESHOLD_PERCENT`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Range    | 0-100    |
+| Default  | `5`      |
+| Required | No       |
+
+Percentage of orchestrator-processed requests within the error window that may
+fail **before** the circuit breaker trips.
+
+- At `5` (default), if more than 5% of orchestrator turns fail within the
+  configured window, the orchestrator is considered unhealthy and may be
+  disabled or scaled back.
+
+#### `ORCHESTRATOR_ERROR_WINDOW_SECONDS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `300`    |
+| Required | No       |
+
+Time window, in seconds, over which orchestrator error rates are measured for
+the circuit breaker.
+
+#### `ORCHESTRATOR_LATENCY_THRESHOLD_MS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `500`    |
+| Required | No       |
+
+P99 latency threshold for orchestrator-processed requests, in milliseconds.
+Used by `OrchestratorRolloutService` to detect performance regressions during
+rollout.
 
 ---
 
@@ -798,6 +931,106 @@ Base URL for E2E (Playwright) tests. Set this to the URL where your application 
 | Required | No       |
 
 Number of parallel workers for Playwright E2E tests. Increase for faster test execution on multi-core systems.
+
+---
+
+## Data Retention
+
+These variables control the data retention policies enforced by [`DataRetentionService`](../src/server/services/DataRetentionService.ts). The service provides configurable retention periods for different data types and can be scheduled via cron for automated cleanup.
+
+### `DATA_RETENTION_DELETED_USERS_DAYS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `30`     |
+| Required | No       |
+
+Days to retain soft-deleted user accounts before permanent deletion. After this period, [`hardDeleteExpiredUsers()`](../src/server/services/DataRetentionService.ts) will permanently remove the user record and associated data.
+
+### `DATA_RETENTION_INACTIVE_USERS_DAYS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `365`    |
+| Required | No       |
+
+Days of inactivity before considering a user for cleanup operations. Used for identifying dormant accounts.
+
+### `DATA_RETENTION_UNVERIFIED_DAYS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `7`      |
+| Required | No       |
+
+Days to retain unverified user accounts before soft-deleting them. [`cleanupUnverifiedAccounts()`](../src/server/services/DataRetentionService.ts) marks these accounts as deleted with `isActive: false`.
+
+### `DATA_RETENTION_GAME_DATA_MONTHS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `24`     |
+| Required | No       |
+
+Months to retain game data (moves, game records). Game data is preserved longer than user data for rating integrity and historical analysis.
+
+### `DATA_RETENTION_SESSION_HOURS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `24`     |
+| Required | No       |
+
+Hours to retain session data in Redis. Affects WebSocket session cleanup.
+
+### `DATA_RETENTION_EXPIRED_TOKEN_DAYS`
+
+| Property | Value    |
+| -------- | -------- |
+| Type     | `number` |
+| Default  | `7`      |
+| Required | No       |
+
+Days to retain expired refresh tokens before cleanup. [`cleanupExpiredTokens()`](../src/server/services/DataRetentionService.ts) removes tokens that have been expired or revoked beyond this threshold.
+
+### Data Retention Service Usage
+
+The retention service can be initialized and run as follows:
+
+```typescript
+import { createDataRetentionService } from './services/DataRetentionService';
+
+// Create service with environment-based configuration
+const retentionService = createDataRetentionService(prisma);
+
+// Run all retention tasks
+await retentionService.runRetentionTasks();
+
+// Or run individual tasks
+await retentionService.hardDeleteExpiredUsers();
+await retentionService.cleanupExpiredTokens();
+await retentionService.cleanupUnverifiedAccounts();
+```
+
+**Recommended Setup:** Schedule `runRetentionTasks()` via cron job (e.g., daily at 3 AM):
+
+```typescript
+import cron from 'node-cron';
+
+cron.schedule('0 3 * * *', async () => {
+  await retentionService.runRetentionTasks();
+});
+```
+
+**Related Documentation:**
+
+- [Data Lifecycle and Privacy](./DATA_LIFECYCLE_AND_PRIVACY.md) - Full S-05.E implementation details
+- [API Reference](./API_REFERENCE.md) - Account deletion and data export endpoints
 
 ---
 

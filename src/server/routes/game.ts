@@ -10,8 +10,10 @@ import {
   GameIdParamSchema,
   GameListingQuerySchema,
 } from '../../shared/validation/schemas';
-import { AiOpponentsConfig } from '../../shared/types/game';
+import { AiOpponentsConfig, BoardType, GameStatus } from '../../shared/types/game';
 import { GameEngine } from '../game/GameEngine';
+import { GamePersistenceService } from '../services/GamePersistenceService';
+import { getDisplayUsername } from './user';
 
 const router = Router();
 
@@ -1046,6 +1048,321 @@ router.get(
 
 /**
  * @openapi
+ * /games/{gameId}/history:
+ *   get:
+ *     summary: Get move history for a game
+ *     description: |
+ *       Returns the complete move history for a specific game in a structured format.
+ *       Only participants and spectators (when enabled) can access this endpoint.
+ *     tags: [Games]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: gameId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: Game ID
+ *     responses:
+ *       200:
+ *         description: Move history retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     gameId:
+ *                       type: string
+ *                     moves:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           moveNumber:
+ *                             type: integer
+ *                           playerId:
+ *                             type: string
+ *                           moveType:
+ *                             type: string
+ *                           moveData:
+ *                             type: object
+ *                           timestamp:
+ *                             type: string
+ *                             format: date-time
+ *                     totalMoves:
+ *                       type: integer
+ *       400:
+ *         description: Invalid game ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *             example:
+ *               success: false
+ *               error:
+ *                 code: GAME_INVALID_ID
+ *                 message: Invalid game ID format
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ *       503:
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+router.get(
+  '/:gameId/history',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    // Validate gameId parameter
+    const paramResult = GameIdParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      throw createError('Invalid game ID format', 400, 'INVALID_GAME_ID');
+    }
+    const { gameId } = paramResult.data;
+    const userId = req.user!.id;
+
+    const prisma = getDatabaseClient();
+    if (!prisma) {
+      throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
+    }
+
+    // First check game exists and user has access
+    const game = await prisma.game.findUnique({
+      where: { id: gameId },
+      select: {
+        id: true,
+        player1Id: true,
+        player2Id: true,
+        player3Id: true,
+        player4Id: true,
+        allowSpectators: true,
+      },
+    });
+
+    if (!game) {
+      throw createError('Game not found', 404, 'GAME_NOT_FOUND');
+    }
+
+    // Enforce game-level authorization
+    assertUserCanViewGame(userId, game);
+
+    // Get move history using the persistence service
+    const moves = await prisma.move.findMany({
+      where: { gameId },
+      orderBy: { moveNumber: 'asc' },
+      include: {
+        player: { select: { id: true, username: true } },
+      },
+    });
+
+    // Format response according to the API specification
+    // Player names are transformed to show "Deleted Player" for anonymized users
+    const formattedMoves = moves.map((move) => {
+      const moveData = (move as any).moveData as Record<string, unknown> | null;
+      return {
+        moveNumber: move.moveNumber,
+        playerId: move.playerId,
+        playerName: getDisplayUsername(move.player.username),
+        moveType: move.moveType,
+        moveData: moveData || {},
+        timestamp: move.timestamp.toISOString(),
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        gameId,
+        moves: formattedMoves,
+        totalMoves: moves.length,
+      },
+    });
+  })
+);
+
+/**
+ * @openapi
+ * /games/user/{userId}:
+ *   get:
+ *     summary: Get games for a specific user
+ *     description: |
+ *       Returns a list of games that a specific user has participated in.
+ *       Results are paginated and sorted by creation date (newest first).
+ *     tags: [Games]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: User ID
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of results to return
+ *       - in: query
+ *         name: offset
+ *         schema:
+ *           type: integer
+ *           minimum: 0
+ *           default: 0
+ *         description: Pagination offset
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [waiting, active, completed, abandoned, paused]
+ *         description: Filter by game status
+ *     responses:
+ *       200:
+ *         description: User games retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     games:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           id:
+ *                             type: string
+ *                           boardType:
+ *                             type: string
+ *                           status:
+ *                             type: string
+ *                           playerCount:
+ *                             type: integer
+ *                           maxPlayers:
+ *                             type: integer
+ *                           winnerId:
+ *                             type: string
+ *                             nullable: true
+ *                           createdAt:
+ *                             type: string
+ *                             format: date-time
+ *                           endedAt:
+ *                             type: string
+ *                             format: date-time
+ *                             nullable: true
+ *                           moveCount:
+ *                             type: integer
+ *                     pagination:
+ *                       type: object
+ *                       properties:
+ *                         total:
+ *                           type: integer
+ *                         limit:
+ *                           type: integer
+ *                         offset:
+ *                           type: integer
+ *                         hasMore:
+ *                           type: boolean
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       503:
+ *         $ref: '#/components/responses/ServiceUnavailable'
+ */
+router.get(
+  '/user/:userId',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { userId } = req.params;
+
+    // Parse query parameters
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 100);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const status = req.query.status as string | undefined;
+
+    const prisma = getDatabaseClient();
+    if (!prisma) {
+      throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
+    }
+
+    // Build where clause for user's games
+    const whereClause: any = {
+      OR: [
+        { player1Id: userId },
+        { player2Id: userId },
+        { player3Id: userId },
+        { player4Id: userId },
+      ],
+    };
+
+    if (status) {
+      whereClause.status = status;
+    }
+
+    // Get games with move count
+    const games = await prisma.game.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: offset,
+      include: {
+        _count: {
+          select: { moves: true },
+        },
+        winner: { select: { id: true, username: true } },
+      },
+    });
+
+    const total = await prisma.game.count({ where: whereClause });
+
+    // Format response
+    // Winner name is transformed to show "Deleted Player" for anonymized users
+    const formattedGames = games.map((game) => ({
+      id: game.id,
+      boardType: game.boardType as BoardType,
+      status: game.status as GameStatus,
+      playerCount: [game.player1Id, game.player2Id, game.player3Id, game.player4Id].filter(Boolean)
+        .length,
+      maxPlayers: game.maxPlayers,
+      winnerId: game.winnerId,
+      winnerName: game.winner ? getDisplayUsername(game.winner.username) : null,
+      createdAt: game.createdAt.toISOString(),
+      endedAt: game.endedAt?.toISOString() || null,
+      moveCount: game._count.moves,
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        games: formattedGames,
+        pagination: {
+          total,
+          limit,
+          offset,
+          hasMore: offset + limit < total,
+        },
+      },
+    });
+  })
+);
+
+/**
+ * @openapi
  * /games/{gameId}/diagnostics/session:
  *   get:
  *     summary: Get in-memory session and connection diagnostics for a game
@@ -1164,7 +1481,7 @@ router.get(
     // in certain tests or CLI tools), return a minimal diagnostics view
     // that reflects only the absence of an in-memory session.
     if (!wsServerInstance || typeof wsServerInstance.getGameDiagnosticsForGame !== 'function') {
-      return res.json({
+      res.json({
         success: true,
         data: {
           sessionStatus: null,
@@ -1176,6 +1493,7 @@ router.get(
           },
         },
       });
+      return;
     }
 
     const diagnostics = wsServerInstance.getGameDiagnosticsForGame(gameId) as {

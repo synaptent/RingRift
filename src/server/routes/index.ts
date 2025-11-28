@@ -2,8 +2,9 @@ import { Router } from 'express';
 // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
 const swaggerUi = require('swagger-ui-express');
 import authRoutes from './auth';
-import gameRoutes, { setWebSocketServer } from './game';
-import userRoutes from './user';
+import gameRoutes, { setWebSocketServer as setGameWebSocketServer } from './game';
+import userRoutes, { setWebSocketServer as setUserWebSocketServer } from './user';
+import adminRoutes from './admin';
 import { authenticate } from '../middleware/auth';
 import { httpLogger } from '../utils/logger';
 import { swaggerSpec } from '../openapi/config';
@@ -11,17 +12,24 @@ import { swaggerSpec } from '../openapi/config';
 export const setupRoutes = (wsServer?: any): Router => {
   const router = Router();
 
-  // Inject WebSocket server into game routes for lobby broadcasting
+  // Inject WebSocket server into routes that need it
   if (wsServer) {
-    setWebSocketServer(wsServer);
+    // Game routes need wsServer for lobby broadcasting
+    setGameWebSocketServer(wsServer);
+    // User routes need wsServer for session termination on account deletion
+    setUserWebSocketServer(wsServer);
   }
 
   // OpenAPI Documentation
   // Swagger UI at /api/docs
-  router.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'RingRift API Documentation',
-  }));
+  router.use(
+    '/docs',
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec, {
+      customCss: '.swagger-ui .topbar { display: none }',
+      customSiteTitle: 'RingRift API Documentation',
+    })
+  );
 
   // Raw OpenAPI spec at /api/docs.json
   router.get('/docs.json', (_req, res) => {
@@ -35,7 +43,28 @@ export const setupRoutes = (wsServer?: any): Router => {
   // Protected routes (require authentication)
   router.use('/games', authenticate, gameRoutes);
   router.use('/users', authenticate, userRoutes);
+  router.use('/admin', adminRoutes);
 
+  /**
+   * @openapi
+   * /client-errors:
+   *   post:
+   *     summary: Report client-side errors from the SPA
+   *     description: |
+   *       Accepts error reports from the RingRift web client and logs them for diagnostics.
+   *       This endpoint is unauthenticated and returns no content.
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             description: Arbitrary error payload from the client
+   *             additionalProperties: true
+   *     responses:
+   *       204:
+   *         description: Error report accepted
+   */
   // Client-side error reporting endpoint (no auth; used by SPA error reporter)
   router.post('/client-errors', (req, res) => {
     const body = (req as any).body ?? {};
@@ -69,6 +98,17 @@ export const setupRoutes = (wsServer?: any): Router => {
     res.status(204).send();
   });
 
+  /**
+   * @openapi
+   * /:
+   *   get:
+   *     summary: API info
+   *     description: |
+   *       Returns basic metadata about the RingRift API and links to documentation.
+   *     responses:
+   *       200:
+   *         description: API information
+   */
   // API info endpoint
   router.get('/', (_req, res) => {
     res.json({

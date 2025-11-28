@@ -1,9 +1,24 @@
 # RingRift Rules Engine Architecture & Rollout Strategy
 
+> **SSoT alignment:** This document is a derived architectural view over the following canonical sources:
+>
+> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers → aggregates → orchestrator → contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`). This is the **Rules/invariants semantics SSoT** for RingRift.
+> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` together with the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`) define the executable Move + orchestrator + WebSocket lifecycle that this doc describes.
+> - **Precedence:** Backend (`GameEngine`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. If this document ever conflicts with the shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this document must be updated to match them.
+>
+> In other words, this file explains how hosts are wired around the TS rules SSoT; it does not introduce a separate semantics SSoT.
+
 **Last Updated:** November 26, 2025
 **Scope:** Python Rules Engine, TypeScript Parity, Canonical Orchestrator, and Rollout Plan
 
-This document defines the architecture of the Python rules engine within the AI service, its relationship to the canonical TypeScript engine, and the strategy for rolling it out as an authoritative validation source.
+**Doc Status (2025-11-26): Active (with historical/aspirational content)**
+
+- Canonical rules semantics SSoT is the **shared TypeScript engine** under `src/shared/engine/`, specifically: helpers → domain aggregates → turn orchestrator → contracts (`schemas.ts`, `serialization.ts`, `testVectorGenerator.ts` + v2 vectors under `tests/fixtures/contract-vectors/v2/`).
+- Move/decision/WebSocket lifecycle semantics are documented in `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`).
+- Backend (`GameEngine`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this SSoT; they must remain parity-validated but are not independent sources of rules semantics.
+- Sections describing Python mutator-first refactors and future rollout phases should be read as **aspirational design** layered on top of the TS rules SSoT.
+
+This document defines the architecture of the Python rules engine within the AI service, its relationship to the canonical TypeScript engine, and the strategy for rolling it out as a parity-validated host over the canonical TypeScript engine in online validation flows.
 
 ---
 
@@ -28,20 +43,20 @@ important groups are:
 - **Movement & captures**
   - Geometry & non‑capturing reachability: [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1)
   - Overtaking capture enumeration: [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1)
-  - Validators: [`MovementValidator.ts`](src/shared/engine/validators/MovementValidator.ts:1), [`CaptureValidator.ts`](src/shared/engine/validators/CaptureValidator.ts:1)
-  - Mutators: [`MovementMutator.ts`](src/shared/engine/mutators/MovementMutator.ts:1), [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1)
+  - Shared helpers for applying movement/capture segments and marker path effects: [`core.ts`](src/shared/engine/core.ts:1), [`movementApplication.ts`](src/shared/engine/movementApplication.ts:1), [`captureChainHelpers.ts`](src/shared/engine/captureChainHelpers.ts:1)
+  - Aggregates and mutators: [`MovementAggregate.ts`](src/shared/engine/aggregates/MovementAggregate.ts:1), [`CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts:1), [`MovementMutator.ts`](src/shared/engine/mutators/MovementMutator.ts:1), [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1)
 
 - **Lines**
   - Marker‑line geometry: [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21)
-  - Line‑phase validators: [`LineValidator.ts`](src/shared/engine/validators/LineValidator.ts:1)
-  - Line mutators (collapse, elimination bookkeeping): [`LineMutator.ts`](src/shared/engine/mutators/LineMutator.ts:1)
-  - Canonical decision helpers: [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) – enumerates and applies `process_line` and `choose_line_reward` decision `Move`s, and standardises when a line collapse grants a ring‑elimination opportunity (via `pendingLineRewardElimination`) for all hosts.
+  - Canonical decision helpers: [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) – enumerate and apply `process_line` and `choose_line_reward` decision `Move`s, and standardise when a line collapse grants a ring‑elimination opportunity (via `pendingLineRewardElimination`) for all hosts.
+  - Aggregate: [`LineAggregate.ts`](src/shared/engine/aggregates/LineAggregate.ts:1)
 
 - **Territory (detection, borders, processing)**
   - Region detection: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36)
   - Border‑marker expansion: [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35)
   - Region processing pipeline (Q23 / self‑elimination compatible): [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1)
   - Canonical decision helpers: [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) – enumerates and applies `process_territory_region` and `eliminate_rings_from_stack` decisions, enforcing Q23, S‑invariant, and per‑player elimination bookkeeping for backend and sandbox hosts.
+  - Aggregate: [`TerritoryAggregate.ts`](src/shared/engine/aggregates/TerritoryAggregate.ts:1)
 
 - **Placement**
   - Placement validation (including no‑dead‑placement wiring): [`PlacementValidator.ts`](src/shared/engine/validators/PlacementValidator.ts:1)
@@ -50,11 +65,10 @@ important groups are:
 - **Victory**
   - Ring‑elimination, Territory‑majority, and stalemate ladder: [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts:51)
 
-- **Turn sequencing**
+- **Turn sequencing & orchestration**
   - Shared phase/turn state machine: [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132)
-  - Turn/phase mutators used by hosts: [`TurnMutator.ts`](src/shared/engine/mutators/TurnMutator.ts:1)
-  - Shared orchestrating GameEngine used in parity tests: [`GameEngine.ts`](src/shared/engine/GameEngine.ts:37)
-  - **Canonical Turn Orchestrator (NEW):** [`turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts:1) – single entry point for all turn processing, delegating to domain aggregates
+  - Canonical phase state machine for orchestrator: [`phaseStateMachine.ts`](src/shared/engine/orchestration/phaseStateMachine.ts:1)
+  - **Canonical Turn Orchestrator:** [`turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts:1) – single entry point (`processTurn` / `processTurnAsync`) for all turn processing, delegating to domain aggregates ([`PlacementAggregate.ts`](src/shared/engine/aggregates/PlacementAggregate.ts:1), [`MovementAggregate.ts`](src/shared/engine/aggregates/MovementAggregate.ts:1), [`CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts:1), [`LineAggregate.ts`](src/shared/engine/aggregates/LineAggregate.ts:1), [`TerritoryAggregate.ts`](src/shared/engine/aggregates/TerritoryAggregate.ts:1), [`VictoryAggregate.ts`](src/shared/engine/aggregates/VictoryAggregate.ts:1)) in deterministic order
 
 - **Orchestration (NEW - Phases 1-4 Complete)**
   - Canonical orchestrator: [`src/shared/engine/orchestration/`](src/shared/engine/orchestration/README.md:1)
@@ -62,6 +76,14 @@ important groups are:
   - Orchestration types: [`types.ts`](src/shared/engine/orchestration/types.ts:1)
   - Backend adapter: [`TurnEngineAdapter.ts`](src/server/game/turn/TurnEngineAdapter.ts:1)
   - Client adapter: [`SandboxOrchestratorAdapter.ts`](src/client/sandbox/SandboxOrchestratorAdapter.ts:1)
+  - Host orchestration modes:
+    - Backend `GameEngine.makeMove()` can operate in **adapter mode** (delegating to `TurnEngineAdapter` / `processTurnAsync`) or in **legacy mode** (validating via `RuleEngine` and applying moves directly via `applyMove`). Movement/capture mutation in the legacy path now uses Movement/Capture aggregates, but phase progression is still host-managed. In production, adapter mode is the **default and canonical** path; legacy mode is confined to tests, diagnostics, and kill‑switch/circuit‑breaker scenarios (see `EngineSelection.LEGACY` below).
+    - Client `ClientSandboxEngine` now treats orchestrator‑driven flows (via `SandboxOrchestratorAdapter` and shared `turnLogic`) as the **canonical** rules path for sandbox games. Legacy click‑driven flows remain only as thin UI/test shims over shared aggregates and turn helpers, and are treated as **tests/tools‑only** surfaces rather than independent rules engines.
+    - Python has no embedded TS orchestrator; instead, its `GameEngine` is parity‑validated against the TS orchestrator + contracts via v2 contract vectors and parity suites. It remains a host/adapter, not a separate rules SSoT.
+  - Engine selection modes (backend):
+    - `EngineSelection.ORCHESTRATOR` – canonical production path: `GameSession.configureEngineSelection()` enables the `TurnEngineAdapter` (`useOrchestratorAdapter=true`), and all turn processing goes through `processTurnAsync` with Movement/Capture/Placement/Line/Territory/Victory aggregates as the single source of rules.
+    - `EngineSelection.SHADOW` – legacy remains authoritative, but the orchestrator runs in parallel on a cloned state via `ShadowModeComparator` and reports mismatch/error/latency metrics to Prometheus. Used for safe rollout and regression detection.
+    - `EngineSelection.LEGACY` – test/tools‑only path: bypasses the adapter and uses the legacy `GameEngine`/`RuleEngine` turn pipeline. In production this mode is reachable only via the orchestrator kill switch or an open circuit breaker (see `OrchestratorRolloutService` and `docs/drafts/ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md`; a dedicated `ORCHESTRATOR_ROLLOUT` runbook remains planned but is not yet present under `docs/runbooks/`). Normal gameplay is expected to use `ORCHESTRATOR` or `SHADOW`.
 
 - **Contract Testing (NEW)**
   - Contract schemas: [`src/shared/engine/contracts/schemas.ts`](src/shared/engine/contracts/schemas.ts:1)
@@ -70,6 +92,8 @@ important groups are:
   - Contract test runner (TS): [`tests/contracts/contractVectorRunner.test.ts`](tests/contracts/contractVectorRunner.test.ts:1)
   - Contract test runner (Python): [`ai-service/tests/contracts/test_contract_vectors.py`](ai-service/tests/contracts/test_contract_vectors.py:1)
   - Test vectors: [`tests/fixtures/contract-vectors/v2/`](tests/fixtures/contract-vectors/v2/) (12 vectors across 5 categories)
+
+The **canonical description of the Move/decision/WebSocket lifecycle and engine decision surfaces** lives in `docs/CANONICAL_ENGINE_API.md`. This architecture document focuses on how the shared TS rules engine (helpers → aggregates → orchestrator → contracts) is hosted by the backend, sandbox, and Python engines, and how the Python engine is rolled out as a parity-validated validation host.
 
 ### Backend, Shared Engine, Orchestrator, and Sandbox Roles
 
@@ -105,7 +129,10 @@ At runtime there are four TypeScript layers:
     victory, and turn progression.
   - Controlled by `useOrchestratorAdapter` feature flag.
   - Provides local experimentation, AI‑vs‑AI simulations, and RulesMatrix / FAQ
-    scenario playback.
+    scenario playback. Legacy sandbox engines (`sandboxLinesEngine.ts`, `sandboxTerritoryEngine.ts`,
+    `sandboxTurnEngine.ts`, `sandboxMovementEngine.ts`) have now been removed in favour of
+    shared helpers and `ClientSandboxEngine` orchestration for movement, captures, lines,
+    territory, and turn progression.
 
 ### How to Change or Extend Rules Safely
 
@@ -113,25 +140,34 @@ When changing rules, treat the shared engine as the only editable source of
 truth:
 
 1. Identify the relevant shared module(s):
-   - Movement & captures: [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1),
+   - Movement & captures (enumeration, application, chain state, aggregates): [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1),
      [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1),
-     [`MovementValidator.ts`](src/shared/engine/validators/MovementValidator.ts:1),
-     [`CaptureValidator.ts`](src/shared/engine/validators/CaptureValidator.ts:1),
+     [`movementApplication.ts`](src/shared/engine/movementApplication.ts:1),
+     [`captureChainHelpers.ts`](src/shared/engine/captureChainHelpers.ts:1),
+     [`MovementAggregate.ts`](src/shared/engine/aggregates/MovementAggregate.ts:1),
+     [`CaptureAggregate.ts`](src/shared/engine/aggregates/CaptureAggregate.ts:1),
      [`MovementMutator.ts`](src/shared/engine/mutators/MovementMutator.ts:1),
-     [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1).
-   - Lines (geometry & validation): [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21),
-     [`LineValidator.ts`](src/shared/engine/validators/LineValidator.ts:1),
-     [`LineMutator.ts`](src/shared/engine/mutators/LineMutator.ts:1).
-   - Line decision phases (rewards and eliminations): [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) for `process_line` / `choose_line_reward` decisions and when line collapses grant `eliminate_rings_from_stack` opportunities.
-   - Territory (geometry & processing): [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36),
-     [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35),
-     [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1).
-   - Territory decision phases (region processing & self‑elimination): [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) for `process_territory_region` / `eliminate_rings_from_stack` decisions, Q23 gating, and elimination bookkeeping.
-   - Placement: [`PlacementValidator.ts`](src/shared/engine/validators/PlacementValidator.ts:1),
-     [`PlacementMutator.ts`](src/shared/engine/mutators/PlacementMutator.ts:1).
-   - Victory: [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts:51).
-   - Turn sequencing: [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132),
-     [`TurnMutator.ts`](src/shared/engine/mutators/TurnMutator.ts:1).
+     [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1),
+     [`core.validateCaptureSegmentOnBoard`](src/shared/engine/core.ts:1).
+   - Lines (geometry, aggregation, decision phases): [`lineDetection.ts`](src/shared/engine/lineDetection.ts:21),
+     [`LineAggregate.ts`](src/shared/engine/aggregates/LineAggregate.ts:1),
+     [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1) for `process_line` / `choose_line_reward` decisions and when line collapses grant `eliminate_rings_from_stack` opportunities.
+
+- Territory (detection, borders, processing, decisions, aggregates): [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36),
+  [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35),
+  [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1),
+  [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) for `process_territory_region` / `eliminate_rings_from_stack` decisions, Q23 gating, and elimination bookkeeping,
+  [`TerritoryAggregate.ts`](src/shared/engine/aggregates/TerritoryAggregate.ts:1).
+- Placement: [`PlacementValidator.ts`](src/shared/engine/validators/PlacementValidator.ts:1),
+  [`PlacementMutator.ts`](src/shared/engine/mutators/PlacementMutator.ts:1),
+  [`PlacementAggregate.ts`](src/shared/engine/aggregates/PlacementAggregate.ts:1) (canonical `place_ring` / `skip_placement` validation and mutation, including no-dead-placement and skip-eligibility helpers now consumed directly by backend `RuleEngine`, `GameEngine`, and `ClientSandboxEngine`),
+  [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts:1).
+- Victory: [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts:51),
+  [`VictoryAggregate.ts`](src/shared/engine/aggregates/VictoryAggregate.ts:1).
+- Turn orchestration: [`turnLogic.ts`](src/shared/engine/turnLogic.ts:132),
+  [`phaseStateMachine.ts`](src/shared/engine/orchestration/phaseStateMachine.ts:1),
+  [`turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts:1),
+  plus the domain aggregates listed above.
 
 2. Update the shared helper(s) under
    [`src/shared/engine`](src/shared/engine/types.ts:1). Avoid editing
@@ -156,24 +192,36 @@ truth:
    - Victory:
      [`victory.shared.test.ts`](tests/unit/victory.shared.test.ts:1).
    - Turn sequencing & termination:
-     [`GameEngine.turnSequence.scenarios.test.ts`](tests/unit/GameEngine.turnSequence.scenarios.test.ts:1),
+     [`GameEngine.decisionPhases.MoveDriven.test.ts`](tests/unit/GameEngine.decisionPhases.MoveDriven.test.ts:1),
      [`SandboxAI.ringPlacementNoopRegression.test.ts`](tests/unit/SandboxAI.ringPlacementNoopRegression.test.ts:1),
      [`GameEngine.aiSimulation.test.ts`](tests/unit/GameEngine.aiSimulation.test.ts:1).
 
 4. Re‑run parity suites that ensure backend and sandbox still match the shared
-   helpers:
-   - Backend vs sandbox:
-     [`MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/MovementCaptureParity.RuleEngine_vs_Sandbox.test.ts:1),
-     [`PlacementParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/PlacementParity.RuleEngine_vs_Sandbox.test.ts:1),
+   helpers and orchestrator:
+   - Backend vs sandbox & host engines (TypeScript): representative suites under `tests/unit/` such as
+     [`Backend_vs_Sandbox.traceParity.test.ts`](tests/unit/Backend_vs_Sandbox.traceParity.test.ts:1),
+     [`Backend_vs_Sandbox.eliminationTrace.test.ts`](tests/unit/Backend_vs_Sandbox.eliminationTrace.test.ts:1),
+     [`Backend_vs_Sandbox.seed5.internalStateParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.internalStateParity.test.ts:1),
+     [`Backend_vs_Sandbox.seed5.checkpoints.test.ts`](tests/unit/Backend_vs_Sandbox.seed5.checkpoints.test.ts:1),
+     [`Backend_vs_Sandbox.seed1.snapshotParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed1.snapshotParity.test.ts:1),
+     [`Backend_vs_Sandbox.seed18.snapshotParity.test.ts`](tests/unit/Backend_vs_Sandbox.seed18.snapshotParity.test.ts:1),
+     [`Sandbox_vs_Backend.aiRngParity.test.ts`](tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1),
+     [`Sandbox_vs_Backend.aiRngFullParity.test.ts`](tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts:1),
      [`TerritoryParity.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts:1),
      [`TerritoryBorders.Backend_vs_Sandbox.test.ts`](tests/unit/TerritoryBorders.Backend_vs_Sandbox.test.ts:1),
      [`TerritoryCore.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts:1),
-     [`VictoryParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/VictoryParity.RuleEngine_vs_Sandbox.test.ts:1).
-   - Shared vs host engines:
+     [`MarkerPath.GameEngine_vs_Sandbox.test.ts`](tests/unit/MarkerPath.GameEngine_vs_Sandbox.test.ts:1),
+     [`TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts`](tests/unit/TerritoryPendingFlag.GameEngine_vs_Sandbox.test.ts:1).
+   - Shared engine vs hosts (TypeScript):
      [`TraceFixtures.sharedEngineParity.test.ts`](tests/unit/TraceFixtures.sharedEngineParity.test.ts:1),
-     [`RefactoredEngineParity.test.ts`](tests/unit/RefactoredEngineParity.test.ts:1),
-     [`movementReachabilityParity.test.ts`](tests/unit/movementReachabilityParity.test.ts:1),
-     [`reachabilityParity.RuleEngine_vs_Sandbox.test.ts`](tests/unit/reachabilityParity.RuleEngine_vs_Sandbox.test.ts:1).
+     [`EngineDeterminism.shared.test.ts`](tests/unit/EngineDeterminism.shared.test.ts:1),
+     [`NoRandomInCoreRules.test.ts`](tests/unit/NoRandomInCoreRules.test.ts:1).
+   - Python vs TypeScript parity (AI service):
+     [`test_rules_parity.py`](ai-service/tests/parity/test_rules_parity.py:1),
+     [`test_rules_parity_fixtures.py`](ai-service/tests/parity/test_rules_parity_fixtures.py:1),
+     [`test_ts_seed_plateau_snapshot_parity.py`](ai-service/tests/parity/test_ts_seed_plateau_snapshot_parity.py:1),
+     [`test_line_and_territory_scenario_parity.py`](ai-service/tests/parity/test_line_and_territory_scenario_parity.py:1),
+     [`test_ai_plateau_progress.py`](ai-service/tests/parity/test_ai_plateau_progress.py:1).
 
 5. Validate **RulesMatrix** and **FAQ** scenarios under
    [`tests/scenarios`](tests/scenarios/FAQ_Q09_Q14.test.ts:1) remain green; add
@@ -218,7 +266,7 @@ To ensure the Python engine behaves exactly like the TypeScript engine:
 
 **Verification:**
 
-- **Trace Parity:** `tests/unit/Python_vs_TS.traceParity.test.ts` consumes Python-generated vectors.
+- **Trace Parity:** TS-generated parity traces under `tests/fixtures/rules-parity/v1/**` together with the integration harness in [`src/server/game/test-python-rules-integration.ts`](src/server/game/test-python-rules-integration.ts:1) feed the Python parity suites.
 - **Fixture Parity:** `ai-service/tests/parity/test_rules_parity_fixtures.py` validates TS-generated fixtures against the Python engine.
 
 ### DefaultRulesEngine ↔ GameEngine Equivalence Coverage
@@ -390,7 +438,7 @@ The rollout is controlled by the `RINGRIFT_RULES_MODE` environment variable.
   - If Python rejects the move, it is rejected.
   - If Python accepts, the move is applied (currently via TS engine in "reverse shadow" for safety, eventually by trusting Python state).
 - **Fallback:** On Python service failure, fall back to TS engine and log `backend_fallback`.
-- **Goal:** Make the Python engine the single source of truth for validation, enabling advanced AI features that rely on precise rule simulation.
+- **Goal:** Make the Python engine the **primary online validation host over the canonical TS orchestrator + contracts**, enabling advanced AI features that rely on precise rule simulation while keeping the TS shared engine as the rules SSoT.
 
 ### Acceptance Criteria for Phase 2
 
@@ -447,11 +495,14 @@ These exclusivity rules are considered **part of the rules contract** and must b
 
 - Client sandbox:
   [`sandboxTerritory.ts`](src/client/sandbox/sandboxTerritory.ts:1),
-  [`sandboxTerritoryEngine.ts`](src/client/sandbox/sandboxTerritoryEngine.ts:1).
-- Shared engine:
+  [`ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:2057).
+- Shared engine (canonical semantics SSoT):
   [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36),
-  [`TerritoryMutator.ts`](src/shared/engine/mutators/TerritoryMutator.ts:1),
-  [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1).
+  [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35),
+  [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1),
+  [`TerritoryAggregate.ts`](src/shared/engine/aggregates/TerritoryAggregate.ts:1).
+- Python adapter (semantic boundary):
+  [`territory.py` (TerritoryMutator)](ai-service/app/rules/mutators/territory.py:1) – Python mutator layered over the canonical TS Territory helpers/aggregate above; it is a semantic boundary, **not** an independent rules SSoT.
 - Backend helpers:
   [`BoardManager.ts`](src/server/game/BoardManager.ts:1),
   [`GameEngine.ts`](src/server/game/GameEngine.ts:1) – both delegate to the
@@ -460,16 +511,17 @@ These exclusivity rules are considered **part of the rules contract** and must b
 
 **Board geometries:**
 
-- `square8`, `square19`: orthogonal (Von Neumann) adjacency for regions.
-- `hex`: hex adjacency based on the coordinate system in `boardMovementGrid.ts`.
+- `square8`, `square19`: territory regions use Von Neumann (orthogonal) adjacency, via `BOARD_CONFIGS[boardType].territoryAdjacency`.
+- `hexagonal`: territory regions use hex adjacency on cube coordinates, also driven by `BOARD_CONFIGS[boardType].territoryAdjacency`.
 
-**Disconnected region:**
+**Region definition and disconnection (canonical):**
 
-- A **region** is a maximal connected set of empty spaces on the board under the geometry's adjacency.
-- A region is **disconnected** for a given player if:
-  - It is completely enclosed by that player's border markers and/or board edges, and
-  - It does not touch any other reachable empty spaces outside the border (again with geometry-appropriate adjacency).
-- `BoardManager.findDisconnectedRegions` computes these regions. The canonical definition is: _"all empty spaces that are no longer connected to the global exterior via empty-space adjacency, assuming the current marker layout"_.
+- A **region** is a maximal set of **non‑collapsed** cells (empty, marker, or stack) that are connected via the board’s `territoryAdjacency`. This matches RR‑CANON‑R040 and the implementation in [`territoryDetection.findDisconnectedRegions`](src/shared/engine/territoryDetection.ts:36).
+- A region is **physically disconnected** when every adjacency path from any cell in the region to any non‑collapsed cell outside the region must cross only:
+  - collapsed spaces, and/or
+  - board edge, and/or
+  - markers belonging to exactly one border color, as formalised in [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35).
+- Color representation (RR‑CANON‑R142) and the Q23 self‑elimination prerequisite (RR‑CANON‑R143) are handled by [`territoryProcessing.canProcessTerritoryRegion`](src/shared/engine/territoryProcessing.ts:99) and [`territoryDecisionHelpers`](src/shared/engine/territoryDecisionHelpers.ts:1); `BoardManager.findDisconnectedRegions` and the sandbox adapters now delegate to these shared helpers rather than maintaining a separate server‑local implementation.
 
 The shared `territoryDetection` implementation is the normative algorithm for detecting such regions; backend and Python code must either call it or faithfully mirror its behaviour.
 
@@ -568,7 +620,7 @@ The following examples are encoded as tests and serve as _living specifications_
     - `S` increases appropriately due to new `collapsedSpaces` and `eliminatedRings`.
 
 - **Q23 negative (sandbox rules):**
-  - Tests: `tests/unit/sandboxTerritory.rules.test.ts`, `tests/unit/sandboxTerritoryEngine.rules.test.ts` (Q23-specific cases).
+  - Tests: `tests/unit/sandboxTerritoryEngine.rules.test.ts` (legacy‑named diagnostic harness that now exercises `ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer`), `tests/unit/ClientSandboxEngine.territoryDisconnection.test.ts` (Q23-specific cases).
   - Scenario: a region is fully enclosed by Player 1's markers, but Player 1 has no stacks or caps outside that region.
   - Expected behaviour:
     - Region is detected as disconnected but **ineligible** (negative Q23).
@@ -707,14 +759,14 @@ This section documents where **board invariants** and the **termination ladder**
   - Placement (`tryPlaceRings`) rejects placement on markers or collapsed spaces.
   - Line collapse (`collapseLineMarkers`) removes stacks and markers before collapsing to Territory.
   - `collapseMarker` in `ClientSandboxEngine` removes both marker and stack, then sets collapsed Territory.
-  - Territory processing (`sandboxTerritory.ts` / `sandboxTerritoryEngine.ts`) removes stacks/markers before collapsing region spaces and border markers.
+  - Territory processing in `sandboxTerritory.ts` (historically via `sandboxTerritoryEngine.ts`, now removed) removes stacks/markers before collapsing region spaces and border markers.
 
 Together, these guarantees mean that **any** invariant violation that does slip through is surfaced immediately in tests on both backend and sandbox paths, and repair logic in hot mutators ensures new overlaps are corrected before they become latent bugs.
 
 ### 6.2 Shared No-Dead-Placement Core
 
 The no-dead-placement rule is implemented once in the shared core and then
-wrapped by backend and sandbox engines.
+wrapped by backend, sandbox, and Python engines.
 
 - Core helper: `hasAnyLegalMoveOrCaptureFromOnBoard` in
   `src/shared/engine/core.ts`.
@@ -727,21 +779,43 @@ wrapped by backend and sandbox engines.
     - If none exist, checks for at least one legal **overtaking capture**
       from `from`.
     - Returns `true` iff some legal movement or capture exists.
-- Backend usage:
+- Backend usage (TypeScript):
   - `BoardManager` adapters expose a `MovementBoardView` over the server-side
     board.
   - `RuleEngine.validateRingPlacement` and related helpers call
-    `hasAnyLegalMoveOrCaptureFromOnBoard` to enforce that placements do not
-    create dead stacks.
-- Sandbox usage:
+    `hasAnyLegalMoveOrCaptureFromOnBoard` (directly or via shared placement
+    aggregates) to enforce that placements do not create dead stacks.
+- Sandbox usage (TypeScript):
   - `ClientSandboxEngine.hasAnyLegalMoveOrCaptureFrom` builds a
     `MovementBoardView` from the sandbox board and delegates to the shared core.
   - `ClientSandboxEngine.tryPlaceRings` uses this to gate placements.
   - `sandboxPlacement.enumerateLegalRingPlacements` uses the same check when
-    generating candidate positions for sandbox and AI.
+    generating candidate positions for sandbox and AI, either directly in its
+    legacy path or indirectly via `validatePlacementOnBoard` +
+    `PlacementContext`.
+- Python usage:
+  - `_create_hypothetical_board_with_placement` in
+    `ai-service/app/game_engine.py` mirrors
+    `createHypotheticalBoardWithPlacement` from `sandboxPlacement.ts`, taking
+    a `BoardState`, position, player, and placement count and returning a
+    hypothetical post-placement board.
+  - `_has_any_movement_or_capture_after_hypothetical_placement` in
+    `ai-service/app/game_engine.py` constructs a temporary `GameState` in the
+    `MOVEMENT` phase, fixes `must_move_from_stack_key` to the placed stack,
+    seeds a synthetic `place_ring` move into `move_history`, and then reuses
+    `_get_movement_moves` and `_get_capture_moves` to answer the same
+    question as `hasAnyLegalMoveOrCaptureFromOnBoard`: “does this placement
+    leave at least one legal move or capture from the placed stack?”
+  - `_get_ring_placement_moves` calls both helpers for each candidate
+    placement position and count, only emitting `place_ring` moves where the
+    hypothetical board passes the no-dead-placement check. This mirrors the
+    TS-side `enumerateLegalRingPlacements` +
+    `hasAnyLegalMoveOrCaptureFromOnBoard` pipeline and ensures both engines
+    reject dead-stack placements near edges, collapsed spaces, and tall
+    stacks.
 
-This shared helper is the **single source of truth** for no-dead-placement in
-both backend and sandbox engines.
+These helpers together are the **single source of truth** for no-dead-
+placement across backend, sandbox, and Python engines.
 
 ### 6.3 Termination Ladder & Sandbox AI Control Flow
 
@@ -758,7 +832,7 @@ The sandbox AI enforces this ladder using three main components:
 
 - Shared core: `hasAnyLegalMoveOrCaptureFromOnBoard` (no-dead-placement).
 - Sandbox AI policy: `src/client/sandbox/sandboxAI.ts`.
-- Turn engine / forced elimination: `src/client/sandbox/sandboxTurnEngine.ts`.
+- Turn engine / forced elimination: `ClientSandboxEngine` turn helpers layered over shared `turnLogic.advanceTurnAndPhase`.
 
 #### 6.3.1 Ring Placement Phase (Sandbox AI)
 
@@ -805,37 +879,38 @@ with `ringsInHand <= 0` for many consecutive no-op turns.
 
 #### 6.3.2 Forced Elimination & Turn Engine (Sandbox)
 
-Key implementation: `maybeProcessForcedEliminationForCurrentPlayerSandbox` in
-`src/client/sandbox/sandboxTurnEngine.ts`, wired through
-`ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`.
+Key implementation: `ClientSandboxEngine.startTurnForCurrentPlayer` and
+`ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`, backed by
+the shared `turnLogic.advanceTurnAndPhase` helper.
 
 - Inputs:
-  - `state: GameState` and per-turn `SandboxTurnState`.
-  - Hooks that expose `enumerateLegalRingPlacements`,
+  - `state: GameState` and per-turn `SandboxTurnState` (hasPlacedThisTurn, mustMoveFromStackKey).
+  - Local helpers that expose `enumerateLegalRingPlacements`,
     `hasAnyLegalMoveOrCaptureFrom`, `getPlayerStacks`, `forceEliminateCap`,
     and `checkAndApplyVictory`.
-- Behaviour:
+- Behaviour (summarised from `ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayerInternal`):
   1. Compute stacks for the current player.
   2. If **no stacks**:
      - If `ringsInHand <= 0`: advance `currentPlayer` to the next player,
-       mark this as an eliminated turn (for control flow), and return.
+       reset per-turn state, and treat this as an eliminated turn.
      - If `ringsInHand > 0`: do **not** advance; the player may act again on
-       a future ring_placement turn.
+       a future `ring_placement` turn.
   3. If stacks **do exist**:
      - Compute whether any movement/capture is available:
        - If a must-move stack is tracked for movement, check that stack
          first; otherwise, scan all stacks.
      - Compute whether any legal ring placements exist that satisfy the
-       no-dead-placement rule using `enumerateLegalRingPlacements`.
+       no-dead-placement rule using `enumerateLegalRingPlacements` and cap checks.
   4. If the player has **any** legal action (move, capture, or
      no-dead-placement placement), return with `eliminated: false`.
   5. If they have **no** such actions, call `forceEliminateCap` to perform a
-     cap elimination and advance turn order.
+     cap elimination, rotate `currentPlayer` to the next seat, and reset per-turn
+     state before the next turn starts.
 
-This function is used both when starting a new turn and during movement
-phases where a player might become completely blocked. It ensures the rules-
-level condition "cannot move and cannot place → must eliminate" is enforced
-consistently in the sandbox.
+These helpers are used both when starting a new turn and during movement
+phases where a player might become completely blocked. Combined with the
+shared turn sequencer, they enforce the rules-level condition
+"cannot move and cannot place → must eliminate" consistently in the sandbox.
 
 ### 6.4 Termination-Oriented Tests & Diagnostics
 
@@ -891,11 +966,11 @@ of the sandbox AI matches the theoretical termination guarantees in
 - Sandbox Territory & elimination:
   - `src/client/sandbox/ClientSandboxEngine.ts`
   - `src/client/sandbox/sandboxTerritory.ts`
-  - `src/client/sandbox/sandboxTerritoryEngine.ts`
+  - ~~`src/client/sandbox/sandboxTerritoryEngine.ts`~~ (historical; module removed after consolidation into shared Territory helpers and `ClientSandboxEngine` turn helpers)
   - `src/client/sandbox/sandboxElimination.ts`
 - Shared engine:
   - [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:36)
-  - [`TerritoryMutator.ts`](src/shared/engine/mutators/TerritoryMutator.ts:1)
+  - [`TerritoryAggregate.ts`](src/shared/engine/aggregates/TerritoryAggregate.ts:1)
   - [`CaptureMutator.ts`](src/shared/engine/mutators/CaptureMutator.ts:1)
   - [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts:35)
   - [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1)
@@ -908,10 +983,12 @@ of the sandbox AI matches the theoretical termination guarantees in
   - [`board_manager.py`](ai-service/app/board_manager.py:1)
   - [`territory.py`](ai-service/app/rules/mutators/territory.py:1)
   - [`capture.py`](ai-service/app/rules/mutators/capture.py:1)
+- Topology & geometry overview:
+  - `docs/TOPOLOGY_MODES.md`
 - Termination & sandbox AI:
   - `docs/supplementary/RULES_TERMINATION_ANALYSIS.md`
   - `src/client/sandbox/sandboxAI.ts`
-  - `src/client/sandbox/sandboxTurnEngine.ts`
+  - `src/client/sandbox/ClientSandboxEngine.ts` (turn helpers)
   - `tests/unit/ClientSandboxEngine.aiSingleSeedDebug.test.ts`
   - `tests/unit/ClientSandboxEngine.aiSimulation.test.ts`
   - `tests/unit/SandboxAI.ringPlacementNoopRegression.test.ts`

@@ -1,77 +1,119 @@
-# Domain Aggregate Design: src/shared/engine/
+# Domain Aggregate Design: `src/shared/engine/`
+
+> **Doc Status (2025-11-26): Partially historical (design with implemented core)**
+>
+> - This document captures the **aggregate-centric design** for the shared TS rules engine.
+> - The **implemented, canonical rules surface today** is:
+>   - Shared helpers under `src/shared/engine/*.ts` (geometry, reachability, detection, decision helpers, victory, AI heuristics).
+>   - Single-file domain aggregates under `src/shared/engine/aggregates/*.ts` (Placement, Movement, Capture, Line, Territory, Victory).
+>   - The canonical turn orchestrator and phase state machine under `src/shared/engine/orchestration/*`.
+>   - Cross-language contracts under `src/shared/engine/contracts/*` plus JSON fixtures under `tests/fixtures/contract-vectors/v2/`.
+> - The **multi-file per-aggregate layouts and migration phases below** are a **target design**. They have been partially implemented via the current `aggregates/*.ts` modules and refactors, but many legacy validators/mutators still exist as compatibility shims.
+> - For the **authoritative, current module inventory and concern types**, see:
+>   - [`docs/MODULE_RESPONSIBILITIES.md`](./MODULE_RESPONSIBILITIES.md) (helpers → aggregates → orchestrator → contracts).
+>   - [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md).
+> - For the **canonical Move / PendingDecision / PlayerChoice / WebSocket lifecycle**, see:
+>   - [`docs/CANONICAL_ENGINE_API.md` §3.9–3.10](./CANONICAL_ENGINE_API.md).
+>
+> Use this document as a **design reference** when evolving the aggregate internals, not as the sole source of truth about the current file layout.
 
 **Task:** T1-W2-B  
-**Date:** 2025-11-26  
-**Status:** Complete
-
-## 1. Overview
-
-This document specifies the domain aggregate structure for refactoring the shared RingRift rules engine. The design consolidates 36 files into 6 primary domain aggregates plus a shared core module, reducing fragmentation while maintaining backward compatibility.
-
-### Summary
-
-| Aggregate          | Files Consolidated | Concern Types                              |
-| ------------------ | ------------------ | ------------------------------------------ |
-| PlacementAggregate | 3                  | Validation, Mutation, Query                |
-| MovementAggregate  | 4                  | Validation, Mutation, Query, Helper        |
-| CaptureAggregate   | 4                  | Validation, Mutation, Query, Orchestration |
-| LineAggregate      | 4                  | Validation, Mutation, Detection, Query     |
-| TerritoryAggregate | 6                  | Validation, Mutation, Detection, Query     |
-| VictoryAggregate   | 1                  | Query                                      |
-| SharedCore         | 6                  | Helper, Types                              |
-| Turn/Orchestration | 6                  | Orchestration, Mutation                    |
-| AI/Evaluation      | 2                  | Query                                      |
-| **Total**          | **36**             |                                            |
+**Last design revision:** 2025-11-26
 
 ---
 
-## 2. Design Principles
+## 1. Overview
+
+This document specifies the **domain aggregate structure** for the shared RingRift rules engine. The design consolidates the original 36-engine-file layout into **6 primary domain aggregates** plus a **shared core module**, reducing fragmentation while maintaining backward compatibility.
+
+Today, the implementation sits in the following shape:
+
+- **Shared helpers**: `core.ts`, `movementLogic.ts`, `movementApplication.ts`, `captureLogic.ts`, `captureChainHelpers.ts`, `lineDetection.ts`, `lineDecisionHelpers.ts`, `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts`, `victoryLogic.ts`, `placementHelpers.ts`, `notation.ts`, `moveActionAdapter.ts`, `types.ts`, etc.
+- **Single-file aggregates** (implemented):
+  - `aggregates/PlacementAggregate.ts`
+  - `aggregates/MovementAggregate.ts`
+  - `aggregates/CaptureAggregate.ts`
+  - `aggregates/LineAggregate.ts`
+  - `aggregates/TerritoryAggregate.ts`
+  - `aggregates/VictoryAggregate.ts`
+- **Orchestrator** (canonical entry point): `orchestration/turnOrchestrator.ts`, `orchestration/phaseStateMachine.ts`, `orchestration/types.ts`.
+- **Contracts**: `contracts/schemas.ts`, `contracts/serialization.ts`, `contracts/testVectorGenerator.ts`.
+- **Legacy validators/mutators**: `validators/*.ts`, `mutators/*.ts`, `mutators/TurnMutator.ts`, and `GameEngine.ts` remain in-tree as **implementation plumbing and compatibility shims**.
+
+The tables and interfaces in sections 2–8 describe the **target internal decomposition** of each aggregate (e.g., `validation.ts`, `mutation.ts`, `enumeration.ts` inside per-aggregate directories). These are **conceptual boundaries** that are partially but not fully reflected in the current file structure.
+
+### 1.1 Summary (Target Aggregate View)
+
+| Group              | Files Consolidated (conceptual) | Concern Types                              |
+| ------------------ | ------------------------------- | ------------------------------------------ |
+| PlacementAggregate | 3                               | Validation, Mutation, Query                |
+| MovementAggregate  | 4                               | Validation, Mutation, Query, Helper        |
+| CaptureAggregate   | 4                               | Validation, Mutation, Query, Orchestration |
+| LineAggregate      | 4                               | Validation, Mutation, Detection, Query     |
+| TerritoryAggregate | 6                               | Validation, Mutation, Detection, Query     |
+| VictoryAggregate   | 1                               | Query                                      |
+| SharedCore         | 6                               | Helper, Types                              |
+| Turn/Orchestration | 6                               | Orchestration, Mutation                    |
+| AI/Evaluation      | 2                               | Query                                      |
+| **Total**          | **36**                          |                                            |
+
+---
+
+## 2. Design Principles (Aggregate Layer)
+
+These principles guide how helpers and legacy validators/mutators are consolidated into domain aggregates that feed the orchestrator.
 
 ### 2.1 Single Responsibility per Aggregate
 
 Each aggregate owns one game domain completely:
 
-- All validation logic for that domain
-- All mutation logic for that domain
-- All query/enumeration logic for that domain
-- All detection logic for that domain (if applicable)
+- All validation logic for that domain.
+- All mutation logic for that domain.
+- All query/enumeration logic for that domain.
+- All detection logic for that domain (if applicable).
 
 ### 2.2 Pure Functions
 
 All aggregate functions are **pure**:
 
-- No side effects on external state
-- No I/O operations (network, file, database)
-- Deterministic outputs for identical inputs
-- State passed in and returned out
+- No side effects on external state.
+- No I/O operations (network, file, database).
+- Deterministic outputs for identical inputs.
+- State passed in and returned out.
 
 ### 2.3 Immutable State Updates
 
 All mutations return **new state objects**:
 
-- Never mutate input GameState or BoardState
-- Clone maps and arrays before modification
-- Support structural sharing where beneficial
+- Never mutate input `GameState` or `BoardState`.
+- Clone maps and arrays before modification.
+- Support structural sharing where beneficial.
 
 ### 2.4 Explicit Dependencies
 
 Aggregates declare dependencies explicitly:
 
-- Import only from SharedCore or ../types/game
-- No circular dependencies between aggregates
-- Dependencies flow downward in the aggregate hierarchy
+- Import only from SharedCore or `../types/game`.
+- No circular dependencies between aggregates.
+- Dependencies flow downward in the aggregate hierarchy.
 
 ### 2.5 Type-safe Contracts
 
 All public interfaces have explicit TypeScript types:
 
-- Input parameters fully typed
-- Return types never `any`
-- Domain-specific result types for complex returns
+- Input parameters fully typed.
+- Return types never `any`.
+- Domain-specific result types for complex returns.
 
 ---
 
-## 3. Aggregate Specifications
+## 3. Aggregate Specifications (Target Design)
+
+> **Note:**
+>
+> - The interfaces in this section express the **intended public surface** of each aggregate.
+> - Today, many of these responsibilities are implemented in the single-file aggregates (e.g. `PlacementAggregate.ts`) and helper modules.
+> - Some function names/types may differ slightly in the current code; when in doubt, the **canonical semantics come from the orchestrator + helpers + tests**, not from this design text.
 
 ### 3.1 PlacementAggregate
 
@@ -79,15 +121,15 @@ All public interfaces have explicit TypeScript types:
 
 Owns all ring placement validation, mutation, and enumeration logic.
 
-#### Source Modules
+#### Source Modules (conceptual consolidation)
 
-| File                                                                                        | Status                  |
+| File                                                                                        | Status in design        |
 | ------------------------------------------------------------------------------------------- | ----------------------- |
 | [`validators/PlacementValidator.ts`](../src/shared/engine/validators/PlacementValidator.ts) | Absorbed into aggregate |
 | [`mutators/PlacementMutator.ts`](../src/shared/engine/mutators/PlacementMutator.ts)         | Absorbed into aggregate |
 | [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts)                           | Absorbed into aggregate |
 
-#### Public Interface
+#### Public Interface (design sketch)
 
 ```typescript
 // ═══════════════════════════════════════════════════════════════════════════
@@ -190,9 +232,9 @@ export function mutatePlacement(state: GameState, action: PlaceRingAction): Game
 export function applyPlacementMove(state: GameState, move: Move): PlacementApplicationOutcome;
 ```
 
-#### Internal Structure
+#### Internal Structure (target)
 
-```
+```text
 PlacementAggregate/
 ├── validation.ts      # validatePlacementOnBoard, validatePlacement, validateSkipPlacement
 ├── mutation.ts        # applyPlacementOnBoard, mutatePlacement, applyPlacementMove
@@ -203,14 +245,14 @@ PlacementAggregate/
 
 #### Dependencies
 
-- **SharedCore**: `calculateCapHeight`, `hasAnyLegalMoveOrCaptureFromOnBoard`, `countRingsOnBoardForPlayer`
-- **../types/game**: `GameState`, `BoardState`, `Position`, `BOARD_CONFIGS`
+- **SharedCore**: `calculateCapHeight`, `hasAnyLegalMoveOrCaptureFromOnBoard`, `countRingsOnBoardForPlayer`.
+- **`../types/game`**: `GameState`, `BoardState`, `Position`, `BOARD_CONFIGS`.
 
 #### Migration Notes
 
-- `placementHelpers.ts` contains stubs that must be implemented during consolidation
-- No cross-aggregate dependencies; cleanest to migrate first
-- Existing tests in `tests/unit/placement.shared.test.ts` should pass unchanged
+- In current code, placement responsibilities are split between `placementHelpers.ts`, `validators/PlacementValidator.ts`, `mutators/PlacementMutator.ts`, and `aggregates/PlacementAggregate.ts`.
+- Over time, the goal is to **centralize placement semantics** into `PlacementAggregate` and helpers, with validators/mutators reduced to thin re-exports or removed.
+- Existing tests in `tests/unit/placement.shared.test.ts` must continue to pass with no semantic regressions.
 
 ---
 
@@ -220,16 +262,16 @@ PlacementAggregate/
 
 Owns all non-capturing movement validation, enumeration, and mutation logic.
 
-#### Source Modules
+#### Source Modules (conceptual consolidation)
 
-| File                                                                                      | Status                  |
+| File                                                                                      | Status in design        |
 | ----------------------------------------------------------------------------------------- | ----------------------- |
 | [`validators/MovementValidator.ts`](../src/shared/engine/validators/MovementValidator.ts) | Absorbed into aggregate |
 | [`mutators/MovementMutator.ts`](../src/shared/engine/mutators/MovementMutator.ts)         | Absorbed into aggregate |
 | [`movementLogic.ts`](../src/shared/engine/movementLogic.ts)                               | Absorbed into aggregate |
 | [`movementApplication.ts`](../src/shared/engine/movementApplication.ts)                   | Absorbed into aggregate |
 
-#### Public Interface
+#### Public Interface (design sketch)
 
 ```typescript
 // ═══════════════════════════════════════════════════════════════════════════
@@ -308,9 +350,9 @@ export function applySimpleMovement(
 ): MovementApplicationOutcome;
 ```
 
-#### Internal Structure
+#### Internal Structure (target)
 
-```
+```text
 MovementAggregate/
 ├── validation.ts      # validateMovement
 ├── mutation.ts        # mutateMovement, applySimpleMovement
@@ -321,14 +363,13 @@ MovementAggregate/
 
 #### Dependencies
 
-- **SharedCore**: `getMovementDirectionsForBoardType`, `getPathPositions`, `calculateDistance`, `applyMarkerEffectsAlongPathOnBoard`
-- **../types/game**: `GameState`, `BoardState`, `Position`, `Move`
+- **SharedCore**: `getMovementDirectionsForBoardType`, `getPathPositions`, `calculateDistance`, `applyMarkerEffectsAlongPathOnBoard`.
+- **`../types/game`**: `GameState`, `BoardState`, `Position`, `Move`.
 
 #### Migration Notes
 
-- `movementApplication.ts` contains stubs that must be implemented
-- Shares marker effect logic with CaptureAggregate via SharedCore
-- Tests in `tests/unit/movement.shared.test.ts` must pass unchanged
+- Today, movement responsibilities are spread across `movementLogic.ts`, `movementApplication.ts`, `validators/MovementValidator.ts`, `mutators/MovementMutator.ts`, and `aggregates/MovementAggregate.ts`.
+- Tests in `tests/unit/movement.shared.test.ts` must remain authoritative for movement semantics.
 
 ---
 
@@ -338,16 +379,16 @@ MovementAggregate/
 
 Owns all overtaking capture validation, enumeration, and mutation logic, including chain capture orchestration.
 
-#### Source Modules
+#### Source Modules (conceptual consolidation)
 
-| File                                                                                    | Status                  |
+| File                                                                                    | Status in design        |
 | --------------------------------------------------------------------------------------- | ----------------------- |
 | [`validators/CaptureValidator.ts`](../src/shared/engine/validators/CaptureValidator.ts) | Absorbed into aggregate |
 | [`mutators/CaptureMutator.ts`](../src/shared/engine/mutators/CaptureMutator.ts)         | Absorbed into aggregate |
 | [`captureLogic.ts`](../src/shared/engine/captureLogic.ts)                               | Absorbed into aggregate |
 | [`captureChainHelpers.ts`](../src/shared/engine/captureChainHelpers.ts)                 | Absorbed into aggregate |
 
-#### Public Interface
+#### Public Interface (design sketch)
 
 ```typescript
 // ═══════════════════════════════════════════════════════════════════════════
@@ -462,9 +503,9 @@ export function applyCaptureSegment(
 ): CaptureApplicationOutcome;
 ```
 
-#### Internal Structure
+#### Internal Structure (target)
 
-```
+```text
 CaptureAggregate/
 ├── validation.ts      # validateCapture, validateCaptureSegmentOnBoard (re-export from SharedCore)
 ├── mutation.ts        # mutateCapture, applyCaptureSegment
@@ -476,14 +517,13 @@ CaptureAggregate/
 
 #### Dependencies
 
-- **SharedCore**: `validateCaptureSegmentOnBoard`, `getMovementDirectionsForBoardType`, `applyMarkerEffectsAlongPathOnBoard`, `calculateCapHeight`
-- **../types/game**: `GameState`, `BoardState`, `Position`, `Move`
+- **SharedCore**: `validateCaptureSegmentOnBoard`, `getMovementDirectionsForBoardType`, `applyMarkerEffectsAlongPathOnBoard`, `calculateCapHeight`.
+- **`../types/game`**: `GameState`, `BoardState`, `Position`, `Move`.
 
 #### Migration Notes
 
-- `captureChainHelpers.ts` contains stubs that must be implemented
-- Chain capture logic has complex state management; consider explicit state machine
-- Tests in `tests/unit/captureLogic.shared.test.ts` must pass unchanged
+- In code, chain capture logic is implemented across `captureLogic.ts`, `captureChainHelpers.ts`, `mutators/CaptureMutator.ts`, and `aggregates/CaptureAggregate.ts`.
+- Tests such as `tests/unit/captureLogic.shared.test.ts`, `tests/unit/GameEngine.chainCapture.test.ts`, and `tests/unit/ClientSandboxEngine.chainCapture.scenarios.test.ts` are the parity constraints.
 
 ---
 
@@ -493,16 +533,16 @@ CaptureAggregate/
 
 Owns all marker line detection, validation, and collapse logic including line reward decisions.
 
-#### Source Modules
+#### Source Modules (conceptual consolidation)
 
-| File                                                                              | Status                  |
+| File                                                                              | Status in design        |
 | --------------------------------------------------------------------------------- | ----------------------- |
 | [`validators/LineValidator.ts`](../src/shared/engine/validators/LineValidator.ts) | Absorbed into aggregate |
 | [`mutators/LineMutator.ts`](../src/shared/engine/mutators/LineMutator.ts)         | Absorbed into aggregate |
 | [`lineDetection.ts`](../src/shared/engine/lineDetection.ts)                       | Absorbed into aggregate |
 | [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts)           | Absorbed into aggregate |
 
-#### Public Interface
+#### Public Interface (design sketch)
 
 ```typescript
 // ═══════════════════════════════════════════════════════════════════════════
@@ -604,9 +644,9 @@ export function mutateProcessLine(state: GameState, action: ProcessLineAction): 
 export function mutateChooseLineReward(state: GameState, action: ChooseLineRewardAction): GameState;
 ```
 
-#### Internal Structure
+#### Internal Structure (target)
 
-```
+```text
 LineAggregate/
 ├── detection.ts       # findAllLines, findLinesForPlayer
 ├── validation.ts      # validateProcessLine, validateChooseLineReward
@@ -618,14 +658,13 @@ LineAggregate/
 
 #### Dependencies
 
-- **SharedCore**: None directly (self-contained geometry)
-- **../types/game**: `GameState`, `BoardState`, `LineInfo`, `BOARD_CONFIGS`
+- **SharedCore**: None directly (self-contained geometry in `lineDetection.ts`).
+- **`../types/game`**: `GameState`, `BoardState`, `LineInfo`, `BOARD_CONFIGS`.
 
 #### Migration Notes
 
-- Clean domain boundary with no cross-aggregate dependencies
-- Detection + Decision + Mutation pattern well-established
-- Tests in `tests/unit/lineDecisionHelpers.shared.test.ts` and `tests/unit/lineDetection.shared.test.ts` must pass
+- Current implementation uses `lineDetection.ts`, `lineDecisionHelpers.ts`, and `aggregates/LineAggregate.ts` as the primary semantic surface; legacy `validators/LineValidator.ts` and `mutators/LineMutator.ts` are historical.
+- Tests in `tests/unit/lineDecisionHelpers.shared.test.ts`, `tests/unit/lineDetection.shared.test.ts`, `tests/unit/LineDetectionParity.rules.test.ts`, and parity fixtures under `tests/fixtures/rules-parity/v1/*.json` must remain green.
 
 ---
 
@@ -635,9 +674,9 @@ LineAggregate/
 
 Owns all territory disconnection detection, border analysis, processability checks, and collapse/elimination logic.
 
-#### Source Modules
+#### Source Modules (conceptual consolidation)
 
-| File                                                                                        | Status                  |
+| File                                                                                        | Status in design        |
 | ------------------------------------------------------------------------------------------- | ----------------------- |
 | [`validators/TerritoryValidator.ts`](../src/shared/engine/validators/TerritoryValidator.ts) | Absorbed into aggregate |
 | [`mutators/TerritoryMutator.ts`](../src/shared/engine/mutators/TerritoryMutator.ts)         | Absorbed into aggregate |
@@ -646,7 +685,7 @@ Owns all territory disconnection detection, border analysis, processability chec
 | [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts)                     | Absorbed into aggregate |
 | [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts)           | Absorbed into aggregate |
 
-#### Public Interface
+#### Public Interface (design sketch)
 
 ```typescript
 // ═══════════════════════════════════════════════════════════════════════════
@@ -818,9 +857,9 @@ export function mutateProcessTerritory(state: GameState, action: ProcessTerritor
 export function mutateEliminateStack(state: GameState, action: EliminateStackAction): GameState;
 ```
 
-#### Internal Structure
+#### Internal Structure (target)
 
-```
+```text
 TerritoryAggregate/
 ├── detection.ts       # findDisconnectedRegions, internal flood-fill
 ├── borders.ts         # getBorderMarkerPositionsForRegion
@@ -834,15 +873,16 @@ TerritoryAggregate/
 
 #### Dependencies
 
-- **SharedCore**: `positionToString`, `stringToPosition` (position utilities)
-- **../types/game**: `GameState`, `BoardState`, `Territory`, `BOARD_CONFIGS`
+- **SharedCore**: `positionToString`, `stringToPosition` (position utilities).
+- **`../types/game`**: `GameState`, `BoardState`, `Territory`, `BOARD_CONFIGS`.
 
 #### Migration Notes
 
-- Most complex aggregate (6 files → 1 aggregate)
-- Strong internal coupling makes consolidation beneficial
-- Has adjacency cache that should be preserved for performance
-- Tests in `tests/unit/territoryDecisionHelpers.shared.test.ts` and `tests/unit/territoryProcessing.shared.test.ts` must pass
+- Territory is the most complex aggregate and is heavily tested via:
+  - `tests/unit/territoryDecisionHelpers.shared.test.ts`
+  - `tests/unit/territoryProcessing.shared.test.ts`
+  - Scenario and parity suites under `tests/scenarios/RulesMatrix.Territory.*.test.ts`, `tests/unit/TerritoryParity.GameEngine_vs_Sandbox.test.ts`, `tests/unit/TerritoryCore.GameEngine_vs_Sandbox.test.ts`, etc.
+- The design here should be read alongside `RULES_ENGINE_ARCHITECTURE.md` and `RULES_SCENARIO_MATRIX.md`, which describe invariants like Q23, S‑invariant, and elimination exclusivity.
 
 ---
 
@@ -852,13 +892,13 @@ TerritoryAggregate/
 
 Owns all victory condition evaluation and tie-breaker logic.
 
-#### Source Modules
+#### Source Modules (conceptual consolidation)
 
-| File                                                      | Status                  |
+| File                                                      | Status in design        |
 | --------------------------------------------------------- | ----------------------- |
 | [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts) | Absorbed into aggregate |
 
-#### Public Interface
+#### Public Interface (design sketch)
 
 ```typescript
 // ═══════════════════════════════════════════════════════════════════════════
@@ -894,9 +934,9 @@ export function evaluateVictory(state: GameState): VictoryResult;
 export function getLastActor(state: GameState): number | undefined;
 ```
 
-#### Internal Structure
+#### Internal Structure (target)
 
-```
+```text
 VictoryAggregate/
 ├── evaluation.ts      # evaluateVictory, getLastActor
 ├── types.ts           # VictoryResult, VictoryReason
@@ -905,35 +945,42 @@ VictoryAggregate/
 
 #### Dependencies
 
-- **SharedCore**: `hasAnyLegalMoveOrCaptureFromOnBoard` (for bare-board terminality check)
-- **../types/game**: `GameState`, `BoardState`
+- **SharedCore**: `hasAnyLegalMoveOrCaptureFromOnBoard` (for bare-board terminality check).
+- **`../types/game`**: `GameState`, `BoardState`.
 
 #### Migration Notes
 
-- Single-file aggregate, minimal complexity
-- Consider merging with Turn/Core if aggregate overhead is not justified
-- Tests in `tests/unit/victory.shared.test.ts` must pass unchanged
+- Current implementation relies on `victoryLogic.ts` and `aggregates/VictoryAggregate.ts`.
+- Tests in `tests/unit/victory.shared.test.ts`, `tests/unit/GameEngine.victory.scenarios.test.ts`, and `tests/scenarios/RulesMatrix.Victory.*.test.ts` are the parity spine.
 
 ---
 
-## 4. Shared Core Module
+## 4. Shared Core Module (Design Role)
 
 ### Purpose
 
 Cross-cutting utilities used by multiple aggregates: geometry, stack calculations, marker effects, state hashing, and board views.
 
-### Source Modules
+In the actual codebase, this role is currently played by:
 
-| File                                                                | Status                                            |
-| ------------------------------------------------------------------- | ------------------------------------------------- |
-| [`core.ts`](../src/shared/engine/core.ts)                           | Remains as SharedCore                             |
-| [`types.ts`](../src/shared/engine/types.ts)                         | Remains as SharedCore                             |
-| [`notation.ts`](../src/shared/engine/notation.ts)                   | Remains as SharedCore                             |
-| [`moveActionAdapter.ts`](../src/shared/engine/moveActionAdapter.ts) | Remains as SharedCore                             |
-| [`validators/utils.ts`](../src/shared/engine/validators/utils.ts)   | Merged into SharedCore                            |
-| [`validators/index.ts`](../src/shared/engine/validators/index.ts)   | Deprecated (barrel replaced by aggregate exports) |
+- `core.ts`
+- `types.ts`
+- `notation.ts`
+- `moveActionAdapter.ts`
+- `validators/utils.ts` (partially folded into `core.ts`)
 
-### Public Interface
+### Source Modules (conceptual consolidation)
+
+| File                                                                | Status in design                              |
+| ------------------------------------------------------------------- | --------------------------------------------- |
+| [`core.ts`](../src/shared/engine/core.ts)                           | Remains as SharedCore                         |
+| [`types.ts`](../src/shared/engine/types.ts)                         | Remains as SharedCore                         |
+| [`notation.ts`](../src/shared/engine/notation.ts)                   | Remains as SharedCore                         |
+| [`moveActionAdapter.ts`](../src/shared/engine/moveActionAdapter.ts) | Remains as SharedCore                         |
+| [`validators/utils.ts`](../src/shared/engine/validators/utils.ts)   | Conceptually merged into SharedCore           |
+| [`validators/index.ts`](../src/shared/engine/validators/index.ts)   | Deprecated (barrel replaced by aggregate API) |
+
+### Public Interface (design sketch)
 
 ```typescript
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1042,108 +1089,85 @@ export function isValidPosition(pos: Position, boardType: BoardType, size: numbe
 
 ---
 
-## 5. Migration Path
+## 5. Turn / Orchestration & AI (Context)
 
-### 5.1 Phase 1: Foundation (T1-W2-C)
+The aggregate design here feeds into the **canonical orchestrator layer**, which is the real public API for rules semantics:
 
-**Goal:** Establish SharedCore and PlacementAggregate
+- `orchestration/turnOrchestrator.ts` – `processTurn` / `processTurnAsync`, `validateMove`, `getValidMoves`, `hasValidMoves`.
+- `orchestration/phaseStateMachine.ts` – phase transition logic.
+- `orchestration/types.ts` – `ProcessTurnResult`, `PendingDecision`, `DecisionType`, `VictoryState`, etc.
 
-1. Create `src/shared/engine/aggregates/` directory structure
-2. Consolidate `core.ts`, `types.ts`, `notation.ts`, `moveActionAdapter.ts`, `validators/utils.ts` into `SharedCore/`
-3. Implement PlacementAggregate by consolidating placement files
-4. Implement stub functions in `placementHelpers.ts`
-5. Update `index.ts` to re-export from new locations
-6. Verify all placement tests pass
+Host adapters (backend `TurnEngineAdapter`, sandbox `SandboxOrchestratorAdapter`, Python `game_engine.py`) consume the orchestrator and expose **Move-centric** APIs. For the end-to-end Move/decision/WebSocket lifecycle, defer to:
 
-**Risk:** Low - PlacementAggregate is self-contained
+- `docs/CANONICAL_ENGINE_API.md` (Move lifecycle SSoT).
 
-### 5.2 Phase 2: Movement & Capture (T1-W2-D, T1-W2-E)
+AI/evaluation modules live alongside aggregates as **consumers** of these semantics:
 
-**Goal:** Consolidate movement and capture domains
-
-1. Implement MovementAggregate (T1-W2-D)
-   - Consolidate 4 movement files
-   - Implement `movementApplication.ts` stubs
-2. Implement CaptureAggregate (T1-W2-E)
-   - Consolidate 4 capture files
-   - Implement `captureChainHelpers.ts` stubs
-3. Verify movement and capture tests pass
-
-**Risk:** Medium - Shared marker effect logic requires careful coordination
-
-### 5.3 Phase 3: Line & Territory (T1-W2-F, T1-W2-G)
-
-**Goal:** Consolidate detection-heavy domains
-
-1. Implement LineAggregate (T1-W2-F)
-   - Consolidate 4 line files
-   - Clean domain with no external dependencies
-2. Implement TerritoryAggregate (T1-W2-G)
-   - Consolidate 6 territory files (most complex)
-   - Preserve adjacency cache for performance
-3. Verify line and territory tests pass
-
-**Risk:** Medium - Territory is the most complex aggregate
-
-### 5.4 Phase 4: Victory & Cleanup (T1-W2-H)
-
-**Goal:** Complete consolidation and verify parity
-
-1. Implement VictoryAggregate
-2. Remove deprecated files from `validators/` and `mutators/` directories
-3. Update all imports in adapters (Server GameEngine, Client Sandbox)
-4. Run full test suite and parity checks
-5. Document final API in `CANONICAL_ENGINE_API.md`
-
-**Risk:** Low - Victory is simple, cleanup is mechanical
+- `heuristicEvaluation.ts`
+- `localAIMoveSelection.ts`
 
 ---
 
-## 6. Backward Compatibility Strategy
+## 6. Migration Path (Historical Plan)
 
-### 6.1 index.ts Remains Stable
+> **Status (2025-11-26):**
+>
+> - Many of the refactors implied by this plan have been partially completed (single-file aggregates, orchestrator, contracts, parity tests).
+> - Validators/mutators and `GameEngine.ts` still exist and are treated as **legacy plumbing** behind the orchestrator.
+> - This section should be read as a **historic/aspirational migration plan**, not an exact record of the current state.
 
-The public API surface exposed via [`src/shared/engine/index.ts`](../src/shared/engine/index.ts) must remain stable throughout the migration:
+### 6.1 Phase 1: Foundation (T1-W2-C)
 
-```typescript
-// Current exports continue to work
-export { validatePlacement } from './aggregates/PlacementAggregate';
-export { validateMovement } from './aggregates/MovementAggregate';
-export { validateCapture } from './aggregates/CaptureAggregate';
-// ... etc.
-```
+**Goal:** Establish SharedCore and PlacementAggregate.
 
-### 6.2 Deprecation Pattern
+1. Create `src/shared/engine/aggregates/` directory structure (done, as single-file aggregates).
+2. Consolidate `core.ts`, `types.ts`, `notation.ts`, `moveActionAdapter.ts`, `validators/utils.ts` into a SharedCore concept.
+3. Implement `PlacementAggregate` by consolidating placement files (partially done; helpers + aggregate + validator/mutator).
+4. Implement stub functions in `placementHelpers.ts`.
+5. Update `index.ts` to re-export from new locations (done for orchestrator/aggregates).
+6. Verify all placement tests pass (enforced via CI).
 
-For functions being moved:
+**Risk:** Low – Placement is relatively self-contained.
 
-```typescript
-// Old location (validators/PlacementValidator.ts)
-/**
- * @deprecated Import from '@shared/engine' or './aggregates/PlacementAggregate' instead.
- * This re-export will be removed in a future version.
- */
-export { validatePlacement } from '../aggregates/PlacementAggregate';
-```
+### 6.2 Phase 2: Movement & Capture (T1-W2-D, T1-W2-E)
 
-### 6.3 Test Preservation
+**Goal:** Consolidate movement and capture domains.
 
-All existing tests must pass without modification:
+1. Implement `MovementAggregate` (T1-W2-D) across helpers + validator/mutator.
+2. Implement `CaptureAggregate` (T1-W2-E) across helpers + validator/mutator.
+3. Keep `MovementValidator`, `CaptureValidator`, and corresponding mutators as thin wrappers or deprecated re-exports where necessary for host compatibility.
+4. Verify movement and capture tests pass.
 
-| Test File                                            | Must Pass |
-| ---------------------------------------------------- | --------- |
-| `tests/unit/placement.shared.test.ts`                | ✓         |
-| `tests/unit/movement.shared.test.ts`                 | ✓         |
-| `tests/unit/captureLogic.shared.test.ts`             | ✓         |
-| `tests/unit/lineDetection.shared.test.ts`            | ✓         |
-| `tests/unit/lineDecisionHelpers.shared.test.ts`      | ✓         |
-| `tests/unit/territoryDecisionHelpers.shared.test.ts` | ✓         |
-| `tests/unit/territoryProcessing.shared.test.ts`      | ✓         |
-| `tests/unit/victory.shared.test.ts`                  | ✓         |
+**Risk:** Medium – Shared marker effect logic requires careful coordination.
+
+### 6.3 Phase 3: Line & Territory (T1-W2-F, T1-W2-G)
+
+**Goal:** Consolidate detection-heavy domains.
+
+1. Implement `LineAggregate` (T1-W2-F) over `lineDetection.ts` + `lineDecisionHelpers.ts`.
+2. Implement `TerritoryAggregate` (T1-W2-G) over `territoryDetection.ts`, `territoryBorders.ts`, `territoryProcessing.ts`, `territoryDecisionHelpers.ts`.
+3. Preserve adjacency caches and performance-sensitive structures.
+4. Verify line and territory tests pass.
+
+**Risk:** Medium – Territory is the most complex aggregate.
+
+### 6.4 Phase 4: Victory & Cleanup (T1-W2-H)
+
+**Goal:** Complete consolidation and verify parity.
+
+1. Implement `VictoryAggregate` over `victoryLogic.ts`.
+2. Gradually deprecate/remove modules in `validators/` and `mutators/` once hosts and tests are fully orchestrator/aggregate-backed.
+3. Update all imports in adapters (Server `GameEngine`, client sandbox) to call aggregates/orchestrator directly.
+4. Run full test suite and parity checks.
+5. Document final API in `CANONICAL_ENGINE_API.md` (now done for the orchestrator and Move lifecycle).
+
+**Risk:** Low – Victory is simple; cleanup is mechanical but must be done carefully to preserve historical context.
 
 ---
 
-## 7. Dependency Graph
+## 7. Dependency Graph (Aggregate View)
+
+The following mermaid graph shows conceptual dependencies between aggregates and SharedCore. For the **actual implemented module graph**, see `docs/MODULE_RESPONSIBILITIES.md`.
 
 ```mermaid
 graph TD
@@ -1228,9 +1252,11 @@ graph TD
 
 ---
 
-## 8. File Structure After Migration
+## 8. File Structure After Full Migration (Target)
 
-```
+> **Note:** This is a **target structure** that may not exactly match the current repository. Use it as a guide when performing future refactors.
+
+```text
 src/shared/engine/
 ├── aggregates/
 │   ├── PlacementAggregate/
@@ -1300,22 +1326,24 @@ src/shared/engine/
 
 ## 9. Summary
 
-| Metric                   | Before       | After                                    |
-| ------------------------ | ------------ | ---------------------------------------- |
-| Files in engine/         | 36           | ~35 (aggregates consolidated internally) |
-| Domain aggregates        | 0 (implicit) | 6 (explicit)                             |
-| Public API surface       | Scattered    | Unified via index.ts                     |
-| Cross-file dependencies  | High         | Low (explicit imports)                   |
-| Test coverage maintained | N/A          | 100%                                     |
+| Metric                            | Before             | After (target)                           |
+| --------------------------------- | ------------------ | ---------------------------------------- |
+| Files in `engine/`                | 36                 | ~35 (aggregates consolidated internally) |
+| Domain aggregates                 | 0 (implicit)       | 6 (explicit)                             |
+| Public API surface                | Scattered          | Unified via `index.ts` + orchestrator    |
+| Cross-file dependencies           | High               | Lower (explicit imports)                 |
+| Test coverage maintained (target) | Not explicitly set | 100%                                     |
 
 ### Key Design Decisions
 
-1. **6 Primary Aggregates**: Placement, Movement, Capture, Line, Territory, Victory
-2. **SharedCore for Cross-cutting**: Geometry, stack calculations, marker effects, board views
-3. **Turn/Orchestration Separate**: GameEngine, turnLogic, etc. remain standalone
-4. **Incremental Migration**: Each aggregate can be implemented independently
-5. **Backward Compatible**: index.ts exports remain stable throughout
+1. **6 Primary Aggregates**: Placement, Movement, Capture, Line, Territory, Victory.
+2. **SharedCore for Cross-cutting**: Geometry, stack calculations, marker effects, board views.
+3. **Turn/Orchestration Separate**: `turnOrchestrator.ts` and friends remain the public rules entry point.
+4. **Incremental Migration**: Each aggregate can be evolved independently as long as orchestrator contracts and tests remain stable.
+5. **Backward Compatible**: `index.ts` and orchestrator exports remain the canonical API surface for hosts/adapters.
 
----
+When making future changes:
 
-_Generated for T1-W2-B: Design Domain Aggregate Boundaries_
+- Treat **helpers → aggregates → orchestrator → contracts** as the rules SSoT.
+- Use this document to reason about **where responsibilities should live** inside aggregates.
+- Use `docs/MODULE_RESPONSIBILITIES.md` and `docs/CANONICAL_ENGINE_API.md` to understand the **current implemented surface and lifecycles**.

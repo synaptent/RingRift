@@ -33,6 +33,12 @@ build/
 coverage/
 .nyc_output/
 
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+# Note: tests/e2e/__snapshots__/ baseline images should be committed
+
 # Temporary files
 *.tmp
 *.temp

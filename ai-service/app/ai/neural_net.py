@@ -3,6 +3,8 @@ Neural Network AI implementation for RingRift
 Uses a simple feedforward neural network for move evaluation
 """
 
+import logging
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -174,8 +176,13 @@ def _from_canonical_xy(
     return Position(x=cx, y=cy)
 
 
+logger = logging.getLogger(__name__)
+
+
 class ResidualBlock(nn.Module):
-    def __init__(self, channels):
+    """Residual block with two 3x3 convolutions and skip connection."""
+
+    def __init__(self, channels: int):
         super(ResidualBlock, self).__init__()
         self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(channels)
@@ -183,7 +190,7 @@ class ResidualBlock(nn.Module):
         self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(channels)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         out = self.relu(self.bn1(self.conv1(x)))
         out = self.bn2(self.conv2(out))
@@ -193,9 +200,28 @@ class ResidualBlock(nn.Module):
 
 
 class RingRiftCNN(nn.Module):
+    """
+    CNN architecture for RingRift board evaluation.
+
+    This model uses a ResNet-style backbone with adaptive pooling to handle
+    variable board sizes (8x8, 19x19, 21x21 hex).
+
+    Architecture Version:
+        v1.0.0 - Initial architecture with 10 residual blocks, 128 filters,
+                 adaptive pooling to 4x4, policy head size 55000.
+    """
+
+    # Architecture version for checkpoint compatibility checking
+    ARCHITECTURE_VERSION = "v1.0.0"
+
     def __init__(
-        self, board_size=8, in_channels=10, global_features=10,
-        num_res_blocks=10, num_filters=128, history_length=3
+        self,
+        board_size: int = 8,
+        in_channels: int = 10,
+        global_features: int = 10,
+        num_res_blocks: int = 10,
+        num_filters: int = 128,
+        history_length: int = 3,
     ):
         super(RingRiftCNN, self).__init__()
         self.board_size = board_size
@@ -355,32 +381,150 @@ class NeuralNetAI(BaseAI):
         model_filename = f"{model_id}.pth"
         model_path = os.path.join(base_dir, "models", model_filename)
         
-        if os.path.exists(model_path):
-            try:
-                self.model.load_state_dict(
-                    torch.load(
-                        model_path,
-                        map_location=self.device,
-                        weights_only=True,
-                    )
-                )
-                self.model.eval()
-            except RuntimeError as e:
-                # Architecture mismatch
-                print(
-                    f"Could not load model (architecture mismatch): {e}. "
-                    "Starting with fresh weights."
-                )
-                self.model.eval()
-            except Exception as e:
-                print(
-                    f"Could not load model (error): {e}. "
-                    "Starting with fresh weights."
-                )
-                self.model.eval()
+        import os as os_mod
+        if os_mod.path.exists(model_path):
+            self._load_model_checkpoint(model_path)
         else:
             # No model found, start fresh (silent)
+            logger.info(f"No model found at {model_path}, using fresh weights")
             self.model.eval()
+
+    def _load_model_checkpoint(self, model_path: str) -> None:
+        """
+        Load model checkpoint with version validation.
+
+        Uses the model versioning system when available, falls back to
+        direct state_dict loading for legacy checkpoints with explicit
+        error handling.
+        """
+        try:
+            # Try to use versioned loading first
+            from ..training.model_versioning import (
+                ModelVersionManager,
+                VersionMismatchError,
+                ChecksumMismatchError,
+                LegacyCheckpointError,
+            )
+
+            manager = ModelVersionManager(default_device=self.device)
+
+            try:
+                # Try strict loading first
+                state_dict, metadata = manager.load_checkpoint(
+                    model_path,
+                    strict=True,
+                    expected_version=RingRiftCNN.ARCHITECTURE_VERSION,
+                    expected_class="RingRiftCNN",
+                    verify_checksum=True,
+                    device=self.device,
+                )
+                self.model.load_state_dict(state_dict)
+                self.model.eval()
+                logger.info(
+                    f"Loaded versioned model from {model_path} "
+                    f"(version: {metadata.architecture_version})"
+                )
+                return
+
+            except LegacyCheckpointError:
+                # Legacy checkpoint - load with warning
+                logger.warning(
+                    f"Loading legacy checkpoint without versioning: "
+                    f"{model_path}. Consider migrating to versioned format."
+                )
+                state_dict, _ = manager.load_checkpoint(
+                    model_path,
+                    strict=False,
+                    verify_checksum=False,
+                    device=self.device,
+                )
+                self.model.load_state_dict(state_dict)
+                self.model.eval()
+                return
+
+            except VersionMismatchError as e:
+                # Version mismatch - FAIL EXPLICITLY instead of silent fallback
+                logger.error(
+                    f"ARCHITECTURE VERSION MISMATCH - Cannot load!\n"
+                    f"  Checkpoint: {e.checkpoint_version}\n"
+                    f"  Expected: {e.current_version}\n"
+                    f"  Path: {model_path}\n"
+                    f"  This is a P0 error. The checkpoint is incompatible "
+                    f"with the current model architecture."
+                )
+                raise  # Re-raise to prevent silent fallback
+
+            except ChecksumMismatchError as e:
+                # Integrity failure - FAIL EXPLICITLY
+                logger.error(
+                    f"CHECKPOINT INTEGRITY FAILURE - File may be corrupted!\n"
+                    f"  Path: {model_path}\n"
+                    f"  Expected checksum: {e.expected[:16]}...\n"
+                    f"  Actual checksum: {e.actual[:16]}..."
+                )
+                raise  # Re-raise to prevent silent fallback
+
+        except ImportError:
+            # model_versioning not available, fall back to direct loading
+            logger.warning(
+                "model_versioning module not available, "
+                "using legacy loading"
+            )
+            self._load_legacy_checkpoint(model_path)
+
+    def _load_legacy_checkpoint(self, model_path: str) -> None:
+        """
+        Legacy checkpoint loading with explicit error handling.
+
+        This is used when the versioning module is not available or
+        for backwards compatibility with existing code paths.
+        """
+        try:
+            checkpoint = torch.load(
+                model_path,
+                map_location=self.device,
+                weights_only=False,
+            )
+
+            # Handle different checkpoint formats
+            if isinstance(checkpoint, dict):
+                if 'model_state_dict' in checkpoint:
+                    state_dict = checkpoint['model_state_dict']
+                elif 'state_dict' in checkpoint:
+                    state_dict = checkpoint['state_dict']
+                else:
+                    # Assume it's a direct state dict
+                    state_dict = checkpoint
+            else:
+                state_dict = checkpoint
+
+            self.model.load_state_dict(state_dict)
+            self.model.eval()
+            logger.info(f"Loaded legacy model from {model_path}")
+
+        except RuntimeError as e:
+            # Architecture mismatch - FAIL EXPLICITLY
+            error_msg = str(e)
+            if "size mismatch" in error_msg or "Missing key" in error_msg:
+                logger.error(
+                    f"ARCHITECTURE MISMATCH - Cannot load checkpoint!\n"
+                    f"  Path: {model_path}\n"
+                    f"  Error: {e}\n"
+                    f"  This indicates the checkpoint was saved with a "
+                    f"different model architecture. Silent fallback to "
+                    f"fresh weights is DISABLED to prevent training bugs."
+                )
+                raise RuntimeError(
+                    f"Architecture mismatch loading {model_path}: {e}. "
+                    f"Silent fallback is disabled. Either use a compatible "
+                    f"checkpoint or explicitly start with fresh weights."
+                ) from e
+            else:
+                raise
+
+        except Exception as e:
+            logger.error(f"Failed to load model from {model_path}: {e}")
+            raise
 
     def select_move(self, game_state: GameState) -> Optional[Move]:
         """
@@ -1394,6 +1538,10 @@ class HexNeuralNet(nn.Module):
     but operates on a fixed [C_hex, 21, 21] spatial frame and exposes a
     hex-only policy head of size :data:`P_HEX`.
 
+    Architecture Version:
+        v1.0.0 - Initial hex architecture with 8 residual blocks, 128 filters,
+                 masked global average pooling, policy head size P_HEX=54244.
+
     Design (see AI_ARCHITECTURE.md, HexNeuralNet section):
 
       * Backbone: initial 3×3 conv → BN → ReLU, followed by ``num_res_blocks``
@@ -1409,6 +1557,9 @@ class HexNeuralNet(nn.Module):
           - flatten over [H, W]; and
           - a linear layer to :data:`P_HEX` logits.
     """
+
+    # Architecture version for checkpoint compatibility checking
+    ARCHITECTURE_VERSION = "v1.0.0"
 
     def __init__(
         self,

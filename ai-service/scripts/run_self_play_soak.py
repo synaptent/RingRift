@@ -56,14 +56,17 @@ import random
 import sys
 import gc
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 # Ensure `app.*` imports resolve when run from ai-service/
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 
-from app.main import _create_ai_instance, _get_difficulty_profile  # type: ignore  # noqa: E402
+from app.main import (  # type: ignore  # noqa: E402
+    _create_ai_instance,
+    _get_difficulty_profile,
+)
 from app.models import (  # type: ignore  # noqa: E402
     AIConfig,
     AIType,
@@ -88,6 +91,23 @@ class GameRecord:
     termination_reason: str
 
 
+def _append_state_to_jsonl(path: str, state: GameState) -> None:
+    """Append a single GameState JSON document as one line to a JSONL file.
+
+    The file is opened in append mode so that repeated soak runs can build up
+    a larger evaluation pool over time. The directory portion of `path` is
+    created if it does not already exist.
+    """
+    directory = os.path.dirname(path) or "."
+    os.makedirs(directory, exist_ok=True)
+    # Use the Pydantic model's JSON serialisation to ensure
+    # round-trippable payloads.
+    payload = state.model_dump_json()  # type: ignore[attr-defined]
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(payload)
+        f.write("\n")
+
+
 def _parse_board_type(name: str) -> BoardType:
     name = name.lower()
     if name == "square8":
@@ -96,7 +116,10 @@ def _parse_board_type(name: str) -> BoardType:
         return BoardType.SQUARE19
     if name == "hexagonal":
         return BoardType.HEXAGONAL
-    raise SystemExit(f"Unknown board type: {name!r} (expected square8|square19|hexagonal)")
+    raise SystemExit(
+        f"Unknown board type: {name!r} "
+        "(expected square8|square19|hexagonal)"
+    )
 
 
 def _build_mixed_ai_pool(
@@ -135,7 +158,8 @@ def _build_mixed_ai_pool(
     # mixed mode
     if engine_mode != "mixed":
         raise SystemExit(
-            f"engine_mode must be 'descent-only' or 'mixed', got {engine_mode!r}"
+            "engine_mode must be 'descent-only' or 'mixed', "
+            f"got {engine_mode!r}"
         )
 
     # Difficulty presets chosen to cover the canonical ladder while keeping
@@ -200,6 +224,85 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
     base_seed = args.seed
     difficulty_band = getattr(args, "difficulty_band", "canonical")
     gc_interval = getattr(args, "gc_interval", 0)
+
+    # Optional state-pool configuration. getattr() is used so that existing
+    # callers that construct an argparse.Namespace manually without these
+    # attributes continue to work unchanged.
+    square8_state_pool_output = getattr(
+        args,
+        "square8_state_pool_output",
+        None,
+    )
+    square8_state_pool_max_states = getattr(
+        args,
+        "square8_state_pool_max_states",
+        500,
+    )
+    square8_state_pool_sampling_interval = getattr(
+        args,
+        "square8_state_pool_sampling_interval",
+        4,
+    )
+    if square8_state_pool_sampling_interval <= 0:
+        # Guard against accidental zero/negative intervals from CLI. For
+        # Square8, a non-positive interval falls back to 1 to preserve
+        # historical behaviour.
+        square8_state_pool_sampling_interval = 1
+
+    square19_state_pool_output = getattr(
+        args,
+        "square19_state_pool_output",
+        None,
+    )
+    square19_state_pool_max_states = getattr(
+        args,
+        "square19_state_pool_max_states",
+        0,
+    )
+    square19_state_pool_sampling_interval = getattr(
+        args,
+        "square19_state_pool_sampling_interval",
+        0,
+    )
+
+    hex_state_pool_output = getattr(
+        args,
+        "hex_state_pool_output",
+        None,
+    )
+    hex_state_pool_max_states = getattr(
+        args,
+        "hex_state_pool_max_states",
+        0,
+    )
+    hex_state_pool_sampling_interval = getattr(
+        args,
+        "hex_state_pool_sampling_interval",
+        0,
+    )
+
+    # Global counters across all games in this soak run.
+    square8_state_pool_sampled = 0
+    square19_state_pool_sampled = 0
+    hex_state_pool_sampled = 0
+
+    # Precompute per-board pool-enable flags so that the inner loop can
+    # cheaply skip sampling logic when pools are disabled.
+    square8_pool_enabled = bool(
+        square8_state_pool_output
+        and square8_state_pool_max_states > 0
+        and square8_state_pool_sampling_interval > 0
+    )
+    square19_pool_enabled = bool(
+        square19_state_pool_output
+        and square19_state_pool_max_states > 0
+        and square19_state_pool_sampling_interval > 0
+    )
+    hex_pool_enabled = bool(
+        hex_state_pool_output
+        and hex_state_pool_max_states > 0
+        and hex_state_pool_sampling_interval > 0
+    )
 
     os.makedirs(os.path.dirname(args.log_jsonl) or ".", exist_ok=True)
 
@@ -280,6 +383,97 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
 
                 move_count += 1
 
+                # Optional state-pool sampling for mid-game snapshots.
+                if (
+                    square8_pool_enabled
+                    and state.board_type == BoardType.SQUARE8
+                    and (
+                        square8_state_pool_sampled
+                        < square8_state_pool_max_states
+                    )
+                    and (
+                        move_count
+                        % square8_state_pool_sampling_interval
+                    )
+                    == 0
+                    and state.game_status == GameStatus.ACTIVE
+                ):
+                    try:
+                        _append_state_to_jsonl(
+                            cast(str, square8_state_pool_output),
+                            state,
+                        )
+                        square8_state_pool_sampled += 1
+                    except Exception as exc:  # pragma: no cover - defensive
+                        # State export must never break the soak loop.
+                        print(
+                            "[square8-state-pool] Failed to "
+                            "serialise/write state "
+                            f"for game {game_idx}, move {move_count}: "
+                            f"{type(exc).__name__}: {exc}",
+                            file=sys.stderr,
+                        )
+
+                if (
+                    square19_pool_enabled
+                    and state.board_type == BoardType.SQUARE19
+                    and (
+                        square19_state_pool_sampled
+                        < square19_state_pool_max_states
+                    )
+                    and (
+                        move_count
+                        % square19_state_pool_sampling_interval
+                    )
+                    == 0
+                    and state.game_status == GameStatus.ACTIVE
+                ):
+                    try:
+                        _append_state_to_jsonl(
+                            cast(str, square19_state_pool_output),
+                            state,
+                        )
+                        square19_state_pool_sampled += 1
+                    except Exception as exc:  # pragma: no cover - defensive
+                        # State export must never break the soak loop.
+                        print(
+                            "[square19-state-pool] Failed to "
+                            "serialise/write state "
+                            f"for game {game_idx}, move {move_count}: "
+                            f"{type(exc).__name__}: {exc}",
+                            file=sys.stderr,
+                        )
+
+                if (
+                    hex_pool_enabled
+                    and state.board_type == BoardType.HEXAGONAL
+                    and (
+                        hex_state_pool_sampled
+                        < hex_state_pool_max_states
+                    )
+                    and (
+                        move_count
+                        % hex_state_pool_sampling_interval
+                    )
+                    == 0
+                    and state.game_status == GameStatus.ACTIVE
+                ):
+                    try:
+                        _append_state_to_jsonl(
+                            cast(str, hex_state_pool_output),
+                            state,
+                        )
+                        hex_state_pool_sampled += 1
+                    except Exception as exc:  # pragma: no cover - defensive
+                        # State export must never break the soak loop.
+                        print(
+                            "[hex-state-pool] Failed to "
+                            "serialise/write state "
+                            f"for game {game_idx}, move {move_count}: "
+                            f"{type(exc).__name__}: {exc}",
+                            file=sys.stderr,
+                        )
+
                 if move_count >= max_moves:
                     termination_reason = "max_moves_reached"
                     break
@@ -287,7 +481,6 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
                 if done:
                     termination_reason = "env_done_flag"
                     break
-
 
             # For problematic terminations, capture a minimal snapshot of the
             # final GameState + last Move so they can be turned into explicit
@@ -305,13 +498,17 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
                     os.makedirs(failure_dir, exist_ok=True)
 
                     try:
-                        state_payload = state.model_dump(mode="json")  # type: ignore[attr-defined]
+                        state_payload = state.model_dump(
+                            mode="json",
+                        )  # type: ignore[attr-defined]
                     except Exception:
                         state_payload = None
 
                     try:
                         last_move_payload = (
-                            last_move.model_dump(mode="json")  # type: ignore[attr-defined]
+                            last_move.model_dump(
+                                mode="json",
+                            )  # type: ignore[attr-defined]
                             if last_move is not None
                             else None
                         )
@@ -320,9 +517,14 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
 
                     failure_path = os.path.join(
                         failure_dir,
-                        f"failure_{game_idx}_{termination_reason.replace(':', '_')}.json",
+                        f"failure_{game_idx}_"
+                        f"{termination_reason.replace(':', '_')}.json",
                     )
-                    with open(failure_path, "w", encoding="utf-8") as failure_f:
+                    with open(
+                        failure_path,
+                        "w",
+                        encoding="utf-8",
+                    ) as failure_f:
                         json.dump(
                             {
                                 "game_index": game_idx,
@@ -350,7 +552,6 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
             log_f.write(json.dumps(asdict(rec)) + "\n")
             records.append(rec)
 
-
             if args.verbose and (game_idx + 1) % args.verbose == 0:
                 print(
                     f"[soak] completed {game_idx + 1}/{num_games} games "
@@ -377,7 +578,10 @@ def _summarise(records: List[GameRecord]) -> Dict[str, Any]:
 
     for r in records:
         by_status[r.status] = by_status.get(r.status, 0) + 1
-        by_reason[r.termination_reason] = by_reason.get(r.termination_reason, 0) + 1
+        by_reason[r.termination_reason] = by_reason.get(
+            r.termination_reason,
+            0,
+        ) + 1
         lengths.append(r.length)
 
     lengths_sorted = sorted(lengths) if lengths else [0]
@@ -445,7 +649,10 @@ def _parse_args() -> argparse.Namespace:
         "--max-moves",
         type=int,
         default=200,
-        help="Maximum moves per game before treating as a cutoff (default: 200).",
+        help=(
+            "Maximum moves per game before treating as a cutoff "
+            "(default: 200)."
+        ),
     )
     parser.add_argument(
         "--seed",
@@ -484,6 +691,87 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "If >0, clear GameEngine move caches and run gc.collect() "
             "every N games to bound memory usage in long soaks."
+        ),
+    )
+    parser.add_argument(
+        "--square8-state-pool-output",
+        type=str,
+        nargs="?",
+        const="data/eval_pools/square8/pool_v1.jsonl",
+        default=None,
+        help=(
+            "Optional JSONL output path for sampled Square8 GameState "
+            "snapshots. If provided without a value, defaults to "
+            "'data/eval_pools/square8/pool_v1.jsonl'. When omitted, no "
+            "state pool is generated."
+        ),
+    )
+    parser.add_argument(
+        "--square8-state-pool-max-states",
+        type=int,
+        default=500,
+        help=(
+            "Maximum number of Square8 GameState snapshots to append to the "
+            "state pool JSONL (default: 500)."
+        ),
+    )
+    parser.add_argument(
+        "--square8-state-pool-sampling-interval",
+        type=int,
+        default=4,
+        help=(
+            "Sample a GameState every N plies for Square8 games "
+            "(default: 4)."
+        ),
+    )
+    parser.add_argument(
+        "--square19-state-pool-output",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write a Square19 state pool JSONL file "
+            "(e.g., data/eval_pools/square19/pool_v1.jsonl)."
+        ),
+    )
+    parser.add_argument(
+        "--square19-state-pool-max-states",
+        type=int,
+        default=0,
+        help=(
+            "If >0, max number of Square19 states to sample into the pool."
+        ),
+    )
+    parser.add_argument(
+        "--square19-state-pool-sampling-interval",
+        type=int,
+        default=0,
+        help=(
+            "If >0, record every Nth move for Square19 games into the pool."
+        ),
+    )
+    parser.add_argument(
+        "--hex-state-pool-output",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write a Hex state pool JSONL file "
+            "(e.g., data/eval_pools/hex/pool_v1.jsonl)."
+        ),
+    )
+    parser.add_argument(
+        "--hex-state-pool-max-states",
+        type=int,
+        default=0,
+        help=(
+            "If >0, max number of Hex states to sample into the pool."
+        ),
+    )
+    parser.add_argument(
+        "--hex-state-pool-sampling-interval",
+        type=int,
+        default=0,
+        help=(
+            "If >0, record every Nth move for Hex games into the pool."
         ),
     )
     return parser.parse_args()

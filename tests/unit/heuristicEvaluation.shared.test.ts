@@ -138,10 +138,10 @@ describe('heuristicEvaluation.evaluateHeuristicState', () => {
   });
 
   it('penalises locally vulnerable stacks near taller enemy stacks', () => {
-    const board = makeEmptyBoardState();
+    // Setup vulnerable position: Player 1's stack is threatened by taller Player 2 stack
+    const vulnerableBoard = makeEmptyBoardState();
 
-    // Player 1: one small stack at (3,3)
-    const myStack: RingStack = {
+    const vulnerableStack: RingStack = {
       position: { x: 3, y: 3 },
       rings: [1],
       stackHeight: 1,
@@ -149,8 +149,7 @@ describe('heuristicEvaluation.evaluateHeuristicState', () => {
       controllingPlayer: 1,
     } as RingStack;
 
-    // Player 2: taller adjacent stack at (4,3)
-    const enemyStack: RingStack = {
+    const threateningStack: RingStack = {
       position: { x: 4, y: 3 },
       rings: [2, 2],
       stackHeight: 2,
@@ -158,16 +157,45 @@ describe('heuristicEvaluation.evaluateHeuristicState', () => {
       controllingPlayer: 2,
     } as RingStack;
 
-    board.stacks.set('3,3', myStack);
-    board.stacks.set('4,3', enemyStack);
+    vulnerableBoard.stacks.set('3,3', vulnerableStack);
+    vulnerableBoard.stacks.set('4,3', threateningStack);
 
-    const state = makeBaseGameState({ board });
+    const vulnerableState = makeBaseGameState({ board: vulnerableBoard });
 
-    const score = evaluateHeuristicState(state, 1, HEURISTIC_WEIGHTS_V1_BALANCED);
+    // Setup safe position: Same stacks but not adjacent (no vulnerability)
+    const safeBoard = makeEmptyBoardState();
 
-    // Vulnerability contribution should push the score negative in this
-    // extremely simple position.
-    expect(score).toBeLessThan(0);
+    const safeStack: RingStack = {
+      position: { x: 3, y: 3 },
+      rings: [1],
+      stackHeight: 1,
+      capHeight: 1,
+      controllingPlayer: 1,
+    } as RingStack;
+
+    const distantStack: RingStack = {
+      position: { x: 6, y: 6 }, // Far away, not threatening
+      rings: [2, 2],
+      stackHeight: 2,
+      capHeight: 2,
+      controllingPlayer: 2,
+    } as RingStack;
+
+    safeBoard.stacks.set('3,3', safeStack);
+    safeBoard.stacks.set('6,6', distantStack);
+
+    const safeState = makeBaseGameState({ board: safeBoard });
+
+    const vulnerableScore = evaluateHeuristicState(
+      vulnerableState,
+      1,
+      HEURISTIC_WEIGHTS_V1_BALANCED
+    );
+    const safeScore = evaluateHeuristicState(safeState, 1, HEURISTIC_WEIGHTS_V1_BALANCED);
+
+    // The vulnerable position should score LOWER than the safe position
+    // because vulnerability penalty reduces the evaluation
+    expect(vulnerableScore).toBeLessThan(safeScore);
   });
 
   it('is deterministic for a fixed state and weight profile', () => {

@@ -40,6 +40,7 @@ import {
   MovementBoardView,
   MarkerPathHelpers,
 } from '../core';
+import { enumerateSimpleMoveTargetsFromStack as enumerateSimpleMoveTargetsFromStackCore } from '../movementLogic';
 
 import { isValidPosition } from '../validators/utils';
 
@@ -106,7 +107,7 @@ export interface MovementApplicationOutcome {
   /**
    * Per-player elimination deltas caused directly by this operation.
    * For simple non-capturing movement this is non-empty only when the move
-   * lands on the mover's own marker and triggers bottom-ring elimination.
+   * lands on the mover's own marker and triggers top-ring elimination.
    * Empty object when no eliminations occurred.
    */
   eliminatedRingsByPlayer: { [player: number]: number };
@@ -345,25 +346,10 @@ export function validateMovement(
  * Enumerate all legal simple (non-capturing) movement targets for the
  * stack controlled by `player` at `from` on a given board.
  *
- * Semantics are aligned with:
- *
- * - Backend RuleEngine.validateStackMovement,
- * - Sandbox ClientSandboxEngine.getValidLandingPositionsForCurrentPlayer, and
- * - hasAnyLegalMoveOrCaptureFromOnBoard in the shared core.
- *
- * Rules encoded:
- *
- * - Movement follows a straight ray along the canonical direction set
- *   for the board type (8-direction Moore for square, 6 cube axes for hex).
- * - The stack must move a distance >= its stackHeight.
- * - The path (excluding endpoints) must be clear of stacks and collapsed
- *   spaces; markers are allowed on the path.
- * - Landing is allowed on:
- *   - Empty spaces;
- *   - Spaces containing a single marker owned by the moving player;
- *   - Any existing stack (merge).
- * - Landing on an opponent marker is illegal, but such markers do not
- *   block further movement along the ray.
+ * This aggregate-level helper is a thin wrapper around the shared
+ * {@link enumerateSimpleMoveTargetsFromStack} function from
+ * movementLogic.ts so that all non-capture movement enumeration
+ * semantics remain single-sourced.
  */
 export function enumerateSimpleMoveTargetsFromStack(
   boardType: BoardType,
@@ -371,96 +357,7 @@ export function enumerateSimpleMoveTargetsFromStack(
   player: number,
   board: MovementBoardAdapters
 ): SimpleMoveTarget[] {
-  const stack = board.getStackAt(from);
-  if (!stack || stack.controllingPlayer !== player || stack.stackHeight <= 0) {
-    return [];
-  }
-
-  const directions = getMovementDirectionsForBoardType(boardType);
-  const results: SimpleMoveTarget[] = [];
-
-  for (const dir of directions) {
-    let step = 1;
-    // Walk outward along this ray until we leave the board or hit an
-    // obstruction that blocks further movement.
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const to: Position = {
-        x: from.x + dir.x * step,
-        y: from.y + dir.y * step,
-      };
-      if (dir.z !== undefined) {
-        to.z = (from.z || 0) + dir.z * step;
-      }
-
-      if (!board.isValidPosition(to)) {
-        break; // Off board along this ray.
-      }
-
-      if (board.isCollapsedSpace(to)) {
-        break; // Cannot move into collapsed territory.
-      }
-
-      // Path between from and to (excluding endpoints) must be clear of
-      // stacks and collapsed spaces. Markers are allowed and processed
-      // separately by marker mutators.
-      const path = getPathPositions(from, to).slice(1, -1);
-      let blocked = false;
-      for (const pos of path) {
-        if (!board.isValidPosition(pos)) {
-          blocked = true;
-          break;
-        }
-        if (board.isCollapsedSpace(pos)) {
-          blocked = true;
-          break;
-        }
-        const pathStack = board.getStackAt(pos);
-        if (pathStack && pathStack.stackHeight > 0) {
-          blocked = true;
-          break;
-        }
-      }
-      if (blocked) {
-        // Further positions along this ray are also blocked.
-        break;
-      }
-
-      const landingStack = board.getStackAt(to);
-      const markerOwner = board.getMarkerOwner?.(to);
-
-      const distance = calculateDistance(boardType, from, to);
-
-      if (!landingStack || landingStack.stackHeight === 0) {
-        // Empty space or marker-only cell.
-        if (markerOwner !== undefined && markerOwner !== player) {
-          // Opponent marker: cannot land here, but the ray continues
-          // past this cell.
-          step += 1;
-          continue;
-        }
-
-        if (distance >= stack.stackHeight) {
-          results.push({ from, to });
-        }
-
-        // Empty/own-marker cells do not block further exploration
-        // along this ray.
-        step += 1;
-        continue;
-      }
-
-      // Landing on an existing stack (own or opponent) is allowed as a
-      // simple merge, but we cannot move beyond it along this ray.
-      if (distance >= stack.stackHeight) {
-        results.push({ from, to });
-      }
-
-      break;
-    }
-  }
-
-  return results;
+  return enumerateSimpleMoveTargetsFromStackCore(boardType, from, player, board);
 }
 
 /**
@@ -540,7 +437,7 @@ export function enumerateAllMovementMoves(state: GameState, player: number): Mov
  * This is the core mutation function that handles:
  * - Removing the stack from origin
  * - Placing a marker at origin
- * - Handling landing on own marker (eliminate bottom ring)
+ * - Handling landing on own marker (eliminate top ring per rules 8.2, 8.3, 16.5.1)
  * - Moving the stack to destination
  *
  * Preconditions: The move has been validated by validateMovement.
@@ -591,20 +488,17 @@ export function mutateMovement(state: GameState, action: MoveStackAction): GameS
       // - Remove the marker
       newState.board.markers.delete(toKey);
 
-      // - Eliminate the bottom ring of the moving stack
-      // RingStack.rings is ordered top→bottom in our implementation
-      // (index 0 is top, index length-1 is bottom)
-      // Rule 8.2: "If you land on your own marker... remove the marker...
-      // and remove the bottom-most ring from your stack."
-      const bottomRingOwner = stack.rings[stack.rings.length - 1];
-      const newRings = stack.rings.slice(0, -1);
+      // - Eliminate the TOP ring of the moving stack (per rules 8.2, 8.3, 16.5.1)
+      // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
+      const topRingOwner = stack.rings[0];
+      const newRings = stack.rings.slice(1); // Remove first element (the top)
 
       // Update elimination counts
       newState.totalRingsEliminated++;
-      newState.board.eliminatedRings[bottomRingOwner] =
-        (newState.board.eliminatedRings[bottomRingOwner] || 0) + 1;
+      newState.board.eliminatedRings[topRingOwner] =
+        (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
 
-      const player = newState.players.find((p) => p.playerNumber === bottomRingOwner);
+      const player = newState.players.find((p) => p.playerNumber === topRingOwner);
       if (player) {
         player.eliminatedRings++;
       }
@@ -616,7 +510,7 @@ export function mutateMovement(state: GameState, action: MoveStackAction): GameS
           rings: newRings,
           stackHeight: newRings.length,
           capHeight: calculateCapHeight(newRings),
-          controllingPlayer: newRings[0],
+          controllingPlayer: newRings[0], // New top ring is the controller
         });
       }
     } else {
@@ -703,7 +597,14 @@ export function applySimpleMovement(
   // 1. Remove stack from origin
   newState.board.stacks.delete(fromKey);
 
-  // 2. Apply marker effects along the path
+  // 2. BEFORE applying marker effects, capture landing marker state for own-marker elimination check
+  // This is critical because applyMarkerEffectsAlongPathOnBoard DELETES the own marker at landing,
+  // so we must capture the state before that happens. (Race condition fix)
+  const landingMarkerBeforeEffects = newState.board.markers.get(toKey);
+  const landedOnOwnMarker =
+    landingMarkerBeforeEffects && landingMarkerBeforeEffects.player === params.player;
+
+  // Apply marker effects along the path
   const leaveDepartureMarker = params.leaveDepartureMarker !== false;
   const helpers = createMarkerHelpers();
 
@@ -724,26 +625,24 @@ export function applySimpleMovement(
     markerEffectsApplied = true;
   }
 
-  // 3. Handle landing
-  const landingMarker = newState.board.markers.get(toKey);
-
-  if (landingMarker && landingMarker.player === params.player) {
+  // 3. Handle landing on own marker (using pre-captured state)
+  if (landedOnOwnMarker) {
     // Landing on OWN marker:
     // - Remove the marker (already done by applyMarkerEffectsAlongPathOnBoard)
-    // - Eliminate the bottom ring of the moving stack
+    // - Eliminate the TOP ring of the moving stack (per rules section 8.2, 8.3, 16.5.1)
 
-    // RingStack.rings in game.ts is bottom→top (index 0 is bottom)
-    const bottomRingOwner = stack.rings[0];
-    const newRings = stack.rings.slice(1);
+    // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
+    const topRingOwner = stack.rings[0];
+    const newRings = stack.rings.slice(1); // Remove first element (the top)
 
     // Update elimination counts
     newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + 1;
-    newState.board.eliminatedRings[bottomRingOwner] =
-      (newState.board.eliminatedRings[bottomRingOwner] || 0) + 1;
+    newState.board.eliminatedRings[topRingOwner] =
+      (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
 
-    eliminatedRingsByPlayer[bottomRingOwner] = (eliminatedRingsByPlayer[bottomRingOwner] || 0) + 1;
+    eliminatedRingsByPlayer[topRingOwner] = (eliminatedRingsByPlayer[topRingOwner] || 0) + 1;
 
-    const player = newState.players.find((p) => p.playerNumber === bottomRingOwner);
+    const player = newState.players.find((p) => p.playerNumber === topRingOwner);
     if (player) {
       player.eliminatedRings++;
     }
@@ -755,23 +654,25 @@ export function applySimpleMovement(
         rings: newRings,
         stackHeight: newRings.length,
         capHeight: calculateCapHeight(newRings),
-        controllingPlayer: newRings[newRings.length - 1],
+        controllingPlayer: newRings[0], // New top ring is the controller
       });
     }
 
     markerEffectsApplied = true;
   } else {
-    // Check for landing on existing stack (merge)
+    // Check for landing on existing stack (merge). This is only reachable
+    // for own-stack merges; movement validators/enumerators never allow
+    // landing on opponent stacks.
     const existingStack = newState.board.stacks.get(toKey);
     if (existingStack) {
-      // Merge: place moving stack on top
-      const newRings = [...stack.rings, ...existingStack.rings];
+      // Merge: existing destination rings remain on top, moving stack goes below.
+      const newRings = [...existingStack.rings, ...stack.rings];
       newState.board.stacks.set(toKey, {
         position: params.to,
         rings: newRings,
         stackHeight: newRings.length,
         capHeight: calculateCapHeight(newRings),
-        controllingPlayer: newRings[newRings.length - 1],
+        controllingPlayer: newRings[0],
       });
     } else {
       // Landing on empty space

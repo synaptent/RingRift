@@ -149,6 +149,57 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
     expect(typeof state.deadlineAt).toBe('number');
   });
 
+  it('restores connected state on successful reconnection before timeout', async () => {
+    // Initial join marks the player as connected
+    await (wsServer as any).handleJoinGame(socket, gameId);
+
+    const initial = wsServer.getPlayerConnectionStateSnapshotForTesting(gameId, userId);
+    expect(initial).toBeDefined();
+    expect(initial!.kind).toBe('connected');
+
+    // Simulate a disconnect which starts the reconnection window
+    (wsServer as any).handleDisconnect(socket);
+
+    const pending = wsServer.getPlayerConnectionStateSnapshotForTesting(gameId, userId);
+    expect(pending).toBeDefined();
+    expect(pending!.kind).toBe('disconnected_pending_reconnect');
+
+    // Simulate the user reconnecting on a new socket before the window expires
+    const roomEmitter = { emit: jest.fn() };
+    const toMock = jest.fn(() => roomEmitter);
+
+    const reconnectSocket: AuthenticatedTestSocket = {
+      ...socket,
+      id: 'socket-2',
+      join: jest.fn(),
+      to: toMock,
+      emit: jest.fn(),
+    };
+
+    await (wsServer as any).handleJoinGame(reconnectSocket, gameId);
+
+    const after = wsServer.getPlayerConnectionStateSnapshotForTesting(gameId, userId);
+    expect(after).toBeDefined();
+    expect(after!.kind).toBe('connected');
+    expect(after!.gameId).toBe(gameId);
+    expect(after!.userId).toBe(userId);
+
+    // Reconnection path should emit a player_reconnected event to the room
+    expect(toMock).toHaveBeenCalledWith(gameId);
+    expect(roomEmitter.emit).toHaveBeenCalledWith(
+      'player_reconnected',
+      expect.objectContaining({
+        type: 'player_reconnected',
+        data: expect.objectContaining({
+          gameId,
+          player: expect.objectContaining({
+            id: userId,
+          }),
+        }),
+      })
+    );
+  });
+
   it('marks player as disconnected_expired when reconnection window expires', async () => {
     await (wsServer as any).handleJoinGame(socket, gameId);
 

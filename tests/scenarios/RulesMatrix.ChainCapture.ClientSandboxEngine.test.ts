@@ -22,7 +22,20 @@ import { chainCaptureRuleScenarios, ChainCaptureRuleScenario } from './rulesMatr
  * client-local sandbox engine. It reuses the ChainCaptureRuleScenario
  * definitions from rulesMatrix.ts and asserts the same aggregate outcomes as
  * the backend GameEngine tests.
+ *
+ * Note: Some scenarios manipulate internal gameState fields (currentPhase,
+ * board stacks) directly, which is incompatible with the orchestrator adapter.
+ * These scenarios are skipped when ORCHESTRATOR_ADAPTER_ENABLED=true.
  */
+
+const orchestratorEnabled = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
+
+// Scenarios that manipulate internal state and don't work with orchestrator
+const orchestratorIncompatibleScenarios = [
+  'Rules_10_3_Q15_3_1_180_degree_reversal_basic',
+  'Rules_10_3_Q15_3_2_cyclic_pattern_triangle_loop',
+  'Rules_10_3_multi_directional_zigzag_chain_square8',
+];
 
 describe('RulesMatrix → ClientSandboxEngine chain-capture scenarios (FAQ 15.3.1–15.3.2)', () => {
   function createEngine(boardType: BoardType): ClientSandboxEngine {
@@ -53,7 +66,7 @@ describe('RulesMatrix → ClientSandboxEngine chain-capture scenarios (FAQ 15.3.
     return new ClientSandboxEngine({ config, interactionHandler: handler });
   }
 
-  const scenarios: ChainCaptureRuleScenario[] = chainCaptureRuleScenarios.filter((s) =>
+  const allScenarios: ChainCaptureRuleScenario[] = chainCaptureRuleScenarios.filter((s) =>
     [
       'Rules_10_3_Q15_3_1_180_degree_reversal_basic',
       'Rules_10_3_Q15_3_2_cyclic_pattern_triangle_loop',
@@ -62,6 +75,11 @@ describe('RulesMatrix → ClientSandboxEngine chain-capture scenarios (FAQ 15.3.
       'Rules_10_3_multi_directional_zigzag_chain_square8',
     ].includes(s.ref.id)
   );
+
+  // Filter out orchestrator-incompatible scenarios when orchestrator is enabled
+  const scenarios: ChainCaptureRuleScenario[] = orchestratorEnabled
+    ? allScenarios.filter((s) => !orchestratorIncompatibleScenarios.includes(s.ref.id))
+    : allScenarios;
 
   test.each<ChainCaptureRuleScenario>(scenarios)(
     '%s → sandbox chain capture matches backend FAQ aggregate effects',

@@ -1,3 +1,10 @@
+> **Doc Status (2025-11-27): Archived (historical debug report)**
+>
+> - Role: snapshot of a specific AI stall bug investigation (double-filtering in sandbox candidates).
+> - Superseded by: fix implementation in `src/client/sandbox/sandboxAI.ts`.
+> - Not a semantics SSoT: see [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md) and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md) and strict invariant soaks [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/STRICT_INVARIANT_SOAKS.md).
+> - Related docs: [`archive/AI_STALL_BUG_CONTINUED.md`](./AI_STALL_BUG_CONTINUED.md), [`archive/AI_STALL_DEBUG_CONTEXT.md`](./AI_STALL_DEBUG_CONTEXT.md).
+
 # AI Sandbox Stall Debug Summary
 
 ## Problem

@@ -7,9 +7,8 @@ import {
   RingStack,
   GameState,
 } from '../../src/shared/types/game';
-import { getCaptureOptionsFromPosition as getCaptureOptionsFromPositionShared } from '../../src/server/game/rules/captureChainEngine';
+import { getChainCaptureContinuationInfo } from '../../src/shared/engine/aggregates/CaptureAggregate';
 import { BoardManager } from '../../src/server/game/BoardManager';
-import { RuleEngine } from '../../src/server/game/RuleEngine';
 
 /**
  * Scenario Tests: Complex Chain Captures
@@ -190,21 +189,15 @@ describe('Scenario: Complex Chain Captures (FAQ 15.3.1, 15.3.2)', () => {
     // position, mirroring GameEngine.chainCapture.triangleAndZigZagState.test.ts.
     const engineAnyDebug: any = engine;
     const stateAfterDebug: GameState = engineAnyDebug.gameState as GameState;
-    const boardManagerDebug: BoardManager = engineAnyDebug.boardManager as BoardManager;
-    const ruleEngineDebug: RuleEngine = engineAnyDebug.ruleEngine as RuleEngine;
     const chainStateDebug = engineAnyDebug.chainCaptureState as
       | { currentPosition: Position }
       | undefined;
 
     if (chainStateDebug) {
-      const followUpsDebug = getCaptureOptionsFromPositionShared(
-        chainStateDebug.currentPosition,
-        1,
+      const { availableContinuations: followUpsDebug } = getChainCaptureContinuationInfo(
         stateAfterDebug,
-        {
-          boardManager: boardManagerDebug,
-          ruleEngine: ruleEngineDebug,
-        }
+        1,
+        chainStateDebug.currentPosition
       );
 
       // eslint-disable-next-line no-console
@@ -425,21 +418,15 @@ describe('Scenario: Complex Chain Captures (FAQ 15.3.1, 15.3.2)', () => {
     // position for the zig-zag scenario.
     const engineAnyZig: any = engine;
     const stateAfterZig: GameState = engineAnyZig.gameState as GameState;
-    const boardManagerZig: BoardManager = engineAnyZig.boardManager as BoardManager;
-    const ruleEngineZig: RuleEngine = engineAnyZig.ruleEngine as RuleEngine;
     const chainStateZig = engineAnyZig.chainCaptureState as
       | { currentPosition: Position }
       | undefined;
 
     if (chainStateZig) {
-      const followUpsZig = getCaptureOptionsFromPositionShared(
-        chainStateZig.currentPosition,
-        1,
+      const { availableContinuations: followUpsZig } = getChainCaptureContinuationInfo(
         stateAfterZig,
-        {
-          boardManager: boardManagerZig,
-          ruleEngine: ruleEngineZig,
-        }
+        1,
+        chainStateZig.currentPosition
       );
 
       // eslint-disable-next-line no-console

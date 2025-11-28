@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { GameEngine } from './GameEngine';
-import { RulesBackendFacade } from './RulesBackendFacade';
+import { RulesBackendFacade, RulesResult } from './RulesBackendFacade';
 import { PlayerInteractionManager } from './PlayerInteractionManager';
 import { WebSocketInteractionHandler } from './WebSocketInteractionHandler';
 import { DelegatingInteractionHandler } from './DelegatingInteractionHandler';
@@ -8,9 +8,13 @@ import { AIInteractionHandler } from './ai/AIInteractionHandler';
 import { globalAIEngine, AIDiagnostics } from './ai/AIEngine';
 import { getOrCreateAIUser } from '../services/AIUserService';
 import { PythonRulesClient } from '../services/PythonRulesClient';
+import { GamePersistenceService } from '../services/GamePersistenceService';
 import { getDatabaseClient } from '../database/connection';
 import { logger } from '../utils/logger';
 import { getMetricsService } from '../services/MetricsService';
+import { orchestratorRollout, EngineSelection } from '../services/OrchestratorRolloutService';
+import { shadowComparator } from '../services/ShadowModeComparator';
+import { createSimpleAdapter, createAutoSelectDecisionHandler } from './turn/TurnEngineAdapter';
 import { config } from '../config';
 import {
   Move,
@@ -37,6 +41,7 @@ import {
   isDeadlineExceeded,
   AIRequestCancelReason,
 } from '../../shared/stateMachines/aiRequest';
+import { runWithTimeout } from '../../shared/utils/timeout';
 
 /**
  * Aggregated AI quality diagnostics for a session
@@ -87,6 +92,9 @@ export class GameSession {
 
   // Default AI request timeout (can be overridden via config)
   private readonly aiRequestTimeoutMs: number;
+
+  // Engine selection for this session (legacy, orchestrator, or shadow)
+  private engineSelection: EngineSelection = EngineSelection.LEGACY;
 
   constructor(
     gameId: string,
@@ -237,6 +245,10 @@ export class GameSession {
       this.interactionManager
     );
 
+    // Decide which engine path to use for this session based on
+    // orchestrator rollout feature flags and user targeting.
+    this.configureEngineSelection(players);
+
     this.gameEngine.enableMoveDrivenDecisionPhases();
 
     // Replay moves
@@ -295,6 +307,108 @@ export class GameSession {
       eliminatedRings: 0,
       territorySpaces: 0,
     };
+  }
+
+  /**
+   * Configure which rules engine variant to use for this session
+   * (legacy, orchestrator adapter, or shadow) using the centralized
+   * OrchestratorRolloutService.
+   *
+   * Phase A – Backend orchestrator-only path:
+   * - The TurnEngineAdapter / shared orchestrator is now the only production
+   *   backend turn-processing path whenever the global
+   *   config.featureFlags.orchestrator.adapterEnabled flag is true.
+   * - We no longer toggle the GameEngine's adapter on a per-session basis;
+   *   per-session engineSelection is used solely for metrics and for deciding
+   *   whether to run additional shadow comparisons (for example, Python or
+   *   legacy pipelines) in diagnostics lanes.
+   *
+   * See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase A – Backend orchestrator-only).
+   */
+  private configureEngineSelection(players: Player[]): void {
+    // Prefer a human player for targeting; fall back to undefined.
+    const primaryHuman = players.find((p) => p.type === 'human');
+    const userId = primaryHuman?.id;
+
+    const decision = orchestratorRollout.selectEngine(this.gameId, userId);
+    this.engineSelection = decision.engine;
+
+    // Adapter enablement is now controlled globally via
+    // config.featureFlags.orchestrator.adapterEnabled and is no longer
+    // overridden per session. EngineSelection is retained for observability
+    // and for selecting shadow-comparison behaviour in higher-level services.
+
+    // Record a rollout session selection metric for observability.
+    getMetricsService().recordOrchestratorSession(decision.engine, decision.reason);
+
+    logger.info('Engine selection for game session', {
+      gameId: this.gameId,
+      engine: decision.engine,
+      reason: decision.reason,
+      targetedUserId: userId,
+    });
+  }
+
+  /**
+   * Apply a move when this session is running in SHADOW mode: the legacy
+   * GameEngine/RulesBackendFacade path remains authoritative, while the
+   * orchestrator adapter runs in parallel on a cloned state via
+   * ShadowModeComparator for comparison and metrics.
+   */
+  private async applyMoveWithOrchestratorShadow(
+    preState: GameState,
+    engineMove: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+  ): Promise<RulesResult> {
+    const moveNumber = preState.moveHistory.length + 1;
+
+    const { result } = await shadowComparator.compare(
+      this.gameId,
+      moveNumber,
+      async () => this.rulesFacade.applyMove(engineMove),
+      async () => this.runOrchestratorShadow(preState, engineMove, moveNumber)
+    );
+
+    return result as RulesResult;
+  }
+
+  /**
+   * Run the shared orchestrator adapter on a cloned snapshot of the
+   * pre-move GameState for shadow comparison. This never mutates the
+   * authoritative GameEngine instance.
+   */
+  private async runOrchestratorShadow(
+    preState: GameState,
+    engineMove: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>,
+    moveNumber: number
+  ): Promise<RulesResult> {
+    const fullMove: Move = {
+      ...engineMove,
+      id: `shadow-${moveNumber}`,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber,
+    };
+
+    // Use the simple in-memory adapter so the orchestrator operates on a
+    // detached copy of the GameState for shadow evaluation.
+    const decisionHandler = createAutoSelectDecisionHandler();
+    const { adapter, getState } = createSimpleAdapter(preState, decisionHandler);
+    const adapterResult = await adapter.processMove(fullMove);
+    const nextState = getState();
+
+    const result: RulesResult = {
+      success: adapterResult.success,
+      gameState: nextState,
+    };
+
+    if (adapterResult.error) {
+      result.error = adapterResult.error;
+    }
+    if (adapterResult.victoryResult) {
+      result.gameResult = adapterResult.victoryResult;
+    }
+
+    return result;
   }
 
   private replayMove(move: any): void {
@@ -493,7 +607,13 @@ export class GameSession {
       thinkTime: 0,
     } as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
 
-    const result = await this.rulesFacade.applyMove(engineMove);
+    // Capture a pre-move snapshot for shadow-mode orchestrator comparison.
+    const preState = this.gameEngine.getGameState();
+
+    const result =
+      this.engineSelection === EngineSelection.SHADOW
+        ? await this.applyMoveWithOrchestratorShadow(preState, engineMove)
+        : await this.rulesFacade.applyMove(engineMove);
     if (!result.success) {
       logger.warn('Engine rejected move', {
         gameId: this.gameId,
@@ -557,22 +677,20 @@ export class GameSession {
   }
 
   private async persistMove(playerId: string, moveData: any, result: any): Promise<void> {
-    const prisma = getDatabaseClient();
-    if (!prisma) return;
+    const updatedState = this.gameEngine.getGameState();
+    const lastMove = updatedState.moveHistory[updatedState.moveHistory.length - 1];
 
-    await prisma.move.create({
-      data: {
+    if (lastMove) {
+      // Use GamePersistenceService for async, non-blocking move saving
+      GamePersistenceService.saveMove({
         gameId: this.gameId,
         playerId,
-        moveNumber: moveData.moveNumber,
-        position: moveData.position,
-        moveType: moveData.moveType,
-        timestamp: new Date(),
-      },
-    });
+        moveNumber: lastMove.moveNumber,
+        move: lastMove,
+      });
+    }
 
     if (result.gameResult) {
-      const updatedState = this.gameEngine.getGameState();
       const winnerPlayerNumber = result.gameResult.winner;
       let winnerId: string | null = null;
 
@@ -583,15 +701,13 @@ export class GameSession {
         winnerId = winnerPlayer?.id ?? null;
       }
 
-      await prisma.game.update({
-        where: { id: this.gameId },
-        data: {
-          status: 'completed' as any,
-          winnerId: winnerId ?? null,
-          endedAt: new Date(),
-          updatedAt: new Date(),
-        },
-      });
+      // Use GamePersistenceService to finish the game with final state
+      await GamePersistenceService.finishGame(
+        this.gameId,
+        winnerId,
+        updatedState,
+        result.gameResult
+      );
     }
   }
 
@@ -724,7 +840,10 @@ export class GameSession {
           const engineMove = rest as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
           appliedMoveType = engineMove.type;
 
-          result = await this.rulesFacade.applyMove(engineMove);
+          result =
+            this.engineSelection === EngineSelection.SHADOW
+              ? await this.applyMoveWithOrchestratorShadow(state, engineMove)
+              : await this.rulesFacade.applyMove(engineMove);
         } else {
           // Get AI move with timeout
           const aiMove = await this.getAIMoveWithTimeout(
@@ -747,7 +866,10 @@ export class GameSession {
           const engineMove = rest as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
           appliedMoveType = engineMove.type;
 
-          result = await this.rulesFacade.applyMove(engineMove);
+          result =
+            this.engineSelection === EngineSelection.SHADOW
+              ? await this.applyMoveWithOrchestratorShadow(state, engineMove)
+              : await this.rulesFacade.applyMove(engineMove);
         }
 
         if (!result.success) {
@@ -824,20 +946,48 @@ export class GameSession {
   }
 
   /**
-   * Get AI move with timeout
+   * Get AI move with timeout.
+   *
+   * This wraps the AI engine call in the shared runWithTimeout helper so that
+   * the timeout semantics are centralized alongside other Tier 3 async flows.
+   * The state machine still owns the authoritative view of deadlines via
+   * aiRequestState.deadlineAt; on timeout we surface a synthetic error and
+   * let the caller map it to the explicit `timed_out` terminal state using
+   * the existing isDeadlineExceeded/markTimedOut logic.
    */
   private async getAIMoveWithTimeout(
     playerNumber: number,
     state: GameState,
     timeoutMs: number
   ): Promise<Move | null> {
-    const timeoutPromise = new Promise<null>((_, reject) => {
-      setTimeout(() => reject(new Error('AI request timeout')), timeoutMs);
+    const result = await runWithTimeout(() => globalAIEngine.getAIMove(playerNumber, state), {
+      timeoutMs,
     });
 
-    const movePromise = globalAIEngine.getAIMove(playerNumber, state);
+    if (result.kind === 'ok') {
+      return result.value ?? null;
+    }
 
-    return Promise.race([movePromise, timeoutPromise]);
+    if (result.kind === 'timeout') {
+      const error: Error & { isTimeout?: boolean } = new Error('AI request timeout');
+      // Mark as a timeout-specific error so future callers that choose to
+      // inspect the error object (for example metrics) can distinguish it
+      // from generic failures, even though GameSession currently relies on
+      // the state-machine deadline for timeout detection.
+      error.isTimeout = true;
+      throw error;
+    }
+
+    if (result.kind === 'canceled') {
+      const error: Error & { cancellationReason?: unknown } = new Error('AI request canceled');
+      error.cancellationReason = result.cancellationReason;
+      throw error;
+    }
+
+    // Exhaustiveness guard – TimedOperationOutcome is a closed union. If we
+    // land here, the helper's API has changed and this method should be
+    // updated accordingly.
+    throw new Error('Unhandled TimedOperationResult outcome in getAIMoveWithTimeout');
   }
 
   /**
@@ -862,7 +1012,10 @@ export class GameSession {
     const fallbackMove = globalAIEngine.getLocalFallbackMove(playerNumber, state);
 
     if (fallbackMove) {
-      const result = await this.rulesFacade.applyMove(fallbackMove);
+      const result =
+        this.engineSelection === EngineSelection.SHADOW
+          ? await this.applyMoveWithOrchestratorShadow(state, fallbackMove)
+          : await this.rulesFacade.applyMove(fallbackMove);
 
       if (result.success) {
         this.aiRequestState = markCompleted(this.aiRequestState);
@@ -897,7 +1050,10 @@ export class GameSession {
     const fallbackMove = globalAIEngine.getLocalFallbackMove(playerNumber, state);
 
     if (fallbackMove) {
-      const result = await this.rulesFacade.applyMove(fallbackMove);
+      const result =
+        this.engineSelection === EngineSelection.SHADOW
+          ? await this.applyMoveWithOrchestratorShadow(state, fallbackMove)
+          : await this.rulesFacade.applyMove(fallbackMove);
 
       if (result.success) {
         this.aiRequestState = markCompleted(this.aiRequestState);
@@ -941,31 +1097,25 @@ export class GameSession {
   }
 
   /**
-   * Persist AI move to database
+   * Persist AI move to database using GamePersistenceService
    */
   private async persistAIMove(
     playerNumber: number,
     moveType: Move['type'] | undefined,
     result: any
   ): Promise<void> {
-    const prisma = getDatabaseClient();
-    if (!prisma) return;
-
     try {
       const aiUser = await getOrCreateAIUser();
       const updatedState = this.gameEngine.getGameState();
       const lastMove = updatedState.moveHistory[updatedState.moveHistory.length - 1];
 
       if (lastMove) {
-        await prisma.move.create({
-          data: {
-            gameId: this.gameId,
-            playerId: aiUser.id,
-            moveNumber: lastMove.moveNumber,
-            position: JSON.stringify({ from: lastMove.from, to: lastMove.to }),
-            moveType: lastMove.type as any,
-            timestamp: lastMove.timestamp,
-          },
+        // Use GamePersistenceService for async, non-blocking move saving
+        GamePersistenceService.saveMove({
+          gameId: this.gameId,
+          playerId: aiUser.id,
+          moveNumber: lastMove.moveNumber,
+          move: lastMove,
         });
       }
 
@@ -980,15 +1130,13 @@ export class GameSession {
           winnerId = winnerPlayer?.id ?? null;
         }
 
-        await prisma.game.update({
-          where: { id: this.gameId },
-          data: {
-            status: 'completed' as any,
-            winnerId: winnerId ?? null,
-            endedAt: new Date(),
-            updatedAt: new Date(),
-          },
-        });
+        // Use GamePersistenceService to finish the game with final state
+        await GamePersistenceService.finishGame(
+          this.gameId,
+          winnerId,
+          updatedState,
+          result.gameResult
+        );
       }
     } catch (err) {
       logger.error('Failed to persist AI move', {

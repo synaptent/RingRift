@@ -5,6 +5,7 @@
 Procedures for reverting RingRift to a previous version when a deployment causes issues. This runbook covers multiple rollback scenarios from quick container rollback to full database restore.
 
 **Severity Levels:**
+
 - **P0 (Critical)**: Service completely down, immediate rollback required
 - **P1 (High)**: Major functionality broken, rollback within minutes
 - **P2 (Medium)**: Degraded performance or minor features broken, planned rollback
@@ -147,14 +148,14 @@ cat prisma/migrations/YYYYMMDD_migration_name/migration.sql
 
 ### Step 2.2: Determine Rollback Strategy
 
-| Migration Type | Strategy | Risk |
-|---------------|----------|------|
-| Added column (nullable) | Leave in place, rollback app only | Low |
-| Added column (required) | May need data backfill or column removal | Medium |
-| Added table | Leave in place, rollback app only | Low |
-| Dropped column | Restore from backup | High |
-| Dropped table | Restore from backup | Critical |
-| Modified column | Assess, may need backup restore | Medium-High |
+| Migration Type          | Strategy                                 | Risk        |
+| ----------------------- | ---------------------------------------- | ----------- |
+| Added column (nullable) | Leave in place, rollback app only        | Low         |
+| Added column (required) | May need data backfill or column removal | Medium      |
+| Added table             | Leave in place, rollback app only        | Low         |
+| Dropped column          | Restore from backup                      | High        |
+| Dropped table           | Restore from backup                      | Critical    |
+| Modified column         | Assess, may need backup restore          | Medium-High |
 
 ### Step 2.3: Backup Current State
 
@@ -366,8 +367,6 @@ docker compose up -d nginx
 
 ```bash
 # Run comprehensive health checks
-./scripts/validate-system.sh  # If available, or:
-
 # Manual checks:
 curl -s http://localhost:3000/health | jq
 curl -s http://localhost:3000/ready | jq
@@ -501,12 +500,12 @@ docker compose up -d --build app
 
 ## Emergency Contacts
 
-| Role | Contact | Escalation |
-|------|---------|------------|
-| On-Call Engineer | [Define] | First response |
-| Database Admin | [Define] | Database restore |
-| Infrastructure | [Define] | System-wide issues |
-| Engineering Lead | [Define] | P0 incidents |
+| Role             | Contact  | Escalation         |
+| ---------------- | -------- | ------------------ |
+| On-Call Engineer | [Define] | First response     |
+| Database Admin   | [Define] | Database restore   |
+| Infrastructure   | [Define] | System-wide issues |
+| Engineering Lead | [Define] | P0 incidents       |
 
 ---
 

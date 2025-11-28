@@ -5,6 +5,7 @@ import {
   Player,
   Position,
   RingStack,
+  Move,
 } from '../../src/shared/types/game';
 import { BoardManager } from '../../src/server/game/BoardManager';
 import { GameEngine } from '../../src/server/game/GameEngine';
@@ -19,11 +20,12 @@ import {
   diffSnapshots,
 } from '../utils/stateSnapshots';
 import { calculateCapHeight } from '../../src/shared/engine/core';
+import { applyCapture as applyCaptureAggregate } from '../../src/shared/engine';
 
 /**
  * Focused parity test for capture + marker + elimination semantics:
  *
- *   - Backend: GameEngine.performOvertakingCapture on a shared BoardState.
+ *   - Backend: shared CaptureAggregate.applyCapture on a backend-style GameState.
  *   - Sandbox: ClientSandboxEngine.applyCaptureSegment (via internal helper).
  *
  * The fixture is constructed so that:
@@ -148,10 +150,10 @@ describe('Capture + marker + elimination semantics parity (backend vs sandbox)',
     return { board, players, from, target, landing, movingPlayer };
   }
 
-  test('performOvertakingCapture vs applyCaptureSegmentOnBoard', async () => {
+  test('shared CaptureAggregate.applyCapture vs sandbox applyCaptureSegmentOnBoard', async () => {
     const { board, players, from, target, landing, movingPlayer } = buildCaptureMarkerFixture();
 
-    // --- Backend path: GameEngine.performOvertakingCapture on a shared board ---
+    // --- Backend-style path: shared CaptureAggregate.applyCapture on a GameState seeded with backend BoardManager geometry ---
 
     const timeControl = { initialTime: 0, increment: 0, type: 'rapid' as const };
     const backendEngine = new GameEngine(
@@ -175,8 +177,27 @@ describe('Capture + marker + elimination semantics parity (backend vs sandbox)',
       currentPhase: 'movement',
     } as GameState;
 
-    // Apply the core capture operation via the private helper.
-    backendAny.performOvertakingCapture(from, target, landing, movingPlayer);
+    const captureMove: Move = {
+      id: 'capture-marker-backend',
+      type: 'overtaking_capture',
+      player: movingPlayer,
+      from,
+      captureTarget: target,
+      to: landing,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    const captureResult = applyCaptureAggregate(backendAny.gameState as any, captureMove as any);
+
+    if (!captureResult.success) {
+      throw new Error(
+        `CaptureAggregate.applyCapture failed in CaptureMarker.GameEngine_vs_Sandbox: ${captureResult.reason}`
+      );
+    }
+
+    backendAny.gameState = captureResult.newState as GameState;
 
     const backendSnap = snapshotFromBoardAndPlayers(
       'backend-capture-marker',
@@ -238,6 +259,178 @@ describe('Capture + marker + elimination semantics parity (backend vs sandbox)',
       // eslint-disable-next-line no-console
       console.error(
         '[CaptureMarker.GameEngine_vs_Sandbox] capture+marker mismatch',
+        diffSnapshots(backendSnap, sandboxSnap)
+      );
+    }
+
+    expect(snapshotsEqual(backendSnap, sandboxSnap)).toBe(true);
+  });
+  test('two-segment capture chain parity (backend vs sandbox)', async () => {
+    const bm = new BoardManager(boardType);
+    const board = bm.createBoard();
+
+    const from1: Position = { x: 3, y: 3 };
+    const target1: Position = { x: 5, y: 3 };
+    const landing1: Position = { x: 7, y: 3 };
+    const target2: Position = { x: 6, y: 2 };
+    const landing2: Position = { x: 4, y: 0 };
+    const movingPlayer = 1 as const;
+    const targetPlayer = 2;
+
+    const attackerRings = [movingPlayer, movingPlayer];
+    const attackerStack: RingStack = {
+      position: from1,
+      rings: attackerRings,
+      stackHeight: attackerRings.length,
+      capHeight: calculateCapHeight(attackerRings),
+      controllingPlayer: movingPlayer,
+    };
+    bm.setStack(from1, attackerStack, board);
+
+    const target1Rings = [targetPlayer, targetPlayer];
+    const target1Stack: RingStack = {
+      position: target1,
+      rings: target1Rings,
+      stackHeight: target1Rings.length,
+      capHeight: calculateCapHeight(target1Rings),
+      controllingPlayer: targetPlayer,
+    };
+    bm.setStack(target1, target1Stack, board);
+
+    const target2Rings = [targetPlayer, targetPlayer];
+    const target2Stack: RingStack = {
+      position: target2,
+      rings: target2Rings,
+      stackHeight: target2Rings.length,
+      capHeight: calculateCapHeight(target2Rings),
+      controllingPlayer: targetPlayer,
+    };
+    bm.setStack(target2, target2Stack, board);
+
+    const players = makeDummyPlayers();
+
+    const timeControl = { initialTime: 0, increment: 0, type: 'rapid' as const };
+    const backendEngine = new GameEngine(
+      'capture-chain-test',
+      boardType,
+      players.map((p) => ({ ...p })),
+      timeControl,
+      false
+    );
+
+    const backendAny: any = backendEngine;
+    const backendState0: GameState = backendEngine.getGameState();
+    const backendBoard = cloneBoard(board);
+    const backendPlayers = players.map((p) => ({ ...p }));
+
+    backendAny.gameState = {
+      ...backendState0,
+      board: backendBoard,
+      players: backendPlayers,
+      currentPlayer: movingPlayer,
+      currentPhase: 'movement',
+    } as GameState;
+
+    const firstSegmentMove: Move = {
+      id: 'capture-chain-backend-1',
+      type: 'overtaking_capture',
+      player: movingPlayer,
+      from: from1,
+      captureTarget: target1,
+      to: landing1,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+
+    const firstResult = applyCaptureAggregate(backendAny.gameState as any, firstSegmentMove as any);
+    if (!firstResult.success) {
+      throw new Error(
+        `CaptureAggregate.applyCapture failed for first segment in chain test: ${firstResult.reason}`
+      );
+    }
+    backendAny.gameState = firstResult.newState as GameState;
+
+    const secondSegmentMove: Move = {
+      id: 'capture-chain-backend-2',
+      type: 'continue_capture_segment',
+      player: movingPlayer,
+      from: landing1,
+      captureTarget: target2,
+      to: landing2,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 2,
+    };
+
+    const secondResult = applyCaptureAggregate(
+      backendAny.gameState as any,
+      secondSegmentMove as any
+    );
+    if (!secondResult.success) {
+      throw new Error(
+        `CaptureAggregate.applyCapture failed for second segment in chain test: ${secondResult.reason}`
+      );
+    }
+    backendAny.gameState = secondResult.newState as GameState;
+
+    const backendSnap = snapshotFromBoardAndPlayers(
+      'backend-capture-chain',
+      backendAny.gameState.board as BoardState,
+      backendAny.gameState.players as Player[]
+    );
+
+    const config: SandboxConfig = {
+      boardType,
+      numPlayers: players.length,
+      playerKinds: players.map((p) => p.type as 'human' | 'ai'),
+    };
+
+    const handler: SandboxInteractionHandler = {
+      async requestChoice(choice: any) {
+        const options = ((choice as any).options as any[]) ?? [];
+        const selectedOption = options.length > 0 ? options[0] : undefined;
+        return {
+          choiceId: (choice as any).id,
+          playerNumber: (choice as any).playerNumber,
+          choiceType: (choice as any).type,
+          selectedOption,
+        } as any;
+      },
+    };
+
+    const sandboxEngine = new ClientSandboxEngine({
+      config,
+      interactionHandler: handler,
+      traceMode: true,
+    });
+
+    const sandboxAny: any = sandboxEngine;
+    const sandboxState0: GameState = sandboxEngine.getGameState();
+    const sandboxBoard = cloneBoard(board);
+    const sandboxPlayers = players.map((p) => ({ ...p }));
+
+    sandboxAny.gameState = {
+      ...sandboxState0,
+      board: sandboxBoard,
+      players: sandboxPlayers,
+      currentPlayer: movingPlayer,
+      currentPhase: 'movement',
+    } as GameState;
+
+    await sandboxAny.applyCaptureSegment(from1, target1, landing1, movingPlayer);
+    await sandboxAny.applyCaptureSegment(landing1, target2, landing2, movingPlayer);
+
+    const sandboxSnap = snapshotFromBoardAndPlayers(
+      'sandbox-capture-chain',
+      sandboxAny.gameState.board as BoardState,
+      sandboxAny.gameState.players as Player[]
+    );
+
+    if (!snapshotsEqual(backendSnap, sandboxSnap)) {
+      // eslint-disable-next-line no-console
+      console.error(
+        '[CaptureMarker.GameEngine_vs_Sandbox] two-segment chain capture mismatch',
         diffSnapshots(backendSnap, sandboxSnap)
       );
     }

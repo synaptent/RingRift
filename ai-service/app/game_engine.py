@@ -16,6 +16,7 @@ from .board_manager import BoardManager
 from .ai.zobrist import ZobristHash
 from .rules.geometry import BoardGeometry
 from .rules.core import count_rings_in_play_for_player
+from .rules.capture_chain import enumerate_capture_moves_py
 
 
 DEBUG_ENGINE = os.environ.get("RINGRIFT_DEBUG_ENGINE") == "1"
@@ -1598,136 +1599,15 @@ class GameEngine:
         """
         Enumerate legal overtaking capture segments for the current attacker.
 
-        This mirrors the TS captureChainEngine.getCaptureOptionsFromPosition
-        + core.validateCaptureSegmentOnBoard flow:
-
-        - Ray-walk from the attacker in each movement direction to find the
-          first potential target stack.
-        - Require attacker.cap_height >= target.cap_height (own- and
-          opponent-stack captures are both allowed).
-        - From the target, ray-walk further to find landing candidates.
-        - For each candidate, validate geometry/path/landing via a Python
-          port of validateCaptureSegmentOnBoard.
+        Adapter over rules.capture_chain.enumerate_capture_moves_py, which
+        mirrors TS CaptureAggregate.enumerateCaptureMoves.
         """
-
-        def _validate_capture_segment_on_board(
-            board_type: BoardType,
-            from_pos: Position,
-            target_pos: Position,
-            landing_pos: Position,
-            player: int,
-        ) -> bool:
-            """
-            Python analogue of core.validateCaptureSegmentOnBoard.
-            Uses BoardManager helpers and the current BoardState.
-            """
-            board = game_state.board
-
-            if not BoardManager.is_valid_position(from_pos, board.type, board.size):
-                return False
-            if not BoardManager.is_valid_position(target_pos, board.type, board.size):
-                return False
-            if not BoardManager.is_valid_position(landing_pos, board.type, board.size):
-                return False
-
-            attacker = BoardManager.get_stack(from_pos, board)
-            if not attacker or attacker.controlling_player != player:
-                return False
-
-            target_stack = BoardManager.get_stack(target_pos, board)
-            if not target_stack:
-                return False
-
-            # Cap height constraint
-            if attacker.cap_height < target_stack.cap_height:
-                return False
-
-            # Direction must be along a valid axis
-            dx = target_pos.x - from_pos.x
-            dy = target_pos.y - from_pos.y
-            dz = (target_pos.z or 0) - (from_pos.z or 0)
-
-            if board_type == BoardType.HEXAGONAL:
-                coord_changes = sum(1 for d in (dx, dy, dz) if d != 0)
-                if coord_changes != 2:
-                    return False
-            else:
-                if dx == 0 and dy == 0:
-                    return False
-                if dx != 0 and dy != 0 and abs(dx) != abs(dy):
-                    return False
-
-            # Path from attacker to target (exclusive) must be clear
-            path_to_target = GameEngine._get_path_positions(from_pos, target_pos)[
-                1:-1
-            ]
-            for pos in path_to_target:
-                if not BoardManager.is_valid_position(
-                    pos, board.type, board.size
-                ):
-                    return False
-                if BoardManager.is_collapsed_space(pos, board):
-                    return False
-                if BoardManager.get_stack(pos, board):
-                    return False
-
-            # Landing must be beyond target in same direction
-            dx2 = landing_pos.x - from_pos.x
-            dy2 = landing_pos.y - from_pos.y
-            dz2 = (landing_pos.z or 0) - (from_pos.z or 0)
-
-            if dx != 0 and (dx2 == 0 or (dx2 > 0) != (dx > 0)):
-                return False
-            if dy != 0 and (dy2 == 0 or (dy2 > 0) != (dy > 0)):
-                return False
-            if dz != 0 and (dz2 == 0 or (dz2 > 0) != (dz > 0)):
-                return False
-
-            dist_to_target = abs(dx) + abs(dy) + abs(dz)
-            dist_to_landing = abs(dx2) + abs(dy2) + abs(dz2)
-            if dist_to_landing <= dist_to_target:
-                return False
-
-            # Total distance must be at least stack height
-            segment_distance = GameEngine._calculate_distance(
-                board_type, from_pos, landing_pos
-            )
-            if segment_distance < attacker.stack_height:
-                return False
-
-            # Path from target to landing (exclusive) must also be clear
-            path_from_target = GameEngine._get_path_positions(
-                target_pos, landing_pos
-            )[1:-1]
-            for pos in path_from_target:
-                if not BoardManager.is_valid_position(
-                    pos, board.type, board.size
-                ):
-                    return False
-                if BoardManager.is_collapsed_space(pos, board):
-                    return False
-                if BoardManager.get_stack(pos, board):
-                    return False
-
-            # Landing space must be empty and not collapsed
-            if BoardManager.is_collapsed_space(landing_pos, board):
-                return False
-            if BoardManager.get_stack(landing_pos, board):
-                return False
-
-            # If there's a marker at landing, it must belong to attacker
-            marker = board.markers.get(landing_pos.to_key())
-            if (marker is not None and
-                    marker.player != attacker.controlling_player):
-                return False
-
-            return True
-
         board = game_state.board
 
         # Determine attacker position
         if game_state.chain_capture_state:
             attacker_pos = game_state.chain_capture_state.current_position
+            kind = "continuation"
         else:
             last_move = (
                 game_state.move_history[-1]
@@ -1736,86 +1616,15 @@ class GameEngine:
             if not last_move or not last_move.to:
                 return []
             attacker_pos = last_move.to
+            kind = "initial"
 
-        attacker_stack = BoardManager.get_stack(attacker_pos, board)
-        if (not attacker_stack or
-                attacker_stack.controlling_player != player_number):
-            return []
-
-        moves: List[Move] = []
-        directions = BoardManager._get_all_directions(board.type)
-
-        for direction in directions:
-            # Step outward from attacker to find first potential target
-            step = 1
-            target_pos: Optional[Position] = None
-
-            while True:
-                pos = BoardManager._add_direction(
-                    attacker_pos, direction, step
-                )
-                if not BoardManager.is_valid_position(
-                    pos, board.type, board.size
-                ):
-                    break
-                if BoardManager.is_collapsed_space(pos, board):
-                    break
-
-                stack_at_pos = BoardManager.get_stack(pos, board)
-                if stack_at_pos and stack_at_pos.stack_height > 0:
-                    # Rule: can overtake own stacks; only capHeight matters
-                    if attacker_stack.cap_height >= stack_at_pos.cap_height:
-                        target_pos = pos
-                    break
-                step += 1
-
-            if target_pos is None:
-                continue
-
-            # From target, search for valid landing positions beyond
-            landing_step = 1
-            while True:
-                landing_pos = BoardManager._add_direction(
-                    target_pos, direction, landing_step
-                )
-                if not BoardManager.is_valid_position(
-                    landing_pos, board.type, board.size
-                ):
-                    break
-                if BoardManager.is_collapsed_space(landing_pos, board):
-                    break
-                if BoardManager.get_stack(landing_pos, board):
-                    break
-
-                if _validate_capture_segment_on_board(
-                    board.type,
-                    attacker_pos,
-                    target_pos,
-                    landing_pos,
-                    player_number,
-                ):
-                    move_type = (
-                        MoveType.CONTINUE_CAPTURE_SEGMENT
-                        if game_state.chain_capture_state
-                        else MoveType.OVERTAKING_CAPTURE
-                    )
-                    moves.append(
-                        Move(
-                            id="simulated",
-                            type=move_type,
-                            player=player_number,
-                            from_pos=attacker_pos,  # type: ignore[arg-type]
-                            to=landing_pos,
-                            capture_target=target_pos,
-                            timestamp=game_state.last_move_at,
-                            thinkTime=0,
-                            moveNumber=len(game_state.move_history) + 1,
-                        )  # type: ignore
-                    )
-
-                landing_step += 1
-
-        return moves
+        return enumerate_capture_moves_py(
+            game_state,
+            player_number,
+            attacker_pos,
+            move_number=len(game_state.move_history) + 1,
+            kind=kind,  # type: ignore[arg-type]
+        )
     @staticmethod
     def _has_valid_placements(
         game_state: GameState, player_number: int

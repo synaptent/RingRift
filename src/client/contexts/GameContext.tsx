@@ -1,21 +1,21 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
 import { toast } from 'react-hot-toast';
 import { reportClientError, isErrorReportingEnabled } from '../utils/errorReporting';
+import { SocketGameConnection } from '../services/GameConnection';
+import type {
+  GameConnection,
+  GameEventHandlers,
+  ConnectionStatus as DomainConnectionStatus,
+} from '../domain/GameAPI';
 import { BoardState, GameState, Move, PlayerChoice, GameResult } from '../../shared/types/game';
 import type {
   WebSocketErrorPayload,
   GameStateUpdateMessage,
   GameOverMessage,
   ChatMessageServerPayload,
-  JoinGamePayload,
-  PlayerMovePayload,
-  PlayerMoveByIdPayload,
-  PlayerChoiceResponsePayload,
-  ChatMessagePayload,
 } from '../../shared/types/websocket';
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+export type ConnectionStatus = DomainConnectionStatus;
 
 interface GameContextType {
   gameId: string | null;
@@ -57,43 +57,6 @@ interface GameContextType {
 }
 
 const GameContext = createContext<GameContextType | null>(null);
-
-// Derive the WebSocket base URL from environment configuration, falling back
-// to a sensible dev default. In local development:
-//   - Vite runs on http://localhost:5173
-//   - The backend (Express + Socket.IO) runs on http://localhost:3000
-// We therefore prefer talking to the backend origin directly rather than
-// relying on the Vite proxy for WebSocket connections.
-function getSocketBaseUrl(): string {
-  const env = (import.meta as any).env ?? {};
-
-  // Prefer an explicit WebSocket URL when provided.
-  const wsUrl = env.VITE_WS_URL as string | undefined;
-  if (wsUrl) {
-    return wsUrl.replace(/\/$/, '');
-  }
-
-  // Next, derive from an API URL by stripping any trailing "/api".
-  const apiUrl = env.VITE_API_URL as string | undefined;
-  if (apiUrl) {
-    const base = apiUrl.replace(/\/?api\/?$/, '');
-    return base.replace(/\/$/, '');
-  }
-
-  // In the browser (Vite dev, built client), detect the common local dev
-  // case (frontend on :5173, backend on :3000) and talk to the backend
-  // origin directly. For any other origin, just reuse window.location.origin.
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    const origin = window.location.origin;
-    if (origin.startsWith('http://localhost:5173') || origin.startsWith('https://localhost:5173')) {
-      return 'http://localhost:3000';
-    }
-    return origin;
-  }
-
-  // Fallback for tests/SSR when no window is available.
-  return 'http://localhost:3000';
-}
 
 // Hydrate a BoardState coming over the wire, where Maps have been
 // serialized to plain objects.
@@ -150,12 +113,127 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null);
-  const socketRef = useRef<Socket | null>(null);
+  const connectionRef = useRef<GameConnection | null>(null);
+  const lastStatusRef = useRef<ConnectionStatus | null>(null);
+  const hasEverConnectedRef = useRef(false);
+
+  const getConnection = useCallback((): GameConnection => {
+    if (connectionRef.current) {
+      return connectionRef.current;
+    }
+
+    const handlers: GameEventHandlers = {
+      onGameState: (payload: GameStateUpdateMessage) => {
+        const { data } = payload || ({} as GameStateUpdateMessage);
+        if (!data?.gameId || !data.gameState) return;
+
+        setGameId(data.gameId);
+        setGameState(hydrateGameState(data.gameState));
+        setValidMoves(Array.isArray(data.validMoves) ? data.validMoves : null);
+        setIsConnecting(false);
+        setError(null);
+        setConnectionStatus('connected');
+        setLastHeartbeatAt(Date.now());
+      },
+      onGameOver: (payload: GameOverMessage) => {
+        const { data } = payload || ({} as GameOverMessage);
+        if (!data?.gameId) return;
+
+        setGameId(data.gameId);
+        if (data.gameState) {
+          setGameState(hydrateGameState(data.gameState));
+        }
+        if (data.gameResult) {
+          setVictoryState(data.gameResult as GameResult);
+        }
+        setValidMoves(null);
+        setIsConnecting(false);
+        setError(null);
+        setPendingChoice(null);
+        setChoiceDeadline(null);
+      },
+      onChoiceRequired: (choice: PlayerChoice) => {
+        setPendingChoice(choice);
+        const deadline = choice.timeoutMs ? Date.now() + choice.timeoutMs : null;
+        setChoiceDeadline(deadline);
+      },
+      onChoiceCanceled: (choiceId: string) => {
+        setPendingChoice((current) => (current && current.id === choiceId ? null : current));
+        setChoiceDeadline((current) => (current ? null : current));
+      },
+      onChatMessage: (payload: ChatMessageServerPayload) => {
+        setChatMessages((prev) => [...prev, { sender: payload.sender, text: payload.text }]);
+      },
+      onError: (payload: WebSocketErrorPayload | unknown) => {
+        let message: string;
+
+        if (
+          payload &&
+          (payload as WebSocketErrorPayload).type === 'error' &&
+          (payload as WebSocketErrorPayload).code
+        ) {
+          const err = payload as WebSocketErrorPayload;
+          // eslint-disable-next-line no-console
+          console.warn('Game socket error', err.code, err.event, err.message);
+          message = err.message || 'Game error';
+        } else {
+          // eslint-disable-next-line no-console
+          console.error('Game socket error', payload);
+          message = (payload as any)?.message || 'Game error';
+        }
+
+        setError(message);
+        toast.error(message);
+        setIsConnecting(false);
+
+        if (isErrorReportingEnabled()) {
+          void reportClientError(payload, {
+            type: 'game_socket_error',
+            code: (payload as any)?.code,
+            event: (payload as any)?.event,
+            gameId,
+            message,
+          });
+        }
+      },
+      onDisconnect: (reason: string) => {
+        // eslint-disable-next-line no-console
+        console.log('Socket disconnected:', reason);
+        setLastHeartbeatAt(null);
+        if (reason !== 'io client disconnect' && isErrorReportingEnabled()) {
+          void reportClientError(new Error(`Socket disconnected: ${reason}`), {
+            type: 'socket_disconnect',
+            gameId,
+            reason,
+          });
+        }
+      },
+      onConnectionStatusChange: (status: ConnectionStatus) => {
+        const previous = lastStatusRef.current;
+        lastStatusRef.current = status;
+
+        setConnectionStatus(status);
+        setIsConnecting(status === 'connecting' || status === 'reconnecting');
+
+        if (status === 'reconnecting') {
+          toast('Reconnecting...', { icon: '🔄', id: 'reconnecting' });
+        } else if (status === 'connected') {
+          if (hasEverConnectedRef.current && previous === 'reconnecting') {
+            toast.success('Reconnected!', { id: 'reconnecting' });
+          }
+          hasEverConnectedRef.current = true;
+        }
+      },
+    };
+
+    const connection = new SocketGameConnection(handlers);
+    connectionRef.current = connection;
+    return connection;
+  }, [gameId]);
 
   const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
+    if (connectionRef.current) {
+      connectionRef.current.disconnect();
     }
     setGameId(null);
     setGameState(null);
@@ -172,12 +250,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const connectToGame = useCallback(
     async (targetGameId: string) => {
-      // If already connected to this game, do nothing.
-      if (gameId === targetGameId && socketRef.current) {
+      const connection = getConnection();
+
+      if (gameId === targetGameId && connection.status !== 'disconnected') {
         return;
       }
 
-      // Tear down any existing connection.
+      // Tear down any existing connection state.
       disconnect();
 
       setIsConnecting(true);
@@ -185,231 +264,38 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       setConnectionStatus('connecting');
 
       try {
-        const token = localStorage.getItem('token');
-        const baseUrl = getSocketBaseUrl();
-
-        const socket = io(baseUrl, {
-          transports: ['websocket', 'polling'],
-          auth: token ? { token } : undefined,
-        });
-
-        socketRef.current = socket;
-
-        const reportingEnabled = isErrorReportingEnabled();
-
-        const emitJoinGame = () => {
-          const payload: JoinGamePayload = { gameId: targetGameId };
-          socket.emit('join_game', payload);
-        };
-
-        socket.on('connect_error', (err: Error) => {
-          console.error('Socket connect_error', err);
-          const msg = err.message || 'Failed to connect to game server';
-          setError(msg);
-          toast.error(msg);
-          setIsConnecting(false);
-          setConnectionStatus('disconnected');
-          setLastHeartbeatAt(null);
-
-          if (reportingEnabled) {
-            void reportClientError(err, {
-              type: 'socket_connect_error',
-              gameId: targetGameId,
-            });
-          }
-        });
-
-        socket.on('connect', () => {
-          setConnectionStatus('connected');
-          // After connecting, join the specific game room.
-          emitJoinGame();
-        });
-
-        socket.on('reconnect_attempt', () => {
-          setIsConnecting(true);
-          setConnectionStatus('reconnecting');
-          toast('Reconnecting...', { icon: '🔄', id: 'reconnecting' });
-        });
-
-        socket.on('reconnect', () => {
-          setIsConnecting(false);
-          setConnectionStatus('connected');
-          toast.success('Reconnected!', { id: 'reconnecting' });
-          // Re-join the game room and request latest state
-          emitJoinGame();
-        });
-
-        // Handle explicit reconnection requests from the server or client logic
-        socket.on('request_reconnect', () => {
-          console.log('Server requested reconnection/resync');
-          emitJoinGame();
-        });
-
-        socket.on('game_state', (payload: GameStateUpdateMessage) => {
-          const { data } = payload || ({} as GameStateUpdateMessage);
-          if (data?.gameId === targetGameId && data?.gameState) {
-            setGameId(targetGameId);
-            setGameState(hydrateGameState(data.gameState));
-            setValidMoves(Array.isArray(data.validMoves) ? data.validMoves : null);
-            setIsConnecting(false);
-            setError(null);
-            setConnectionStatus('connected');
-            setLastHeartbeatAt(Date.now());
-          }
-        });
-
-        // Terminal game event carrying the final GameResult and snapshot.
-        socket.on('game_over', (payload: GameOverMessage) => {
-          const { data } = payload || ({} as GameOverMessage);
-          if (!data || data.gameId !== targetGameId) return;
-
-          setGameId(targetGameId);
-          if (data.gameState) {
-            setGameState(hydrateGameState(data.gameState));
-          }
-          if (data.gameResult) {
-            setVictoryState(data.gameResult as GameResult);
-          }
-          setValidMoves(null);
-          setIsConnecting(false);
-          setError(null);
-          // Any pending choices are no longer relevant once the game ends.
-          setPendingChoice(null);
-          setChoiceDeadline(null);
-        });
-
-        // Choice system events
-        socket.on('player_choice_required', (choice: PlayerChoice) => {
-          setPendingChoice(choice);
-          const deadline = choice.timeoutMs ? Date.now() + choice.timeoutMs : null;
-          setChoiceDeadline(deadline);
-        });
-
-        socket.on('player_choice_canceled', (choiceId: string) => {
-          setPendingChoice((current) => (current && current.id === choiceId ? null : current));
-          setChoiceDeadline((current) => (current ? null : current));
-        });
-
-        socket.on('chat_message', (payload: ChatMessageServerPayload) => {
-          setChatMessages((prev) => [...prev, { sender: payload.sender, text: payload.text }]);
-        });
-
-        socket.on('error', (payload: WebSocketErrorPayload | any) => {
-          let message: string;
-
-          if (payload && payload.type === 'error' && payload.code) {
-            console.warn('Game socket error', payload.code, payload.event, payload.message);
-            message = payload.message || 'Game error';
-            setError(message);
-            toast.error(message);
-          } else {
-            message = payload?.message || 'Game error';
-            console.error('Game socket error', payload);
-            setError(message);
-            toast.error(message);
-          }
-          setIsConnecting(false);
-
-          if (reportingEnabled) {
-            void reportClientError(payload, {
-              type: 'game_socket_error',
-              code: (payload as any)?.code,
-              event: (payload as any)?.event,
-              gameId: targetGameId,
-              message,
-            });
-          }
-        });
-
-        socket.on('disconnect', (reason) => {
-          console.log('Socket disconnected:', reason);
-          // If the disconnection was initiated by the server or network,
-          // we want to keep the socketRef so auto-reconnect can work.
-          // Only clear socketRef if we explicitly called disconnect().
-          if (reason === 'io client disconnect') {
-            socketRef.current = null;
-          }
-
-          setConnectionStatus('disconnected');
-          setLastHeartbeatAt(null);
-
-          if (reason !== 'io client disconnect') {
-            // Attempt to reconnect immediately if it wasn't an intentional disconnect
-            // Note: Socket.IO's auto-reconnect will handle the actual connection retry,
-            // but we update UI state here.
-            setConnectionStatus('reconnecting');
-
-            if (reportingEnabled) {
-              void reportClientError(new Error(`Socket disconnected: ${reason}`), {
-                type: 'socket_disconnect',
-                gameId: targetGameId,
-                reason,
-              });
-            }
-          }
-        });
+        await connection.connect(targetGameId);
       } catch (err: any) {
+        // Any connection errors should also surface via onError, but we
+        // defensively set local state here as well.
+        // eslint-disable-next-line no-console
         console.error('Failed to connect to game', err);
         setError(err?.message || 'Failed to connect to game');
         setIsConnecting(false);
         setConnectionStatus('disconnected');
       }
     },
-    [gameId, disconnect]
+    [gameId, disconnect, getConnection]
   );
   // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
+      if (connectionRef.current) {
+        connectionRef.current.disconnect();
       }
     };
   }, []);
 
   const respondToChoice = useCallback(
     (choice: PlayerChoice, selectedOption: any) => {
-      const socket = socketRef.current;
-      if (!socket || !gameId) {
-        console.warn('respondToChoice called without active socket/game');
+      const connection = connectionRef.current;
+      if (!connection || !gameId) {
+        // eslint-disable-next-line no-console
+        console.warn('respondToChoice called without active connection/game');
         return;
       }
 
-      // When an option carries a canonical moveId, we prefer the Move-driven
-      // decision path by submitting a player_move_by_id request. This ensures
-      // that all decisions are recorded as canonical Moves in the history.
-      let moveId: string | undefined;
-
-      if (
-        choice.type === 'line_order' ||
-        choice.type === 'region_order' ||
-        choice.type === 'ring_elimination'
-      ) {
-        // These types have options as objects which may contain a moveId.
-        moveId =
-          selectedOption && typeof (selectedOption as any).moveId === 'string'
-            ? (selectedOption as any).moveId
-            : undefined;
-      } else if (choice.type === 'line_reward_option') {
-        // This type has options as strings, but the choice object itself
-        // carries a map of option strings to moveIds.
-        const optionKey = selectedOption as string;
-        moveId = choice.moveIds?.[optionKey as keyof typeof choice.moveIds];
-      }
-
-      if (moveId) {
-        const payload: PlayerMoveByIdPayload = { gameId, moveId };
-        socket.emit('player_move_by_id', payload);
-      } else {
-        const response: PlayerChoiceResponsePayload = {
-          choiceId: choice.id,
-          playerNumber: choice.playerNumber,
-          choiceType: choice.type as PlayerChoiceResponsePayload['choiceType'],
-          selectedOption,
-        };
-
-        socket.emit('player_choice_response', response);
-      }
-
+      connection.respondToChoice(choice, selectedOption);
       setPendingChoice(null);
       setChoiceDeadline(null);
     },
@@ -418,46 +304,40 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const submitMove = useCallback(
     (partialMove: Omit<Move, 'id' | 'timestamp' | 'thinkTime' | 'moveNumber'>) => {
-      const socket = socketRef.current;
-      if (!socket || !gameId) {
-        console.warn('submitMove called without active socket/game');
+      const connection = connectionRef.current;
+      if (!connection || !gameId) {
+        // eslint-disable-next-line no-console
+        console.warn('submitMove called without active connection/game');
         return;
       }
 
-      // Bridge between the richer Move type used by GameEngine and the
-      // current WebSocket/DB schema expected by handlePlayerMove. This is a
-      // transitional implementation and should be revisited when the
-      // WebSocket layer is refactored to speak Move directly.
-      const movePayload: PlayerMovePayload['move'] = {
+      const move: Move = {
+        id: '',
+        type: partialMove.type,
+        player: partialMove.player,
+        from: partialMove.from,
+        to: partialMove.to,
+        captureTarget: (partialMove as any).captureTarget,
+        timestamp: new Date(),
+        thinkTime: 0,
         moveNumber: (gameState?.moveHistory.length ?? 0) + 1,
-        position: JSON.stringify({ from: partialMove.from, to: partialMove.to }),
-        moveType: partialMove.type as PlayerMovePayload['move']['moveType'],
       };
 
-      const payload: PlayerMovePayload = {
-        gameId,
-        move: movePayload,
-      };
-
-      socket.emit('player_move', payload);
+      connection.submitMove(move);
     },
     [gameId, gameState]
   );
 
   const sendChatMessage = useCallback(
     (text: string) => {
-      const socket = socketRef.current;
-      if (!socket || !gameId) {
-        console.warn('sendChatMessage called without active socket/game');
+      const connection = connectionRef.current;
+      if (!connection || !gameId) {
+        // eslint-disable-next-line no-console
+        console.warn('sendChatMessage called without active connection/game');
         return;
       }
 
-      const payload: ChatMessagePayload = {
-        gameId,
-        text,
-      };
-
-      socket.emit('chat_message', payload);
+      connection.sendChatMessage(text);
     },
     [gameId]
   );

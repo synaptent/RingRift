@@ -42,6 +42,8 @@ model User {
   moves          Move[]
   refreshTokens  RefreshToken[]
 
+  // Index for efficient soft-delete filtering queries
+  @@index([deletedAt])
   @@map("users")
 }
 
@@ -70,6 +72,9 @@ model Game {
   winnerId String?
   winner   User?   @relation("Winner", fields: [winnerId], references: [id])
 
+  // Final game state snapshot for completed games
+  finalState Json?      // Complete GameState at game end for replay/analysis
+
   // Timestamps
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -89,11 +94,13 @@ model Move {
   playerId   String
   player     User     @relation(fields: [playerId], references: [id])
   moveNumber Int
-  position   Json // { x: number, y: number } or { q: number, r: number, s: number } for hex
+  position   Json // { from?: Position, to: Position } - legacy position data
   moveType   MoveType
+  moveData   Json?    // Rich move data including captured stacks, formed lines, etc.
   timestamp  DateTime @default(now())
 
   @@unique([gameId, moveNumber])
+  @@index([gameId, timestamp])
   @@map("moves")
 }
 
@@ -120,11 +127,28 @@ enum GameStatus {
 }
 
 enum MoveType {
+  // Ring placement phase
   place_ring
-  move_ring
-  build_stack
+  skip_placement
+  
+  // Movement phase
+  move_ring        // Legacy alias for move_stack
   move_stack
+  build_stack
+  
+  // Capture moves
   overtaking_capture
+  continue_capture_segment
+  
+  // Line processing decisions
+  process_line
+  choose_line_reward
+  
+  // Territory processing decisions
+  process_territory_region
+  eliminate_rings_from_stack
+  
+  // Legacy / experimental (kept for backward compatibility)
   line_formation
   territory_claim
 }

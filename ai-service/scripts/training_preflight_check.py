@@ -1,0 +1,715 @@
+#!/usr/bin/env python3
+"""
+RingRift Training Preflight Check
+
+Comprehensive verification that all training infrastructure components
+are ready and functioning correctly before running training.
+
+Usage:
+    cd ai-service
+    python scripts/training_preflight_check.py
+"""
+
+import os
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+# Ensure we can import from app/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+@dataclass
+class CheckResult:
+    """Result of a single preflight check."""
+    name: str
+    passed: bool
+    message: str = ""
+    error: Optional[str] = None
+    suggestion: Optional[str] = None
+
+
+@dataclass
+class CheckCategory:
+    """Category of related checks."""
+    name: str
+    checks: List[CheckResult] = field(default_factory=list)
+
+    @property
+    def all_passed(self) -> bool:
+        return all(c.passed for c in self.checks)
+
+    @property
+    def passed_count(self) -> int:
+        return sum(1 for c in self.checks if c.passed)
+
+    @property
+    def total_count(self) -> int:
+        return len(self.checks)
+
+
+class PreflightChecker:
+    """Runs all preflight checks and reports results."""
+
+    def __init__(self):
+        self.categories: List[CheckCategory] = []
+
+    def add_check(self, category_name: str, result: CheckResult) -> None:
+        """Add a check result to a category."""
+        for cat in self.categories:
+            if cat.name == category_name:
+                cat.checks.append(result)
+                return
+        new_cat = CheckCategory(name=category_name, checks=[result])
+        self.categories.append(new_cat)
+
+    def run_all_checks(self) -> bool:
+        """Run all preflight checks. Returns True if all pass."""
+        self._check_environment()
+        self._check_data_generation()
+        self._check_neural_networks()
+        self._check_training_infrastructure()
+        self._check_memory_management()
+        self._check_optimization_utilities()
+        self._run_smoke_tests()
+
+        return all(cat.all_passed for cat in self.categories)
+
+    def _check_environment(self) -> None:
+        """Check environment and dependencies."""
+        cat = "Environment"
+
+        # Python version
+        py_version = sys.version_info
+        py_str = f"{py_version.major}.{py_version.minor}.{py_version.micro}"
+        if py_version >= (3, 10):
+            self.add_check(cat, CheckResult(
+                name="Python version",
+                passed=True,
+                message=py_str,
+            ))
+        else:
+            self.add_check(cat, CheckResult(
+                name="Python version",
+                passed=False,
+                message=py_str,
+                error=f"Python 3.10+ required, got {py_str}",
+                suggestion="Upgrade to Python 3.10 or later",
+            ))
+
+        # PyTorch
+        try:
+            import torch
+            self.add_check(cat, CheckResult(
+                name="PyTorch version",
+                passed=True,
+                message=torch.__version__,
+            ))
+        except ImportError as e:
+            self.add_check(cat, CheckResult(
+                name="PyTorch version",
+                passed=False,
+                error=str(e),
+                suggestion="Install PyTorch: pip install torch",
+            ))
+
+        # CUDA availability (optional)
+        try:
+            import torch
+            if torch.cuda.is_available():
+                device_name = torch.cuda.get_device_name(0)
+                self.add_check(cat, CheckResult(
+                    name="CUDA available",
+                    passed=True,
+                    message=f"Yes ({device_name})",
+                ))
+            else:
+                self.add_check(cat, CheckResult(
+                    name="CUDA available",
+                    passed=True,
+                    message="No (CPU training only)",
+                ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="CUDA available",
+                passed=True,
+                message=f"Check failed: {e}",
+            ))
+
+        # Required packages
+        required_packages = ["torch", "numpy", "psutil"]
+        optional_packages = ["cma"]
+        all_ok = True
+        missing = []
+
+        for pkg in required_packages:
+            try:
+                __import__(pkg)
+            except ImportError:
+                all_ok = False
+                missing.append(pkg)
+
+        for pkg in optional_packages:
+            try:
+                __import__(pkg)
+            except ImportError:
+                missing.append(f"{pkg} (optional)")
+
+        if all_ok:
+            msg = "OK"
+            if any("optional" in m for m in missing):
+                optional_missing = [m for m in missing if "optional" in m]
+                msg = f"OK (missing optional: {', '.join(optional_missing)})"
+            self.add_check(cat, CheckResult(
+                name="Required packages",
+                passed=True,
+                message=msg,
+            ))
+        else:
+            self.add_check(cat, CheckResult(
+                name="Required packages",
+                passed=False,
+                error=f"Missing: {', '.join(missing)}",
+                suggestion="Install missing packages: pip install " + " ".join(
+                    m.split()[0] for m in missing if "optional" not in m
+                ),
+            ))
+
+    def _check_data_generation(self) -> None:
+        """Check data generation components."""
+        cat = "Data Generation"
+
+        # Rules engine
+        try:
+            from app.rules.default_engine import DefaultRulesEngine
+            DefaultRulesEngine()  # Verify instantiation works
+            self.add_check(cat, CheckResult(
+                name="Rules engine",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Rules engine",
+                passed=False,
+                error=str(e),
+                suggestion="Ensure you're running from ai-service directory",
+            ))
+
+        # Self-play game (short test)
+        try:
+            from app.training.env import RingRiftEnv
+            from app.models import BoardType
+
+            env = RingRiftEnv(board_type=BoardType.SQUARE8, max_moves=10)
+            env.reset(seed=42)
+            moves_played = 0
+
+            for _ in range(10):
+                legal = env.legal_moves()
+                if not legal:
+                    break
+                # Pick first legal move
+                move = legal[0]
+                _, _, done, _ = env.step(move)
+                moves_played += 1
+                if done:
+                    break
+
+            self.add_check(cat, CheckResult(
+                name="Self-play game",
+                passed=True,
+                message=f"OK ({moves_played} moves played)",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Self-play game",
+                passed=False,
+                error=str(e),
+                suggestion="Check game engine and RingRiftEnv implementation",
+            ))
+
+        # Generate data module
+        try:
+            from app.training import generate_data  # noqa: F401
+            from app.training.generate_data import (  # noqa: F401
+                create_initial_state,
+            )
+            self.add_check(cat, CheckResult(
+                name="generate_data module",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="generate_data module",
+                passed=False,
+                error=str(e),
+                suggestion="Check app/training/generate_data.py",
+            ))
+
+    def _check_neural_networks(self) -> None:
+        """Check neural network components."""
+        cat = "Neural Networks"
+
+        # RingRiftCNN instantiation
+        try:
+            from app.ai.neural_net import RingRiftCNN
+            net = RingRiftCNN(board_size=8)
+            self.add_check(cat, CheckResult(
+                name="RingRiftCNN instantiation",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="RingRiftCNN instantiation",
+                passed=False,
+                error=str(e),
+                suggestion="Check app/ai/neural_net.py for RingRiftCNN class",
+            ))
+
+        # RingRiftCNN forward pass
+        try:
+            import torch
+            from app.ai.neural_net import RingRiftCNN
+
+            net = RingRiftCNN(board_size=8)
+            # Create dummy input: batch=1, channels=40 (10*4), 8x8 board
+            # Plus global features (10)
+            batch_size = 2
+            in_channels = net.total_in_channels  # 40 by default
+            dummy_spatial = torch.randn(batch_size, in_channels, 8, 8)
+            dummy_global = torch.randn(batch_size, 10)
+
+            with torch.no_grad():
+                # Network returns (value, policy)
+                value, policy = net(dummy_spatial, dummy_global)
+
+            # Check output shapes
+            assert value.shape == (batch_size, 1), "Value shape mismatch"
+            assert policy.shape == (batch_size, 55000), "Policy shape mismatch"
+
+            # Check for NaN
+            assert not torch.isnan(value).any(), "Value contains NaN"
+            assert not torch.isnan(policy).any(), "Policy contains NaN"
+
+            self.add_check(cat, CheckResult(
+                name="RingRiftCNN forward pass",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="RingRiftCNN forward pass",
+                passed=False,
+                error=str(e),
+                suggestion="Check neural network architecture",
+            ))
+
+        # Weight initialization check
+        try:
+            import torch
+            from app.ai.neural_net import RingRiftCNN
+
+            net = RingRiftCNN(board_size=8)
+            has_nan = False
+            unreasonable_magnitude = False
+
+            for name, param in net.named_parameters():
+                if torch.isnan(param).any():
+                    has_nan = True
+                    break
+                if param.abs().max() > 100:
+                    unreasonable_magnitude = True
+
+            if has_nan:
+                self.add_check(cat, CheckResult(
+                    name="Weight initialization",
+                    passed=False,
+                    error="Weights contain NaN values",
+                    suggestion="Check weight initialization",
+                ))
+            elif unreasonable_magnitude:
+                self.add_check(cat, CheckResult(
+                    name="Weight initialization",
+                    passed=True,
+                    message="OK (some large weights detected)",
+                ))
+            else:
+                self.add_check(cat, CheckResult(
+                    name="Weight initialization",
+                    passed=True,
+                    message="OK",
+                ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Weight initialization",
+                passed=False,
+                error=str(e),
+            ))
+
+    def _check_training_infrastructure(self) -> None:
+        """Check training infrastructure components."""
+        cat = "Training Infrastructure"
+
+        # EarlyStopping class
+        try:
+            from app.training.train import EarlyStopping
+            EarlyStopping(patience=5)  # Verify instantiation works
+            self.add_check(cat, CheckResult(
+                name="EarlyStopping class",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="EarlyStopping class",
+                passed=False,
+                error=str(e),
+                suggestion="Check app/training/train.py",
+            ))
+
+        # Checkpoint saving
+        try:
+            from app.training.train import (  # noqa: F401
+                save_checkpoint,
+                load_checkpoint,
+            )
+            self.add_check(cat, CheckResult(
+                name="Checkpoint saving",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Checkpoint saving",
+                passed=False,
+                error=str(e),
+                suggestion="Check save_checkpoint/load_checkpoint in train.py",
+            ))
+
+        # LR schedulers
+        try:
+            from app.training.train import get_warmup_scheduler  # noqa: F401
+            self.add_check(cat, CheckResult(
+                name="LR schedulers",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="LR schedulers",
+                passed=False,
+                error=str(e),
+                suggestion="Check get_warmup_scheduler in train.py",
+            ))
+
+        # Distributed utilities
+        try:
+            from app.training.distributed import (  # noqa: F401
+                setup_distributed,
+                cleanup_distributed,
+                is_main_process,
+                get_distributed_sampler,
+                wrap_model_ddp,
+            )
+            self.add_check(cat, CheckResult(
+                name="Distributed utilities",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Distributed utilities",
+                passed=False,
+                error=str(e),
+                suggestion="Check app/training/distributed.py",
+            ))
+
+    def _check_memory_management(self) -> None:
+        """Check memory management components."""
+        cat = "Memory Management"
+
+        # MemoryConfig
+        try:
+            from app.utils.memory_config import MemoryConfig
+            config = MemoryConfig()
+            default_gb = config.max_memory_gb
+            self.add_check(cat, CheckResult(
+                name="MemoryConfig",
+                passed=True,
+                message=f"OK ({default_gb} GB default)",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="MemoryConfig",
+                passed=False,
+                error=str(e),
+                suggestion="Check app/utils/memory_config.py",
+            ))
+
+        # BoundedTranspositionTable
+        try:
+            from app.ai.bounded_transposition_table import (
+                BoundedTranspositionTable,
+            )
+            tt = BoundedTranspositionTable(max_entries=1000)
+            tt.put("test_key", {"value": 42})
+            retrieved = tt.get("test_key")
+            assert retrieved is not None, "Failed to retrieve"
+            self.add_check(cat, CheckResult(
+                name="BoundedTranspositionTable",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="BoundedTranspositionTable",
+                passed=False,
+                error=str(e),
+                suggestion="Check app/ai/bounded_transposition_table.py",
+            ))
+
+    def _check_optimization_utilities(self) -> None:
+        """Check optimization utilities."""
+        cat = "Optimization Utilities"
+
+        # CMA-ES
+        try:
+            import cma  # noqa: F401
+            self.add_check(cat, CheckResult(
+                name="CMA-ES",
+                passed=True,
+                message="OK",
+            ))
+        except ImportError:
+            self.add_check(cat, CheckResult(
+                name="CMA-ES",
+                passed=True,
+                message="Not installed (optional)",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="CMA-ES",
+                passed=False,
+                error=str(e),
+            ))
+
+        # Hex augmentation
+        try:
+            from app.training.hex_augmentation import (  # noqa: F401
+                HexSymmetryTransform,
+            )
+            self.add_check(cat, CheckResult(
+                name="Hex augmentation",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Hex augmentation",
+                passed=False,
+                error=str(e),
+                suggestion="Check app/training/hex_augmentation.py",
+            ))
+
+        # Parallel self-play utilities check (just imports)
+        try:
+            # Check that key components exist
+            from app.ai.descent_ai import DescentAI  # noqa: F401
+            from app.ai.heuristic_ai import HeuristicAI  # noqa: F401
+            self.add_check(cat, CheckResult(
+                name="Parallel self-play",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Parallel self-play",
+                passed=False,
+                error=str(e),
+                suggestion="Check AI implementations in app/ai/",
+            ))
+
+    def _run_smoke_tests(self) -> None:
+        """Run quick smoke tests."""
+        cat = "Smoke Test"
+
+        # Generate data
+        states = []
+        try:
+            from app.training.env import RingRiftEnv
+            from app.models import BoardType
+
+            env = RingRiftEnv(board_type=BoardType.SQUARE8, max_moves=50)
+
+            for game_idx in range(5):
+                env.reset(seed=game_idx)
+                game_states = [env.state]
+                for _ in range(20):
+                    legal = env.legal_moves()
+                    if not legal:
+                        break
+                    move = legal[0]
+                    _, _, done, _ = env.step(move)
+                    game_states.append(env.state)
+                    if done:
+                        break
+                states.extend(game_states)
+
+            self.add_check(cat, CheckResult(
+                name="Generate data",
+                passed=True,
+                message=f"OK ({len(states)} states from 5 games)",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Generate data",
+                passed=False,
+                error=str(e),
+            ))
+            return  # Can't continue without data
+
+        # Save and load data
+        try:
+            import numpy as np
+
+            # Create dummy training data
+            num_samples = min(len(states), 10)
+            dummy_features = np.random.randn(num_samples, 40, 8, 8).astype(
+                np.float32
+            )
+            dummy_globals = np.random.randn(num_samples, 10).astype(np.float32)
+            dummy_values = np.random.randn(num_samples).astype(np.float32)
+
+            with tempfile.NamedTemporaryFile(suffix=".npz", delete=False) as f:
+                temp_path = f.name
+                np.savez(
+                    temp_path,
+                    features=dummy_features,
+                    globals=dummy_globals,
+                    values=dummy_values,
+                )
+
+            # Load and verify
+            loaded = np.load(temp_path)
+            assert loaded["features"].shape == dummy_features.shape
+            assert loaded["globals"].shape == dummy_globals.shape
+            assert loaded["values"].shape == dummy_values.shape
+
+            os.unlink(temp_path)
+
+            self.add_check(cat, CheckResult(
+                name="Load data",
+                passed=True,
+                message="OK",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Load data",
+                passed=False,
+                error=str(e),
+            ))
+
+        # Training step
+        try:
+            import torch
+            import torch.nn as nn
+            from app.ai.neural_net import RingRiftCNN
+
+            net = RingRiftCNN(board_size=8)
+            optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
+            loss_fn = nn.MSELoss()
+
+            # Create dummy batch
+            batch_size = 4
+            in_channels = net.total_in_channels
+            dummy_spatial = torch.randn(batch_size, in_channels, 8, 8)
+            dummy_global = torch.randn(batch_size, 10)
+            target_value = torch.randn(batch_size, 1)
+
+            # Forward pass
+            net.train()
+            optimizer.zero_grad()
+            # Network returns (value, policy)
+            value, policy = net(dummy_spatial, dummy_global)
+
+            # Compute loss (value head only for simplicity)
+            loss = loss_fn(value, target_value)
+
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+
+            loss_val = loss.item()
+
+            if not (
+                torch.isfinite(torch.tensor(loss_val))
+                and not torch.isnan(torch.tensor(loss_val))
+            ):
+                raise ValueError(f"Loss is not finite: {loss_val}")
+
+            self.add_check(cat, CheckResult(
+                name="Training step",
+                passed=True,
+                message=f"OK (loss={loss_val:.4f})",
+            ))
+        except Exception as e:
+            self.add_check(cat, CheckResult(
+                name="Training step",
+                passed=False,
+                error=str(e),
+                suggestion="Check neural network training loop",
+            ))
+
+    def print_report(self) -> None:
+        """Print the preflight check report."""
+        print("\n=== RingRift Training Preflight Check ===\n")
+
+        total_passed = 0
+        total_checks = 0
+
+        for cat in self.categories:
+            print(f"[{cat.name}]")
+            for check in cat.checks:
+                total_checks += 1
+                if check.passed:
+                    total_passed += 1
+                    symbol = "✓"
+                    msg = check.message or "OK"
+                    print(f"  {symbol} {check.name}: {msg}")
+                else:
+                    symbol = "✗"
+                    print(f"  {symbol} {check.name}: FAILED")
+                    if check.error:
+                        print(f"    Error: {check.error}")
+                    if check.suggestion:
+                        print(f"    Suggestion: {check.suggestion}")
+            print()
+
+        # Summary
+        all_passed = total_passed == total_checks
+        if all_passed:
+            print("=== PREFLIGHT CHECK PASSED ===")
+            print(f"All {total_checks} checks passed. Ready for training.")
+        else:
+            print("=== PREFLIGHT CHECK FAILED ===")
+            failed = total_checks - total_passed
+            print(
+                f"{failed} of {total_checks} checks failed. "
+                "Please fix issues before training."
+            )
+
+
+def main() -> int:
+    """Main entry point. Returns 0 on success, 1 on failure."""
+    checker = PreflightChecker()
+    all_passed = checker.run_all_checks()
+    checker.print_report()
+    return 0 if all_passed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

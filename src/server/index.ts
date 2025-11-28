@@ -17,7 +17,7 @@ import client from 'prom-client';
 import { config, enforceAppTopology } from './config';
 import { HealthCheckService, isServiceReady } from './services/HealthCheckService';
 import { getMetricsService } from './services/MetricsService';
-import { getServiceStatusManager, DegradationLevel } from './services/ServiceStatusManager';
+import { getServiceStatusManager } from './services/ServiceStatusManager';
 
 const app = express();
 const server = createServer(app);
@@ -177,6 +177,38 @@ async function startServer() {
       logger.info(`Server running on port ${PORT}`);
       logger.info(`WebSocket server attached to HTTP server on port ${PORT}`);
       logger.info(`Environment: ${config.nodeEnv}`);
+
+      // Log orchestrator adapter mode for observability
+      const orchestratorEnabled = config.featureFlags.orchestrator.adapterEnabled;
+      logger.info(`Orchestrator adapter mode: ${orchestratorEnabled ? 'ENABLED' : 'DISABLED'}`, {
+        orchestratorAdapterEnabled: orchestratorEnabled,
+        rolloutPercentage: config.featureFlags.orchestrator.rolloutPercentage,
+        shadowModeEnabled: config.featureFlags.orchestrator.shadowModeEnabled,
+        circuitBreakerEnabled: config.featureFlags.orchestrator.circuitBreaker.enabled,
+        engineMode: orchestratorEnabled
+          ? 'TurnEngineAdapter (shared orchestrator)'
+          : 'TurnEngine (legacy)',
+      });
+
+      // In production, having the orchestrator adapter disabled should be
+      // an explicit, documented rollback per ORCHESTRATOR_ROLLOUT_PLAN.
+      // Emit a loud warning so accidental misconfiguration is visible.
+      if (config.nodeEnv === 'production' && !orchestratorEnabled) {
+        logger.warn(
+          'Orchestrator adapter is DISABLED in production; this should only occur during a documented rollback (see docs/ORCHESTRATOR_ROLLOUT_PLAN.md).',
+          {
+            orchestratorAdapterEnabled: orchestratorEnabled,
+            rolloutPercentage: config.featureFlags.orchestrator.rolloutPercentage,
+            shadowModeEnabled: config.featureFlags.orchestrator.shadowModeEnabled,
+            rulesMode: config.rulesEngine.rulesMode,
+          }
+        );
+      }
+
+      // Initialize orchestrator rollout percentage gauge for metrics.
+      getMetricsService().setOrchestratorRolloutPercentage(
+        config.featureFlags.orchestrator.rolloutPercentage
+      );
     });
 
     // Graceful shutdown

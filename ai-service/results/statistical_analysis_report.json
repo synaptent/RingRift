@@ -1,0 +1,321 @@
+{
+  "metadata": {
+    "generated_at": "2025-11-28T04:56:40.260544Z",
+    "results_directory": "/Users/armand/Development/RingRift/ai-service/results",
+    "files_analyzed": [
+      "cmaes_seed_test.json",
+      "neural_network_self_play.json",
+      "baseline_vs_neural_network.json",
+      "baseline_heuristic_vs_random_fixed.json",
+      "statistical_analysis_report.json",
+      "neural_network_vs_random.json",
+      "cmaes_vs_neural_network.json",
+      "random_vs_random_fixed.json",
+      "baseline_heuristic_vs_random.json",
+      "cmaes_heuristic_vs_random.json",
+      "cmaes_vs_random.longrun01.json",
+      "baseline_vs_cmaes.json",
+      "cmaes_vs_baseline.longrun01.json",
+      "baseline_heuristic_self_play.json",
+      "cmaes_heuristic_self_play.json"
+    ],
+    "statistical_methods": {
+      "confidence_intervals": "Wilson score interval (95%)",
+      "significance_test": "Binomial exact test (two-tailed)",
+      "pairwise_comparison": "Fisher's exact test",
+      "effect_size": "Cohen's h",
+      "significance_threshold": 0.05
+    }
+  },
+  "summary": {
+    "total_matchups_analyzed": 15,
+    "ais_evaluated": ["cmaes_heuristic", "baseline_heuristic", "neural_network"],
+    "best_performer": "baseline_heuristic"
+  },
+  "vs_random_baseline": {
+    "cmaes_heuristic": {
+      "wins": 345,
+      "losses": 54,
+      "draws": 1,
+      "total_games": 400,
+      "win_rate": 0.8625,
+      "win_rate_ci": [0.8253, 0.8928],
+      "p_value": 0.0,
+      "effect_size": 0.811,
+      "effect_interpretation": "large",
+      "statistical_power": 1.0,
+      "significant": true,
+      "source_file": "cmaes_vs_random.longrun01.json"
+    },
+    "baseline_heuristic": {
+      "wins": 18,
+      "losses": 2,
+      "draws": 0,
+      "total_games": 20,
+      "win_rate": 0.9,
+      "win_rate_ci": [0.699, 0.9721],
+      "p_value": 0.000402,
+      "effect_size": 0.9273,
+      "effect_interpretation": "large",
+      "statistical_power": 0.9965,
+      "significant": true,
+      "source_file": "baseline_heuristic_vs_random_fixed.json"
+    },
+    "neural_network": {
+      "wins": 15,
+      "losses": 5,
+      "draws": 0,
+      "total_games": 20,
+      "win_rate": 0.75,
+      "win_rate_ci": [0.5313, 0.8881],
+      "p_value": 0.041389,
+      "effect_size": 0.5236,
+      "effect_interpretation": "medium",
+      "statistical_power": 0.6251,
+      "significant": true,
+      "source_file": "neural_network_vs_random.json"
+    }
+  },
+  "pairwise_comparisons": {
+    "neural_network_vs_neural_network": {
+      "player1": "neural_network",
+      "player2": "neural_network",
+      "player1_wins": 2,
+      "player2_wins": 8,
+      "draws": 0,
+      "total_games": 10,
+      "player1_win_rate": 0.2,
+      "player1_win_rate_ci": [0.0567, 0.5098],
+      "p_value": 0.109375,
+      "effect_size": -0.6435,
+      "effect_interpretation": "medium",
+      "significant": false,
+      "source_file": "neural_network_self_play.json"
+    },
+    "baseline_heuristic_vs_neural_network": {
+      "player1": "baseline_heuristic",
+      "player2": "neural_network",
+      "player1_wins": 14,
+      "player2_wins": 6,
+      "draws": 0,
+      "total_games": 20,
+      "player1_win_rate": 0.7,
+      "player1_win_rate_ci": [0.481, 0.8545],
+      "p_value": 0.115318,
+      "effect_size": 0.4115,
+      "effect_interpretation": "small",
+      "significant": false,
+      "source_file": "baseline_vs_neural_network.json"
+    },
+    "unknown_vs_unknown": {
+      "player1": "unknown",
+      "player2": "unknown",
+      "player1_wins": 0,
+      "player2_wins": 0,
+      "draws": 0,
+      "total_games": 0,
+      "player1_win_rate": 0,
+      "player1_win_rate_ci": [0.0, 1.0],
+      "p_value": 1.0,
+      "effect_size": -1.5708,
+      "effect_interpretation": "large",
+      "significant": false,
+      "source_file": "statistical_analysis_report.json"
+    },
+    "cmaes_heuristic_vs_neural_network": {
+      "player1": "cmaes_heuristic",
+      "player2": "neural_network",
+      "player1_wins": 14,
+      "player2_wins": 6,
+      "draws": 0,
+      "total_games": 20,
+      "player1_win_rate": 0.7,
+      "player1_win_rate_ci": [0.481, 0.8545],
+      "p_value": 0.115318,
+      "effect_size": 0.4115,
+      "effect_interpretation": "small",
+      "significant": false,
+      "source_file": "cmaes_vs_neural_network.json"
+    },
+    "baseline_heuristic_vs_cmaes_heuristic": {
+      "player1": "baseline_heuristic",
+      "player2": "cmaes_heuristic",
+      "player1_wins": 10,
+      "player2_wins": 10,
+      "draws": 0,
+      "total_games": 20,
+      "player1_win_rate": 0.5,
+      "player1_win_rate_ci": [0.2993, 0.7007],
+      "p_value": 1.0,
+      "effect_size": 0.0,
+      "effect_interpretation": "negligible",
+      "significant": false,
+      "source_file": "baseline_vs_cmaes.json"
+    },
+    "cmaes_heuristic_vs_baseline_heuristic": {
+      "player1": "cmaes_heuristic",
+      "player2": "baseline_heuristic",
+      "player1_wins": 400,
+      "player2_wins": 400,
+      "draws": 0,
+      "total_games": 800,
+      "player1_win_rate": 0.5,
+      "player1_win_rate_ci": [0.4654, 0.5346],
+      "p_value": 1.0,
+      "effect_size": 0.0,
+      "effect_interpretation": "negligible",
+      "significant": false,
+      "source_file": "cmaes_vs_baseline.longrun01.json"
+    },
+    "baseline_heuristic_vs_baseline_heuristic": {
+      "player1": "baseline_heuristic",
+      "player2": "baseline_heuristic",
+      "player1_wins": 5,
+      "player2_wins": 5,
+      "draws": 0,
+      "total_games": 10,
+      "player1_win_rate": 0.5,
+      "player1_win_rate_ci": [0.2366, 0.7634],
+      "p_value": 1.0,
+      "effect_size": 0.0,
+      "effect_interpretation": "negligible",
+      "significant": false,
+      "source_file": "baseline_heuristic_self_play.json"
+    },
+    "cmaes_heuristic_vs_cmaes_heuristic": {
+      "player1": "cmaes_heuristic",
+      "player2": "cmaes_heuristic",
+      "player1_wins": 5,
+      "player2_wins": 5,
+      "draws": 0,
+      "total_games": 10,
+      "player1_win_rate": 0.5,
+      "player1_win_rate_ci": [0.2366, 0.7634],
+      "p_value": 1.0,
+      "effect_size": 0.0,
+      "effect_interpretation": "negligible",
+      "significant": false,
+      "source_file": "cmaes_heuristic_self_play.json"
+    }
+  },
+  "cross_comparisons": {
+    "cmaes_heuristic_vs_baseline_heuristic_indirect": {
+      "ai1": "cmaes_heuristic",
+      "ai2": "baseline_heuristic",
+      "ai1_win_rate_vs_random": 0.8625,
+      "ai2_win_rate_vs_random": 0.9,
+      "difference": -0.03749999999999998,
+      "p_value": 1.0,
+      "effect_size": -0.1163,
+      "effect_interpretation": "negligible",
+      "significant": false,
+      "comparison_type": "indirect_via_random"
+    },
+    "cmaes_heuristic_vs_neural_network_indirect": {
+      "ai1": "cmaes_heuristic",
+      "ai2": "neural_network",
+      "ai1_win_rate_vs_random": 0.8625,
+      "ai2_win_rate_vs_random": 0.75,
+      "difference": 0.11250000000000004,
+      "p_value": 0.179391,
+      "effect_size": 0.2874,
+      "effect_interpretation": "small",
+      "significant": false,
+      "comparison_type": "indirect_via_random"
+    },
+    "baseline_heuristic_vs_neural_network_indirect": {
+      "ai1": "baseline_heuristic",
+      "ai2": "neural_network",
+      "ai1_win_rate_vs_random": 0.9,
+      "ai2_win_rate_vs_random": 0.75,
+      "difference": 0.15000000000000002,
+      "p_value": 0.407484,
+      "effect_size": 0.4037,
+      "effect_interpretation": "small",
+      "significant": false,
+      "comparison_type": "indirect_via_random"
+    }
+  },
+  "ranking": [
+    {
+      "name": "baseline_heuristic",
+      "win_rate_vs_random": 0.9,
+      "significant_vs_random": true,
+      "effect_vs_random": 0.9273,
+      "head_to_head_wins": 0,
+      "head_to_head_losses": 0,
+      "head_to_head_ties": 5,
+      "rank": 1
+    },
+    {
+      "name": "cmaes_heuristic",
+      "win_rate_vs_random": 0.8625,
+      "significant_vs_random": true,
+      "effect_vs_random": 0.811,
+      "head_to_head_wins": 0,
+      "head_to_head_losses": 0,
+      "head_to_head_ties": 5,
+      "rank": 2
+    },
+    {
+      "name": "neural_network",
+      "win_rate_vs_random": 0.75,
+      "significant_vs_random": true,
+      "effect_vs_random": 0.5236,
+      "head_to_head_wins": 0,
+      "head_to_head_losses": 0,
+      "head_to_head_ties": 4,
+      "rank": 3
+    },
+    {
+      "name": "unknown",
+      "win_rate_vs_random": 0,
+      "significant_vs_random": false,
+      "effect_vs_random": 0,
+      "head_to_head_wins": 0,
+      "head_to_head_losses": 0,
+      "head_to_head_ties": 2,
+      "rank": 4
+    }
+  ],
+  "key_findings": {
+    "cmaes_vs_baseline": {
+      "result": "no_significant_difference",
+      "p_value": 1.0,
+      "effect_size": 0.0,
+      "effect_interpretation": "negligible",
+      "conclusion": "CMA-ES optimization did NOT provide statistically significant improvement over baseline",
+      "raw_data": {
+        "player1": "cmaes_heuristic",
+        "player2": "baseline_heuristic",
+        "player1_wins": 400,
+        "player2_wins": 400,
+        "draws": 0,
+        "total_games": 800,
+        "player1_win_rate": 0.5,
+        "player1_win_rate_ci": [0.4654, 0.5346],
+        "p_value": 1.0,
+        "effect_size": 0.0,
+        "effect_interpretation": "negligible",
+        "significant": false,
+        "source_file": "cmaes_vs_baseline.longrun01.json"
+      }
+    },
+    "neural_network_performance": {
+      "win_rate_vs_random": 0.75,
+      "significant_vs_random": true,
+      "p_value_vs_random": 0.041389,
+      "comparison_to_baseline": -0.15000000000000002,
+      "conclusion": "Neural network achieves 75% win rate vs random (statistically significant)"
+    },
+    "training_effectiveness": {
+      "neural_network_vs_heuristics": {
+        "matchup": "neural_network vs neural_network",
+        "result_win_rate": 0.2,
+        "significant": false,
+        "p_value": 0.109375
+      },
+      "conclusion": "Neural network training shows limited effectiveness compared to hand-tuned heuristics. Heuristic approaches remain stronger for this game."
+    }
+  }
+}

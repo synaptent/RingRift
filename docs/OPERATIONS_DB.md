@@ -1,5 +1,8 @@
 # RingRift Database Operations & Migrations
 
+> **Doc Status (2025-11-27): Active**  
+> Canonical operational reference for running the Postgres database and Prisma migrations across local, staging, and production environments. This is not a rules or lifecycle SSoT; it complements `ENVIRONMENT_VARIABLES.md`, `DEPLOYMENT_REQUIREMENTS.md`, and `DOCUMENTATION_INDEX.md` for overall deployment architecture.
+
 This playbook describes how to operate the Postgres database that backs RingRift across local development, staging, and production.
 
 It is aimed at engineers and operators and is the canonical reference for:
@@ -9,18 +12,18 @@ It is aimed at engineers and operators and is the canonical reference for:
 - How backups and restores are handled at a conceptual level
 - How to respond when a migration or DB incident goes wrong
 
-For general environment setup, see [`QUICKSTART.md`](../QUICKSTART.md:1) and [`README.md`](../README.md:1). For the Prisma schema itself, see [`prisma/schema.prisma`](../prisma/schema.prisma:1).
+For general environment setup, see [`QUICKSTART.md`](../QUICKSTART.md) and [`README.md`](../README.md). For the Prisma schema itself, see [`prisma/schema.prisma`](../prisma/schema.prisma).
 
 ---
 
 ## 1. Environments & Database Expectations
 
-RingRift uses PostgreSQL as the primary persistence layer and Prisma as the ORM. All schema changes must flow through checked-in Prisma migrations under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql:1).
+RingRift uses PostgreSQL as the primary persistence layer and Prisma as the ORM. All schema changes must flow through checked-in Prisma migrations under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql).
 
 At a high level:
 
-- **Local development** uses a Postgres container from [`docker-compose.yml`](../docker-compose.yml:1) or a local Postgres instance.
-- **Staging** is a single-node Docker Compose stack using [`docker-compose.yml`](../docker-compose.yml:1) + [`docker-compose.staging.yml`](../docker-compose.staging.yml:1) and the [`.env.staging`](../.env.staging:1) template.
+- **Local development** uses a Postgres container from [`docker-compose.yml`](../docker-compose.yml) or a local Postgres instance.
+- **Staging** is a single-node Docker Compose stack using [`docker-compose.yml`](../docker-compose.yml) + [`docker-compose.staging.yml`](../docker-compose.staging.yml) and the [`.env.staging`](../.env.staging) template.
 - **Production** is expected to use a managed or self-operated Postgres instance; the exact hosting platform is out of scope for this repo, but the workflows below assume:
   - A stable `DATABASE_URL` for the primary database.
   - Regular automated backups or snapshots managed by infra/ops.
@@ -39,8 +42,8 @@ At a high level:
   - Host: `localhost:5432`
   - DB name: `ringrift`
   - User: `ringrift`
-  - Password: from `DB_PASSWORD` (default `password`) in [`docker-compose.yml`](../docker-compose.yml:1) / [`.env.example`](../.env.example:1).
-- The local Prisma `DATABASE_URL` usually matches [`DATABASE_URL` in .env.example](../.env.example:1):  
+  - Password: from `DB_PASSWORD` (default `password`) in [`docker-compose.yml`](../docker-compose.yml) / [`.env.example`](../.env.example).
+- The local Prisma `DATABASE_URL` usually matches [`DATABASE_URL` in .env.example](../.env.example):  
   `postgresql://ringrift:password@localhost:5432/ringrift`.
 
 **Applying migrations (schema changes)**
@@ -72,7 +75,7 @@ When you need an ad-hoc backup (for example, before experimenting with destructi
 docker compose exec postgres pg_dump -U ringrift -d ringrift -f /backups/dev_YYYYMMDD_HHMM.sql
 ```
 
-The `postgres` service mounts `./backups` into `/backups` (see [`docker-compose.yml`](../docker-compose.yml:55)), so the file will appear under `./backups/` on the host.
+The `postgres` service mounts `./backups` into `/backups` (see [`docker-compose.yml`](../docker-compose.yml)), so the file will appear under `./backups/` on the host.
 
 To restore a local backup:
 
@@ -91,15 +94,15 @@ docker compose exec -T postgres psql -U ringrift -d ringrift < backups/dev_YYYYM
 
 Staging is intended to look like a small production deployment while still living on a developer or CI host:
 
-- Single-node stack defined by [`docker-compose.yml`](../docker-compose.yml:1) + [`docker-compose.staging.yml`](../docker-compose.staging.yml:1).
-- Uses `.env` based on [`.env.staging`](../.env.staging:1) for secrets and connection strings.
+- Single-node stack defined by [`docker-compose.yml`](../docker-compose.yml) + [`docker-compose.staging.yml`](../docker-compose.staging.yml).
+- Uses `.env` based on [`.env.staging`](../.env.staging) for secrets and connection strings.
 - The `app` service runs:
 
   ```bash
   npx prisma migrate deploy && node dist/server/index.js
   ```
 
-  on startup (see [`docker-compose.staging.yml`](../docker-compose.staging.yml:7)).
+  on startup (see [`docker-compose.staging.yml`](../docker-compose.staging.yml)).
 
 **Migrations in staging**
 
@@ -178,11 +181,11 @@ The repo does **not** prescribe a specific cloud provider. Operators must ensure
 
 ## 2. Safe Prisma Migration Workflow
 
-This workflow applies to any schema change in [`prisma/schema.prisma`](../prisma/schema.prisma:1). All changes must go through migrations checked into Git.
+This workflow applies to any schema change in [`prisma/schema.prisma`](../prisma/schema.prisma). All changes must go through migrations checked into Git.
 
 ### 2.1 Design & local development
 
-1. Edit the schema in [`prisma/schema.prisma`](../prisma/schema.prisma:1).
+1. Edit the schema in [`prisma/schema.prisma`](../prisma/schema.prisma).
 2. From a **local dev** environment, generate a new migration:
 
    ```bash
@@ -197,10 +200,10 @@ This workflow applies to any schema change in [`prisma/schema.prisma`](../prisma
    npm test
    ```
 
-4. Inspect the generated SQL under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql:1) to confirm it matches intent (especially for destructive changes).
+4. Inspect the generated SQL under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql) to confirm it matches intent (especially for destructive changes).
 5. Commit **both**:
-   - The updated [`prisma/schema.prisma`](../prisma/schema.prisma:1).
-   - The new directory under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql:1).
+   - The updated [`prisma/schema.prisma`](../prisma/schema.prisma).
+   - The new directory under [`prisma/migrations`](../prisma/migrations/20251119080345_init/migration.sql).
 
 ### 2.2 Staging rollout
 
@@ -287,7 +290,7 @@ This section describes how to respond when migrations or DB incidents go wrong. 
    - Inspect logs for specific constraint or nullability errors.
    - Confirm that the underlying tables and data are still intact (e.g., via provider console or `psql`).
 3. **Fix forward with a corrective migration**
-   - Make the necessary schema change locally in [`prisma/schema.prisma`](../prisma/schema.prisma:1) (for example, relax a constraint, add a default, or add a compatibility column).
+   - Make the necessary schema change locally in [`prisma/schema.prisma`](../prisma/schema.prisma) (for example, relax a constraint, add a default, or add a compatibility column).
    - Generate a new migration with `prisma migrate dev`, test locally, and roll it through staging.
    - Apply it to production with `prisma migrate deploy`.
 4. **Clean up (if needed)**
@@ -379,4 +382,4 @@ This section describes how to respond when migrations or DB incidents go wrong. 
 - `npx prisma db push`
 - Manual edits to already-applied migration SQL files
 
-This document should be kept in sync with [`QUICKSTART.md`](../QUICKSTART.md:1), [`docker-compose.yml`](../docker-compose.yml:1), and [`docker-compose.staging.yml`](../docker-compose.staging.yml:1) whenever deployment or database practices change.
+This document should be kept in sync with [`QUICKSTART.md`](../QUICKSTART.md), [`docker-compose.yml`](../docker-compose.yml), and [`docker-compose.staging.yml`](../docker-compose.staging.yml) whenever deployment or database practices change.

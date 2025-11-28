@@ -47,8 +47,8 @@ export type MovementBoardAdapters = MovementBoardView;
  *   spaces; markers are allowed on the path.
  * - Landing is allowed on:
  *   - Empty spaces;
- *   - Spaces containing a single marker owned by the moving player;
- *   - Any existing stack (merge).
+ *   - Spaces containing a single marker owned by the moving player.
+ * - Landing on an existing stack is NOT allowed (stacks block the ray).
  * - Landing on an opponent marker is illegal, but such markers do not
  *   block further movement along the ray.
  */
@@ -137,12 +137,9 @@ export function enumerateSimpleMoveTargetsFromStack(
         continue;
       }
 
-      // Landing on an existing stack (own or opponent) is allowed as a
-      // simple merge, but we cannot move beyond it along this ray.
-      if (distance >= stack.stackHeight) {
-        results.push({ from, to });
-      }
-
+      // Landing on an existing stack is NOT allowed - stacks block the ray.
+      // Rule 8.1: "Cannot pass through other rings or stacks"
+      // Rule 8.2: "Landing on ... empty or occupied by a single marker"
       break;
     }
   }

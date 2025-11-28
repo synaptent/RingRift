@@ -11,6 +11,7 @@ RingRift uses a comprehensive CI/CD pipeline to ensure code quality, automated t
 **Purpose**: Ensures code follows consistent style guidelines and best practices.
 
 **What it does**:
+
 - Runs ESLint on all TypeScript files
 - Checks for code quality issues, potential bugs, and style violations
 - Fails the build if any linting errors are found
@@ -24,12 +25,14 @@ RingRift uses a comprehensive CI/CD pipeline to ensure code quality, automated t
 **Purpose**: Validates TypeScript types across the entire codebase.
 
 **What it does**:
+
 - Type checks server code (`tsconfig.server.json`)
 - Type checks client code (`tsconfig.client.json`)
 - Ensures no type errors exist
 - Does not emit JavaScript files (--noEmit flag)
 
 **Commands**:
+
 - Server: `npx tsc --noEmit -p tsconfig.server.json`
 - Client: `npx tsc --noEmit -p tsconfig.client.json`
 
@@ -38,6 +41,7 @@ RingRift uses a comprehensive CI/CD pipeline to ensure code quality, automated t
 **Purpose**: Runs the full test suite with coverage reporting.
 
 **What it does**:
+
 - Executes all unit and integration tests
 - Generates code coverage reports
 - Uploads coverage to Codecov (optional)
@@ -47,6 +51,7 @@ RingRift uses a comprehensive CI/CD pipeline to ensure code quality, automated t
 **Command**: `npm run test:ci`
 
 **Coverage Artifacts**:
+
 - Available in GitHub Actions for 7 days
 - Downloadable HTML report
 - LCOV format for external tools
@@ -56,16 +61,19 @@ RingRift uses a comprehensive CI/CD pipeline to ensure code quality, automated t
 **Purpose**: Ensures the application can be built successfully.
 
 **What it does**:
+
 - Compiles TypeScript server code
 - Builds optimized client bundle with Vite
 - Archives build artifacts
 - Only runs if lint, typecheck, and test pass
 
 **Commands**:
+
 - `npm run build:server`
 - `npm run build:client`
 
 **Build Artifacts**:
+
 - Available in GitHub Actions for 7 days
 - Contains compiled server and client code
 
@@ -74,6 +82,7 @@ RingRift uses a comprehensive CI/CD pipeline to ensure code quality, automated t
 **Purpose**: Final approval step ensuring all quality checks passed.
 
 **What it does**:
+
 - Confirms all previous stages succeeded
 - Provides clear success message
 
@@ -143,30 +152,36 @@ git push origin feature/my-feature
 ## CI/CD Best Practices
 
 ### 1. Write Tests First (TDD)
+
 - Create tests before implementing features
 - Aim for 80%+ code coverage
 - Test edge cases and error scenarios
 
 ### 2. Fix Linting Issues
+
 - Don't commit code with linting errors
 - Use `npm run lint:fix` to auto-fix issues
 - Configure your editor for real-time linting
 
 ### 3. Type Safety
+
 - Avoid `any` types
 - Use proper TypeScript types
 - Fix type errors, don't bypass them
 
 ### 4. Small, Focused Commits
+
 - One feature/fix per commit
 - Clear, descriptive commit messages
 - Follow conventional commits (feat, fix, docs, etc.)
 
 ### 5. Green Build
+
 - Ensure all CI checks pass before merging
 - Don't merge failing PR
 
 s
+
 - Fix issues promptly
 
 ## Troubleshooting CI/CD Issues
@@ -174,11 +189,13 @@ s
 ### Lint Failures
 
 **Common causes**:
+
 - Unused variables
 - Missing semicolons
 - Inconsistent formatting
 
 **Fix**:
+
 ```bash
 npm run lint:fix
 git add .
@@ -188,11 +205,13 @@ git commit --amend --no-edit
 ### Type Check Failures
 
 **Common causes**:
+
 - Type mismatches
 - Missing type definitions
 - Incorrect imports
 
 **Fix**:
+
 - Review TypeScript errors carefully
 - Add proper types
 - Use type assertions only when necessary
@@ -200,11 +219,13 @@ git commit --amend --no-edit
 ### Test Failures
 
 **Common causes**:
+
 - Race conditions
 - Incorrect mocks
 - Environment issues
 
 **Fix**:
+
 ```bash
 npm test -- --verbose
 npm test -- tests/unit/failing-test.test.ts
@@ -213,11 +234,13 @@ npm test -- tests/unit/failing-test.test.ts
 ### Build Failures
 
 **Common causes**:
+
 - Missing dependencies
 - Environment variables
 - Module resolution issues
 
 **Fix**:
+
 ```bash
 npm ci                 # Clean install
 rm -rf node_modules    # Nuclear option
@@ -276,6 +299,7 @@ with:
 ### Parallelization
 
 Jobs run in parallel when possible:
+
 - `lint` and `typecheck` run simultaneously
 - `test` runs independently
 - `build` runs after lint, typecheck, and test complete
@@ -312,6 +336,7 @@ npm run test:ci
 ### Updating GitHub Actions
 
 Check for updates to GitHub Actions:
+
 - `actions/checkout`
 - `actions/setup-node`
 - `codecov/codecov-action`
@@ -322,6 +347,7 @@ Check for updates to GitHub Actions:
 ### Build Status
 
 View build status:
+
 - GitHub repository → Actions tab
 - Pull request checks
 - Commit status badges
@@ -353,7 +379,57 @@ Planned CI/CD improvements:
    - Automated changelog generation
    - GitHub releases
 
+## Monitoring Configuration Validation
+
+### Purpose
+
+Validates Prometheus and Alertmanager configurations to catch misconfigurations before deployment. This prevents invalid configs from causing monitoring outages.
+
+### What Gets Validated
+
+1. **YAML Syntax**: Basic syntax validation using Python's yaml parser
+2. **Prometheus Config**: Using official `promtool check config`
+3. **Alert Rules**: Using official `promtool check rules` (validates PromQL expressions)
+4. **Alertmanager Config**: Using official `amtool check-config`
+5. **Common Issues**: Checks for hardcoded secrets, tabs in YAML, etc.
+
+### Trigger Conditions
+
+The validation workflow runs when:
+
+- Files in `monitoring/**` are modified
+- The validation script `scripts/validate-monitoring-configs.sh` is modified
+
+### Running Locally
+
+```bash
+# Using npm script (recommended)
+npm run validate:monitoring
+
+# Or run the script directly
+./scripts/validate-monitoring-configs.sh
+
+# Options
+./scripts/validate-monitoring-configs.sh --help       # Show help
+./scripts/validate-monitoring-configs.sh --verbose    # Verbose output
+./scripts/validate-monitoring-configs.sh --yaml-only  # YAML only (no Docker)
+./scripts/validate-monitoring-configs.sh --docker-only # Requires Docker
+```
+
+### Files Validated
+
+| File                                       | Tool Used | Checks                          |
+| ------------------------------------------ | --------- | ------------------------------- |
+| `monitoring/prometheus/prometheus.yml`     | promtool  | Config syntax, scrape configs   |
+| `monitoring/prometheus/alerts.yml`         | promtool  | PromQL syntax, rule format      |
+| `monitoring/alertmanager/alertmanager.yml` | amtool    | Routing, receivers, inhibitions |
+
+### Requirements
+
+- **Docker**: Required for full validation (uses official Prometheus/Alertmanager images)
+- **Python 3 + pyyaml**: Fallback for basic YAML validation if Docker unavailable
+
 ---
 
-**Last Updated**: November 13, 2025  
+**Last Updated**: November 27, 2025
 **Maintainer**: RingRift Development Team

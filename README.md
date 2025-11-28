@@ -1,5 +1,10 @@
 # RingRift - Multiplayer Strategy Game
 
+**Doc Status (2025-11-27): Active (project overview & navigation)**
+
+- High-level project overview, setup, and API surface.
+- Not a rules or lifecycle SSoT. For rules semantics, defer to `RULES_CANONICAL_SPEC.md` plus the shared TypeScript rules engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts + v2 contract vectors). For lifecycle semantics (move/decision/WebSocket), defer to `docs/CANONICAL_ENGINE_API.md` plus shared TS/WebSocket types and schemas.
+
 ⚠️ **PROJECT STATUS: ENGINE/AI-FOCUSED BETA – BACKEND PLAY & AI TURNS WORK; UX & SCENARIO TESTS STILL IN PROGRESS** ⚠️
 
 > **Important:** Core game mechanics are largely implemented, and there is now a **playable backend game flow**: the server’s `GameEngine` drives rules, WebSocket-backed games use it as the source of truth, the React client renders boards and submits moves, and AI opponents can make moves via the Python AI service. In addition, a **client-local sandbox engine** (`ClientSandboxEngine`) powers the `/sandbox` route with strong rules parity and dedicated Jest suites for movement, captures, lines, territory, and victory checks. However, the UI/UX is still evolving and there is not yet a comprehensive scenario matrix for every rule/FAQ example. See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) for code‑verified status.
@@ -28,7 +33,7 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 - ✅ **Phase transitions** - Correct game flow through all phases
 - ✅ **Player state tracking** - Ring counts, eliminations, territory
 - ✅ **Hexagonal board support** - Full 331-space board validated
-- ✅ **Client-local sandbox engine** - `/sandbox` uses `ClientSandboxEngine` plus `sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxLinesEngine.ts`, `sandboxTerritoryEngine.ts`, and `sandboxVictory.ts` to run full games in the browser (movement, captures, lines, territory, and ring/territory victories) with dedicated Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts`.
+- ✅ **Client-local sandbox engine** - `/sandbox` uses `ClientSandboxEngine` plus `sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxTerritory.ts`, and `sandboxVictory.ts` (with line and territory processing now wired directly to shared helpers) to run full games in the browser (movement, captures, lines, territory, and ring/territory victories) with dedicated Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts`.
 
 ### ⚠️ Critical Gaps (Blocks Production-Quality Play)
 
@@ -82,11 +87,8 @@ To understand the project and know which documents are authoritative for each ar
   - `KNOWN_ISSUES.md` – Current P0/P1 bugs and gaps.
 
 - **Architecture & Design**
-  - `ARCHITECTURE_ASS
-
-essment.md` – Comprehensive architecture review and future design plans.
-
-- `AI_ARCHITECTURE.md` – AI Service architecture, assessment, and improvement plans (with cross-links to training pipelines and incidents).
+  - `ARCHITECTURE_ASSESSMENT.md` – Comprehensive architecture review and future design plans.
+  - `AI_ARCHITECTURE.md` – AI Service architecture, assessment, and improvement plans (with cross-links to training pipelines and incidents).
 - `RULES_ENGINE_ARCHITECTURE.md` – Python Rules Engine architecture and rollout strategy.
 
 - **Subsystem Guides**
@@ -98,7 +100,7 @@ essment.md` – Comprehensive architecture review and future design plans.
 
 - **Historical Plans & Evaluations**
   - [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1) – Incident report for the TerritoryMutator vs `GameEngine.apply_move()` divergence and its fix, with tests and follow-up tasks.
-  - Docs under `archive/` and `deprecated/` – Earlier architecture and improvement plans, preserved for context only.
+  - Docs under `archive/` – Earlier architecture and improvement plans, preserved for context only.
 
 ### 🔗 Developer Quick Links
 
@@ -311,8 +313,11 @@ To avoid flaky behaviour in `/game/:gameId` and WebSocket tests, ensure that you
 # Build application
 npm run build
 
-# Start with Docker (full stack: app, nginx, postgres, redis, prometheus, grafana)
+# Start with Docker (core stack: app, nginx, postgres, redis, ai-service)
 docker-compose up -d
+
+# Include monitoring (prometheus, alertmanager, grafana)
+docker-compose --profile monitoring up -d
 
 # Or manual deployment
 npm start
@@ -669,7 +674,7 @@ npm test
 - Architecture assessment: `ARCHITECTURE_ASSESSMENT.md`
 - Current state assessment: `CURRENT_STATE_ASSESSMENT.md`
 - Strategic roadmap: `STRATEGIC_ROADMAP.md`
-- Playable game implementation plan (historical): `deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`
+- Playable game implementation plan (historical): `archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md`
 - Test documentation: `tests/README.md`
 
 ## 🤝 Contributing

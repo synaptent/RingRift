@@ -3,7 +3,21 @@
 **Last Updated:** November 23, 2025
 **Scope:** AI Service, Algorithms, Training Pipeline, and Integration
 
-This document consolidates the architectural overview, technical assessment, and improvement plans for the RingRift AI system. It serves as the **canonical, current** reference for AI behaviour and design.
+> **SSoT alignment:** This document is a derived view over the following canonical sources:
+>
+> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers, mutators, aggregates, orchestrator, and v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`). This shared TS engine is the **rules semantics SSoT** for RingRift.
+> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md`, `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts` for the Move/orchestrator/WebSocket lifecycle that AI integrates with.
+> - **AI/Training SSoT:** Executable Python AI service code under `ai-service/app/**` and its tests under `ai-service/tests/**`, plus CI workflows (`.github/workflows/ci.yml`) that build and validate the AI service.
+>   - Offline optimisation & evaluation harnesses: `ai-service/scripts/run_cmaes_optimization.py`, `ai-service/scripts/run_genetic_heuristic_search.py`, and their associated tests (`ai-service/tests/test_heuristic_training_evaluation.py`, `ai-service/tests/test_multi_start_evaluation.py`) are treated as **sanity/diagnostic tooling** over the shared rules SSoT rather than independent sources of semantics.
+> - **Precedence:** If this document ever conflicts with those specs, engines, types, or workflows, **code + tests win**, and this doc must be updated to match them.
+>
+> **Doc Status (2025-11-26): Active (with historical appendix)**
+>
+> - Canonical reference for the **current AI architecture and integration**: Python AI service, TS AI boundary, RNG/determinism, neural nets, training pipeline, and resilience/fallback behaviour.
+> - References several historical deep-dive/assessment docs (under `archive/` and `deprecated/`); those are explicitly called out as historical snapshots and should be read as background only.
+> - For the canonical rules engine and Move lifecycle, defer to `ARCHITECTURE_ASSESSMENT.md`, `ARCHITECTURE_REMEDIATION_PLAN.md`, and `docs/CANONICAL_ENGINE_API.md` (Move + orchestrator + hosts), which this document assumes as its rules SSoT.
+>
+> This document consolidates the architectural overview, technical assessment, and improvement plans for the RingRift AI system. It serves as the **canonical, current** reference for AI behaviour and design.
 
 Historical deep-dive documents:
 
@@ -14,6 +28,73 @@ For an up-to-date, ticket-ready roadmap, see **`docs/supplementary/AI_IMPROVEMEN
 
 ---
 
+## 0. AI Incident Overview (rules vs AI vs infra)
+
+This section is a shared stub for AI-related incidents; the detailed runbooks
+(`docs/runbooks/AI_ERRORS.md`, `AI_PERFORMANCE.md`, `AI_FALLBACK.md`,
+`AI_SERVICE_DOWN.md`) link back here for high-level classification.
+
+When something looks “AI-broken” in production, ask **which layer is likely at fault**:
+
+- **Rules engine / orchestrator (shared TS SSoT)**
+  - Symptoms:
+    - Illegal moves accepted or produced (violating `RULES_CANONICAL_SPEC.md`).
+    - Incorrect scoring, victory conditions, or turn sequencing.
+    - Disagreements between TS shared-engine tests and contract vectors
+      vs all hosts (backend, sandbox, Python).
+  - First checks:
+    - Run shared rules suites and contract vectors:
+      - TS: `tests/unit/*.shared.test.ts`, `tests/contracts/contractVectorRunner.test.ts`.
+      - Python: `ai-service/tests/contracts/test_contract_vectors.py`.
+    - Inspect orchestrator adapters and flags:
+      `ORCHESTRATOR_ADAPTER_ENABLED`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE`,
+      `ORCHESTRATOR_SHADOW_MODE_ENABLED`, `RINGRIFT_RULES_MODE`.
+  - Playbook:
+    - If the shared engine or orchestrator looks wrong, follow
+      `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` (Safe rollback checklist).
+    - Do **not** change rules or flip to legacy engines from AI runbooks.
+
+- **AI behaviour / models (Python service + TS AI boundary)**
+  - Symptoms:
+    - Moves are legal but obviously weak/odd for the configured difficulty.
+    - Certain difficulties feel much slower/stronger/weaker after a model/config change.
+    - Errors in `/ai/move` without any evidence of rules violations.
+  - First checks:
+    - AI-specific metrics and logs:
+      `ringrift_ai_requests_total`, `ringrift_ai_request_duration_seconds_bucket`,
+      `ringrift_ai_fallback_total`, `AI_MOVE_LATENCY`, `AI_MOVE_REQUESTS`.
+    - Status of `AIServiceDown`, `AIRequestHighLatency`, `AIErrorsIncreasing`,
+      `AIFallbackRateHigh` alerts.
+  - Playbook:
+    - Use `AI_ERRORS.md` and `AI_PERFORMANCE.md` to classify internal errors vs
+      performance/capacity vs contract/input issues.
+    - Use `AI_FALLBACK.md` / `AI_SERVICE_DOWN.md` for quality-preserving
+      fallbacks when the remote service is unhealthy.
+
+- **Infrastructure / transport (Node, network, host resources)**
+  - Symptoms:
+    - Timeouts, connection errors, or very high P95/P99 AI latencies.
+    - AI works in isolation but fails or falls back under load.
+    - Other services showing concurrent availability/latency/resource alerts.
+  - First checks:
+    - App readiness (`/ready`) and service status metrics:
+      `ringrift_service_status{service="ai_service"}`.
+    - Host/container resources (`docker stats ai-service`, CPU/memory dashboards).
+    - Global runbooks: `HIGH_LATENCY.md`, `SERVICE_DEGRADATION.md`,
+      `SERVICE_OFFLINE.md`.
+  - Playbook:
+    - Treat these as availability / performance incidents first; scale, tune
+      timeouts, or adjust concurrency via `AI_PERFORMANCE.md` and
+      `AI_SERVICE_DOWN.md`.
+
+Rule of thumb:
+
+- If a move is **illegal or contradicts the written rules**, suspect the **shared
+  rules engine / orchestrator** and follow the orchestrator rollout plan.
+- If moves are **legal but slow, weak, or failing intermittently**, suspect the
+  **AI service or infra**, and use the AI runbooks; do not alter rules in
+  response to AI-only issues.
+
 ## 1. Architecture Overview
 
 ### System Context
@@ -23,53 +104,136 @@ The AI system operates as a dedicated microservice (`ai-service`) built with Pyt
 - **Microservice:** `ai-service/` (Python 3.11+)
 - **Communication:** REST API (`/ai/move`, `/ai/evaluate`, `/rules/evaluate_move`)
 - **Integration:**
-  - [`AIEngine`](src/server/game/ai/AIEngine.ts:135) (TypeScript) delegates to [`AIServiceClient`](src/server/services/AIServiceClient.ts:170) for AI moves.
-  - [`RulesBackendFacade`](src/server/game/RulesBackendFacade.ts:1) (TypeScript) delegates to [`PythonRulesClient`](src/server/services/PythonRulesClient.ts:1) for rules validation (shadow/authoritative modes).
+  - [`AIEngine`](src/server/game/ai/AIEngine.ts) (TypeScript) delegates to [`AIServiceClient`](src/server/services/AIServiceClient.ts) for AI moves.
+  - [`RulesBackendFacade`](src/server/game/RulesBackendFacade.ts) (TypeScript) delegates to [`PythonRulesClient`](src/server/services/PythonRulesClient.ts) for rules validation (shadow/authoritative modes).
 - **Resilience:** Multi-tier fallback system ensures games never get stuck due to AI failures.
 - **UI Integration:** Full lobby and game UI support for AI opponent configuration and visualization.
 
 ### Rules, shared engine, and training topology
 
+> For the **authoritative Move / PendingDecision / PlayerChoice / WebSocket lifecycle**, see [`docs/CANONICAL_ENGINE_API.md` §3.9–3.10](docs/CANONICAL_ENGINE_API.md). This section is an AI- and training-centric view over that same orchestrator-centred flow.
+
 At runtime there are three tightly coupled layers that share the **same rules semantics** but serve different roles:
 
 - **Shared TypeScript Rules Engine (canonical)**
-  - Core game types (including `GameState`, `BoardState`, `Move`, and enums for phases and move types) live in [`game.ts`](src/shared/types/game.ts:1) and engine-specific type helpers in [`types.ts`](src/shared/engine/types.ts:1).
-  - Movement, capture, lines, and Territory are implemented as pure helpers under [`src/shared/engine`](src/shared/engine/core.ts:1):
-    - Movement / reachability: [`movementLogic.ts`](src/shared/engine/movementLogic.ts:1), [`movementApplication.ts`](src/shared/engine/movementApplication.ts:1).
-    - Capture / chains: [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1), [`captureChainHelpers.ts`](src/shared/engine/captureChainHelpers.ts:1).
-    - Lines: [`lineDetection.ts`](src/shared/engine/lineDetection.ts:1), [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts:1).
-    - Territory: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:1), [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1), [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1).
-  - These shared helpers are orchestrated by the TS shared [`GameEngine`](src/shared/engine/GameEngine.ts:37) and are used by:
-    - The backend host engine in [`src/server/game/GameEngine.ts`](src/server/game/GameEngine.ts:1).
-    - The client-local sandbox engine in [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts:1).
-    - Rules/FAQ parity tests under `tests/unit/*shared.test.ts` and `tests/scenarios/RulesMatrix.*.test.ts`.
+  - Core game types (including `GameState`, `BoardState`, `Move`, and enums for phases and move types) live in [`game.ts`](src/shared/types/game.ts) and engine-specific type helpers in [`types.ts`](src/shared/engine/types.ts).
+  - Movement, capture, lines, and Territory are implemented as pure helpers under [`src/shared/engine`](src/shared/engine/core.ts):
+    - Movement / reachability: [`movementLogic.ts`](src/shared/engine/movementLogic.ts), [`movementApplication.ts`](src/shared/engine/movementApplication.ts).
+    - Capture / chains: [`captureLogic.ts`](src/shared/engine/captureLogic.ts), [`captureChainHelpers.ts`](src/shared/engine/captureChainHelpers.ts).
+    - Lines: [`lineDetection.ts`](src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts).
+    - Territory: [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts), [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts), [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts).
+  - These shared helpers are orchestrated by the **shared turn orchestrator** in
+    [`src/shared/engine/orchestration/turnOrchestrator.ts`](src/shared/engine/orchestration/turnOrchestrator.ts),
+    working through domain aggregates under
+    [`src/shared/engine/aggregates/`](src/shared/engine/aggregates/):
+    - `PlacementAggregate.ts`, `MovementAggregate.ts`, `CaptureAggregate.ts`,
+      `LineAggregate.ts`, `TerritoryAggregate.ts`, `VictoryAggregate.ts`.
+  - These helpers + aggregates are consumed via thin host/adapters:
+    - **Backend host engine** [`src/server/game/GameEngine.ts`](src/server/game/GameEngine.ts)
+      using [`TurnEngineAdapter`](src/server/game/turn/TurnEngineAdapter.ts) over the shared
+      orchestrator (`processTurn` / `processTurnAsync`).
+    - **Client-local sandbox engine** [`ClientSandboxEngine.ts`](src/client/sandbox/ClientSandboxEngine.ts)
+      using [`SandboxOrchestratorAdapter`](src/client/sandbox/SandboxOrchestratorAdapter.ts) for local
+      simulation, FAQ/RulesMatrix scenarios, and AI-debug flows.
+    - Rules/FAQ and parity tests under `tests/unit/*shared.test.ts`,
+      `tests/unit/Backend_vs_Sandbox.*.test.ts`,
+      `tests/unit/Territory*.test.ts`, and
+      `tests/unit/TraceFixtures.sharedEngineParity.test.ts`, which all treat the
+      shared helpers + aggregates + orchestrator as the canonical rules surface.
+  - Host orchestration modes and rollout:
+    - Backend `GameEngine.makeMove()` can run in **orchestrator-adapter mode** (delegating to `TurnEngineAdapter` / `processTurnAsync`) or **legacy mode** (validating via `RuleEngine` and applying moves directly). In production, `ORCHESTRATOR_ADAPTER_ENABLED=true` and `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100` make the adapter path the default, with `OrchestratorRolloutService` and its circuit breaker confining the legacy path to tests, diagnostics, and kill-switch/rollback scenarios.
+    - `ClientSandboxEngine` similarly offers orchestrator-driven flows (via `SandboxOrchestratorAdapter`) alongside thin legacy UX helpers that call shared aggregates directly for interactive tooling.
+    - Python never embeds the TS orchestrator; its `GameEngine` is treated as a host/adapter validated against the TS orchestrator + contracts via v2 contract vectors and parity suites (see [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md) for a detailed mapping).
 
 - **Python Rules Engine and mutators (AI Service)**
   - The Python AI Service embeds a Rules Engine that mirrors the shared TS engine:
-    - Canonical Python engine orchestration: [`GameEngine`](ai-service/app/game_engine.py:33).
-    - Board-level helpers (including disconnected-region detection): [`BoardManager.find_disconnected_regions()`](ai-service/app/board_manager.py:171).
-    - Rules façade and shadow-contract mutators: [`DefaultRulesEngine`](ai-service/app/rules/default_engine.py:23), [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py:6) and the other mutators under `ai-service/app/rules/mutators/`.
-  - [`PythonRulesClient`](src/server/services/PythonRulesClient.ts:33) exposes this engine to the TS backend via `/rules/evaluate_move`, and [`RulesBackendFacade`](src/server/game/RulesBackendFacade.ts:1) decides whether to treat the Python engine as **shadow** (parity only) or **authoritative** (`RINGRIFT_RULES_MODE`).
+    - Canonical Python engine orchestration: [`GameEngine`](ai-service/app/game_engine.py).
+    - Board-level helpers (including disconnected-region detection): [`BoardManager.find_disconnected_regions()`](ai-service/app/board_manager.py).
+    - Rules façade and shadow-contract mutators: [`DefaultRulesEngine`](ai-service/app/rules/default_engine.py), [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py) and the other mutators under `ai-service/app/rules/mutators/`.
+  - [`PythonRulesClient`](src/server/services/PythonRulesClient.ts) exposes this engine to the TS backend via `/rules/evaluate_move`, and [`RulesBackendFacade`](src/server/game/RulesBackendFacade.ts) decides whether to treat the Python engine as **shadow** (parity only) or **authoritative** (`RINGRIFT_RULES_MODE`).
   - Territory semantics are deliberately wired to mirror the TS shared helpers:
-    - TS geometry and region detection: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts:1) ↔ Python [`BoardManager.find_disconnected_regions`](ai-service/app/board_manager.py:171).
-    - TS region application and Q23 outside-stack prerequisite: [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts:1) and [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts:1) ↔ Python [`GameEngine._apply_territory_claim()`](ai-service/app/game_engine.py:2718).
-    - Explicit Territory self-elimination decisions: TS [`enumerateTerritoryEliminationMoves()`](src/shared/engine/territoryDecisionHelpers.ts:402) ↔ Python [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py:6) and [`GameEngine._apply_forced_elimination()`](ai-service/app/game_engine.py:2988).
+    - TS geometry and region detection: [`territoryDetection.ts`](src/shared/engine/territoryDetection.ts) ↔ Python [`BoardManager.find_disconnected_regions`](ai-service/app/board_manager.py).
+    - TS region application and Q23 outside-stack prerequisite: [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts) and [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts) ↔ Python [`GameEngine._apply_territory_claim()`](ai-service/app/game_engine.py).
+    - Explicit Territory self-elimination decisions: TS [`enumerateTerritoryEliminationMoves()`](src/shared/engine/territoryDecisionHelpers.ts) ↔ Python [`TerritoryMutator`](ai-service/app/rules/mutators/territory.py) and [`GameEngine._apply_forced_elimination()`](ai-service/app/game_engine.py).
 
 - **Training and dataset-generation pipelines (Python)**
-  - General self-play dataset generation (policy/value, NN-style) is implemented in [`generate_data.py`](ai-service/app/training/generate_data.py:1) using:
-    - The same Python [`GameEngine`](ai-service/app/game_engine.py:33) and [`RingRiftEnv`](ai-service/app/training/env.py:6) used by online AI search.
-    - `DescentAI` and the neural network encoders from `ai-service/app/ai/`.
-  - The **Territory/combined-margin dataset generator** for heuristic training is implemented in [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py:1):
-    - Builds a fresh `GameState` via [`RingRiftEnv`](ai-service/app/training/env.py:6) (which in turn uses [`create_initial_state()`](ai-service/app/training/generate_data.py:21)).
-    - Uses [`GameEngine.get_valid_moves()`](ai-service/app/game_engine.py:45) and [`GameEngine.apply_move()`](ai-service/app/game_engine.py:117) as the single source of rules for self-play.
-    - Serialises **pre-move** snapshots of the Python `GameState` along each trajectory with per-player scalar targets derived from the final board via [`_final_combined_margin()`](ai-service/app/training/generate_territory_dataset.py:79).
-    - Emits one JSONL record per `(state, player)` with `game_state`, `player_number`, `target`, `time_weight`, and engine/AI metadata (`engine_mode`, `num_players`, `ai_type_pN`, `ai_difficulty_pN`).
-  - Training jobs and the live AI/Rules Service therefore share:
-    - The same Python `GameEngine` implementation for all rules, including Territory and forced elimination.
-    - The same `GameState` / `Move` model surface (mirroring TS [`GameState`](src/shared/types/game.ts:1)).
-    - The same Territory stack, now guarded by TS↔Python parity tests (see [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1) and Python parity suites under `ai-service/tests/parity/` and [`test_territory_forced_elimination_divergence.py`](ai-service/tests/test_territory_forced_elimination_divergence.py:1)).
+- - General self-play dataset generation (policy/value, NN-style) is implemented in [`generate_data.py`](ai-service/app/training/generate_data.py) using:
+-     - The same Python [`GameEngine`](ai-service/app/game_engine.py) and [`RingRiftEnv`](ai-service/app/training/env.py) used by online AI search.
+-     - `DescentAI` and the neural network encoders from `ai-service/app/ai/`.
+- - The **Territory/combined-margin dataset generator** for heuristic training is implemented in [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py):
+-     - Builds a fresh `GameState` via [`RingRiftEnv`](ai-service/app/training/env.py) (which in turn uses [`create_initial_state()`](ai-service/app/training/generate_data.py)).
+-     - Uses [`GameEngine.get_valid_moves()`](ai-service/app/game_engine.py) and [`GameEngine.apply_move()`](ai-service/app/game_engine.py) as the single source of rules for self-play.
+-     - Serialises **pre-move** snapshots of the Python `GameState` along each trajectory with per-player scalar targets derived from the final board via [`_final_combined_margin()`](ai-service/app/training/generate_territory_dataset.py).
+-     - Emits one JSONL record per `(state, player)` with `game_state`, `player_number`, `target`, `time_weight`, and engine/AI metadata (`engine_mode`, `num_players`, `ai_type_pN`, `ai_difficulty_pN`).
+- - Training jobs and the live AI/Rules Service therefore share:
+-     - The same Python `GameEngine` implementation for all rules, including Territory and forced elimination.
+-     - The same `GameState` / `Move` model surface (mirroring TS [`GameState`](src/shared/types/game.ts)).
+-     - The same Territory stack, now guarded by TS↔Python parity tests (see [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md) and Python parity suites under `ai-service/tests/parity/` and [`test_territory_forced_elimination_divergence.py`](ai-service/tests/test_territory_forced_elimination_divergence.py)).
+-
+- For a deeper, rules-focused mapping between TS and Python (including how parity fixtures and mutator contracts are enforced), see [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md). For detailed CLI usage and dataset schemas for training, see [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md). For the forced-elimination / TerritoryMutator divergence and its guard rails, see [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md).
 
-For a deeper, rules-focused mapping between TS and Python (including how parity fixtures and mutator contracts are enforced), see [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1). For detailed CLI usage and dataset schemas for training, see [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1). For the forced-elimination / TerritoryMutator divergence and its guard rails, see [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1).
+* +### Pre-Training Preparation & Memory Budgeting
+* +This section provides a **RingRift-specific pre-training checklist** and explains how the **global memory budget** (16&nbsp;GB by default, configurable via `RINGRIFT_MAX_MEMORY_GB`) is propagated through training jobs, search components, and long-running soaks. It is intentionally high-level and defers detailed procedures to [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](docs/AI_TRAINING_PREPARATION_GUIDE.md), [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md), and the assessment in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md`](docs/AI_TRAINING_ASSESSMENT_FINAL.md).
+* +#### High-level pre-training checklist
+* +- **Clarify objective & dataset source**
+* - Decide what you are training/tuning:
+* - **Neural network policy/value** using self-play NPZ datasets from [`generate_data.py`](ai-service/app/training/generate_data.py).
+* - **Heuristic scalar evaluators** using JSONL territory/combined-margin datasets from [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py).
+* - Ensure **leak-free splits by game**, not by individual positions:
+* - Use complete games as the unit of train/validation/test splitting (see recommendations in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §6.1](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
+* - Confirm coverage of critical regimes:
+* - Early/mid/late game, forced-elimination / LPS, and near‑victory situations.
+* - Draw scenarios from self-play plus rules/FAQ matrices and invariant suites (e.g. [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md), `tests/scenarios/RulesMatrix.*.test.ts`, and parity/invariant tests under `ai-service/tests/`).
+* +- **Start from stable architectures & hyperparameters**
+* - **Heuristics:**
+* - Treat the Python weight profiles in [`heuristic_weights.py`](ai-service/app/ai/heuristic_weights.py) and the TS fallback personas in [`heuristicEvaluation.ts`](src/shared/engine/heuristicEvaluation.ts) as the canonical starting point for `HeuristicAI`.
+* - When adding new features, keep weights **sign-correct** (e.g. more eliminated opponent rings must not worsen our score) and of **conservative magnitude** relative to existing terms (see [`AI_ARCHITECTURE.md` §5.2–5.4](AI_ARCHITECTURE.md)).
+* - **Neural networks:**
+* - Start from the current CNNs (`RingRiftCNN` / `HexNeuralNet`) and baseline `TrainConfig` defaults in the training stack under `ai-service/app/training/**` (documented in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §2](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
+* - Treat architecture changes (depth, width, additional heads) as **second‑order** optimizations after data quality, regularisation, and batch sizing have been tuned (see empirical findings in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §6–7](docs/AI_TRAINING_ASSESSMENT_FINAL.md)).
+* +- **Configure and respect the global memory budget**
+* - Set a host‑level limit via:
+* - `RINGRIFT_MAX_MEMORY_GB` (env var; default `16.0`).
+* - [`MemoryConfig`](ai-service/app/utils/memory_config.py) (documented in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §2](docs/AI_TRAINING_ASSESSMENT_FINAL.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §§3,13](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
+* - Ensure this budget is threaded through:
+* - **Search data structures:** use [`BoundedTranspositionTable`](ai-service/app/ai/bounded_transposition_table.py) in `MinimaxAI` and `DescentAI` instead of unbounded dicts, to prevent OOMs during long searches and tournaments.
+* - **Training loops:** size batches and (where applicable) DataLoader workers in [`train.py`](ai-service/app/training/train.py) according to `max_memory_gb`, preferring memory‑mapped NPZ datasets for large runs as described in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §3](docs/AI_TRAINING_PREPARATION_GUIDE.md).
+* - **Self-play / soaks:** select difficulty bands and GC intervals in [`run_self_play_soak.py`](ai-service/scripts/run_self_play_soak.py) that keep memory usage within the configured limit (see [`docs/STRICT_INVARIANT_SOAKS.md` §2](docs/STRICT_INVARIANT_SOAKS.md)).
+* +- **Validate weight initialization and training stability**
+* - **NNs:** follow the Xavier/He initialization and validation helpers in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §4](docs/AI_TRAINING_PREPARATION_GUIDE.md):
+* - Check initial weight statistics, policy entropy, and value distributions on a small real batch before running long epochs.
+* - Confirm no NaNs or explosive gradients (NaN/instability bugs in early pipelines are documented and fixed in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §4](docs/AI_TRAINING_ASSESSMENT_FINAL.md)).
+* - **Heuristics:** treat new or retuned features conservatively:
+* - Use plateaus/ordering constraints from regression fixtures under `tests/fixtures/heuristic/v1/**` plus parity tests in `ai-service/tests/test_heuristic_parity.py` and `tests/unit/heuristicParity.shared.test.ts` to guard against sign/magnitude mistakes.
+* +- **Define baselines, evaluation harness, and scenario battery**
+* - Baselines:
+* - Random AI, canonical heuristic profiles, and the current NN are all available as `AIType`/difficulty presets (see difficulty ladder mapping earlier in this doc).
+* - Evaluation harness:
+* - Use [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py) for structured head‑to‑head matches and [`generate_statistical_report.py`](ai-service/scripts/generate_statistical_report.py) for CI‑style reports (Wilson CIs, p‑values, effect sizes), as summarized in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §§6,10](docs/AI_TRAINING_ASSESSMENT_FINAL.md).
+* - Scenario batteries:
+* - Plan targeted tests over:
+*      - Rules matrix and FAQ scenarios (`RULES_SCENARIO_MATRIX.md`, `tests/scenarios/RulesMatrix.*.test.ts`).
+*      - Invariant and strict‑no‑move soaks described in [`docs/STRICT_INVARIANT_SOAKS.md`](docs/STRICT_INVARIANT_SOAKS.md).
+* - Plug these into the same evaluation/reporting scripts so regressions show up in the same statistical pipeline.
+* +- **Reproducibility and experiment management**
+* - Fix seeds for:
+* - Self‑play generators (`--seed` flags in [`generate_data.py`](ai-service/app/training/generate_data.py) and [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py)).
+* - Training runs (`TrainConfig.seed` and seeding helpers in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §7.1](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
+* - Evaluation batteries (`--seed` options in [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py)).
+* - Record for each run:
+* - Git commit hash and dirty state.
+* - Dataset manifest/version (see the manifest format in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §7.4](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
+* - `MemoryConfig` values and key hyperparameters.
+* - Paths to checkpoints, evaluation JSONs, and generated statistical reports.
+* +- **Documentation & ethical notes**
+* - For **RingRift game AI**, ethical risk is low, but:
+* - Difficulty and AI type must match user expectations.
+* - Behaviour should be reproducible enough to debug and reason about (see RNG determinism section later in this doc).
+* - Any reuse of this infrastructure outside game AI must additionally respect the data/privacy and security guidance in [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](docs/DATA_LIFECYCLE_AND_PRIVACY.md) and related security docs.
+* +For end‑to‑end, procedural guidance (including concrete CLI examples and more detailed checklists), see:
+* +- [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](docs/AI_TRAINING_PREPARATION_GUIDE.md) for the full pre‑flight and infrastructure checklist.
+  +- [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md) for dataset schemas and generator usage.
+  +- [`docs/AI_TRAINING_ASSESSMENT_FINAL.md`](docs/AI_TRAINING_ASSESSMENT_FINAL.md) for the implemented memory limits, bug fixes, and empirical results that motivated these guidelines.
 
 ### Difficulty-to-AI-Type Mapping
 
@@ -128,7 +292,7 @@ behaviour across TS and Python.
 - **NeuralNetAI:** CNN-based evaluation (value and policy heads) shared across board types (8×8, 19×19, hex) and used internally by `MCTSAI` and `DescentAI`.
 - Training-side helpers and analysis tools under `ai-service/app/training/` (self-play data generation, tournaments, overfit tests).
 
-The Python `ai-service` exposes these tactical engines via the `AIType` enum, and the TypeScript backend selects them through [`AIServiceClient.AIType`](src/server/services/AIServiceClient.ts:16) and the profile-driven mapping in [`AIEngine`](src/server/game/ai/AIEngine.ts:26).
+The Python `ai-service` exposes these tactical engines via the `AIType` enum, and the TypeScript backend selects them through [`AIServiceClient.AIType`](src/server/services/AIServiceClient.ts) and the profile-driven mapping in [`AIEngine`](src/server/game/ai/AIEngine.ts).
 
 ### Neural Network Status
 
@@ -423,9 +587,11 @@ Python Service see the same RNG stream per game, modulo any non-determinism in l
   - These suites inject `LocalAIRng` hooks (`() => seededRng.next()`) into both sandbox and backend AI flows and
     assert that, given identical seeds and states, both sides select the same sequence of AI moves.
 - **Python-side determinism:**
-  - [`ai-service/tests/test_determinism.py`](ai-service/tests/test_determinism.py) verifies that seeded `AIConfig`
-    instances for RandomAI/HeuristicAI (and other engines as they are brought under test) produce identical move
-    sequences for identical seeds and states.
+  - _Historical:_ `ai-service/tests/test_determinism.py` previously verified that
+    seeded `AIConfig` instances for RandomAI/HeuristicAI (and other engines as they were brought under test) produced
+    identical move sequences for identical seeds and states. That legacy suite has been removed; determinism is now
+    covered by [`test_engine_determinism.py`](ai-service/tests/test_engine_determinism.py) and
+    [`test_no_random_in_rules_core.py`](ai-service/tests/test_no_random_in_rules_core.py).
 
 Together, these tests form the basis of the RNG determinism contract: **same seed + same history ⇒ same moves**
 across TS backend, sandbox engine, and Python AI Service.
@@ -450,13 +616,16 @@ across TS backend, sandbox engine, and Python AI Service.
 
 **TypeScript Tests:**
 
-- [`RNGDeterminism.test.ts`](tests/unit/RNGDeterminism.test.ts:1): Core SeededRNG algorithm tests
-- AI parity tests verify sandbox and backend produce identical sequences
+- [`EngineDeterminism.shared.test.ts`](tests/unit/EngineDeterminism.shared.test.ts): Shared-engine determinism and turn replay invariants for the canonical TS rules engine.
+- [`NoRandomInCoreRules.test.ts`](tests/unit/NoRandomInCoreRules.test.ts): Guards against unseeded randomness in shared-engine helpers/aggregates/orchestrator.
+- AI RNG / parity tests (`Sandbox_vs_Backend.aiRngParity.test.ts`, `Sandbox_vs_Backend.aiRngFullParity.test.ts`, and `GameSession.aiDeterminism.test.ts`) verify sandbox and backend produce identical AI move sequences for the same seeds and per-game RNG.
+- _Historical:_ an earlier `RNGDeterminism.test.ts` suite exercised the raw `SeededRNG` implementation; its coverage is now subsumed by the integrated determinism and "no random in core" suites above.
 
 **Python Tests:**
 
-- [`test_determinism.py`](ai-service/tests/test_determinism.py:1): AI determinism with seeded configs
-- Verify RandomAI, HeuristicAI produce identical moves with same seed
+- [`test_engine_determinism.py`](ai-service/tests/test_engine_determinism.py): Python rules engine determinism (no divergence under fixed seeds and histories).
+- [`test_no_random_in_rules_core.py`](ai-service/tests/test_no_random_in_rules_core.py): Guards against unseeded randomness in the Python rules core.
+- AI plateau/trace parity tests under `ai-service/tests/parity/` (e.g. `test_ts_seed_plateau_snapshot_parity.py`, `test_ai_plateau_progress.py`, `test_line_and_territory_scenario_parity.py`) use TS-generated fixtures to validate fully deterministic cross-language behaviour at the scenario/trace level.
 
 ### Known Limitations
 
@@ -487,7 +656,7 @@ Level 2: Local Heuristic AI (TypeScript)
 Level 3: Random Valid Move Selection
 ```
 
-**Implementation:** [`AIEngine.getAIMove()`](src/server/game/ai/AIEngine.ts:228)
+**Implementation:** [`AIEngine.getAIMove()`](src/server/game/ai/AIEngine.ts)
 
 ### Error Scenarios Handled
 
@@ -499,7 +668,7 @@ Level 3: Random Valid Move Selection
   - Service availability re-tested after 60-second cooldown
 
 - **Timeouts:** AI Service taking too long to respond
-  - Default timeout: 30 seconds (configured in [`AIServiceClient`](src/server/services/AIServiceClient.ts:179))
+  - Default timeout: 30 seconds (configured in [`AIServiceClient`](src/server/services/AIServiceClient.ts))
   - Automatic fallback to local heuristics
   - Logged with latency metrics for monitoring
 
@@ -510,7 +679,7 @@ Level 3: Random Valid Move Selection
 
 #### Invalid Move Responses
 
-- **Move Validation:** All AI-suggested moves are validated against the legal move list from [`RuleEngine`](src/server/game/RuleEngine.ts:1)
+- **Move Validation:** All AI-suggested moves are validated against the legal move list from [`RuleEngine`](src/server/game/RuleEngine.ts)
   - Validates move type, player, positions, and special properties
   - Deep equality check including hexagonal coordinates
   - Invalid moves trigger automatic fallback
@@ -525,7 +694,7 @@ Level 3: Random Valid Move Selection
 
 ### Circuit Breaker Pattern
 
-**Implementation:** [`CircuitBreaker`](src/server/services/AIServiceClient.ts:20) class in AIServiceClient
+**Implementation:** [`CircuitBreaker`](src/server/services/AIServiceClient.ts) class in AIServiceClient
 
 **Behavior:**
 
@@ -552,9 +721,9 @@ Level 3: Random Valid Move Selection
 
 #### Level 2: Local Heuristic AI
 
-**Implementation:** [`AIEngine.selectLocalHeuristicMove()`](src/server/game/ai/AIEngine.ts:352)
+**Implementation:** [`AIEngine.selectLocalHeuristicMove()`](src/server/game/ai/AIEngine.ts)
 
-- Uses shared [`chooseLocalMoveFromCandidates()`](src/shared/engine/localAIMoveSelection.ts:1)
+- Uses shared [`chooseLocalMoveFromCandidates()`](src/shared/engine/localAIMoveSelection.ts)
 - Prioritizes captures over movements
 - Prefers moves that advance game state
 - Deterministic with provided RNG
@@ -577,7 +746,7 @@ Level 3: Random Valid Move Selection
 
 #### Per-Player Diagnostics
 
-**[`AIDiagnostics`](src/server/game/ai/AIEngine.ts:50) Interface:**
+**[`AIDiagnostics`](src/server/game/ai/AIEngine.ts) Interface:**
 
 ```typescript
 {
@@ -586,17 +755,17 @@ Level 3: Random Valid Move Selection
 }
 ```
 
-**Access:** [`AIEngine.getDiagnostics(playerNumber)`](src/server/game/ai/AIEngine.ts:722)
+**Access:** [`AIEngine.getDiagnostics(playerNumber)`](src/server/game/ai/AIEngine.ts)
 
 #### Per-Game Quality Mode
 
-[`GameSession`](src/server/game/GameSession.ts:42) tracks aggregate AI quality:
+[`GameSession`](src/server/game/GameSession.ts) tracks aggregate AI quality:
 
 - `normal`: AI Service working as expected
 - `fallbackLocalAI`: Using local heuristics due to service issues
 - `rulesServiceDegraded`: Python Rules Engine failures detected
 
-**Access:** [`GameSession.getAIDiagnosticsSnapshotForTesting()`](src/server/game/GameSession.ts:832)
+**Access:** [`GameSession.getAIDiagnosticsSnapshotForTesting()`](src/server/game/GameSession.ts)
 
 #### Logging
 
@@ -620,7 +789,7 @@ logger.warn('Remote AI Service failed, falling back to local heuristics', {
 
 #### Error Events
 
-[`GameSession`](src/server/game/GameSession.ts:759) emits `game_error` events when AI encounters fatal failures:
+[`GameSession`](src/server/game/GameSession.ts) emits `game_error` events when AI encounters fatal failures:
 
 ```typescript
 socket.emit('game_error', {
@@ -632,7 +801,7 @@ socket.emit('game_error', {
 
 #### UI Feedback
 
-[`GamePage`](src/client/pages/GamePage.tsx:1) displays error banners:
+[`GamePage`](src/client/pages/GamePage.tsx) displays error banners:
 
 - User-friendly error message
 - Technical details in development mode
@@ -641,10 +810,10 @@ socket.emit('game_error', {
 
 ### Sandbox AI Resilience
 
-[`sandboxAI.ts`](src/client/sandbox/sandboxAI.ts:1) implements comprehensive error handling:
+[`sandboxAI.ts`](src/client/sandbox/sandboxAI.ts) implements comprehensive error handling:
 
-- Top-level try-catch in [`maybeRunAITurnSandbox()`](src/client/sandbox/sandboxAI.ts:437)
-- Error recovery in [`selectSandboxMovementMove()`](src/client/sandbox/sandboxAI.ts:392)
+- Top-level try-catch in [`maybeRunAITurnSandbox()`](src/client/sandbox/sandboxAI.ts)
+- Error recovery in [`selectSandboxMovementMove()`](src/client/sandbox/sandboxAI.ts)
 - Fallback to random selection on errors
 - Never propagates exceptions to game engine
 - Logs all errors for debugging
@@ -653,7 +822,7 @@ socket.emit('game_error', {
 
 #### Unit Tests
 
-[`tests/unit/AIEngine.fallback.test.ts`](tests/unit/AIEngine.fallback.test.ts:1):
+[`tests/unit/AIEngine.fallback.test.ts`](tests/unit/AIEngine.fallback.test.ts):
 
 - Service failure handling
 - Invalid move rejection
@@ -664,7 +833,7 @@ socket.emit('game_error', {
 
 #### Integration Tests
 
-[`tests/integration/AIResilience.test.ts`](tests/integration/AIResilience.test.ts:1):
+[`tests/integration/AIResilience.test.ts`](tests/integration/AIResilience.test.ts):
 
 - Complete game with AI Service down
 - Intermittent failures
@@ -678,7 +847,7 @@ socket.emit('game_error', {
 
 Endpoint: `/health/ai-service` (when implemented)
 
-- Checks [`AIServiceClient.healthCheck()`](src/server/services/AIServiceClient.ts:455)
+- Checks [`AIServiceClient.healthCheck()`](src/server/services/AIServiceClient.ts)
 - Returns status: `healthy`, `degraded`, or `unavailable`
 
 **Metrics to Monitor:**
@@ -975,3 +1144,74 @@ lock down the API surface for future heuristic-driven selection
 
 These steps are tracked in `docs/supplementary/AI_IMPROVEMENT_BACKLOG.md` (§1.3 and §6.4) and will
 be rolled out incrementally to preserve determinism and test coverage.
+
+### 5.6 Heuristic Training Sanity & Plateau Diagnostics
+
+Heuristic training/evaluation is **not** part of the canonical rules surface, but it is still subject to explicit
+sanity requirements so that optimisation loops (CMA-ES, genetic search, manual tuning) actually explore distinct
+policies instead of accidentally re-evaluating the same behaviour.
+
+- Canonical requirements and test strategy are documented in
+  `docs/PYTHON_PARITY_REQUIREMENTS.md` (§4.6 “Heuristic Training & Evaluation Sanity”), which treats the Python
+  heuristic harness as a parity-adjacent subsystem with its own invariants.
+- The dedicated test suite `ai-service/tests/test_heuristic_training_evaluation.py` asserts two key properties:
+  - `evaluate_fitness` (CMA-ES/GA fitness harness) distinguishes `heuristic_v1_balanced` from a clearly bad
+    all-zero profile under identical conditions and reports non-zero weight-distance diagnostics via `debug_hook`.
+  - `HeuristicAI.get_evaluation_breakdown(state)["total"]` on a non-trivial Square8 mid-game state _differs_ between
+    the balanced and all-zero profiles, confirming that the scalar evaluation actually depends on the active weights.
+- Together with the plateau/trace parity tests in `ai-service/tests/parity/` (especially
+  `test_ai_plateau_progress.py` and `test_ts_seed_plateau_snapshot_parity.py`), these sanity checks provide a
+  first line of defence against:
+  - Wiring bugs where candidate/baseline weights are silently equal.
+  - Training configurations that never meaningfully explore the heuristic weight space.
+  - Misleading “flat plateau” interpretations caused by harness or evaluation issues rather than true optimisation
+    saturation.
+    These suites are classified and tracked in `tests/TEST_SUITE_PARITY_PLAN.md` (§4.1) as Python core/behaviour
+    tests with a specific focus on heuristic-training and plateau diagnostics.
+
+Any change to `HeuristicAI`, the shared fitness harness (`run_cmaes_optimization.py` / `run_genetic_heuristic_search.py`),
+or the evaluation/debug instrumentation that would cause these tests to pass trivially (e.g. equal fitness or identical
+evaluations for obviously different profiles) must be treated as a regression and investigated alongside the usual
+rules parity suites.
+
+Operationally, two complementary optimisation harnesses exercise these invariants:
+
+- **CMA-ES tuner**: [`ai-service/scripts/run_cmaes_optimization.py`](ai-service/scripts/run_cmaes_optimization.py)
+  runs structured CMA-ES searches over `HeuristicWeights` (typically around `heuristic_v1_balanced`), writing
+  `run_meta.json`, generation summaries, checkpoints, and `best_weights.json` under `logs/cmaes/runs/<run_id>/`. It
+  is orchestrated by `run_heuristic_experiment.py` and its results are integrated into
+  `statistical_analysis_report.json` and `AI_TRAINING_ASSESSMENT_FINAL.md` (§10).
+- **Genetic search harness**: [`ai-service/scripts/run_genetic_heuristic_search.py`](ai-service/scripts/run_genetic_heuristic_search.py)
+  reuses the same `evaluate_fitness(...)` function to run an elitist GA over the same weight space, optionally using
+  multi-start / evaluation pools from `app/training/eval_pools.py`. GA runs log `best_weights.json` under
+  `logs/ga/runs/<run_id>/` with the same schema as CMA-ES so downstream tooling and reports can compare profiles
+  directly.
+
+Both harnesses are intentionally kept **behind test and documentation guardrails** rather than the production AI
+API surface; they exist to explore the heuristic landscape and to diagnose plateau behaviour without compromising
+the deterministic, orchestrator-aligned rules SSoT.
+
+#### 5.6.1 Multi-start Evaluation & State Pools
+
+To mitigate overfitting to a single seed or opening, both CMA-ES and the GA harness support **multi-start evaluation**
+driven by precomputed state pools:
+
+- State pools are JSONL files of `GameState` snapshots indexed by `(BoardType, pool_id)` via
+  [`ai-service/app/training/eval_pools.py`](ai-service/app/training/eval_pools.py).
+- `evaluate_fitness(...)` in `run_cmaes_optimization.py` accepts:
+  - `eval_mode="initial-only"` (default) to start games from the standard initial state, or
+  - `eval_mode="multi-start"` plus `state_pool_id`, in which case each evaluation game samples its starting
+    position from the configured pool for that board type.
+- The genetic harness (`run_genetic_heuristic_search.py`) forwards these parameters verbatim, so both CMA-ES and GA
+  can be run against the same evaluation pools for apples-to-apples comparisons.
+
+A minimal smoke test for this path lives in
+[`ai-service/tests/test_multi_start_evaluation.py`](ai-service/tests/test_multi_start_evaluation.py). It:
+
+- Builds a tiny Square8 pool using `RingRiftEnv` and writes it via `model_dump_json` to a temporary JSONL file.
+- Patches `eval_pools.POOL_PATHS` to point `(BoardType.SQUARE8, "test")` at that file.
+- Calls `evaluate_fitness` with `eval_mode="multi-start"` / `state_pool_id="test"` and asserts that
+  baseline-vs-baseline fitness is well-behaved in `[0.0, 1.0]`.
+
+This ensures the wiring between CLI flags (`--eval-mode`, `--state-pool-id`), the pool loader, and the underlying
+fitness loop remains deterministic and test-covered as we evolve training configs.

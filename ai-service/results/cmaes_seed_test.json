@@ -1,0 +1,72 @@
+{
+  "config": {
+    "player1": "cmaes_heuristic",
+    "player2": "random",
+    "games": 4,
+    "board": "square8",
+    "seed": 999,
+    "max_moves_per_game": 200,
+    "minimax_depth": 3,
+    "timestamp": "2025-11-27T00:47:25.867886"
+  },
+  "results": {
+    "player1_wins": 2,
+    "player2_wins": 2,
+    "draws": 0,
+    "player1_win_rate": 0.5,
+    "player1_win_rate_ci95": [0.15, 0.85],
+    "avg_game_length": 39.5,
+    "avg_game_length_std": 2.5,
+    "avg_decision_time_p1": 0.5136,
+    "avg_decision_time_p2": 0.0157,
+    "total_runtime_seconds": 50.0,
+    "victory_types": {
+      "elimination": 4
+    },
+    "avg_p1_final_pieces": 12.5,
+    "avg_p2_final_pieces": 13.0,
+    "piece_advantage_p1": -0.5
+  },
+  "games": [
+    {
+      "game_number": 1,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 2,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 37,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 3,
+      "winner": "random",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "random",
+      "error": null
+    },
+    {
+      "game_number": 4,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 37,
+      "victory_type": "elimination",
+      "p1_was": "random",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    }
+  ]
+}

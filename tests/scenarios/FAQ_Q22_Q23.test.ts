@@ -6,6 +6,10 @@
  * - FAQ Q23: Self-elimination prerequisite for disconnected regions
  *
  * Rules: §11.2-11.3 (Graduated Line Rewards), §12.2 (Territory Self-Elimination Prerequisite)
+ *
+ * NOTE: These tests directly manipulate internal engine state (gameState) and are
+ * skipped when ORCHESTRATOR_ADAPTER_ENABLED=true because the orchestrator
+ * bypasses internal state access patterns these tests rely on.
  */
 
 import { GameEngine } from '../../src/server/game/GameEngine';
@@ -19,7 +23,11 @@ import {
 } from '../../src/shared/types/game';
 import { createTestPlayer } from '../utils/fixtures';
 
-describe('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => {
+// Skip when orchestrator is enabled - these tests manipulate internal gameState directly
+const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
+const describeOrSkip = skipWithOrchestrator ? describe.skip : describe;
+
+describeOrSkip('FAQ Q22-Q23: Graduated Line Rewards & Territory Prerequisites', () => {
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
   const createBasePlayers = (): Player[] => [

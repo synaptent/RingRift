@@ -18,7 +18,7 @@ export type ChoiceStatus =
       gameId: string;
       choiceId: string;
       playerNumber: number;
-      choiceType?: PlayerChoiceType;
+      choiceType?: PlayerChoiceType | undefined;
       requestedAt: number;
       /** Wall-clock deadline when the choice will time out, in ms since epoch. */
       deadlineAt: number;
@@ -28,7 +28,7 @@ export type ChoiceStatus =
       gameId: string;
       choiceId: string;
       playerNumber: number;
-      choiceType?: PlayerChoiceType;
+      choiceType?: PlayerChoiceType | undefined;
       completedAt: number;
     }
   | {
@@ -36,7 +36,7 @@ export type ChoiceStatus =
       gameId: string;
       choiceId: string;
       playerNumber: number;
-      choiceType?: PlayerChoiceType;
+      choiceType?: PlayerChoiceType | undefined;
       completedAt: number;
       reason: ChoiceRejectionReason;
     }
@@ -45,7 +45,7 @@ export type ChoiceStatus =
       gameId: string;
       choiceId: string;
       playerNumber: number;
-      choiceType?: PlayerChoiceType;
+      choiceType?: PlayerChoiceType | undefined;
       completedAt: number;
       reason: ChoiceCancelReason;
     }
@@ -54,7 +54,7 @@ export type ChoiceStatus =
       gameId: string;
       choiceId: string;
       playerNumber: number;
-      choiceType?: PlayerChoiceType;
+      choiceType?: PlayerChoiceType | undefined;
       requestedAt: number;
       deadlineAt: number;
       completedAt: number;

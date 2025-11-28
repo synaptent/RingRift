@@ -1,5 +1,17 @@
 # Python Parity Requirements
 
+> **SSoT alignment:** This document is a derived parity/contract view over the canonical TS rules engine. It explains how the Python rules implementation in `ai-service/app/**` is validated against the **Canonical TS rules surface** (`src/shared/engine/**` helpers + aggregates + orchestrator + contracts and v2 contract vectors), and how parity fixtures/tests are maintained. It does not define new rules semantics.
+>
+> **Doc Status (2025-11-26): Active (with historical TypeScript implementation details)**
+>
+> - Canonical TS rules surface is the helpers + aggregates + orchestrator stack under `src/shared/engine/`: `core.ts`, movement/capture/line/territory/victory helpers, `aggregates/*Aggregate.ts`, and `orchestration/turnOrchestrator.ts` / `phaseStateMachine.ts`, plus contract vectors in `src/shared/engine/contracts/**` and `tests/fixtures/contract-vectors/v2/*.json`.
+> - Function and class names under `validators/*.ts` and `mutators/*.ts` in the tables below should be read as **semantic anchors**, not necessarily 1:1 concrete TS files. As of this date, only `validators/PlacementValidator.ts` and a subset of `mutators/*Mutator.ts` exist on the TS side; the rest of the semantics are expressed via helpers, aggregates, and the orchestrator and are exercised by:
+>   - TS contract tests in `tests/contracts/contractVectorRunner.test.ts`
+>   - Shared-engine parity in `tests/unit/TraceFixtures.sharedEngineParity.test.ts`
+>   - Backend↔sandbox parity in `tests/unit/Backend_vs_Sandbox.*.test.ts`
+>   - Python contract tests in `ai-service/tests/contracts/test_contract_vectors.py`
+> - When this document refers to e.g. `MovementValidator` or `LineMutator` on the TS side, it is describing the **domain boundary** that the Python `validators/*` and `mutators/*` modules implement and validate against, with the shared contract vectors as the canonical spec.
+
 **Task:** T1-W1-F  
 **Date:** 2025-11-26  
 **Status:** Complete
@@ -25,7 +37,14 @@ The Python rules engine serves two primary purposes:
 | **Validation**   | Pure functions                     | Shadow contract validation against TS   |
 | **Code Sharing** | Used by Server + Client            | Language boundary prevents sharing      |
 
-### 1.3 Architecture Pattern
+### 1.3 Canonical Move Lifecycle & SSoT References
+
+- Move, `MoveType`, `GamePhase`, `GameStatus`, and player choice types are defined in the shared TS types under [`src/shared/types/game.ts`](../src/shared/types/game.ts).
+- Orchestrator result/decision types (`ProcessTurnResult`, `PendingDecision`, `DecisionType`, `VictoryState`, `ProcessingMetadata`) are defined under [`src/shared/engine/orchestration/types.ts`](../src/shared/engine/orchestration/types.ts).
+- WebSocket transport and `PlayerChoice*` decision surfaces are defined in [`src/shared/types/websocket.ts`](../src/shared/types/websocket.ts) and validated by [`src/shared/validation/websocketSchemas.ts`](../src/shared/validation/websocketSchemas.ts).
+- The canonical description of the Move → PendingDecision → PlayerChoice → WebSocket → Move.id lifecycle lives in [`docs/CANONICAL_ENGINE_API.md`](./CANONICAL_ENGINE_API.md); this document defers all lifecycle semantics to that SSoT and focuses purely on TS↔Python rules parity.
+
+### 1.4 Architecture Pattern
 
 The Python AI service uses a **shadow contract validation** pattern:
 
@@ -136,24 +155,24 @@ The Python AI service uses a **shadow contract validation** pattern:
 
 ### 2.9 Mutators
 
-| TS Mutator         | TS File                        | Python Mutator                                                        | Python File             | Parity Status | Notes                   |
-| ------------------ | ------------------------------ | --------------------------------------------------------------------- | ----------------------- | ------------- | ----------------------- |
-| `PlacementMutator` | `mutators/PlacementMutator.ts` | [`PlacementMutator`](../ai-service/app/rules/mutators/placement.py:6) | `mutators/placement.py` | ✅ MATCHED    | Delegates to GameEngine |
-| `MovementMutator`  | `mutators/MovementMutator.ts`  | [`MovementMutator`](../ai-service/app/rules/mutators/movement.py:6)   | `mutators/movement.py`  | ✅ MATCHED    | Delegates to GameEngine |
-| `CaptureMutator`   | `mutators/CaptureMutator.ts`   | [`CaptureMutator`](../ai-service/app/rules/mutators/capture.py:6)     | `mutators/capture.py`   | ✅ MATCHED    | Delegates to GameEngine |
-| `LineMutator`      | `mutators/LineMutator.ts`      | [`LineMutator`](../ai-service/app/rules/mutators/line.py:6)           | `mutators/line.py`      | ✅ MATCHED    | Delegates to GameEngine |
-| `TerritoryMutator` | `mutators/TerritoryMutator.ts` | [`TerritoryMutator`](../ai-service/app/rules/mutators/territory.py:6) | `mutators/territory.py` | ✅ MATCHED    | Delegates to GameEngine |
-| `TurnMutator`      | `mutators/TurnMutator.ts`      | [`TurnMutator`](../ai-service/app/rules/mutators/turn.py:6)           | `mutators/turn.py`      | ✅ MATCHED    | Delegates to GameEngine |
+| TS Mutator         | TS File                                                                                               | Python Mutator                                                        | Python File             | Parity Status | Notes                                                                                  |
+| ------------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ----------------------- | ------------- | -------------------------------------------------------------------------------------- |
+| `PlacementMutator` | `mutators/PlacementMutator.ts`                                                                        | [`PlacementMutator`](../ai-service/app/rules/mutators/placement.py:6) | `mutators/placement.py` | ✅ MATCHED    | Delegates to GameEngine                                                                |
+| `MovementMutator`  | `mutators/MovementMutator.ts`                                                                         | [`MovementMutator`](../ai-service/app/rules/mutators/movement.py:6)   | `mutators/movement.py`  | ✅ MATCHED    | Delegates to GameEngine                                                                |
+| `CaptureMutator`   | `mutators/CaptureMutator.ts`                                                                          | [`CaptureMutator`](../ai-service/app/rules/mutators/capture.py:6)     | `mutators/capture.py`   | ✅ MATCHED    | Delegates to GameEngine                                                                |
+| `LineMutator`      | semantic boundary over shared line helpers (`lineDecisionHelpers.ts`, `LineAggregate.ts`)             | [`LineMutator`](../ai-service/app/rules/mutators/line.py:6)           | `mutators/line.py`      | ✅ MATCHED    | Python mutator implements the same domain boundary validated via line contract vectors |
+| `TerritoryMutator` | semantic boundary over shared territory helpers (`territoryProcessing.ts`, `TerritoryAggregate.ts`)   | [`TerritoryMutator`](../ai-service/app/rules/mutators/territory.py:6) | `mutators/territory.py` | ✅ MATCHED    | Python mutator implements the same domain boundary validated via territory contracts   |
+| `TurnMutator`      | semantic boundary over shared turn orchestrator (`turnLogic.ts`, `orchestration/turnOrchestrator.ts`) | [`TurnMutator`](../ai-service/app/rules/mutators/turn.py:6)           | `mutators/turn.py`      | ✅ MATCHED    | Python mutator implements the same domain boundary validated via turn/phase contracts  |
 
 ### 2.10 Validators
 
-| TS Validator         | TS File                            | Python Validator                                                          | Python File               | Parity Status | Notes         |
-| -------------------- | ---------------------------------- | ------------------------------------------------------------------------- | ------------------------- | ------------- | ------------- |
-| `PlacementValidator` | `validators/PlacementValidator.ts` | [`PlacementValidator`](../ai-service/app/rules/validators/placement.py:6) | `validators/placement.py` | ✅ MATCHED    | Reimplemented |
-| `MovementValidator`  | `validators/MovementValidator.ts`  | [`MovementValidator`](../ai-service/app/rules/validators/movement.py:7)   | `validators/movement.py`  | ✅ MATCHED    | Reimplemented |
-| `CaptureValidator`   | `validators/CaptureValidator.ts`   | [`CaptureValidator`](../ai-service/app/rules/validators/capture.py:7)     | `validators/capture.py`   | ✅ MATCHED    | Reimplemented |
-| `LineValidator`      | `validators/LineValidator.ts`      | [`LineValidator`](../ai-service/app/rules/validators/line.py:15)          | `validators/line.py`      | ✅ MATCHED    | Reimplemented |
-| `TerritoryValidator` | `validators/TerritoryValidator.ts` | [`TerritoryValidator`](../ai-service/app/rules/validators/territory.py:6) | `validators/territory.py` | ✅ MATCHED    | Reimplemented |
+| TS Validator         | TS File                                                                                             | Python Validator                                                          | Python File               | Parity Status | Notes                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------- | ------------- | ------------------------------------------------------------------------------------- |
+| `PlacementValidator` | `validators/PlacementValidator.ts`                                                                  | [`PlacementValidator`](../ai-service/app/rules/validators/placement.py:6) | `validators/placement.py` | ✅ MATCHED    | Reimplemented                                                                         |
+| `MovementValidator`  | semantic boundary over shared movement helpers (`movementLogic.ts`, `movementApplication.ts`)       | [`MovementValidator`](../ai-service/app/rules/validators/movement.py:7)   | `validators/movement.py`  | ✅ MATCHED    | Python validator enforces the same rules as TS movement helpers + RuleEngine binding  |
+| `CaptureValidator`   | semantic boundary over shared capture helpers (`captureLogic.ts`, `captureChainHelpers.ts`)         | [`CaptureValidator`](../ai-service/app/rules/validators/capture.py:7)     | `validators/capture.py`   | ✅ MATCHED    | Python validator enforces the same rules as TS capture helpers + RuleEngine binding   |
+| `LineValidator`      | semantic boundary over shared line helpers (`lineDetection.ts`, `lineDecisionHelpers.ts`)           | [`LineValidator`](../ai-service/app/rules/validators/line.py:15)          | `validators/line.py`      | ✅ MATCHED    | Python validator enforces the same rules as TS line helpers + RuleEngine binding      |
+| `TerritoryValidator` | semantic boundary over shared territory helpers (`territoryDetection.ts`, `territoryProcessing.ts`) | [`TerritoryValidator`](../ai-service/app/rules/validators/territory.py:6) | `validators/territory.py` | ✅ MATCHED    | Python validator enforces the same rules as TS territory helpers + RuleEngine binding |
 
 ### 2.11 Functions NOT Implemented in Python
 
@@ -293,33 +312,52 @@ The Python AI service uses a **shadow contract validation** pattern:
 - Global stalemate tie-breaker ladder
 - Rings-in-hand counted as eliminated for tie-breaking
 
+### 4.6 Heuristic Training & Evaluation Sanity
+
+While heuristic evaluation is **not** part of the canonical rules surface, the Python training/evaluation harness must behave in a way that meaningfully exercises different heuristic weight profiles and avoids degenerate “all policies look the same” failures.
+
+**Critical Requirements:**
+
+- The shared fitness evaluator [`evaluate_fitness`](../ai-service/scripts/run_cmaes_optimization.py) must:
+  - Distinguish a strong baseline (`heuristic_v1_balanced`) from a clearly bad profile (e.g. all-zero weights) under identical conditions.
+  - Correctly apply candidate weights to the `HeuristicAI` instances (no accidental reuse of baseline weights).
+  - Expose per-evaluation diagnostics (wins, draws, losses, and candidate–baseline L2 distance) via `debug_hook` so plateau investigations can see whether distinct policies are being explored.
+- `HeuristicAI` position evaluation must _depend_ on the active weight vector:
+  - On a nontrivial mid-game state, evaluations for baseline vs all-zero (or similarly extreme) profiles must differ for the same player.
+
+**Test Strategy:**
+
+- `ai-service/tests/test_heuristic_training_evaluation.py`:
+  - `test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline`:
+    - Asserts baseline vs baseline evaluates to ≈0.5 with symmetric W/L and zero weight distance.
+    - Asserts an all-zero profile loses decisively vs the same baseline and has non-zero `weight_l2`, confirming that the fitness harness both applies and distinguishes different weights.
+  - `test_heuristic_ai_position_evaluation_depends_on_weights`:
+    - Builds a mid-game Square8 state via the shared training helper (`create_initial_state` + baseline self-play).
+    - Verifies that `HeuristicAI.get_evaluation_breakdown(state)["total"]` differs between baseline and all-zero profiles on the same state.
+- `ai-service/tests/test_multi_start_evaluation.py`:
+  - Smoke-tests the `eval_mode="multi-start"` path in `evaluate_fitness` using a small, temporary Square8 state pool written in JSONL format.
+  - Confirms that the wiring between eval pools (`app/training/eval_pools.py`), the multi-start loop, and CLI-facing parameters (`--eval-mode`, `--state-pool-id`) is functional and yields baseline-vs-baseline fitness values in `[0.0, 1.0]`.
+- `ai-service/tests/test_eval_randomness_integration.py`:
+  - Integration-tests the `eval_randomness` parameter of `evaluate_fitness` in `scripts/run_cmaes_optimization.py`.
+  - Asserts that with a fixed `seed`, both `eval_randomness=0.0` (fully deterministic evaluation) and small non-zero values (controlled stochastic tie-breaking) produce deterministic, repeatable fitness values.
+  - Guards against regressions where hidden RNG sources (e.g. numpy, Python `random`) or refactors to tie-breaking introduce non-determinism into CMA-ES/GA evaluation despite fixed seeds.
+
+These tests are not rules-parity checks, but they are treated as **required sanity guards** for the heuristic training stack. Any change to `evaluate_fitness`, `HeuristicAI`, or the weight-application path that would cause these tests to pass trivially (e.g. equal fitness or identical evaluations for very different profiles) must be investigated as a potential wiring or plateau-diagnostics regression.
+
 ---
 
 ## 5. Test Parity Strategy
 
 ### 5.1 Shared Test Fixtures
 
-All parity tests use JSON fixtures stored in [`tests/fixtures/rules-parity/`](../tests/fixtures/rules-parity/).
+Primary cross-language rules parity is enforced via **contract vectors (v2)** stored in [`tests/fixtures/contract-vectors/v2/`](../tests/fixtures/contract-vectors/v2/).
 
-**Fixture Schema (v2):**
+- TypeScript runner: [`tests/contracts/contractVectorRunner.test.ts`](../tests/contracts/contractVectorRunner.test.ts)
+- Python runner: [`ai-service/tests/contracts/test_contract_vectors.py`](../ai-service/tests/contracts/test_contract_vectors.py)
+- Vector schemas: [`src/shared/engine/contracts/schemas.ts`](../src/shared/engine/contracts/schemas.ts) and [`src/shared/engine/contracts/serialization.ts`](../src/shared/engine/contracts/serialization.ts)
+- JSON examples: [`tests/fixtures/contract-vectors/v2/README.md`](../tests/fixtures/contract-vectors/v2/README.md)
 
-```json
-{
-  "version": "v2",
-  "fixture_type": "state_action" | "trace",
-  "board_type": "square8" | "square19" | "hexagonal",
-  "description": "Human-readable description",
-  "input": {
-    "state": { /* GameState JSON */ },
-    "action"?: { /* Move JSON */ }
-  },
-  "expected": {
-    "next_state"?: { /* GameState JSON */ },
-    "valid_moves"?: [ /* Move[] JSON */ ],
-    "state_hash"?: "canonical hash string"
-  }
-}
-```
+Legacy **trace-based fixtures** under [`tests/fixtures/rules-parity/`](../tests/fixtures/rules-parity/) are retained for historical debugging and seed/trace investigations (see `docs/PARITY_SEED_TRIAGE.md` and `RULES_SCENARIO_MATRIX.md`). They should not be treated as the primary spec for TS↔Python parity.
 
 ### 5.2 Deterministic Seed-Based Scenarios
 
@@ -341,19 +379,28 @@ const state = applyMove(state, ai.selectMove(state, rng));
 
 ### 5.3 Property-Based Testing for Equivalence
 
+> **Status:** As of 2025-11-26 this section is aspirational; property-based suites are not yet wired into CI and should be treated as future work.
+
 Use hypothesis (Python) and fast-check (TypeScript) for:
 
 1. **State hash equivalence:** `hash_game_state(state) === hashGameState(state)`
 2. **Move enumeration equivalence:** `set(py_moves) === set(ts_moves)`
 3. **State transition equivalence:** `apply_move(state, move) === applyMove(state, move)`
 
-### 5.4 Existing Parity Tests
+### 5.4 Existing Parity & Sanity Tests
 
-| Test Suite                                 | Location                  | Coverage                 |
-| ------------------------------------------ | ------------------------- | ------------------------ |
-| `test_default_engine_equivalence.py`       | `ai-service/tests/rules/` | Move application parity  |
-| `test_default_engine_flags.py`             | `ai-service/tests/rules/` | Mutator shadow contracts |
-| `TraceFixtures.sharedEngineParity.test.ts` | `tests/unit/`             | Trace replay parity      |
+| Test Suite                                   | Location                      | Coverage                                                                                    |
+| -------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
+| `contractVectorRunner.test.ts`               | `tests/contracts/`            | Contract vectors (TS): shared engine semantics → v2 contract vectors                        |
+| `test_contract_vectors.py`                   | `ai-service/tests/contracts/` | Contract vectors (Python): TS↔Python rules parity on v2 vectors                            |
+| `test_rules_parity_fixtures.py`              | `ai-service/tests/parity/`    | TS→Python trace/plateau parity using generated fixtures                                     |
+| `test_ts_seed_plateau_snapshot_parity.py`    | `ai-service/tests/parity/`    | Seed plateau snapshot parity against TS engine                                              |
+| `test_ai_plateau_progress.py`                | `ai-service/tests/parity/`    | AI plateau progress parity vs TS plateau traces                                             |
+| `test_line_and_territory_scenario_parity.py` | `ai-service/tests/parity/`    | Focused line+territory scenario parity using TS-generated fixtures                          |
+| `test_default_engine_equivalence.py`         | `ai-service/tests/rules/`     | Move application parity (DefaultRulesEngine vs GameEngine)                                  |
+| `test_default_engine_flags.py`               | `ai-service/tests/rules/`     | Mutator shadow contracts / safety flags                                                     |
+| `test_heuristic_training_evaluation.py`      | `ai-service/tests/`           | Heuristic training/evaluation sanity: fitness harness and HeuristicAI weight sensitivity    |
+| `TraceFixtures.sharedEngineParity.test.ts`   | `tests/unit/`                 | Legacy trace replay parity (diagnostic; see `docs/PARITY_SEED_TRIAGE.md` for usage context) |
 
 ---
 
@@ -385,11 +432,12 @@ flowchart TD
 
 ### 6.3 CI Integration
 
-The following CI checks enforce parity:
+The following CI checks enforce rules and parity guarantees (see [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
 
-1. **`test-typescript-parity`:** Runs TS engine against shared fixtures
-2. **`test-python-parity`:** Runs Python engine against same fixtures
-3. **`test-cross-language`:** Generates states in TS, validates in Python
+1. **`test` (Jest umbrella):** Runs the full TS Jest suite, including shared-engine unit tests and `tests/contracts/contractVectorRunner.test.ts`.
+2. **`ts-rules-engine`:** Runs `npm run test:ts-rules-engine`, focusing on rules-level suites and shared-engine invariants.
+3. **`python-core`:** Runs `python -m pytest` over `ai-service/tests` excluding `tests/parity/`, covering core Python rules/AI tests (including `test_heuristic_training_evaluation.py`).
+4. **`python-rules-parity`:** Generates TS→Python rules-parity fixtures via `tests/scripts/generate_rules_parity_fixtures.ts`, then runs `ai-service/tests/parity/test_rules_parity_fixtures.py` under `pytest`.
 
 ### 6.4 Documentation Requirements
 

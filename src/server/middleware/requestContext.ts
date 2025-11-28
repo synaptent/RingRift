@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import {
   RequestContext as LoggerRequestContext,
   runWithContext,
+  getRequestContext,
 } from '../utils/logger';
 
 /**
@@ -81,9 +82,6 @@ export const requestContext = (req: RequestWithId, res: Response, next: NextFunc
  */
 export const updateContextWithUser = (userId: string): void => {
   // Note: AsyncLocalStorage store is shared by reference, so we can modify it directly
-  // However, since we're using runWithContext which creates the store, we need
-  // to import the storage and modify it directly
-  const { getRequestContext } = require('../utils/logger');
   const context = getRequestContext();
   if (context) {
     context.userId = userId;

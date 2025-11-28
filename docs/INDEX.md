@@ -8,6 +8,7 @@
 - **Current Status:** [CURRENT_STATE_ASSESSMENT.md](../CURRENT_STATE_ASSESSMENT.md:1) - What works, what doesn't, and verified code status.
 - **Roadmap:** [STRATEGIC_ROADMAP.md](../STRATEGIC_ROADMAP.md:1) - Future plans and milestones.
 - **Rules Engine:** [RULES_ENGINE_ARCHITECTURE.md](../RULES_ENGINE_ARCHITECTURE.md:1) – Complete rules engine architecture including orchestration layer.
+- **Lifecycle & State Machines:** [docs/CANONICAL_ENGINE_API.md](./CANONICAL_ENGINE_API.md:1) – canonical engine API; [docs/STATE_MACHINES.md](./STATE_MACHINES.md:1) – shared session/AI/choice/connection state machines over the canonical API.
 - **AI, Rules & Training:** [AI_ARCHITECTURE.md](../AI_ARCHITECTURE.md:1) – High-level AI/rules/training architecture; [docs/AI_TRAINING_AND_DATASETS.md](./AI_TRAINING_AND_DATASETS.md:1) – AI service training & dataset pipelines; [docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md](./INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1) – incident report and fix for the TerritoryMutator divergence.
 
 ## 📖 Rules & Design
@@ -26,16 +27,17 @@
 
 The following documents record the 4-phase architecture remediation completed November 2025:
 
-- [docs/drafts/RULES_ENGINE_CONSOLIDATION_DESIGN.md](./drafts/RULES_ENGINE_CONSOLIDATION_DESIGN.md) - Original consolidation design document.
-- [docs/drafts/PHASE1_REMEDIATION_PLAN.md](./drafts/PHASE1_REMEDIATION_PLAN.md) - Production hardening tasks.
-- [docs/drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md](./drafts/PHASE3_ADAPTER_MIGRATION_REPORT.md) - Backend and sandbox adapter migration.
-- [docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md](./drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md) - Python contract test runner with 100% parity.
+- [docs/drafts/RULES_ENGINE_CONSOLIDATION_DESIGN.md](./drafts/RULES_ENGINE_CONSOLIDATION_DESIGN.md) - Original consolidation design document (design reference, partially historical).
+- [archive/PHASE1_REMEDIATION_PLAN.md](../archive/PHASE1_REMEDIATION_PLAN.md) - Historical Phase 1 production-hardening plan (superseded by `ARCHITECTURE_REMEDIATION_PLAN.md` and `CURRENT_STATE_ASSESSMENT.md`).
+- [archive/PHASE3_ADAPTER_MIGRATION_REPORT.md](../archive/PHASE3_ADAPTER_MIGRATION_REPORT.md) - Historical backend and sandbox adapter migration report (superseded by `ARCHITECTURE_ASSESSMENT.md` and `ARCHITECTURE_REMEDIATION_PLAN.md`).
+- [archive/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md](../archive/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md) - Historical Python contract test runner report (superseded by `docs/PYTHON_PARITY_REQUIREMENTS.md`, `AI_ARCHITECTURE.md`, and `ai-service/README.md`).
 
 ### Canonical Orchestrator (NEW)
 
 - [src/shared/engine/orchestration/README.md](../src/shared/engine/orchestration/README.md) - Orchestrator usage and API documentation.
 - [docs/CANONICAL_ENGINE_API.md](./CANONICAL_ENGINE_API.md) - Canonical engine public API specification.
 - [docs/MODULE_RESPONSIBILITIES.md](./MODULE_RESPONSIBILITIES.md) - Module catalog for shared engine.
+- [docs/ORCHESTRATOR_ROLLOUT_PLAN.md](./ORCHESTRATOR_ROLLOUT_PLAN.md:1) - Orchestrator-first rollout and legacy rules shutdown plan (Track A).
 
 ### Contract Testing (NEW)
 

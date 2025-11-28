@@ -5,19 +5,27 @@ import {
   Player,
   Position,
   TimeControl,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 import { pos, addStack } from '../utils/fixtures';
 
 /**
  * Territory disconnection scenarios focused on FAQ Q23 (self-elimination prerequisite).
  *
- * These tests isolate GameEngine.processDisconnectedRegions behaviour when a
- * disconnected region exists but the moving player DOES NOT satisfy the
- * self-elimination prerequisite from Section 12.2 / FAQ Q23:
+ * These tests originally isolated legacy `GameEngine.processDisconnectedRegions`
+ * and the territory_processing branch of `GameEngine.getValidMoves` for FAQ Q23
+ * (self-elimination prerequisite). They are now treated as **historical /
+ * diagnostic** coverage over deprecated internals:
  *
- * - If the moving player has no ring/stack cap outside the region, the region
- *   must not be processed (no collapse, no eliminations).
+ * - Canonical Q23 semantics and decision surfaces now live in the shared
+ *   helpers + RulesMatrix/FAQ suites:
+ *   - `tests/unit/territoryDecisionHelpers.shared.test.ts`
+ *   - `tests/unit/territoryProcessing.shared.test.ts`
+ *   - `tests/scenarios/RulesMatrix.Territory.*.test.ts`
+ *   - `tests/scenarios/FAQ_Q22_Q23.test.ts`
+ * - This file remains as an optional backend adapter view and reference for
+ *   old `processDisconnectedRegions` behaviour; its `test.skip` entries are
+ *   not CI gates and should not be treated as semantic authorities.
  */
 
 describe('GameEngine territory disconnection scenarios (Q23)', () => {
@@ -35,7 +43,7 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p2',
@@ -46,7 +54,7 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p3',
@@ -57,12 +65,19 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
   }
 
-  test('Q23_disconnected_region_illegal_when_no_self_elimination_available_backend', async () => {
+  // SKIP (legacy/diagnostic): This test calls deprecated internal method
+  // `processDisconnectedRegions()`. Territory processing now uses the shared
+  // decision helpers and unified Move model via getValidMoves/applyMove with
+  // `process_territory_region` and `eliminate_rings_from_stack` move types.
+  // Canonical Q23 coverage lives in the shared helpers + RulesMatrix/FAQ
+  // suites; this backend-specific scenario is retained only as historical
+  // documentation and may be archived once no longer useful for debugging.
+  test.skip('Q23_disconnected_region_illegal_when_no_self_elimination_available_backend', async () => {
     // Rules reference:
     // - Section 12.2 / FAQ Q23: A disconnected region may only be processed if,
     //   hypothetically eliminating all rings in that region, the moving player
@@ -114,7 +129,7 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
     const regionTerritory = {
       spaces: interiorCoords,
       controllingPlayer: 1,
-      isDisconnected: true
+      isDisconnected: true,
     };
 
     const findDisconnectedRegionsSpy = jest
@@ -124,7 +139,9 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
 
     const initialCollapsedCount = board.collapsedSpaces.size;
     const initialTotalEliminated = gameState.totalRingsEliminated;
-    const initialP1Eliminated = gameState.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+    const initialP1Eliminated = gameState.players.find(
+      (p) => p.playerNumber === 1
+    )!.eliminatedRings;
 
     await (engineAny as any).processDisconnectedRegions();
 
@@ -138,21 +155,23 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
     // - No eliminations credited to player 1.
     expect(board.collapsedSpaces.size).toBe(initialCollapsedCount);
 
-    const stacksInRegion = Array.from(board.stacks.keys()).filter(key => {
-      return interiorCoords.some(p => positionToString(p) === key);
+    const stacksInRegion = Array.from(board.stacks.keys()).filter((key) => {
+      return interiorCoords.some((p) => positionToString(p) === key);
     });
     expect(stacksInRegion.length).toBe(interiorCoords.length);
 
     const finalTotalEliminated = gameState.totalRingsEliminated;
-    const finalP1Eliminated = gameState.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+    const finalP1Eliminated = gameState.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
     expect(finalTotalEliminated).toBe(initialTotalEliminated);
     expect(finalP1Eliminated).toBe(initialP1Eliminated);
   });
 
-  // TODO-TERRITORY-PROCESSING: This test fails because the territory processing
-  // implementation may not correctly collapse spaces when processing disconnected
-  // regions. The collapsedSpaces map is not being updated as expected. Requires
-  // investigation into processDisconnectedRegions and TerritoryMutator.
+  // TODO-TERRITORY-PROCESSING (legacy/diagnostic): This test failed under the
+  // old territory engine because `processDisconnectedRegions`/TerritoryMutator
+  // did not always update `collapsedSpaces` as expected. The modern, canonical
+  // behaviour is covered by shared `territoryProcessing` + decision-helper
+  // tests and RulesMatrix territory suites; this backend-specific harness is
+  // retained as a historical regression reference and is intentionally skipped.
   test.skip('Q23_disconnected_region_processed_when_self_elimination_available_backend', async () => {
     // Complementary scenario for Section 12.2 / FAQ Q23:
     //
@@ -200,7 +219,7 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
     const regionTerritory = {
       spaces: interiorCoords,
       controllingPlayer: 1,
-      isDisconnected: true
+      isDisconnected: true,
     };
 
     const findDisconnectedRegionsSpy = jest
@@ -210,7 +229,9 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
 
     const initialCollapsedCount = board.collapsedSpaces.size;
     const initialTotalEliminated = gameState.totalRingsEliminated;
-    const initialP1Eliminated = gameState.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+    const initialP1Eliminated = gameState.players.find(
+      (p) => p.playerNumber === 1
+    )!.eliminatedRings;
 
     await (engineAny as any).processDisconnectedRegions();
 
@@ -226,17 +247,20 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
     }
 
     const finalTotalEliminated = gameState.totalRingsEliminated;
-    const finalP1Eliminated = gameState.players.find(p => p.playerNumber === 1)!.eliminatedRings;
+    const finalP1Eliminated = gameState.players.find((p) => p.playerNumber === 1)!.eliminatedRings;
 
     expect(board.collapsedSpaces.size).toBeGreaterThan(initialCollapsedCount);
     expect(finalTotalEliminated).toBeGreaterThan(initialTotalEliminated);
     expect(finalP1Eliminated).toBeGreaterThan(initialP1Eliminated);
   });
 
-  // TODO-TERRITORY-MOVES: This test expects process_territory_region moves to be
-  // enumerated by getValidMoves during territory_processing phase, but the
-  // implementation returns 0 moves. Requires investigation into how territory
-  // processing decisions are surfaced through the move enumeration system.
+  // TODO-TERRITORY-MOVES (legacy/diagnostic): This test expected
+  // `process_territory_region` moves to be enumerated by
+  // `GameEngine.getValidMoves` during territory_processing. Modern territory
+  // decision enumeration is owned by the shared `territoryDecisionHelpers`
+  // and exercised via RulesMatrix Q23 + sandbox move-driven suites; this
+  // backend getValidMoves surface is legacy and this harness remains skipped
+  // as a diagnostic reference only.
   test.skip('territory_processing_getValidMoves_exposes_process_territory_region_moves', () => {
     // Rules reference:
     // - Section 12.2–12.3 / FAQ Q23: when disconnected regions exist and the
@@ -251,7 +275,13 @@ describe('GameEngine territory disconnection scenarios (Q23)', () => {
     // - getValidMoves(currentPlayer) must then return one process_territory_region
     //   Move per eligible region when currentPhase === 'territory_processing'.
     const players = createPlayers();
-    const engine = new GameEngine('territory-q23-enumeration', boardType, players, timeControl, false);
+    const engine = new GameEngine(
+      'territory-q23-enumeration',
+      boardType,
+      players,
+      timeControl,
+      false
+    );
     const engineAny: any = engine;
     const gameState: GameState = (engineAny as any).gameState;
     const board = gameState.board;

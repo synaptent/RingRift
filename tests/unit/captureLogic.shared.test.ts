@@ -15,9 +15,7 @@ import {
   addStack,
   pos,
 } from '../utils/fixtures';
-import { BoardManager } from '../../src/server/game/BoardManager';
-import { RuleEngine } from '../../src/server/game/RuleEngine';
-import { getCaptureOptionsFromPosition as getBackendCaptureOptions } from '../../src/server/game/rules/captureChainEngine';
+import { getChainCaptureContinuationInfo } from '../../src/shared/engine/aggregates/CaptureAggregate';
 
 // Classification: canonical shared capture helper tests for enumerateCaptureMoves
 // and backend parity in simple and multi-direction capture scenarios.
@@ -86,7 +84,7 @@ describe('enumerateCaptureMoves shared helper', () => {
 
     expect(sharedSegments.length).toBeGreaterThan(0);
 
-    // Backend path: captureChainEngine.getCaptureOptionsFromPosition via real RuleEngine.
+    // Backend path: CaptureAggregate.getChainCaptureContinuationInfo
     const players: Player[] = [createTestPlayer(1), createTestPlayer(2)];
     const state: GameState = createTestGameState({
       boardType,
@@ -96,12 +94,11 @@ describe('enumerateCaptureMoves shared helper', () => {
       currentPhase: 'capture',
     });
 
-    const manager = new BoardManager(boardType);
-    const engine = new RuleEngine(manager, boardType as any);
-    const backendMoves = getBackendCaptureOptions(from, player, state, {
-      boardManager: manager,
-      ruleEngine: engine,
-    });
+    const { availableContinuations: backendMoves } = getChainCaptureContinuationInfo(
+      state,
+      player,
+      from
+    );
 
     const backendSegments = backendMoves.map((m: Move) => ({
       from: positionToString(m.from as Position),

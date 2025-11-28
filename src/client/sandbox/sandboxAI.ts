@@ -16,6 +16,7 @@ import {
   enumerateChooseLineRewardMoves,
   enumerateProcessTerritoryRegionMoves,
   enumerateTerritoryEliminationMoves,
+  evaluateSkipPlacementEligibility as evaluateSkipPlacementEligibilityAggregate,
 } from '../../shared/engine';
 import {
   isSandboxAiCaptureDebugEnabled,
@@ -416,83 +417,41 @@ export async function maybeRunAITurnSandbox(
         // With no rings in hand, ring_placement is not a real decision
         // phase under the rules: the player must either move from
         // existing stacks or, if completely blocked, undergo forced
-        // elimination. Leaving this as a pure no-op would violate the
-        // termination ladder and allow structural stalls when the
-        // surrounding controller does not advance phases on its own.
-        const boardForSkip = gameState.board;
-        const playerStacksForSkip = hooks.getPlayerStacks(current.playerNumber, boardForSkip);
-        const hasAnyActionFromStacks =
-          playerStacksForSkip.length > 0 &&
-          playerStacksForSkip.some((stack) =>
-            hooks.hasAnyLegalMoveOrCaptureFrom(stack.position, current.playerNumber, boardForSkip)
+        // elimination. Skip-placement moves with ringsInHand == 0 are
+        // never legal; backend hosts advance phases without requiring
+        // an explicit skip_placement decision.
+        const beforeElimState = hooks.getGameState();
+        const beforeElimHash = hashGameState(beforeElimState);
+
+        const eliminated = hooks.maybeProcessForcedEliminationForCurrentPlayer();
+        debugForcedEliminationAttempted = true;
+        debugForcedEliminationEliminated = eliminated;
+
+        const afterElimState = hooks.getGameState();
+        const afterElimHash = hashGameState(afterElimState);
+
+        if (
+          SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED &&
+          !sandboxStallLoggingSuppressed &&
+          !eliminated &&
+          beforeElimHash === afterElimHash &&
+          afterElimState.gameStatus === 'active'
+        ) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[Sandbox AI Stall Diagnostic] Ring-placement (no rings) forced elimination did not change state',
+            {
+              boardType: gameState.boardType,
+              currentPlayer: gameState.currentPlayer,
+              currentPhase: gameState.currentPhase,
+              ringsInHand: gameState.players.map((p) => ({
+                playerNumber: p.playerNumber,
+                type: p.type,
+                ringsInHand: p.ringsInHand,
+                stacks: hooks.getPlayerStacks(p.playerNumber, gameState.board).length,
+              })),
+            }
           );
-
-        if (hasAnyActionFromStacks) {
-          // Legal moves exist from existing stacks: mirror backend
-          // RuleEngine.validateSkipPlacement by issuing an explicit
-          // skip_placement move so we always progress into the movement
-          // phase rather than silently stalling.
-          const stateForMove = hooks.getGameState();
-          const moveNumber = stateForMove.history.length + 1;
-          // For canonical skip_placement, no board coordinate is semantically
-          // meaningful; use the shared sentinel {0,0} so sandbox traces align
-          // with backend GameEngine and shared-engine fixtures.
-          const sentinelTo: Position = { x: 0, y: 0 };
-
-          const skipMove: Move = {
-            id: '',
-            type: 'skip_placement',
-            player: current.playerNumber,
-            from: undefined,
-            to: sentinelTo,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber,
-          } as Move;
-
-          await hooks.applyCanonicalMove(skipMove);
-
-          lastAIMove = skipMove;
-          hooks.setLastAIMove(lastAIMove);
-        } else {
-          // No rings in hand and no legal moves/placements: this is a
-          // true forced-elimination situation. Delegate to the shared
-          // helper so we either eliminate a cap and advance to the next
-          // player or, in degenerate cases, at least log a diagnostic
-          // when state does not change.
-          const beforeElimState = hooks.getGameState();
-          const beforeElimHash = hashGameState(beforeElimState);
-
-          const eliminated = hooks.maybeProcessForcedEliminationForCurrentPlayer();
-          debugForcedEliminationAttempted = true;
-          debugForcedEliminationEliminated = eliminated;
-
-          const afterElimState = hooks.getGameState();
-          const afterElimHash = hashGameState(afterElimState);
-
-          if (
-            SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED &&
-            !sandboxStallLoggingSuppressed &&
-            !eliminated &&
-            beforeElimHash === afterElimHash &&
-            afterElimState.gameStatus === 'active'
-          ) {
-            // eslint-disable-next-line no-console
-            console.warn(
-              '[Sandbox AI Stall Diagnostic] Ring-placement (no rings) forced elimination did not change state',
-              {
-                boardType: gameState.boardType,
-                currentPlayer: gameState.currentPlayer,
-                currentPhase: gameState.currentPhase,
-                ringsInHand: gameState.players.map((p) => ({
-                  playerNumber: p.playerNumber,
-                  type: p.type,
-                  ringsInHand: p.ringsInHand,
-                  stacks: hooks.getPlayerStacks(p.playerNumber, gameState.board).length,
-                })),
-              }
-            );
-          }
         }
 
         return;
@@ -504,11 +463,12 @@ export async function maybeRunAITurnSandbox(
       // legal move/capture available.
       const boardForSkip = gameState.board;
       const playerStacksForSkip = hooks.getPlayerStacks(current.playerNumber, boardForSkip);
-      const hasAnyActionFromStacks =
-        playerStacksForSkip.length > 0 &&
-        playerStacksForSkip.some((stack) =>
-          hooks.hasAnyLegalMoveOrCaptureFrom(stack.position, current.playerNumber, boardForSkip)
-        );
+      const skipEligibility = evaluateSkipPlacementEligibilityAggregate(
+        gameState,
+        current.playerNumber
+      );
+      const canSkipAggregate =
+        (skipEligibility as any).eligible ?? (skipEligibility as any).canSkip ?? false;
 
       const placementCandidates = hooks.enumerateLegalRingPlacements(current.playerNumber);
       debugPlacementCandidateCount = placementCandidates.length;
@@ -525,7 +485,7 @@ export async function maybeRunAITurnSandbox(
             count: placementCandidates.length,
             player: current.playerNumber,
             ringsInHand,
-            hasAnyActionFromStacks,
+            skipEligible: canSkipAggregate,
             playerStacksCount: playerStacksForSkip.length,
           })
         );
@@ -535,7 +495,7 @@ export async function maybeRunAITurnSandbox(
       // skip placement when backend would also allow it; otherwise, the
       // state is structurally blocked.
       if (placementCandidates.length === 0) {
-        if (hasAnyActionFromStacks) {
+        if (canSkipAggregate) {
           const stateForMove = hooks.getGameState();
           const moveNumber = stateForMove.history.length + 1;
           // For skip_placement, use the canonical sentinel {0,0}. The
@@ -614,6 +574,18 @@ export async function maybeRunAITurnSandbox(
       const remainingBySupply = ringsInHand;
       const maxAvailableGlobal = Math.min(remainingByCap, remainingBySupply);
 
+      // Determine whether the player has any legal moves or captures from
+      // existing stacks if they choose to skip placement. This mirrors the
+      // logic used in the placementCandidates === 0 branch above.
+      const hasAnyActionFromStacks = (() => {
+        for (const stack of stacksForPlayer) {
+          if (hooks.hasAnyLegalMoveOrCaptureFrom(stack.position, current.playerNumber, board)) {
+            return true;
+          }
+        }
+        return false;
+      })();
+
       if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
         // eslint-disable-next-line no-console
         console.log(
@@ -630,8 +602,8 @@ export async function maybeRunAITurnSandbox(
       }
 
       // When the player hits their ring cap (maxAvailableGlobal = 0), they can
-      // still skip placement if they have legal moves from existing stacks.
-      // This mirrors the logic at lines 520-550 for the placementCandidates === 0 case.
+      // still skip placement if they have legal moves from existing stacks and
+      // the aggregate reports that skipping is legal.
       if (maxAvailableGlobal <= 0) {
         if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
           // eslint-disable-next-line no-console
@@ -640,7 +612,7 @@ export async function maybeRunAITurnSandbox(
           );
         }
 
-        if (hasAnyActionFromStacks) {
+        if (canSkipAggregate) {
           // Player has hit cap but can skip placement and move existing stacks.
           // As with other skip_placement moves, use the canonical sentinel {0,0}
           // so backend and sandbox traces share the same representation.
@@ -769,7 +741,7 @@ export async function maybeRunAITurnSandbox(
         );
       }
 
-      if (hasAnyActionFromStacks) {
+      if (hasAnyActionFromStacks && canSkipAggregate) {
         // For canonical skip_placement candidates, always use the shared
         // sentinel {0,0}. The destination coordinate is ignored by rules
         // logic but must be consistent across engines for trace parity.
@@ -1198,18 +1170,35 @@ export async function maybeRunAITurnSandbox(
     const afterStateForHistory = hooks.getGameState();
     const afterHashForHistory = hashGameState(afterStateForHistory);
 
+    const stateUnchanged = beforeHashForHistory === afterHashForHistory;
+    const samePlayer =
+      debugPlayerNumber !== null && afterStateForHistory.currentPlayer === debugPlayerNumber;
+    const stillActive = afterStateForHistory.gameStatus === 'active';
+
+    if (stateUnchanged && samePlayer && stillActive) {
+      sandboxConsecutiveNoopAITurns += 1;
+    } else {
+      sandboxConsecutiveNoopAITurns = 0;
+    }
+
+    // Global safety net: if we observe a sustained sequence of no-op AI
+    // turns for the same player while the game remains active, mark the
+    // game as completed to avoid structural stalls.
+    if (
+      stateUnchanged &&
+      samePlayer &&
+      stillActive &&
+      sandboxConsecutiveNoopAITurns >= SANDBOX_NOOP_STALL_THRESHOLD
+    ) {
+      const stalled: GameState = {
+        ...afterStateForHistory,
+        gameStatus: 'completed',
+      };
+      hooks.setGameState(stalled);
+      sandboxStallLoggingSuppressed = true;
+    }
+
     if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && debugIsAiTurn) {
-      const stateUnchanged = beforeHashForHistory === afterHashForHistory;
-      const samePlayer =
-        debugPlayerNumber !== null && afterStateForHistory.currentPlayer === debugPlayerNumber;
-      const stillActive = afterStateForHistory.gameStatus === 'active';
-
-      if (stateUnchanged && samePlayer && stillActive) {
-        sandboxConsecutiveNoopAITurns += 1;
-      } else {
-        sandboxConsecutiveNoopAITurns = 0;
-      }
-
       const traceBuffer = getSandboxTraceBuffer();
       if (traceBuffer) {
         const turnEntry: SandboxAITurnTraceEntry = {

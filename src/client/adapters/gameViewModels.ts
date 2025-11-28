@@ -34,7 +34,7 @@ import type {
   BOARD_CONFIGS,
 } from '../../shared/types/game';
 import { positionToString } from '../../shared/types/game';
-import type { ConnectionStatus } from '../contexts/GameContext';
+import type { ConnectionStatus } from '../domain/GameAPI';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HUD View Model

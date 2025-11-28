@@ -1,0 +1,132 @@
+{
+  "config": {
+    "player1": "baseline_heuristic",
+    "player2": "baseline_heuristic",
+    "games": 10,
+    "board": "square8",
+    "seed": 43,
+    "max_moves_per_game": 200,
+    "minimax_depth": 3,
+    "timestamp": "2025-11-27T00:25:07.329822"
+  },
+  "results": {
+    "player1_wins": 5,
+    "player2_wins": 5,
+    "draws": 0,
+    "player1_win_rate": 0.5,
+    "player1_win_rate_ci95": [0.2366, 0.7634],
+    "avg_game_length": 42.0,
+    "avg_game_length_std": 0.0,
+    "avg_decision_time_p1": 0.4259,
+    "avg_decision_time_p2": 0.4186,
+    "total_runtime_seconds": 212.1,
+    "victory_types": {
+      "elimination": 10
+    },
+    "avg_p1_final_pieces": 16.0,
+    "avg_p2_final_pieces": 16.0,
+    "piece_advantage_p1": 0.0
+  },
+  "games": [
+    {
+      "game_number": 1,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 2,
+      "winner": "baseline_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 3,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 4,
+      "winner": "baseline_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 5,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 6,
+      "winner": "baseline_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 7,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 8,
+      "winner": "baseline_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 9,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 10,
+      "winner": "baseline_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    }
+  ]
+}

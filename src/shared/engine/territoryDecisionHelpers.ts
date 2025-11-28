@@ -20,7 +20,7 @@ import type { TerritoryProcessingContext } from './territoryProcessing';
  *   - `GameEngine.applyDecisionMove` branches for `process_territory_region`
  *     and `eliminate_rings_from_stack`.
  * - Sandbox:
- *   - [`sandboxTerritoryEngine.processDisconnectedRegionsForCurrentPlayerEngine`](src/client/sandbox/sandboxTerritoryEngine.ts:1)
+ *   - (legacy) `sandboxTerritoryEngine.processDisconnectedRegionsForCurrentPlayerEngine`
  *   - `ClientSandboxEngine.applyCanonicalMoveInternal` territory-processing
  *     branches.
  *

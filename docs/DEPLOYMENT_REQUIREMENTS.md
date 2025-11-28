@@ -1,5 +1,13 @@
 # RingRift Deployment Requirements
 
+> **Doc Status (2025-11-27): Active**
+>
+> **Role:** Canonical deployment requirements and environment-configuration guide for RingRift across development, staging, and production. Covers infra prerequisites, topology flags, health checks, resource limits, and validation/monitoring expectations for operators.
+>
+> **Not a semantics SSoT:** This document does not define game rules or lifecycle semantics. Rules semantics are owned by the shared TypeScript rules engine under `src/shared/engine/**` plus contracts and vectors (see `RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`). Lifecycle semantics are owned by `docs/CANONICAL_ENGINE_API.md` together with shared types/schemas in `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+>
+> **Related docs:** `docs/ENVIRONMENT_VARIABLES.md`, `docs/SECRETS_MANAGEMENT.md`, `docs/OPERATIONS_DB.md`, `docs/SECURITY_THREAT_MODEL.md`, `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`, `docs/ALERTING_THRESHOLDS.md`, and `DOCUMENTATION_INDEX.md`.
+
 This document outlines the requirements and configuration for deploying RingRift in different environments.
 
 ## Table of Contents
@@ -19,12 +27,12 @@ This document outlines the requirements and configuration for deploying RingRift
 
 ## Environment Overview
 
-| Environment | `NODE_ENV` | Purpose | Secret Handling |
-|-------------|------------|---------|-----------------|
-| Development | `development` | Local development | Placeholder secrets OK |
-| Staging | `production` | Pre-production testing | Real secrets required |
-| Production | `production` | Live application | Secrets from vault |
-| Test | `test` | Automated testing | In-memory/mocked |
+| Environment | `NODE_ENV`    | Purpose                | Secret Handling        |
+| ----------- | ------------- | ---------------------- | ---------------------- |
+| Development | `development` | Local development      | Placeholder secrets OK |
+| Staging     | `production`  | Pre-production testing | Real secrets required  |
+| Production  | `production`  | Live application       | Secrets from vault     |
+| Test        | `test`        | Automated testing      | In-memory/mocked       |
 
 ---
 
@@ -61,11 +69,11 @@ npm run dev
 
 ### Optional Services
 
-| Service | Required | Fallback Behavior |
-|---------|----------|-------------------|
-| PostgreSQL | Yes | No fallback - required for data persistence |
-| Redis | No | In-memory rate limiting and caching |
-| AI Service | No | Local heuristic-based AI moves |
+| Service    | Required | Fallback Behavior                           |
+| ---------- | -------- | ------------------------------------------- |
+| PostgreSQL | Yes      | No fallback - required for data persistence |
+| Redis      | No       | In-memory rate limiting and caching         |
+| AI Service | No       | Local heuristic-based AI moves              |
 
 ### Development-Specific Settings
 
@@ -117,12 +125,12 @@ DB_PASSWORD=<real-database-password>
 
 All services must pass health checks before the app starts:
 
-| Service | Health Check | Timeout |
-|---------|--------------|---------|
-| postgres | `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB` | 30s startup |
-| redis | `redis-cli ping` | 10s startup |
-| ai-service | HTTP `/health` | 20s startup |
-| app | HTTP `/health` | 5s startup |
+| Service    | Health Check                                   | Timeout     |
+| ---------- | ---------------------------------------------- | ----------- |
+| postgres   | `pg_isready -U $POSTGRES_USER -d $POSTGRES_DB` | 30s startup |
+| redis      | `redis-cli ping`                               | 10s startup |
+| ai-service | HTTP `/health`                                 | 20s startup |
+| app        | HTTP `/health`                                 | 5s startup  |
 
 ---
 
@@ -184,6 +192,7 @@ JWT_SECRET=Tg7k3X9p2Qm8Yw6Rh4Bv1Fn5Jc0LdSeAiUo...             # ✅ OK
 ```
 
 Generate production secrets:
+
 ```bash
 # JWT secrets (minimum 32 characters)
 openssl rand -base64 48
@@ -194,14 +203,14 @@ openssl rand -base64 32
 
 ### Resource Limits
 
-| Service | Memory Limit | Memory Reservation | CPU (if applicable) |
-|---------|-------------|--------------------|--------------------|
-| app | 512MB | 256MB | Based on load testing |
-| postgres | 256MB | 128MB | Based on load testing |
-| redis | 128MB | 64MB | - |
-| ai-service | 512MB | 256MB | Based on load testing |
-| prometheus | 512MB | 256MB | - |
-| grafana | 256MB | 128MB | - |
+| Service    | Memory Limit | Memory Reservation | CPU (if applicable)   |
+| ---------- | ------------ | ------------------ | --------------------- |
+| app        | 512MB        | 256MB              | Based on load testing |
+| postgres   | 256MB        | 128MB              | Based on load testing |
+| redis      | 128MB        | 64MB               | -                     |
+| ai-service | 512MB        | 256MB              | Based on load testing |
+| prometheus | 512MB        | 256MB              | -                     |
+| grafana    | 256MB        | 128MB              | -                     |
 
 ---
 
@@ -219,11 +228,11 @@ ai-service (healthy) ┘
 
 ### Internal DNS (Docker)
 
-| Service | Internal URL |
-|---------|--------------|
+| Service    | Internal URL                                                |
+| ---------- | ----------------------------------------------------------- |
 | PostgreSQL | `postgresql://ringrift:$DB_PASSWORD@postgres:5432/ringrift` |
-| Redis | `redis://redis:6379` |
-| AI Service | `http://ai-service:8001` |
+| Redis      | `redis://redis:6379`                                        |
+| AI Service | `http://ai-service:8001`                                    |
 
 ---
 
@@ -231,19 +240,19 @@ ai-service (healthy) ┘
 
 ### Required in All Environments
 
-| Variable | Description |
-|----------|-------------|
-| `NODE_ENV` | Environment mode: development, staging, production, test |
-| `DATABASE_URL` | PostgreSQL connection string |
+| Variable       | Description                                              |
+| -------------- | -------------------------------------------------------- |
+| `NODE_ENV`     | Environment mode: development, staging, production, test |
+| `DATABASE_URL` | PostgreSQL connection string                             |
 
 ### Required in Production/Staging
 
-| Variable | Description |
-|----------|-------------|
-| `JWT_SECRET` | JWT signing secret (min 32 chars, no placeholders) |
+| Variable             | Description                                          |
+| -------------------- | ---------------------------------------------------- |
+| `JWT_SECRET`         | JWT signing secret (min 32 chars, no placeholders)   |
 | `JWT_REFRESH_SECRET` | Refresh token secret (min 32 chars, no placeholders) |
-| `REDIS_URL` | Redis connection string |
-| `AI_SERVICE_URL` | AI service base URL |
+| `REDIS_URL`          | Redis connection string                              |
+| `AI_SERVICE_URL`     | AI service base URL                                  |
 
 ### Optional with Defaults
 
@@ -260,6 +269,7 @@ GET /health
 ```
 
 Response (200 OK):
+
 ```json
 {
   "status": "healthy",
@@ -276,6 +286,7 @@ Response (200 OK):
 ### Docker Health Check
 
 Defined in Dockerfile:
+
 ```dockerfile
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
@@ -303,11 +314,11 @@ services:
 ```yaml
 resources:
   requests:
-    memory: "256Mi"
-    cpu: "100m"
+    memory: '256Mi'
+    cpu: '100m'
   limits:
-    memory: "512Mi"
-    cpu: "500m"
+    memory: '512Mi'
+    cpu: '500m'
 ```
 
 ---
@@ -347,6 +358,7 @@ npm run validate:deployment
 ```
 
 This checks:
+
 - All env vars in docker-compose are documented in .env.example
 - No hardcoded secrets in compose files
 - Health checks are configured
@@ -386,11 +398,11 @@ docker-compose up -d
 
 ### Monitoring Services
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| Prometheus | 9090 | Metrics collection |
-| Alertmanager | 9093 | Alert routing |
-| Grafana | 3002 | Dashboards |
+| Service      | Port | Purpose            |
+| ------------ | ---- | ------------------ |
+| Prometheus   | 9090 | Metrics collection |
+| Alertmanager | 9093 | Alert routing      |
+| Grafana      | 3002 | Dashboards         |
 
 See [`monitoring/`](../monitoring/) for configuration files.
 
@@ -429,3 +441,4 @@ npm run validate:deployment
 
 # Interactive shell in container
 docker-compose exec app sh
+```

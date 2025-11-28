@@ -51,20 +51,17 @@ export function mutateMovement(state: GameState, action: MoveStackAction): GameS
       // - Remove the marker
       newState.board.markers.delete(toKey);
 
-      // - Eliminate the bottom ring of the moving stack (which is the top ring in the array representation? No, rings are bottom-to-top)
-      // Wait, let's check RingStack definition in types/game.ts: "rings: number[]; // Array of player numbers, bottom to top"
-      // So index 0 is bottom, index length-1 is top.
-
-      // Rule 8.2: "If you land on your own marker... remove the marker... and remove the bottom-most ring from your stack."
-      const bottomRingOwner = stack.rings[0];
-      const newRings = stack.rings.slice(1);
+      // - Eliminate the TOP ring of the moving stack (per rules 8.2, 8.3, 16.5.1)
+      // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
+      const topRingOwner = stack.rings[0];
+      const newRings = stack.rings.slice(1); // Remove first element (the top)
 
       // Update elimination counts
       newState.totalRingsEliminated++;
-      newState.board.eliminatedRings[bottomRingOwner] =
-        (newState.board.eliminatedRings[bottomRingOwner] || 0) + 1;
+      newState.board.eliminatedRings[topRingOwner] =
+        (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
 
-      const player = newState.players.find((p) => p.playerNumber === bottomRingOwner);
+      const player = newState.players.find((p) => p.playerNumber === topRingOwner);
       if (player) {
         player.eliminatedRings++;
       }
@@ -76,7 +73,7 @@ export function mutateMovement(state: GameState, action: MoveStackAction): GameS
           rings: newRings,
           stackHeight: newRings.length,
           capHeight: calculateCapHeight(newRings),
-          controllingPlayer: newRings[newRings.length - 1],
+          controllingPlayer: newRings[0], // New top ring is the controller
         });
       }
     } else {

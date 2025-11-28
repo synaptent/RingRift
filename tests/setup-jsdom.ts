@@ -19,3 +19,257 @@ Object.defineProperty(global, 'importMeta', {
   writable: true,
   configurable: true,
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WebSocket Mock for Client-Side Tests
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Mock WebSocket implementation for testing.
+ *
+ * Supports standard WebSocket properties and methods, plus helper methods
+ * for simulating server behavior in tests.
+ *
+ * Usage in tests:
+ * ```typescript
+ * const ws = new WebSocket('ws://localhost:3000');
+ *
+ * // Simulate receiving a message
+ * (ws as MockWebSocket)._simulateMessage(JSON.stringify({ type: 'update' }));
+ *
+ * // Simulate an error
+ * (ws as MockWebSocket)._simulateError();
+ *
+ * // Simulate server closing connection
+ * (ws as MockWebSocket)._simulateClose(1000, 'Normal closure');
+ * ```
+ */
+class MockWebSocket {
+  // WebSocket ready state constants
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+
+  // Instance ready state constants (for compatibility)
+  readonly CONNECTING = 0;
+  readonly OPEN = 1;
+  readonly CLOSING = 2;
+  readonly CLOSED = 3;
+
+  url: string;
+  readyState: number;
+  protocol: string = '';
+  extensions: string = '';
+  bufferedAmount: number = 0;
+  binaryType: BinaryType = 'blob';
+
+  // Event handlers
+  onopen: ((this: WebSocket, ev: Event) => any) | null = null;
+  onclose: ((this: WebSocket, ev: CloseEvent) => any) | null = null;
+  onmessage: ((this: WebSocket, ev: MessageEvent) => any) | null = null;
+  onerror: ((this: WebSocket, ev: Event) => any) | null = null;
+
+  // Track sent messages for test assertions
+  private _sentMessages: (string | ArrayBuffer | Blob | ArrayBufferView)[] = [];
+  private _eventListeners: Map<string, Set<EventListener>> = new Map();
+
+  constructor(url: string | URL, protocols?: string | string[]) {
+    this.url = typeof url === 'string' ? url : url.toString();
+    this.readyState = MockWebSocket.CONNECTING;
+
+    if (protocols) {
+      this.protocol = Array.isArray(protocols) ? protocols[0] || '' : protocols;
+    }
+
+    // Auto-open in next tick for testing convenience
+    // This simulates successful connection
+    setTimeout(() => {
+      if (this.readyState === MockWebSocket.CONNECTING) {
+        this.readyState = MockWebSocket.OPEN;
+        const openEvent = new Event('open');
+        this._dispatchEvent('open', openEvent);
+        this.onopen?.call(this as unknown as WebSocket, openEvent);
+      }
+    }, 0);
+  }
+
+  /**
+   * Send data through the WebSocket
+   */
+  send(data: string | ArrayBuffer | Blob | ArrayBufferView): void {
+    if (this.readyState === MockWebSocket.CONNECTING) {
+      throw new DOMException(
+        "Failed to execute 'send' on 'WebSocket': Still in CONNECTING state.",
+        'InvalidStateError'
+      );
+    }
+    if (this.readyState !== MockWebSocket.OPEN) {
+      // WebSocket spec says to silently discard if not OPEN
+      return;
+    }
+    this._sentMessages.push(data);
+  }
+
+  /**
+   * Close the WebSocket connection
+   */
+  close(code: number = 1000, reason: string = ''): void {
+    if (this.readyState === MockWebSocket.CLOSING || this.readyState === MockWebSocket.CLOSED) {
+      return;
+    }
+
+    this.readyState = MockWebSocket.CLOSING;
+
+    // Simulate async close
+    setTimeout(() => {
+      this.readyState = MockWebSocket.CLOSED;
+      const closeEvent = new CloseEvent('close', {
+        code,
+        reason,
+        wasClean: code === 1000,
+      });
+      this._dispatchEvent('close', closeEvent);
+      this.onclose?.call(this as unknown as WebSocket, closeEvent);
+    }, 0);
+  }
+
+  /**
+   * Add event listener
+   */
+  addEventListener(type: string, listener: EventListener): void {
+    if (!this._eventListeners.has(type)) {
+      this._eventListeners.set(type, new Set());
+    }
+    this._eventListeners.get(type)!.add(listener);
+  }
+
+  /**
+   * Remove event listener
+   */
+  removeEventListener(type: string, listener: EventListener): void {
+    this._eventListeners.get(type)?.delete(listener);
+  }
+
+  /**
+   * Dispatch event to listeners
+   */
+  dispatchEvent(event: Event): boolean {
+    this._dispatchEvent(event.type, event);
+    return true;
+  }
+
+  private _dispatchEvent(type: string, event: Event): void {
+    const listeners = this._eventListeners.get(type);
+    if (listeners) {
+      listeners.forEach((listener) => {
+        try {
+          listener.call(this, event);
+        } catch (e) {
+          console.error('Error in WebSocket event listener:', e);
+        }
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Test Helper Methods
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Simulate receiving a message from the server
+   */
+  _simulateMessage(data: string | ArrayBuffer | Blob): void {
+    if (this.readyState !== MockWebSocket.OPEN) {
+      console.warn('Cannot simulate message on non-open WebSocket');
+      return;
+    }
+    const messageEvent = new MessageEvent('message', { data });
+    this._dispatchEvent('message', messageEvent);
+    this.onmessage?.call(this as unknown as WebSocket, messageEvent);
+  }
+
+  /**
+   * Simulate a connection error
+   */
+  _simulateError(message?: string): void {
+    const errorEvent = new Event('error');
+    // Add message property for debugging if provided
+    if (message) {
+      Object.defineProperty(errorEvent, 'message', { value: message });
+    }
+    this._dispatchEvent('error', errorEvent);
+    this.onerror?.call(this as unknown as WebSocket, errorEvent);
+  }
+
+  /**
+   * Simulate server closing the connection
+   */
+  _simulateClose(code: number = 1000, reason: string = ''): void {
+    if (this.readyState === MockWebSocket.CLOSED) {
+      return;
+    }
+    this.readyState = MockWebSocket.CLOSED;
+    const closeEvent = new CloseEvent('close', {
+      code,
+      reason,
+      wasClean: code === 1000,
+    });
+    this._dispatchEvent('close', closeEvent);
+    this.onclose?.call(this as unknown as WebSocket, closeEvent);
+  }
+
+  /**
+   * Simulate successful connection opening
+   * Useful when you want to control when connection opens
+   */
+  _simulateOpen(): void {
+    if (this.readyState !== MockWebSocket.CONNECTING) {
+      console.warn('Cannot simulate open on non-connecting WebSocket');
+      return;
+    }
+    this.readyState = MockWebSocket.OPEN;
+    const openEvent = new Event('open');
+    this._dispatchEvent('open', openEvent);
+    this.onopen?.call(this as unknown as WebSocket, openEvent);
+  }
+
+  /**
+   * Get all messages that have been sent through this WebSocket
+   */
+  _getSentMessages(): (string | ArrayBuffer | Blob | ArrayBufferView)[] {
+    return [...this._sentMessages];
+  }
+
+  /**
+   * Clear the sent messages log
+   */
+  _clearSentMessages(): void {
+    this._sentMessages = [];
+  }
+
+  /**
+   * Get the last sent message
+   */
+  _getLastSentMessage(): string | ArrayBuffer | Blob | ArrayBufferView | undefined {
+    return this._sentMessages[this._sentMessages.length - 1];
+  }
+
+  /**
+   * Set ready state manually (for edge case testing)
+   */
+  _setReadyState(state: number): void {
+    this.readyState = state;
+  }
+}
+
+// Export the MockWebSocket class for type usage in tests
+export { MockWebSocket };
+
+// Add to global for browser environment simulation
+(global as any).WebSocket = MockWebSocket;
+
+// Also set on globalThis for modern environments
+if (typeof globalThis !== 'undefined') {
+  (globalThis as any).WebSocket = MockWebSocket;
+}

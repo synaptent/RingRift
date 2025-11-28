@@ -1,12 +1,9 @@
-> **Status:** Historical deep-dive. This document captures an in-depth
-> assessment of the Python AI service from an earlier revision of the
-> architecture. For the **current canonical overview**, see
-> `AI_ARCHITECTURE.md`. For the **current backlog and follow-up tasks**, see
-> `AI_IMPROVEMENT_BACKLOG.md`.
+> **Doc Status (2025-11-27): Partially historical (AI host analysis, Python service only)**
 >
-> Some implementation details here (especially difficulty ladders, RNG
-> plumbing, and rules parity) have since been updated; defer to the canonical
-> documents above for ground truth.
+> - Role: deep technical assessment of the Python AI microservice (agents, training flows, and Python `GameEngine`) from an earlier architecture revision.
+> - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
+> - For the current AI architecture and improvement backlog, prefer [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md), this repository’s live [`AI_IMPROVEMENT_PLAN.md`](./AI_IMPROVEMENT_PLAN.md), and [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/AI_TRAINING_AND_DATASETS.md).
+> - Related docs: historical variants in [`archive/AI_ASSESSMENT_REPORT.md`](../archive/AI_ASSESSMENT_REPORT.md) and [`archive/AI_IMPROVEMENT_PLAN.md`](../archive/AI_IMPROVEMENT_PLAN.md), parity and invariants meta-docs such as [`docs/PYTHON_PARITY_REQUIREMENTS.md`](../docs/PYTHON_PARITY_REQUIREMENTS.md), [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/STRICT_INVARIANT_SOAKS.md), [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md), and [`docs/PARITY_SEED_TRIAGE.md`](../docs/PARITY_SEED_TRIAGE.md).
 
 # AI Service Technical Assessment Report
 

@@ -1,5 +1,10 @@
 # RingRift Quick Start Guide
 
+**Doc Status (2025-11-27): Active (developer quickstart)**
+
+- Step-by-step setup and deployment guide for the TS backend, React client, and Python AI service.
+- Not a rules or lifecycle SSoT; for rules semantics defer to `RULES_CANONICAL_SPEC.md` + shared TS engine (`src/shared/engine/**`), and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+
 ## Game Completion
 
 When a game ends, you'll see a comprehensive victory screen showing:
@@ -28,10 +33,10 @@ Games can end in several ways:
 - **Territory Majority** (🏰): Control more than 50% of the board as collapsed Territory
 - **Last Player Standing** (👑): Be the only player who can still make legal moves
 - **Stalemate Draw** (🤝): When no moves are possible, the winner is determined by:
-   - Most Territory spaces (higher priority)
-   - Most rings eliminated (if Territory is tied)
-   - Most markers remaining (if still tied)
-   - Last player to complete a valid action (final tiebreaker)
+  - Most Territory spaces (higher priority)
+  - Most rings eliminated (if Territory is tied)
+  - Most markers remaining (if still tied)
+  - Last player to complete a valid action (final tiebreaker)
 
 ---
 
@@ -239,6 +244,16 @@ npm run test:coverage     # Coverage report
 
 > For a deeper understanding of what is implemented and where the gaps are, see `CURRENT_STATE_ASSESSMENT.md` and `README.md`.
 
+### Privacy and Data Management (GDPR Compliance)
+
+RingRift includes privacy-focused features for GDPR compliance:
+
+- **Account Deletion**: Users can delete their accounts via `DELETE /api/users/me`. This soft-deletes the account, anonymizes personal data (email and username), and revokes all authentication tokens.
+- **Data Export**: Users can export their data via `GET /api/users/me/export`. The export includes profile information, statistics, and game history in a downloadable JSON format.
+- **Data Retention**: Configurable retention policies clean up expired tokens, unverified accounts, and soft-deleted users. See [`docs/ENVIRONMENT_VARIABLES.md`](docs/ENVIRONMENT_VARIABLES.md) for configuration options.
+
+For implementation details, see [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](docs/DATA_LIFECYCLE_AND_PRIVACY.md).
+
 ### 1.7 Configuration Reference (Core Environment Variables)
 
 Most configuration is controlled via a root `.env` file for local development and
@@ -397,8 +412,8 @@ By default you’ll have:
 - **Nginx** proxy on `http://localhost/` (80) and `https://localhost/` (443), if configured
 - **PostgreSQL** on port `5432`
 - **Redis** on port `6379`
-- **Prometheus** on `http://localhost:9090`
-- **Grafana** on `http://localhost:3001`
+- **Prometheus** on `http://localhost:9090` (requires `--profile monitoring`)
+- **Grafana** on `http://localhost:3002` (requires `--profile monitoring`)
 
 > If you manually scale the `app` service (for example, `docker compose up --scale app=2`), you are leaving the default, supported topology. Update `RINGRIFT_APP_TOPOLOGY` and ensure infrastructure-enforced sticky sessions for WebSocket + game-affecting HTTP traffic before doing so.
 
@@ -448,7 +463,7 @@ For more context on **what is already covered** and where we’re headed with te
 
 - `CURRENT_STATE_ASSESSMENT.md` – coverage and feature completeness
 - `STRATEGIC_ROADMAP.md` – higher-level plan
-- `deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` – historical concrete steps toward a playable MVP; for current, code‑verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
+- `archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` – historical concrete steps toward a playable MVP; for current, code‑verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
 
 ---
 
@@ -459,16 +474,14 @@ Once you have the app and AI service running, the most impactful next steps are:
 1. **Exercise the Sandbox and Backend Games**
    - Use `/sandbox` to explore rules, chain captures, lines, and territory in a local-only environment.
    - Create a backend game from the lobby and play with an AI opponent (requires AI Service).
-   
    2. **Start Adding Scenario Tests**
       - Mirror examples from `ringrift_complete_rules.md` into Jest tests in `tests/unit/`.
       - Focus on chain capture edge cases, complex line/Territory interactions, and hex-board quirks.
-   
    3. **Improve HUD & Game UX**
       - Enhance `GameHUD` and `GamePage` to show phase, current player, ring counts, and Territory spaces.
       - Wire `VictoryModal` consistently for both backend and sandbox games.
 
-4. **Harden the AI Boundary**
+2. **Harden the AI Boundary**
    - Extend tests around `AIEngine`, `AIServiceClient`, and `AIInteractionHandler` to cover failure and timeout behaviour.
    - Add minimal logging/metrics for AI calls.
 
@@ -518,7 +531,7 @@ kill -9 <PID>
 **"command not found: docker"**
 
 - Install Docker Desktop, OrbStack, or Colima.
-- See `deprecated/DOCKER_SETUP.md` for historical Docker notes if needed.
+- See `docker-compose.yml` and `Dockerfile` for Docker configuration.
 
 **"Cannot connect to the Docker daemon"**
 
@@ -632,9 +645,9 @@ Once the stack is healthy, you should have:
   - PostgreSQL: `localhost:5432`
 - **Redis**:
   - Redis: `localhost:6379`
-- **Observability**:
+- **Observability** (requires `--profile monitoring`):
   - Prometheus: `http://localhost:9090`
-  - Grafana: `http://localhost:3001`
+  - Grafana: `http://localhost:3002`
 
 ### 8.4 Verifying the Staging Stack
 

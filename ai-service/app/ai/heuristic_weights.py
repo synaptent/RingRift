@@ -32,7 +32,7 @@ from typing import Dict, Mapping
 HeuristicWeights = Dict[str, float]
 
 
-# --- v1 Balanced Base Profile -------------------------------------------------
+# --- v1 Balanced Base Profile ----------------------------------------------
 #
 # These weights are derived from the legacy class-level constants in
 # ``heuristic_ai.py`` and represent the current "balanced" behaviour of
@@ -44,24 +44,65 @@ BASE_V1_BALANCED_WEIGHTS: HeuristicWeights = {
     "WEIGHT_STACK_CONTROL": 10.0,
     "WEIGHT_STACK_HEIGHT": 5.0,
     "WEIGHT_TERRITORY": 8.0,
-    "WEIGHT_RINGS_IN_HAND": 3.0,
+    # Softer emphasis on rings in hand; progress comes from on-board play.
+    "WEIGHT_RINGS_IN_HAND": 1.0,
     "WEIGHT_CENTER_CONTROL": 4.0,
-    "WEIGHT_ADJACENCY": 2.0,
+    # Adjacency/influence is currently disabled in the evaluator for
+    # TS/Python parity. The weight remains to keep the profile shape stable.
+    "WEIGHT_ADJACENCY": 0.0,
     "WEIGHT_OPPONENT_THREAT": 6.0,
     "WEIGHT_MOBILITY": 4.0,
     "WEIGHT_ELIMINATED_RINGS": 12.0,
     "WEIGHT_LINE_POTENTIAL": 7.0,
     "WEIGHT_VICTORY_PROXIMITY": 20.0,
-    "WEIGHT_MARKER_COUNT": 1.5,
+    # De-emphasise raw marker density; structure comes from territory/lines.
+    "WEIGHT_MARKER_COUNT": 0.5,
     "WEIGHT_VULNERABILITY": 8.0,
     "WEIGHT_OVERTAKE_POTENTIAL": 8.0,
-    "WEIGHT_TERRITORY_CLOSURE": 10.0,
-    "WEIGHT_LINE_CONNECTIVITY": 6.0,
+    # Reduce double-counting of structure; markers + connectivity already help.
+    "WEIGHT_TERRITORY_CLOSURE": 7.0,
+    "WEIGHT_LINE_CONNECTIVITY": 4.0,
     "WEIGHT_TERRITORY_SAFETY": 5.0,
     "WEIGHT_STACK_MOBILITY": 4.0,
+    # High-signal heuristic extensions (v1).
+    "WEIGHT_OPPONENT_VICTORY_THREAT": 6.0,
+    "WEIGHT_FORCED_ELIMINATION_RISK": 4.0,
+    "WEIGHT_LPS_ACTION_ADVANTAGE": 2.0,
+    "WEIGHT_MULTI_LEADER_THREAT": 2.0,
 }
-
-
+ 
+ 
+# Canonical ordered list of heuristic weight keys used by :class:`HeuristicAI`.
+# This order is used by optimisation/diagnostics tooling (CMA-ES, GA,
+# axis-aligned scans, etc.) and must remain in lockstep with the keys and
+# insertion order of :data:`BASE_V1_BALANCED_WEIGHTS`. Tests assert this
+# invariant so external tools can safely rely on it.
+HEURISTIC_WEIGHT_KEYS: list[str] = [
+    "WEIGHT_STACK_CONTROL",
+    "WEIGHT_STACK_HEIGHT",
+    "WEIGHT_TERRITORY",
+    "WEIGHT_RINGS_IN_HAND",
+    "WEIGHT_CENTER_CONTROL",
+    "WEIGHT_ADJACENCY",
+    "WEIGHT_OPPONENT_THREAT",
+    "WEIGHT_MOBILITY",
+    "WEIGHT_ELIMINATED_RINGS",
+    "WEIGHT_LINE_POTENTIAL",
+    "WEIGHT_VICTORY_PROXIMITY",
+    "WEIGHT_MARKER_COUNT",
+    "WEIGHT_VULNERABILITY",
+    "WEIGHT_OVERTAKE_POTENTIAL",
+    "WEIGHT_TERRITORY_CLOSURE",
+    "WEIGHT_LINE_CONNECTIVITY",
+    "WEIGHT_TERRITORY_SAFETY",
+    "WEIGHT_STACK_MOBILITY",
+    "WEIGHT_OPPONENT_VICTORY_THREAT",
+    "WEIGHT_FORCED_ELIMINATION_RISK",
+    "WEIGHT_LPS_ACTION_ADVANTAGE",
+    "WEIGHT_MULTI_LEADER_THREAT",
+]
+ 
+ 
 def _with_deltas(
     base: Mapping[str, float],
     *,
@@ -86,11 +127,13 @@ def _with_deltas(
     return out
 
 
-# --- v1 Personas --------------------------------------------------------------
+# --- v1 Personas -----------------------------------------------------------
 #
 # These personas are defined as small, interpretable adjustments around the
 # balanced profile. They are intentionally conservative so as not to break
 # existing expectations while still giving designers room to experiment.
+# TS personas must mirror these deltas; see
+# src/shared/engine/heuristicEvaluation.ts.
 
 # Balanced: identical to the base profile.
 HEURISTIC_V1_BALANCED: HeuristicWeights = dict(BASE_V1_BALANCED_WEIGHTS)
@@ -108,6 +151,11 @@ HEURISTIC_V1_AGGRESSIVE: HeuristicWeights = _with_deltas(
         # Slightly downweight safety concerns
         "WEIGHT_VULNERABILITY": 0.85,
         "WEIGHT_TERRITORY_SAFETY": 0.85,
+        # High-signal extensions
+        "WEIGHT_OPPONENT_VICTORY_THREAT": 1.10,
+        "WEIGHT_FORCED_ELIMINATION_RISK": 0.85,
+        "WEIGHT_LPS_ACTION_ADVANTAGE": 1.0,
+        "WEIGHT_MULTI_LEADER_THREAT": 0.8,
     },
 )
 
@@ -125,6 +173,11 @@ HEURISTIC_V1_TERRITORIAL: HeuristicWeights = _with_deltas(
         "WEIGHT_MARKER_COUNT": 1.1,
         # Slightly downweight pure elimination focus
         "WEIGHT_ELIMINATED_RINGS": 0.9,
+        # High-signal extensions
+        "WEIGHT_OPPONENT_VICTORY_THREAT": 1.15,
+        "WEIGHT_FORCED_ELIMINATION_RISK": 1.0,
+        "WEIGHT_LPS_ACTION_ADVANTAGE": 1.1,
+        "WEIGHT_MULTI_LEADER_THREAT": 1.25,
     },
 )
 
@@ -142,11 +195,16 @@ HEURISTIC_V1_DEFENSIVE: HeuristicWeights = _with_deltas(
         # Tone down overtake/elimination eagerness a bit
         "WEIGHT_OVERTAKE_POTENTIAL": 0.9,
         "WEIGHT_ELIMINATED_RINGS": 0.9,
+        # High-signal extensions
+        "WEIGHT_OPPONENT_VICTORY_THREAT": 1.05,
+        "WEIGHT_FORCED_ELIMINATION_RISK": 1.3,
+        "WEIGHT_LPS_ACTION_ADVANTAGE": 1.2,
+        "WEIGHT_MULTI_LEADER_THREAT": 1.1,
     },
 )
 
 
-# --- Registry ------------------------------------------------------------------
+# --- Registry --------------------------------------------------------------
 #
 # Public mapping from profile_id -> HeuristicWeights. The keys here are what
 # ``AIConfig.heuristic_profile_id`` and the canonical difficulty ladder refer

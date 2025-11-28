@@ -78,7 +78,8 @@ openssl rand -base64 32
 
 ```bash
 # Clone repository or copy files to server
-git clone <repository-url> /opt/ringrift
+# Replace with your organization's repository URL
+git clone https://github.com/your-org/ringrift.git /opt/ringrift
 cd /opt/ringrift
 
 # Create environment file from template
@@ -90,14 +91,14 @@ nano .env
 
 **Critical variables to configure:**
 
-| Variable | Description | Notes |
-|----------|-------------|-------|
-| `NODE_ENV` | Environment mode | `production` for staging/prod |
-| `DATABASE_URL` | Postgres connection string | Include real password |
-| `JWT_SECRET` | JWT signing key | Generated above |
-| `JWT_REFRESH_SECRET` | Refresh token key | Generated above |
-| `REDIS_URL` | Redis connection string | Required for production |
-| `AI_SERVICE_URL` | AI service endpoint | `http://ai-service:8001` |
+| Variable             | Description                | Notes                         |
+| -------------------- | -------------------------- | ----------------------------- |
+| `NODE_ENV`           | Environment mode           | `production` for staging/prod |
+| `DATABASE_URL`       | Postgres connection string | Include real password         |
+| `JWT_SECRET`         | JWT signing key            | Generated above               |
+| `JWT_REFRESH_SECRET` | Refresh token key          | Generated above               |
+| `REDIS_URL`          | Redis connection string    | Required for production       |
+| `AI_SERVICE_URL`     | AI service endpoint        | `http://ai-service:8001`      |
 
 ### 4. Validate Configuration
 
@@ -427,11 +428,11 @@ After successful initial deployment:
 
 ## Emergency Contacts
 
-| Role | Contact | When to Call |
-|------|---------|--------------|
-| On-Call Engineer | [Define] | Any deployment issues |
-| Database Admin | [Define] | Database connection issues |
-| Security Team | [Define] | Secret or access issues |
+| Role             | Contact  | When to Call               |
+| ---------------- | -------- | -------------------------- |
+| On-Call Engineer | [Define] | Any deployment issues      |
+| Database Admin   | [Define] | Database connection issues |
+| Security Team    | [Define] | Secret or access issues    |
 
 ---
 

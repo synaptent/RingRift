@@ -1,10 +1,18 @@
 # RingRift Security & Threat Model (S-05)
 
+> **Doc Status (2025-11-27): Active (with historical/aspirational content)**
+>
+> **Role:** High-level security and threat-model overview for the RingRift stack (frontend SPA, Node.js backend, Python AI service), plus the S‑05 security hardening backlog. It frames security risks, controls, and planned work across auth/session, authorization, abuse/DoS, data protection, and supply chain/CI.
+>
+> **Not a semantics SSoT:** This document does not define game rules or lifecycle semantics. Rules semantics are owned by the shared TypeScript rules engine under `src/shared/engine/**` plus contracts and vectors (see `RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`). Lifecycle semantics are owned by `docs/CANONICAL_ENGINE_API.md` together with shared types/schemas in `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+>
+> **Related docs:** `docs/SECRETS_MANAGEMENT.md`, `docs/ENVIRONMENT_VARIABLES.md`, `docs/OPERATIONS_DB.md`, `docs/DATA_LIFECYCLE_AND_PRIVACY.md` (S‑05.E details), `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md` (S‑05.F details), and `DOCUMENTATION_INDEX.md`.
+
 **Scope:** Multiplayer RingRift stack covering frontend SPA, Node.js backend (HTTP + WebSocket), and Python AI service.
 
 This document summarizes the security threat model and hardening plan for RingRift. It aligns with:
 
-- [`FINAL_ARCHITECT_REPORT.md`](../FINAL_ARCHITECT_REPORT.md:1)
+- [`FINAL_ARCHITECT_REPORT.md`](../archive/FINAL_ARCHITECT_REPORT.md:1)
 - [`CURRENT_STATE_ASSESSMENT.md`](../CURRENT_STATE_ASSESSMENT.md:1)
 - [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:1)
 

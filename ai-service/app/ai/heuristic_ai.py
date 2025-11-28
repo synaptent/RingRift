@@ -1,18 +1,59 @@
 """
 Heuristic AI implementation for RingRift
 Uses strategic heuristics to evaluate and select moves
+
+When `config.use_incremental_search` is True (the default), this config option
+is available for API consistency with other AIs (MinimaxAI, MCTSAI, DescentAI).
+However, HeuristicAI is a single-depth evaluator, so the benefit of the
+make/unmake pattern is limited compared to tree-search AIs. The option is
+stored but not actively used to modify behavior.
 """
 
 from typing import Optional, List, Dict
 
 from .base import BaseAI
-from ..models import GameState, Move, RingStack, Position, AIConfig
+from ..models import (
+    GameState,
+    Move,
+    RingStack,
+    Position,
+    AIConfig,
+    Player as PlayerState,
+)
 from ..rules.geometry import BoardGeometry
 from .heuristic_weights import HEURISTIC_WEIGHT_PROFILES
 
 
+def _victory_proximity_base_for_player(
+    game_state: GameState,
+    player: PlayerState,
+) -> float:
+    rings_needed = game_state.victory_threshold - player.eliminated_rings
+    territory_needed = (
+        game_state.territory_victory_threshold - player.territory_spaces
+    )
+
+    if rings_needed <= 0 or territory_needed <= 0:
+        return 1000.0
+
+    score = 0.0
+    score += (1.0 / max(1, rings_needed)) * 50.0
+    score += (1.0 / max(1, territory_needed)) * 50.0
+    return score
+
+
 class HeuristicAI(BaseAI):
-    """AI that uses heuristics to select strategic moves"""
+    """AI that uses heuristics to select strategic moves.
+    
+    HeuristicAI performs single-depth evaluation of all valid moves and
+    selects the best one based on a weighted combination of heuristic
+    features. Unlike tree-search AIs (Minimax, MCTS, Descent), it does
+    not benefit significantly from the make/unmake pattern since it
+    only evaluates one move ahead.
+    
+    The `use_incremental_search` config option is available for API
+    consistency but has limited impact on HeuristicAI performance.
+    """
     
     # Evaluation weights for different factors
     WEIGHT_STACK_CONTROL = 10.0
@@ -33,6 +74,10 @@ class HeuristicAI(BaseAI):
     WEIGHT_LINE_CONNECTIVITY = 6.0
     WEIGHT_TERRITORY_SAFETY = 5.0
     WEIGHT_STACK_MOBILITY = 4.0
+    WEIGHT_OPPONENT_VICTORY_THREAT = 6.0
+    WEIGHT_FORCED_ELIMINATION_RISK = 4.0
+    WEIGHT_LPS_ACTION_ADVANTAGE = 2.0
+    WEIGHT_MULTI_LEADER_THREAT = 2.0
 
     def __init__(self, player_number: int, config: AIConfig):
         """
@@ -45,8 +90,20 @@ class HeuristicAI(BaseAI):
         constants for this instance. If no profile is found, the built-in
         defaults defined above are used unchanged to preserve current
         behaviour.
+        
+        The ``use_incremental_search`` config option is read for API
+        consistency with tree-search AIs but has minimal impact on
+        HeuristicAI since it only performs single-depth evaluation.
         """
         super().__init__(player_number, config)
+        
+        # Read use_incremental_search for API consistency with other AIs.
+        # Limited benefit for single-depth evaluation but maintains
+        # consistent configuration interface across all AI implementations.
+        self.use_incremental_search: bool = getattr(
+            config, 'use_incremental_search', True
+        )
+        
         self._apply_weight_profile()
 
     def _apply_weight_profile(self) -> None:
@@ -146,58 +203,68 @@ class HeuristicAI(BaseAI):
                 return 0.0
 
         score = 0.0
-        
+         
         # Stack control evaluation
         score += self._evaluate_stack_control(game_state)
-        
+         
         # Territory evaluation
         score += self._evaluate_territory(game_state)
-        
+         
         # Rings in hand evaluation
         score += self._evaluate_rings_in_hand(game_state)
-        
+         
         # Center control evaluation
         score += self._evaluate_center_control(game_state)
-        
+         
         # Opponent threat evaluation
         score += self._evaluate_opponent_threats(game_state)
-        
+         
         # Mobility evaluation
         score += self._evaluate_mobility(game_state)
-        
+         
         # Eliminated rings evaluation
         score += self._evaluate_eliminated_rings(game_state)
-        
+         
         # Line potential evaluation
         score += self._evaluate_line_potential(game_state)
-        
+         
         # Victory proximity evaluation
         score += self._evaluate_victory_proximity(game_state)
-        
+
+        # Opponent victory proximity / threat evaluation
+        score += self._evaluate_opponent_victory_threat(game_state)
+         
         # Marker count evaluation
         score += self._evaluate_marker_count(game_state)
-
+ 
         # Vulnerability evaluation
         score += self._evaluate_vulnerability(game_state)
-
+ 
         # Overtake potential evaluation
         score += self._evaluate_overtake_potential(game_state)
-
+ 
         # Territory closure evaluation
         score += self._evaluate_territory_closure(game_state)
-
-        # Influence evaluation
-        score += self._evaluate_influence(game_state)
-
+         
+        # Influence evaluation is currently disabled for TS/Python parity.
+        # The adjacency/influence term remains in the weight schema but is
+        # not applied in the evaluator.
+        # score += self._evaluate_influence(game_state)
+         
         # Line connectivity evaluation
         score += self._evaluate_line_connectivity(game_state)
-
+         
         # Territory safety evaluation
         score += self._evaluate_territory_safety(game_state)
-
+ 
         # Stack mobility evaluation
         score += self._evaluate_stack_mobility(game_state)
-        
+
+        # Forced-elimination / LPS / multi-leader high-signal heuristics
+        score += self._evaluate_forced_elimination_risk(game_state)
+        score += self._evaluate_lps_action_advantage(game_state)
+        score += self._evaluate_multi_leader_threat(game_state)
+         
         return score
     
     def get_evaluation_breakdown(
@@ -224,6 +291,9 @@ class HeuristicAI(BaseAI):
             "eliminated_rings": self._evaluate_eliminated_rings(game_state),
             "line_potential": self._evaluate_line_potential(game_state),
             "victory_proximity": self._evaluate_victory_proximity(game_state),
+            "opponent_victory_threat": self._evaluate_opponent_victory_threat(
+                game_state
+            ),
             "marker_count": self._evaluate_marker_count(game_state),
             "vulnerability": self._evaluate_vulnerability(game_state),
             "overtake_potential": self._evaluate_overtake_potential(
@@ -232,7 +302,16 @@ class HeuristicAI(BaseAI):
             "territory_closure": self._evaluate_territory_closure(game_state),
             "line_connectivity": self._evaluate_line_connectivity(game_state),
             "territory_safety": self._evaluate_territory_safety(game_state),
-            "stack_mobility": self._evaluate_stack_mobility(game_state)
+            "stack_mobility": self._evaluate_stack_mobility(game_state),
+            "forced_elimination_risk": self._evaluate_forced_elimination_risk(
+                game_state
+            ),
+            "lps_action_advantage": self._evaluate_lps_action_advantage(
+                game_state
+            ),
+            "multi_leader_threat": self._evaluate_multi_leader_threat(
+                game_state
+            ),
         }
     
     def _evaluate_stack_control(self, game_state: GameState) -> float:
@@ -328,9 +407,12 @@ class HeuristicAI(BaseAI):
                 if adj_key in game_state.board.stacks:
                     adj_stack = game_state.board.stacks[adj_key]
                     if adj_stack.controlling_player != self.player_number:
-                        # Opponent stack adjacent to ours is a threat
+                        # Opponent stack adjacent to ours is a threat.
+                        # Capture power is based on cap height per compact
+                        # rules §10.1, so we compare using cap height here
+                        # rather than total stack height.
                         threat_level = (
-                            adj_stack.stack_height - my_stack.stack_height
+                            adj_stack.cap_height - my_stack.cap_height
                         )
                         score -= (
                             threat_level * self.WEIGHT_OPPONENT_THREAT * 0.5
@@ -342,9 +424,9 @@ class HeuristicAI(BaseAI):
         """Evaluate mobility (number of valid moves)"""
         # Optimization: Use pseudo-mobility instead of full move generation
         # Full move generation is too expensive for evaluation function.
-
+ 
         score = 0.0
-
+ 
         # My pseudo-mobility
         my_stacks = [
             s for s in game_state.board.stacks.values()
@@ -365,12 +447,14 @@ class HeuristicAI(BaseAI):
                     continue
                 if adj_key in game_state.board.stacks:
                     target = game_state.board.stacks[adj_key]
-                    if (target.controlling_player != self.player_number and
-                            stack.stack_height > target.stack_height):
-                        my_mobility += 1
+                    if target.controlling_player != self.player_number:
+                        # Capture power is based on cap height per compact
+                        # rules §10.1, so we compare cap heights here.
+                        if stack.cap_height >= target.cap_height:
+                            my_mobility += 1
                 else:
                     my_mobility += 1
-
+ 
         # Opponent pseudo-mobility
         opp_stacks = [
             s for s in game_state.board.stacks.values()
@@ -389,14 +473,95 @@ class HeuristicAI(BaseAI):
                     continue
                 if adj_key in game_state.board.stacks:
                     target = game_state.board.stacks[adj_key]
-                    if (target.controlling_player == self.player_number and
-                            stack.stack_height > target.stack_height):
-                        opp_mobility += 1
+                    if target.controlling_player == self.player_number:
+                        # Capture power is based on cap height per compact
+                        # rules §10.1, so we compare cap heights here.
+                        if stack.cap_height >= target.cap_height:
+                            opp_mobility += 1
                 else:
                     opp_mobility += 1
-
         score = (my_mobility - opp_mobility) * self.WEIGHT_MOBILITY
         return score
+
+    def _iterate_board_keys(self, board) -> List[str]:
+        """
+        Iterate over all logical board coordinate keys for the given board.
+
+        This delegates to BoardManager._generate_all_positions_for_board to
+        stay aligned with the shared rules/territory logic.
+        """
+        from ..board_manager import BoardManager
+
+        keys: List[str] = []
+        for pos in BoardManager._generate_all_positions_for_board(board):
+            keys.append(pos.to_key())
+        return keys
+
+    def _approx_real_actions_for_player(
+        self,
+        game_state: GameState,
+        player_number: int,
+    ) -> int:
+        """
+        Approximate the number of "real" actions (moves + placements) available
+        to the given player.
+
+        - Counts one move per stack that has at least one legal-looking move
+          (empty neighbor or capturable enemy stack).
+        - Adds one additional action if the player has rings in hand and there
+          exists at least one empty, non-collapsed space where a ring could be
+          placed.
+        """
+        board = game_state.board
+        approx_moves = 0
+
+        for stack in board.stacks.values():
+            if stack.controlling_player != player_number:
+                continue
+
+            adj_positions = self._get_adjacent_positions(
+                stack.position,
+                game_state,
+            )
+            stack_has_any_move = False
+            for pos in adj_positions:
+                key = pos.to_key()
+                if key in board.collapsed_spaces:
+                    continue
+
+                if key in board.stacks:
+                    target = board.stacks[key]
+                    if (
+                        target.controlling_player != player_number
+                        and stack.cap_height >= target.cap_height
+                    ):
+                        stack_has_any_move = True
+                        break
+                else:
+                    stack_has_any_move = True
+                    break
+
+            if stack_has_any_move:
+                approx_moves += 1
+
+        approx_placement = 0
+        player = next(
+            (
+                p
+                for p in game_state.players
+                if p.player_number == player_number
+            ),
+            None,
+        )
+        if player and player.rings_in_hand > 0:
+            has_empty = any(
+                key not in board.stacks and key not in board.collapsed_spaces
+                for key in self._iterate_board_keys(board)
+            )
+            if has_empty:
+                approx_placement = 1
+
+        return approx_moves + approx_placement
 
     def _evaluate_influence(self, game_state: GameState) -> float:
         """Evaluate board influence"""
@@ -507,25 +672,40 @@ class HeuristicAI(BaseAI):
         if not my_player:
             return 0.0
 
-        # Ring elimination victory
-        rings_needed = (
-            game_state.victory_threshold - my_player.eliminated_rings
-        )
-        if rings_needed <= 0:
-            return 1000.0  # Winning state
+        base = _victory_proximity_base_for_player(game_state, my_player)
+        return base * self.WEIGHT_VICTORY_PROXIMITY
 
-        # Territory victory
-        territory_needed = (
-            game_state.territory_victory_threshold - my_player.territory_spaces
-        )
-        if territory_needed <= 0:
-            return 1000.0  # Winning state
+    def _evaluate_opponent_victory_threat(
+        self,
+        game_state: GameState,
+    ) -> float:
+        """
+        Evaluate how much closer the leading opponent is to victory
+        than we are.
 
-        score = 0.0
-        score += (1.0 / max(1, rings_needed)) * 50.0
-        score += (1.0 / max(1, territory_needed)) * 50.0
+        This mirrors the self victory proximity computation and
+        compares our proximity score to the maximum proximity score
+        among all opponents. A positive gap is treated as a threat
+        and converted into a penalty.
+        """
+        my_player = self.get_player_info(game_state)
+        if not my_player:
+            return 0.0
 
-        return score * self.WEIGHT_VICTORY_PROXIMITY
+        self_prox = _victory_proximity_base_for_player(game_state, my_player)
+
+        max_opp_prox = 0.0
+        for p in game_state.players:
+            if p.player_number == self.player_number:
+                continue
+            prox = _victory_proximity_base_for_player(game_state, p)
+            if prox > max_opp_prox:
+                max_opp_prox = prox
+
+        raw_gap = max_opp_prox - self_prox
+        relative_threat = max(0.0, raw_gap)
+
+        return -relative_threat * self.WEIGHT_OPPONENT_VICTORY_THREAT
 
     def _evaluate_marker_count(self, game_state: GameState) -> float:
         """Evaluate number of markers on board"""
@@ -595,9 +775,10 @@ class HeuristicAI(BaseAI):
 
             for adj_stack in visible_stacks:
                 if adj_stack.controlling_player != self.player_number:
-                    # If opponent stack is taller, we are vulnerable
-                    if adj_stack.stack_height > stack.stack_height:
-                        diff = adj_stack.stack_height - stack.stack_height
+                    # Capture power is based on cap height per compact rules
+                    # §10.1, so we compare using cap height here.
+                    if adj_stack.cap_height > stack.cap_height:
+                        diff = adj_stack.cap_height - stack.cap_height
                         score -= diff * 1.0
 
         return score * self.WEIGHT_VULNERABILITY
@@ -622,9 +803,10 @@ class HeuristicAI(BaseAI):
 
             for adj_stack in visible_stacks:
                 if adj_stack.controlling_player != self.player_number:
-                    # If our stack is taller, we can overtake
-                    if stack.stack_height > adj_stack.stack_height:
-                        diff = stack.stack_height - adj_stack.stack_height
+                    # Capture power is based on cap height per compact rules
+                    # §10.1, so we compare using cap height here.
+                    if stack.cap_height > adj_stack.cap_height:
+                        diff = stack.cap_height - adj_stack.cap_height
                         score += diff * 1.0
 
         return score * self.WEIGHT_OVERTAKE_POTENTIAL
@@ -793,7 +975,7 @@ class HeuristicAI(BaseAI):
             s for s in game_state.board.stacks.values()
             if s.controlling_player == self.player_number
         ]
-
+ 
         for stack in my_stacks:
             adjacent = self._get_adjacent_positions(stack.position, game_state)
             valid_moves_from_here = 0
@@ -806,21 +988,135 @@ class HeuristicAI(BaseAI):
                 if adj_key in game_state.board.stacks:
                     target = game_state.board.stacks[adj_key]
                     if target.controlling_player != self.player_number:
-                        if stack.stack_height > target.stack_height:
+                        # Capture power is based on cap height per compact
+                        # rules §10.1, so we compare using cap height here.
+                        if stack.cap_height >= target.cap_height:
                             valid_moves_from_here += 1
                     continue
-
+ 
                 valid_moves_from_here += 1
-
+ 
             # Reward stacks with more freedom
             score += valid_moves_from_here
-
+ 
             # Penalty for completely blocked stacks (dead weight)
             if valid_moves_from_here == 0:
                 score -= 5.0
-
+ 
         return score * self.WEIGHT_STACK_MOBILITY
 
+    def _evaluate_forced_elimination_risk(
+        self,
+        game_state: GameState,
+    ) -> float:
+        """
+        Penalise positions where we control many stacks but have very few
+        real actions (moves or placements), indicating forced-elimination risk.
+        """
+        board = game_state.board
+        my_stacks = [
+            s for s in board.stacks.values()
+            if s.controlling_player == self.player_number
+        ]
+        controlled_stacks = len(my_stacks)
+        if controlled_stacks == 0:
+            return 0.0
+
+        approx_actions = self._approx_real_actions_for_player(
+            game_state,
+            self.player_number,
+        )
+        ratio = approx_actions / max(1, controlled_stacks)
+
+        if ratio >= 2.0:
+            risk_factor = 0.0
+        elif ratio >= 1.0:
+            risk_factor = 2.0 - ratio
+        else:
+            risk_factor = 1.0 + (1.0 - ratio)
+
+        return -risk_factor * self.WEIGHT_FORCED_ELIMINATION_RISK
+
+    def _evaluate_lps_action_advantage(
+        self,
+        game_state: GameState,
+    ) -> float:
+        """
+        Last-player-standing action advantage heuristic.
+
+        In 3+ player games, reward being one of the few players with real
+        actions left and penalise being the only player without actions.
+        """
+        players = game_state.players
+        if len(players) <= 2:
+            return 0.0
+
+        actions = {
+            p.player_number: self._approx_real_actions_for_player(
+                game_state,
+                p.player_number,
+            )
+            for p in players
+        }
+        self_actions = actions.get(self.player_number, 0)
+        self_has = self_actions > 0
+
+        opp_with_action = sum(
+            1
+            for p in players
+            if p.player_number != self.player_number
+            and actions.get(p.player_number, 0) > 0
+        )
+
+        if not self_has:
+            advantage = -1.0
+        else:
+            total_opponents = len(players) - 1
+            if total_opponents <= 0:
+                advantage = 0.0
+            else:
+                inactive_fraction = (
+                    total_opponents - opp_with_action
+                ) / float(total_opponents)
+                advantage = inactive_fraction
+
+        return advantage * self.WEIGHT_LPS_ACTION_ADVANTAGE
+
+    def _evaluate_multi_leader_threat(
+        self,
+        game_state: GameState,
+    ) -> float:
+        """
+        Multi-player leader threat heuristic.
+
+        In 3+ player games, penalise positions where a single opponent is
+        much closer to victory than the other opponents.
+        """
+        players = game_state.players
+        if len(players) <= 2:
+            return 0.0
+
+        prox_by_player = {
+            p.player_number: _victory_proximity_base_for_player(game_state, p)
+            for p in players
+        }
+
+        opp_prox = [
+            prox_by_player[p.player_number]
+            for p in players
+            if p.player_number != self.player_number
+        ]
+        if len(opp_prox) < 2:
+            return 0.0
+
+        opp_prox_sorted = sorted(opp_prox, reverse=True)
+        opp_top1 = opp_prox_sorted[0]
+        opp_top2 = opp_prox_sorted[1]
+
+        leader_gap = max(0.0, opp_top1 - opp_top2)
+
+        return -leader_gap * self.WEIGHT_MULTI_LEADER_THREAT
+ 
     def _get_adjacent_positions(
         self,
         position: Position,

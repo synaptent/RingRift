@@ -1,9 +1,24 @@
 # Parity Seed Triage Matrix
 
-**Last Updated:** November 25, 2025  
-**Status:** Active Investigation  
-**Severity:** P0 – Critical for engine correctness  
-**Related:** [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) (P0.2), [TRACE_PARITY_CONTINUATION_TASK.md](../archive/TRACE_PARITY_CONTINUATION_TASK.md)
+> **Doc Status (2025-11-27): Active (test meta-doc, non-semantics)**
+>
+> - Tracks **Backend ↔ Sandbox semantic trace parity divergences** for selected seeded AI games and documents which trace-based suites remain diagnostic vs gating.
+> - Treats **shared TS orchestrator + contracts + contract vectors** as the rules SSoT:
+>   - Orchestrator + aggregates: `src/shared/engine/orchestration/turnOrchestrator.ts`, `src/shared/engine/aggregates/*.ts`.
+>   - Contracts & vectors: `src/shared/engine/contracts/*`, `tests/fixtures/contract-vectors/v2/*.json`.
+>   - TS runner: `tests/contracts/contractVectorRunner.test.ts`.
+>   - Python runner & parity: `ai-service/tests/contracts/test_contract_vectors.py`, `ai-service/tests/parity/*.py`.
+> - Seeded `Backend_vs_Sandbox.*` and related parity suites referenced here are **host/adapter diagnostics** over GameEngine / ClientSandboxEngine / BoardManager and Python hosts; they are not a separate rules SSoT and must yield to the shared TS engine + contract vectors + rules docs when they disagree.
+> - For rules semantics and lifecycle SSoT, see:
+>   - [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md) (RR-CANON-RXXX rules).
+>   - [`ringrift_complete_rules.md`](../ringrift_complete_rules.md) and the scenario index in [`RULES_SCENARIO_MATRIX.md`](../RULES_SCENARIO_MATRIX.md).
+>   - [`docs/CANONICAL_ENGINE_API.md` §3.9–3.10](./CANONICAL_ENGINE_API.md) for Move / PendingDecision / PlayerChoice / WebSocket.
+> - For broader test taxonomy and CI profiles, see `tests/README.md`, `tests/TEST_LAYERS.md`, and `tests/TEST_SUITE_PARITY_PLAN.md`.
+> - Last triage update: 2025-11-27; status and seed set should be periodically revalidated as parity work and contract-vector coverage progress.
+>
+> **Last Updated:** November 27, 2025 \
+> **Severity:** P0 – Critical for engine correctness \
+> **Related:** [KNOWN_ISSUES.md](../KNOWN_ISSUES.md) (P0.2), [TRACE_PARITY_CONTINUATION_TASK.md](../archive/TRACE_PARITY_CONTINUATION_TASK.md)
 
 ---
 
@@ -33,6 +48,27 @@ This document tracks all known **Backend↔Sandbox semantic trace parity diverge
 1. **Seed 5** – Most investigated, earliest divergence with capture enumeration
 2. **Seed 17** – Clear capture/chain-capture divergences at known move numbers
 3. **Seed 14** – Placement validation and line processing divergences
+
+### 1.5 Orchestrator + contract-vector backbone vs seed traces
+
+Since the Phase 1–4 rules remediation, the **primary TS↔Python rules parity guarantees** are provided by:
+
+- **Canonical TS orchestrator + aggregates:** `src/shared/engine/orchestration/turnOrchestrator.ts` and `src/shared/engine/aggregates/*.ts`.
+- **Cross-language contracts:** `src/shared/engine/contracts/*` and v2 contract vectors under `tests/fixtures/contract-vectors/v2/*.json`.
+- **TS contract runner:** `tests/contracts/contractVectorRunner.test.ts`.
+- **Python contract runner + parity suites:** `ai-service/tests/contracts/test_contract_vectors.py` and scenario-oriented suites under `ai-service/tests/parity/`.
+
+In that topology:
+
+- **Seeded Backend_vs_Sandbox.\* suites** act as **host/adapter and instrumentation checks** (GameEngine/RuleEngine/BoardManager ↔ ClientSandboxEngine), not as the source of truth for Move legality.
+- **`TraceFixtures.sharedEngineParity.test.ts`** exercises orchestrator-level traces (using shared-engine fixtures and v1 traces under `tests/fixtures/rules-parity/v1/*.json`) and is the preferred place to assert orchestrator semantics over long games.
+- **Python parity tests** use the same contract vectors and selected traces to ensure the Python `GameEngine` mirrors the shared orchestrator’s behavior.
+
+Use this document when deciding **which seeds/traces are worth preserving** as host/adapter regression tests, and when deciding whether to:
+
+- Fix a discrepancy by changing **GameEngine / ClientSandboxEngine / BoardManager** behaviour;
+- Update **trace fixtures / test harnesses** because the orchestrator+contracts semantics have evolved; or
+- Defer/retire a divergence as historical once contract-vector and orchestrator suites agree.
 
 ---
 

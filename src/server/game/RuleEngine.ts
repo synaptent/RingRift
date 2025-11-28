@@ -7,9 +7,8 @@ import type {
   Territory,
   CaptureSegmentBoardView,
   MovementBoardView,
-  MarkerPathHelpers,
   CaptureBoardAdapters,
-  PlacementContext,
+  PlacementAggregateContext,
 } from '../../shared/engine';
 import {
   BOARD_CONFIGS,
@@ -20,18 +19,25 @@ import {
   getPathPositions,
   validateCaptureSegmentOnBoard,
   hasAnyLegalMoveOrCaptureFromOnBoard,
-  applyMarkerEffectsAlongPathOnBoard,
-  countRingsInPlayForPlayer,
   evaluateVictory,
   enumerateCaptureMoves,
   enumerateSimpleMoveTargetsFromStack,
   canProcessTerritoryRegion,
   enumerateProcessTerritoryRegionMoves,
   enumerateTerritoryEliminationMoves,
-  validatePlacementOnBoard,
   enumerateProcessLineMoves,
   enumerateChooseLineRewardMoves,
   findLinesForPlayer,
+  // Canonical placement validation + enumeration (TS SSOT)
+  validatePlacementOnBoardAggregate,
+  enumeratePlacementPositions,
+  evaluateSkipPlacementEligibilityAggregate,
+  // Canonical non-capture movement mutation (TS SSOT)
+  applySimpleMovement as applySimpleMovementAggregate,
+  // Canonical capture mutation (TS SSOT)
+  applyCapture as applyCaptureAggregate,
+  // Canonical placement mutation (TS SSOT)
+  applyPlacementMoveAggregate,
 } from '../../shared/engine';
 import { getMovementDirectionsForBoardType } from '../../shared/engine/core';
 import { BoardManager } from './BoardManager';
@@ -103,53 +109,41 @@ export class RuleEngine {
    * controlled stack. It is *not* allowed to skip when placement is
    * mandatory (no stacks on board, or stacks with no legal moves).
    *
-   * Rule Reference: Section 4.1 / 2.1 – optional placement when
-   * movement/capture is available.
+   * Backend-specific tightening:
+   * - Reject skip_placement when the active player has no rings in hand,
+   *   even though the shared aggregate helper treats that case as
+   *   semantically fine. When ringsInHand === 0 the TurnEngine is
+   *   responsible for advancing phases without requiring an explicit
+   *   bookkeeping move.
+   *
+   * Rule Reference: RR‑CANON‑R080 (optional placement) and related notes in
+   * SHARED_ENGINE_CONSOLIDATION_PLAN §Placement Canonical Semantics.
    */
   private validateSkipPlacement(move: Move, gameState: GameState): boolean {
-    if (gameState.currentPhase !== 'ring_placement') {
-      return false;
-    }
-
     const playerState = gameState.players.find((p) => p.playerNumber === move.player);
     if (!playerState || playerState.ringsInHand <= 0) {
-      // No rings to optionally place – skipping is meaningless here.
       return false;
     }
 
-    const board = gameState.board;
-    const playerStacks = this.getPlayerStacks(move.player, board);
-
-    // If the player has no stacks at all, placement is mandatory.
-    if (playerStacks.length === 0) {
-      return false;
-    }
-
-    // Check if at least one controlled stack has a legal move or capture
-    // in the *current* board state. If none do, placement is mandatory
-    // (the player is effectively blocked without placing).
-    const hasAnyAction = playerStacks.some((pos) =>
-      this.hasAnyLegalMoveOrCaptureFrom(pos, move.player, board)
-    );
-
-    return hasAnyAction;
+    const eligibility = evaluateSkipPlacementEligibilityAggregate(gameState, move.player);
+    return eligibility.eligible;
   }
 
   /**
    * Validates ring placement according to RingRift rules.
    *
-   * This now delegates the detailed capacity, invariant, and no-dead-placement
-   * checks to the shared {@link validatePlacementOnBoard} helper so that the
-   * backend RuleEngine, shared GameEngine, and sandbox all share a single
-   * source of truth for placement semantics:
+   * This delegates capacity, invariant, and no-dead-placement checks to the
+   * shared {@link validatePlacementOnBoardAggregate} helper so that the
+   * backend RuleEngine, shared GameEngine, orchestrator, and sandbox all
+   * share a single source of truth for placement semantics:
    *
    * - Board geometry / collapsed-space / marker-stack exclusivity.
    * - Per-player ring cap + ringsInHand supply.
    * - Single vs multi-ring placement rules (stacks vs empty cells).
    * - No-dead-placement via hasAnyLegalMoveOrCaptureFromOnBoard.
    *
-   * Rule Reference: Section 7.1 – Placement must leave at least one legal move
-   * or capture from the resulting stack.
+   * Rule Reference: RR‑CANON‑R070–R072, R080–R082 – placement legality and
+   * no-dead-placement.
    */
   private validateRingPlacement(move: Move, gameState: GameState): boolean {
     // Ring placement is only allowed during the ring_placement phase.
@@ -166,14 +160,14 @@ export class RuleEngine {
     const boardConfig = BOARD_CONFIGS[boardType];
     const requestedCount = move.placementCount ?? 1;
 
-    const ctx: PlacementContext = {
+    const ctx: PlacementAggregateContext = {
       boardType,
       player: move.player,
       ringsInHand: playerState.ringsInHand,
       ringsPerPlayerCap: boardConfig.ringsPerPlayer,
     };
 
-    const result = validatePlacementOnBoard(gameState.board, move.to, requestedCount, ctx);
+    const result = validatePlacementOnBoardAggregate(gameState.board, move.to, requestedCount, ctx);
     return result.valid;
   }
 
@@ -374,7 +368,24 @@ export class RuleEngine {
   }
 
   /**
-   * Processes a move and returns the new game state
+   * DIAGNOSTICS-ONLY (legacy): process a move and return the new game state.
+   *
+   * This method implements the pre-orchestrator backend pipeline:
+   *   - apply placement / movement / capture via legacy helpers
+   *   - then resolve automatic line formation and territory disconnection via
+   *     processLineFormation/processTerritoryDisconnection.
+   *
+   * Canonical backend turn processing is now handled by TurnEngineAdapter +
+   * processTurnAsync in the shared orchestrator, with RuleEngine restricted to:
+   *   - validateMove
+   *   - getValidMoves
+   *   - checkGameEnd
+   * and related enumeration helpers.
+   *
+   * There are no production call sites for this method; it is retained only
+   * for legacy tests and debugging harnesses. See
+   * docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase A/B, Phase C – legacy helper
+   * shutdown) before modifying or reusing this method.
    */
   processMove(move: Move, gameState: GameState): GameState {
     const newState = this.cloneGameState(gameState);
@@ -402,244 +413,91 @@ export class RuleEngine {
    * Processes ring placement
    */
   private processRingPlacement(move: Move, gameState: GameState): void {
-    const newStack: RingStack = {
-      position: move.to,
-      rings: [move.player],
-      stackHeight: 1,
-      capHeight: 1,
-      controllingPlayer: move.player,
-    };
+    if (move.type !== 'place_ring') {
+      return;
+    }
 
-    this.boardManager.setStack(move.to, newStack, gameState.board);
+    const outcome = applyPlacementMoveAggregate(gameState, move);
+
+    // Mutate the cloned GameState in-place so callers (processMove and any
+    // tests that inspect the returned state) observe the canonical outcome
+    // produced by the shared placement aggregate.
+    Object.assign(gameState, outcome.nextState);
   }
 
   /**
-   * Processes stack movement
+   * Processes stack movement via the canonical shared MovementAggregate.
    */
   private processStackMovement(move: Move, gameState: GameState): void {
-    if (!move.from) return;
-
-    const fromKey = positionToString(move.from);
-    const toKey = positionToString(move.to);
-
-    const sourceStack = gameState.board.stacks.get(fromKey);
-    if (!sourceStack) return;
-
-    const destinationStack = gameState.board.stacks.get(toKey);
-
-    // Apply marker effects along the path (leave departure marker, flip/collapse intermediate)
-    const markerHelpers: MarkerPathHelpers = {
-      setMarker: (pos, player, b) => this.boardManager.setMarker(pos, player, b),
-      collapseMarker: (pos, player, b) => this.boardManager.collapseMarker(pos, player, b),
-      flipMarker: (pos, player, b) => this.boardManager.flipMarker(pos, player, b),
-    };
-
-    // Check if landing on own marker before applying effects (which might remove it)
-    const landingMarker = this.boardManager.getMarker(move.to, gameState.board);
-    const landedOnOwnMarker = landingMarker === move.player;
-
-    applyMarkerEffectsAlongPathOnBoard(
-      gameState.board,
-      move.from,
-      move.to,
-      move.player,
-      markerHelpers
-    );
-
-    if (destinationStack && destinationStack.rings.length > 0) {
-      // Merge stacks
-      const mergedStack: RingStack = {
-        position: move.to,
-        rings: [...destinationStack.rings, ...sourceStack.rings],
-        stackHeight: destinationStack.stackHeight + sourceStack.stackHeight,
-        capHeight: sourceStack.capHeight, // Moving stack's cap becomes new cap
-        controllingPlayer: sourceStack.controllingPlayer,
-      };
-      this.boardManager.setStack(move.to, mergedStack, gameState.board);
-    } else {
-      // Move to empty position (or position that had a marker which is now removed)
-      const movedStack: RingStack = {
-        ...sourceStack,
-        position: move.to,
-      };
-      this.boardManager.setStack(move.to, movedStack, gameState.board);
+    if (!move.from || !move.to) {
+      return;
     }
 
-    // Remove from source
-    this.boardManager.removeStack(move.from, gameState.board);
+    // Delegate non-capturing movement mutation (marker-path effects,
+    // landing-on-own-marker elimination, and elimination accounting) to the
+    // shared MovementAggregate so backend RuleEngine, GameEngine, sandbox,
+    // and orchestrator all share a single source of truth for board effects.
+    const outcome = applySimpleMovementAggregate(gameState, {
+      from: move.from,
+      to: move.to,
+      player: move.player,
+    });
 
-    // Handle landing on own marker: eliminate top ring
-    if (landedOnOwnMarker) {
-      const stackAtLanding = gameState.board.stacks.get(toKey);
-      if (stackAtLanding && stackAtLanding.stackHeight > 0) {
-        const [, ...remainingRings] = stackAtLanding.rings;
-
-        if (remainingRings.length > 0) {
-          const newStack: RingStack = {
-            ...stackAtLanding,
-            rings: remainingRings,
-            stackHeight: remainingRings.length,
-            capHeight: calculateCapHeight(remainingRings),
-            controllingPlayer: remainingRings[0],
-          };
-          this.boardManager.setStack(move.to, newStack, gameState.board);
-        } else {
-          this.boardManager.removeStack(move.to, gameState.board);
-        }
-
-        // Update elimination counts
-        const player = move.player; // The mover is the one who gets credited/penalized?
-        // Rules say: "If you land on your own marker... remove the top ring of your stack... This counts as an eliminated ring."
-        // It counts towards the player's eliminated rings total.
-
-        gameState.totalRingsEliminated += 1;
-        if (!gameState.board.eliminatedRings[player]) {
-          gameState.board.eliminatedRings[player] = 0;
-        }
-        gameState.board.eliminatedRings[player] += 1;
-
-        const playerState = gameState.players.find((p) => p.playerNumber === player);
-        if (playerState) {
-          playerState.eliminatedRings += 1;
-        }
-      }
-    }
+    // Mutate the cloned GameState in-place so callers (processMove and any
+    // tests that inspect the returned state) observe the canonical outcome
+    // produced by the shared engine.
+    Object.assign(gameState, outcome.nextState);
   }
 
   /**
-   * Processes capture with chain reactions
+   * Processes capture using the canonical shared capture aggregate.
+   *
+   * This is now a thin adapter over {@link applyCaptureAggregate}, which
+   * performs all marker-path effects, stack updates, and landing-on-own-marker
+   * elimination. Any legacy adjacency-based chain-reaction behaviour has been
+   * removed so that the shared CaptureAggregate is the single source of truth
+   * for capture semantics.
    */
   private processCapture(move: Move, gameState: GameState): void {
-    if (!move.from || !move.capturedStacks || !move.captureTarget) return;
-
-    const fromKey = positionToString(move.from);
-    const attackerStack = gameState.board.stacks.get(fromKey);
-    if (!attackerStack) return;
-
-    const capturedStacks: RingStack[] = move.capturedStacks;
-
-    // Apply marker effects along the path.
-    // For capture, we must handle the path from `from` to `captureTarget` (leaving departure marker)
-    // and from `captureTarget` to `to` (NOT leaving departure marker on target).
-
-    const markerHelpers: MarkerPathHelpers = {
-      setMarker: (pos, player, b) => this.boardManager.setMarker(pos, player, b),
-      collapseMarker: (pos, player, b) => this.boardManager.collapseMarker(pos, player, b),
-      flipMarker: (pos, player, b) => this.boardManager.flipMarker(pos, player, b),
-    };
-
-    // Check if landing on own marker before applying effects
-    const landingMarker = this.boardManager.getMarker(move.to, gameState.board);
-    const landedOnOwnMarker = landingMarker === move.player;
-
-    // 1. Path from start to target
-    applyMarkerEffectsAlongPathOnBoard(
-      gameState.board,
-      move.from,
-      move.captureTarget,
-      move.player,
-      markerHelpers,
-      { leaveDepartureMarker: true }
-    );
-
-    // 2. Path from target to landing
-    applyMarkerEffectsAlongPathOnBoard(
-      gameState.board,
-      move.captureTarget,
-      move.to,
-      move.player,
-      markerHelpers,
-      { leaveDepartureMarker: false }
-    );
-
-    // Apply overtaking one ring at a time, mirroring the GameEngine and
-    // Rust behaviour: each capture segment takes only the top ring of the
-    // target stack and adds it to the bottom of the attacker. Target
-    // stacks that become empty are removed.
-    let updatedAttacker = attackerStack;
-
-    for (const capturedStack of capturedStacks) {
-      const capturedKey = positionToString(capturedStack.position);
-      const currentTarget = gameState.board.stacks.get(capturedKey);
-      if (!currentTarget || currentTarget.rings.length === 0) {
-        continue;
-      }
-
-      const [capturedRing, ...remaining] = currentTarget.rings;
-
-      if (remaining.length > 0) {
-        const newTarget: RingStack = {
-          ...currentTarget,
-          rings: remaining,
-          stackHeight: remaining.length,
-          capHeight: calculateCapHeight(remaining),
-          controllingPlayer: remaining[0],
-        };
-        this.boardManager.setStack(capturedStack.position, newTarget, gameState.board);
-      } else {
-        this.boardManager.removeStack(capturedStack.position, gameState.board);
-      }
-
-      const newRings = [...updatedAttacker.rings, capturedRing];
-
-      updatedAttacker = {
-        ...updatedAttacker,
-        rings: newRings,
-        stackHeight: newRings.length,
-        capHeight: calculateCapHeight(newRings),
-        controllingPlayer: newRings[0],
-      };
+    if (!move.from || !move.to || !move.captureTarget) {
+      return;
     }
 
-    // Move the updated attacker stack to the destination
-    const toKey = positionToString(move.to);
-    const movedStack: RingStack = {
-      ...updatedAttacker,
-      position: move.to,
-    };
-    this.boardManager.setStack(move.to, movedStack, gameState.board);
-    this.boardManager.removeStack(move.from, gameState.board);
+    const result = applyCaptureAggregate(gameState, move);
 
-    // Handle landing on own marker: eliminate top ring
-    if (landedOnOwnMarker) {
-      const stackAtLanding = gameState.board.stacks.get(toKey);
-      if (stackAtLanding && stackAtLanding.stackHeight > 0) {
-        const [, ...remainingRings] = stackAtLanding.rings;
-
-        if (remainingRings.length > 0) {
-          const newStack: RingStack = {
-            ...stackAtLanding,
-            rings: remainingRings,
-            stackHeight: remainingRings.length,
-            capHeight: calculateCapHeight(remainingRings),
-            controllingPlayer: remainingRings[0],
-          };
-          this.boardManager.setStack(move.to, newStack, gameState.board);
-        } else {
-          this.boardManager.removeStack(move.to, gameState.board);
-        }
-
-        // Update elimination counts
-        const player = move.player;
-        gameState.totalRingsEliminated += 1;
-        if (!gameState.board.eliminatedRings[player]) {
-          gameState.board.eliminatedRings[player] = 0;
-        }
-        gameState.board.eliminatedRings[player] += 1;
-
-        const playerState = gameState.players.find((p) => p.playerNumber === player);
-        if (playerState) {
-          playerState.eliminatedRings += 1;
-        }
-      }
+    if (!result.success) {
+      // Defensive diagnostic: this should not occur if RuleEngine validation
+      // and the shared validator are in sync. Log and treat as a no-op rather
+      // than attempting a partial/manual mutation.
+      // eslint-disable-next-line no-console
+      console.error('[RuleEngine.processCapture] CaptureAggregate.applyCapture failed', {
+        reason: result.reason,
+        moveType: move.type,
+        player: move.player,
+        from: positionToString(move.from),
+        captureTarget: positionToString(move.captureTarget),
+        to: positionToString(move.to),
+      });
+      return;
     }
 
-    // Check for chain reactions (legacy behaviour; GameEngine now drives
-    // chain captures via chainCaptureState and CaptureDirectionChoice).
-    this.processChainReactions(move.from, gameState);
+    // Mutate the cloned GameState in-place so that callers (processMove and any
+    // tests that inspect the returned state) observe the canonical capture
+    // outcome produced by the shared engine.
+    Object.assign(gameState, result.newState);
   }
   /**
-   * Processes chain reactions from captures
+   * DIAGNOSTICS-ONLY (legacy): process chain reactions from captures.
+   *
+   * This helper comes from the historical backend capture-chain pipeline and
+   * is no longer part of the canonical semantics. Capture and chain-capture
+   * behaviour are now implemented exclusively in
+   * src/shared/engine/aggregates/CaptureAggregate.ts and driven via the
+   * shared orchestrator.
+   *
+   * There are no production call sites for this helper; it is retained only
+   * for legacy tests and exploratory diagnostics. Do not introduce new
+   * production usages. See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C).
    */
   private processChainReactions(triggerPos: Position, gameState: GameState): void {
     const triggerKey = positionToString(triggerPos);
@@ -675,7 +533,19 @@ export class RuleEngine {
   }
 
   /**
-   * Processes line formation and marker collapse
+   * DIAGNOSTICS-ONLY (legacy): process line formation and marker collapse.
+   *
+   * This helper predates the shared LineAggregate / lineDecisionHelpers stack
+   * and is not used by the canonical backend turn pipeline. Line detection
+   * and rewards now live in src/shared/engine/lineDecisionHelpers.ts and are
+   * surfaced via:
+   *   - enumerateProcessLineMoves / enumerateChooseLineRewardMoves
+   *   - applyProcessLineDecision
+   * through the shared orchestrator and GameEngine.applyDecisionMove.
+   *
+   * It is retained only for legacy tests that exercise the old automatic
+   * pipeline. See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C – legacy helper
+   * shutdown) before modifying or reusing this helper.
    */
   private processLineFormation(gameState: GameState): void {
     const lines = this.boardManager.findAllLines(gameState.board);
@@ -691,7 +561,20 @@ export class RuleEngine {
   }
 
   /**
-   * Processes territory disconnection
+   * DIAGNOSTICS-ONLY (legacy): process territory disconnection.
+   *
+   * This helper predates the shared TerritoryAggregate and
+   * territoryDecisionHelpers stack. Canonical territory semantics (disconnected
+   * region detection, Q23 self-elimination prerequisite, collapse and
+   * eliminations) are now implemented in
+   * src/shared/engine/territoryProcessing.ts and consumed via:
+   *   - enumerateProcessTerritoryRegionMoves / enumerateTerritoryEliminationMoves
+   *   - applyProcessTerritoryRegionDecision
+   * surfaced through RuleEngine.getValidMoves and GameEngine.applyDecisionMove.
+   *
+   * There are no production call sites for this helper; it is retained only
+   * for legacy tests and diagnostics. Do not introduce new production usages.
+   * See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C – legacy helper shutdown).
    */
   private processTerritoryDisconnection(gameState: GameState): void {
     // Check territories for each player
@@ -821,13 +704,18 @@ export class RuleEngine {
 
   /**
    * Gets valid ring placement moves for the given player using the shared,
-   * canonical placement validator. This keeps backend move enumeration in
-   * lock-step with the shared GameEngine and sandbox:
+   * canonical PlacementAggregate:
    *
    * - Capacity (per-player ring cap + ringsInHand supply).
    * - Board geometry / collapsed-space / marker-stack exclusivity.
    * - Single vs multi-ring placement rules.
    * - No-dead-placement via hasAnyLegalMoveOrCaptureFromOnBoard.
+   *
+   * Enumeration first delegates to {@link enumeratePlacementPositions} to
+   * discover all cells where at least one ring placement is legal, then
+   * uses {@link validatePlacementOnBoardAggregate} to derive the per-move
+   * placementCount surface (1..3 on empty cells, 1 on existing stacks)
+   * without re-encoding cap or ray-walk semantics locally.
    */
   private getValidRingPlacements(player: number, gameState: GameState): Move[] {
     const moves: Move[] = [];
@@ -839,46 +727,36 @@ export class RuleEngine {
     const board = gameState.board;
     const boardType = board.type;
     const boardConfig = BOARD_CONFIGS[boardType];
-    const allPositions = this.boardManager.getAllPositions();
 
-    // Compute own-colour rings for capacity checks: all rings of this
-    // player's colour on the board in any stack (regardless of which
-    // player currently controls those stacks), plus rings in hand. This
-    // matches the canonical ringsPerPlayer semantics (RR-CANON-R020).
-    const totalInPlay = countRingsInPlayForPlayer(gameState, player);
-    const ringsOnBoard = totalInPlay - playerState.ringsInHand;
-
-    const remainingByCap = boardConfig.ringsPerPlayer - ringsOnBoard;
-    const remainingBySupply = playerState.ringsInHand;
-    const maxAvailableGlobal = Math.min(remainingByCap, remainingBySupply);
-
-    if (maxAvailableGlobal <= 0) {
+    // Canonical enumeration of all cells where at least one ring placement
+    // is legal for this player under the current state (including
+    // no-dead-placement).
+    const legalPositions = enumeratePlacementPositions(gameState, player);
+    if (legalPositions.length === 0) {
       return moves;
     }
 
-    const baseCtx: PlacementContext = {
-      boardType,
-      player,
-      ringsInHand: playerState.ringsInHand,
-      ringsPerPlayerCap: boardConfig.ringsPerPlayer,
-      ringsOnBoard,
-      maxAvailableGlobal,
-    };
-
     const baseMoveNumber = gameState.moveHistory.length + 1;
 
-    for (const pos of allPositions) {
+    for (const pos of legalPositions) {
       const posKey = positionToString(pos);
       const stack = board.stacks.get(posKey);
       const isOccupied = !!(stack && stack.rings.length > 0);
 
-      const maxPerPlacement = isOccupied ? 1 : Math.min(3, maxAvailableGlobal);
-      if (maxPerPlacement <= 0) {
-        continue;
-      }
+      // Per-cell cap is 1 when placing onto an existing stack and up to 3
+      // on empty cells; global capacity and supply constraints are enforced
+      // by the shared validator.
+      const perCellCap = isOccupied ? 1 : 3;
 
-      for (let count = 1; count <= maxPerPlacement; count++) {
-        const validation = validatePlacementOnBoard(board, pos, count, baseCtx);
+      for (let count = 1; count <= perCellCap; count++) {
+        const ctx: PlacementAggregateContext = {
+          boardType,
+          player,
+          ringsInHand: playerState.ringsInHand,
+          ringsPerPlayerCap: boardConfig.ringsPerPlayer,
+        };
+
+        const validation = validatePlacementOnBoardAggregate(board, pos, count, ctx);
         if (!validation.valid) {
           continue;
         }

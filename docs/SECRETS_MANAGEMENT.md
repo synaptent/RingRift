@@ -1,5 +1,13 @@
 # Secrets Management Guide
 
+> **Doc Status (2025-11-27): Active**
+>
+> **Role:** Canonical guide for how RingRift manages application secrets across environments (development, staging, production), including required environment variables, validation, rotation, and operational procedures.
+>
+> **Not a semantics SSoT:** This document does not define game rules or lifecycle semantics. Rules semantics are owned by the shared TypeScript rules engine under `src/shared/engine/**` plus contracts and vectors (see `RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`). Lifecycle semantics are owned by `docs/CANONICAL_ENGINE_API.md` together with shared types/schemas in `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+>
+> **Related docs:** `docs/ENVIRONMENT_VARIABLES.md`, `docs/DEPLOYMENT_REQUIREMENTS.md`, `docs/SECURITY_THREAT_MODEL.md`, `docs/OPERATIONS_DB.md`, `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`, and `DOCUMENTATION_INDEX.md`.
+
 This document describes best practices for managing secrets in RingRift deployments.
 
 ## Table of Contents
@@ -23,20 +31,21 @@ RingRift uses several types of secrets:
 
 ### Secret Categories
 
-| Secret | Required (Prod) | Required (Dev) | Min Length | Purpose |
-|--------|-----------------|----------------|------------|---------|
-| `JWT_SECRET` | ✅ Yes | ❌ No | 32 chars | Access token signing |
-| `JWT_REFRESH_SECRET` | ✅ Yes | ❌ No | 32 chars | Refresh token signing |
-| `DATABASE_URL` | ✅ Yes | ❌ No | - | PostgreSQL connection |
-| `REDIS_URL` | ✅ Yes | ❌ No | - | Redis connection |
-| `REDIS_PASSWORD` | ❌ No | ❌ No | 8 chars | Redis authentication |
-| `AI_SERVICE_URL` | ✅ Yes | ❌ No | - | AI service endpoint |
+| Secret               | Required (Prod) | Required (Dev) | Min Length | Purpose               |
+| -------------------- | --------------- | -------------- | ---------- | --------------------- |
+| `JWT_SECRET`         | ✅ Yes          | ❌ No          | 32 chars   | Access token signing  |
+| `JWT_REFRESH_SECRET` | ✅ Yes          | ❌ No          | 32 chars   | Refresh token signing |
+| `DATABASE_URL`       | ✅ Yes          | ❌ No          | -          | PostgreSQL connection |
+| `REDIS_URL`          | ✅ Yes          | ❌ No          | -          | Redis connection      |
+| `REDIS_PASSWORD`     | ❌ No           | ❌ No          | 8 chars    | Redis authentication  |
+| `AI_SERVICE_URL`     | ✅ Yes          | ❌ No          | -          | AI service endpoint   |
 
 ## Development Environment
 
 ### Quick Start
 
 1. Copy the example environment file:
+
    ```bash
    cp .env.example .env
    ```
@@ -102,6 +111,7 @@ For production deployments, consider:
 - **Docker Swarm Secrets** - For Docker Swarm deployments
 
 Example with Docker Secrets:
+
 ```yaml
 services:
   app:
@@ -122,6 +132,7 @@ services:
 **Steps:**
 
 1. Generate new secrets:
+
    ```bash
    JWT_SECRET=$(openssl rand -base64 48)
    JWT_REFRESH_SECRET=$(openssl rand -base64 48)
@@ -130,10 +141,11 @@ services:
 2. Update secrets in your secrets management system
 
 3. Restart the application:
+
    ```bash
    # Docker Compose
    docker-compose restart app
-   
+
    # Kubernetes
    kubectl rollout restart deployment/ringrift-app
    ```
@@ -157,12 +169,13 @@ For zero-downtime JWT rotation, implement key versioning:
 **Steps:**
 
 1. Create new database user (or update password):
+
    ```sql
    -- Option A: Create new user
    CREATE USER ringrift_new WITH PASSWORD 'new_secure_password';
    GRANT ALL PRIVILEGES ON DATABASE ringrift TO ringrift_new;
    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ringrift_new;
-   
+
    -- Option B: Update existing password
    ALTER USER ringrift WITH PASSWORD 'new_secure_password';
    ```
@@ -172,6 +185,7 @@ For zero-downtime JWT rotation, implement key versioning:
 3. Restart the application
 
 4. Verify database connectivity:
+
    ```bash
    curl http://localhost:3000/health
    ```
@@ -189,6 +203,7 @@ For zero-downtime JWT rotation, implement key versioning:
 **Steps:**
 
 1. Update Redis password:
+
    ```bash
    redis-cli CONFIG SET requirepass "new_secure_password"
    ```
@@ -240,6 +255,7 @@ For zero-downtime JWT rotation, implement key versioning:
 **Cause:** You're running in production mode with placeholder secrets from `.env.example`.
 
 **Solution:** Generate new, unique secrets:
+
 ```bash
 export JWT_SECRET=$(openssl rand -base64 48)
 export JWT_REFRESH_SECRET=$(openssl rand -base64 48)
@@ -250,6 +266,7 @@ export JWT_REFRESH_SECRET=$(openssl rand -base64 48)
 **Cause:** Your JWT secret is too short for production security.
 
 **Solution:** Generate a longer secret (48+ characters recommended):
+
 ```bash
 openssl rand -base64 48
 ```
@@ -259,6 +276,7 @@ openssl rand -base64 48
 **Cause:** Missing database connection string in production.
 
 **Solution:** Set the `DATABASE_URL` environment variable:
+
 ```bash
 export DATABASE_URL="postgresql://user:password@host:5432/ringrift"
 ```
@@ -268,12 +286,14 @@ export DATABASE_URL="postgresql://user:password@host:5432/ringrift"
 **Cause:** One or more secrets failed validation.
 
 **Solution:** Check the error message for specific issues. Common causes:
+
 - Missing required secret
 - Placeholder value detected
 - Secret too short
 - Invalid URL format
 
 View the full error details:
+
 ```bash
 NODE_ENV=production node -e "require('./dist/server/config')"
 ```

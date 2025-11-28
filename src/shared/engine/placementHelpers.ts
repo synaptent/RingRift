@@ -1,4 +1,7 @@
-import type { GameState, Move, Position } from '../types/game';
+import type { GameState, Move, Position, BoardState, BoardType } from '../types/game';
+import { BOARD_CONFIGS, positionToString } from '../types/game';
+import { hasAnyLegalMoveOrCaptureFromOnBoard, MovementBoardView, calculateCapHeight } from './core';
+import { isValidPosition } from './validators/utils';
 
 /**
  * Shared helpers for placement application and skip-placement decisions.
@@ -96,10 +99,84 @@ export interface PlacementApplicationOutcome {
  *   legality checks.
  */
 export function applyPlacementMove(state: GameState, move: Move): PlacementApplicationOutcome {
-  throw new Error(
-    'TODO(P0-HELPERS): applyPlacementMove is a design-time stub. ' +
-      'See P0_TASK_21_SHARED_HELPER_MODULES_DESIGN.md for intended semantics.'
-  );
+  if (move.type !== 'place_ring') {
+    throw new Error(`applyPlacementMove: Expected 'place_ring' move, got '${move.type}'`);
+  }
+
+  const playerObj = state.players.find((p) => p.playerNumber === move.player);
+  if (!playerObj) {
+    throw new Error('applyPlacementMove: Player not found');
+  }
+
+  const requestedCount = move.placementCount ?? 1;
+  const effectiveCount = Math.min(requestedCount, playerObj.ringsInHand);
+
+  if (effectiveCount <= 0) {
+    // No rings to place - return state unchanged with zero placed
+    return {
+      nextState: state,
+      placementCount: 0,
+      placedOnStack: false,
+    };
+  }
+
+  const posKey = positionToString(move.to);
+  const existingStack = state.board.stacks.get(posKey);
+  const isPlacingOnStack = !!(existingStack && existingStack.rings.length > 0);
+
+  // Update board state with new placement
+  const newBoard: BoardState = {
+    ...state.board,
+    stacks: new Map(state.board.stacks),
+    markers: new Map(state.board.markers),
+  };
+
+  // Maintain stack/marker exclusivity: clear any marker at the destination
+  newBoard.markers.delete(posKey);
+
+  const placementRings = new Array(effectiveCount).fill(move.player);
+
+  if (isPlacingOnStack && existingStack) {
+    const rings = [...placementRings, ...existingStack.rings];
+    newBoard.stacks.set(posKey, {
+      ...existingStack,
+      rings,
+      stackHeight: rings.length,
+      capHeight: calculateCapHeight(rings),
+      controllingPlayer: rings[0],
+    });
+  } else {
+    const rings = placementRings;
+    newBoard.stacks.set(posKey, {
+      position: move.to,
+      rings,
+      stackHeight: rings.length,
+      capHeight: calculateCapHeight(rings),
+      controllingPlayer: rings[0],
+    });
+  }
+
+  // Update player's ringsInHand
+  const players = state.players.map((p) => {
+    if (p.playerNumber === move.player) {
+      return { ...p, ringsInHand: p.ringsInHand - effectiveCount };
+    }
+    return { ...p };
+  });
+
+  const nextState: GameState = {
+    ...state,
+    board: newBoard,
+    players,
+    moveHistory: [...state.moveHistory],
+    lastMoveAt: new Date(),
+  };
+
+  return {
+    nextState,
+    placementCount: effectiveCount,
+    placedOnStack: isPlacingOnStack,
+  };
 }
 
 /**
@@ -182,8 +259,83 @@ export function evaluateSkipPlacementEligibility(
   state: GameState,
   player: number
 ): SkipPlacementEligibilityResult {
-  throw new Error(
-    'TODO(P0-HELPERS): evaluateSkipPlacementEligibility is a design-time stub. ' +
-      'See P0_TASK_21_SHARED_HELPER_MODULES_DESIGN.md for intended semantics.'
-  );
+  // Phase check
+  if (state.currentPhase !== 'ring_placement') {
+    return {
+      canSkip: false,
+      reason: 'Not in ring placement phase',
+      code: 'INVALID_PHASE',
+    };
+  }
+
+  // Turn check
+  if (player !== state.currentPlayer) {
+    return {
+      canSkip: false,
+      reason: 'Not your turn',
+      code: 'NOT_YOUR_TURN',
+    };
+  }
+
+  const playerObj = state.players.find((p) => p.playerNumber === player);
+  if (!playerObj) {
+    return {
+      canSkip: false,
+      reason: 'Player not found',
+      code: 'PLAYER_NOT_FOUND',
+    };
+  }
+
+  // Build a movement board view for checking legal moves/captures
+  const boardView: MovementBoardView = {
+    isValidPosition: (pos: Position) => isValidPosition(pos, state.board.type, state.board.size),
+    isCollapsedSpace: (pos: Position) => state.board.collapsedSpaces.has(positionToString(pos)),
+    getStackAt: (pos: Position) => {
+      const key = positionToString(pos);
+      const stack = state.board.stacks.get(key);
+      if (!stack) return undefined;
+      return {
+        controllingPlayer: stack.controllingPlayer,
+        capHeight: stack.capHeight,
+        stackHeight: stack.stackHeight,
+      };
+    },
+    getMarkerOwner: (pos: Position) => {
+      const marker = state.board.markers.get(positionToString(pos));
+      return marker?.player;
+    },
+  };
+
+  let hasControlledStack = false;
+  let hasLegalActionFromStack = false;
+
+  for (const stack of state.board.stacks.values()) {
+    if (stack.controllingPlayer !== player || stack.stackHeight <= 0) {
+      continue;
+    }
+    hasControlledStack = true;
+
+    if (hasAnyLegalMoveOrCaptureFromOnBoard(state.board.type, stack.position, player, boardView)) {
+      hasLegalActionFromStack = true;
+      break;
+    }
+  }
+
+  if (!hasControlledStack) {
+    return {
+      canSkip: false,
+      reason: 'Cannot skip placement when you control no stacks on the board',
+      code: 'NO_CONTROLLED_STACKS',
+    };
+  }
+
+  if (!hasLegalActionFromStack) {
+    return {
+      canSkip: false,
+      reason: 'Cannot skip placement when no legal moves or captures are available',
+      code: 'NO_LEGAL_ACTIONS',
+    };
+  }
+
+  return { canSkip: true };
 }

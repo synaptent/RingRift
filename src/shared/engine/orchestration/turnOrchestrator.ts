@@ -8,8 +8,10 @@
  * domain aggregates for actual logic.
  */
 
-import type { GameState, GamePhase, Move, Territory } from '../../types/game';
+import type { GameState, GamePhase, Move, Territory, Position } from '../../types/game';
 import { positionToString } from '../../types/game';
+
+import { hashGameState } from '../core';
 
 import type {
   ProcessTurnResult,
@@ -205,17 +207,39 @@ export function processTurn(state: GameState, move: Move): ProcessTurnResult {
   const startTime = Date.now();
   const stateMachine = new PhaseStateMachine(createTurnProcessingState(state, move));
 
+  // Compute hash before applying move to detect if the move actually changed state
+  const hashBefore = hashGameState(stateMachine.gameState);
+
   // Apply the move based on type
-  const nextState = applyMove(stateMachine.gameState, move);
-  stateMachine.updateGameState(nextState);
+  const applyResult = applyMoveWithChainInfo(stateMachine.gameState, move);
+  stateMachine.updateGameState(applyResult.nextState);
+
+  // Compute hash after applying move
+  const hashAfter = hashGameState(stateMachine.gameState);
+  const moveActuallyChangedState = hashBefore !== hashAfter;
+
+  // If this was a capture move and chain continuation is required, set the chain capture state
+  if (applyResult.chainCaptureRequired && applyResult.chainCapturePosition) {
+    stateMachine.setChainCapture(true, applyResult.chainCapturePosition);
+  }
 
   // For placement moves, don't process post-move phases - the player still needs to move
   // Post-move phases (lines, territory) only happen after movement/capture
   const isPlacementMove = move.type === 'place_ring' || move.type === 'skip_placement';
 
+  // For decision moves (process_territory_region, eliminate_rings_from_stack, etc.),
+  // if the move didn't actually change state (e.g., Q23 prerequisite not met), don't
+  // process post-move phases - just return the unchanged state.
+  const isDecisionMove =
+    move.type === 'process_territory_region' ||
+    move.type === 'eliminate_rings_from_stack' ||
+    move.type === 'process_line' ||
+    move.type === 'choose_line_reward';
+
   let result: { pendingDecision?: PendingDecision; victoryResult?: VictoryState } = {};
-  if (!isPlacementMove) {
-    // Process post-move phases only for movement/capture moves
+  if (!isPlacementMove && (moveActuallyChangedState || !isDecisionMove)) {
+    // Process post-move phases only for movement/capture moves, or for decision moves
+    // that actually changed state.
     result = processPostMovePhases(stateMachine);
   }
 
@@ -240,9 +264,19 @@ export function processTurn(state: GameState, move: Move): ProcessTurnResult {
 }
 
 /**
- * Apply a move to the game state based on move type.
+ * Result of applying a move, including chain capture info for capture moves.
  */
-function applyMove(state: GameState, move: Move): GameState {
+interface ApplyMoveResult {
+  nextState: GameState;
+  chainCaptureRequired?: boolean;
+  chainCapturePosition?: Position;
+}
+
+/**
+ * Apply a move to the game state based on move type.
+ * For capture moves, also returns chain capture continuation info.
+ */
+function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
   switch (move.type) {
     case 'place_ring': {
       const action = {
@@ -254,16 +288,20 @@ function applyMove(state: GameState, move: Move): GameState {
       const newState = mutatePlacement(state, action);
       // After placement, advance to movement phase
       return {
-        ...newState,
-        currentPhase: 'movement' as GamePhase,
+        nextState: {
+          ...newState,
+          currentPhase: 'movement' as GamePhase,
+        },
       };
     }
 
     case 'skip_placement': {
       // Skip placement is a no-op on state, just phase transition
       return {
-        ...state,
-        currentPhase: 'movement' as GamePhase,
+        nextState: {
+          ...state,
+          currentPhase: 'movement' as GamePhase,
+        },
       };
     }
 
@@ -277,7 +315,7 @@ function applyMove(state: GameState, move: Move): GameState {
         to: move.to,
         player: move.player,
       });
-      return outcome.nextState;
+      return { nextState: outcome.nextState };
     }
 
     case 'overtaking_capture':
@@ -291,32 +329,40 @@ function applyMove(state: GameState, move: Move): GameState {
         landing: move.to,
         player: move.player,
       });
-      return outcome.nextState;
+      // Return chain capture info so the orchestrator can set state machine flags
+      if (outcome.chainContinuationRequired) {
+        return {
+          nextState: outcome.nextState,
+          chainCaptureRequired: true,
+          chainCapturePosition: move.to,
+        };
+      }
+      return { nextState: outcome.nextState };
     }
 
     case 'process_line': {
       const outcome = applyProcessLineDecision(state, move);
-      return outcome.nextState;
+      return { nextState: outcome.nextState };
     }
 
     case 'choose_line_reward': {
       const outcome = applyChooseLineRewardDecision(state, move);
-      return outcome.nextState;
+      return { nextState: outcome.nextState };
     }
 
     case 'process_territory_region': {
       const outcome = applyProcessTerritoryRegionDecision(state, move);
-      return outcome.nextState;
+      return { nextState: outcome.nextState };
     }
 
     case 'eliminate_rings_from_stack': {
       const outcome = applyEliminateRingsFromStackDecision(state, move);
-      return outcome.nextState;
+      return { nextState: outcome.nextState };
     }
 
     default: {
       // For unsupported move types, return state unchanged
-      return state;
+      return { nextState: state };
     }
   }
 }
@@ -480,6 +526,15 @@ export async function processTurnAsync(
   // Process any pending decisions
   while (result.status === 'awaiting_decision' && result.pendingDecision) {
     const decision = result.pendingDecision;
+
+    // Chain capture decisions should NOT be auto-resolved via delegates.
+    // They must be handled via explicit continue_capture_segment moves
+    // submitted through the normal makeMove() flow. Return with the pending
+    // decision so GameEngine can set up chainCaptureState and allow the
+    // caller to select a continuation move.
+    if (decision.type === 'chain_capture') {
+      return result;
+    }
 
     // Emit decision event if handler provided
     delegates.onProcessingEvent?.({

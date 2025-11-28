@@ -11,6 +11,8 @@ on:
       - '.env.example'
       - 'src/server/config/env.ts'
       - 'scripts/validate-deployment-config.ts'
+      - 'monitoring/**'
+      - 'scripts/validate-monitoring-configs.sh'
   pull_request:
     paths:
       - 'docker-compose*.yml'
@@ -18,6 +20,8 @@ on:
       - '.env.example'
       - 'src/server/config/env.ts'
       - 'scripts/validate-deployment-config.ts'
+      - 'monitoring/**'
+      - 'scripts/validate-monitoring-configs.sh'
 
 jobs:
   validate:
@@ -44,7 +48,7 @@ jobs:
         run: |
           # Install docker-compose v2 if not present
           docker compose version || echo "Docker Compose not available, skipping syntax check"
-          
+
           # Validate docker-compose.yml syntax
           if command -v docker &> /dev/null; then
             echo "Validating docker-compose.yml syntax..."
@@ -57,40 +61,149 @@ jobs:
       - name: Check for hardcoded secrets
         run: |
           echo "Scanning for potential hardcoded secrets..."
-          
+
           # Check docker-compose files for common secret patterns
           if grep -rE "(password|secret|key)=['\"]?[a-zA-Z0-9]{8,}['\"]?" docker-compose*.yml 2>/dev/null | grep -v '\${'; then
             echo "⚠️ Warning: Potential hardcoded secrets found (review above)"
           else
             echo "✅ No obvious hardcoded secrets in docker-compose files"
           fi
-          
+
           # This is informational only - validation script checks more thoroughly
 
       - name: Validate Dockerfile
         run: |
           echo "Checking Dockerfile best practices..."
-          
+
           # Check for HEALTHCHECK
           if grep -q "HEALTHCHECK" Dockerfile; then
             echo "✅ Dockerfile has HEALTHCHECK instruction"
           else
             echo "⚠️ Warning: Dockerfile missing HEALTHCHECK instruction"
           fi
-          
+
           # Check for non-root user
           if grep -q "USER " Dockerfile && ! grep -q "USER root" Dockerfile; then
             echo "✅ Dockerfile runs as non-root user"
           else
             echo "⚠️ Warning: Dockerfile may run as root"
           fi
-          
+
           # Check for multi-stage build
           if grep -q "AS builder\|AS runtime" Dockerfile; then
             echo "✅ Dockerfile uses multi-stage build"
           else
             echo "⚠️ Warning: Consider using multi-stage build"
           fi
+
+  # Monitoring configuration validation
+  validate-monitoring:
+    name: Validate Monitoring Configurations
+    runs-on: ubuntu-latest
+    # CI Safety: Monitoring validation should be quick
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate YAML syntax
+        run: |
+          echo "Validating YAML syntax of monitoring configs..."
+
+          # Use Python for YAML validation (available in ubuntu-latest)
+          python3 -c "
+          import yaml
+          import sys
+
+          files = [
+              'monitoring/prometheus/prometheus.yml',
+              'monitoring/prometheus/alerts.yml',
+              'monitoring/alertmanager/alertmanager.yml'
+          ]
+
+          errors = []
+          for f in files:
+              try:
+                  with open(f) as file:
+                      yaml.safe_load(file)
+                  print(f'✅ {f} - YAML syntax valid')
+              except yaml.YAMLError as e:
+                  print(f'❌ {f} - YAML syntax error: {e}')
+                  errors.append(f)
+              except FileNotFoundError:
+                  print(f'⚠️ {f} - File not found')
+
+          if errors:
+              sys.exit(1)
+          "
+
+      - name: Validate Prometheus config with promtool
+        run: |
+          echo "Pulling Prometheus image for validation..."
+          docker pull prom/prometheus:latest
+
+          # Create temp directory with configs
+          mkdir -p /tmp/prometheus-check
+          cp monitoring/prometheus/prometheus.yml /tmp/prometheus-check/
+          cp monitoring/prometheus/alerts.yml /tmp/prometheus-check/
+
+          # Update rule_files path for container context
+          sed -i "s|/etc/prometheus/alerts.yml|/config/alerts.yml|g" /tmp/prometheus-check/prometheus.yml
+
+          echo "Validating Prometheus config..."
+          docker run --rm -v /tmp/prometheus-check:/config:ro prom/prometheus:latest \
+            promtool check config /config/prometheus.yml
+
+          echo "✅ Prometheus config validation passed"
+
+      - name: Validate Prometheus alert rules with promtool
+        run: |
+          echo "Validating Prometheus alert rules..."
+          docker run --rm -v $(pwd)/monitoring/prometheus:/config:ro prom/prometheus:latest \
+            promtool check rules /config/alerts.yml
+
+          echo "✅ Prometheus alert rules validation passed"
+
+      - name: Validate Alertmanager config with amtool
+        run: |
+          echo "Pulling Alertmanager image for validation..."
+          docker pull prom/alertmanager:latest
+
+          echo "Validating Alertmanager config..."
+          docker run --rm -v $(pwd)/monitoring/alertmanager:/config:ro prom/alertmanager:latest \
+            amtool check-config /config/alertmanager.yml
+
+          echo "✅ Alertmanager config validation passed"
+
+      - name: Check for common configuration issues
+        run: |
+          echo "Checking for common configuration issues..."
+
+          # Check for potential hardcoded secrets
+          if grep -rE "(password|secret|token|key):\s*['\"]?[a-zA-Z0-9]{16,}['\"]?" monitoring/ 2>/dev/null | grep -v '\${' | grep -v '#'; then
+            echo "⚠️ Warning: Potential hardcoded secrets found (review manually)"
+          else
+            echo "✅ No obvious hardcoded secrets found"
+          fi
+
+          # Check for tabs in YAML files
+          if grep -P '\t' monitoring/**/*.yml 2>/dev/null; then
+            echo "⚠️ Warning: Tabs found in YAML files (spaces preferred)"
+          else
+            echo "✅ No tabs in YAML files"
+          fi
+
+          echo "✅ Common configuration checks completed"
 
   # Optional: Build test to ensure Docker images can be built
   build-test:

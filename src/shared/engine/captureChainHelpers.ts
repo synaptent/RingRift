@@ -1,38 +1,51 @@
 import type { GameState, Move, Position } from '../types/game';
+import { positionToString, stringToPosition } from '../types/game';
+import { validateCaptureSegmentOnBoard, type CaptureSegmentBoardView } from './core';
+import { isValidPosition } from './validators/utils';
+import type {
+  ChainCaptureStateSnapshot as AggregateChainSnapshot,
+  ChainCaptureEnumerationOptions as AggregateChainOptions,
+  CaptureBoardAdapters as AggregateCaptureBoardAdapters,
+} from './aggregates/CaptureAggregate';
+import {
+  enumerateChainCaptureSegments as enumerateChainCaptureSegmentsAggregate,
+  enumerateCaptureMoves as enumerateCaptureMovesAggregate,
+} from './aggregates/CaptureAggregate';
 
 /**
- * Shared primitives for capture-chain orchestration.
+ * Shared primitives for capture-chain orchestration (legacy shim).
  *
- * These helpers provide a host-agnostic surface that both the backend
- * [`captureChainEngine`](src/server/game/rules/captureChainEngine.ts:1) and the
- * client sandbox chain-capture logic can target instead of re-encoding the
- * rules around:
+ * This module now delegates all capture-segment geometry and chain
+ * enumeration to the canonical implementation in
+ * {@link aggregates/CaptureAggregate.ts} while preserving the older helper
+ * surface used by tests and tooling:
  *
- * - which follow-up capture segments are legal from a given landing position, and
- * - when a chain must continue vs may terminate.
+ * - {@link enumerateChainCaptureSegments}
+ * - {@link getChainCaptureContinuationInfo}
+ * - {@link canCapture}
+ * - {@link getValidCaptureTargets}
+ * - {@link processChainCapture}
  *
- * The functions here intentionally do **not** own any long-lived chain state;
- * they operate on a lightweight snapshot that each host is free to extend with
- * UI / history metadata. This mirrors the existing separation between:
+ * The goal for P1.2 is to ensure there is a single algorithmic source of
+ * truth for capture logic while keeping these helpers available as a thin,
+ * well-documented compatibility layer.
+ */
+
+/**
+ * Lightweight snapshot of chain-capture state used by legacy helpers.
  *
- * - backend: `TsChainCaptureState` + `getCaptureOptionsFromPosition`,
- * - sandbox: `performCaptureChainSandbox` +
- *   `enumerateCaptureSegmentsFromSandbox`.
+ * NOTE: The canonical aggregate snapshot uses {@code capturedThisChain:
+ * Position[]}. This shim maps {@link visitedTargets} to that field and does
+ * not own any independent enumeration logic.
  */
 export interface ChainCaptureStateSnapshot {
-  /**
-   * Player performing the capture chain.
-   *
-   * This must match {@link GameState.currentPlayer} in normal engine flows;
-   * the helpers do not mutate turn ownership.
-   */
+  /** Player performing the capture chain. */
   player: number;
 
   /**
    * Position of the capturing stack at the start of the **next** segment.
-   * For the first segment this is the origin of the initial overtaking
-   * capture; for later segments it is the landing position of the most
-   * recent segment.
+   * For the first segment this is the origin of the initial capture; for
+   * later segments it is the previous landing position.
    */
   currentPosition: Position;
 
@@ -40,121 +53,155 @@ export interface ChainCaptureStateSnapshot {
    * Optional set of capture-target positions (stringified via
    * {@link positionToString}) that have already been used in this chain.
    * When combined with {@link ChainCaptureEnumerationOptions.disallowRevisitedTargets}
-   * this allows hosts to enforce "no immediate backtracking" or
-   * "no repeated target" semantics without re-deriving them locally.
+   * this allows callers to request "no repeated target" enumeration without
+   * re-encoding that policy locally.
    */
   visitedTargets?: string[];
 }
 
 /**
  * Configuration for capture-chain segment enumeration.
+ *
+ * This mirrors the canonical {@link AggregateChainOptions} type but keeps
+ * the older name for compatibility.
  */
 export interface ChainCaptureEnumerationOptions {
-  /**
-   * When true, filter out any candidate segment whose captureTarget is
-   * present in {@link ChainCaptureStateSnapshot.visitedTargets}. This
-   * matches the semantics of the backend
-   * [`getCaptureOptionsFromPosition`](src/server/game/rules/captureChainEngine.ts:1)
-   * helper.
-   *
-   * Default: false.
-   */
+  /** See {@link AggregateChainOptions.disallowRevisitedTargets}. */
   disallowRevisitedTargets?: boolean;
-
-  /**
-   * Move number to embed in the generated {@link Move} instances. When not
-   * provided, callers are expected to patch `moveNumber` themselves before
-   * appending the moves to history.
-   */
+  /** See {@link AggregateChainOptions.moveNumber}. */
   moveNumber?: number;
-
-  /**
-   * How generated moves should be typed:
-   *
-   * - 'initial'      – `type: 'overtaking_capture'`
-   * - 'continuation' – `type: 'continue_capture_segment'`
-   *
-   * Hosts typically use 'initial' for the first segment of a chain and
-   * 'continuation' for all subsequent segments.
-   *
-   * Default: 'continuation'.
-   */
+  /** See {@link AggregateChainOptions.kind}. */
   kind?: 'initial' | 'continuation';
 }
 
 /**
- * Result of asking the shared engine whether a capture chain may or must
- * continue from the current position.
+ * Result of asking whether a capture chain may or must continue from the
+ * current position.
+ *
+ * Canonical aggregate naming uses {@code mustContinue} +
+ * {@code availableContinuations}; this shim preserves the older
+ * {@code hasFurtherCaptures} / {@code segments} naming used by tests.
  */
 export interface ChainCaptureContinuationInfo {
-  /**
-   * True when at least one legal capture segment exists from the current
-   * position. Under the standard rules this implies that the chain **must**
-   * continue; when false, the chain terminates and bookkeeping proceeds to
-   * line processing.
-   */
+  /** True when at least one legal capture segment exists from currentPosition. */
   hasFurtherCaptures: boolean;
-
-  /**
-   * Concrete `Move` instances describing each legal next segment, suitable
-   * for inclusion in `getValidMoves` during the `chain_capture` phase.
-   *
-   * These moves are not applied by this helper; hosts call
-   * [`applyCaptureSegment`](src/shared/engine/movementApplication.ts:1) (or
-   * their local equivalent during refactor) to apply the chosen segment.
-   */
+  /** Concrete {@link Move} values describing each legal next segment. */
   segments: Move[];
 }
 
+// ---------------------------------------------------------------------------
+// Internal mapping helpers
+// ---------------------------------------------------------------------------
+
+function toAggregateSnapshot(snapshot: ChainCaptureStateSnapshot): AggregateChainSnapshot {
+  const capturedThisChain = snapshot.visitedTargets?.map((s) => stringToPosition(s)) ?? [];
+
+  return {
+    player: snapshot.player,
+    currentPosition: snapshot.currentPosition,
+    capturedThisChain,
+  };
+}
+
+function toAggregateOptions(
+  options?: ChainCaptureEnumerationOptions
+): AggregateChainOptions | undefined {
+  if (!options) return undefined;
+
+  const result: AggregateChainOptions = {};
+
+  if (options.disallowRevisitedTargets !== undefined) {
+    result.disallowRevisitedTargets = options.disallowRevisitedTargets;
+  }
+  if (options.moveNumber !== undefined) {
+    result.moveNumber = options.moveNumber;
+  }
+  if (options.kind !== undefined) {
+    result.kind = options.kind;
+  }
+
+  return result;
+}
+
+function createCaptureBoardAdaptersFromState(state: GameState): AggregateCaptureBoardAdapters {
+  const board = state.board;
+  const boardType = state.board.type;
+  const size = board.size;
+
+  return {
+    isValidPosition: (pos: Position) => isValidPosition(pos, boardType, size),
+    isCollapsedSpace: (pos: Position) => board.collapsedSpaces.has(positionToString(pos)),
+    getStackAt: (pos: Position) => {
+      const key = positionToString(pos);
+      const stack = board.stacks.get(key);
+      if (!stack) return undefined;
+      return {
+        controllingPlayer: stack.controllingPlayer,
+        capHeight: stack.capHeight,
+        stackHeight: stack.stackHeight,
+      };
+    },
+    getMarkerOwner: (pos: Position) => {
+      const marker = board.markers.get(positionToString(pos));
+      return marker?.player;
+    },
+  };
+}
+
+function createCaptureSegmentViewFromState(state: GameState): CaptureSegmentBoardView {
+  const board = state.board;
+  const boardType = state.board.type;
+  const size = board.size;
+
+  return {
+    isValidPosition: (pos: Position) => isValidPosition(pos, boardType, size),
+    isCollapsedSpace: (pos: Position) => board.collapsedSpaces.has(positionToString(pos)),
+    getStackAt: (pos: Position) => {
+      const key = positionToString(pos);
+      const stack = board.stacks.get(key);
+      if (!stack) return undefined;
+      return {
+        controllingPlayer: stack.controllingPlayer,
+        capHeight: stack.capHeight,
+        stackHeight: stack.stackHeight,
+      };
+    },
+    getMarkerOwner: (pos: Position) => {
+      const marker = board.markers.get(positionToString(pos));
+      return marker?.player;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Canonical delegation helpers
+// ---------------------------------------------------------------------------
+
 /**
  * Enumerate all legal capture-chain segments for the specified player and
- * starting position on the given GameState.
+ * starting position on the given {@link GameState}.
  *
- * Responsibilities:
- *
- * - Delegate the geometric legality checks to the shared
- *   [`enumerateCaptureMoves`](src/shared/engine/captureLogic.ts:1) helper.
- * - Optionally filter out segments that revisit an already-captured target
- *   according to {@link ChainCaptureEnumerationOptions.disallowRevisitedTargets}.
- * - Normalise the `Move.type` field to either:
- *   - 'overtaking_capture'   (kind === 'initial'), or
- *   - 'continue_capture_segment' (kind === 'continuation').
- *
- * Error handling:
- *
- * - This helper assumes the provided {@link GameState} satisfies the usual
- *   board invariants (stack/marker/territory exclusivity).
- * - It is allowed to throw if structural invariants are violated, but is
- *   expected to be total for states produced by the canonical engines.
- *
- * NOTE: For P0 Task #21 this function is specified and documented but left
- * as a design-time stub; backend and sandbox hosts are **not** yet wired to
- * call it. Later tasks will port existing host logic into its body.
+ * This is now a thin wrapper over
+ * {@link aggregates/CaptureAggregate.enumerateChainCaptureSegments}, with
+ * a small adapter from {@link ChainCaptureStateSnapshot} to the canonical
+ * aggregate snapshot.
  */
 export function enumerateChainCaptureSegments(
   state: GameState,
   snapshot: ChainCaptureStateSnapshot,
   options?: ChainCaptureEnumerationOptions
 ): Move[] {
-  throw new Error(
-    'TODO(P0-HELPERS): enumerateChainCaptureSegments is a design-time stub. ' +
-      'See P0_TASK_21_SHARED_HELPER_MODULES_DESIGN.md for the intended semantics.'
-  );
+  const aggregateSnapshot = toAggregateSnapshot(snapshot);
+  const aggregateOptions = toAggregateOptions(options);
+
+  return enumerateChainCaptureSegmentsAggregate(state, aggregateSnapshot, aggregateOptions);
 }
 
 /**
  * Convenience wrapper that answers "must this chain continue?" in a single
  * call, returning both the boolean and the concrete segment list.
  *
- * This mirrors the combined usage pattern of:
- *
- * - backend: `updateChainCaptureStateAfterCapture` +
- *   `getCaptureOptionsFromPosition`, and
- * - sandbox: `enumerateCaptureSegmentsFromSandbox` +
- *   `performCaptureChainSandbox`.
- *
  * Hosts are expected to:
- *
  * - call this helper after applying each capture segment, and
  * - transition to the `chain_capture` phase when
  *   {@link ChainCaptureContinuationInfo.hasFurtherCaptures} is true, or
@@ -165,9 +212,120 @@ export function getChainCaptureContinuationInfo(
   snapshot: ChainCaptureStateSnapshot,
   options?: ChainCaptureEnumerationOptions
 ): ChainCaptureContinuationInfo {
-  const segments = enumerateChainCaptureSegments(state, snapshot, options);
+  const aggregateSnapshot = toAggregateSnapshot(snapshot);
+  const aggregateOptions = toAggregateOptions(options);
+
+  const segments = enumerateChainCaptureSegmentsAggregate(
+    state,
+    aggregateSnapshot,
+    aggregateOptions
+  );
+
   return {
     hasFurtherCaptures: segments.length > 0,
     segments,
+  };
+}
+
+/**
+ * Check if a capture is valid from a given position to a target and landing.
+ *
+ * This is a thin wrapper around {@link validateCaptureSegmentOnBoard} for
+ * convenience. It does not own any capture geometry logic.
+ */
+export function canCapture(
+  state: GameState,
+  from: Position,
+  target: Position,
+  landing: Position,
+  player: number
+): boolean {
+  const view = createCaptureSegmentViewFromState(state);
+
+  return validateCaptureSegmentOnBoard(state.boardType, from, target, landing, player, view);
+}
+
+/**
+ * Get all valid capture targets from a given position for a player.
+ *
+ * Returns an array of objects containing the target position and all valid
+ * landing positions for each target. Enumeration is delegated entirely to
+ * {@link CaptureAggregate.enumerateCaptureMoves}.
+ */
+export function getValidCaptureTargets(
+  state: GameState,
+  from: Position,
+  player: number
+): Array<{ target: Position; landings: Position[] }> {
+  const adapters = createCaptureBoardAdaptersFromState(state);
+  const moveNumber = state.moveHistory.length + 1;
+
+  const moves = enumerateCaptureMovesAggregate(state.boardType, from, player, adapters, moveNumber);
+
+  // Group moves by captureTarget
+  const byTarget = new Map<string, { target: Position; landings: Position[] }>();
+
+  for (const move of moves) {
+    if (!move.captureTarget || !move.to) continue;
+
+    const key = positionToString(move.captureTarget);
+    let entry = byTarget.get(key);
+    if (!entry) {
+      entry = { target: move.captureTarget, landings: [] };
+      byTarget.set(key, entry);
+    }
+    entry.landings.push(move.to);
+  }
+
+  return Array.from(byTarget.values());
+}
+
+/**
+ * Process a full capture chain starting from an initial capture move in a
+ * purely analytical way (no mutation). This helper is primarily useful for
+ * UI visualisation and AI decision making.
+ *
+ * NOTE:
+ * - This helper re-validates the initial segment via {@link canCapture}.
+ * - Continuation options are computed using the canonical chain enumerator
+ *   on the *unmutated* state, so
+ *   {@link ChainCaptureContinuationInfo.hasFurtherCaptures} is an
+ *   approximation. Hosts that need exact continuation sets should apply the
+ *   capture to a cloned state and then call the aggregate helpers directly.
+ */
+export function processChainCapture(
+  state: GameState,
+  initialFrom: Position,
+  initialTarget: Position,
+  initialLanding: Position,
+  player: number
+): {
+  isValid: boolean;
+  hasContinuation: boolean;
+  continuationOptions: Move[];
+} {
+  if (!canCapture(state, initialFrom, initialTarget, initialLanding, player)) {
+    return {
+      isValid: false,
+      hasContinuation: false,
+      continuationOptions: [],
+    };
+  }
+
+  const snapshot: ChainCaptureStateSnapshot = {
+    player,
+    currentPosition: initialLanding,
+    visitedTargets: [positionToString(initialTarget)],
+  };
+
+  const info = getChainCaptureContinuationInfo(state, snapshot, {
+    disallowRevisitedTargets: true,
+    kind: 'continuation',
+  });
+
+  return {
+    isValid: true,
+    hasContinuation: info.hasFurtherCaptures,
+    continuationOptions: info.segments,
   };
 }

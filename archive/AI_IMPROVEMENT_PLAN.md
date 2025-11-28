@@ -1,3 +1,10 @@
+> **Doc Status (2025-11-27): Archived (historical AI host improvement plan, Python service only)**
+>
+> - Role: early improvement plan for the Python AI microservice (agents, MCTS/NN pipeline, integration) from a prior architecture revision. Retained for historical context and archaeology; concrete planning should use the active AI host docs instead.
+> - Superseded by: the current AI host plan in [`ai-service/AI_IMPROVEMENT_PLAN.md`](../ai-service/AI_IMPROVEMENT_PLAN.md), the architecture overview in [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md), and the training/meta docs [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/AI_TRAINING_PREPARATION_GUIDE.md).
+> - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
+> - Related docs: other archived AI-era reports such as [`archive/AI_ASSESSMENT_REPORT.md`](./AI_ASSESSMENT_REPORT.md), [`archive/AI_CODE_REVIEW_REPORT.md`](./AI_CODE_REVIEW_REPORT.md), tournament summaries (`AI_TOURNAMENT_RESULTS*.md`), and incident/debug write-ups (`AI_STALL_*`).
+
 # RingRift AI Improvement Plan
 
 ## 1. Current State Analysis

@@ -59,10 +59,16 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Dict, Iterable, List
 
-# Allow imports from app/
+# Ensure project root (containing ``app`` and ``scripts``) is on sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.run_cmaes_optimization import (  # type: ignore
+    CMAESConfig,
+    run_cmaes_optimization,
+)
 
 from app.models import (  # type: ignore
     AIConfig,
@@ -384,6 +390,11 @@ def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
     results: List[MatchStats] = []
 
     if mode == "baseline-vs-trained":
+        if not args.trained_profiles_a:
+            raise SystemExit(
+                "--trained-profiles-a is required when mode=baseline-vs-trained"
+            )
+
         # Load trained profiles under *_trained ids for A/B comparison.
         load_trained_profiles_if_available(
             path=args.trained_profiles_a,
@@ -460,22 +471,87 @@ def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
     return results
 
 
+def run_cmaes_train(args: argparse.Namespace) -> None:
+    """Orchestrate a CMA-ES training run based on CLI arguments.
+
+    This resolves a baseline heuristic profile to concrete weights,
+    writes them to disk for the CMA-ES driver, and then invokes
+    :func:`run_cmaes_optimization` with a constructed
+    :class:`CMAESConfig`.
+    """
+    # Resolve baseline heuristic profile to raw weights.
+    baseline_profile_id = args.cmaes_baseline_profile_id
+    if baseline_profile_id not in HEURISTIC_WEIGHT_PROFILES:
+        raise SystemExit(
+            f"Unknown baseline profile id for CMA-ES: {baseline_profile_id!r}"
+        )
+    baseline_weights = HEURISTIC_WEIGHT_PROFILES[baseline_profile_id]
+
+    # Derive run identifiers and directories.
+    base_output_dir = args.cmaes_output_dir or "logs/cmaes"
+    run_id = args.cmaes_run_id or datetime.now().strftime("cmaes_%Y%m%d_%H%M%S")
+    run_dir = os.path.join(base_output_dir, "runs", run_id)
+    os.makedirs(run_dir, exist_ok=True)
+
+    # Persist baseline weights for the CMA-ES driver.
+    baseline_path = os.path.join(run_dir, "baseline_weights.json")
+    with open(baseline_path, "w", encoding="utf-8") as f:
+        json.dump(baseline_weights, f, indent=2, sort_keys=True)
+
+    # CMA-ES output/checkpoint locations.
+    output_path = os.path.join(run_dir, "best_weights.json")
+    checkpoint_dir = os.path.join(run_dir, "checkpoints")
+
+    # Map board string to enum used by the CMA-ES driver.
+    board_type_map = {
+        "square8": BoardType.SQUARE8,
+        "square19": BoardType.SQUARE19,
+        "hex": BoardType.HEXAGONAL,
+    }
+    board_type = board_type_map[args.cmaes_board]
+
+    config = CMAESConfig(
+        generations=args.cmaes_generations,
+        population_size=args.cmaes_population_size,
+        games_per_eval=args.cmaes_games_per_eval,
+        sigma=args.cmaes_sigma,
+        output_path=output_path,
+        baseline_path=baseline_path,
+        board_type=board_type,
+        checkpoint_dir=checkpoint_dir,
+        seed=args.cmaes_seed,
+        max_moves=args.cmaes_max_moves,
+        opponent_mode=args.cmaes_opponent_mode,
+        run_id=run_id,
+        run_dir=run_dir,
+        resume_from=None,
+    )
+
+    print("\n=== Starting CMA-ES training via heuristic experiment harness ===")
+    print(f"Baseline profile id: {baseline_profile_id}")
+    print(f"Run directory:       {run_dir}")
+    print(f"Baseline weights:    {baseline_path}")
+    run_cmaes_optimization(config)
+    print("=== CMA-ES training run completed ===\n")
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Run baseline-vs-trained or A/B experiments for HeuristicAI "
-            "profiles and emit a summary report."
+            "profiles, or orchestrate CMA-ES training runs, and emit a "
+            "summary report."
         )
     )
     parser.add_argument(
         "--mode",
-        choices=["baseline-vs-trained", "ab-trained"],
+        choices=["baseline-vs-trained", "ab-trained", "cmaes-train"],
         default="baseline-vs-trained",
         help="Experiment mode (default: baseline-vs-trained).",
     )
     parser.add_argument(
         "--trained-profiles-a",
-        required=True,
+        required=False,
         help=(
             "Path to trained profiles JSON file for experiment A. In "
             "baseline-vs-trained mode this is the single trained file "
@@ -525,7 +601,10 @@ def _parse_args() -> argparse.Namespace:
         "--games-per-match",
         type=int,
         default=200,
-        help="Number of games per (difficulty, board) pairing (default: 200).",
+        help=(
+            "Number of games per (difficulty, board) pairing "
+            "(default: 200)."
+        ),
     )
     parser.add_argument(
         "--out-json",
@@ -541,37 +620,145 @@ def _parse_args() -> argparse.Namespace:
             "Directories are created if needed."
         ),
     )
+    # CMA-ES training options (used when mode=cmaes-train).
+    parser.add_argument(
+        "--cmaes-generations",
+        type=int,
+        default=50,
+        help=(
+            "Number of CMA-ES generations when mode=cmaes-train "
+            "(default: 50)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-population-size",
+        type=int,
+        default=20,
+        help=(
+            "Population size per CMA-ES generation when mode=cmaes-train "
+            "(default: 20)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-games-per-eval",
+        type=int,
+        default=10,
+        help=(
+            "Games per candidate evaluation when mode=cmaes-train "
+            "(default: 10)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-sigma",
+        type=float,
+        default=0.5,
+        help=(
+            "Initial CMA-ES step size when mode=cmaes-train "
+            "(default: 0.5)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-output-dir",
+        default="logs/cmaes",
+        help=(
+            "Base directory for CMA-ES runs when mode=cmaes-train "
+            "(default: logs/cmaes)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-board",
+        type=str,
+        choices=["square8", "square19", "hex"],
+        default="square8",
+        help=(
+            "Board type for CMA-ES self-play when mode=cmaes-train "
+            "(default: square8)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-max-moves",
+        type=int,
+        default=200,
+        help=(
+            "Maximum moves per CMA-ES self-play game before declaring a "
+            "draw when mode=cmaes-train (default: 200)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-seed",
+        type=int,
+        default=None,
+        help=(
+            "Random seed for CMA-ES runs when mode=cmaes-train "
+            "(optional)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-opponent-mode",
+        type=str,
+        choices=["baseline-only", "baseline-plus-incumbent"],
+        default="baseline-only",
+        help=(
+            "Opponent pool mode for CMA-ES fitness evaluation when "
+            "mode=cmaes-train (default: baseline-only)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-baseline-profile-id",
+        type=str,
+        default="heuristic_v1_balanced",
+        help=(
+            "Baseline heuristic profile id whose weights seed CMA-ES and "
+            "act as the evaluation baseline when mode=cmaes-train "
+            "(default: heuristic_v1_balanced)."
+        ),
+    )
+    parser.add_argument(
+        "--cmaes-run-id",
+        type=str,
+        default=None,
+        help=(
+            "Logical run identifier used for CMA-ES training when "
+            "mode=cmaes-train (optional)."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    results = run_experiments(args)
 
-    # Human-readable summary
-    for r in results:
-        print("\n=== Heuristic Experiment Result ===")
-        print(f"Mode:              {r.mode}")
-        print(f"Difficulty:        {r.difficulty}")
-        print(f"Board:             {r.board}")
-        print(f"Games:             {r.games}")
-        print(f"Profile A:         {r.profile_a_id}")
-        print(f"Profile B:         {r.profile_b_id}")
-        print("-----------------------------------")
-        print(f"A wins:            {r.wins_a}")
-        print(f"B wins:            {r.wins_b}")
-        print(f"Draws:             {r.draws}")
-        print(f"Non-draws:         {r.non_draws}")
-        print(
-            f"A winrate (no draws): {r.winrate_a_excl_draws:.3f} | "
-            f"B winrate: {r.winrate_b_excl_draws:.3f}"
-        )
-        print("===================================")
+    if args.mode in ("baseline-vs-trained", "ab-trained"):
+        results = run_experiments(args)
 
-    if args.out_json:
-        _write_json(args.out_json, results)
-    if args.out_csv:
-        _write_csv(args.out_csv, results)
+        # Human-readable summary
+        for r in results:
+            print("\n=== Heuristic Experiment Result ===")
+            print(f"Mode:              {r.mode}")
+            print(f"Difficulty:        {r.difficulty}")
+            print(f"Board:             {r.board}")
+            print(f"Games:             {r.games}")
+            print(f"Profile A:         {r.profile_a_id}")
+            print(f"Profile B:         {r.profile_b_id}")
+            print("-----------------------------------")
+            print(f"A wins:            {r.wins_a}")
+            print(f"B wins:            {r.wins_b}")
+            print(f"Draws:             {r.draws}")
+            print(f"Non-draws:         {r.non_draws}")
+            print(
+                f"A winrate (no draws): {r.winrate_a_excl_draws:.3f} | "
+                f"B winrate: {r.winrate_b_excl_draws:.3f}"
+            )
+            print("===================================")
+
+        if args.out_json:
+            _write_json(args.out_json, results)
+        if args.out_csv:
+            _write_csv(args.out_csv, results)
+    elif args.mode == "cmaes-train":
+        run_cmaes_train(args)
+    else:
+        raise SystemExit(f"Unknown mode: {args.mode!r}")
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint

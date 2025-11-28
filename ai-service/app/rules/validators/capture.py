@@ -1,7 +1,7 @@
 from app.models import GameState, Move, GamePhase
 from app.rules.interfaces import Validator
-# from app.game_engine import GameEngine
 from app.board_manager import BoardManager
+from app.rules.capture_chain import validate_capture_segment_on_board_py
 
 
 class CaptureValidator(Validator):
@@ -47,10 +47,10 @@ class CaptureValidator(Validator):
             return False
 
         # 4. Core Validation
-        # Delegate to the shared helper that implements the full geometry
-        # and rules check.
-        from app.game_engine import GameEngine
-        return GameEngine._validate_capture_segment_on_board_for_reachability(
+        # Delegate to the canonical capture-chain helper that implements the
+        # full geometry and rules check, mirroring TS
+        # core.validateCaptureSegmentOnBoard semantics.
+        return validate_capture_segment_on_board_py(
             state.board.type,
             move.from_pos,
             move.capture_target,

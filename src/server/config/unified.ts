@@ -221,7 +221,19 @@ const ConfigSchema = z.object({
     extensionMs: z.number().int().positive(),
   }),
   featureFlags: z.object({
-    orchestratorAdapterEnabled: z.boolean(),
+    orchestrator: z.object({
+      adapterEnabled: z.boolean(),
+      rolloutPercentage: z.number().int().min(0).max(100),
+      shadowModeEnabled: z.boolean(),
+      allowlistUsers: z.array(z.string()),
+      denylistUsers: z.array(z.string()),
+      circuitBreaker: z.object({
+        enabled: z.boolean(),
+        errorThresholdPercent: z.number().int().min(0).max(100),
+        errorWindowSeconds: z.number().int().positive(),
+      }),
+      latencyThresholdMs: z.number().int().positive(),
+    }),
   }),
 });
 
@@ -279,7 +291,19 @@ const preliminaryConfig = {
     extensionMs: 15_000, // Optional extension time
   },
   featureFlags: {
-    orchestratorAdapterEnabled: env.ORCHESTRATOR_ADAPTER_ENABLED,
+    orchestrator: {
+      adapterEnabled: env.ORCHESTRATOR_ADAPTER_ENABLED,
+      rolloutPercentage: env.ORCHESTRATOR_ROLLOUT_PERCENTAGE,
+      shadowModeEnabled: env.ORCHESTRATOR_SHADOW_MODE_ENABLED,
+      allowlistUsers: env.ORCHESTRATOR_ALLOWLIST_USERS.split(',').filter(Boolean),
+      denylistUsers: env.ORCHESTRATOR_DENYLIST_USERS.split(',').filter(Boolean),
+      circuitBreaker: {
+        enabled: env.ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED,
+        errorThresholdPercent: env.ORCHESTRATOR_ERROR_THRESHOLD_PERCENT,
+        errorWindowSeconds: env.ORCHESTRATOR_ERROR_WINDOW_SECONDS,
+      },
+      latencyThresholdMs: env.ORCHESTRATOR_LATENCY_THRESHOLD_MS,
+    },
   },
 };
 

@@ -9,7 +9,7 @@ import {
   LineInfo,
   RingStack,
   MarkerInfo,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 
 /**
@@ -39,7 +39,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p2',
@@ -50,7 +50,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'p3',
@@ -61,12 +61,16 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 36,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
   }
 
-  test('line + territory consequences combine correctly on hex board (stubbed detection)', async () => {
+  // SKIP: This test calls deprecated internal method `processAutomaticConsequences()`.
+  // Territory processing now uses unified Move model via getValidMoves/applyMove with
+  // `process_territory_region` and `eliminate_rings_from_stack` move types.
+  // See: territoryDecisionHelpers.shared.test.ts for current architecture tests.
+  test.skip('line + territory consequences combine correctly on hex board (stubbed detection)', async () => {
     const players = createPlayers();
     const engine = new GameEngine('territory-line-hex', boardType, players, timeControl, false);
     const engineAny: any = engine;
@@ -81,7 +85,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
     const regionSpaces: Position[] = [
       { x: 0, y: 0, z: 0 },
       { x: 1, y: -1, z: 0 },
-      { x: 0, y: -1, z: 1 }
+      { x: 0, y: -1, z: 1 },
     ];
 
     // Place B stacks (player 2) in the region so internal eliminations occur.
@@ -92,7 +96,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
         rings: [2],
         stackHeight: 1,
         capHeight: 1,
-        controllingPlayer: 2
+        controllingPlayer: 2,
       };
       board.stacks.set(key, stack);
     }
@@ -106,7 +110,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
     // Hex adjacency for {x:1, y:-1, z:0} includes {x:2, y:-2, z:0}
     const borderPositions: Position[] = [
       { x: 2, y: -2, z: 0 },
-      { x: -1, y: 1, z: 0 }
+      { x: -1, y: 1, z: 0 },
     ];
 
     // Place P1 markers at border positions
@@ -115,7 +119,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
       const markerInfo: MarkerInfo = {
         player: 1,
         position: p,
-        type: 'regular'
+        type: 'regular',
       };
       board.markers.set(key, markerInfo);
     }
@@ -123,7 +127,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
     const territoryRegion: Territory = {
       spaces: regionSpaces,
       controllingPlayer: 1,
-      isDisconnected: true
+      isDisconnected: true,
     };
 
     jest
@@ -138,14 +142,14 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
       { x: -1, y: 1, z: 0 },
       { x: 0, y: 0, z: 0 },
       { x: 1, y: -1, z: 0 },
-      { x: 2, y: -2, z: 0 }
+      { x: 2, y: -2, z: 0 },
     ];
 
     const lineInfo: LineInfo = {
       positions: linePositions,
       player: 1,
       length: linePositions.length,
-      direction: { x: 1, y: -1, z: 0 }
+      direction: { x: 1, y: -1, z: 0 },
     };
 
     jest
@@ -164,7 +168,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
         rings: [1],
         stackHeight: 1,
         capHeight: 1,
-        controllingPlayer: 1
+        controllingPlayer: 1,
       };
       board.stacks.set(key, stack);
     };
@@ -187,8 +191,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
     const updatedGameState: GameState = (engineAny as any).gameState;
     const updatedBoard = updatedGameState.board;
 
-    const keysFrom = (positions: Position[]) =>
-      new Set(positions.map(p => positionToString(p)));
+    const keysFrom = (positions: Position[]) => new Set(positions.map((p) => positionToString(p)));
 
     const interiorKeys = keysFrom(regionSpaces);
     const borderKeys = keysFrom(borderPositions);
@@ -200,7 +203,7 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
     const allKeys = new Set<string>([
       ...Array.from(interiorKeys),
       ...Array.from(borderKeys),
-      ...Array.from(lineKeys)
+      ...Array.from(lineKeys),
     ]);
 
     // 1. All interior region spaces collapsed for P1 and empty of stacks.
@@ -223,7 +226,9 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
     }
 
     // 4. All stacks inside the region should be eliminated.
-    const collapsedForP1 = Array.from(updatedBoard.collapsedSpaces.values()).filter(v => v === 1).length;
+    const collapsedForP1 = Array.from(updatedBoard.collapsedSpaces.values()).filter(
+      (v) => v === 1
+    ).length;
 
     // We do not assert a precise territorySpaces count on hex here,
     // since collapsed spaces may include additional positions beyond
@@ -231,7 +236,9 @@ describe('GameEngine territory + line processing (hexagonal)', () => {
     // are gone and elimination accounting behaves as expected.
 
     // 5. All stacks inside the region should be eliminated.
-    const stacksInRegion = Array.from(updatedBoard.stacks.keys()).filter(k => interiorKeys.has(k));
+    const stacksInRegion = Array.from(updatedBoard.stacks.keys()).filter((k) =>
+      interiorKeys.has(k)
+    );
     expect(stacksInRegion.length).toBe(0);
 
     // 6. Eliminated ring counts should at least include the internal

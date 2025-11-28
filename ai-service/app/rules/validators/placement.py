@@ -1,79 +1,85 @@
 from app.models import GameState, Move, MoveType, GamePhase
 from app.rules.interfaces import Validator
-# from app.game_engine import GameEngine
-from app.board_manager import BoardManager
+from app.rules.placement import (
+    PlacementContextPy,
+    evaluate_skip_placement_eligibility_py,
+    validate_placement_on_board_py,
+)
+from app.rules.core import BOARD_CONFIGS
+
 
 class PlacementValidator(Validator):
     def validate(self, state: GameState, move: Move) -> bool:
-        # 1. Phase Check
+        """Validate PLACE_RING and SKIP_PLACEMENT moves.
+
+        Phase/turn checks remain here; board geometry, caps, and
+        no-dead-placement semantics are delegated to the canonical
+        helpers in app.rules.placement, mirroring the TS
+        PlacementAggregate.validatePlacement / validatePlacementOnBoard
+        split.
+        """
+        # 1. Phase check
         if state.current_phase != GamePhase.RING_PLACEMENT:
             return False
 
-        # 1.5. Skip Placement Check
+        # 1.5. Skip-placement handling
         if move.type == MoveType.SKIP_PLACEMENT:
-            # Delegate to GameEngine helper which mirrors TS logic
-            from app.game_engine import GameEngine
-            skip_moves = GameEngine._get_skip_placement_moves(state, move.player)
-            return any(m.type == MoveType.SKIP_PLACEMENT for m in skip_moves)
+            # Turn check
+            if move.player != state.current_player:
+                return False
 
-        # 2. Turn Check
+            player = next(
+                (p for p in state.players if p.player_number == move.player),
+                None,
+            )
+            if not player:
+                return False
+
+            # Host-level tightening: skip-placement is only surfaced when
+            # the player has at least one ring in hand. This mirrors the
+            # backend/sandbox use of the shared skip-placement aggregate
+            # plus a separate ringsInHand > 0 check.
+            if player.rings_in_hand <= 0:
+                return False
+
+            result = evaluate_skip_placement_eligibility_py(state, move.player)
+            return result.eligible
+
+        # This validator only handles PLACE_RING / SKIP_PLACEMENT.
+        if move.type != MoveType.PLACE_RING:
+            return False
+
+        # 2. Turn check
         if move.player != state.current_player:
             return False
 
-        player = next((p for p in state.players if p.player_number == move.player), None)
+        player = next(
+            (p for p in state.players if p.player_number == move.player),
+            None,
+        )
         if not player:
             return False
 
-        # 3. Rings in Hand Check
+        if move.to is None:
+            return False
+
         count = move.placement_count or 1
-        if player.rings_in_hand < count:
-            return False
 
-        # 4. Position Validity Check
-        if not BoardManager.is_valid_position(move.to, state.board.type, state.board.size):
-            return False
+        board_type = state.board.type
+        board_config = BOARD_CONFIGS[board_type]
 
-        pos_key = move.to.to_key()
+        ctx = PlacementContextPy(
+            board_type=board_type,
+            player=move.player,
+            rings_in_hand=player.rings_in_hand,
+            rings_per_player_cap=board_config.rings_per_player,
+        )
 
-        # 5. Collapsed Space Check
-        if pos_key in state.board.collapsed_spaces:
-            return False
-        
-        # Cannot place on markers
-        if pos_key in state.board.markers:
-            return False
-
-        existing_stack = state.board.stacks.get(pos_key)
-
-        # 6. Placement Logic Checks
-        if existing_stack and existing_stack.stack_height > 0:
-            # Placing on existing stack
-            if count != 1:
-                return False
-        else:
-            # Placing on empty space
-            if count < 1 or count > 3:
-                return False
-            # Note: ringsInHand check above covers the capacity limit implicitly
-
-        # 7. No-Dead-Placement Rule Check
-        # Construct a hypothetical board representing the state AFTER placement.
-        from app.game_engine import GameEngine
-        hyp_board = GameEngine._create_hypothetical_board_with_placement(
+        result = validate_placement_on_board_py(
             state.board,
             move.to,
-            move.player,
             count,
+            ctx,
         )
 
-        has_legal_move = GameEngine._has_any_movement_or_capture_after_hypothetical_placement(
-            state,
-            move.player,
-            move.to,
-            hyp_board,
-        )
-
-        if not has_legal_move:
-            return False
-
-        return True
+        return result.valid

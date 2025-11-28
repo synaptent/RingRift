@@ -1,5 +1,11 @@
 # RingRift AI Service
 
+> **Doc Status (2025-11-27): Active (Python AI microservice, AI host/adapter only)**
+>
+> - Role: primary reference for the Python AI microservice API surface, difficulty ladder, and integration with the Node.js backend. It describes the AI host, not the game rules themselves.
+> - Not a semantics or lifecycle SSoT: the Python rules engine inside this service is a **host/adapter** over the shared TypeScript rules SSoT under `src/shared/engine/**` and the engine contracts under `src/shared/engine/contracts/**`, with cross-language behaviour anchored by the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`. For canonical rules semantics and lifecycle/API contracts, defer to [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
+> - Related docs: high-level AI architecture and roadmap in [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md), host-focused analysis in [`ai-service/AI_ASSESSMENT_REPORT.md`](./AI_ASSESSMENT_REPORT.md), improvement roadmap in [`ai-service/AI_IMPROVEMENT_PLAN.md`](./AI_IMPROVEMENT_PLAN.md), training workflows in [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/AI_TRAINING_AND_DATASETS.md) and [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/AI_TRAINING_PREPARATION_GUIDE.md), and TS↔Python rules parity details in [`docs/PYTHON_PARITY_REQUIREMENTS.md`](../docs/PYTHON_PARITY_REQUIREMENTS.md) and [`docs/STRICT_INVARIANT_SOAKS.md`](../docs/STRICT_INVARIANT_SOAKS.md).
+
 Python-based FastAPI microservice for AI move generation and position evaluation.
 
 ## Architecture
@@ -14,11 +20,11 @@ This service provides AI capabilities for the RingRift game through a RESTful AP
 ## Features
 
 - **Currently supported AI types (canonical ladder)**:
-  - RandomAI: Selects random valid moves (difficulty 1–2)
-  - HeuristicAI: Uses strategic heuristics (difficulty 3–5)
-  - MinimaxAI: Depth-limited search with evaluation, used for difficulty 6–8
-  - MCTSAI: Monte Carlo tree search implementation, used for difficulty 9–10
-  - DescentAI: Local-descent evaluator used in some parity and evaluation tests
+  - RandomAI: Selects random valid moves (difficulty 1)
+  - HeuristicAI: Uses strategic heuristics (difficulty 2)
+  - MinimaxAI: Depth-limited minimax with alpha-beta pruning (difficulty 3–6)
+  - MCTSAI: Monte Carlo tree search with PUCT/RAVE (difficulty 7–8)
+  - DescentAI: UBFM/Descent-style tree search (difficulty 9–10)
 
   These types are wired through the **canonical 1–10 difficulty ladder** defined in [`app/main.py`](ai-service/app/main.py) and mirrored in the TypeScript backend’s `AI_DIFFICULTY_PRESETS` in [`AIEngine.ts`](../src/server/game/ai/AIEngine.ts:1). For a given numeric difficulty, both the backend and service agree on the underlying AI type, randomness, and think-time budget.
 
@@ -34,6 +40,85 @@ This service provides AI capabilities for the RingRift game through a RESTful AP
 - **Health Checks**: Container orchestration support
 
 For end-to-end training, self-play, and dataset-generation workflows that consume this service and its embedded rules engine (including the territory/combined-margin generator), see [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1). For the territory forced-elimination / `TerritoryMutator` incident and its fix, see [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1).
+
+## Offline Training & Evaluation Scripts
+
+The AI service repo also contains **offline training/diagnostic scripts** that reuse the same
+`HeuristicAI` and rules/parity backbone as the production service. These are not part of the
+FastAPI surface, but they are important for experimentation and regression analysis.
+
+### CMA-ES Heuristic Optimisation
+
+The canonical CMA-ES harness lives in [`scripts/run_cmaes_optimization.py`](scripts/run_cmaes_optimization.py).
+It exposes both a library-style `run_cmaes_optimization(config)` entry point and a CLI:
+
+```bash
+cd ai-service
+python scripts/run_cmaes_optimization.py \
+  --board square8 \
+  --generations 4 \
+  --population-size 16 \
+  --games-per-eval 32 \
+  --sigma 0.5 \
+  --baseline-profile-id heuristic_v1_balanced \
+  --output-dir logs/cmaes \
+  --run-id demo_cmaes_square8_v1
+```
+
+- Baseline weights are taken from `BASE_V1_BALANCED_WEIGHTS` in
+  [`app/ai/heuristic_weights.py`](app/ai/heuristic_weights.py).
+- Fitness is computed by `evaluate_fitness(...)` (also used by the genetic harness), which
+  plays self-play matches vs the baseline heuristic under the shared TS↔Python rules engine.
+- Results are written under `logs/cmaes/runs/<run_id>/`:
+  - `run_meta.json`, `baseline_weights.json`, `best_weights.json`.
+  - Per-generation summaries in `generations/generation_00N.json`.
+  - Checkpoints in `checkpoints/checkpoint_gen00N.json`.
+
+For a higher-level orchestration wrapper that also generates statistical reports, see
+[`scripts/run_heuristic_experiment.py`](scripts/run_heuristic_experiment.py) and the
+summary in `docs/AI_TRAINING_ASSESSMENT_FINAL.md` (§10 “Extended CMA-ES Tuning Run #1”).
+
+### Genetic Search over Heuristic Weights
+
+An experimental genetic search harness lives in
+[`scripts/run_genetic_heuristic_search.py`](scripts/run_genetic_heuristic_search.py). It
+explores the same heuristic weight space as CMA-ES but with a simple GA:
+
+- Individuals are `HeuristicWeights` dicts (same keys as `BASE_V1_BALANCED_WEIGHTS`).
+- Fitness is delegated to `evaluate_fitness(...)` from `run_cmaes_optimization.py`, so CMA-ES
+  and GA share a single fitness definition and plateau diagnostics.
+- Selection uses elitism (top-K per generation), with Gaussian per-weight mutation.
+
+Typical invocation (from `ai-service/`):
+
+```bash
+python scripts/run_genetic_heuristic_search.py \
+  --generations 3 \
+  --population-size 8 \
+  --elite-count 3 \
+  --games-per-eval 16 \
+  --sigma 2.0 \
+  --board square8 \
+  --output-dir logs/ga \
+  --run-id ga_v1_square8_demo \
+  --seed 12345
+```
+
+Key implementation details:
+
+- Supports `--eval-mode` (`initial-only` vs `multi-start`) and `--state-pool-id` to reuse the
+  same evaluation-pool infrastructure as CMA-ES (`ai-service/app/training/eval_pools.py`).
+- Prints per-individual diagnostics via the `debug_hook` from `evaluate_fitness`, including
+  wins/draws/losses and `weight_l2` vs baseline, so you can quickly see whether a run is
+  actually exploring distinct policies.
+- Logs are written under `logs/ga/runs/<run_id>/`, with `best_weights.json` matching the
+  CMA-ES schema (`{"weights": { ... }}`) so downstream tooling can treat GA outputs and
+  CMA-ES outputs uniformly.
+
+Both CMA-ES and GA harnesses are covered by the heuristic-training sanity suite
+(`ai-service/tests/test_heuristic_training_evaluation.py`) and statistical reporting
+pipelines (`scripts/generate_statistical_report.py`), as described in
+[`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md#56-heuristic-training-sanity--plateau-diagnostics).
 
 ## API Endpoints
 
@@ -519,6 +604,150 @@ curl -X POST http://localhost:8001/ai/move \
 
 Visit http://localhost:8001/docs for Swagger UI with interactive testing
 
+## Distributed Training
+
+The training infrastructure supports distributed training using PyTorch's DistributedDataParallel (DDP) for multi-GPU training on a single machine or across multiple nodes.
+
+### Quick Start
+
+```bash
+# Single-node multi-GPU training with torchrun
+cd ai-service
+./scripts/run_distributed_training.sh 4 \
+  --data path/to/data.npz \
+  --epochs 100 \
+  --scale-lr
+
+# Or use torchrun directly
+torchrun --nproc_per_node=4 \
+  app/training/train.py \
+  --distributed \
+  --data path/to/data.npz \
+  --epochs 100
+```
+
+### Key Features
+
+1. **Automatic Data Sharding**: StreamingDataLoader automatically shards data
+   across workers so each GPU processes unique samples:
+
+   ```python
+   from app.training.data_loader import StreamingDataLoader
+   from app.training.distributed import get_rank, get_world_size
+
+   loader = StreamingDataLoader(
+       data_paths=["data1.npz", "data2.npz"],
+       batch_size=64,
+       rank=get_rank(),
+       world_size=get_world_size(),
+   )
+   # Each worker gets ~total_samples/world_size unique samples
+   ```
+
+2. **Versioned Checkpoints**: Uses ModelVersionManager for checkpoint
+   management with architecture validation and checksum verification:
+
+   ```python
+   from app.training.model_versioning import ModelVersionManager
+
+   manager = ModelVersionManager()
+
+   # Save with full metadata
+   metadata = manager.create_metadata(model, training_info={...})
+   manager.save_checkpoint(model, metadata, "checkpoint.pth")
+
+   # Load with validation
+   state, metadata = manager.load_checkpoint("checkpoint.pth")
+   ```
+
+3. **High-Level DistributedTrainer**: Coordinates all components:
+
+   ```python
+   from app.training.distributed import DistributedTrainer
+   from app.training.config import TrainConfig
+
+   config = TrainConfig(epochs_per_iter=100, batch_size=64)
+
+   trainer = DistributedTrainer(
+       config=config,
+       data_paths=["data1.npz", "data2.npz"],
+       model=my_model,
+   )
+   trainer.setup()      # Initialize distributed, wrap model, create loaders
+   trainer.train()      # Run training loop with metrics
+   trainer.cleanup()    # Clean up resources
+   ```
+
+### Command Line Arguments
+
+The `train.py` script supports the following distributed training options:
+
+| Argument                   | Description                                |
+| -------------------------- | ------------------------------------------ |
+| `--distributed`            | Enable distributed training with DDP       |
+| `--local-rank`             | Local rank (set automatically by torchrun) |
+| `--scale-lr`               | Scale learning rate based on world size    |
+| `--lr-scale-mode`          | LR scaling mode: `linear` or `sqrt`        |
+| `--find-unused-parameters` | Enable for models with unused params       |
+
+### Checkpoint Synchronization
+
+- **Only rank 0 saves checkpoints** to avoid file conflicts
+- **All ranks load checkpoints** on resume for consistency
+- **Barrier synchronization** before and after checkpoint operations
+
+```python
+# In DistributedTrainer.checkpoint():
+synchronize()  # All ranks wait here
+if is_main_process():
+    # Only rank 0 saves
+    manager.save_checkpoint(model, metadata, path)
+synchronize()  # All ranks wait until save is complete
+```
+
+### Streaming Data Sharding
+
+The StreamingDataLoader partitions samples across workers:
+
+```
+Total samples: 1000
+World size: 4
+
+Rank 0 gets: samples 0, 4, 8, 12, ... (250 samples)
+Rank 1 gets: samples 1, 5, 9, 13, ... (250 samples)
+Rank 2 gets: samples 2, 6, 10, 14, ... (250 samples)
+Rank 3 gets: samples 3, 7, 11, 15, ... (250 samples)
+```
+
+Each epoch shuffles with a deterministic seed so all ranks see consistent
+ordering when using the same base seed.
+
+### Multi-Node Training
+
+For multi-node training, set the appropriate environment variables:
+
+```bash
+# On node 0 (master)
+export MASTER_ADDR=192.168.1.100
+export MASTER_PORT=29500
+torchrun --nnodes=2 --node_rank=0 --nproc_per_node=4 \
+  app/training/train.py --distributed ...
+
+# On node 1
+export MASTER_ADDR=192.168.1.100
+export MASTER_PORT=29500
+torchrun --nnodes=2 --node_rank=1 --nproc_per_node=4 \
+  app/training/train.py --distributed ...
+```
+
+### Best Practices
+
+1. **Scale learning rate** with `--scale-lr` when using multiple GPUs
+2. **Use linear scaling** for small world sizes (2-4 GPUs)
+3. **Use sqrt scaling** for larger setups (8+ GPUs)
+4. **Monitor per-rank metrics** using DistributedMetrics class
+5. **Set consistent seeds** across ranks for reproducibility
+
 ## Future Enhancements
 
 - [ ] Productionize Minimax AI with alpha-beta pruning and integrate it into the main `/ai/move` path (building on [`MinimaxAI`](ai-service/app/ai/minimax_ai.py:1) and its tests).
@@ -617,18 +846,21 @@ The TypeScript side uses the [`SeededRNG`](../src/shared/utils/rng.ts:1) class (
 
 ### Testing Determinism
 
-**Python tests** (in [`tests/test_determinism.py`](tests/test_determinism.py:1)):
+**Python tests**:
 
-- `test_seeded_random_ai_determinism` - Same seed produces identical moves
-- `test_different_seeds_produce_different_moves` - Different seeds diverge
-- `test_heuristic_ai_determinism` - HeuristicAI with seeded RNG
-- `test_evaluation_determinism` - Position evaluation consistency
+- [`test_engine_determinism.py`](tests/test_engine_determinism.py:1) - applies a fixed scripted move sequence from a
+  canonical initial `GameState` and asserts identical final snapshots and `hash_game_state` values on repeated runs.
+- [`test_no_random_in_rules_core.py`](tests/test_no_random_in_rules_core.py:1) - guards against unseeded randomness in
+  the Python rules core, mirroring the TS `NoRandomInCoreRules.test.ts` invariant.
 
 **TypeScript tests**:
 
-- [`RNGDeterminism.test.ts`](../tests/unit/RNGDeterminism.test.ts:1) - SeededRNG class behavior
-- [`Sandbox_vs_Backend.aiRngParity.test.ts`](../tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1) - RNG plumbing verification
-- [`GameSession.aiDeterminism.test.ts`](../tests/integration/GameSession.aiDeterminism.test.ts:1) - End-to-end AI determinism
+- [`Sandbox_vs_Backend.aiRngParity.test.ts`](../tests/unit/Sandbox_vs_Backend.aiRngParity.test.ts:1) - RNG plumbing verification and shared seeded-RNG injection across backend and sandbox.
+- [`Sandbox_vs_Backend.aiRngFullParity.test.ts`](../tests/unit/Sandbox_vs_Backend.aiRngFullParity.test.ts:1) - Deeper RNG parity coverage (diagnostic/opt-in).
+- [`GameSession.aiDeterminism.test.ts`](../tests/integration/GameSession.aiDeterminism.test.ts:1) - End-to-end AI determinism for server-side game sessions.
+- [`EngineDeterminism.shared.test.ts`](../tests/unit/EngineDeterminism.shared.test.ts:1) - Shared-engine determinism and turn replay invariants for the canonical TS rules engine.
+- [`NoRandomInCoreRules.test.ts`](../tests/unit/NoRandomInCoreRules.test.ts:1) - Guards against unseeded randomness in core shared-engine helpers/aggregates/orchestrator.
+- _Historical:_ an earlier `RNGDeterminism.test.ts` suite exercised the raw `SeededRNG` implementation; its coverage is now subsumed by the integrated determinism and "no random in core" suites above.
 
 ## Performance Considerations
 

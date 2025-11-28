@@ -71,6 +71,21 @@ function cloneBoard(board: BoardState): BoardState {
  * (e.g. `simulate_best_post_move_chain`) but is built entirely on the
  * sandbox capture helpers and the shared, pure validator
  * `validateCaptureSegmentOnBoard`.
+ *
+ * IMPORTANT:
+ * - This search is **analysis / debug only** and is not a rules SSOT.
+ * - It MUST NOT be used to drive user-facing legality surfaces such as
+ *   getValidMoves, ClientSandboxEngine.handleMovementClick, or AI move
+ *   validation.
+ * - All rules-level capture enumeration and application must instead go
+ *   through the shared capture aggregate
+ *   (CaptureAggregate.enumerateCaptureMoves / applyCaptureSegment /
+ *   applyCapture) or its shims.
+ *
+ * Callers should treat this helper as a tooling primitive for exploring
+ * potential chains under additional heuristics (e.g. pruneVisitedPositions),
+ * not as an authority on what the current player is required or allowed
+ * to play.
  */
 export function findMaxCaptureChains(
   boardType: BoardType,

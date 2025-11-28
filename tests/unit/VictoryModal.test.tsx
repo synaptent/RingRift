@@ -2,13 +2,11 @@ import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { VictoryModal } from '../../src/client/components/VictoryModal';
+import { toVictoryViewModel } from '../../src/client/adapters/gameViewModels';
 import { GameResult, Player, GameState, BoardState } from '../../src/shared/types/game';
 
 // Helper to create test game result
-function createGameResult(
-  winner: number | undefined,
-  reason: GameResult['reason']
-): GameResult {
+function createGameResult(winner: number | undefined, reason: GameResult['reason']): GameResult {
   return {
     winner,
     reason,
@@ -528,6 +526,41 @@ describe('VictoryModal', () => {
     expect(rows[1]).toHaveTextContent('👑');
   });
 
+  it('should render correctly when provided a prebuilt VictoryViewModel', () => {
+    const players = createTestPlayers();
+    const gameResult = createGameResult(1, 'ring_elimination');
+    const gameState = createTestGameState(players);
+
+    const viewModel = toVictoryViewModel(gameResult, players, gameState, {
+      currentUserId: 'user1',
+      isDismissed: false,
+    });
+
+    // Sanity check: viewModel should be non-null and visible
+    expect(viewModel).not.toBeNull();
+    if (!viewModel) {
+      return;
+    }
+
+    render(
+      <VictoryModal
+        isOpen={true}
+        viewModel={viewModel}
+        onClose={mockOnClose}
+        onReturnToLobby={mockOnReturnToLobby}
+      />
+    );
+
+    // Title and description come from the view model path
+    expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
+    expect(screen.getByText(/Victory by eliminating all opponent rings/)).toBeInTheDocument();
+
+    // Stats table is rendered via the view model finalStats
+    const table = screen.getByRole('table');
+    const rows = within(table).getAllByRole('row');
+    expect(rows).toHaveLength(1 + players.length);
+  });
+
   it('should display statistics from gameResult when gameState not provided', () => {
     const players = createTestPlayers();
     const gameResult = createGameResult(1, 'ring_elimination');
@@ -641,7 +674,7 @@ describe('VictoryModal', () => {
     const players = createTestPlayers();
     const gameResult = createGameResult(1, 'ring_elimination');
     const gameState = createTestGameState(players);
-    
+
     // Add some history entries
     gameState.history = [
       { moveNumber: 1, action: {} as any, actor: 1 } as any,
@@ -664,9 +697,9 @@ describe('VictoryModal', () => {
 
     // Alice (player 1) should have 3 moves, Bob (player 2) should have 2
     const rows = screen.getAllByRole('row');
-    
+
     // Find Alice's row (should be first after header due to being winner)
-    const aliceRow = rows.find(row => row.textContent?.includes('Alice'));
+    const aliceRow = rows.find((row) => row.textContent?.includes('Alice'));
     expect(aliceRow).toHaveTextContent('3'); // 3 moves for Alice
   });
 });

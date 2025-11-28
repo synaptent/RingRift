@@ -47,6 +47,39 @@ import { isValidPosition } from '../validators/utils';
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
+ * Individual segment in a capture chain, tracking the from, target, landing
+ * positions and the cap height of the captured stack.
+ *
+ * This is used by host engines to track the full history of a multi-segment
+ * chain capture as it progresses.
+ */
+export interface ChainCaptureSegment {
+  from: Position;
+  target: Position;
+  landing: Position;
+  capturedCapHeight: number;
+}
+
+/**
+ * Full chain capture state used by host engines (GameEngine, etc.) to track
+ * mandatory chain captures across multiple segments.
+ *
+ * This differs from ChainCaptureStateSnapshot in that it maintains the full
+ * segment history, visited positions for cycle detection, and cached
+ * available moves for the current position.
+ */
+export interface ChainCaptureState {
+  playerNumber: number;
+  startPosition: Position;
+  currentPosition: Position;
+  segments: ChainCaptureSegment[];
+  /** Full capture moves (from=currentPosition) that the player may choose from */
+  availableMoves: Move[];
+  /** Positions visited by the capturing stack to help avoid pathological cycles */
+  visitedPositions: Set<string>;
+}
+
+/**
  * Adapter interface for board queries used by capture enumeration.
  * Callers construct this from a GameState/BoardState using lightweight
  * stack/marker projections.
@@ -698,39 +731,50 @@ export function mutateCapture(
     });
   }
 
-  // 5. Handle landing on own marker (if applicable)
-  // Rule 10.2: If the landing space is occupied by your own marker...
-  // remove the marker... and remove the bottom-most ring from the NEW combined stack.
+  // 5. Handle landing on marker (if applicable)
+  // Rule: If landing on your own marker, remove the marker and eliminate the TOP ring
+  // from the NEW combined stack (per rules 8.2, 8.3, 16.5.1).
+  // If landing on opponent marker, remove the marker (no ring elimination) to maintain
+  // the invariant that stacks and markers cannot coexist at the same position.
   const landingMarker = newState.board.markers.get(toKey);
-  if (landingMarker && landingMarker.player === action.playerId) {
-    newState.board.markers.delete(toKey);
+  if (landingMarker) {
+    if (landingMarker.player === action.playerId) {
+      // Own marker: remove and eliminate top ring
+      newState.board.markers.delete(toKey);
 
-    const currentStack = newState.board.stacks.get(toKey)!;
-    const bottomRingOwner = currentStack.rings[currentStack.rings.length - 1];
-    const reducedRings = currentStack.rings.slice(0, -1);
+      const currentStack = newState.board.stacks.get(toKey)!;
+      // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
+      const topRingOwner = currentStack.rings[0];
+      const reducedRings = currentStack.rings.slice(1); // Remove first element (the top)
 
-    // Update elimination counts
-    newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + 1;
-    newState.board.eliminatedRings[bottomRingOwner] =
-      (newState.board.eliminatedRings[bottomRingOwner] || 0) + 1;
+      // Update elimination counts
+      newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + 1;
+      newState.board.eliminatedRings[topRingOwner] =
+        (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
 
-    const player = newState.players.find((p) => p.playerNumber === bottomRingOwner);
-    if (player) {
-      player.eliminatedRings++;
-    }
+      const player = newState.players.find((p) => p.playerNumber === topRingOwner);
+      if (player) {
+        player.eliminatedRings++;
+      }
 
-    // Update the stack on board with the reduced rings
-    if (reducedRings.length > 0) {
-      newState.board.stacks.set(toKey, {
-        ...currentStack,
-        rings: reducedRings,
-        stackHeight: reducedRings.length,
-        capHeight: calculateCapHeight(reducedRings),
-        controllingPlayer: reducedRings[0],
-      });
+      // Update the stack on board with the reduced rings
+      if (reducedRings.length > 0) {
+        newState.board.stacks.set(toKey, {
+          ...currentStack,
+          rings: reducedRings,
+          stackHeight: reducedRings.length,
+          capHeight: calculateCapHeight(reducedRings),
+          controllingPlayer: reducedRings[0], // New top ring is the controller
+        });
+      } else {
+        // Stack eliminated completely
+        newState.board.stacks.delete(toKey);
+      }
     } else {
-      // Stack eliminated completely
-      newState.board.stacks.delete(toKey);
+      // Opponent marker: remove the marker (no ring elimination)
+      // This handles the case where a capture lands on an opponent's marker.
+      // The marker is simply removed to maintain the stack/marker coexistence invariant.
+      newState.board.markers.delete(toKey);
     }
   }
 
@@ -738,6 +782,53 @@ export function mutateCapture(
   newState.lastMoveAt = new Date();
 
   return newState;
+}
+
+/**
+ * Update or initialize the internal chain capture state after an
+ * overtaking capture has been successfully applied to the board.
+ *
+ * This is used by host engines (GameEngine) to track mandatory chain
+ * captures. It creates a new state on the first capture segment and
+ * updates the existing state for subsequent segments.
+ *
+ * @param state - Current chain capture state (undefined on first capture)
+ * @param move - The capture move that was just applied
+ * @param capturedCapHeight - The cap height of the stack that was captured
+ * @returns Updated chain capture state, or undefined if move is invalid
+ */
+export function updateChainCaptureStateAfterCapture(
+  state: ChainCaptureState | undefined,
+  move: Move,
+  capturedCapHeight: number
+): ChainCaptureState | undefined {
+  if (!move.from || !move.captureTarget || !move.to) {
+    return state;
+  }
+
+  const segment: ChainCaptureSegment = {
+    from: move.from,
+    target: move.captureTarget,
+    landing: move.to,
+    capturedCapHeight,
+  };
+
+  if (!state) {
+    return {
+      playerNumber: move.player,
+      startPosition: move.from,
+      currentPosition: move.to,
+      segments: [segment],
+      availableMoves: [],
+      visitedPositions: new Set<string>([positionToString(move.from)]),
+    };
+  }
+
+  // Continuing an existing chain
+  state.currentPosition = move.to;
+  state.segments.push(segment);
+  state.visitedPositions.add(positionToString(move.from));
+  return state;
 }
 
 /**

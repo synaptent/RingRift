@@ -3,6 +3,10 @@
  * Runs AFTER test framework is installed
  */
 
+// Set orchestrator adapter default for tests (Phase 3 migration complete)
+// This ensures tests and ClientSandboxEngine have consistent behavior
+process.env.ORCHESTRATOR_ADAPTER_ENABLED = process.env.ORCHESTRATOR_ADAPTER_ENABLED ?? 'true';
+
 // Import Testing Library jest-dom matchers
 import '@testing-library/jest-dom';
 
@@ -43,7 +47,7 @@ jest.setTimeout(10000);
 // Mock window.matchMedia for components using media queries
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: jest.fn().mockImplementation(query => ({
+  value: jest.fn().mockImplementation((query) => ({
     matches: false,
     media: query,
     onchange: null,

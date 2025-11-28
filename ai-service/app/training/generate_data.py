@@ -1,25 +1,30 @@
 """
 Self-play data generation script for RingRift
-Uses MCTS to generate high-quality training data with data augmentation
+Uses MCTS to generate high-quality training data with data augmentation.
+
+Supports both square (8x8, 19x19) and hexagonal boards.
+Hex boards use D6 symmetry augmentation (12 transformations).
 """
 
 import argparse
 import os
 import random as py_random
-import sys
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Tuple
 
 import numpy as np
 
-from app.ai.descent_ai import DescentAI  # noqa: E402
-from app.ai.neural_net import INVALID_MOVE_INDEX  # noqa: E402
-from app.game_engine import GameEngine  # noqa: E402
-from app.models import (  # noqa: E402
+from app.ai.descent_ai import DescentAI
+from app.ai.neural_net import INVALID_MOVE_INDEX
+from app.models import (
     GameState, BoardType, BoardState, GamePhase, GameStatus, TimeControl,
     Player, AIConfig
 )
-from app.training.env import RingRiftEnv  # noqa: E402
+from app.training.env import RingRiftEnv
+from app.training.hex_augmentation import (
+    HexSymmetryTransform,
+    augment_hex_sample,
+)
 
 
 def create_initial_state(
@@ -171,28 +176,36 @@ def calculate_outcome(state, player_number, depth):
 
 def augment_data(
     features,
-    globals,
+    globals_vec,
     policy_indices,
     policy_values,
     neural_net,
     board_type: BoardType,
+    hex_transform: Optional[HexSymmetryTransform] = None,
 ):
     """
     Augment data by rotating and flipping.
 
     Returns a list of (features, globals, policy_indices, policy_values)
-    tuples. For hexagonal boards we currently skip augmentation because
-    simple rotations/flips of the rectangular embedding do not correspond
-    cleanly to legal hex symmetries.
+    tuples.
+
+    For square boards: 8 augmentations (4 rotations × 2 flips)
+    For hexagonal boards: 12 augmentations (D6 symmetry group)
     """
-    # Hex boards: no geometric augmentation for now.
+    # Hex boards: use D6 symmetry augmentation (12 transformations)
     if board_type == BoardType.HEXAGONAL:
-        return [(features, globals, policy_indices, policy_values)]
+        return augment_hex_data(
+            features,
+            globals_vec,
+            policy_indices,
+            policy_values,
+            hex_transform,
+        )
 
     augmented = []
 
     # Original sample
-    augmented.append((features, globals, policy_indices, policy_values))
+    augmented.append((features, globals_vec, policy_indices, policy_values))
 
     # Helper to transform a sparse policy
     def transform_policy(indices, values, k_rot, flip_h):
@@ -311,7 +324,7 @@ def augment_data(
             k,
             False,
         )
-        augmented.append((rotated_features, globals, r_indices, r_values))
+        augmented.append((rotated_features, globals_vec, r_indices, r_values))
 
     # Flip (horizontal)
     flipped_features = np.flip(features, axis=2)
@@ -321,7 +334,7 @@ def augment_data(
         0,
         True,
     )
-    augmented.append((flipped_features, globals, f_indices, f_values))
+    augmented.append((flipped_features, globals_vec, f_indices, f_values))
 
     # Flip + rotations
     for k in range(1, 4):
@@ -333,9 +346,52 @@ def augment_data(
             k,
             True,
         )
-        augmented.append((rf_features, globals, rf_indices, rf_values))
+        augmented.append((rf_features, globals_vec, rf_indices, rf_values))
 
     return augmented
+
+
+def augment_hex_data(
+    features: np.ndarray,
+    globals_vec: np.ndarray,
+    policy_indices: np.ndarray,
+    policy_values: np.ndarray,
+    hex_transform: Optional[HexSymmetryTransform] = None,
+) -> List[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    """
+    Augment hex board data using D6 symmetry transformations.
+
+    Applies all 12 transformations from the dihedral group D6:
+    - 6 rotations (0°, 60°, 120°, 180°, 240°, 300°)
+    - 6 reflections (rotation + swap)
+
+    Args:
+        features: Board feature tensor (C, H, W)
+        globals_vec: Global features vector
+        policy_indices: Sparse policy move indices
+        policy_values: Sparse policy probabilities
+        hex_transform: Optional pre-created transform (efficiency)
+
+    Returns:
+        List of 12 augmented (features, globals, indices, values) tuples
+    """
+    if hex_transform is None:
+        hex_transform = HexSymmetryTransform()
+
+    # Convert to numpy arrays if needed
+    if not isinstance(policy_indices, np.ndarray):
+        policy_indices = np.array(policy_indices, dtype=np.int32)
+    if not isinstance(policy_values, np.ndarray):
+        policy_values = np.array(policy_values, dtype=np.float32)
+
+    # Use the hex augmentation module
+    return augment_hex_sample(
+        features,
+        globals_vec,
+        policy_indices,
+        policy_values,
+        hex_transform,
+    )
 
 
 def generate_dataset(

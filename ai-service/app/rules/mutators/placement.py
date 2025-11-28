@@ -1,19 +1,36 @@
-from app.models import GameState, Move
+from app.models import GameState, Move, MoveType
 from app.rules.interfaces import Mutator
-# from app.game_engine import GameEngine
+from app.rules.placement import apply_place_ring_py
 
 
 class PlacementMutator(Mutator):
     def apply(self, state: GameState, move: Move) -> None:
         """Apply a PLACE_RING move to ``state`` in-place.
 
-        This is a thin wrapper around ``GameEngine._apply_place_ring`` so
-        that placement behaviour has a single source of truth. Timeline
-        bookkeeping (e.g. ``last_move_at``, phase updates, move history)
-        remains the responsibility of the orchestrator
-        (``GameEngine.apply_move`` / ``DefaultRulesEngine.apply_move``).
+        This mutator delegates core placement semantics to the canonical
+        helper layer in ``app.rules.placement``, mirroring the pattern
+        used by CaptureMutator:
+
+        - ``apply_place_ring_py`` performs the mutation via
+          ``GameEngine.apply_move`` on a working copy of the state.
+        - The resulting GameState is then copied back onto ``state`` so
+          that DefaultRulesEngine mutator-first orchestration can compare
+          against GameEngine.apply_move without duplicating algorithms.
+
+        Timeline bookkeeping (e.g. ``last_move_at``, phase updates,
+        move history, hashes) remains the responsibility of the
+        orchestrator (``GameEngine.apply_move`` /
+        ``DefaultRulesEngine.apply_move``).
         """
-        # GameEngine._apply_place_ring mutates the provided GameState in-place
-        # and keeps board/players in sync with the TS semantics.
-        from app.game_engine import GameEngine
-        GameEngine._apply_place_ring(state, move)
+        if move.type != MoveType.PLACE_RING:
+            return
+
+        # Work on a deep copy to avoid mutating the caller's state via
+        # the intermediate engine call. Copy the resulting canonical
+        # GameState back field-by-field, as in CaptureMutator.
+        working_state = state.model_copy(deep=True)
+        outcome = apply_place_ring_py(working_state, move)
+
+        next_state = outcome.next_state
+        for field_name in state.model_fields:
+            setattr(state, field_name, getattr(next_state, field_name))

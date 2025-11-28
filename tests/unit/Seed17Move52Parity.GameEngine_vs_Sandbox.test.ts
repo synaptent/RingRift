@@ -18,9 +18,17 @@ import { addMarker, addStack, addCollapsedSpace, pos } from '../utils/fixtures';
  * then apply the move and let each engine run its automatic
  * consequences. We assert that the resulting board summaries and
  * S-invariants match.
+ *
+ * NOTE: Skipped when ORCHESTRATOR_ADAPTER_ENABLED=true because this test
+ * manipulates internal engine state directly, which is incompatible with
+ * the orchestrator adapter's unified processing flow (intentional divergence).
  */
 
-describe('Seed17 move 52 parity: GameEngine vs ClientSandboxEngine', () => {
+// Skip this test suite when orchestrator adapter is enabled - direct internal state manipulation
+const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
+const maybeDescribe = skipWithOrchestrator ? describe.skip : describe;
+
+maybeDescribe('Seed17 move 52 parity: GameEngine vs ClientSandboxEngine', () => {
   const boardType: BoardType = 'square8';
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 

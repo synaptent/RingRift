@@ -35,6 +35,9 @@ tensorboardX==2.6.2.2
 # gymnasium - Modern RL environment interface (successor to OpenAI Gym)
 gymnasium==1.0.0
 
+# CMA-ES for heuristic weight optimization
+cma>=3.3.0
+
 # Note: stable-baselines3 removed - incompatible with numpy 2.x
 # We'll implement RL algorithms directly using PyTorch instead
 # This gives us more control and flexibility for RingRift-specific RL

@@ -1,5 +1,13 @@
 # RingRift Test Layering Strategy
 
+> **Doc Status (2025-11-27): Active (test meta-doc, non-semantics)**
+>
+> **Role:** Define a clear test layering strategy (unit → contract/scenario → integration → E2E) so that suites are classified consistently, redundancy is minimized, and CI profiles remain predictable. This doc is a **test/meta reference only** – it describes how tests are organised and which layers should run where; it does **not** define game rules or lifecycle semantics.
+>
+> **Not a semantics SSoT:** Canonical rules and lifecycle semantics are owned by the shared TypeScript rules engine and contracts/vectors (`src/shared/engine/**`, `src/shared/engine/contracts/**`, `tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) together with the written rules and lifecycle docs (`RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `docs/CANONICAL_ENGINE_API.md`). This file should always defer to those SSoTs when describing “what is correct”; it only describes **how we test** that correctness.
+>
+> **Related docs:** `tests/README.md`, `tests/TEST_SUITE_PARITY_PLAN.md`, `docs/PARITY_SEED_TRIAGE.md`, `RULES_SCENARIO_MATRIX.md`, `RULES_ENGINE_ARCHITECTURE.md`, and `DOCUMENTATION_INDEX.md`.
+
 > **Purpose:** Define a clear test layering strategy to minimize redundancy, improve iteration speed, and ensure each layer has a specific purpose.
 
 ## Test Layer Overview
@@ -89,12 +97,12 @@ Test individual functions, modules, and components in isolation.
 
 #### Infrastructure
 
-| File                          | Purpose                  | Keep/Review |
-| ----------------------------- | ------------------------ | ----------- |
-| `envFlags.test.ts`            | Environment flag parsing | ✅ Keep     |
-| `notation.test.ts`            | Move notation parsing    | ✅ Keep     |
-| `NoRandomInCoreRules.test.ts` | Determinism guard        | ✅ Keep     |
-| `RNGDeterminism.test.ts`      | RNG consistency          | ✅ Keep     |
+| File                          | Purpose                  | Keep/Review                                                                                                 |
+| ----------------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `envFlags.test.ts`            | Environment flag parsing | ✅ Keep                                                                                                     |
+| `notation.test.ts`            | Move notation parsing    | ✅ Keep                                                                                                     |
+| `NoRandomInCoreRules.test.ts` | Determinism guard        | ✅ Keep                                                                                                     |
+| `RNGDeterminism.test.ts`      | RNG consistency          | 🕒 Historical (removed; superseded by `EngineDeterminism.shared.test.ts` and `NoRandomInCoreRules.test.ts`) |
 
 ---
 
@@ -102,14 +110,14 @@ Test individual functions, modules, and components in isolation.
 
 ### Purpose
 
-Validate that all engine implementations (TS backend, TS sandbox, Python) produce identical outputs for the same inputs.
+Validate that the **canonical shared TS engine** (helpers + aggregates + orchestrator under `src/shared/engine/`) behaves as specified by the rules docs, and that other engines (backend hosts, sandbox adapters, Python rules engine) match it via **contract vectors and shared fixtures**.
 
 ### Characteristics
 
 - **Speed:** < 500ms per vector
-- **Dependencies:** Canonical engine, test fixtures
+- **Dependencies:** Shared TS engine, contract schemas, vector fixtures, Python parity runners
 - **Determinism:** 100% deterministic
-- **Granularity:** State transitions, move validation
+- **Granularity:** State transitions, move validation, domain‑aggregate behaviour
 
 ### Contract Test Vectors (`tests/fixtures/contract-vectors/v2/`)
 
@@ -200,6 +208,10 @@ Validate complete user journeys in a real browser environment.
 
 ```
 tests/unit/*.shared.test.ts          # Core logic tests
+tests/unit/GameEngine.movement.shared.test.ts             # Backend movement wired to MovementAggregate
+tests/unit/ClientSandboxEngine.movementParity.shared.test.ts  # Sandbox movement parity vs MovementAggregate
+tests/unit/ClientSandboxEngine.placement.shared.test.ts   # Sandbox placement/skip parity vs PlacementAggregate
+tests/unit/RuleEngine.skipPlacement.shared.test.ts        # RuleEngine skip_placement parity vs PlacementAggregate
 tests/contracts/                      # Contract vectors
 tests/fixtures/contract-vectors/      # Test vector data
 ```
@@ -237,14 +249,16 @@ ai-service/tests/invariants/          # Invariant tests
 
 #### Parity Tests → Contract Vectors
 
-Many parity tests can be converted to contract vectors:
+Many parity and snapshot parity tests can be converted to or backed by contract vectors:
 
-| Parity Test                       | Contract Vector            |
-| --------------------------------- | -------------------------- |
-| `MovementCaptureParity.*.test.ts` | → `movement.vectors.json`  |
-| `PlacementParity.*.test.ts`       | → `placement.vectors.json` |
-| `VictoryParity.*.test.ts`         | → Add victory vectors      |
-| `TerritoryParity.*.test.ts`       | → `territory.vectors.json` |
+| Parity Test Suite                                 | Contract Vector / Anchor                                                                                           |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Backend_vs_Sandbox.traceParity.test.ts`          | Backed by `movement.vectors.json`, `capture.vectors.json`, `line_detection.vectors.json`, `territory.vectors.json` |
+| `Backend_vs_Sandbox.eliminationTrace.test.ts`     | Backed by elimination/territory vectors and victory semantics (add dedicated victory vectors over time)            |
+| `Backend_vs_Sandbox.seed*.snapshotParity.test.ts` | Should be derivable from and consistent with vector-backed traces                                                  |
+| `TerritoryParity.GameEngine_vs_Sandbox.test.ts`   | → `territory.vectors.json`                                                                                         |
+| `TerritoryCore.GameEngine_vs_Sandbox.test.ts`     | → `territory.vectors.json`                                                                                         |
+| `TraceFixtures.sharedEngineParity.test.ts`        | → `movement.vectors.json`, `capture.vectors.json`, `line_detection.vectors.json`, `territory.vectors.json`         |
 
 #### Seed-Specific Tests → Historical Failures
 
@@ -263,15 +277,22 @@ Keep seed-specific tests only for documented historical failures:
 
 Some tests duplicate behavior across engines:
 
-| GameEngine Test                             | Sandbox Test                                         | Recommendation                    |
-| ------------------------------------------- | ---------------------------------------------------- | --------------------------------- |
-| `GameEngine.lines.scenarios.test.ts`        | `ClientSandboxEngine.lines.test.ts`                  | Promote shared cases to contracts |
-| `GameEngine.territoryDisconnection.test.ts` | `ClientSandboxEngine.territoryDisconnection.test.ts` | Same                              |
-| `GameEngine.victory.*.test.ts`              | `ClientSandboxEngine.victory.test.ts`                | Same                              |
+| GameEngine Test                             | Sandbox / Cross-Host Test                                                                                                               | Recommendation                                                                                                                                                                    |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GameEngine.lines.scenarios.test.ts`        | `ClientSandboxEngine.lines.test.ts`                                                                                                     | Promote shared cases to contracts                                                                                                                                                 |
+| `GameEngine.territoryDisconnection.test.ts` | `ClientSandboxEngine.territoryDisconnection.test.ts`                                                                                    | Same                                                                                                                                                                              |
+| `GameEngine.victory.*.test.ts`              | `GameEngine.victory.LPS.scenarios.test.ts`, `ClientSandboxEngine.victory.LPS.crossInteraction.test.ts`, `RulesMatrix.Victory.*.test.ts` | Same high-level semantics; prefer shared `victory.shared.test.ts` + RulesMatrix victory suites as the semantic anchor, and treat engine-/sandbox-specific suites as adapter views |
 
 ---
 
 ## CI Pipeline Configuration
+
+> **Orchestrator profiles:** Unless explicitly noted otherwise, these commands are assumed to run with `ORCHESTRATOR_ADAPTER_ENABLED=true` and `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, treating the orchestrator adapter as the default rules path. Legacy/SHADOW profiles (with the adapter disabled or `EngineSelection.LEGACY`/`SHADOW` forced by configuration) should be reserved for targeted parity/regression jobs that focus on legacy behaviour and `ShadowModeComparator` metrics.
+>
+> **Semantic gates vs diagnostics:**
+>
+> - **Semantic gates in CI:** `*.shared.test.ts` suites, contract‑vector tests (`tests/contracts/**` + `tests/fixtures/contract-vectors/v2/**`), and RulesMatrix/FAQ scenario suites (`tests/scenarios/RulesMatrix.*.test.ts`, `tests/scenarios/FAQ_*.test.ts`) are the primary rules **authorities** and should be treated as hard gates in CI.
+> - **Diagnostic / legacy suites:** Seeded trace parity, backend↔sandbox parity suites (`Backend_vs_Sandbox.*`, `TerritoryParity.*`, `Sandbox_vs_Backend.*`), and historical/seed‑specific tests are **diagnostic nets**. They may run in separate jobs or be skipped/env‑gated; when they disagree with the semantic gates, the `.shared` + contracts + RulesMatrix suites win.
 
 ### Fast Feedback (< 2 min)
 

@@ -5,6 +5,7 @@
 Procedures for safely applying Prisma database migrations to RingRift environments. This runbook complements [OPERATIONS_DB.md](../OPERATIONS_DB.md) with step-by-step operational procedures.
 
 **Critical Rules:**
+
 - Never run `prisma migrate dev` against staging or production
 - Never run `prisma db push` against staging or production
 - Always backup before applying migrations to production
@@ -14,19 +15,19 @@ Procedures for safely applying Prisma database migrations to RingRift environmen
 
 ## Migration Types and Risk Assessment
 
-| Migration Type | Risk Level | Requires Backup | Downtime |
-|---------------|------------|-----------------|----------|
-| Add nullable column | Low | Recommended | None |
-| Add table | Low | Recommended | None |
-| Add required column | Medium | Required | Brief |
-| Add index | Medium | Recommended | None* |
-| Modify column type | High | Required | Possible |
-| Drop column | High | Required | None** |
-| Drop table | Critical | Required | None** |
-| Rename column/table | High | Required | May require downtime |
+| Migration Type      | Risk Level | Requires Backup | Downtime             |
+| ------------------- | ---------- | --------------- | -------------------- |
+| Add nullable column | Low        | Recommended     | None                 |
+| Add table           | Low        | Recommended     | None                 |
+| Add required column | Medium     | Required        | Brief                |
+| Add index           | Medium     | Recommended     | None\*               |
+| Modify column type  | High       | Required        | Possible             |
+| Drop column         | High       | Required        | None\*\*             |
+| Drop table          | Critical   | Required        | None\*\*             |
+| Rename column/table | High       | Required        | May require downtime |
 
-*Large tables may lock during index creation  
-**After backwards-compatibility period
+\*Large tables may lock during index creation  
+\*\*After backwards-compatibility period
 
 ---
 
@@ -98,18 +99,21 @@ git commit -m "feat: add preferredLanguage field to User model"
 For zero-downtime deployments, use expand-contract pattern:
 
 **Phase 1: Expand (add new column as nullable)**
+
 ```sql
 -- Migration 1: Add nullable column
 ALTER TABLE users ADD COLUMN preferred_language VARCHAR(10);
 ```
 
 **Phase 2: Migrate Data**
+
 ```sql
 -- Migration 2 or application code: Populate existing rows
 UPDATE users SET preferred_language = 'en' WHERE preferred_language IS NULL;
 ```
 
 **Phase 3: Contract (make required after all apps updated)**
+
 ```sql
 -- Migration 3: Add constraint after all app versions handle it
 ALTER TABLE users ALTER COLUMN preferred_language SET NOT NULL;
@@ -194,8 +198,9 @@ curl -s http://localhost:3000/ready | jq
 ### 2.5 Staging Smoke Tests
 
 ```bash
-# Run smoke tests
-npm run test:smoke -- --env=staging
+# Verify deployment via health checks
+curl -s http://localhost:3000/health | jq
+curl -s http://localhost:3000/ready | jq
 
 # Manual verification:
 # - Login works
@@ -245,6 +250,7 @@ head -20 backups/prod_pre_migration_*.sql | tail -1  # Should show SQL commands
 ```
 
 **For managed databases (AWS RDS, GCP CloudSQL, etc.):**
+
 ```bash
 # Create snapshot through provider console or CLI
 # AWS example:
@@ -261,10 +267,10 @@ docker compose run --rm app npx prisma migrate status
 
 # Check active connections
 docker compose exec postgres psql -U ringrift -d ringrift -c "
-SELECT count(*) as active_connections, 
+SELECT count(*) as active_connections,
        state,
-       wait_event_type 
-FROM pg_stat_activity 
+       wait_event_type
+FROM pg_stat_activity
 WHERE datname = 'ringrift'
 GROUP BY state, wait_event_type;"
 ```
@@ -343,7 +349,7 @@ docker compose logs app --since 15m | grep -c ERROR
 # Post in #deployments channel
 # Template:
 ✅ DATABASE MIGRATION COMPLETE
-Environment: Production  
+Environment: Production
 Migration: add_user_preferred_language
 Duration: X minutes
 Status: Success
@@ -449,7 +455,7 @@ UPDATE table_name SET new_field = 'default_value' WHERE new_field IS NULL;
 "
 
 # Migration 2: Make required (after all data populated)
-# prisma/schema.prisma  
+# prisma/schema.prisma
 # newField String  // Now required
 
 # Generate and apply migration 2
@@ -489,6 +495,7 @@ CREATE INDEX CONCURRENTLY idx_users_email ON users(email);
 ### 5.4 Dropping a Table or Column
 
 **Pre-requisites:**
+
 1. Verify no application code references the column/table
 2. Deploy application without references
 3. Wait for all old instances to be replaced
@@ -569,16 +576,16 @@ docker compose run --rm app npx prisma db pull --print
 
 ## Quick Reference Commands
 
-| Task | Command |
-|------|---------|
-| Check migration status | `npx prisma migrate status` |
-| Apply pending migrations | `npx prisma migrate deploy` |
-| Create new migration (dev) | `npx prisma migrate dev --name <name>` |
-| Reset database (dev only!) | `npx prisma migrate reset` |
-| Mark as applied | `npx prisma migrate resolve --applied <name>` |
-| Mark as rolled back | `npx prisma migrate resolve --rolled-back <name>` |
-| View current schema | `\d table_name` (in psql) |
-| View migration SQL | `cat prisma/migrations/*/migration.sql` |
+| Task                       | Command                                           |
+| -------------------------- | ------------------------------------------------- |
+| Check migration status     | `npx prisma migrate status`                       |
+| Apply pending migrations   | `npx prisma migrate deploy`                       |
+| Create new migration (dev) | `npx prisma migrate dev --name <name>`            |
+| Reset database (dev only!) | `npx prisma migrate reset`                        |
+| Mark as applied            | `npx prisma migrate resolve --applied <name>`     |
+| Mark as rolled back        | `npx prisma migrate resolve --rolled-back <name>` |
+| View current schema        | `\d table_name` (in psql)                         |
+| View migration SQL         | `cat prisma/migrations/*/migration.sql`           |
 
 ---
 

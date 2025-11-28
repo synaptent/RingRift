@@ -6,7 +6,10 @@ import type {
   PerTurnState as SharedPerTurnState,
   TurnLogicDelegates,
 } from '../../../shared/engine';
-import { advanceTurnAndPhase } from '../../../shared/engine';
+import {
+  advanceTurnAndPhase,
+  enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
+} from '../../../shared/engine';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
 
@@ -168,40 +171,29 @@ export function advanceGameForCurrentPlayer(
 function hasValidCaptures(
   gameState: GameState,
   turnState: PerTurnState,
-  deps: TurnEngineDeps,
+  _deps: TurnEngineDeps,
   playerNumber: number
 ): boolean {
-  const { ruleEngine } = deps;
-
-  // Delegate to RuleEngine for capture generation so that the
-  // decision to enter the capture phase stays in sync with the
-  // actual overtaking_capture semantics. We construct a lightweight
-  // view of the current state with phase forced to 'capture' for the
-  // specified player and ask RuleEngine for valid moves.
+  // Use the shared CaptureAggregate global enumerator so that the decision to
+  // enter the capture phase stays in sync with the canonical capture surface
+  // used by the sandbox and shared engine.
   const tempState: GameState = {
     ...gameState,
     currentPlayer: playerNumber,
     currentPhase: 'capture',
   };
 
-  let moves = ruleEngine.getValidMoves(tempState);
+  let moves = enumerateAllCaptureMovesAggregate(tempState, playerNumber);
 
-  // Respect per-turn must-move constraints: if a stack was just
-  // placed or updated this turn, only captures originating from that
-  // stack are considered when deciding whether to enter the capture
-  // phase. This keeps TurnEngine's gating semantics aligned with
-  // GameEngine.getValidMoves, which applies the same restriction.
+  // Respect per-turn must-move constraints: if a stack was just placed or
+  // updated this turn, only captures originating from that stack are
+  // considered when deciding whether to enter the capture phase. This keeps
+  // TurnEngine's gating semantics aligned with GameEngine.getValidMoves,
+  // which applies the same restriction.
   const { mustMoveFromStackKey } = turnState;
   if (mustMoveFromStackKey) {
     moves = moves.filter((m) => {
-      const isMovementOrCaptureType =
-        m.type === 'move_stack' ||
-        m.type === 'move_ring' ||
-        m.type === 'build_stack' ||
-        m.type === 'overtaking_capture' ||
-        m.type === 'continue_capture_segment';
-
-      if (!isMovementOrCaptureType || !m.from) {
+      if ((m.type !== 'overtaking_capture' && m.type !== 'continue_capture_segment') || !m.from) {
         return false;
       }
 
@@ -210,7 +202,7 @@ function hasValidCaptures(
     });
   }
 
-  return moves.some((m) => m.type === 'overtaking_capture');
+  return moves.length > 0;
 }
 
 /**

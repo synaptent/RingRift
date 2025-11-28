@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+import { generateTestUser, registerUser, loginUser, logout } from './helpers/test-utils';
+import { LoginPage, RegisterPage, HomePage } from './pages';
 
 /**
  * E2E Test Suite: User Authentication
@@ -18,84 +20,68 @@ import { test, expect } from '@playwright/test';
  * RUN COMMAND: npm run test:e2e -- --timeout 60000
  */
 
-/**
- * Generates unique user credentials for test isolation.
- * Each test run creates distinct users to avoid conflicts between parallel runs.
- */
-function generateUserCredentials() {
-  const timestamp = Date.now();
-  const random = Math.floor(Math.random() * 1_000_000);
-  const slug = `${timestamp}-${random}`;
-  const email = `e2e+${slug}@example.com`;
-  const username = `e2e-user-${slug}`;
-  const password = 'E2E_test_password_123!';
-  return { email, username, password };
-}
-
 test.describe('Auth E2E – registration and login', () => {
   // Increase timeout for auth operations that involve database
   test.setTimeout(90_000);
 
   test('registers a new user, logs out, and logs back in', async ({ page }) => {
-    const { email, username, password } = generateUserCredentials();
+    const { email, username, password } = generateTestUser();
 
-    // Step 1: Navigate to registration page
-    await page.goto('/register');
-    await expect(page.getByRole('heading', { name: /create an account/i })).toBeVisible();
+    // Step 1: Register using helper
+    await registerUser(page, username, email, password);
 
-    // Step 2: Fill registration form
-    // Using exact label matches for stability
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Username').fill(username);
-    await page.getByLabel('Password', { exact: true }).fill(password);
-    await page.getByLabel('Confirm password').fill(password);
+    // Step 2: Verify authenticated state
+    const homePage = new HomePage(page);
+    await homePage.assertAuthenticated();
+    await homePage.assertUsernameDisplayed(username);
 
-    // Step 3: Submit and verify successful registration
-    await page.getByRole('button', { name: /create account/i }).click();
+    // Step 3: Log out using helper
+    await logout(page);
 
-    // Wait for redirect to authenticated home page
-    await page.waitForURL('**/', { timeout: 30_000 });
+    // Step 4: Log back in using helper
+    await loginUser(page, email, password);
 
-    // Step 4: Verify authenticated state in navbar
-    const logoutButton = page.getByRole('button', { name: /logout/i });
-    await expect(logoutButton).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(username)).toBeVisible();
-
-    // Step 5: Log out
-    await logoutButton.click();
-
-    // After logout, should redirect to /login
-    await page.waitForURL('**/login', { timeout: 10_000 });
-
-    // Step 6: Log back in with same credentials
-    await page.getByLabel('Email').fill(email);
-    await page.getByLabel('Password', { exact: true }).fill(password);
-
-    await page.getByRole('button', { name: /login/i }).click();
-
-    // Wait for redirect back to home
-    await page.waitForURL('**/', { timeout: 30_000 });
-
-    // Step 7: Verify authenticated state restored
-    await expect(page.getByRole('button', { name: /logout/i })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(username)).toBeVisible();
+    // Step 5: Verify authenticated state restored
+    await homePage.assertAuthenticated();
+    await homePage.assertUsernameDisplayed(username);
   });
 
   test('shows error for invalid login credentials', async ({ page }) => {
+    const loginPage = new LoginPage(page);
+
     // Navigate to login page
-    await page.goto('/login');
-    await expect(page.getByRole('heading', { name: /login/i })).toBeVisible();
+    await loginPage.goto();
+    await loginPage.waitForReady();
 
     // Attempt login with non-existent credentials
-    await page.getByLabel('Email').fill('nonexistent@example.com');
-    await page.getByLabel('Password', { exact: true }).fill('WrongPassword123!');
-
-    await page.getByRole('button', { name: /login/i }).click();
+    await loginPage.login('nonexistent@example.com', 'WrongPassword123!');
 
     // Should redirect to registration with prefilled email (current app behavior)
     // OR show an error - either is acceptable for this happy path test
     await expect(
       page.getByRole('heading', { name: /create an account/i }).or(page.locator('.text-red-300'))
     ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('can navigate from login to register page', async ({ page }) => {
+    const loginPage = new LoginPage(page);
+
+    await loginPage.goto();
+    await loginPage.waitForReady();
+    await loginPage.goToRegister();
+
+    const registerPage = new RegisterPage(page);
+    await registerPage.waitForReady();
+  });
+
+  test('can navigate from register to login page', async ({ page }) => {
+    const registerPage = new RegisterPage(page);
+
+    await registerPage.goto();
+    await registerPage.waitForReady();
+    await registerPage.goToLogin();
+
+    const loginPage = new LoginPage(page);
+    await loginPage.waitForReady();
   });
 });

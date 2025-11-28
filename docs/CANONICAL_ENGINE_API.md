@@ -1,5 +1,13 @@
 # Canonical Engine Public API
 
+> **SSoT alignment:** This document is a derived view over the following canonical sources:
+>
+> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers, mutators, aggregates, orchestrator, contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`).
+> - **Lifecycle/API SSoT:** `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts` define the executable Move + orchestrator + WebSocket lifecycle that this doc describes.
+> - **Precedence:** If this document ever conflicts with those types, orchestrator implementations, WebSocket schemas, or contract vectors, **code and tests win** and this document must be updated to match them.
+>
+> In other words, this file is documentation for the canonical engine API; it is not itself a semantics SSoT.
+
 **Task:** T1-W1-B
 **Date:** 2025-11-26
 **Status:** Complete (Updated with Orchestration Layer)
@@ -20,7 +28,7 @@ This API is designed to be:
 
 ### Design Philosophy
 
-The canonical engine implements RingRift rules as **pure functions** that transform [`GameState`](../src/shared/types/game.ts:471) immutably. Adapters (Server GameEngine, Client Sandbox, Python AI Service) are responsible for:
+The canonical engine implements RingRift rules as **pure functions** that transform [`GameState`](../src/shared/types/game.ts) immutably. Adapters (Server GameEngine, Client Sandbox, Python AI Service) are responsible for:
 
 - Orchestrating turn/phase flow
 - Managing player interaction (choices, timeouts)
@@ -114,6 +122,28 @@ export type { MarkerPathHelpers } from './core';
 // Progress Tracking
 export type { ProgressSnapshot, BoardSummary, GameHistoryEntry, GameTrace } from '../types/game';
 ```
+
+### 2.4 Canonical GamePhase and MoveType literals
+
+For quick reference, the following string literals come directly from the `GamePhase` and
+`MoveType` unions in `src/shared/types/game.ts` and should be treated as canonical when
+integrating with the engine:
+
+```text
+GamePhase:
+  'ring_placement' | 'movement' | 'capture' | 'chain_capture' | 'line_processing' | 'territory_processing'
+
+MoveType:
+  'place_ring' | 'move_ring' | 'build_stack' | 'move_stack' |
+  'overtaking_capture' | 'continue_capture_segment' |
+  'process_line' | 'choose_line_reward' |
+  'process_territory_region' | 'eliminate_rings_from_stack' |
+  'line_formation' | 'territory_claim' | 'skip_placement'
+```
+
+These literals are the **single source of truth** for host/UI/transport code that needs to
+branch on a particular phase or move kind. Adapters must not introduce additional ad-hoc
+string discriminants outside these sets.
 
 ---
 
@@ -453,13 +483,19 @@ type VictoryReason =
 **Usage Pattern:**
 
 ```typescript
-import { evaluateVictory } from '@shared/engine/victoryLogic';
+// Validation (GameState-Level)
+validatePlacement(state: GameState, action: PlaceRingAction): ValidationResult
+validateSkipPlacement(state: GameState, action: SkipPlacementAction): ValidationResult
 
-const result = evaluateVictory(state);
-if (result.isGameOver) {
-  // Handle game end
-  console.log(`Game over: ${result.reason}, winner: ${result.winner}`);
-}
+// Application helpers
+// NOTE: As of November 2025 the **implemented** canonical helpers live in
+// `src/shared/engine/aggregates/PlacementAggregate.ts` and are wired into the
+// orchestrator as `applyPlacementMoveAggregate` and
+// `evaluateSkipPlacementEligibilityAggregate`. The functions exported from
+// `placementHelpers.ts` are **design-time stubs** and must not be consumed
+// directly by hosts until P0 Task 21 finishes wiring them to the aggregates.
+applyPlacementMove(state: GameState, move: Move): PlacementApplicationOutcome
+evaluateSkipPlacementEligibility(state: GameState, player: number): SkipPlacementEligibilityResult
 ```
 
 ---
@@ -561,121 +597,508 @@ computeProgressSnapshot(state: GameState): ProgressSnapshot
 
 **Location:** [`orchestration/`](../src/shared/engine/orchestration/)
 
-The orchestration layer provides a single entry point for all turn processing, delegating to domain aggregates in deterministic order.
+The orchestration layer provides a single, canonical entry point for all turn processing, delegating to domain aggregates in deterministic order and surfacing **pending decisions** as canonical `Move[]` options.
 
 ```typescript
-// Main Entry Points
-processTurn(
-  state: GameState,
-  move: Move,
-  options?: ProcessTurnOptions
-): TurnResult
+// Main Entry Points (canonical orchestrator)
+processTurn(state: GameState, move: Move): ProcessTurnResult;
 
 processTurnAsync(
   state: GameState,
   move: Move,
-  options?: ProcessTurnOptions
-): Promise<TurnResult>
+  delegates: TurnProcessingDelegates
+): Promise<ProcessTurnResult>;
 
-// Phase State Machine
-advancePhase(state: GameState, currentPhase: GamePhase): PhaseTransition
-getNextPhase(currentPhase: GamePhase, context: PhaseContext): GamePhase
+// Validation & enumeration helpers
+type ValidationResult = { valid: boolean; reason?: string };
+
+validateMove(state: GameState, move: Move): ValidationResult;
+getValidMoves(state: GameState): Move[];
+hasValidMoves(state: GameState): boolean;
 ```
 
-**Result Types:**
+**Result & decision types (mirrors `orchestration/types.ts`):**
 
 ```typescript
-interface TurnResult {
+interface ProcessTurnResult {
+  /** Next game state after applying the move */
   nextState: GameState;
+
+  /** Whether the turn completed or is blocked on a decision */
+  status: 'complete' | 'awaiting_decision';
+
+  /** Pending decision if status is 'awaiting_decision' */
   pendingDecision?: PendingDecision;
-  phaseTransitions: PhaseTransition[];
-  victory?: VictoryResult;
-  events: GameEvent[];
+
+  /** Victory state if the game ended during this turn */
+  victoryResult?: VictoryState;
+
+  /** Debug/diagnostic metadata (phases traversed, S-invariant, etc.) */
+  metadata: ProcessingMetadata;
 }
+
+type DecisionType =
+  | 'line_order'
+  | 'line_reward'
+  | 'region_order'
+  | 'elimination_target'
+  | 'capture_direction'
+  | 'chain_capture';
 
 interface PendingDecision {
-  type: 'line_order' | 'line_reward' | 'region_order' | 'elimination' | 'capture_direction';
-  options: Move[];
-  player: number;
-}
+  /** What kind of decision is being requested */
+  type: DecisionType;
 
-interface PhaseTransition {
-  from: GamePhase;
-  to: GamePhase;
-  reason: string;
+  /** Player who must make the decision */
+  player: number;
+
+  /** Canonical Move options for this decision */
+  options: Move[];
+
+  /** Optional timeout hint (enforced by adapters, not the engine) */
+  timeoutMs?: number;
+
+  /** UI/transport-oriented context (board highlights, copy, etc.) */
+  context: DecisionContext;
 }
 ```
 
-**Usage Pattern:**
+> **Victory reasons:** The orchestrator's `VictoryState.reason` union is a superset of the
+> rules-level `VictoryResult.reason` from `victoryLogic.ts`—it adds host/transport reasons
+> such as `'stalemate_resolution'` and `'resignation'`. Rules semantics for ring-elimination
+> and territory-control victories, last-player-standing, and `game_completed` remain anchored
+> to `evaluateVictory(...)` in the shared engine; adapters may layer additional host-level
+> reasons without redefining rules.
+
+**Decision surfaces and PlayerChoice mapping:**
+
+The orchestrator exposes **only canonical `Move` options**. Transport-level decision objects (WebSocket payloads, UI flows, `PlayerChoice*` types) must treat these as:
+
+> "Select one specific `Move.id` from `pendingDecision.options`."
+
+The core type alignment is:
+
+- Orchestrator `DecisionType` ↔ shared `PlayerChoiceType`:
+  - `'line_order'` ↔ `PlayerChoiceType: 'line_order'`
+  - `'line_reward'` ↔ `PlayerChoiceType: 'line_reward_option'`
+  - `'region_order'` ↔ `PlayerChoiceType: 'region_order'`
+  - `'elimination_target'` ↔ `PlayerChoiceType: 'ring_elimination'`
+  - `'capture_direction'` ↔ `PlayerChoiceType: 'capture_direction'`
+  - `'chain_capture'` – currently surfaced as capture `Move` options; choice flows may treat each `Move` as an implicit direction choice.
+- For `line_order`, `region_order`, and `ring_elimination` choices, the shared types in [`game.ts`](../src/shared/types/game.ts) include stable `moveId` fields that point back to the canonical `Move.id` in `pendingDecision.options`.
+
+This ensures that **all decision semantics live in the engine’s `Move` model**, and transports/clients only ever pick among already‑validated canonical actions.
+
+**Usage Pattern (adapter perspective):**
 
 ```typescript
-import { processTurn, TurnResult } from '@shared/engine/orchestration';
+import type { GameState, Move } from '@shared/types/game';
+import {
+  processTurnAsync,
+  type ProcessTurnResult,
+  type TurnProcessingDelegates,
+} from '@shared/engine/orchestration/turnOrchestrator';
 
-// Process a move through all phases
-const result: TurnResult = processTurn(currentState, playerMove);
+async function applyMoveViaOrchestrator(
+  state: GameState,
+  move: Move,
+  delegates: TurnProcessingDelegates
+): Promise<ProcessTurnResult> {
+  const result = await processTurnAsync(state, move, delegates);
 
-if (result.pendingDecision) {
-  // Present choices to player/AI
-  const choice = await getPlayerChoice(result.pendingDecision.options);
-  const nextResult = processTurn(result.nextState, choice);
-} else if (result.victory) {
-  // Game is over
-  handleGameEnd(result.victory);
-} else {
-  // Move to next player's turn
-  currentState = result.nextState;
+  if (result.status === 'awaiting_decision' && result.pendingDecision) {
+    // Present canonical Move options to player/AI based on DecisionType
+    // and PlayerChoiceType mapping
+    const choiceMove = await delegates.resolveDecision(result.pendingDecision);
+    return processTurnAsync(result.nextState, choiceMove, delegates);
+  }
+
+  return result;
 }
 ```
 
 **Adapters:**
 
-Two adapters wrap the orchestrator for specific runtime contexts:
+Two adapters wrap the orchestrator for specific runtime contexts and are the
+_primary_ consumers of this API for live games:
 
 1. **Backend Adapter:** [`TurnEngineAdapter.ts`](../src/server/game/turn/TurnEngineAdapter.ts)
-   - Wraps orchestrator with WebSocket and session concerns
-   - Handles player interaction via `PlayerInteractionManager`
-   - Manages AI turn integration
-   - Controlled by `useOrchestratorAdapter` feature flag
+   - Wraps the orchestrator with WebSocket/session concerns and persistence.
+   - Uses `processTurnAsync`, `validateMove`, `getValidMoves`, and `hasValidMoves` to drive backend rules interactions.
+   - Maps `VictoryState` → backend `GameResult` and emits `game:state_update` / `game:ended` events.
+   - Controlled by the `useOrchestratorAdapter` feature flag inside the server `GameEngine`.
 
 2. **Sandbox Adapter:** [`SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)
-   - Wraps orchestrator for browser-local simulation
-   - Provides same interface as `ClientSandboxEngine`
-   - Controlled by `useOrchestratorAdapter` feature flag
+   - Wraps the orchestrator for browser-local simulation and tooling.
+   - Provides the same surface as `ClientSandboxEngine` (get state, apply moves, query validity).
+   - Uses `processTurn` / `processTurnAsync` + `validateMove` / `getValidMoves` to power local RulesMatrix/FAQ scenarios and AI-vs-AI tests.
+   - Controlled by a feature flag that allows switching between legacy sandbox flows and the orchestrator-backed path.
 
----
+In both cases, **`Move` remains the canonical action**, and all decision/choice flows are thin wrappers over orchestrator-provided `Move` options.
+
+##### 3.9.0a High-level turn + decision flow (diagram)
+
+The following diagram summarises the canonical rules flow shared across
+`ARCHITECTURE_ASSESSMENT.md` (§2, §4), this document (§3.9–3.9.1), and
+`AI_ARCHITECTURE.md` (§1, “Rules, shared engine, and training topology”):
+
+```mermaid
+flowchart LR
+    subgraph Host
+      HState[GameState]
+      HMove[Move]
+    end
+
+    subgraph Orchestrator
+      OProc[processTurn / processTurnAsync]
+      OPhases[Phase state machine]
+      OPend[PendingDecision]
+    end
+
+    subgraph Aggregates
+      APlace[PlacementAggregate]
+      AMove[MovementAggregate]
+      ACapture[CaptureAggregate]
+      ALine[LineAggregate]
+      ATerr[TerritoryAggregate]
+      AVict[VictoryAggregate]
+    end
+
+    subgraph Transport
+      PC[PlayerChoice*]
+      WS[WebSocket payloads]
+    end
+
+    HState -->|HMove| OProc
+    OProc --> APlace --> AMove --> ACapture --> ALine --> ATerr --> AVict --> OPhases
+    OPhases -->|complete| HState
+    OPhases -->|awaiting_decision| OPend
+
+    OPend -->|options: Move[]| PC
+    PC --> WS --> PC
+    PC -->|selected moveId| OProc
+```
+
+This is the same conceptual lifecycle described in
+`ARCHITECTURE_ASSESSMENT.md` (“The "Move" Lifecycle (Canonical Orchestrator + Hosts)”)
+and referenced from `AI_ARCHITECTURE.md` (§1). All three docs should be read
+as different views on this single orchestrator‑centred flow.
+
+#### 3.9.1 WebSocket transport and PlayerChoice over Moves
+
+**Key types & modules:**
+
+- Canonical actions & decisions:
+  - `Move`, `MoveType`, `GamePhase`, `PlayerChoice*`, `PlayerChoiceType` – [`src/shared/types/game.ts`](../src/shared/types/game.ts)
+  - `DecisionType`, `PendingDecision`, `ProcessTurnResult` – [`src/shared/engine/orchestration/types.ts`](../src/shared/engine/orchestration/types.ts)
+- WebSocket contracts:
+  - Server↔client events & payloads – [`src/shared/types/websocket.ts`](../src/shared/types/websocket.ts)
+  - Zod schemas for inbound payloads – [`src/shared/validation/websocketSchemas.ts`](../src/shared/validation/websocketSchemas.ts)
+- Backend handlers:
+  - Game WebSocket server wiring – [`src/server/websocket/server.ts`](../src/server/websocket/server.ts)
+  - Per-game interaction bridge – [`src/server/game/WebSocketInteractionHandler.ts`](../src/server/game/WebSocketInteractionHandler.ts)
+  - Game session state machine – [`src/shared/stateMachines/gameSession.ts`](../src/shared/stateMachines/gameSession.ts)
+
+At the WebSocket boundary, **all rules interactions are expressed in terms of canonical `Move` objects and their IDs**:
+
+- The `game_state` event (`GameStateUpdateMessage`) always includes:
+  - `gameState: GameState` – full authoritative state.
+  - `validMoves: Move[]` – the orchestrator/adapter-provided set of legal actions for the active player.
+- Clients submit actions via:
+  - `player_move` with a `PlayerMovePayload` that carries a `MovePayload` (type + positions).
+  - `player_move_by_id` with a `PlayerMoveByIdPayload` that references a previously-advertised `Move.id`.
+- Decision phases that require structured choices (line order, line reward, territory order, ring elimination, capture direction) are surfaced as:
+  - `player_choice_required` events with a concrete `PlayerChoice` variant whose `options` each map back to **one canonical `Move.id`** when a canonical Move exists for that decision.
+  - `player_choice_response` events from the client, carrying `PlayerChoiceResponse.selectedOption` that must match one of the advertised `options` (validated server-side in `WebSocketInteractionHandler`).
+
+The **type alignment** between orchestrator decisions, PlayerChoice, and WebSockets is:
+
+- Orchestrator `DecisionType` ↔ `PlayerChoiceType` ↔ WebSocket payloads:
+  - `DecisionType: 'line_order'` ↔ `PlayerChoiceType: 'line_order'` ↔ `LineOrderChoice.options[*].moveId` (canonical `process_line` Move.id).
+  - `DecisionType: 'line_reward'` ↔ `PlayerChoiceType: 'line_reward_option'` ↔ `LineRewardChoice.moveIds[option_*]` (canonical `choose_line_reward` Move.id per option).
+  - `DecisionType: 'region_order'` ↔ `PlayerChoiceType: 'region_order'` ↔ `RegionOrderChoice.options[*].moveId` (canonical `process_territory_region` Move.id).
+  - `DecisionType: 'elimination_target'` ↔ `PlayerChoiceType: 'ring_elimination'` ↔ `RingEliminationChoice.options[*].moveId` (canonical `eliminate_rings_from_stack` Move.id).
+  - `DecisionType: 'capture_direction'` ↔ `PlayerChoiceType: 'capture_direction'` ↔ `CaptureDirectionChoice.options[*]` (currently matched structurally; future work may attach explicit `moveId`s for the corresponding capture `Move`).
+  - `DecisionType: 'chain_capture'` – handled today via additional `Move` submissions for follow-up segments (no dedicated `PlayerChoiceType`); UIs guide the player to select further capture segments by sending more canonical capture moves.
+
+In all of these cases, the **semantic contract** is:
+
+> WebSockets and UI never invent new decision payloads; they **only ever choose** among canonical `Move` instances that were already enumerated and validated by the orchestrator.
+
+Concretely:
+
+- For primary actions (placement, movement, overtaking capture, chain continuation):
+  - Server sends `validMoves: Move[]` in `game_state`.
+  - Client selects a move via `player_move` / `player_move_by_id`.
+  - Backend GameEngine or `TurnEngineAdapter` re-validates and passes the `Move` to `processTurn` / `processTurnAsync`.
+- For decision phases (line/territory/elimination/capture-direction):
+  - Orchestrator produces a `PendingDecision` with `options: Move[]`.
+  - Adapters derive a `PlayerChoice` with `options` annotated by the corresponding `Move.id` where applicable.
+  - Client replies with `player_choice_response` selecting exactly one of those options.
+  - The adapter resolves the choice back into the canonical `Move` (using `moveId` or structural matching) and feeds it to `processTurn` / `processTurnAsync`.
+
+This architecture ensures that **`Move` remains the single canonical description of "what action occurred"**, while WebSockets and PlayerChoice types provide a user- and transport-friendly way to:
+
+- Present decisions.
+- Enforce timeouts and defaults.
+- Log and replay decisions in terms of stable `Move.id`s across backend, sandbox, and Python parity harnesses.
+
+#### 3.9.2 Worked example: `PendingDecision → PlayerChoice → WebSocket → Move`
+
+This section gives a concrete, code-aligned example of how a **line reward decision** flows from the orchestrator through backend adapters and WebSockets, and back into a canonical `Move`.
+
+> **Scope:** This describes the **target orchestrator-backed backend path**.
+> Today, `GameEngine` + `WebSocketInteractionHandler` already use `PlayerChoice` with
+> `moveId` fields for line/territory/elimination decisions. As Phase 3 migration
+> completes, `TurnEngineAdapter` will become the primary entry point for these
+> decisions, but the contracts shown here (Move IDs carried through PlayerChoice
+> and WebSocket payloads) are already in place.
+
+##### Step 1: Orchestrator produces a `PendingDecision`
+
+After a move that creates multiple scoring lines, the orchestrator’s `processTurnAsync`
+returns a `ProcessTurnResult` in the **`awaiting_decision`** state:
+
+```ts
+import { processTurnAsync } from '@shared/engine/orchestration/turnOrchestrator';
+import type { GameState, Move } from '@shared/types/game';
+import type { TurnProcessingDelegates } from '@shared/engine/orchestration/types';
+
+async function applyPlayerMove(state: GameState, move: Move, delegates: TurnProcessingDelegates) {
+  const result = await processTurnAsync(state, move, delegates);
+
+  if (result.status === 'awaiting_decision' && result.pendingDecision) {
+    // For this example, assume:
+    // result.pendingDecision.type === 'line_reward'
+    // result.pendingDecision.options: Move[] of type 'choose_line_reward'
+    return result.pendingDecision;
+  }
+
+  return result;
+}
+```
+
+At this point the orchestrator knows **everything needed to resolve the rules**:
+
+- `pendingDecision.type === 'line_reward'` (or `'line_order'`, `'region_order'`, etc.)
+- `pendingDecision.options: Move[]` – each `Move` is a fully validated
+  `choose_line_reward` action with a stable `Move.id`.
+
+##### Step 2: Backend adapter builds a `PlayerChoice`
+
+A backend adapter (today: `GameEngine` line/territory helpers; Phase 3: `TurnEngineAdapter`
+
+- a `DecisionHandler` implemented via `WebSocketInteractionHandler`) converts that
+  `PendingDecision` into a transport-level `PlayerChoice`.
+
+The **contract** is:
+
+- Each `PlayerChoice` option carries a **`moveId`** that points back to exactly one
+  canonical `Move.id` in `pendingDecision.options`.
+- The rest of the option payload is **UI/transport shape** (IDs, marker positions, etc.).
+
+For a line reward decision, the choice looks like:
+
+```ts
+import type { LineRewardChoice } from '@shared/types/game';
+
+function buildLineRewardChoice(
+  gameId: string,
+  pending: PendingDecision // type === 'line_reward'
+): LineRewardChoice {
+  return {
+    id: `line-reward-${gameId}-${Date.now()}`,
+    gameId,
+    playerNumber: pending.player,
+    type: 'line_reward_option',
+    prompt: 'Choose how to collapse this line for your reward',
+    timeoutMs: pending.timeoutMs,
+    options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
+    moveIds: {
+      option_1_collapse_all_and_eliminate: pending.options[0]?.id,
+      option_2_min_collapse_no_elimination: pending.options[1]?.id,
+    },
+  };
+}
+```
+
+The same pattern is used for other decision types:
+
+- `LineOrderChoice.options[*].moveId` → canonical `'process_line'` `Move.id`.
+- `RegionOrderChoice.options[*].moveId` → canonical `'process_territory_region'` `Move.id`.
+- `RingEliminationChoice.options[*].moveId` → canonical `'eliminate_rings_from_stack'` `Move.id`.
+
+##### Step 3: WebSocket transport: `player_choice_required` / `player_choice_response`
+
+The backend emits the `PlayerChoice` over WebSockets using the shared contracts in
+`src/shared/types/websocket.ts` and `src/shared/validation/websocketSchemas.ts`:
+
+```ts
+// server/websocket/server.ts
+io.to(targetSocketId).emit('player_choice_required', choice); // choice: PlayerChoice
+```
+
+On the client side, React state (e.g. `GameContext`) renders the appropriate UI for the
+specific `PlayerChoiceType` and, when the user selects an option, sends:
+
+```ts
+socket.emit('player_choice_response', {
+  choiceId: choice.id,
+  playerNumber: currentPlayerNumber,
+  choiceType: choice.type, // optional but recommended
+  selectedOption: 'option_2_min_collapse_no_elimination',
+});
+```
+
+`WebSocketInteractionHandler.handleChoiceResponse(...)` receives this payload,
+locates the pending `PlayerChoice`, and validates that `selectedOption` is one of
+`choice.options[*]`.
+
+##### Step 4: Resolving back to a canonical `Move`
+
+The **backend decision handler** is responsible for mapping the selected option back
+into the canonical `Move` using the `moveId` fields:
+
+```ts
+import type { PendingDecision } from '@shared/engine/orchestration/types';
+import type { LineRewardChoice, PlayerChoiceResponseFor } from '@shared/types/game';
+
+async function resolveLineRewardDecision(
+  pending: PendingDecision,
+  emitChoice: (choice: LineRewardChoice) => Promise<PlayerChoiceResponseFor<LineRewardChoice>>
+): Promise<Move> {
+  const choice = buildLineRewardChoice('game-123', pending);
+  const response = await emitChoice(choice);
+
+  const option = response.selectedOption; // one of the union options
+  const moveId = choice.moveIds?.[option];
+  if (!moveId) {
+    throw new Error(`No canonical Move.id mapped for selected option: ${option}`);
+  }
+
+  const move = pending.options.find((m) => m.id === moveId);
+  if (!move) {
+    throw new Error(`PendingDecision.options did not contain Move with id=${moveId}`);
+  }
+
+  return move;
+}
+```
+
+Finally, the adapter feeds that canonical `Move` back into the orchestrator to
+continue processing:
+
+```ts
+const nextResult = await processTurnAsync(result.nextState, chosenMove, delegates);
+```
+
+Throughout this loop:
+
+- **All rules semantics** live in the orchestrator and its `Move` model.
+- **All transports and UIs** treat decisions as “pick one `Move.id` from a vetted list”.
+- WebSocket logs and replayers can reconstruct the full decision history purely from
+  `Move` traces and `moveId` references.
 
 ### 3.10 Contract Testing Domain (NEW)
 
 **Location:** [`contracts/`](../src/shared/engine/contracts/)
 
-Contract testing ensures cross-language parity between TypeScript and Python engines.
+The contract testing domain provides a **language‑neutral description** of key engine behaviours for TypeScript and Python to share. It complements rules-level tests by:
 
-```typescript
-// Schema definitions
-export type { ContractTestVector, ContractInput, ContractOutput } from './schemas';
+- Serialising `GameState`, `Move`, and `ProcessTurnResult` into deterministic JSON.
+- Storing **versioned test vectors** under `tests/fixtures/contract-vectors/v2/*.json`.
+- Powering TS (`tests/contracts/contractVectorRunner.test.ts`) and Python (`ai-service/tests/contracts/test_contract_vectors.py`) parity suites.
 
-// Serialization (deterministic JSON output)
-serializeGameState(state: GameState): string
-serializeMove(move: Move): string
-serializeTurnResult(result: TurnResult): string
+It is the preferred way to assert that **Python’s `GameEngine` matches the shared TS orchestrator**, and is referenced by:
 
-// Test vector generation
-generateTestVector(
-  category: string,
-  name: string,
-  inputState: GameState,
-  move: Move
-): ContractTestVector
-```
-
-**Test Vectors Location:** [`tests/fixtures/contract-vectors/v2/`](../tests/fixtures/contract-vectors/v2/)
-
-**Test Runners:**
-
-- TypeScript: [`tests/contracts/contractVectorRunner.test.ts`](../tests/contracts/contractVectorRunner.test.ts)
-- Python: [`ai-service/tests/contracts/test_contract_vectors.py`](../ai-service/tests/contracts/test_contract_vectors.py)
+- `docs/PYTHON_PARITY_REQUIREMENTS.md` (function/type parity).
+- `RULES_SCENARIO_MATRIX.md` §10 (contract vectors and Python parity suites).
+- `tests/TEST_LAYERS.md` / `tests/TEST_SUITE_PARITY_PLAN.md` (Layer 2: Contract/Scenario tests).
 
 ---
+
+### 3.10.1 Core API
+
+```ts
+// schemas.ts
+export interface ContractInput {
+  state: GameState;
+  move: Move;
+}
+
+export interface ContractOutput {
+  nextState: GameState;
+  processTurnResult: ProcessTurnResult;
+}
+
+export interface ContractTestVector {
+  version: 'v2';
+  category: 'placement' | 'movement' | 'capture' | 'line_detection' | 'territory';
+  id: string; // e.g. "movement.basic_step.square8.m1"
+  description: string;
+  input: ContractInput;
+  expected: ContractOutput;
+}
+```
+
+```ts
+// serialization.ts
+serializeGameState(state: GameState): unknown;
+serializeMove(move: Move): unknown;
+serializeProcessTurnResult(result: ProcessTurnResult): unknown;
+```
+
+```ts
+// testVectorGenerator.ts
+export function generateTestVector(
+  category: ContractTestVector['category'],
+  id: string,
+  description: string,
+  state: GameState,
+  move: Move,
+  process: (s: GameState, m: Move) => ProcessTurnResult
+): ContractTestVector {
+  const processTurnResult = process(state, move);
+  return {
+    version: 'v2',
+    category,
+    id,
+    description,
+    input: { state, move },
+    expected: {
+      nextState: processTurnResult.nextState,
+      processTurnResult,
+    },
+  };
+}
+```
+
+These APIs are primarily used by build/test scripts and should remain **backwards‑compatible** across languages; any breaking change requires regenerating vectors and updating both TS and Python runners together.
+
+---
+
+### 3.10.2 Test vector locations & mapping
+
+Vectors live under:
+
+- `tests/fixtures/contract-vectors/v2/placement.vectors.json`
+- `tests/fixtures/contract-vectors/v2/movement.vectors.json`
+- `tests/fixtures/contract-vectors/v2/capture.vectors.json`
+- `tests/fixtures/contract-vectors/v2/line_detection.vectors.json`
+- `tests/fixtures/contract-vectors/v2/territory.vectors.json`
+
+and are mapped in `RULES_SCENARIO_MATRIX.md` §10 to specific rules/scenario clusters
+(Movement, Capture, Lines, Territory, Plateau regressions).
+
+TS runner:
+
+- `tests/contracts/contractVectorRunner.test.ts` – iterates each vector file, runs the shared orchestrator, and compares outputs with the expected `nextState` + `processTurnResult`.
+
+Python runner:
+
+- `ai-service/tests/contracts/test_contract_vectors.py` – does the same for the Python `GameEngine`, using a mirror `ContractTestVector` schema and JSON loader.
+
+Together, these suites provide the **orchestrator‑centric TS↔Python parity backbone**, and should be preferred over ad‑hoc seed traces when validating cross‑language rules behaviour.
 
 ## 4. Internal vs External Boundary
 
@@ -856,8 +1279,8 @@ The Server GameEngine already delegates extensively to shared helpers. Remaining
 
 The Client Sandbox similarly delegates to shared helpers. Remaining work:
 
-1. Replace `sandboxLinesEngine` internals with shared line helpers
-2. Replace `sandboxTerritoryEngine` internals with shared territory helpers
+1. ✅ Replace `sandboxLinesEngine` internals with shared line helpers – line decisions now flow directly through `lineDecisionHelpers` via `ClientSandboxEngine.getValidLineProcessingMovesForCurrentPlayer()` / `processLinesForCurrentPlayer()`, and `sandboxLinesEngine.ts` has been removed.
+2. ✅ Replace `sandboxTerritoryEngine` internals with shared territory helpers – territory decisions and automatic region processing now flow through `territoryDecisionHelpers` via `ClientSandboxEngine.getValidTerritoryProcessingMovesForCurrentPlayer()` / `processDisconnectedRegionsForCurrentPlayer()`, and `sandboxTerritoryEngine.ts` has been removed.
 3. Consolidate turn progression logic via `advanceTurnAndPhase()`
 
 ### 8.3 For Python AI Service
@@ -876,7 +1299,7 @@ This API specification defines a stable, narrow boundary for the canonical RingR
 
 **Completed (November 2025):**
 
-1. ✅ T1-W1-C: Implement stubbed functions (`applyPlacementMove`, `evaluateSkipPlacementEligibility`)
+1. ✅ T1-W1-C: Introduce canonical placement helpers in `aggregates/PlacementAggregate.ts` (mirrored as `applyPlacementMoveAggregate` / `evaluateSkipPlacementEligibilityAggregate` and used by the orchestrator). The older `placementHelpers.ts` exports remain documented design-time stubs until hosts are fully migrated.
 2. ✅ T1-W1-D: Create adapter layer specifications for each host
 3. ✅ Orchestration layer complete with `processTurn()` / `processTurnAsync()`
 4. ✅ Backend and sandbox adapters implemented

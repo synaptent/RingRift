@@ -1,14 +1,52 @@
 /**
- * Tests for HealthCheckService
+ * Unit tests for HealthCheckService
  *
- * Covers:
- * - Liveness probe (minimal checks)
- * - Readiness probe with dependency health status
- * - Healthy, degraded, and unhealthy scenarios
- * - Timeout handling for slow checks
+ * Tests cover:
+ * - Liveness checks (always healthy)
+ * - Readiness checks (healthy, degraded, unhealthy states)
+ * - Individual service checks (database, Redis, AI service)
+ * - Timeout handling
+ * - Error handling
+ * - ServiceStatusManager integration
  */
 
-// Mock the logger module BEFORE any imports that might use it
+import {
+  HealthCheckService,
+  getLivenessStatus,
+  getReadinessStatus,
+  isServiceReady,
+  registerHealthChecksWithStatusManager,
+  HealthCheckResponse,
+} from '../../src/server/services/HealthCheckService';
+
+// Mock dependencies
+const mockCheckDatabaseHealth = jest.fn();
+const mockGetDatabaseClient = jest.fn();
+const mockGetRedisClient = jest.fn();
+const mockGetServiceStatusManager = jest.fn();
+const mockUpdateServiceStatus = jest.fn();
+const mockRegisterHealthCheck = jest.fn();
+
+jest.mock('../../src/server/database/connection', () => ({
+  checkDatabaseHealth: () => mockCheckDatabaseHealth(),
+  getDatabaseClient: () => mockGetDatabaseClient(),
+}));
+
+jest.mock('../../src/server/cache/redis', () => ({
+  getRedisClient: () => mockGetRedisClient(),
+}));
+
+jest.mock('../../src/server/config', () => ({
+  config: {
+    aiService: {
+      url: 'http://ai-service:8000',
+    },
+    app: {
+      version: '1.0.0-test',
+    },
+  },
+}));
+
 jest.mock('../../src/server/utils/logger', () => ({
   logger: {
     info: jest.fn(),
@@ -18,387 +56,319 @@ jest.mock('../../src/server/utils/logger', () => ({
   },
 }));
 
-// Mock the config module BEFORE it's used by other modules
-jest.mock('../../src/server/config', () => ({
-  config: {
-    app: {
-      version: '1.0.0-test',
-    },
-    aiService: {
-      url: 'http://localhost:8001',
-    },
-    logging: {
-      level: 'info',
-    },
-    nodeEnv: 'test',
+jest.mock('../../src/server/services/ServiceStatusManager', () => ({
+  getServiceStatusManager: () => mockGetServiceStatusManager(),
+  ServiceHealthStatus: {
+    healthy: 'healthy',
+    degraded: 'degraded',
+    unhealthy: 'unhealthy',
+    unknown: 'unknown',
   },
 }));
 
-// Mock the database connection module
-jest.mock('../../src/server/database/connection', () => ({
-  checkDatabaseHealth: jest.fn(),
-  getDatabaseClient: jest.fn(),
-}));
-
-// Mock the redis cache module
-jest.mock('../../src/server/cache/redis', () => ({
-  getRedisClient: jest.fn(),
-}));
-
-// Mock global fetch for AI service health checks
+// Mock global fetch
 const mockFetch = jest.fn();
-global.fetch = mockFetch as any;
-
-// Import mocked modules
-import { checkDatabaseHealth, getDatabaseClient } from '../../src/server/database/connection';
-import { getRedisClient } from '../../src/server/cache/redis';
-
-// Import HealthCheckService AFTER mocks are set up
-import {
-  getLivenessStatus,
-  getReadinessStatus,
-  isServiceReady,
-  HealthCheckService,
-  HealthCheckResponse,
-} from '../../src/server/services/HealthCheckService';
-
-const mockCheckDatabaseHealth = checkDatabaseHealth as jest.MockedFunction<typeof checkDatabaseHealth>;
-const mockGetDatabaseClient = getDatabaseClient as jest.MockedFunction<typeof getDatabaseClient>;
-const mockGetRedisClient = getRedisClient as jest.MockedFunction<typeof getRedisClient>;
+global.fetch = mockFetch;
 
 describe('HealthCheckService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockFetch.mockReset();
+    jest.useFakeTimers();
+
+    // Default mock implementations
+    mockGetServiceStatusManager.mockReturnValue({
+      updateServiceStatus: mockUpdateServiceStatus,
+      registerHealthCheck: mockRegisterHealthCheck,
+    });
   });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // ==========================================================================
+  // getLivenessStatus Tests
+  // ==========================================================================
 
   describe('getLivenessStatus', () => {
-    it('returns healthy status with basic metadata', () => {
-      const status = getLivenessStatus();
+    it('returns healthy status immediately', () => {
+      const result = getLivenessStatus();
 
-      expect(status.status).toBe('healthy');
-      expect(status.version).toBe('1.0.0-test');
-      expect(typeof status.timestamp).toBe('string');
-      expect(typeof status.uptime).toBe('number');
-      expect(status.uptime).toBeGreaterThanOrEqual(0);
-      // Liveness check should not include detailed checks
-      expect(status.checks).toBeUndefined();
+      expect(result.status).toBe('healthy');
+      expect(result.version).toBe('1.0.0-test');
+      expect(result.uptime).toBeGreaterThanOrEqual(0);
+      expect(result.timestamp).toBeDefined();
     });
 
-    it('returns consistent structure on multiple calls', () => {
-      const status1 = getLivenessStatus();
-      const status2 = getLivenessStatus();
+    it('returns valid ISO timestamp', () => {
+      const result = getLivenessStatus();
 
-      expect(status1.status).toBe(status2.status);
-      expect(status1.version).toBe(status2.version);
-    });
-  });
-
-  describe('getReadinessStatus', () => {
-    describe('when all dependencies are healthy', () => {
-      beforeEach(() => {
-        // Mock database as healthy
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockResolvedValue(true);
-
-        // Mock Redis as healthy with PING response
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service as healthy
-        mockFetch.mockResolvedValue({
-          ok: true,
-          status: 200,
-        } as Response);
-      });
-
-      it('returns healthy status with all checks passing', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('healthy');
-        expect(status.version).toBe('1.0.0-test');
-        expect(typeof status.timestamp).toBe('string');
-        expect(typeof status.uptime).toBe('number');
-
-        // Check individual dependency statuses
-        expect(status.checks).toBeDefined();
-        expect(status.checks?.database?.status).toBe('healthy');
-        expect(status.checks?.redis?.status).toBe('healthy');
-        expect(status.checks?.aiService?.status).toBe('healthy');
-
-        // Latency should be recorded
-        expect(typeof status.checks?.database?.latency).toBe('number');
-        expect(typeof status.checks?.redis?.latency).toBe('number');
-        expect(typeof status.checks?.aiService?.latency).toBe('number');
-      });
-
-      it('isServiceReady returns true for healthy status', async () => {
-        const status = await getReadinessStatus();
-        expect(isServiceReady(status)).toBe(true);
-      });
+      const timestamp = new Date(result.timestamp);
+      expect(timestamp.toISOString()).toBe(result.timestamp);
     });
 
-    describe('when database is unavailable', () => {
-      beforeEach(() => {
-        // Mock database as unavailable
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockResolvedValue(false);
+    it('does not include checks in response', () => {
+      const result = getLivenessStatus();
 
-        // Mock Redis as healthy
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service as healthy
-        mockFetch.mockResolvedValue({
-          ok: true,
-          status: 200,
-        } as Response);
-      });
-
-      it('returns unhealthy status', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('unhealthy');
-        expect(status.checks?.database?.status).toBe('unhealthy');
-        expect(status.checks?.database?.error).toBeDefined();
-      });
-
-      it('isServiceReady returns false for unhealthy status', async () => {
-        const status = await getReadinessStatus();
-        expect(isServiceReady(status)).toBe(false);
-      });
-    });
-
-    describe('when database client is not initialized', () => {
-      beforeEach(() => {
-        mockGetDatabaseClient.mockReturnValue(null);
-
-        // Mock Redis as healthy
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service as healthy
-        mockFetch.mockResolvedValue({
-          ok: true,
-          status: 200,
-        } as Response);
-      });
-
-      it('returns unhealthy status', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('unhealthy');
-        expect(status.checks?.database?.status).toBe('unhealthy');
-        expect(status.checks?.database?.error).toContain('not initialized');
-      });
-    });
-
-    describe('when Redis is unavailable', () => {
-      beforeEach(() => {
-        // Mock database as healthy
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockResolvedValue(true);
-
-        // Mock Redis as unavailable
-        mockGetRedisClient.mockReturnValue(null);
-
-        // Mock AI service as healthy
-        mockFetch.mockResolvedValue({
-          ok: true,
-          status: 200,
-        } as Response);
-      });
-
-      it('returns degraded status (Redis is non-critical)', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('degraded');
-        expect(status.checks?.database?.status).toBe('healthy');
-        expect(status.checks?.redis?.status).toBe('degraded');
-        expect(status.checks?.redis?.error).toContain('not connected');
-      });
-
-      it('isServiceReady returns true for degraded status', async () => {
-        const status = await getReadinessStatus();
-        // Degraded means the service can still serve traffic
-        expect(isServiceReady(status)).toBe(true);
-      });
-    });
-
-    describe('when Redis PING fails', () => {
-      beforeEach(() => {
-        // Mock database as healthy
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockResolvedValue(true);
-
-        // Mock Redis PING rejection
-        const mockRedisClient = {
-          ping: jest.fn().mockRejectedValue(new Error('Connection refused')),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service as healthy
-        mockFetch.mockResolvedValue({
-          ok: true,
-          status: 200,
-        } as Response);
-      });
-
-      it('returns degraded status with error message', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('degraded');
-        expect(status.checks?.redis?.status).toBe('degraded');
-        expect(status.checks?.redis?.error).toContain('Connection refused');
-      });
-    });
-
-    describe('when AI service is unavailable', () => {
-      beforeEach(() => {
-        // Mock database as healthy
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockResolvedValue(true);
-
-        // Mock Redis as healthy
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service as unavailable
-        mockFetch.mockRejectedValue(new Error('ECONNREFUSED'));
-      });
-
-      it('returns degraded status (AI service is non-critical)', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('degraded');
-        expect(status.checks?.database?.status).toBe('healthy');
-        expect(status.checks?.redis?.status).toBe('healthy');
-        expect(status.checks?.aiService?.status).toBe('degraded');
-        expect(status.checks?.aiService?.error).toContain('ECONNREFUSED');
-      });
-    });
-
-    describe('when AI service returns non-200 status', () => {
-      beforeEach(() => {
-        // Mock database as healthy
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockResolvedValue(true);
-
-        // Mock Redis as healthy
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service returning 503
-        mockFetch.mockResolvedValue({
-          ok: false,
-          status: 503,
-        } as Response);
-      });
-
-      it('returns degraded status with status code in error', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('degraded');
-        expect(status.checks?.aiService?.status).toBe('degraded');
-        expect(status.checks?.aiService?.error).toContain('503');
-      });
-    });
-
-    describe('when includeAIService is false', () => {
-      beforeEach(() => {
-        // Mock database as healthy
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockResolvedValue(true);
-
-        // Mock Redis as healthy
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-      });
-
-      it('excludes AI service check from results', async () => {
-        const status = await getReadinessStatus({ includeAIService: false });
-
-        expect(status.checks?.database).toBeDefined();
-        expect(status.checks?.redis).toBeDefined();
-        expect(status.checks?.aiService).toBeUndefined();
-        expect(mockFetch).not.toHaveBeenCalled();
-      });
-    });
-
-    describe('timeout handling', () => {
-      beforeEach(() => {
-        // Mock database as healthy but slow
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockImplementation(
-          () =>
-            new Promise((resolve) => {
-              setTimeout(() => resolve(true), 100); // 100ms delay
-            })
-        );
-
-        // Mock Redis as healthy
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service as healthy
-        mockFetch.mockResolvedValue({
-          ok: true,
-          status: 200,
-        } as Response);
-      });
-
-      it('uses custom timeout when provided', async () => {
-        // Use a short timeout that should succeed
-        const status = await getReadinessStatus({ timeoutMs: 500 });
-
-        expect(status.status).toBe('healthy');
-      });
-    });
-
-    describe('database query error', () => {
-      beforeEach(() => {
-        // Mock database query throwing an error
-        mockGetDatabaseClient.mockReturnValue({} as any);
-        mockCheckDatabaseHealth.mockRejectedValue(new Error('Query timeout'));
-
-        // Mock Redis as healthy
-        const mockRedisClient = {
-          ping: jest.fn().mockResolvedValue('PONG'),
-        };
-        mockGetRedisClient.mockReturnValue(mockRedisClient as any);
-
-        // Mock AI service as healthy
-        mockFetch.mockResolvedValue({
-          ok: true,
-          status: 200,
-        } as Response);
-      });
-
-      it('returns unhealthy status with error message', async () => {
-        const status = await getReadinessStatus();
-
-        expect(status.status).toBe('unhealthy');
-        expect(status.checks?.database?.status).toBe('unhealthy');
-        expect(status.checks?.database?.error).toContain('Query timeout');
-      });
+      expect(result.checks).toBeUndefined();
     });
   });
 
-  describe('isServiceReady helper', () => {
+  // ==========================================================================
+  // getReadinessStatus Tests - Healthy Scenarios
+  // ==========================================================================
+
+  describe('getReadinessStatus - healthy scenarios', () => {
+    it('returns healthy when all services are up', async () => {
+      // Mock all services as healthy
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('healthy');
+      expect(result.checks?.database?.status).toBe('healthy');
+      expect(result.checks?.redis?.status).toBe('healthy');
+      expect(result.checks?.aiService?.status).toBe('healthy');
+    });
+
+    it('includes latency measurements for healthy services', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.checks?.database?.latency).toBeDefined();
+      expect(result.checks?.redis?.latency).toBeDefined();
+      expect(result.checks?.aiService?.latency).toBeDefined();
+    });
+  });
+
+  // ==========================================================================
+  // getReadinessStatus Tests - Degraded Scenarios
+  // ==========================================================================
+
+  describe('getReadinessStatus - degraded scenarios', () => {
+    it('returns degraded when Redis is down', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue(null); // Redis not connected
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('degraded');
+      expect(result.checks?.database?.status).toBe('healthy');
+      expect(result.checks?.redis?.status).toBe('degraded');
+      expect(result.checks?.redis?.error).toBe('Redis client not connected');
+      expect(result.checks?.aiService?.status).toBe('healthy');
+    });
+
+    it('returns degraded when AI service is unavailable', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockRejectedValue(new Error('Connection refused'));
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('degraded');
+      expect(result.checks?.database?.status).toBe('healthy');
+      expect(result.checks?.redis?.status).toBe('healthy');
+      expect(result.checks?.aiService?.status).toBe('degraded');
+      expect(result.checks?.aiService?.error).toContain('Connection refused');
+    });
+
+    it('returns degraded when AI service returns non-ok response', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 503,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('degraded');
+      expect(result.checks?.aiService?.status).toBe('degraded');
+      expect(result.checks?.aiService?.error).toContain('503');
+    });
+
+    it('returns degraded when Redis ping fails', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockRejectedValue(new Error('Redis timeout')),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('degraded');
+      expect(result.checks?.redis?.status).toBe('degraded');
+      expect(result.checks?.redis?.error).toContain('Redis timeout');
+    });
+
+    it('returns degraded when Redis returns unexpected response', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('UNEXPECTED'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('degraded');
+      expect(result.checks?.redis?.status).toBe('degraded');
+      expect(result.checks?.redis?.error).toContain('Unexpected PING response');
+    });
+  });
+
+  // ==========================================================================
+  // getReadinessStatus Tests - Unhealthy Scenarios
+  // ==========================================================================
+
+  describe('getReadinessStatus - unhealthy scenarios', () => {
+    it('returns unhealthy when database is down', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(false); // Database query failed
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('unhealthy');
+      expect(result.checks?.database?.status).toBe('unhealthy');
+      expect(result.checks?.database?.error).toBe('Database query failed');
+    });
+
+    it('returns unhealthy when database client is not initialized', async () => {
+      mockGetDatabaseClient.mockReturnValue(null); // Database not initialized
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('unhealthy');
+      expect(result.checks?.database?.status).toBe('unhealthy');
+      expect(result.checks?.database?.error).toBe('Database client not initialized');
+    });
+
+    it('returns unhealthy when database throws exception', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockRejectedValue(new Error('Connection lost'));
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(result.status).toBe('unhealthy');
+      expect(result.checks?.database?.status).toBe('unhealthy');
+      expect(result.checks?.database?.error).toContain('Connection lost');
+    });
+  });
+
+  // ==========================================================================
+  // Timeout Handling Tests
+  // ==========================================================================
+
+  describe('timeout handling', () => {
+    it('handles database timeout', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      // Never-resolving promise to simulate timeout
+      mockCheckDatabaseHealth.mockImplementation(() => new Promise(() => {}));
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const resultPromise = getReadinessStatus({ timeoutMs: 100 });
+
+      // Fast-forward past the timeout
+      jest.advanceTimersByTime(150);
+
+      const result = await resultPromise;
+
+      expect(result.status).toBe('unhealthy');
+      expect(result.checks?.database?.status).toBe('unhealthy');
+      expect(result.checks?.database?.error).toContain('timed out');
+    });
+
+    it('handles Redis timeout', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockImplementation(() => new Promise(() => {})),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const resultPromise = getReadinessStatus({ timeoutMs: 100 });
+
+      jest.advanceTimersByTime(150);
+
+      const result = await resultPromise;
+
+      expect(result.status).toBe('degraded');
+      expect(result.checks?.redis?.status).toBe('degraded');
+      expect(result.checks?.redis?.error).toContain('timed out');
+    });
+  });
+
+  // ==========================================================================
+  // isServiceReady Tests
+  // ==========================================================================
+
+  describe('isServiceReady', () => {
     it('returns true for healthy status', () => {
       const response: HealthCheckResponse = {
         status: 'healthy',
@@ -406,6 +376,7 @@ describe('HealthCheckService', () => {
         version: '1.0.0',
         uptime: 100,
       };
+
       expect(isServiceReady(response)).toBe(true);
     });
 
@@ -416,6 +387,7 @@ describe('HealthCheckService', () => {
         version: '1.0.0',
         uptime: 100,
       };
+
       expect(isServiceReady(response)).toBe(true);
     });
 
@@ -426,15 +398,178 @@ describe('HealthCheckService', () => {
         version: '1.0.0',
         uptime: 100,
       };
+
       expect(isServiceReady(response)).toBe(false);
     });
   });
 
-  describe('HealthCheckService namespace export', () => {
-    it('exports all methods through HealthCheckService object', () => {
-      expect(HealthCheckService.getLivenessStatus).toBe(getLivenessStatus);
-      expect(HealthCheckService.getReadinessStatus).toBe(getReadinessStatus);
-      expect(HealthCheckService.isServiceReady).toBe(isServiceReady);
+  // ==========================================================================
+  // registerHealthChecksWithStatusManager Tests
+  // ==========================================================================
+
+  describe('registerHealthChecksWithStatusManager', () => {
+    it('registers health checks for all services', () => {
+      registerHealthChecksWithStatusManager(5000);
+
+      expect(mockRegisterHealthCheck).toHaveBeenCalledTimes(3);
+      expect(mockRegisterHealthCheck).toHaveBeenCalledWith('database', expect.any(Function));
+      expect(mockRegisterHealthCheck).toHaveBeenCalledWith('redis', expect.any(Function));
+      expect(mockRegisterHealthCheck).toHaveBeenCalledWith('aiService', expect.any(Function));
+    });
+
+    it('uses provided timeout for health checks', async () => {
+      registerHealthChecksWithStatusManager(1000);
+
+      // Get the database health check callback
+      const databaseCallback = mockRegisterHealthCheck.mock.calls.find(
+        (call: [string, () => Promise<unknown>]) => call[0] === 'database'
+      )?.[1];
+
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+
+      const result = await databaseCallback();
+
+      expect(result.status).toBe('healthy');
+    });
+
+    it('handles registration failure gracefully', () => {
+      mockGetServiceStatusManager.mockImplementation(() => {
+        throw new Error('Status manager not initialized');
+      });
+
+      // Should not throw
+      expect(() => registerHealthChecksWithStatusManager(5000)).not.toThrow();
+    });
+  });
+
+  // ==========================================================================
+  // Options Tests
+  // ==========================================================================
+
+  describe('options handling', () => {
+    it('uses default timeout when not specified', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus();
+
+      expect(result.status).toBe('healthy');
+    });
+
+    it('excludes AI service check when includeAIService is false', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+
+      const result = await getReadinessStatus({ includeAIService: false });
+
+      expect(result.status).toBe('healthy');
+      expect(result.checks?.aiService).toBeUndefined();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // ServiceStatusManager Integration Tests
+  // ==========================================================================
+
+  describe('ServiceStatusManager integration', () => {
+    it('updates service status after health check', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      await getReadinessStatus({ timeoutMs: 1000 });
+
+      expect(mockUpdateServiceStatus).toHaveBeenCalledTimes(3);
+      expect(mockUpdateServiceStatus).toHaveBeenCalledWith(
+        'database',
+        'healthy',
+        undefined,
+        expect.any(Number)
+      );
+      expect(mockUpdateServiceStatus).toHaveBeenCalledWith(
+        'redis',
+        'healthy',
+        undefined,
+        expect.any(Number)
+      );
+      expect(mockUpdateServiceStatus).toHaveBeenCalledWith(
+        'aiService',
+        'healthy',
+        undefined,
+        expect.any(Number)
+      );
+    });
+
+    it('continues health check even if status manager update fails', async () => {
+      mockUpdateServiceStatus.mockImplementation(() => {
+        throw new Error('Update failed');
+      });
+
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const result = await getReadinessStatus({ timeoutMs: 1000 });
+
+      // Should still complete successfully
+      expect(result.status).toBe('healthy');
+    });
+  });
+
+  // ==========================================================================
+  // HealthCheckService Object Tests
+  // ==========================================================================
+
+  describe('HealthCheckService object', () => {
+    it('exports all required methods', () => {
+      expect(HealthCheckService.getLivenessStatus).toBeDefined();
+      expect(HealthCheckService.getReadinessStatus).toBeDefined();
+      expect(HealthCheckService.isServiceReady).toBeDefined();
+      expect(HealthCheckService.registerHealthChecksWithStatusManager).toBeDefined();
+    });
+
+    it('methods work through service object', async () => {
+      mockGetDatabaseClient.mockReturnValue({});
+      mockCheckDatabaseHealth.mockResolvedValue(true);
+      mockGetRedisClient.mockReturnValue({
+        ping: jest.fn().mockResolvedValue('PONG'),
+      });
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+      });
+
+      const livenessResult = HealthCheckService.getLivenessStatus();
+      expect(livenessResult.status).toBe('healthy');
+
+      const readinessResult = await HealthCheckService.getReadinessStatus({ timeoutMs: 1000 });
+      expect(readinessResult.status).toBe('healthy');
+
+      expect(HealthCheckService.isServiceReady(readinessResult)).toBe(true);
     });
   });
 });

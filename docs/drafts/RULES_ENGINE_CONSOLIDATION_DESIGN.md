@@ -1,3 +1,15 @@
+> **Doc Status (2025-11-28): Draft / Aspirational (derived)**  
+> **Role:** Forward-looking consolidation design for the RingRift rules engine, capturing intended target architecture for the shared TS engine, backend/sandbox adapters, and Python parity layer.
+>
+> **SSoT alignment:** This document is a derived architectural design over the **Rules/invariants semantics SSoT** and the **Canonical TS rules surface**:
+>
+> - Narrative rules docs: `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `ringrift_compact_rules.md`.
+> - Shared TypeScript rules engine helpers + aggregates under `src/shared/engine/**` and the turn orchestrator under `src/shared/engine/orchestration/**`.
+> - Contracts and v2 contract vectors under `src/shared/engine/contracts/**` and `tests/fixtures/contract-vectors/v2/**`, plus the TS + Python contract runners (`tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`).
+> - Derived rules/architecture docs: `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`, `docs/MODULE_RESPONSIBILITIES.md`, `docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md`.
+>
+> **Precedence:** This file is **not** a semantics SSoT. If anything here disagrees with the shared TS engine/orchestrator, contracts/vectors, or their tests (including Python contract/parity suites), **code + tests + canonical docs win** and this design must be updated.
+
 # Rules Engine Consolidation Design
 
 **Task:** Priority #1 - Rules Engine Architecture Consolidation  
@@ -8,6 +20,73 @@
 ---
 
 ## Executive Summary
+
+This document presents the architectural design for consolidating RingRift's fragmented rules engine implementation into a single canonical source of truth. Currently, THREE rule engine surfaces must be kept in lockstep:
+
+1. **Shared TypeScript Engine** (`src/shared/engine/*`)
+2. **Backend Game Engine** (`src/server/game/*`)
+3. **Python AI Rules Engine** (`ai-service/app/rules/*`)
+
+Additionally, the client sandbox (`src/client/sandbox/**`) maintains its own orchestration mirroring server logic.
+
+### Key Design Decisions
+
+| Decision               | Recommendation                          | Rationale                                                                       |
+| ---------------------- | --------------------------------------- | ------------------------------------------------------------------------------- |
+| Single Source of Truth | `src/shared/engine/`                    | Already contains aggregate pattern, pure functions, comprehensive test coverage |
+| Backend Pattern        | Thin adapter over shared engine         | Reduce duplicate logic to WebSocket/interaction concerns only                   |
+| Sandbox Pattern        | Thin adapter over shared engine         | Consolidate with backend where possible                                         |
+| Python Integration     | Contract tests + JSON schema generation | Balance parity guarantees with performance requirements                         |
+| Migration Approach     | Phased, backward-compatible             | Preserve existing test infrastructure during transition                         |
+
+---
+
+## 0. Reconciliation Notes (2025-11-28)
+
+This draft predates the latest consolidation work and should be read as an **aspirational design**, not a literal description of current files/APIs. The authoritative view of the rules surfaces and consolidation status now lives in:
+
+- `RULES_ENGINE_ARCHITECTURE.md`
+- `RULES_IMPLEMENTATION_MAPPING.md`
+- `docs/RULES_ENGINE_SURFACE_AUDIT.md`
+- `docs/MODULE_RESPONSIBILITIES.md`
+- `docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md`
+
+Key clarifications when reading the sections below:
+
+1. **Engine entry points & module layout**
+   - The _actual_ exported surfaces today are the functions and types in `src/shared/engine/index.ts` plus the orchestrator exports in `src/shared/engine/orchestration/index.ts` (e.g. `processTurn`, `processTurnAsync`, `validateMove`, `getValidMoves`, `evaluateVictory`).
+   - Names like `resolveTerritory`, `detectLines`, `computeVictoryState`, and modules such as `decisionRouter.ts`, `gameStateSchema.ts`, `moveSchema.ts`, `resultSchema.ts`, or an `internal/` directory are **conceptual design handles**. Their responsibilities are currently implemented across:
+     - `src/shared/engine/territoryProcessing.ts`, `src/shared/engine/territoryDecisionHelpers.ts`, `src/shared/engine/lineDetection.ts`, `src/shared/engine/lineDecisionHelpers.ts`.
+     - `src/shared/engine/orchestration/turnOrchestrator.ts`, `src/shared/engine/orchestration/phaseStateMachine.ts`, and `src/shared/validation/schemas.ts` / `src/shared/engine/contracts/schemas.ts`.
+   - When this document shows alternative filenames, treat them as **target refactors**, not as promises that those files exist today.
+
+2. **Backend and sandbox adapters**
+   - There is **no `src/server/game/adapters/EngineAdapter.ts`** or `src/client/sandbox/adapters/SandboxEngineAdapter.ts` in the current codebase. The active adapter/host surfaces are:
+     - Backend: `src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`, `src/server/game/turn/TurnEngine.ts`, `src/server/game/turn/TurnEngineAdapter.ts`, `src/server/game/RulesBackendFacade.ts`, and WebSocket/server routes.
+     - Sandbox: `src/client/sandbox/ClientSandboxEngine.ts`, `src/client/sandbox/SandboxOrchestratorAdapter.ts`, and the `sandbox*.ts` helpers (`sandboxPlacement.ts`, `sandboxMovement.ts`, `sandboxLines.ts`, `sandboxTerritory.ts`, `sandboxVictory.ts`, `sandboxElimination.ts`, `sandboxGameEnd.ts`, `sandboxCaptures.ts`, `sandboxCaptureSearch.ts`).
+   - Sections below that mention `ServerEngineAdapter`/`SandboxEngineAdapter` are **future-facing patterns**. They should be interpreted as “what we want GameEngine/ClientSandboxEngine to look like” rather than as additional shared SSoT modules.
+
+3. **Legacy module migration**
+   - Backend helpers such as `src/server/game/rules/lineProcessing.ts` and `src/server/game/rules/territoryProcessing.ts` have already been removed and are treated as **historical** in current docs.
+   - Consolidated sandbox engines like `sandboxLinesEngine.ts` / `sandboxTerritoryEngine.ts` no longer exist. The remaining `sandbox*.ts` files listed above are thin host helpers over the shared engine/orchestrator, not alternative rules engines.
+   - Migration tables and “Files to Remove” sections should therefore be read as a **historical plan**; the authoritative list of completed vs open items is in `docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md`.
+
+4. **Contract vectors and Python parity**
+   - The core of the “contract-based parity” design is already implemented using:
+     - TS-side generator and serialization under `src/shared/engine/contracts/testVectorGenerator.ts` and `src/shared/engine/contracts/serialization.ts`.
+     - Canonical v2 JSON fixtures under `tests/fixtures/contract-vectors/v2/*.vectors.json`.
+     - TS runner: `tests/contracts/contractVectorRunner.test.ts`.
+     - Python runner: `ai-service/tests/contracts/test_contract_vectors.py`.
+   - Snippets below that refer to `generate-vectors.ts`, `ts_vectors/*.json`, or `test_contract_parity.py` are earlier naming sketches; the **paths above are the SSoT** for contract layout and parity tests.
+
+5. **Migration phases and timelines**
+   - Phases P1–P5 in this draft describe a **multi-week migration plan**. Large parts of P1–P3 are already complete and captured as “done” in `docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md` and the reconciled rules docs; remaining items should be treated as **aspirational** and re-validated against current code/tests before implementation.
+
+When in doubt, consult the SSoT docs and the live TS engine/orchestrator/contracts first, then treat the remainder of this file as a design sketch for future refactors.
+
+---
+
+## 1. Current State Analysis
 
 This document presents the architectural design for consolidating RingRift's fragmented rules engine implementation into a single canonical source of truth. Currently, THREE rule engine surfaces must be kept in lockstep:
 

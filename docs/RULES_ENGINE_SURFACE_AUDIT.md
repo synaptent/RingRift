@@ -1,5 +1,20 @@
 # Rules Engine Surface Audit
 
+> **SSoT alignment:** This document is an audit/diagnostic view over the rules engine surfaces. It defers to:
+>
+> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers → aggregates → turn orchestrator → contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`). This is the **Rules/invariants semantics SSoT** for RingRift.
+> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`) for the executable Move + orchestrator + WebSocket lifecycle.
+> - **Precedence:** Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. If this audit ever conflicts with the shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this document must be updated to match.
+>
+> This file inventories and critiques surfaces around the canonical TS rules engine; it is not itself a semantics SSoT.
+
+**Doc Status (2025-11-26): Active (with historical/diagnostic analysis)**
+
+- Canonical rules semantics SSoT is the **shared TypeScript engine** under `src/shared/engine/`, specifically: helpers → domain aggregates → turn orchestrator → contracts (`schemas.ts`, `serialization.ts`, `testVectorGenerator.ts` + v2 vectors under `tests/fixtures/contract-vectors/v2/`).
+- Move/decision/WebSocket lifecycle semantics are documented in `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`).
+- Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this SSoT. This audit treats them as consumers of the shared engine, not as independent rules engines.
+- Sections that describe a fully-populated TS `validators/*` / `mutators/*` tree should be read as **semantic boundary diagrams** and partially historical; the implemented canonical surface is helpers + aggregates + orchestrator + contracts.
+
 **Task:** T1-W1-A  
 **Date:** 2025-11-26  
 **Status:** Complete
@@ -19,12 +34,12 @@ This audit examines the four rules engine surfaces identified in `ARCHITECTURE_R
 
 ## 1. Surface Inventory Table
 
-| Surface               | Location                | File Count | Approx. Line Count | Key Entry Points                                          | Primary Responsibility                                      |
-| --------------------- | ----------------------- | ---------- | ------------------ | --------------------------------------------------------- | ----------------------------------------------------------- |
-| **Shared Engine**     | `src/shared/engine/`    | 26 files   | ~4,500             | `GameEngine.ts`, `turnLogic.ts`, validators/, mutators/   | Canonical rules definitions, pure functions                 |
-| **Server Game**       | `src/server/game/`      | 12 files   | ~6,000             | `GameEngine.ts`, `RuleEngine.ts`, `RulesBackendFacade.ts` | Backend orchestration, WebSocket interaction, parity bridge |
-| **Python AI Service** | `ai-service/app/rules/` | 14 files   | ~2,000             | `default_engine.py`, validators/, mutators/               | Python port for AI training, parity validation              |
-| **Client Sandbox**    | `src/client/sandbox/`   | 12 files   | ~5,200             | `ClientSandboxEngine.ts`, sandbox\*Engine.ts              | Client-side game hosting, local AI                          |
+| Surface               | Location                | File Count | Approx. Line Count | Key Entry Points                                                                                                                  | Primary Responsibility                                      |
+| --------------------- | ----------------------- | ---------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| **Shared Engine**     | `src/shared/engine/`    | 51 files   | ~8,000             | `turnLogic.ts`, `orchestration/` (turnOrchestrator.ts, phaseStateMachine.ts, types.ts), `aggregates/`, `validators/`, `mutators/` | Canonical rules definitions, pure functions                 |
+| **Server Game**       | `src/server/game/`      | 12 files   | ~6,000             | `GameEngine.ts`, `RuleEngine.ts`, `RulesBackendFacade.ts`                                                                         | Backend orchestration, WebSocket interaction, parity bridge |
+| **Python AI Service** | `ai-service/app/rules/` | 14 files   | ~2,000             | `default_engine.py`, validators/, mutators/                                                                                       | Python port for AI training, parity validation              |
+| **Client Sandbox**    | `src/client/sandbox/`   | 18 files   | ~7,500             | `ClientSandboxEngine.ts`, `SandboxOrchestratorAdapter.ts` (legacy `sandbox*Engine.ts` now removed)                                | Client-side game hosting, local AI                          |
 
 ---
 
@@ -40,21 +55,22 @@ This audit examines the four rules engine surfaces identified in `ARCHITECTURE_R
 
 #### Key Files and Functions
 
-| File                                                                              | Key Exports                                                                                               | Purpose                                 |
-| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| [`core.ts`](../src/shared/engine/core.ts)                                         | `calculateCapHeight`, `getPathPositions`, `validateCaptureSegmentOnBoard`, `hashGameState`                | Core utilities, geometry, state hashing |
-| [`GameEngine.ts`](../src/shared/engine/GameEngine.ts)                             | `GameEngine` class                                                                                        | Reference stateless implementation      |
-| [`turnLogic.ts`](../src/shared/engine/turnLogic.ts)                               | `advanceTurnAndPhase`, `PerTurnState`                                                                     | Turn/phase state machine                |
-| [`movementLogic.ts`](../src/shared/engine/movementLogic.ts)                       | `enumerateSimpleMoveTargetsFromStack`                                                                     | Movement reachability                   |
-| [`captureLogic.ts`](../src/shared/engine/captureLogic.ts)                         | `enumerateCaptureMoves`, `CaptureBoardAdapters`                                                           | Capture enumeration                     |
-| [`lineDetection.ts`](../src/shared/engine/lineDetection.ts)                       | `findLinesForPlayer`, `findAllLinesShared`                                                                | Line geometry detection                 |
-| [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts)           | `enumerateProcessLineMoves`, `applyProcessLineDecision`                                                   | Line decision moves                     |
-| [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts)             | `findDisconnectedRegions`                                                                                 | Territory region detection              |
-| [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts)           | `applyTerritoryRegion`, `filterProcessableTerritoryRegions`                                               | Territory collapse logic                |
-| [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts) | `enumerateProcessTerritoryRegionMoves`, `applyProcessTerritoryRegionDecision`                             | Territory decision moves                |
-| [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts)                         | `evaluateVictory`                                                                                         | Victory condition evaluation            |
-| `validators/`                                                                     | `PlacementValidator`, `MovementValidator`, `CaptureValidator`, `LineValidator`, `TerritoryValidator`      | Move validation                         |
-| `mutators/`                                                                       | `PlacementMutator`, `MovementMutator`, `CaptureMutator`, `LineMutator`, `TerritoryMutator`, `TurnMutator` | State mutation                          |
+| File                                                                              | Key Exports                                                                                                                                                                                       | Purpose                                        |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| [`core.ts`](../src/shared/engine/core.ts)                                         | `calculateCapHeight`, `getPathPositions`, `validateCaptureSegmentOnBoard`, `hashGameState`                                                                                                        | Core utilities, geometry, state hashing        |
+| [`turnLogic.ts`](../src/shared/engine/turnLogic.ts)                               | `advanceTurnAndPhase`, `PerTurnState`                                                                                                                                                             | Turn/phase state machine                       |
+| [`orchestration/`](../src/shared/engine/orchestration/)                           | `processTurn` / `processTurnAsync`, `validateMove`, `getValidMoves`, `hasValidMoves`, `ProcessTurnResult`, `PendingDecision`, `VictoryState`                                                      | Canonical turn orchestrator & decision surface |
+| [`aggregates/`](../src/shared/engine/aggregates/)                                 | `PlacementAggregate`, `MovementAggregate`, `CaptureAggregate`, `LineAggregate`, `TerritoryAggregate`, `VictoryAggregate`                                                                          | Domain aggregates composed by orchestrator     |
+| [`movementLogic.ts`](../src/shared/engine/movementLogic.ts)                       | `enumerateSimpleMoveTargetsFromStack`                                                                                                                                                             | Movement reachability                          |
+| [`captureLogic.ts`](../src/shared/engine/captureLogic.ts)                         | `enumerateCaptureMoves`, `CaptureBoardAdapters`                                                                                                                                                   | Capture enumeration                            |
+| [`lineDetection.ts`](../src/shared/engine/lineDetection.ts)                       | `findLinesForPlayer`, `findAllLinesShared`                                                                                                                                                        | Line geometry detection                        |
+| [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts)           | `enumerateProcessLineMoves`, `applyProcessLineDecision`                                                                                                                                           | Line decision moves                            |
+| [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts)             | `findDisconnectedRegions`                                                                                                                                                                         | Territory region detection                     |
+| [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts)           | `applyTerritoryRegion`, `filterProcessableTerritoryRegions`                                                                                                                                       | Territory collapse logic                       |
+| [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts) | `enumerateProcessTerritoryRegionMoves`, `applyProcessTerritoryRegionDecision`                                                                                                                     | Territory decision moves                       |
+| [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts)                         | `evaluateVictory`                                                                                                                                                                                 | Victory condition evaluation                   |
+| `validators/`                                                                     | `PlacementValidator` (board-level + GameState-level placement & skip-placement validation); other move families validate via shared helpers and aggregates rather than separate validator classes | Move validation                                |
+| `mutators/`                                                                       | `PlacementMutator`, `MovementMutator`, `CaptureMutator`, `LineMutator`, `TerritoryMutator`                                                                                                        | State mutation used by aggregates              |
 
 #### Public API Pattern
 
@@ -82,20 +98,20 @@ function evaluateVictory(state: GameState): VictoryVerdict;
 
 #### Key Files and Functions
 
-| File                                                                              | Key Exports                                  | Purpose                                       |
-| --------------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------- |
-| [`GameEngine.ts`](../src/server/game/GameEngine.ts) (~3,329 lines)                | `GameEngine` class                           | Stateful orchestrator with player interaction |
-| [`RuleEngine.ts`](../src/server/game/RuleEngine.ts) (~1,564 lines)                | `RuleEngine` class                           | Stateless validation, move enumeration        |
-| [`RulesBackendFacade.ts`](../src/server/game/RulesBackendFacade.ts) (~364 lines)  | `RulesBackendFacade` class                   | Parity bridge (TS/Python shadow modes)        |
-| [`BoardManager.ts`](../src/server/game/BoardManager.ts) (~1,283 lines)            | `BoardManager` class                         | Board state CRUD, adjacency                   |
-| [`rules/captureChainEngine.ts`](../src/server/game/rules/captureChainEngine.ts)   | `updateChainCaptureStateAfterCapture`        | Chain capture state tracking                  |
-| [`rules/lineProcessing.ts`](../src/server/game/rules/lineProcessing.ts)           | `processLinesForCurrentPlayer`               | Line orchestration with interaction           |
-| [`rules/territoryProcessing.ts`](../src/server/game/rules/territoryProcessing.ts) | `processDisconnectedRegionsForCurrentPlayer` | Territory orchestration                       |
-| [`turn/TurnEngine.ts`](../src/server/game/turn/TurnEngine.ts)                     | `advanceGameForCurrentPlayer`                | Turn orchestration                            |
+| File                                                                             | Key Exports                                  | Purpose                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`GameEngine.ts`](../src/server/game/GameEngine.ts) (~3,329 lines)               | `GameEngine` class                           | Stateful orchestrator with player interaction                                                                                                            |
+| [`RuleEngine.ts`](../src/server/game/RuleEngine.ts) (~1,564 lines)               | `RuleEngine` class                           | Stateless validation, move enumeration                                                                                                                   |
+| [`RulesBackendFacade.ts`](../src/server/game/RulesBackendFacade.ts) (~364 lines) | `RulesBackendFacade` class                   | Parity bridge (TS/Python shadow modes)                                                                                                                   |
+| [`BoardManager.ts`](../src/server/game/BoardManager.ts) (~1,283 lines)           | `BoardManager` class                         | Board state CRUD, adjacency                                                                                                                              |
+| `rules/captureChainEngine.ts` (legacy; historical, file removed)                 | `updateChainCaptureStateAfterCapture`        | Historical backend chain-capture state tracking module; superseded by `GameEngine` + shared `captureChainHelpers` and kept here only as a naming anchor. |
+| `rules/lineProcessing.ts` (legacy; historical, file removed)                     | `processLinesForCurrentPlayer`               | Historical backend line-processing orchestration; modern flows use shared `lineDecisionHelpers` + aggregates and backend adapters.                       |
+| `rules/territoryProcessing.ts` (legacy; historical, file removed)                | `processDisconnectedRegionsForCurrentPlayer` | Historical backend territory-processing orchestration; modern flows use shared `territoryDetection`/`territoryProcessing`/`territoryDecisionHelpers`.    |
+| [`turn/TurnEngine.ts`](../src/server/game/turn/TurnEngine.ts)                    | `advanceGameForCurrentPlayer`                | Turn orchestration                                                                                                                                       |
 
 #### Delegation Pattern to Shared Engine
 
-**Explicit documentation in [`territoryProcessing.ts`](../src/server/game/rules/territoryProcessing.ts:1-15):**
+**Historical documentation from legacy `territoryProcessing.ts` (server `rules/territoryProcessing.ts`, since removed; retained here as a historical note):**
 
 ```typescript
 /**
@@ -212,18 +228,25 @@ class PlacementMutator(Mutator):
 
 #### Key Files and Functions
 
-| File                                                                                        | Key Exports                                  | Purpose                          |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------- |
-| [`ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts) (~2,712 lines)     | `ClientSandboxEngine` class                  | Main orchestrator                |
-| [`sandboxTurnEngine.ts`](../src/client/sandbox/sandboxTurnEngine.ts) (~380 lines)           | `advanceTurnAndPhaseForCurrentPlayerSandbox` | Turn orchestration               |
-| [`sandboxPlacement.ts`](../src/client/sandbox/sandboxPlacement.ts) (~222 lines)             | `enumerateLegalRingPlacements`               | Placement helpers                |
-| [`sandboxMovement.ts`](../src/client/sandbox/sandboxMovement.ts) (~70 lines)                | `enumerateSimpleMovementLandings`            | Movement helpers                 |
-| [`sandboxCaptures.ts`](../src/client/sandbox/sandboxCaptures.ts) (~173 lines)               | `enumerateCaptureSegmentsFromBoard`          | Capture helpers                  |
-| [`sandboxLines.ts`](../src/client/sandbox/sandboxLines.ts) (~134 lines)                     | `findAllLinesOnBoard`                        | Line detection                   |
-| [`sandboxLinesEngine.ts`](../src/client/sandbox/sandboxLinesEngine.ts) (~285 lines)         | `getValidLineProcessingMoves`                | Line decision orchestration      |
-| [`sandboxTerritory.ts`](../src/client/sandbox/sandboxTerritory.ts) (~599 lines)             | `findDisconnectedRegionsOnBoard`             | Territory detection              |
-| [`sandboxTerritoryEngine.ts`](../src/client/sandbox/sandboxTerritoryEngine.ts) (~373 lines) | `getValidTerritoryProcessingMoves`           | Territory decision orchestration |
-| [`sandboxVictory.ts`](../src/client/sandbox/sandboxVictory.ts) (~120 lines)                 | `checkSandboxVictory`                        | Victory checking                 |
+| File                                                                                            | Key Exports                                  | Purpose                                                                                                                                          |
+| ----------------------------------------------------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`ClientSandboxEngine.ts`](../src/client/sandbox/ClientSandboxEngine.ts) (~2,712 lines)         | `ClientSandboxEngine` class                  | Main orchestrator                                                                                                                                |
+| [`SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)          | `SandboxOrchestratorAdapter` class           | Adapter wrapping turn orchestrator                                                                                                               |
+| ~~[`sandboxTurnEngine.ts`](../src/client/sandbox/sandboxTurnEngine.ts)~~ (~380 lines)           | `advanceTurnAndPhaseForCurrentPlayerSandbox` | **Removed – responsibilities moved to shared `turnLogic.advanceTurnAndPhase` + `ClientSandboxEngine`/`SandboxOrchestratorAdapter` turn helpers** |
+| [`sandboxPlacement.ts`](../src/client/sandbox/sandboxPlacement.ts) (~222 lines)                 | `enumerateLegalRingPlacements`               | Placement helpers                                                                                                                                |
+| [`sandboxMovement.ts`](../src/client/sandbox/sandboxMovement.ts) (~70 lines)                    | `enumerateSimpleMovementLandings`            | Movement helpers                                                                                                                                 |
+| ~~[`sandboxMovementEngine.ts`](../src/client/sandbox/sandboxMovementEngine.ts)~~                | (removed)                                    | (movement orchestration now in `ClientSandboxEngine`)                                                                                            |
+| [`sandboxCaptures.ts`](../src/client/sandbox/sandboxCaptures.ts) (~173 lines)                   | `enumerateCaptureSegmentsFromBoard`          | Capture helpers                                                                                                                                  |
+| [`sandboxCaptureSearch.ts`](../src/client/sandbox/sandboxCaptureSearch.ts)                      | Capture search utilities                     | Chain capture enumeration                                                                                                                        |
+| [`sandboxLines.ts`](../src/client/sandbox/sandboxLines.ts) (~134 lines)                         | `findAllLinesOnBoard`                        | Line detection                                                                                                                                   |
+| ~~[`sandboxLinesEngine.ts`](../src/client/sandbox/sandboxLinesEngine.ts) (~285 lines)~~         | (removed)                                    | (line decisions now via shared helpers + `ClientSandboxEngine`)                                                                                  |
+| [`sandboxTerritory.ts`](../src/client/sandbox/sandboxTerritory.ts) (~599 lines)                 | `findDisconnectedRegionsOnBoard`             | Territory detection                                                                                                                              |
+| ~~[`sandboxTerritoryEngine.ts`](../src/client/sandbox/sandboxTerritoryEngine.ts) (~373 lines)~~ | (removed)                                    | (territory decisions now via shared helpers + `ClientSandboxEngine`)                                                                             |
+| [`sandboxVictory.ts`](../src/client/sandbox/sandboxVictory.ts) (~120 lines)                     | `checkSandboxVictory`                        | Victory checking                                                                                                                                 |
+| [`sandboxElimination.ts`](../src/client/sandbox/sandboxElimination.ts)                          | Elimination helpers                          | Ring elimination processing                                                                                                                      |
+| [`sandboxGameEnd.ts`](../src/client/sandbox/sandboxGameEnd.ts)                                  | Game end utilities                           | End-game state handling                                                                                                                          |
+| [`sandboxAI.ts`](../src/client/sandbox/sandboxAI.ts)                                            | Local AI helpers                             | Local AI move selection                                                                                                                          |
+| [`localSandboxController.ts`](../src/client/sandbox/localSandboxController.ts)                  | `LocalSandboxController`                     | Local game session controller                                                                                                                    |
 
 #### Delegation Pattern to Shared Engine
 
@@ -245,7 +268,7 @@ class PlacementMutator(Mutator):
  */
 ```
 
-**Sandbox delegates to shared:**
+**Sandbox delegates to shared (current posture):**
 
 ```typescript
 // sandboxVictory.ts
@@ -253,18 +276,25 @@ import { evaluateVictory } from '../../shared/engine/victoryLogic';
 
 // sandboxTerritory.ts
 import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../shared/engine/territoryDetection';
-import { applyTerritoryRegion } from '../../shared/engine/territoryProcessing';
+import {
+  applyTerritoryRegion,
+  canProcessTerritoryRegion,
+} from '../../shared/engine/territoryProcessing';
 
 // sandboxLines.ts
 import { findAllLines as findAllLinesShared } from '../../shared/engine/lineDetection';
 
-// sandboxLinesEngine.ts
+// ClientSandboxEngine.ts (line / territory decision moves)
 import {
   enumerateProcessLineMoves,
   applyProcessLineDecision,
-} from '../../shared/engine/lineDecisionHelpers';
+  applyChooseLineRewardDecision,
+  enumerateProcessTerritoryRegionMoves,
+  applyProcessTerritoryRegionDecision,
+  applyEliminateRingsFromStackDecision,
+} from '../../shared/engine';
 
-// sandboxTurnEngine.ts
+// ClientSandboxEngine.ts (turn/phase sequencer)
 import { advanceTurnAndPhase } from '../../shared/engine/turnLogic';
 
 // sandboxPlacement.ts
@@ -327,7 +357,7 @@ graph TB
         SE_Victory[victoryLogic.ts]
         SE_Validators[validators/]
         SE_Mutators[mutators/]
-        SE_GameEngine[GameEngine.ts]
+        SE_Orchestrator[orchestration/turnOrchestrator.ts + aggregates/]
     end
 
     subgraph "Server Game (Backend Orchestrator)"
@@ -336,9 +366,9 @@ graph TB
         SG_Facade[RulesBackendFacade.ts]
         SG_BoardManager[BoardManager.ts]
         SG_TurnEngine[TurnEngine.ts]
-        SG_LineProcessing[lineProcessing.ts]
-        SG_TerritoryProcessing[territoryProcessing.ts]
-        SG_CaptureChain[captureChainEngine.ts]
+        SG_LineProcessing[lineProcessing.ts (legacy; removed)]
+        SG_TerritoryProcessing[territoryProcessing.ts (legacy; removed)]
+        SG_CaptureChain[captureChainEngine.ts (legacy; removed)]
     end
 
     subgraph "Python AI Service (Duplicated Port)"
@@ -352,13 +382,14 @@ graph TB
 
     subgraph "Client Sandbox (Client Orchestrator)"
         CS_Engine[ClientSandboxEngine.ts]
-        CS_Turn[sandboxTurnEngine.ts]
         CS_Placement[sandboxPlacement.ts]
         CS_Movement[sandboxMovement.ts]
         CS_Captures[sandboxCaptures.ts]
-        CS_Lines[sandboxLines.ts + sandboxLinesEngine.ts]
-        CS_Territory[sandboxTerritory.ts + sandboxTerritoryEngine.ts]
+        CS_Lines[sandboxLines.ts]
+        CS_Territory[sandboxTerritory.ts]
         CS_Victory[sandboxVictory.ts]
+        %% Historical sandbox turn engine (now removed; responsibilities live in ClientSandboxEngine + shared turnLogic)
+        %% CS_Turn[sandboxTurnEngine.ts (legacy; removed)]
     end
 
     %% Server Game delegates to Shared
@@ -391,7 +422,7 @@ graph TB
     PY_Geometry -.-> SE_Core
     PY_Validators -.-> SE_Validators
     PY_Mutators -.-> SE_Mutators
-    PY_Engine -.-> SE_GameEngine
+    PY_Engine -.-> SE_Orchestrator
 
     %% Parity bridge
     SG_Facade --> PY_Engine
@@ -481,13 +512,13 @@ Both Server Game and Client Sandbox documentation explicitly reference shared mo
 
 ### 6.3 What Can Be Deprecated/Removed
 
-| File/Directory                                            | Action             | Rationale                           |
-| --------------------------------------------------------- | ------------------ | ----------------------------------- |
-| `src/client/sandbox/sandboxTerritory.ts` internal helpers | Remove             | Marked as `@deprecated` DEAD CODE   |
-| `ai-service/app/rules/geometry.py`                        | Merge into core.py | Duplicates core.py functions        |
-| `ai-service/app/rules/validators/*`                       | Thin adapter only  | Currently reimplements validation   |
-| `src/server/game/rules/lineProcessing.ts`                 | Further delegate   | Keep only interaction orchestration |
-| `src/server/game/rules/territoryProcessing.ts`            | Further delegate   | Keep only interaction orchestration |
+| File/Directory                                                   | Action             | Rationale                                                                                                                                                       |
+| ---------------------------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/client/sandbox/sandboxTerritory.ts` internal helpers        | Remove             | Marked as `@deprecated` DEAD CODE                                                                                                                               |
+| `ai-service/app/rules/geometry.py`                               | Merge into core.py | Duplicates core.py functions                                                                                                                                    |
+| `ai-service/app/rules/validators/*`                              | Thin adapter only  | Currently reimplements validation                                                                                                                               |
+| `src/server/game/rules/lineProcessing.ts` (legacy; removed)      | Historical only    | Historical backend line-processing adapter; removed after consolidation onto shared `lineDecisionHelpers`/aggregates.                                           |
+| `src/server/game/rules/territoryProcessing.ts` (legacy; removed) | Historical only    | Historical backend territory-processing adapter; removed after consolidation onto shared `territoryDetection`/`territoryProcessing`/`territoryDecisionHelpers`. |
 
 ---
 
@@ -548,26 +579,26 @@ Both Server Game and Client Sandbox documentation explicitly reference shared mo
 
 ### 8.1 File Line Counts
 
-| Surface     | File                        | Lines  |
-| ----------- | --------------------------- | ------ |
-| **Shared**  | core.ts                     | ~650   |
-| **Shared**  | turnLogic.ts                | ~250   |
-| **Shared**  | movementLogic.ts            | ~200   |
-| **Shared**  | captureLogic.ts             | ~350   |
-| **Shared**  | lineDetection.ts            | ~200   |
-| **Shared**  | lineDecisionHelpers.ts      | ~400   |
-| **Shared**  | territoryDetection.ts       | ~250   |
-| **Shared**  | territoryProcessing.ts      | ~300   |
-| **Shared**  | territoryDecisionHelpers.ts | ~400   |
-| **Shared**  | victoryLogic.ts             | ~150   |
-| **Server**  | GameEngine.ts               | ~3,329 |
-| **Server**  | RuleEngine.ts               | ~1,564 |
-| **Server**  | BoardManager.ts             | ~1,283 |
-| **Python**  | default_engine.py           | ~994   |
-| **Python**  | core.py                     | ~245   |
-| **Sandbox** | ClientSandboxEngine.ts      | ~2,712 |
-| **Sandbox** | sandboxTerritory.ts         | ~599   |
-| **Sandbox** | sandboxTurnEngine.ts        | ~380   |
+| Surface     | File                                                                              | Lines  |
+| ----------- | --------------------------------------------------------------------------------- | ------ |
+| **Shared**  | core.ts                                                                           | ~650   |
+| **Shared**  | turnLogic.ts                                                                      | ~250   |
+| **Shared**  | movementLogic.ts                                                                  | ~200   |
+| **Shared**  | captureLogic.ts                                                                   | ~350   |
+| **Shared**  | lineDetection.ts                                                                  | ~200   |
+| **Shared**  | lineDecisionHelpers.ts                                                            | ~400   |
+| **Shared**  | territoryDetection.ts                                                             | ~250   |
+| **Shared**  | territoryProcessing.ts                                                            | ~300   |
+| **Shared**  | territoryDecisionHelpers.ts                                                       | ~400   |
+| **Shared**  | victoryLogic.ts                                                                   | ~150   |
+| **Server**  | GameEngine.ts                                                                     | ~3,329 |
+| **Server**  | RuleEngine.ts                                                                     | ~1,564 |
+| **Server**  | BoardManager.ts                                                                   | ~1,283 |
+| **Python**  | default_engine.py                                                                 | ~994   |
+| **Python**  | core.py                                                                           | ~245   |
+| **Sandbox** | ClientSandboxEngine.ts                                                            | ~2,712 |
+| **Sandbox** | sandboxTerritory.ts                                                               | ~599   |
+| **Sandbox** | sandboxTurnEngine.ts (legacy; removed, historical line count from prior revision) | ~380   |
 
 ### 8.2 Import Analysis Summary
 

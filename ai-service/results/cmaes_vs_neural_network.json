@@ -1,0 +1,233 @@
+{
+  "config": {
+    "player1": "cmaes_heuristic",
+    "player2": "neural_network",
+    "games": 20,
+    "board": "square8",
+    "seed": 45,
+    "max_moves_per_game": 200,
+    "minimax_depth": 3,
+    "timestamp": "2025-11-27T09:09:00.417960"
+  },
+  "results": {
+    "player1_wins": 14,
+    "player2_wins": 6,
+    "draws": 0,
+    "player1_win_rate": 0.7,
+    "player1_win_rate_ci95": [0.481, 0.8545],
+    "avg_game_length": 44.6,
+    "avg_game_length_std": 14.07,
+    "avg_decision_time_p1": 0.2817,
+    "avg_decision_time_p2": 1.0952,
+    "total_runtime_seconds": 785.1,
+    "victory_types": {
+      "elimination": 18,
+      "territory": 2
+    },
+    "avg_p1_final_pieces": 11.25,
+    "avg_p2_final_pieces": 13.25,
+    "piece_advantage_p1": -2.0
+  },
+  "games": [
+    {
+      "game_number": 1,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 37,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 2,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 62,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 3,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 41,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 4,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 5,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 6,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 55,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 7,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 58,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 8,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 36,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 9,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 38,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 10,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 19,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 11,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 59,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 12,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 13,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 14,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 21,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 15,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 37,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 16,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 50,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 17,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 52,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 18,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 71,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 19,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 18,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 20,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 59,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    }
+  ]
+}

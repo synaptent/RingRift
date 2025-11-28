@@ -9,8 +9,8 @@ Thank you for your interest in contributing to RingRift! This document provides 
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs and issues
 - [ARCHITECTURE_ASSESSMENT.md](./ARCHITECTURE_ASSESSMENT.md) - Architecture and refactoring axes
 - [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) - Phased strategic plan and milestones
-- [deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md](./deprecated/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md) - Historical end-to-end playable lifecycle plan (lobby → game → AI → victory); for current, code-verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
-- [CODEBASE_EVALUATION.md](./CODEBASE_EVALUATION.md) - Current code-level evaluation (kept in sync with `CURRENT_STATE_ASSESSMENT.md`, `IMPLEMENTATION_STATUS.md`, `KNOWN_ISSUES.md`, and `TODO.md`)
+- [archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md](./archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md) - Historical end-to-end playable lifecycle plan (lobby → game → AI → victory); for current, code-verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `ARCHITECTURE_ASSESSMENT.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
+- [archive/CODEBASE_EVALUATION.md](./archive/CODEBASE_EVALUATION.md) - Historical code-level evaluation (superseded by `ARCHITECTURE_ASSESSMENT.md` and `CURRENT_STATE_ASSESSMENT.md`)
 
 ---
 
@@ -353,6 +353,36 @@ validateMovement(move: Move, gameState: GameState): boolean {
 
 ---
 
+## 🔍 Code Quality
+
+### Linting
+
+This project uses ESLint to enforce code quality standards. **ESLint failures will block CI**, so it's important to check and fix lint issues locally before pushing.
+
+```bash
+# Check for lint errors
+npm run lint
+
+# Auto-fix lint errors
+npm run lint:fix
+```
+
+**Important:** Run `npm run lint` before committing to catch and fix any issues locally. The `lint:fix` command will automatically fix many common issues, but some may require manual intervention.
+
+### Pre-commit Hooks
+
+This project uses Husky and lint-staged to automatically run linting on staged files before each commit. If linting fails, the commit will be blocked until the issues are resolved.
+
+### Type Checking
+
+TypeScript compilation errors also block CI. Ensure your code compiles cleanly:
+
+```bash
+npm run build
+```
+
+---
+
 ## 📋 Pull Request Process
 
 ### Before Submitting
@@ -422,6 +452,70 @@ Relates to #issue-number
 
 ---
 
+### CI & PR policy (S-05.F.1)
+
+> **Status (2025-11-27): Active (documentation/policy only, non-semantics)** \
+> Implements S-05.F.1 from `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`. This section does **not** define game rules or lifecycle semantics. Those remain in:
+>
+> - `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `ringrift_compact_rules.md` (rules semantics SSoT)
+> - `docs/CANONICAL_ENGINE_API.md` + shared TS/WebSocket types and schemas (lifecycle/API SSoT)
+> - Shared TS engine + contracts + contract vectors under `src/shared/engine/**` and `tests/fixtures/contract-vectors/v2/**`
+>
+> CI is a consumer of those SSoTs and of the test-layer taxonomy described in `tests/README.md`, `tests/TEST_LAYERS.md`, and `tests/TEST_SUITE_PARITY_PLAN.md`.
+
+#### Branches and reviews
+
+This policy applies to all pull requests targeting the protected branches:
+
+- `main`
+- `develop`
+
+Expectations:
+
+- Use PRs for all changes to `main` / `develop` (no direct pushes).
+- Each PR targeting `main` or `develop` should have **at least one approval** from a non-author reviewer.
+- For changes that touch any of the following, a **second review is strongly recommended**:
+  - Shared TS engine orchestrator or aggregates under `src/shared/engine/**`
+  - Contracts and vectors under `src/shared/engine/contracts/**` and `tests/fixtures/contract-vectors/v2/**`
+  - Lifecycle/API surfaces in `docs/CANONICAL_ENGINE_API.md` or shared WebSocket types/schemas
+  - Python rules/AI hosts that adapt the canonical engine (for example `ai-service/app/rules/*`, `ai-service/app/game_engine.py`)
+
+#### Required CI checks (expected branch-protection gates)
+
+CI is defined in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml). For PRs into `main` and `develop`, the following jobs are expected to be configured as **required status checks** via branch protection:
+
+- `lint-and-typecheck` – ESLint + TypeScript compilation for root, server, and client.
+- `test` – `npm run test:coverage` across the Jest suite. See `tests/README.md`, `tests/TEST_LAYERS.md`, and `tests/TEST_SUITE_PARITY_PLAN.md` for the core vs diagnostics split and rules/trace/integration taxonomy.
+- `ts-rules-engine` – `npm run test:ts-rules-engine`, the canonical TS rules semantics signal over the shared engine (helpers → aggregates → orchestrator → contracts).
+- `build` – `npm run build` for server and client, plus archiving of the `dist/` artefacts.
+- `security-scan` – Node dependency audits via `npm audit --production --audit-level=high` and a Snyk scan with `--severity-threshold=high`.
+- `docker-build` – Docker Buildx build of the main `Dockerfile` (tagged `ringrift:test`, push disabled) to validate image build correctness in CI.
+- `python-rules-parity` – TS→Python rules-parity fixture generation followed by `pytest ai-service/tests/parity/test_rules_parity_fixtures.py` (primary TS↔Python rules parity signal).
+- `python-dependency-audit` – `pip-audit -r ai-service/requirements.txt --severity HIGH` over the AI-service dependency set.
+
+The `e2e-tests` Playwright job is **CI-blocking**. Infrastructure (Postgres, Redis) is configured via GitHub Actions services, and Playwright has retry support (2x in CI) for flaky test resilience. Contributors should:
+
+- Ensure E2E tests pass before merging PRs.
+- Run E2E tests locally when making changes to auth/session flows, lobby/game lifecycle, or WebSocket transport behaviour.
+
+As CI evolves (for example additional jobs for topology, SBOMs, or AI pipelines), new required checks should be documented in `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md` and, where relevant, referenced here.
+
+#### Handling flaky or failing checks
+
+- Do **not** merge PRs into `main` or `develop` while any of the required checks listed above are failing, except in a clearly documented emergency fix.
+- For known-flaky suites (typically long-running or infra-sensitive tests inside `test` or `e2e-tests`):
+  - Prefer re-running the job in CI and/or fixing the underlying flakiness in a follow-up PR.
+  - If you must temporarily quarantine a test, mark it clearly in code (for example with a comment referencing the tracking issue) and update the relevant test meta-doc (`tests/TEST_LAYERS.md` or `tests/TEST_SUITE_PARITY_PLAN.md`).
+- Temporarily disabling a CI job (for example commenting out a job in `ci.yml`) should be rare, explicitly called out in the PR description, and paired with a tracking issue. When this happens for security- or CI-related jobs, also leave a short note in `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md` so the S-05.F design stays in sync with reality.
+
+#### Releases and deployments
+
+- Production and staging deployments should originate from **tagged commits on `main`** (or dedicated release branches) that have passed all required CI checks above.
+- Prefer Docker images built by CI (via the `docker-build` pipeline or a future push-enabled variant) over ad-hoc images built on developer machines.
+- For incident response or security review, use this section together with:
+  - `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md` (S-05.F design and job map)
+  - `docs/SECURITY_THREAT_MODEL.md` (threat scenarios and S-05 backlog)
+
 ## 🐛 Bug Reports
 
 ### Required Information
@@ -472,7 +566,7 @@ Description of how to fix
 2. `STRATEGIC_ROADMAP.md` - Phased roadmap from core logic to UI, AI, and multiplayer
 3. `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Practical plan for a fully playable experience (lobby → game → AI → victory)
 4. `src/shared/types/game.ts` - Shared game type definitions
-5. `deprecated/ringrift_architecture_plan.md` and `deprecated/TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Historical design docs (preserved for context, but superseded by the files above)
+5. `archive/ringrift_architecture_plan.md` and `archive/TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Historical design docs (preserved for context, but superseded by the files above)
 
 ### Understanding the Game
 
@@ -610,6 +704,6 @@ Your contributions help make RingRift a reality. Whether you fix a small bug or 
 
 ---
 
-**Document Version:** 1.1  
-**Last Updated:** November 15, 2025  
+**Document Version:** 1.2
+**Last Updated:** November 27, 2025
 **Maintainer:** Development Team

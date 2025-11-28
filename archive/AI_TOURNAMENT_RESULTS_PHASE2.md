@@ -1,3 +1,10 @@
+> **Doc Status (2025-11-27): Archived (historical AI results, Phase 2)**
+>
+> - Role: record of AI improvements after Phase 2 refactors.
+> - Superseded by: the active AI host docs [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md) and [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/AI_TRAINING_AND_DATASETS.md).
+> - Not a semantics SSoT: see [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md) and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
+> - Related docs: [`archive/AI_TOURNAMENT_RESULTS.md`](./AI_TOURNAMENT_RESULTS.md), [`archive/AI_ASSESSMENT_REPORT.md`](./AI_ASSESSMENT_REPORT.md).
+
 # AI Tournament Results (Phase 2 - After Improvements)
 
 ## Summary

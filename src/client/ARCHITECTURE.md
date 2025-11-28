@@ -1,5 +1,11 @@
 # Client Architecture
 
+> **Doc Status (2025-11-27): Active (client layering & hosts/adapters)**
+>
+> - Describes the client-side layering (UI, view models, hooks, GameContext, sandbox hosts/adapters).
+> - Not a rules or lifecycle SSoT. Rules semantics SSoT = `RULES_CANONICAL_SPEC.md` + shared TS rules engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts + v2 contract vectors). Lifecycle semantics SSoT = `docs/CANONICAL_ENGINE_API.md` + shared TS/WebSocket types and schemas.
+> - `ClientSandboxEngine` and `SandboxOrchestratorAdapter` are **hosts/adapters** over the shared TS engine, not independent rules engines.
+
 This document describes the client-side architecture for RingRift, focusing on the separation between game domain logic and UI presentation.
 
 ## Overview

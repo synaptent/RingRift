@@ -7,23 +7,32 @@ import {
   Player,
   Position,
   RingStack,
-  positionToString
+  positionToString,
 } from '../../shared/types/game';
 import { calculateCapHeight, getPathPositions } from '../../shared/engine/core';
 
 /**
- * Minimal, browser-safe local sandbox harness.
+ * DIAGNOSTICS-ONLY (legacy) – local sandbox harness.
  *
- * This is intentionally very small and conservative: it provides just
- * enough structure for the `/sandbox` route to manage a local board
- * and per-player ring placement in a way that is compatible with the
- * shared GameState/BoardState types, without importing any server-only
- * modules.
+ * This module implements a minimal, browser-safe local sandbox rules subset
+ * independent of the shared turn orchestrator. It exists solely for
+ * diagnostics, experimentation, and Phase C migration work; it is **not**
+ * used by the `/sandbox` route or [`GamePage`](../pages/GamePage.tsx:165) in
+ * normal operation.
  *
- * The long-term goal is to evolve this into a thin wrapper around the
- * shared GameEngine once the engine modules are made browser-safe and
- * moved into a shared location. For now, all logic here is explicitly
- * marked as experimental and confined to the sandbox.
+ * Canonical sandbox rules behaviour is provided by:
+ * - [`ClientSandboxEngine`](./ClientSandboxEngine.ts:131) as the sandbox host.
+ * - [`SandboxOrchestratorAdapter`](./SandboxOrchestratorAdapter.ts:162) +
+ *   `processTurnAsync` in the shared orchestrator as the lifecycle SSOT.
+ *
+ * See [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../../../docs/ORCHESTRATOR_ROLLOUT_PLAN.md:302)
+ * Phase B/Phase C for the orchestrator-first rollout and legacy shutdown plan.
+ *
+ * This harness provides just enough structure for diagnostics code to manage a
+ * local board and per-player ring placement/movement in a way that is
+ * compatible with the shared `GameState`/`BoardState` types, without importing
+ * any server-only modules. It must not be reintroduced as a production rules
+ * host for `/sandbox`.
  */
 
 export interface LocalSandboxConfig {
@@ -59,7 +68,7 @@ export function createEmptyBoard(boardType: BoardType): BoardState {
     formedLines: [],
     eliminatedRings: {},
     size: config.size,
-    type: boardType
+    type: boardType,
   };
 }
 
@@ -68,9 +77,7 @@ export function createEmptyBoard(boardType: BoardType): BoardState {
  * placeholder identities; the sandbox currently focuses on board
  * behaviour rather than authentication.
  */
-export function createInitialLocalSandboxState(
-  config: LocalSandboxConfig
-): LocalSandboxState {
+export function createInitialLocalSandboxState(config: LocalSandboxConfig): LocalSandboxState {
   const players: Player[] = Array.from({ length: config.numPlayers }, (_, idx) => {
     const playerNumber = idx + 1;
     return {
@@ -83,7 +90,7 @@ export function createInitialLocalSandboxState(
       aiDifficulty: undefined,
       ringsInHand: BOARD_CONFIGS[config.boardType].ringsPerPlayer,
       eliminatedRings: 0,
-      territorySpaces: 0
+      territorySpaces: 0,
     };
   });
 
@@ -92,7 +99,7 @@ export function createInitialLocalSandboxState(
     players,
     currentPlayer: 1,
     currentPhase: 'ring_placement',
-    selectedStack: undefined
+    selectedStack: undefined,
   };
 }
 
@@ -101,15 +108,14 @@ export function createInitialLocalSandboxState(
  * allows us to reuse some HUD components later if needed without
  * claiming full rules fidelity.
  */
-export function toSandboxGameState(state: LocalSandboxState): Pick<
-  GameState,
-  'board' | 'players' | 'currentPlayer' | 'currentPhase'
-> {
+export function toSandboxGameState(
+  state: LocalSandboxState
+): Pick<GameState, 'board' | 'players' | 'currentPlayer' | 'currentPhase'> {
   return {
     board: state.board,
     players: state.players,
     currentPlayer: state.currentPlayer,
-    currentPhase: state.currentPhase
+    currentPhase: state.currentPhase,
   } as Pick<GameState, 'board' | 'players' | 'currentPlayer' | 'currentPhase'>;
 }
 
@@ -136,7 +142,7 @@ export function handleLocalSandboxCellClick(
       return state;
     }
 
-    const player = state.players.find(p => p.playerNumber === state.currentPlayer);
+    const player = state.players.find((p) => p.playerNumber === state.currentPlayer);
     if (!player || player.ringsInHand <= 0) {
       // No rings left to place for this player; ignore the click for now.
       return state;
@@ -148,7 +154,7 @@ export function handleLocalSandboxCellClick(
       rings,
       stackHeight: rings.length,
       capHeight: calculateCapHeight(rings),
-      controllingPlayer: state.currentPlayer
+      controllingPlayer: state.currentPlayer,
     };
 
     const nextStacks = new Map(state.board.stacks);
@@ -156,30 +162,30 @@ export function handleLocalSandboxCellClick(
 
     const nextBoard: BoardState = {
       ...state.board,
-      stacks: nextStacks
+      stacks: nextStacks,
     };
 
-    const updatedPlayers = state.players.map(p =>
+    const updatedPlayers = state.players.map((p) =>
       p.playerNumber === state.currentPlayer
         ? { ...p, ringsInHand: Math.max(0, p.ringsInHand - 1) }
         : p
     );
 
     const nextPlayerIndex =
-      updatedPlayers.findIndex(p => p.playerNumber === state.currentPlayer) + 1;
+      updatedPlayers.findIndex((p) => p.playerNumber === state.currentPlayer) + 1;
     const nextPlayer =
       nextPlayerIndex < updatedPlayers.length
         ? updatedPlayers[nextPlayerIndex].playerNumber
         : updatedPlayers[0].playerNumber;
 
-    const allRingsExhausted = updatedPlayers.every(p => p.ringsInHand <= 0);
+    const allRingsExhausted = updatedPlayers.every((p) => p.ringsInHand <= 0);
 
     return {
       board: nextBoard,
       players: updatedPlayers,
       currentPlayer: nextPlayer,
       currentPhase: allRingsExhausted ? 'movement' : 'ring_placement',
-      selectedStack: undefined
+      selectedStack: undefined,
     };
   }
 
@@ -191,7 +197,7 @@ export function handleLocalSandboxCellClick(
     if (stackAtPos && stackAtPos.controllingPlayer === state.currentPlayer) {
       return {
         ...state,
-        selectedStack: position
+        selectedStack: position,
       };
     }
 
@@ -227,16 +233,16 @@ export function handleLocalSandboxCellClick(
     nextStacks.delete(fromKey);
     nextStacks.set(key, {
       ...movingStack,
-      position
+      position,
     });
 
     const nextBoard: BoardState = {
       ...state.board,
-      stacks: nextStacks
+      stacks: nextStacks,
     };
 
     const nextPlayerIndex =
-      state.players.findIndex(p => p.playerNumber === state.currentPlayer) + 1;
+      state.players.findIndex((p) => p.playerNumber === state.currentPlayer) + 1;
     const nextPlayer =
       nextPlayerIndex < state.players.length
         ? state.players[nextPlayerIndex].playerNumber
@@ -246,7 +252,7 @@ export function handleLocalSandboxCellClick(
       ...state,
       board: nextBoard,
       currentPlayer: nextPlayer,
-      selectedStack: undefined
+      selectedStack: undefined,
     };
   }
 

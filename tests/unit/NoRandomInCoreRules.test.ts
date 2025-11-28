@@ -20,20 +20,20 @@ function readAllTsFiles(dir: string, ignore: (p: string) => boolean): string {
 }
 
 describe('No randomness in core TS rules engine', () => {
-  it('shared engine contains no Math.random calls (excluding AI helpers)', () => {
+  it('shared engine contains no Math.random calls (excluding AI helpers and test utilities)', () => {
     const engineDir = path.join(__dirname, '..', '..', 'src', 'shared', 'engine');
-    const text = readAllTsFiles(engineDir, (p) =>
-      p.endsWith(`${path.sep}localAIMoveSelection.ts`)
+    const text = readAllTsFiles(
+      engineDir,
+      (p) =>
+        p.endsWith(`${path.sep}localAIMoveSelection.ts`) ||
+        p.includes(`${path.sep}contracts${path.sep}`) // Exclude test utilities
     );
     expect(text).not.toMatch(/Math\.random/);
   });
 
   it('server game core (non-AI) contains no Math.random calls', () => {
     const gameDir = path.join(__dirname, '..', '..', 'src', 'server', 'game');
-    const text = readAllTsFiles(
-      gameDir,
-      (p) => p.includes(`${path.sep}ai${path.sep}`)
-    );
+    const text = readAllTsFiles(gameDir, (p) => p.includes(`${path.sep}ai${path.sep}`));
     expect(text).not.toMatch(/Math\.random/);
   });
 });

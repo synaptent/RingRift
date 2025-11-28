@@ -224,7 +224,7 @@ class TestCheckpointFunctions(unittest.TestCase):
             self.assertIsNotNone(checkpoint["scheduler_state_dict"])
 
     def test_save_checkpoint_with_early_stopping(self) -> None:
-        """Test saving checkpoint with early stopping state."""
+        """Test saving checkpoint with early stopping state (legacy format)."""
         model = SimpleModel()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -234,9 +234,11 @@ class TestCheckpointFunctions(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "checkpoint.pt")
+            # Use legacy format (use_versioning=False) to test old behavior
             save_checkpoint(
                 model, optimizer, epoch=2, loss=0.2, path=path,
-                early_stopping=es
+                early_stopping=es,
+                use_versioning=False,
             )
 
             checkpoint = torch.load(path)

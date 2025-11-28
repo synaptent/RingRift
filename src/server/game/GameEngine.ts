@@ -30,6 +30,13 @@ import {
   applyProcessLineDecision,
   applyChooseLineRewardDecision,
   findLinesForPlayer,
+  // Canonical non-capture movement mutation (TS SSOT)
+  applySimpleMovement as applySimpleMovementAggregate,
+  // Capture aggregate helpers (canonical capture mutation + global enumeration)
+  enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
+  applyCapture as applyCaptureAggregate,
+  // Canonical placement mutation (TS SSOT)
+  applyPlacementMove as applyPlacementMoveAggregate,
 } from '../../shared/engine';
 import type {
   GameResult,
@@ -41,13 +48,11 @@ import type {
 import { BoardManager } from './BoardManager';
 import { RuleEngine } from './RuleEngine';
 import { PlayerInteractionManager } from './PlayerInteractionManager';
-import { processLinesForCurrentPlayer } from './rules/lineProcessing';
-import { processDisconnectedRegionsForCurrentPlayer } from './rules/territoryProcessing';
 import {
+  getChainCaptureContinuationInfo,
   ChainCaptureState,
-  updateChainCaptureStateAfterCapture as updateChainCaptureStateAfterCaptureShared,
-  getCaptureOptionsFromPosition as getCaptureOptionsFromPositionShared,
-} from './rules/captureChainEngine';
+  updateChainCaptureStateAfterCapture,
+} from '../../shared/engine/aggregates/CaptureAggregate';
 import { config } from '../config';
 import {
   PerTurnState,
@@ -56,12 +61,14 @@ import {
   TurnEngineDeps,
   TurnEngineHooks,
 } from './turn/TurnEngine';
+import { orchestratorRollout } from '../services/OrchestratorRolloutService';
+import { getMetricsService } from '../services/MetricsService';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Orchestrator Adapter Feature Flag
 // ═══════════════════════════════════════════════════════════════════════════
 // Check config for feature flag to enable orchestrator adapter by default
-const ORCHESTRATOR_ADAPTER_ENABLED_BY_CONFIG = config.featureFlags.orchestratorAdapterEnabled;
+const ORCHESTRATOR_ADAPTER_ENABLED_BY_CONFIG = config.featureFlags.orchestrator.adapterEnabled;
 import {
   TurnEngineAdapter,
   StateAccessor,
@@ -77,8 +84,8 @@ import {
  * the representation without breaking clients. It is roughly modeled after the
  * Rust engine's `ChainCaptureState` and is used only inside GameEngine.
  *
- * The concrete shape is shared with the rules/captureChainEngine module; we
- * keep the Ts* aliases here to preserve existing semantics and comments while
+ * The concrete shape is shared with the CaptureAggregate module; we keep the
+ * Ts* aliases here to preserve existing semantics and comments while
  * centralising the implementation.
  */
 type TsChainCaptureState = ChainCaptureState;
@@ -267,6 +274,17 @@ export class GameEngine {
   }
 
   /**
+   * Disable delegation to the shared orchestrator adapter and use the
+   * legacy GameEngine turn processing pipeline for this instance.
+   *
+   * This is primarily used by orchestrator rollout logic to keep some
+   * sessions on the legacy path even when the global feature flag is on.
+   */
+  public disableOrchestratorAdapter(): void {
+    this.useOrchestratorAdapter = false;
+  }
+
+  /**
    * Check if orchestrator adapter is enabled.
    */
   public isOrchestratorAdapterEnabled(): boolean {
@@ -282,7 +300,56 @@ export class GameEngine {
     const stateAccessor: StateAccessor = {
       getGameState: () => this.gameState,
       updateGameState: (newState: GameState) => {
-        this.gameState = newState;
+        // Preserve references to existing board Maps so tests that cache
+        // engineAny.gameState before making moves continue to see updates.
+        // The orchestrator returns immutable state updates, but the legacy
+        // GameEngine tests rely on mutation semantics.
+        const existingBoard = this.gameState.board;
+
+        // Update stacks Map in-place
+        existingBoard.stacks.clear();
+        for (const [key, stack] of newState.board.stacks) {
+          existingBoard.stacks.set(key, stack);
+        }
+
+        // Update markers Map in-place
+        existingBoard.markers.clear();
+        for (const [key, marker] of newState.board.markers) {
+          existingBoard.markers.set(key, marker);
+        }
+
+        // Update collapsedSpaces Map in-place
+        existingBoard.collapsedSpaces.clear();
+        for (const [key, collapsed] of newState.board.collapsedSpaces) {
+          existingBoard.collapsedSpaces.set(key, collapsed);
+        }
+
+        // Update territories Map in-place
+        existingBoard.territories.clear();
+        for (const [key, territory] of newState.board.territories) {
+          existingBoard.territories.set(key, territory);
+        }
+
+        // Update formedLines array in-place
+        existingBoard.formedLines.length = 0;
+        existingBoard.formedLines.push(...newState.board.formedLines);
+
+        // Update eliminatedRings object
+        for (const key of Object.keys(existingBoard.eliminatedRings)) {
+          delete existingBoard.eliminatedRings[key as unknown as number];
+        }
+        for (const [key, value] of Object.entries(newState.board.eliminatedRings)) {
+          existingBoard.eliminatedRings[key as unknown as number] = value;
+        }
+
+        // Update scalar board fields
+        existingBoard.size = newState.board.size;
+
+        // Update the gameState while preserving the board reference
+        this.gameState = {
+          ...newState,
+          board: existingBoard,
+        };
       },
       getPlayerInfo: (playerNumber: number) => {
         const player = this.gameState.players.find((p) => p.playerNumber === playerNumber);
@@ -357,12 +424,32 @@ export class GameEngine {
       const result = await adapter.processMove(fullMove);
 
       if (!result.success) {
+        // DEBUG: Log orchestrator error for debugging Category C failures
+        console.error('[GameEngine.processMoveViaAdapter] Orchestrator rejected move:', {
+          moveType: fullMove.type,
+          player: fullMove.player,
+          from: fullMove.from,
+          captureTarget: fullMove.captureTarget,
+          to: fullMove.to,
+          error: result.error,
+          currentPhase: this.gameState.currentPhase,
+          currentPlayer: this.gameState.currentPlayer,
+          stackCount: this.gameState.board.stacks.size,
+        });
+
+        // Record unsuccessful orchestrator move for rollout metrics
+        getMetricsService().recordOrchestratorMove('orchestrator', 'error');
+
         return {
           success: false,
           error: result.error || 'Move rejected by orchestrator',
           gameState: this.getGameState(),
         };
       }
+
+      // Record a successful orchestrator operation for rollout/circuit breaker
+      orchestratorRollout.recordSuccess();
+      getMetricsService().recordOrchestratorMove('orchestrator', 'success');
 
       // The adapter has already updated this.gameState via stateAccessor.
       // Now handle post-processing that GameEngine is responsible for:
@@ -386,6 +473,68 @@ export class GameEngine {
         };
       }
 
+      // Handle pending chain capture decision from orchestrator.
+      // When processTurnAsync returns with status 'awaiting_decision' for
+      // a chain_capture decision type, we need to set up the internal
+      // chainCaptureState so that subsequent getValidMoves() returns
+      // continue_capture_segment moves and makeMove() accepts them.
+      //
+      // NOTE: The adapter wraps processTurnAsync which now returns early
+      // for chain_capture decisions. We detect this via the returned error
+      // containing the pending decision info, OR we can check the result
+      // state for chain capture indicators.
+      //
+      // After a capture move, if chain continuation is available, the
+      // orchestrator sets gameState.currentPhase to something (typically
+      // stays in movement/capture context). We detect chain continuation
+      // by checking if the move was a capture and if further captures
+      // are available from the landing position.
+      if (
+        (fullMove.type === 'overtaking_capture' || fullMove.type === 'continue_capture_segment') &&
+        fullMove.to
+      ) {
+        // Check if chain continuation is available from the landing position
+        // using the shared CaptureAggregate which provides a cleaner interface
+        const continuationInfo = getChainCaptureContinuationInfo(
+          this.gameState,
+          fullMove.player,
+          fullMove.to
+        );
+
+        if (continuationInfo.mustContinue) {
+          // Set up chain capture state for GameEngine's internal tracking
+          // Capture the cap height of the captured target for proper state
+          const targetStack = fullMove.captureTarget
+            ? this.boardManager.getStack(fullMove.captureTarget, beforeStateForHistory.board)
+            : undefined;
+          const capturedCapHeight = targetStack ? targetStack.capHeight : 0;
+
+          this.chainCaptureState = updateChainCaptureStateAfterCapture(
+            this.chainCaptureState,
+            fullMove,
+            capturedCapHeight
+          );
+
+          if (this.chainCaptureState) {
+            this.chainCaptureState.availableMoves = continuationInfo.availableContinuations;
+          }
+
+          // Set phase to chain_capture so getValidMoves returns continue_capture_segment moves
+          this.gameState.currentPhase = 'chain_capture';
+
+          // Start player's timer for the chain capture decision
+          this.startPlayerTimer(this.gameState.currentPlayer);
+
+          return {
+            success: true,
+            gameState: this.getGameState(),
+          };
+        } else {
+          // Chain is exhausted; clear any stale chain state
+          this.chainCaptureState = undefined;
+        }
+      }
+
       // Start next player's timer
       this.startPlayerTimer(this.gameState.currentPlayer);
 
@@ -395,6 +544,11 @@ export class GameEngine {
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
+
+      // Record orchestrator error for rollout/circuit breaker tracking
+      orchestratorRollout.recordError();
+      getMetricsService().recordOrchestratorMove('orchestrator', 'error');
+
       return {
         success: false,
         error: `Adapter error: ${errorMessage}`,
@@ -483,7 +637,6 @@ export class GameEngine {
     // These void-accesses mark the helpers as "used" from the compiler's
     // perspective without invoking them.
     void this.processLineFormations;
-    void this.processDisconnectedRegions;
     void this.getValidLineProcessingMoves;
     void this.getValidTerritoryProcessingMoves;
   }
@@ -648,13 +801,34 @@ export class GameEngine {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ORCHESTRATOR ADAPTER DELEGATION
-    // When enabled, delegate all rules processing to the shared orchestrator
-    // via TurnEngineAdapter. This is part of Phase 3 Rules Engine Consolidation.
+    // ORCHESTRATOR ADAPTER DELEGATION (Phase A – Backend orchestrator-only)
     // ═══════════════════════════════════════════════════════════════════════
-    if (this.useOrchestratorAdapter) {
+    // In Phase A the shared orchestrator, wrapped by TurnEngineAdapter, is
+    // the only production backend turn-processing path. The legacy
+    // RuleEngine-based pipeline is reserved for test harnesses and
+    // diagnostics only.
+    //
+    // Behaviour:
+    // - In all non-test environments (config.isTest === false), always
+    //   delegate to the adapter regardless of the internal flag.
+    // - In tests (config.isTest === true), allow explicit opt-out via
+    //   disableOrchestratorAdapter() so legacy helpers remain available for
+    //   diagnostics and archived scenarios.
+    const isTestEnv = config.isTest === true;
+    if (!isTestEnv || this.useOrchestratorAdapter) {
       return this.processMoveViaAdapter(move);
     }
+
+    // Legacy backend path (RuleEngine-based). This is now restricted to
+    // test/diagnostic usage and is not used by production GameSession /
+    // WebSocket entrypoints. We still record usage for rollout diagnostics.
+    let legacyMoveRecorded = false;
+    const recordLegacyMove = (outcome: 'success' | 'error') => {
+      if (!legacyMoveRecorded) {
+        getMetricsService().recordOrchestratorMove('legacy', outcome);
+        legacyMoveRecorded = true;
+      }
+    };
 
     // Capture a pre-move snapshot for history/event-sourcing. This uses the
     // public getGameState() so callers and history entries share the same
@@ -696,6 +870,7 @@ export class GameEngine {
 
     const validation = this.ruleEngine.validateMove(fullMove, validationState);
     if (!validation) {
+      recordLegacyMove('error');
       return {
         success: false,
         error: 'Invalid move',
@@ -817,6 +992,7 @@ export class GameEngine {
             currentPlayer: this.gameState.currentPlayer,
           }
         );
+        recordLegacyMove('error');
         return {
           success: false,
           error: 'Source stack no longer exists',
@@ -835,6 +1011,7 @@ export class GameEngine {
             currentPlayer: this.gameState.currentPlayer,
           }
         );
+        recordLegacyMove('error');
         return {
           success: false,
           error: 'Source stack is not controlled by this player',
@@ -879,7 +1056,7 @@ export class GameEngine {
     let chainContinuationAvailable = false;
 
     if (fullMove.type === 'overtaking_capture' || fullMove.type === 'continue_capture_segment') {
-      this.updateChainCaptureStateAfterCapture(fullMove, capturedCapHeight);
+      this.updateChainCaptureStateAfterCaptureInternal(fullMove, capturedCapHeight);
 
       const state = this.chainCaptureState;
       const currentPlayer = this.gameState.currentPlayer;
@@ -931,6 +1108,8 @@ export class GameEngine {
       // Record a structured history entry for this capture segment.
       this.appendHistoryEntry(beforeStateForHistory, fullMove);
 
+      recordLegacyMove('success');
+
       return {
         success: true,
         gameState: this.getGameState(),
@@ -961,6 +1140,8 @@ export class GameEngine {
         // this decision state.
         this.appendHistoryEntry(beforeStateForHistory, fullMove);
 
+        recordLegacyMove('success');
+
         return {
           success: true,
           gameState: this.getGameState(),
@@ -981,6 +1162,8 @@ export class GameEngine {
 
         this.startPlayerTimer(this.gameState.currentPlayer);
         this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+        recordLegacyMove('success');
 
         return {
           success: true,
@@ -1023,9 +1206,8 @@ export class GameEngine {
       });
     }
 
-    this.debugCheckpoint('before-processAutomaticConsequences');
-    await this.processAutomaticConsequences();
-    this.debugCheckpoint('after-processAutomaticConsequences');
+    // Legacy automatic consequence processing removed - orchestrator handles this
+    this.debugCheckpoint('legacy-path-deprecated');
 
     // Check for game end conditions
     const gameEndCheck = this.ruleEngine.checkGameEnd(this.gameState);
@@ -1036,6 +1218,8 @@ export class GameEngine {
       // canonical move that produced the terminal state so parity/debug
       // tooling sees a complete move-by-move trace.
       this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+      recordLegacyMove(endResult.success ? 'success' : 'error');
 
       return {
         success: endResult.success,
@@ -1120,6 +1304,8 @@ export class GameEngine {
           // tooling sees a complete trace.
           this.appendHistoryEntry(beforeStateForHistory, fullMove);
 
+          recordLegacyMove('success');
+
           return {
             success: true,
             gameResult: lpsResult,
@@ -1136,6 +1322,8 @@ export class GameEngine {
 
     // Record a structured history entry for this canonical move.
     this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+    recordLegacyMove('success');
 
     return {
       success: true,
@@ -1156,39 +1344,68 @@ export class GameEngine {
 
     switch (move.type) {
       case 'place_ring':
-        if (move.to) {
-          const board = this.gameState.board;
-          const existingStack = this.boardManager.getStack(move.to, board);
-          const placementCount = Math.max(1, move.placementCount ?? 1);
+        if (!move.to) {
+          // DIAGNOSTIC: a validated place_ring move must always carry a destination.
+          // Log and treat as a no-op rather than attempting a partial/manual mutation.
+          console.error('[GameEngine.applyMove] BUG: place_ring without destination', {
+            moveType: move.type,
+            player: move.player,
+            currentPhase: this.gameState.currentPhase,
+            currentPlayer: this.gameState.currentPlayer,
+          });
+          break;
+        }
 
-          const placementRings = new Array(placementCount).fill(move.player);
+        // Delegate placement mutation (stack creation/merge, marker exclusivity,
+        // ringsInHand bookkeeping) to the shared PlacementAggregate so backend
+        // GameEngine, RuleEngine, sandbox, and orchestrator all share a single
+        // source of truth for placement effects.
+        {
+          const outcome = applyPlacementMoveAggregate(this.gameState, move);
+          const newStateAfterPlacement = outcome.nextState;
 
-          let newRings: number[];
-          if (existingStack && existingStack.rings.length > 0) {
-            // Placing on an existing stack: new rings sit on top
-            newRings = [...placementRings, ...existingStack.rings];
-          } else {
-            // Placing on an empty space
-            newRings = placementRings;
+          // Preserve the existing BoardState object reference while applying
+          // the aggregate's updated board contents so callers that cache
+          // engineAny.gameState.board continue to observe updates. This mirrors
+          // the movement/capture branches and the TurnEngineAdapter wiring.
+          const existingBoard = this.gameState.board;
+
+          existingBoard.stacks.clear();
+          for (const [key, stack] of newStateAfterPlacement.board.stacks) {
+            existingBoard.stacks.set(key, stack);
           }
 
-          const newStack: RingStack = {
-            position: move.to,
-            rings: newRings,
-            stackHeight: newRings.length,
-            capHeight: calculateCapHeight(newRings),
-            controllingPlayer: newRings[0],
+          existingBoard.markers.clear();
+          for (const [key, marker] of newStateAfterPlacement.board.markers) {
+            existingBoard.markers.set(key, marker);
+          }
+
+          existingBoard.collapsedSpaces.clear();
+          for (const [key, owner] of newStateAfterPlacement.board.collapsedSpaces) {
+            existingBoard.collapsedSpaces.set(key, owner);
+          }
+
+          existingBoard.territories.clear();
+          for (const [key, territory] of newStateAfterPlacement.board.territories) {
+            existingBoard.territories.set(key, territory);
+          }
+
+          existingBoard.formedLines.length = 0;
+          existingBoard.formedLines.push(...newStateAfterPlacement.board.formedLines);
+
+          for (const key of Object.keys(existingBoard.eliminatedRings)) {
+            delete existingBoard.eliminatedRings[key as unknown as number];
+          }
+          for (const [key, value] of Object.entries(newStateAfterPlacement.board.eliminatedRings)) {
+            existingBoard.eliminatedRings[key as unknown as number] = value;
+          }
+
+          existingBoard.size = newStateAfterPlacement.board.size;
+
+          this.gameState = {
+            ...newStateAfterPlacement,
+            board: existingBoard,
           };
-
-          this.boardManager.setStack(move.to, newStack, board);
-
-          // Update player state: decrement rings in hand by placementCount,
-          // clamped defensively to avoid going below zero.
-          const player = this.gameState.players.find((p) => p.playerNumber === move.player);
-          if (player && player.ringsInHand > 0) {
-            const toSpend = Math.min(placementCount, player.ringsInHand);
-            player.ringsInHand -= toSpend;
-          }
         }
         break;
 
@@ -1202,8 +1419,8 @@ export class GameEngine {
       case 'move_ring':
       case 'move_stack':
         if (move.from && move.to) {
-          const stack = this.boardManager.getStack(move.from, this.gameState.board);
-          if (!stack) {
+          const sourceStack = this.boardManager.getStack(move.from, this.gameState.board);
+          if (!sourceStack) {
             // DIAGNOSTIC: This should never happen if validation and defensive
             // checks are working correctly. Log and bail to prevent silent no-ops.
             console.error('[GameEngine.applyMove] BUG: move_stack/move_ring but no source stack', {
@@ -1216,63 +1433,136 @@ export class GameEngine {
             break; // Early exit from switch - no state change
           }
 
-          // Rule Reference: Section 4.2.1 - Leave marker on departure space
-          this.boardManager.setMarker(move.from, move.player, this.gameState.board);
+          // Delegate non-capturing movement mutation (marker-path effects,
+          // stack merge, landing-on-own-marker elimination, and elimination
+          // accounting) to the shared MovementAggregate so backend, sandbox,
+          // and orchestrator all share a single source of truth.
+          const outcome = applySimpleMovementAggregate(this.gameState, {
+            from: move.from,
+            to: move.to,
+            player: move.player,
+          });
 
-          // Process markers along movement path (Section 8.3)
-          this.processMarkersAlongPath(move.from, move.to, move.player);
+          const newStateAfterMove = outcome.nextState;
 
-          // Check if landing on same-color marker (Section 8.2 / 8.3.1)
-          const landingMarker = this.boardManager.getMarker(move.to, this.gameState.board);
-          const landedOnOwnMarker = landingMarker === move.player;
-          if (landedOnOwnMarker) {
-            // Stacks cannot coexist with markers; remove the marker prior
-            // to landing, then apply the self-elimination rule below.
-            this.boardManager.removeMarker(move.to, this.gameState.board);
+          // Preserve the existing BoardState object reference while
+          // applying the aggregate's updated board contents so callers
+          // holding a cached board reference continue to observe updates.
+          const existingBoard = this.gameState.board;
+
+          existingBoard.stacks.clear();
+          for (const [key, stack] of newStateAfterMove.board.stacks) {
+            existingBoard.stacks.set(key, stack);
           }
 
-          // If there is an existing stack at the landing position, merge the
-          // moving stack into it rather than overwriting it. This mirrors the
-          // sandbox movement engine and preserves ring conservation for simple
-          // moves that land on occupied spaces.
-          const existingDest = this.boardManager.getStack(move.to, this.gameState.board);
-
-          // Remove stack from source
-          this.boardManager.removeStack(move.from, this.gameState.board);
-
-          let movedStack: RingStack;
-          if (existingDest && existingDest.rings.length > 0) {
-            const mergedRings = [...existingDest.rings, ...stack.rings];
-            movedStack = {
-              position: move.to,
-              rings: mergedRings,
-              stackHeight: mergedRings.length,
-              capHeight: calculateCapHeight(mergedRings),
-              controllingPlayer: mergedRings[0],
-            };
-          } else {
-            // Normal movement (no existing stack at landing position)
-            movedStack = {
-              ...stack,
-              position: move.to,
-            };
+          existingBoard.markers.clear();
+          for (const [key, marker] of newStateAfterMove.board.markers) {
+            existingBoard.markers.set(key, marker);
           }
 
-          this.boardManager.setStack(move.to, movedStack, this.gameState.board);
-
-          if (landedOnOwnMarker) {
-            // New rule: landing on your own marker with a non-capture move
-            // removes that marker and immediately eliminates your top ring,
-            // credited toward ring-elimination victory conditions.
-            this.eliminateTopRingAt(move.to, move.player);
+          existingBoard.collapsedSpaces.clear();
+          for (const [key, owner] of newStateAfterMove.board.collapsedSpaces) {
+            existingBoard.collapsedSpaces.set(key, owner);
           }
+
+          existingBoard.territories.clear();
+          for (const [key, territory] of newStateAfterMove.board.territories) {
+            existingBoard.territories.set(key, territory);
+          }
+
+          existingBoard.formedLines.length = 0;
+          existingBoard.formedLines.push(...newStateAfterMove.board.formedLines);
+
+          for (const key of Object.keys(existingBoard.eliminatedRings)) {
+            delete existingBoard.eliminatedRings[key as unknown as number];
+          }
+          for (const [key, value] of Object.entries(newStateAfterMove.board.eliminatedRings)) {
+            existingBoard.eliminatedRings[key as unknown as number] = value;
+          }
+
+          existingBoard.size = newStateAfterMove.board.size;
+
+          this.gameState = {
+            ...newStateAfterMove,
+            board: existingBoard,
+          };
         }
         break;
 
       case 'overtaking_capture':
       case 'continue_capture_segment':
         if (move.from && move.to && move.captureTarget) {
-          this.performOvertakingCapture(move.from, move.captureTarget, move.to, move.player);
+          // Delegate capture mutation to the shared CaptureAggregate so that
+          // backend GameEngine, sandbox, and shared core all share a single
+          // source of truth for marker-path effects, stack updates, and
+          // landing-on-own-marker elimination.
+          const captureResult = applyCaptureAggregate(this.gameState, move);
+
+          if (!captureResult.success) {
+            // Defensive diagnostic: this should never happen if RuleEngine
+            // validation is in sync with the shared validator. Log and treat
+            // as a no-op rather than attempting a partial/manual mutation.
+            // eslint-disable-next-line no-console
+            console.error('[GameEngine.applyMove] CaptureAggregate.applyCapture failed', {
+              reason: captureResult.reason,
+              moveType: move.type,
+              player: move.player,
+              from: move.from && positionToString(move.from),
+              captureTarget: move.captureTarget && positionToString(move.captureTarget),
+              to: move.to && positionToString(move.to),
+            });
+            break;
+          }
+
+          const newStateAfterCapture = captureResult.newState;
+
+          // Preserve references to the existing BoardState Maps when
+          // applying the shared capture mutation so that tests which cache
+          // engineAny.gameState.board continue to observe updates. This
+          // mirrors the TurnEngineAdapter stateAccessor.updateGameState
+          // wiring used for orchestrator delegation.
+          const existingBoard = this.gameState.board;
+
+          existingBoard.stacks.clear();
+          for (const [key, stack] of newStateAfterCapture.board.stacks) {
+            existingBoard.stacks.set(key, stack);
+          }
+
+          existingBoard.markers.clear();
+          for (const [key, marker] of newStateAfterCapture.board.markers) {
+            existingBoard.markers.set(key, marker);
+          }
+
+          existingBoard.collapsedSpaces.clear();
+          for (const [key, collapsed] of newStateAfterCapture.board.collapsedSpaces) {
+            existingBoard.collapsedSpaces.set(key, collapsed);
+          }
+
+          existingBoard.territories.clear();
+          for (const [key, territory] of newStateAfterCapture.board.territories) {
+            existingBoard.territories.set(key, territory);
+          }
+
+          existingBoard.formedLines.length = 0;
+          existingBoard.formedLines.push(...newStateAfterCapture.board.formedLines);
+
+          for (const key of Object.keys(existingBoard.eliminatedRings)) {
+            delete existingBoard.eliminatedRings[key as unknown as number];
+          }
+          for (const [key, value] of Object.entries(newStateAfterCapture.board.eliminatedRings)) {
+            existingBoard.eliminatedRings[key as unknown as number] = value;
+          }
+
+          existingBoard.size = newStateAfterCapture.board.size;
+
+          // Update the gameState while preserving the board reference
+          this.gameState = {
+            ...newStateAfterCapture,
+            board: existingBoard,
+          };
+
+          // For diagnostics we continue to record the primary capture target
+          // for this segment, matching the legacy applyMove behaviour.
           result.captures.push(move.captureTarget);
         }
         break;
@@ -1333,8 +1623,8 @@ export class GameEngine {
    * we track the start position, current position, and the sequence of
    * capture segments taken so far.
    */
-  private updateChainCaptureStateAfterCapture(move: Move, capturedCapHeight: number): void {
-    this.chainCaptureState = updateChainCaptureStateAfterCaptureShared(
+  private updateChainCaptureStateAfterCaptureInternal(move: Move, capturedCapHeight: number): void {
+    this.chainCaptureState = updateChainCaptureStateAfterCapture(
       this.chainCaptureState,
       move,
       capturedCapHeight
@@ -1346,19 +1636,18 @@ export class GameEngine {
    * specified player by ray-walking in each movement direction and
    * validating each candidate via RuleEngine.
    *
-   * This helper delegates to the shared captureChainEngine and mirrors
-   * the Rust CaptureProcessor::get_available_capture_details logic. It
-   * remains the canonical source for chain-continuation options; the
-   * unified Move model simply re-labels these as
-   * 'continue_capture_segment' during the dedicated 'chain_capture'
-   * phase.
+   * This helper delegates to the shared CaptureAggregate which provides
+   * the canonical source for chain-continuation options; the unified Move
+   * model simply re-labels these as 'continue_capture_segment' during
+   * the dedicated 'chain_capture' phase.
    */
   private getCaptureOptionsFromPosition(position: Position, playerNumber: number): Move[] {
-    return getCaptureOptionsFromPositionShared(position, playerNumber, this.gameState, {
-      boardManager: this.boardManager,
-      ruleEngine: this.ruleEngine,
-      interactionManager: this.interactionManager,
-    });
+    const continuationInfo = getChainCaptureContinuationInfo(
+      this.gameState,
+      playerNumber,
+      position
+    );
+    return continuationInfo.availableContinuations;
   }
 
   /**
@@ -1464,44 +1753,6 @@ export class GameEngine {
       // credited toward ring-elimination victory conditions.
       this.eliminateTopRingAt(landing, player);
     }
-  }
-
-  /**
-   * Process automatic consequences after a move
-   * Rule Reference: Section 4.5 - Post-Movement Processing
-   */
-  private async processAutomaticConsequences(): Promise<void> {
-    // Captures are already processed in applyMove
-
-    // When Move-driven decision phases are enabled, territory processing
-    // is driven exclusively via explicit process_territory_region and
-    // eliminate_rings_from_stack Moves surfaced through getValidMoves /
-    // applyDecisionMove. In that mode we must *not* also run the
-    // automatic territory pipeline here, or the backend may collapse
-    // regions earlier than the sandbox engine records them as
-    // decisions (as observed in the seed-5 trace parity harness).
-    //
-    // Legacy / non-move-driven flows continue to rely on the automatic
-    // helper so that plateau/rules tests which never enable
-    // useMoveDrivenDecisionPhases preserve their existing semantics.
-    if (!this.useMoveDrivenDecisionPhases) {
-      // Process territory disconnections (Section 12.2) via the shared
-      // canonical helper so that the automatic post-move pipeline uses
-      // exactly the same semantics as the standalone
-      // territoryProcessing.rules tests and the Python/TS parity layer.
-      this.gameState = await processDisconnectedRegionsForCurrentPlayer(this.gameState, {
-        boardManager: this.boardManager,
-        interactionManager: this.interactionManager,
-      });
-    }
-
-    // Process line formations (Section 11.2, 11.3) using the shared
-    // functional helper so that line semantics remain aligned between
-    // the backend GameEngine and the rules-layer tests.
-    this.gameState = await processLinesForCurrentPlayer(this.gameState, {
-      boardManager: this.boardManager,
-      interactionManager: this.interactionManager,
-    });
   }
 
   /**
@@ -2211,22 +2462,6 @@ export class GameEngine {
   }
 
   /**
-   * Process disconnected regions with chain reactions
-   * Rule Reference: Section 12.2, 12.3 - Territory Disconnection and Chain Reactions
-   */
-  private async processDisconnectedRegions(): Promise<void> {
-    // Legacy helper retained for direct test access and parity with
-    // existing GameEngine.territoryDisconnection tests. Internally this
-    // now delegates to the shared canonical helper so that both the
-    // explicit processDisconnectedRegions call and the automatic
-    // post-move pipeline share identical semantics.
-    this.gameState = await processDisconnectedRegionsForCurrentPlayer(this.gameState, {
-      boardManager: this.boardManager,
-      interactionManager: this.interactionManager,
-    });
-  }
-
-  /**
    * Check if player can process a disconnected region
    * Rule Reference: Section 12.2 - Self-Elimination Prerequisite
    *
@@ -2602,7 +2837,7 @@ export class GameEngine {
     // During an active chain_capture phase, valid moves are the explicit
     // continuation segments from the current chain position. Rather than
     // relying on any cached list, we always re-enumerate from the board
-    // using the shared captureChainEngine helper so that the options
+    // using the shared CaptureAggregate helper so that the options
     // exposed here stay in lockstep with the core rules and the targeted
     // triangle/zig-zag tests.
     if (this.gameState.currentPhase === 'chain_capture') {
@@ -2927,13 +3162,17 @@ export class GameEngine {
     }
 
     // 3) Overtaking capture.
+    //
+    // Use the shared CaptureAggregate global enumerator so that "real action"
+    // detection for LPS tracking is based on the same capture surface as the
+    // turn engine and sandbox, independent of any backend RuleEngine helpers.
     const tempCaptureState: GameState = {
       ...state,
       currentPlayer: playerNumber,
       currentPhase: 'capture',
     };
-    const captureMoves = this.ruleEngine.getValidMoves(tempCaptureState);
-    return captureMoves.some((m) => m.type === 'overtaking_capture');
+    const captureMoves = enumerateAllCaptureMovesAggregate(tempCaptureState, playerNumber);
+    return captureMoves.length > 0;
   }
 
   /**
@@ -3226,8 +3465,8 @@ export class GameEngine {
             currentPhase: 'capture',
           };
 
-          const captureMoves = this.ruleEngine.getValidMoves(tempCaptureState);
-          const hasCaptureLocal = captureMoves.some((m) => m.type === 'overtaking_capture');
+          const captureMoves = enumerateAllCaptureMovesAggregate(tempCaptureState, playerNumber);
+          const hasCaptureLocal = captureMoves.length > 0;
 
           return { hasMovement: hasMovementLocal, hasCapture: hasCaptureLocal };
         })();
@@ -3470,8 +3709,8 @@ export class GameEngine {
           currentPlayer,
           currentPhase: 'capture',
         };
-        const captureMoves = this.ruleEngine.getValidMoves(tempCapture);
-        hasCapture = captureMoves.some((m) => m.type === 'overtaking_capture');
+        const captureMoves = enumerateAllCaptureMovesAggregate(tempCapture, currentPlayer);
+        hasCapture = captureMoves.length > 0;
       }
 
       const hasRealAction = hasPlacement || hasMovement || hasCapture;

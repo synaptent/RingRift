@@ -1,0 +1,133 @@
+{
+  "config": {
+    "player1": "neural_network",
+    "player2": "neural_network",
+    "games": 10,
+    "board": "square8",
+    "seed": 43,
+    "max_moves_per_game": 200,
+    "minimax_depth": 3,
+    "timestamp": "2025-11-27T02:10:39.949099"
+  },
+  "results": {
+    "player1_wins": 2,
+    "player2_wins": 8,
+    "draws": 0,
+    "player1_win_rate": 0.2,
+    "player1_win_rate_ci95": [0.0567, 0.5098],
+    "avg_game_length": 63.0,
+    "avg_game_length_std": 13.12,
+    "avg_decision_time_p1": 1.1007,
+    "avg_decision_time_p2": 1.1085,
+    "total_runtime_seconds": 842.01,
+    "victory_types": {
+      "elimination": 8,
+      "territory": 2
+    },
+    "avg_p1_final_pieces": 9.9,
+    "avg_p2_final_pieces": 8.2,
+    "piece_advantage_p1": 1.7
+  },
+  "games": [
+    {
+      "game_number": 1,
+      "winner": "neural_network",
+      "winner_number": 1,
+      "length": 74,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 2,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 81,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 3,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 71,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 4,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 40,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 5,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 6,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 58,
+      "victory_type": "territory",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 7,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 53,
+      "victory_type": "territory",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 8,
+      "winner": "neural_network",
+      "winner_number": 1,
+      "length": 64,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 9,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 66,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    },
+    {
+      "game_number": 10,
+      "winner": "neural_network",
+      "winner_number": 2,
+      "length": 78,
+      "victory_type": "elimination",
+      "p1_was": "neural_network",
+      "p2_was": "neural_network",
+      "error": null
+    }
+  ]
+}

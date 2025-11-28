@@ -5,12 +5,8 @@ import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal } from '../components/VictoryModal';
 import { GameHUD } from '../components/GameHUD';
 import { GameEventLog } from '../components/GameEventLog';
-import { LocalSandboxState, handleLocalSandboxCellClick } from '../sandbox/localSandboxController';
-import {
-  ClientSandboxEngine,
-  SandboxConfig,
-  SandboxInteractionHandler,
-} from '../sandbox/ClientSandboxEngine';
+import { LocalSandboxState } from '../sandbox/localSandboxController';
+import { SandboxInteractionHandler } from '../sandbox/ClientSandboxEngine';
 import {
   BoardState,
   BoardType,
@@ -27,15 +23,14 @@ import { toast } from 'react-hot-toast';
 import { useGame, ConnectionStatus } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
 import { gameApi } from '../services/api';
-import { isSandboxAiStallDiagnosticsEnabled } from '../../shared/utils/envFlags';
-
-type LocalPlayerType = 'human' | 'ai';
-
-interface LocalConfig {
-  numPlayers: number;
-  boardType: BoardType;
-  playerTypes: LocalPlayerType[]; // indexed 0..3 for players 1..4
-}
+import { useSandbox, LocalConfig, LocalPlayerType } from '../contexts/SandboxContext';
+import {
+  toBoardViewModel,
+  toHUDViewModel,
+  toEventLogViewModel,
+  toVictoryViewModel,
+} from '../adapters/gameViewModels';
+import { useSandboxInteractions } from '../hooks/useSandboxInteractions';
 
 const BOARD_PRESETS: Array<{
   value: BoardType;
@@ -194,6 +189,32 @@ export default function GamePage() {
 
   const { user } = useAuth();
 
+  // Sandbox context (local client-only sandbox mode)
+  const {
+    config,
+    setConfig,
+    isConfigured,
+    setIsConfigured,
+    backendSandboxError,
+    setBackendSandboxError,
+    sandboxEngine,
+    sandboxPendingChoice,
+    setSandboxPendingChoice,
+    sandboxCaptureChoice,
+    setSandboxCaptureChoice,
+    sandboxCaptureTargets,
+    setSandboxCaptureTargets,
+    sandboxLastProgressAt,
+    setSandboxLastProgressAt,
+    sandboxStallWarning,
+    setSandboxStallWarning,
+    sandboxStateVersion,
+    setSandboxStateVersion,
+    sandboxDiagnosticsEnabled,
+    initLocalSandboxEngine,
+    resetSandboxEngine,
+  } = useSandbox();
+
   // Derived state for HUD
   const currentPlayer = gameState?.players.find((p) => p.playerNumber === gameState.currentPlayer);
   const isPlayer = !!gameState?.players.some((p) => p.id === user?.id);
@@ -262,44 +283,30 @@ export default function GamePage() {
   const lastChoiceIdRef = useRef<string | null>(null);
   const lastConnectionStatusRef = useRef<ConnectionStatus | null>(null);
 
-  // Local sandbox render tick used to force re-renders for AI-vs-AI games
-  // even when React state derived from GameState hasn’t otherwise changed.
-  const [, setSandboxTurn] = useState(0);
-
-  // Local setup state (used only when no gameId route param is provided)
-  const [config, setConfig] = useState<LocalConfig>({
-    numPlayers: 2,
-    boardType: 'square8',
-    playerTypes: ['human', 'human', 'ai', 'ai'],
-  });
-  const [isConfigured, setIsConfigured] = useState(false);
-  const [backendSandboxError, setBackendSandboxError] = useState<string | null>(null);
-
   // Local-only sandbox state (legacy; retained for now as a fallback)
   const [localSandbox, setLocalSandbox] = useState<LocalSandboxState | null>(null);
 
-  // Client-local sandbox engine (Stage 2 harness). When defined, this is the
-  // source of truth for sandbox GameState. We keep it in a ref so methods are
-  // stable across renders.
-  const sandboxEngineRef = useRef<ClientSandboxEngine | null>(null);
-
-  // Sandbox PlayerChoice state (used only in local sandbox mode). This mirrors
-  // the backend pendingChoice flow but remains fully client-local.
-  const [sandboxPendingChoice, setSandboxPendingChoice] = useState<PlayerChoice | null>(null);
   const sandboxChoiceResolverRef = useRef<
     ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
   >(null);
-  const [sandboxCaptureChoice, setSandboxCaptureChoice] = useState<PlayerChoice | null>(null);
-  const [sandboxCaptureTargets, setSandboxCaptureTargets] = useState<Position[]>([]);
 
   // UI selection state (used in both modes)
   const [selected, setSelected] = useState<Position | undefined>();
   const [validTargets, setValidTargets] = useState<Position[]>([]);
-
-  // Sandbox stall/watchdog diagnostics for local AI games.
-  const [sandboxLastProgressAt, setSandboxLastProgressAt] = useState<number | null>(null);
-  const [sandboxStallWarning, setSandboxStallWarning] = useState<string | null>(null);
-  const sandboxDiagnosticsEnabled = isSandboxAiStallDiagnosticsEnabled();
+  const {
+    handleCellClick: handleSandboxCellClick,
+    handleCellDoubleClick: handleSandboxCellDoubleClick,
+    handleCellContextMenu: handleSandboxCellContextMenu,
+    maybeRunSandboxAiIfNeeded,
+  } = useSandboxInteractions({
+    localSandbox,
+    setLocalSandbox,
+    selected,
+    setSelected,
+    validTargets,
+    setValidTargets,
+    choiceResolverRef: sandboxChoiceResolverRef,
+  });
 
   const createSandboxInteractionHandler = (
     playerTypesSnapshot: LocalPlayerType[]
@@ -486,18 +493,13 @@ export default function GamePage() {
     // client-local sandbox engine. This keeps the sandbox usable for quick
     // experiments while aligning it with the shared GameState model and
     // PlayerChoice semantics used by the backend GameEngine.
-    const sandboxConfig: SandboxConfig = {
-      boardType: nextBoardType,
-      numPlayers: config.numPlayers,
-      playerKinds: config.playerTypes.slice(0, config.numPlayers) as LocalPlayerType[],
-    };
-
     const interactionHandler = createSandboxInteractionHandler(
       config.playerTypes.slice(0, config.numPlayers)
     );
-
-    sandboxEngineRef.current = new ClientSandboxEngine({
-      config: sandboxConfig,
+    const engine = initLocalSandboxEngine({
+      boardType: nextBoardType,
+      numPlayers: config.numPlayers,
+      playerTypes: config.playerTypes.slice(0, config.numPlayers) as LocalPlayerType[],
       interactionHandler,
     });
 
@@ -505,71 +507,15 @@ export default function GamePage() {
     setSelected(undefined);
     setValidTargets([]);
     setSandboxPendingChoice(null);
-    setIsConfigured(true);
 
     // If the first player is an AI, immediately start the sandbox AI turn
     // loop so AI-vs-AI games progress without any human clicks.
-    const engine = sandboxEngineRef.current;
     if (engine) {
       const state = engine.getGameState();
       const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
       if (current && current.type === 'ai') {
-        void runSandboxAiTurnLoop();
+        maybeRunSandboxAiIfNeeded();
       }
-    }
-  };
-
-  const runSandboxAiTurnLoop = async () => {
-    const engine = sandboxEngineRef.current;
-    if (!engine) return;
-
-    let safetyCounter = 0;
-    // Allow a bounded number of consecutive AI turns per batch to avoid
-    // accidental infinite loops, but drive progression one visible move at a
-    // time so AI-vs-AI games feel continuous rather than "bursty".
-    while (safetyCounter < 32) {
-      const state = engine.getGameState();
-      if (state.gameStatus !== 'active') break;
-      const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
-      if (!current || current.type !== 'ai') break;
-
-      await engine.maybeRunAITurn();
-
-      // After each AI move, clear any stale selection/highlights and bump the
-      // sandboxTurn counter so BoardView re-renders with the latest state.
-      setSelected(undefined);
-      setValidTargets([]);
-      setSandboxTurn((t) => t + 1);
-      setSandboxLastProgressAt(Date.now());
-      setSandboxStallWarning(null);
-
-      safetyCounter += 1;
-
-      // Small delay between moves so AI-only games progress in a smooth
-      // sequence rather than a single visual burst of many moves.
-      await new Promise((resolve) => window.setTimeout(resolve, 120));
-    }
-
-    // If the game is still active and the next player is an AI, schedule
-    // another batch so AI-vs-AI games continue advancing without manual
-    // clicks. The safety counter above still bounds each batch.
-    const finalState = engine.getGameState();
-    const next = finalState.players.find((p) => p.playerNumber === finalState.currentPlayer);
-    if (finalState.gameStatus === 'active' && next && next.type === 'ai') {
-      window.setTimeout(() => {
-        void runSandboxAiTurnLoop();
-      }, 200);
-    }
-  };
-
-  const maybeRunSandboxAiIfNeeded = () => {
-    const engine = sandboxEngineRef.current;
-    if (!engine) return;
-
-    const state = engine.getGameState();
-    const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
-    if (state.gameStatus === 'active' && current && current.type === 'ai') {
-      void runSandboxAiTurnLoop();
     }
   };
 
@@ -599,253 +545,6 @@ export default function GamePage() {
       console.error('Failed to export sandbox AI trace', err);
       toast.error('Failed to export sandbox AI trace; see console for details.');
     }
-  };
-
-  // Unified sandbox click handler: prefer the ClientSandboxEngine when
-  // available (Stage 2 harness), otherwise fall back to the legacy
-  // LocalSandboxState controller.
-  const handleSandboxCellClick = (pos: Position) => {
-    // When a capture_direction choice is pending in the local sandbox,
-    // interpret clicks as selecting one of the highlighted landing
-    // squares instead of sending a normal click into the engine.
-    if (sandboxCaptureChoice && sandboxCaptureChoice.type === 'capture_direction') {
-      const currentChoice: any = sandboxCaptureChoice;
-      const options: any[] = (currentChoice.options ?? []) as any[];
-      const matching = options.find((opt) => positionsEqual(opt.landingPosition, pos));
-
-      if (matching) {
-        const resolver = sandboxChoiceResolverRef.current;
-        if (resolver) {
-          resolver({
-            choiceId: currentChoice.id,
-            playerNumber: currentChoice.playerNumber,
-            choiceType: currentChoice.type,
-            selectedOption: matching,
-          } as PlayerChoiceResponseFor<PlayerChoice>);
-        }
-        sandboxChoiceResolverRef.current = null;
-        setSandboxCaptureChoice(null);
-        setSandboxCaptureTargets([]);
-
-        // After resolving a capture_direction choice, the sandbox engine
-        // continues the capture chain (possibly with additional automatic
-        // segments). Bump sandboxTurn on the next tick so BoardView
-        // re-reads the latest GameState once that chain has fully
-        // resolved, and then trigger AI turns if the next player is an AI.
-        window.setTimeout(() => {
-          setSandboxTurn((t) => t + 1);
-          maybeRunSandboxAiIfNeeded();
-        }, 0);
-      }
-      // Ignore clicks that are not on a highlighted landing square.
-      return;
-    }
-
-    const engine = sandboxEngineRef.current;
-    if (engine) {
-      const stateBefore = engine.getGameState();
-      const current = stateBefore.players.find((p) => p.playerNumber === stateBefore.currentPlayer);
-
-      // If it is currently an AI player's turn in the sandbox engine, ignore
-      // human clicks and ensure the AI turn loop is running instead of placing
-      // rings for the AI seat.
-      if (stateBefore.gameStatus === 'active' && current && current.type === 'ai') {
-        maybeRunSandboxAiIfNeeded();
-        return;
-      }
-
-      // Ring-placement phase: a single click attempts a 1-ring placement
-      // via the engine. On success, we immediately highlight the legal
-      // movement targets for the newly placed/updated stack, and the
-      // human must then move that stack; the AI will respond only after
-      // the movement step completes.
-      if (stateBefore.currentPhase === 'ring_placement') {
-        void (async () => {
-          const placed = await engine.tryPlaceRings(pos, 1);
-          if (!placed) {
-            return;
-          }
-
-          setSelected(pos);
-          const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-          setValidTargets(targets);
-          setSandboxTurn((t) => t + 1);
-        })();
-        return;
-      }
-
-      // Movement phase: mirror backend UX – first click selects a stack
-      // and highlights its legal landing positions; second click on a
-      // highlighted cell executes the move.
-      if (!selected) {
-        // Selection click: record selected cell and highlight valid targets.
-        setSelected(pos);
-        const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-        setValidTargets(targets);
-        // Inform the engine about the selection so its internal
-        // movement state (_selectedStackKey) matches the UI.
-        engine.handleHumanCellClick(pos);
-        return;
-      }
-
-      // Clicking the same cell clears selection.
-      if (positionsEqual(selected, pos)) {
-        setSelected(undefined);
-        setValidTargets([]);
-        // Let the engine clear its internal selection as well.
-        engine.clearSelection();
-        return;
-      }
-
-      // If this click is on a highlighted target, treat it as executing
-      // the move and then let the AI respond.
-      const isTarget = validTargets.some((t) => positionsEqual(t, pos));
-      if (isTarget) {
-        engine.handleHumanCellClick(pos);
-        setSelected(undefined);
-        setValidTargets([]);
-        setSandboxTurn((t) => t + 1);
-        setSandboxStateVersion((v) => v + 1);
-        return;
-      }
-
-      // Otherwise, ignore clicks on non-highlighted cells while a stack
-      // is selected so that invalid landings cannot be executed. Users
-      // can either click the selected stack again to clear selection, or
-      // select a different stack by first clearing and then re-clicking.
-      return;
-    }
-
-    if (!localSandbox) return;
-
-    const next = handleLocalSandboxCellClick(localSandbox, pos);
-    setLocalSandbox(next);
-    setSelected(pos);
-    setValidTargets([]); // movement/capture targets will be added in a later phase
-  };
-
-  /**
-   * Sandbox double-click handler: implements the richer placement semantics
-   * for the local sandbox during the ring_placement phase.
-   *
-   * - Empty cells: attempt a 2-ring placement (falling back to 1 ring if
-   *   necessary) and then highlight movement targets from the new stack.
-   * - Occupied cells: attempt a single-ring placement onto the stack and
-   *   then highlight movement targets from that stack.
-   */
-  const handleSandboxCellDoubleClick = (pos: Position) => {
-    const engine = sandboxEngineRef.current;
-    if (!engine) return;
-
-    const state = engine.getGameState();
-    if (state.currentPhase !== 'ring_placement') {
-      return;
-    }
-
-    const board = state.board;
-    const key = positionToString(pos);
-    const stack = board.stacks.get(key);
-    const player = state.players.find((p) => p.playerNumber === state.currentPlayer);
-    if (!player || player.ringsInHand <= 0) {
-      return;
-    }
-
-    const isOccupied = !!stack && stack.rings.length > 0;
-    const maxFromHand = player.ringsInHand;
-    const maxPerPlacement = isOccupied ? 1 : maxFromHand;
-
-    if (maxPerPlacement <= 0) {
-      return;
-    }
-
-    void (async () => {
-      let placed = false;
-
-      if (!isOccupied) {
-        // Empty cell: treat as a request to place 2 rings here in a single
-        // placement action when possible.
-        const desiredCount = Math.min(2, maxFromHand);
-        placed = await engine.tryPlaceRings(pos, desiredCount);
-
-        // If the desired multi-ring placement fails no-dead-placement checks,
-        // fall back to a single-ring placement.
-        if (!placed && desiredCount > 1) {
-          placed = await engine.tryPlaceRings(pos, 1);
-        }
-      } else {
-        // Existing stack: canonical rule is exactly 1 ring per placement.
-        placed = await engine.tryPlaceRings(pos, 1);
-      }
-
-      if (!placed) {
-        return;
-      }
-
-      // After a successful placement, we are now in the movement step for
-      // this player, and the placed/updated stack must move. Highlight its
-      // legal landing targets so the user can complete the turn.
-      setSelected(pos);
-      const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-      setValidTargets(targets);
-      setSandboxTurn((t) => t + 1);
-    })();
-  };
-
-  /**
-   * Sandbox context-menu handler (right-click / long-press proxy): prompts
-   * the user for a ring-count to place at the clicked position, then applies
-   * that placement via tryPlaceRings when legal.
-   */
-  const handleSandboxCellContextMenu = (pos: Position) => {
-    const engine = sandboxEngineRef.current;
-    if (!engine) return;
-
-    const state = engine.getGameState();
-    if (state.currentPhase !== 'ring_placement') {
-      return;
-    }
-
-    const board = state.board;
-    const key = positionToString(pos);
-    const stack = board.stacks.get(key);
-    const player = state.players.find((p) => p.playerNumber === state.currentPlayer);
-    if (!player || player.ringsInHand <= 0) {
-      return;
-    }
-
-    const isOccupied = !!stack && stack.rings.length > 0;
-    const maxFromHand = player.ringsInHand;
-    const maxPerPlacement = isOccupied ? 1 : maxFromHand;
-
-    if (maxPerPlacement <= 0) {
-      return;
-    }
-
-    const promptLabel = isOccupied
-      ? 'Place how many rings on this stack? (canonical: 1)'
-      : `Place how many rings on this empty cell? (1–${maxPerPlacement})`;
-
-    const raw = window.prompt(promptLabel, Math.min(2, maxPerPlacement).toString());
-    if (!raw) {
-      return;
-    }
-
-    const parsed = Number.parseInt(raw, 10);
-    if (!Number.isFinite(parsed) || parsed < 1 || parsed > maxPerPlacement) {
-      return;
-    }
-
-    void (async () => {
-      const placed = await engine.tryPlaceRings(pos, parsed);
-      if (!placed) {
-        return;
-      }
-
-      setSelected(pos);
-      const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-      setValidTargets(targets);
-      setSandboxTurn((t) => t + 1);
-    })();
   };
 
   /**
@@ -1207,18 +906,14 @@ export default function GamePage() {
     };
   }, [pendingChoice, choiceDeadline]);
 
-  // State version counter to trigger AI turn checks after human moves.
-  // Must be declared before any conditional returns to satisfy Rules of Hooks.
-  const [sandboxStateVersion, setSandboxStateVersion] = useState(0);
-
   // Auto-trigger AI turns when state version changes (after human moves).
-  // This effect checks the sandboxEngineRef directly to avoid prop dependency issues.
+  // This effect checks the sandbox engine directly to avoid prop dependency issues.
   useEffect(() => {
-    if (!isConfigured || !sandboxEngineRef.current) {
+    if (!isConfigured || !sandboxEngine) {
       return;
     }
 
-    const engine = sandboxEngineRef.current;
+    const engine = sandboxEngine;
     const state = engine.getGameState();
     const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
 
@@ -1238,104 +933,6 @@ export default function GamePage() {
       };
     }
   }, [isConfigured, sandboxStateVersion]);
-
-  // Local sandbox AI-only stall watchdog. This runs independently of the
-  // internal sandbox AI diagnostics and focuses on scheduler-level stalls
-  // (situations where an AI player is to move but the local game state has
-  // not advanced for an extended period).
-  useEffect(() => {
-    if (!isConfigured) {
-      return;
-    }
-
-    const STALL_TIMEOUT_MS = 8000;
-    const POLL_INTERVAL_MS = 1000;
-
-    const id = window.setInterval(() => {
-      setSandboxStallWarning((prevWarning) => {
-        const last = sandboxLastProgressAt;
-        if (last === null) {
-          return prevWarning;
-        }
-
-        const engine = sandboxEngineRef.current;
-        if (!engine) {
-          return null;
-        }
-
-        const state = engine.getGameState();
-        const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
-        const now = Date.now();
-
-        if (state.gameStatus !== 'active' || !current || current.type !== 'ai') {
-          // Clear any previous warning when there is no active AI turn pending.
-          return null;
-        }
-
-        if (now - last > STALL_TIMEOUT_MS) {
-          return (
-            prevWarning ??
-            'Potential AI stall detected: sandbox AI has not advanced the game state for several seconds while an AI player is to move.'
-          );
-        }
-
-        // Below threshold but still in AI turn: preserve any existing warning
-        // (it may have been set by the diagnostics watcher or a previous poll).
-        return prevWarning;
-      });
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [isConfigured, sandboxLastProgressAt]);
-
-  // Structural AI stall diagnostics watcher: when enabled via
-  // RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS, poll the sandbox AI trace
-  // buffer and surface any "stall" entries as a UI banner so that AI-vs-AI
-  // stalls are visible and debuggable from the /sandbox route.
-  useEffect(() => {
-    if (!sandboxDiagnosticsEnabled) {
-      return;
-    }
-
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const POLL_INTERVAL_MS = 1000;
-    const anyWindow = window as any;
-    let lastSeenStallTimestamp = 0;
-
-    const id = window.setInterval(() => {
-      const trace = (anyWindow.__RINGRIFT_SANDBOX_TRACE__ ?? []) as any[];
-      if (!Array.isArray(trace) || trace.length === 0) {
-        return;
-      }
-
-      const latestStall = [...trace].reverse().find((entry) => entry && entry.kind === 'stall');
-      if (!latestStall) {
-        return;
-      }
-
-      const ts = typeof latestStall.timestamp === 'number' ? latestStall.timestamp : Date.now();
-      if (ts <= lastSeenStallTimestamp) {
-        return;
-      }
-
-      lastSeenStallTimestamp = ts;
-
-      setSandboxStallWarning(
-        (prev) =>
-          prev ??
-          'Sandbox AI stall detected by diagnostics: consecutive AI turns are not changing the game state. Use “Copy AI trace” for detailed debugging.'
-      );
-    }, POLL_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(id);
-    };
-  }, [sandboxDiagnosticsEnabled]);
 
   // === Backend game mode ===
   if (routeGameId) {
@@ -1384,6 +981,34 @@ export default function GamePage() {
 
     const board = gameState.board;
     const boardType = gameState.boardType;
+    const backendBoardViewModel = toBoardViewModel(board, {
+      selectedPosition: selected || backendMustMoveFrom,
+      validTargets,
+    });
+    const hudViewModel = toHUDViewModel(gameState, {
+      instruction: getInstruction(),
+      connectionStatus,
+      lastHeartbeatAt,
+      isSpectator: !isPlayer,
+      currentUserId: user?.id,
+    });
+    const victoryViewModel = toVictoryViewModel(victoryState, gameState.players, gameState, {
+      currentUserId: user?.id,
+      isDismissed: isVictoryModalDismissed,
+    });
+    const hudCurrentPlayer = hudViewModel.players.find((p) => p.isCurrentPlayer);
+    const backendSelectedStackDetails = (() => {
+      if (!backendBoardViewModel || !selected) return null;
+      const key = positionToString(selected);
+      const cell = backendBoardViewModel.cells.find((c) => c.positionKey === key);
+      const stack = cell?.stack;
+      if (!stack) return null;
+      return {
+        height: stack.stackHeight,
+        cap: stack.capHeight,
+        controllingPlayer: stack.controllingPlayer,
+      };
+    })();
 
     const gameOverBannerText =
       victoryState && isVictoryModalDismissed && victoryState.reason
@@ -1461,17 +1086,20 @@ export default function GamePage() {
           </div>
           <div className="flex items-center space-x-2 text-xs text-gray-400">
             <span>Status: {gameState.gameStatus}</span>
-            <span>• Phase: {gameState.currentPhase}</span>
-            <span>• Current player: P{gameState.currentPlayer}</span>
+            <span>• Phase: {hudViewModel.phase.label}</span>
+            <span>
+              • Current player:{' '}
+              {hudCurrentPlayer
+                ? hudCurrentPlayer.username || `P${hudCurrentPlayer.playerNumber}`
+                : '—'}
+            </span>
           </div>
         </header>
 
         {/* Victory modal overlays the rest of the UI when the game is over. */}
         <VictoryModal
           isOpen={!!victoryState && !isVictoryModalDismissed}
-          gameResult={victoryState}
-          players={gameState.players}
-          gameState={gameState}
+          viewModel={victoryViewModel}
           onClose={() => {
             setIsVictoryModalDismissed(true);
           }}
@@ -1480,7 +1108,6 @@ export default function GamePage() {
             // TODO: Implement rematch request via WebSocket
             console.log('Rematch requested');
           }}
-          currentUserId={user?.id}
         />
 
         <main className="flex flex-col md:flex-row md:space-x-8 space-y-4 md:space-y-0">
@@ -1488,6 +1115,7 @@ export default function GamePage() {
             <BoardView
               boardType={boardType}
               board={board}
+              viewModel={backendBoardViewModel}
               selectedPosition={selected || backendMustMoveFrom}
               validTargets={validTargets}
               onCellClick={(pos) => handleBackendCellClick(pos, board)}
@@ -1516,15 +1144,25 @@ export default function GamePage() {
             <div className="p-3 border border-slate-700 rounded bg-slate-900/50">
               <h2 className="font-semibold mb-2">Selection</h2>
               {selected ? (
-                <div>
-                  <div>
-                    Selected: ({selected.x}, {selected.y}
+                <div className="space-y-2">
+                  <div className="text-lg font-mono font-semibold text-white">
+                    ({selected.x}, {selected.y}
                     {selected.z !== undefined ? `, ${selected.z}` : ''})
                   </div>
-                  <div className="text-xs text-slate-300 mt-1">
-                    Click a source stack, then click a highlighted destination to send a move to the
-                    server. The backend GameEngine is the source of truth for legality and state.
-                  </div>
+                  {backendSelectedStackDetails ? (
+                    <ul className="text-xs text-slate-300 space-y-1">
+                      <li>Stack height: {backendSelectedStackDetails.height}</li>
+                      <li>Cap height: {backendSelectedStackDetails.cap}</li>
+                      <li>Controlled by: P{backendSelectedStackDetails.controllingPlayer}</li>
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-slate-300">
+                      Empty cell – choose a placement target.
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-400">
+                    Click a highlighted destination to commit the move, or select a new source.
+                  </p>
                 </div>
               ) : (
                 <div className="text-slate-200">Click a cell to inspect it.</div>
@@ -1534,15 +1172,7 @@ export default function GamePage() {
               )}
             </div>
 
-            <GameHUD
-              gameState={gameState}
-              currentPlayer={currentPlayer}
-              instruction={getInstruction()}
-              connectionStatus={connectionStatus}
-              isSpectator={!isPlayer}
-              lastHeartbeatAt={lastHeartbeatAt}
-              currentUserId={user?.id}
-            />
+            <GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />
 
             <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
               <span>Log view</span>
@@ -1556,9 +1186,12 @@ export default function GamePage() {
             </div>
 
             <GameEventLog
-              history={gameState.history}
-              systemEvents={showSystemEventsInLog ? eventLog : []}
-              victoryState={victoryState}
+              viewModel={toEventLogViewModel(
+                gameState.history,
+                showSystemEventsInLog ? eventLog : [],
+                victoryState,
+                { maxEntries: 40 }
+              )}
             />
 
             {/* Chat UI */}
@@ -1621,7 +1254,7 @@ export default function GamePage() {
   const selectedBoardPreset =
     BOARD_PRESETS.find((preset) => preset.value === config.boardType) ?? BOARD_PRESETS[0];
 
-  if (!isConfigured || (!localSandbox && !sandboxEngineRef.current)) {
+  if (!isConfigured || (!localSandbox && !sandboxEngine)) {
     return (
       <div className="container mx-auto px-4 py-8 space-y-6">
         <header>
@@ -1798,7 +1431,7 @@ export default function GamePage() {
   }
 
   // Game view once configured (local sandbox)
-  const sandboxEngine = sandboxEngineRef.current;
+  const sandboxEngine = sandboxEngine;
   const sandboxGameState: GameState | null = sandboxEngine
     ? sandboxEngine.getGameState()
     : localSandbox
@@ -1858,6 +1491,43 @@ export default function GamePage() {
     sandboxCurrentPlayer?.username || `Player ${sandboxCurrentPlayer?.playerNumber ?? '?'}`;
   const displayedValidTargets =
     sandboxCaptureTargets.length > 0 ? sandboxCaptureTargets : validTargets;
+  const sandboxBoardViewModel = sandboxBoardState
+    ? toBoardViewModel(sandboxBoardState, {
+        selectedPosition: selected,
+        validTargets: displayedValidTargets,
+      })
+    : null;
+  const sandboxVictoryViewModel = sandboxVictoryResult
+    ? toVictoryViewModel(
+        sandboxVictoryResult,
+        sandboxGameState?.players ?? [],
+        sandboxGameState ?? undefined,
+        {
+          currentUserId: user?.id,
+          isDismissed: isSandboxVictoryModalDismissed,
+        }
+      )
+    : null;
+  const sandboxHudPlayers = sandboxPlayersList.map((player) => ({
+    playerNumber: player.playerNumber,
+    username: player.username || `Player ${player.playerNumber}`,
+    type: player.type,
+    ringsInHand: player.ringsInHand,
+    eliminatedRings: player.eliminatedRings,
+    territorySpaces: player.territorySpaces,
+    isCurrent: player.playerNumber === sandboxCurrentPlayerNumber,
+  }));
+  const sandboxHudViewModel = {
+    players: sandboxHudPlayers,
+    phaseDetails: sandboxPhaseDetails,
+    modeNotes: sandboxModeNotes,
+  };
+  const sandboxEventLogViewModel = toEventLogViewModel(
+    sandboxGameState?.history ?? [],
+    [],
+    sandboxVictoryResult,
+    { maxEntries: 40 }
+  );
   const selectedStackDetails = (() => {
     if (!sandboxBoardState || !selected) return null;
     const key = positionToString(selected);
@@ -1912,23 +1582,19 @@ export default function GamePage() {
       {sandboxGameState && (
         <VictoryModal
           isOpen={!!sandboxVictoryResult && !isSandboxVictoryModalDismissed}
-          gameResult={sandboxVictoryResult}
-          players={sandboxGameState.players}
-          gameState={sandboxGameState}
+          viewModel={sandboxVictoryViewModel}
           onClose={() => {
             setIsSandboxVictoryModalDismissed(true);
           }}
           onReturnToLobby={() => {
-            setIsConfigured(false);
+            resetSandboxEngine();
             setLocalSandbox(null);
-            sandboxEngineRef.current = null;
             setSelected(undefined);
             setValidTargets([]);
             setBackendSandboxError(null);
             setSandboxPendingChoice(null);
             setIsSandboxVictoryModalDismissed(false);
           }}
-          currentUserId={user?.id}
         />
       )}
 
@@ -1963,9 +1629,8 @@ export default function GamePage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setIsConfigured(false);
+                      resetSandboxEngine();
                       setLocalSandbox(null);
-                      sandboxEngineRef.current = null;
                       setSelected(undefined);
                       setValidTargets([]);
                       setBackendSandboxError(null);
@@ -1981,19 +1646,22 @@ export default function GamePage() {
                 </div>
               </div>
 
-              <BoardView
-                boardType={sandboxBoardState.type}
-                board={sandboxBoardState}
-                selectedPosition={selected}
-                validTargets={displayedValidTargets}
-                onCellClick={(pos) => handleSandboxCellClick(pos)}
-                onCellDoubleClick={(pos) => handleSandboxCellDoubleClick(pos)}
-                onCellContextMenu={(pos) => handleSandboxCellContextMenu(pos)}
-                showMovementGrid
-                showCoordinateLabels={
-                  sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
-                }
-              />
+              {sandboxBoardState && sandboxBoardViewModel && (
+                <BoardView
+                  boardType={sandboxBoardState.type}
+                  board={sandboxBoardState}
+                  viewModel={sandboxBoardViewModel}
+                  selectedPosition={selected}
+                  validTargets={displayedValidTargets}
+                  onCellClick={(pos) => handleSandboxCellClick(pos)}
+                  onCellDoubleClick={(pos) => handleSandboxCellDoubleClick(pos)}
+                  onCellContextMenu={(pos) => handleSandboxCellContextMenu(pos)}
+                  showMovementGrid
+                  showCoordinateLabels={
+                    sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
+                  }
+                />
+              )}
 
               {/* Sandbox game summary bar directly below the board */}
               <section className="mt-1 p-3 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 text-xs text-slate-200">
@@ -2035,13 +1703,12 @@ export default function GamePage() {
           <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
             <h2 className="font-semibold">Players</h2>
             <div className="space-y-2">
-              {sandboxPlayersList.map((player) => {
-                const isCurrent = player.playerNumber === sandboxCurrentPlayerNumber;
+              {sandboxHudViewModel.players.map((player) => {
                 return (
                   <div
                     key={player.playerNumber}
                     className={`rounded-xl border px-3 py-2 text-xs flex items-center justify-between ${
-                      isCurrent
+                      player.isCurrent
                         ? 'border-emerald-400 bg-emerald-900/20'
                         : 'border-slate-700 bg-slate-900/40'
                     }`}
@@ -2075,11 +1742,7 @@ export default function GamePage() {
           </div>
 
           <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60">
-            <GameEventLog
-              history={sandboxGameState?.history ?? []}
-              systemEvents={[]}
-              victoryState={sandboxVictoryResult}
-            />
+            <GameEventLog viewModel={sandboxEventLogViewModel} />
           </div>
 
           <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
@@ -2120,9 +1783,9 @@ export default function GamePage() {
           <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
             <h2 className="font-semibold">Phase Guide</h2>
             <p className="text-xs uppercase tracking-wide text-slate-400">
-              {sandboxPhaseDetails.label}
+              {sandboxHudViewModel.phaseDetails.label}
             </p>
-            <p className="text-sm text-slate-200">{sandboxPhaseDetails.summary}</p>
+            <p className="text-sm text-slate-200">{sandboxHudViewModel.phaseDetails.summary}</p>
             <p className="text-xs text-slate-400">
               Complete the current requirement to advance the turn (chain captures, line rewards,
               etc.).
@@ -2132,7 +1795,7 @@ export default function GamePage() {
           <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
             <h2 className="font-semibold">Sandbox Notes</h2>
             <ul className="list-disc list-inside text-slate-300 space-y-1 text-xs">
-              {sandboxModeNotes.map((note, idx) => (
+              {sandboxHudViewModel.modeNotes.map((note, idx) => (
                 <li key={idx}>{note}</li>
               ))}
             </ul>

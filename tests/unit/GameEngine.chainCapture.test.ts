@@ -9,7 +9,14 @@ import { Position, Player, BoardType, TimeControl, RingStack } from '../../src/s
  * gate that prevents players from:
  *   - moving a different player's piece while a chain is in progress
  *   - playing any non-overtaking or wrong-origin move during an active chain
+ *
+ * Note: Some tests in this suite manipulate internal engine state
+ * (chainCaptureState, gameState.currentPhase) directly, which is incompatible
+ * with the orchestrator adapter. These tests are skipped when
+ * ORCHESTRATOR_ADAPTER_ENABLED=true.
  */
+
+const orchestratorEnabled = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
 
 describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
   const boardType: BoardType = 'square8';
@@ -25,7 +32,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
+      territorySpaces: 0,
     },
     {
       id: 'p2',
@@ -36,8 +43,8 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
-    }
+      territorySpaces: 0,
+    },
   ];
 
   function createEngine(): GameEngine {
@@ -96,79 +103,91 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         type: 'continue_capture_segment',
         from: next.from,
         captureTarget: next.captureTarget,
-        to: next.to
+        to: next.to,
       } as any);
 
       expect(result.success).toBe(true);
     }
   }
 
-  test('rejects moves from a different player while a chain capture is in progress', async () => {
-    const engine = createEngine();
+  // This test manipulates internal chainCaptureState directly, which the orchestrator ignores
+  (orchestratorEnabled ? test.skip : test)(
+    'rejects moves from a different player while a chain capture is in progress',
+    async () => {
+      const engine = createEngine();
 
-    const chainStart: Position = { x: 3, y: 3 };
-    const chainCurrent: Position = { x: 5, y: 5 };
+      const chainStart: Position = { x: 3, y: 3 };
+      const chainCurrent: Position = { x: 5, y: 5 };
 
-    // Force an internal chain state as if player 1 had started a capture.
-    (engine as any).chainCaptureState = {
-      playerNumber: 1,
-      startPosition: chainStart,
-      currentPosition: chainCurrent,
-      segments: [],
-      availableMoves: [],
-      visitedPositions: new Set<string>(['3,3'])
-    };
+      // Force an internal chain state as if player 1 had started a capture.
+      (engine as any).chainCaptureState = {
+        playerNumber: 1,
+        startPosition: chainStart,
+        currentPosition: chainCurrent,
+        segments: [],
+        availableMoves: [],
+        visitedPositions: new Set<string>(['3,3']),
+      };
 
-    const result = await engine.makeMove({
-      // Wrong player attempts to move while chain is active
-      player: 2,
-      type: 'move_ring',
-      from: chainCurrent,
-      to: { x: 6, y: 6 }
-    } as any);
+      const result = await engine.makeMove({
+        // Wrong player attempts to move while chain is active
+        player: 2,
+        type: 'move_ring',
+        from: chainCurrent,
+        to: { x: 6, y: 6 },
+      } as any);
 
-    expect(result.success).toBe(false);
-    expect(result.error).toBe('Chain capture in progress: only the capturing player may move');
-  });
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Chain capture in progress: only the capturing player may move');
+    }
+  );
 
-  test('rejects non-overtaking or wrong-origin moves from the capturing player during an active chain', async () => {
-    const engine = createEngine();
+  // This test manipulates internal chainCaptureState directly, which the orchestrator ignores
+  (orchestratorEnabled ? test.skip : test)(
+    'rejects non-overtaking or wrong-origin moves from the capturing player during an active chain',
+    async () => {
+      const engine = createEngine();
 
-    const chainStart: Position = { x: 3, y: 3 };
-    const chainCurrent: Position = { x: 5, y: 5 };
+      const chainStart: Position = { x: 3, y: 3 };
+      const chainCurrent: Position = { x: 5, y: 5 };
 
-    (engine as any).chainCaptureState = {
-      playerNumber: 1,
-      startPosition: chainStart,
-      currentPosition: chainCurrent,
-      segments: [],
-      availableMoves: [],
-      visitedPositions: new Set<string>(['3,3', '5,5'])
-    };
+      (engine as any).chainCaptureState = {
+        playerNumber: 1,
+        startPosition: chainStart,
+        currentPosition: chainCurrent,
+        segments: [],
+        availableMoves: [],
+        visitedPositions: new Set<string>(['3,3', '5,5']),
+      };
 
-    // Case 1: correct player but wrong move type
-    const wrongType = await engine.makeMove({
-      player: 1,
-      type: 'move_ring',
-      from: chainCurrent,
-      to: { x: 6, y: 6 }
-    } as any);
+      // Case 1: correct player but wrong move type
+      const wrongType = await engine.makeMove({
+        player: 1,
+        type: 'move_ring',
+        from: chainCurrent,
+        to: { x: 6, y: 6 },
+      } as any);
 
-    expect(wrongType.success).toBe(false);
-    expect(wrongType.error).toBe('Chain capture in progress: must continue capturing with the same stack');
+      expect(wrongType.success).toBe(false);
+      expect(wrongType.error).toBe(
+        'Chain capture in progress: must continue capturing with the same stack'
+      );
 
-    // Case 2: correct player and type, but from a different origin than currentPosition
-    const wrongOrigin = await engine.makeMove({
-      player: 1,
-      type: 'overtaking_capture',
-      from: { x: 4, y: 4 },
-      captureTarget: { x: 6, y: 6 },
-      to: { x: 7, y: 7 }
-    } as any);
+      // Case 2: correct player and type, but from a different origin than currentPosition
+      const wrongOrigin = await engine.makeMove({
+        player: 1,
+        type: 'overtaking_capture',
+        from: { x: 4, y: 4 },
+        captureTarget: { x: 6, y: 6 },
+        to: { x: 7, y: 7 },
+      } as any);
 
-    expect(wrongOrigin.success).toBe(false);
-    expect(wrongOrigin.error).toBe('Chain capture in progress: must continue capturing with the same stack');
-  });
+      expect(wrongOrigin.success).toBe(false);
+      expect(wrongOrigin.error).toBe(
+        'Chain capture in progress: must continue capturing with the same stack'
+      );
+    }
+  );
 
   test('performs a full two-step chain capture end-to-end (ported from Rust)', async () => {
     // This scenario mirrors the Rust test_chain_capture setup on an 8x8 board:
@@ -187,7 +206,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'blue',
@@ -198,7 +217,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'green',
@@ -209,8 +228,8 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
 
     const engine = new GameEngine('chain-e2e', 'square8', players, timeControl, false);
@@ -230,7 +249,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         rings,
         stackHeight: rings.length,
         capHeight: rings.length,
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       boardManager.setStack(position, stack, gameState.board);
     };
@@ -239,8 +258,8 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
     const bluePos: Position = { x: 2, y: 3 };
     const greenPos: Position = { x: 2, y: 5 };
 
-    makeStack(1, 2, redPos);   // Red height 2 at (2,2)
-    makeStack(2, 1, bluePos);  // Blue height 1 at (2,3)
+    makeStack(1, 2, redPos); // Red height 2 at (2,2)
+    makeStack(2, 1, bluePos); // Blue height 1 at (2,3)
     makeStack(3, 1, greenPos); // Green height 1 at (2,5)
 
     const result = await engine.makeMove({
@@ -248,15 +267,15 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       type: 'overtaking_capture',
       from: redPos,
       captureTarget: bluePos,
-      to: { x: 2, y: 4 }
+      to: { x: 2, y: 4 },
     } as any);
- 
+
     expect(result.success).toBe(true);
- 
+
     // Resolve the mandatory continuation segment(s) via the explicit
     // chain_capture phase so that the full two-step chain is applied.
     await resolveChainIfPresent(engine);
- 
+
     // After the chain resolves, the original red stack and both targets
     // should be gone, and the capturing stack should be at (2,7) with height 4.
     const board = gameState.board;
@@ -264,14 +283,14 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
     const stackAtBlue = board.stacks.get('2,3');
     const stackAtGreen = board.stacks.get('2,5');
     const stackAtFinal = board.stacks.get('2,7');
- 
+
     expect(stackAtRed).toBeUndefined();
     expect(stackAtBlue).toBeUndefined();
     expect(stackAtGreen).toBeUndefined();
     expect(stackAtFinal).toBeDefined();
     expect(stackAtFinal!.stackHeight).toBe(4);
     expect(stackAtFinal!.controllingPlayer).toBe(1);
- 
+
     // Internal chain state should be cleared once no further captures exist.
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
@@ -302,7 +321,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'blue',
@@ -313,8 +332,8 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
 
     const engine = new GameEngine('chain-180', 'square8', players, timeControl, false);
@@ -334,7 +353,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         rings,
         stackHeight: rings.length,
         capHeight: rings.length,
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       boardManager.setStack(position, stack, gameState.board);
     };
@@ -351,32 +370,32 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       type: 'overtaking_capture',
       from: redPos,
       captureTarget: bluePos,
-      to: { x: 2, y: 4 }
+      to: { x: 2, y: 4 },
     } as any);
- 
+
     expect(result.success).toBe(true);
- 
+
     // Resolve the forced 180° reversal continuation via chain_capture so that
     // the full sequence (to 2,1) is applied.
     await resolveChainIfPresent(engine);
- 
+
     const board = gameState.board;
     const stackAtInitial = board.stacks.get('2,2');
     const stackAtBlue = board.stacks.get('2,3');
     const stackAtIntermediate = board.stacks.get('2,4');
     const stackAtFinal = board.stacks.get('2,1');
- 
+
     // Original positions and intermediate landing should be empty after the
     // chain completes.
     expect(stackAtInitial).toBeUndefined();
     expect(stackAtBlue).toBeUndefined();
     expect(stackAtIntermediate).toBeUndefined();
- 
+
     // Final stack at (2,1) should contain all rings from the sequence: R2 + B2.
     expect(stackAtFinal).toBeDefined();
     expect(stackAtFinal!.stackHeight).toBe(4);
     expect(stackAtFinal!.controllingPlayer).toBe(1);
- 
+
     // Chain state should be cleared once no further captures exist.
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
@@ -405,7 +424,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'blue',
@@ -416,7 +435,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       // Optional third player index to mirror Rust's use of a distinct marker color
       {
@@ -428,8 +447,8 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
 
     const engine = new GameEngine('chain-markers', 'square8', players, timeControl, false);
@@ -448,7 +467,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         rings,
         stackHeight: rings.length,
         capHeight: rings.length,
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       boardManager.setStack(position, stack, gameState.board);
     };
@@ -470,7 +489,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       type: 'overtaking_capture',
       from: redPos,
       captureTarget: bluePos,
-      to: landingPos
+      to: landingPos,
     } as any);
 
     expect(result.success).toBe(true);
@@ -523,7 +542,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'blue',
@@ -534,7 +553,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'green',
@@ -545,11 +564,17 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
 
-    const engine = new GameEngine('chain-termination-blocked', 'square8', players, timeControl, false);
+    const engine = new GameEngine(
+      'chain-termination-blocked',
+      'square8',
+      players,
+      timeControl,
+      false
+    );
     const engineAny: any = engine;
     const boardManager = engineAny.boardManager as any;
     const gameState = engineAny.gameState as any;
@@ -565,7 +590,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         rings,
         stackHeight: rings.length,
         capHeight: rings.length,
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       boardManager.setStack(position, stack, gameState.board);
     };
@@ -586,7 +611,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       type: 'overtaking_capture',
       from: redPos,
       captureTarget: bluePos,
-      to: { x: 2, y: 4 }
+      to: { x: 2, y: 4 },
     } as any);
 
     expect(result.success).toBe(true);
@@ -644,7 +669,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'blue',
@@ -655,7 +680,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
+        territorySpaces: 0,
       },
       {
         id: 'green',
@@ -666,8 +691,8 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         timeRemaining: timeControl.initialTime * 1000,
         ringsInHand: 18,
         eliminatedRings: 0,
-        territorySpaces: 0
-      }
+        territorySpaces: 0,
+      },
     ];
 
     const engine = new GameEngine('chain-termination-cap', 'square8', players, timeControl, false);
@@ -686,7 +711,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
         rings,
         stackHeight: rings.length,
         capHeight: rings.length,
-        controllingPlayer: playerNumber
+        controllingPlayer: playerNumber,
       };
       boardManager.setStack(position, stack, gameState.board);
     };
@@ -705,7 +730,7 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
       type: 'overtaking_capture',
       from: redPos,
       captureTarget: bluePos,
-      to: { x: 2, y: 4 }
+      to: { x: 2, y: 4 },
     } as any);
 
     expect(result.success).toBe(true);
@@ -735,120 +760,130 @@ describe('GameEngine chain capture enforcement (TsChainCaptureState)', () => {
     expect(engineAny.chainCaptureState).toBeUndefined();
   });
 
-  test('runs post-movement processing once after an engine-driven chain capture', async () => {
-    // Use the same two-step chain scenario as the "full two-step" test, but
-    // focus on verifying that processAutomaticConsequences is invoked once
-    // after the chain capture has fully resolved. This ensures the
-    // capture → processAutomaticConsequences wiring remains intact.
+  // This test spies on processAutomaticConsequences which isn't used in orchestrator mode
+  (orchestratorEnabled ? test.skip : test)(
+    'runs post-movement processing once after an engine-driven chain capture',
+    async () => {
+      // Use the same two-step chain scenario as the "full two-step" test, but
+      // focus on verifying that processAutomaticConsequences is invoked once
+      // after the chain capture has fully resolved. This ensures the
+      // capture → processAutomaticConsequences wiring remains intact.
 
-    const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
+      const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
-    const players: Player[] = [
-      {
-        id: 'red',
-        username: 'Red',
-        type: 'human',
-        playerNumber: 1,
-        isReady: true,
-        timeRemaining: timeControl.initialTime * 1000,
-        ringsInHand: 18,
-        eliminatedRings: 0,
-        territorySpaces: 0
-      },
-      {
-        id: 'blue',
-        username: 'Blue',
-        type: 'human',
-        playerNumber: 2,
-        isReady: true,
-        timeRemaining: timeControl.initialTime * 1000,
-        ringsInHand: 18,
-        eliminatedRings: 0,
-        territorySpaces: 0
-      },
-      {
-        id: 'green',
-        username: 'Green',
-        type: 'human',
-        playerNumber: 3,
-        isReady: true,
-        timeRemaining: timeControl.initialTime * 1000,
-        ringsInHand: 18,
-        eliminatedRings: 0,
-        territorySpaces: 0
-      }
-    ];
+      const players: Player[] = [
+        {
+          id: 'red',
+          username: 'Red',
+          type: 'human',
+          playerNumber: 1,
+          isReady: true,
+          timeRemaining: timeControl.initialTime * 1000,
+          ringsInHand: 18,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+        {
+          id: 'blue',
+          username: 'Blue',
+          type: 'human',
+          playerNumber: 2,
+          isReady: true,
+          timeRemaining: timeControl.initialTime * 1000,
+          ringsInHand: 18,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+        {
+          id: 'green',
+          username: 'Green',
+          type: 'human',
+          playerNumber: 3,
+          isReady: true,
+          timeRemaining: timeControl.initialTime * 1000,
+          ringsInHand: 18,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+      ];
 
-    const engine = new GameEngine('chain-post-processing', 'square8', players, timeControl, false);
-    const engineAny: any = engine;
-    const boardManager = engineAny.boardManager as any;
-    const gameState = engineAny.gameState as any;
+      const engine = new GameEngine(
+        'chain-post-processing',
+        'square8',
+        players,
+        timeControl,
+        false
+      );
+      const engineAny: any = engine;
+      const boardManager = engineAny.boardManager as any;
+      const gameState = engineAny.gameState as any;
 
-    // Ensure capture phase & correct player so RuleEngine allows capture.
-    gameState.currentPhase = 'capture';
-    gameState.currentPlayer = 1;
+      // Ensure capture phase & correct player so RuleEngine allows capture.
+      gameState.currentPhase = 'capture';
+      gameState.currentPlayer = 1;
 
-    const makeStack = (playerNumber: number, height: number, position: Position) => {
-      const rings = Array(height).fill(playerNumber);
-      const stack: RingStack = {
-        position,
-        rings,
-        stackHeight: rings.length,
-        capHeight: rings.length,
-        controllingPlayer: playerNumber
+      const makeStack = (playerNumber: number, height: number, position: Position) => {
+        const rings = Array(height).fill(playerNumber);
+        const stack: RingStack = {
+          position,
+          rings,
+          stackHeight: rings.length,
+          capHeight: rings.length,
+          controllingPlayer: playerNumber,
+        };
+        boardManager.setStack(position, stack, gameState.board);
       };
-      boardManager.setStack(position, stack, gameState.board);
-    };
 
-    const redPos: Position = { x: 2, y: 2 };
-    const bluePos: Position = { x: 2, y: 3 };
-    const greenPos: Position = { x: 2, y: 5 };
+      const redPos: Position = { x: 2, y: 2 };
+      const bluePos: Position = { x: 2, y: 3 };
+      const greenPos: Position = { x: 2, y: 5 };
 
-    // Same configuration as the "full two-step chain" test.
-    makeStack(1, 2, redPos);
-    makeStack(2, 1, bluePos);
-    makeStack(3, 1, greenPos);
+      // Same configuration as the "full two-step chain" test.
+      makeStack(1, 2, redPos);
+      makeStack(2, 1, bluePos);
+      makeStack(3, 1, greenPos);
 
-    // Spy on processAutomaticConsequences to ensure it is invoked exactly once
-    // after the engine-driven chain is complete.
-    const processSpy = jest
-      .spyOn(engineAny, 'processAutomaticConsequences')
-      .mockResolvedValue(undefined);
+      // Spy on processAutomaticConsequences to ensure it is invoked exactly once
+      // after the engine-driven chain is complete.
+      const processSpy = jest
+        .spyOn(engineAny, 'processAutomaticConsequences')
+        .mockResolvedValue(undefined);
 
-    const result = await engine.makeMove({
-      player: 1,
-      type: 'overtaking_capture',
-      from: redPos,
-      captureTarget: bluePos,
-      to: { x: 2, y: 4 }
-    } as any);
- 
-    expect(result.success).toBe(true);
- 
-    // Resolve the remaining chain-capture segment(s). The engine should only
-    // invoke processAutomaticConsequences once, after the final segment for
-    // this turn has been applied.
-    await resolveChainIfPresent(engine);
- 
-    // processAutomaticConsequences should have been called exactly once for
-    // this turn, after chain-capture resolution concluded.
-    expect(processSpy).toHaveBeenCalledTimes(1);
- 
-    // For sanity, the final chain state and board geometry should mirror the
-    // expectations from the earlier full two-step chain test.
-    const board = gameState.board;
-    const stackAtRed = board.stacks.get('2,2');
-    const stackAtBlue = board.stacks.get('2,3');
-    const stackAtGreen = board.stacks.get('2,5');
-    const stackAtFinal = board.stacks.get('2,7');
- 
-    expect(stackAtRed).toBeUndefined();
-    expect(stackAtBlue).toBeUndefined();
-    expect(stackAtGreen).toBeUndefined();
-    expect(stackAtFinal).toBeDefined();
-    expect(stackAtFinal!.stackHeight).toBe(4);
-    expect(stackAtFinal!.controllingPlayer).toBe(1);
- 
-    expect(engineAny.chainCaptureState).toBeUndefined();
-  });
+      const result = await engine.makeMove({
+        player: 1,
+        type: 'overtaking_capture',
+        from: redPos,
+        captureTarget: bluePos,
+        to: { x: 2, y: 4 },
+      } as any);
+
+      expect(result.success).toBe(true);
+
+      // Resolve the remaining chain-capture segment(s). The engine should only
+      // invoke processAutomaticConsequences once, after the final segment for
+      // this turn has been applied.
+      await resolveChainIfPresent(engine);
+
+      // processAutomaticConsequences should have been called exactly once for
+      // this turn, after chain-capture resolution concluded.
+      expect(processSpy).toHaveBeenCalledTimes(1);
+
+      // For sanity, the final chain state and board geometry should mirror the
+      // expectations from the earlier full two-step chain test.
+      const board = gameState.board;
+      const stackAtRed = board.stacks.get('2,2');
+      const stackAtBlue = board.stacks.get('2,3');
+      const stackAtGreen = board.stacks.get('2,5');
+      const stackAtFinal = board.stacks.get('2,7');
+
+      expect(stackAtRed).toBeUndefined();
+      expect(stackAtBlue).toBeUndefined();
+      expect(stackAtGreen).toBeUndefined();
+      expect(stackAtFinal).toBeDefined();
+      expect(stackAtFinal!.stackHeight).toBe(4);
+      expect(stackAtFinal!.controllingPlayer).toBe(1);
+
+      expect(engineAny.chainCaptureState).toBeUndefined();
+    }
+  );
 });

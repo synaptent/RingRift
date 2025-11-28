@@ -7,6 +7,7 @@
 
 import axios, { AxiosInstance } from 'axios';
 import { config } from '../config';
+import type { CancellationToken } from '../../shared/utils/cancellation';
 import {
   GameState,
   Move,
@@ -193,6 +194,11 @@ export interface RegionOrderChoiceResponsePayload {
   difficulty: number;
 }
 
+export interface AIServiceRequestOptions {
+  /** Optional cooperative cancellation token for this request. */
+  token?: CancellationToken;
+}
+
 /**
  * Client for interacting with the Python AI microservice.
  * Includes circuit breaker for resilience and timeout handling.
@@ -291,10 +297,15 @@ export class AIServiceClient {
     playerNumber: number,
     difficulty: number = 5,
     aiType?: AIType,
-    seed?: number
+    seed?: number,
+    options?: AIServiceRequestOptions
   ): Promise<MoveResponse> {
     const startTime = performance.now();
     const difficultyLabel = String(difficulty ?? 'n/a');
+
+    // Cooperative pre-flight cancellation: if a token is provided and is
+    // already canceled, avoid touching the circuit breaker or HTTP layer.
+    options?.token?.throwIfCanceled('before dispatching AIServiceClient.getAIMove');
 
     // Fast-fail when the node-local concurrency cap has been reached so that
     // AI-heavy workloads cannot starve the service or other games.
@@ -437,8 +448,17 @@ export class AIServiceClient {
   /**
    * Evaluate current position from a player's perspective.
    */
-  async evaluatePosition(gameState: GameState, playerNumber: number): Promise<EvaluationResponse> {
+  async evaluatePosition(
+    gameState: GameState,
+    playerNumber: number,
+    options?: AIServiceRequestOptions
+  ): Promise<EvaluationResponse> {
     const startTime = performance.now();
+
+    // Cooperative pre-flight cancellation; position evaluation is a pure
+    // dependency call and should not mutate state when canceled.
+    options?.token?.throwIfCanceled('before dispatching AIServiceClient.evaluatePosition');
+
     try {
       const request: EvaluationRequest = {
         game_state: gameState,
@@ -482,8 +502,15 @@ export class AIServiceClient {
     playerNumber: number,
     difficulty: number = 5,
     aiType: AIType | undefined,
-    options: LineRewardChoice['options']
+    options: LineRewardChoice['options'],
+    requestOptions?: AIServiceRequestOptions
   ): Promise<LineRewardChoiceResponsePayload> {
+    // Cooperative pre-flight cancellation; choice selection is a pure
+    // dependency call and should not proceed when canceled.
+    requestOptions?.token?.throwIfCanceled(
+      'before dispatching AIServiceClient.getLineRewardChoice'
+    );
+
     try {
       const request: LineRewardChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -534,8 +561,15 @@ export class AIServiceClient {
     playerNumber: number,
     difficulty: number = 5,
     aiType: AIType | undefined,
-    options: RingEliminationChoice['options']
+    options: RingEliminationChoice['options'],
+    requestOptions?: AIServiceRequestOptions
   ): Promise<RingEliminationChoiceResponsePayload> {
+    // Cooperative pre-flight cancellation; choice selection is a pure
+    // dependency call and should not proceed when canceled.
+    requestOptions?.token?.throwIfCanceled(
+      'before dispatching AIServiceClient.getRingEliminationChoice'
+    );
+
     try {
       const request: RingEliminationChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -586,8 +620,15 @@ export class AIServiceClient {
     playerNumber: number,
     difficulty: number = 5,
     aiType: AIType | undefined,
-    options: RegionOrderChoice['options']
+    options: RegionOrderChoice['options'],
+    requestOptions?: AIServiceRequestOptions
   ): Promise<RegionOrderChoiceResponsePayload> {
+    // Cooperative pre-flight cancellation; choice selection is a pure
+    // dependency call and should not proceed when canceled.
+    requestOptions?.token?.throwIfCanceled(
+      'before dispatching AIServiceClient.getRegionOrderChoice'
+    );
+
     try {
       const request: RegionOrderChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -659,26 +700,26 @@ export class AIServiceClient {
       const response = await this.client.get('/health');
       const latencyMs = Math.round(performance.now() - startTime);
       const isHealthy = response.data.status === 'healthy';
-      
+
       // Update status manager based on health check result
       this.updateServiceStatus(
         isHealthy ? 'healthy' : 'degraded',
         isHealthy ? undefined : 'Health check returned non-healthy status',
         latencyMs
       );
-      
+
       return isHealthy;
     } catch (error) {
       const latencyMs = Math.round(performance.now() - startTime);
       logger.error('AI Service health check failed', { error });
-      
+
       // Update status manager on health check failure
       this.updateServiceStatus(
         'unhealthy',
         error instanceof Error ? error.message : 'Health check failed',
         latencyMs
       );
-      
+
       return false;
     }
   }

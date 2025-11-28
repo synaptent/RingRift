@@ -12,7 +12,7 @@ import {
   BOARD_CONFIGS,
   positionToString,
 } from '../../src/shared/types/game';
-import { getCaptureOptionsFromPosition as getCaptureOptionsFromPositionShared } from '../../src/server/game/rules/captureChainEngine';
+import { getChainCaptureContinuationInfo } from '../../src/shared/engine/aggregates/CaptureAggregate';
 
 /**
  * Comprehensive Rules Matrix Scenario Suite

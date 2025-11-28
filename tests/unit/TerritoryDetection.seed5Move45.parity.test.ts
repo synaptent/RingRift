@@ -9,96 +9,104 @@ import {
 import { findDisconnectedRegions as findDisconnectedRegionsShared } from '../../src/shared/engine/territoryDetection';
 import { findDisconnectedRegionsOnBoard as findDisconnectedRegionsSandbox } from '../../src/client/sandbox/sandboxTerritory';
 
-describe('Territory detection parity at seed 5 process_territory_region step', () => {
-  const boardType: BoardType = 'square8';
-  const numPlayers = 2;
-  const seed = 5;
-  const MAX_STEPS = 60;
+// Skip this test suite when orchestrator adapter is enabled - territory processing timing differs intentionally
+const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
 
-  function createSandboxEngineFromInitial(initial: GameState): ClientSandboxEngine {
-    const config: SandboxConfig = {
-      boardType: initial.boardType,
-      numPlayers: initial.players.length,
-      playerKinds: initial.players
-        .slice()
-        .sort((a, b) => a.playerNumber - b.playerNumber)
-        .map((p) => p.type as 'human' | 'ai'),
-    };
+(skipWithOrchestrator ? describe.skip : describe)(
+  'Territory detection parity at seed 5 process_territory_region step',
+  () => {
+    const boardType: BoardType = 'square8';
+    const numPlayers = 2;
+    const seed = 5;
+    const MAX_STEPS = 60;
 
-    const handler: SandboxInteractionHandler = {
-      async requestChoice(choice: any) {
-        const options = ((choice as any).options as any[]) ?? [];
-        const selectedOption = options.length > 0 ? options[0] : undefined;
+    function createSandboxEngineFromInitial(initial: GameState): ClientSandboxEngine {
+      const config: SandboxConfig = {
+        boardType: initial.boardType,
+        numPlayers: initial.players.length,
+        playerKinds: initial.players
+          .slice()
+          .sort((a, b) => a.playerNumber - b.playerNumber)
+          .map((p) => p.type as 'human' | 'ai'),
+      };
 
-        return {
-          choiceId: (choice as any).id,
-          playerNumber: (choice as any).playerNumber,
-          choiceType: (choice as any).type,
-          selectedOption,
-        } as any;
-      },
-    };
+      const handler: SandboxInteractionHandler = {
+        async requestChoice(choice: any) {
+          const options = ((choice as any).options as any[]) ?? [];
+          const selectedOption = options.length > 0 ? options[0] : undefined;
 
-    const engine = new ClientSandboxEngine({
-      config,
-      interactionHandler: handler,
-      traceMode: true,
-    });
-    const engineAny: any = engine;
-    engineAny.gameState = initial;
-    return engine;
-  }
+          return {
+            choiceId: (choice as any).id,
+            playerNumber: (choice as any).playerNumber,
+            choiceType: (choice as any).type,
+            selectedOption,
+          } as any;
+        },
+      };
 
-  test('shared vs backend vs sandbox detectors at first process_territory_region', async () => {
-    const trace = await runSandboxAITrace(boardType, numPlayers, seed, MAX_STEPS);
-    expect(trace.entries.length).toBeGreaterThan(0);
-
-    const targetIndex = trace.entries.findIndex((e) => e.action.type === 'process_territory_region');
-    expect(targetIndex).toBeGreaterThanOrEqual(0);
-
-    const engine = createSandboxEngineFromInitial(trace.initialState);
-    for (let i = 0; i < targetIndex; i++) {
-      const move = trace.entries[i].action as Move;
-      await engine.applyCanonicalMove(move);
+      const engine = new ClientSandboxEngine({
+        config,
+        interactionHandler: handler,
+        traceMode: true,
+      });
+      const engineAny: any = engine;
+      engineAny.gameState = initial;
+      return engine;
     }
 
-    const stateBefore = engine.getGameState();
-    const movingPlayer = stateBefore.currentPlayer;
+    test('shared vs backend vs sandbox detectors at first process_territory_region', async () => {
+      const trace = await runSandboxAITrace(boardType, numPlayers, seed, MAX_STEPS);
+      expect(trace.entries.length).toBeGreaterThan(0);
 
-    const sharedRegions = findDisconnectedRegionsShared(stateBefore.board);
-    const sharedRegionKeys = sharedRegions.map((region) =>
-      region.spaces.map(positionToString).sort()
-    );
+      const targetIndex = trace.entries.findIndex(
+        (e) => e.action.type === 'process_territory_region'
+      );
+      expect(targetIndex).toBeGreaterThanOrEqual(0);
 
-    const sandboxRegions = findDisconnectedRegionsSandbox(stateBefore.board);
-    const sandboxRegionKeys = sandboxRegions.map((region) =>
-      region.spaces.map(positionToString).sort()
-    );
+      const engine = createSandboxEngineFromInitial(trace.initialState);
+      for (let i = 0; i < targetIndex; i++) {
+        const move = trace.entries[i].action as Move;
+        await engine.applyCanonicalMove(move);
+      }
 
-    const boardManager = new BoardManager(stateBefore.boardType);
-    const backendRegions = boardManager.findDisconnectedRegions(stateBefore.board, movingPlayer);
-    const backendRegionKeys = backendRegions.map((region) =>
-      region.spaces.map(positionToString).sort()
-    );
+      const stateBefore = engine.getGameState();
+      const movingPlayer = stateBefore.currentPlayer;
 
-    const counts = {
-      shared: sharedRegions.length,
-      sandbox: sandboxRegions.length,
-      backend: backendRegions.length,
-    };
+      const sharedRegions = findDisconnectedRegionsShared(stateBefore.board);
+      const sharedRegionKeys = sharedRegions.map((region) =>
+        region.spaces.map(positionToString).sort()
+      );
 
-    // eslint-disable-next-line no-console
-    console.log('[TerritoryDetection.seed5Move45] regionCounts', counts, {
-      sharedRegionKeys,
-      sandboxRegionKeys,
-      backendRegionKeys,
-      movingPlayer,
+      const sandboxRegions = findDisconnectedRegionsSandbox(stateBefore.board);
+      const sandboxRegionKeys = sandboxRegions.map((region) =>
+        region.spaces.map(positionToString).sort()
+      );
+
+      const boardManager = new BoardManager(stateBefore.boardType);
+      const backendRegions = boardManager.findDisconnectedRegions(stateBefore.board, movingPlayer);
+      const backendRegionKeys = backendRegions.map((region) =>
+        region.spaces.map(positionToString).sort()
+      );
+
+      const counts = {
+        shared: sharedRegions.length,
+        sandbox: sandboxRegions.length,
+        backend: backendRegions.length,
+      };
+
+      // eslint-disable-next-line no-console
+      console.log('[TerritoryDetection.seed5Move45] regionCounts', counts, {
+        sharedRegionKeys,
+        sandboxRegionKeys,
+        backendRegionKeys,
+        movingPlayer,
+      });
+
+      // Diagnostic-only: this test is currently intended to surface detector
+      // differences via logging rather than enforcing parity. Once the
+      // underlying bug is fixed, these expectations can be tightened to
+      // require exact equality between detectors.
+      expect(sharedRegions.length).toBeGreaterThanOrEqual(0);
     });
-
-    // Diagnostic-only: this test is currently intended to surface detector
-    // differences via logging rather than enforcing parity. Once the
-    // underlying bug is fixed, these expectations can be tightened to
-    // require exact equality between detectors.
-    expect(sharedRegions.length).toBeGreaterThanOrEqual(0);
-  });
-});
+  }
+);

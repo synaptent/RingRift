@@ -1,17 +1,10 @@
 import { BoardManager } from '../../src/server/game/BoardManager';
-import { RuleEngine } from '../../src/server/game/RuleEngine';
 import {
   validateCaptureSegmentOnBoard,
   CaptureSegmentBoardView,
 } from '../../src/shared/engine/core';
-import {
-  BoardType,
-  BoardState,
-  GameState,
-  Position,
-  RingStack,
-} from '../../src/shared/types/game';
-import { getCaptureOptionsFromPosition } from '../../src/server/game/rules/captureChainEngine';
+import { BoardType, BoardState, GameState, Position, RingStack } from '../../src/shared/types/game';
+import { getChainCaptureContinuationInfo } from '../../src/shared/engine/aggregates/CaptureAggregate';
 
 describe('Capture segment core + enumerator: triangle and zig-zag scenarios', () => {
   const boardType: BoardType = 'square8';
@@ -73,14 +66,7 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
     const target2: Position = { x: 4, y: 4 };
     const landing2: Position = { x: 5, y: 3 };
 
-    const okSecond = validateCaptureSegmentOnBoard(
-      boardType,
-      from2,
-      target2,
-      landing2,
-      1,
-      view
-    );
+    const okSecond = validateCaptureSegmentOnBoard(boardType, from2, target2, landing2, 1, view);
     expect(okSecond).toBe(true);
 
     // Board state after second segment:
@@ -96,14 +82,7 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
     const target3: Position = { x: 4, y: 3 };
     const landing3: Position = { x: 2, y: 3 };
 
-    const okThird = validateCaptureSegmentOnBoard(
-      boardType,
-      from3,
-      target3,
-      landing3,
-      1,
-      view3
-    );
+    const okThird = validateCaptureSegmentOnBoard(boardType, from3, target3, landing3, 1, view3);
     expect(okThird).toBe(true);
   });
 
@@ -122,15 +101,13 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
       const gameState = {
         id: 'triangle-second',
         boardType,
-        board,
+        board: { ...board, type: boardType, size: 8 },
         moveHistory: [] as any[],
-      } as GameState;
+        currentPlayer: 1,
+        currentPhase: 'capture',
+      } as unknown as GameState;
 
-      const ruleEngine = new RuleEngine(boardManager, boardType);
-      const moves = getCaptureOptionsFromPosition(from, 1, gameState, {
-        boardManager,
-        ruleEngine,
-      });
+      const { availableContinuations: moves } = getChainCaptureContinuationInfo(gameState, 1, from);
 
       const hasExpected = moves.some(
         (m) =>
@@ -161,15 +138,13 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
       const gameState = {
         id: 'triangle-third',
         boardType,
-        board,
+        board: { ...board, type: boardType, size: 8 },
         moveHistory: [] as any[],
-      } as GameState;
+        currentPlayer: 1,
+        currentPhase: 'capture',
+      } as unknown as GameState;
 
-      const ruleEngine = new RuleEngine(boardManager, boardType);
-      const moves = getCaptureOptionsFromPosition(from, 1, gameState, {
-        boardManager,
-        ruleEngine,
-      });
+      const { availableContinuations: moves } = getChainCaptureContinuationInfo(gameState, 1, from);
 
       const hasExpected = moves.some(
         (m) =>
@@ -204,14 +179,7 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
     const target2: Position = { x: 3, y: 2 };
     const landing2: Position = { x: 4, y: 2 };
 
-    const okSecond = validateCaptureSegmentOnBoard(
-      boardType,
-      from2,
-      target2,
-      landing2,
-      1,
-      view
-    );
+    const okSecond = validateCaptureSegmentOnBoard(boardType, from2, target2, landing2, 1, view);
     expect(okSecond).toBe(true);
 
     // Board for third zig-zag segment:
@@ -226,14 +194,7 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
     const target3: Position = { x: 4, y: 3 };
     const landing3: Position = { x: 4, y: 5 };
 
-    const okThird = validateCaptureSegmentOnBoard(
-      boardType,
-      from3,
-      target3,
-      landing3,
-      1,
-      view3
-    );
+    const okThird = validateCaptureSegmentOnBoard(boardType, from3, target3, landing3, 1, view3);
     expect(okThird).toBe(true);
   });
 
@@ -252,15 +213,13 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
       const gameState = {
         id: 'zigzag-second',
         boardType,
-        board,
+        board: { ...board, type: boardType, size: 8 },
         moveHistory: [] as any[],
-      } as GameState;
+        currentPlayer: 1,
+        currentPhase: 'capture',
+      } as unknown as GameState;
 
-      const ruleEngine = new RuleEngine(boardManager, boardType);
-      const moves = getCaptureOptionsFromPosition(from, 1, gameState, {
-        boardManager,
-        ruleEngine,
-      });
+      const { availableContinuations: moves } = getChainCaptureContinuationInfo(gameState, 1, from);
 
       const hasExpected = moves.some(
         (m) =>
@@ -291,15 +250,13 @@ describe('Capture segment core + enumerator: triangle and zig-zag scenarios', ()
       const gameState = {
         id: 'zigzag-third',
         boardType,
-        board,
+        board: { ...board, type: boardType, size: 8 },
         moveHistory: [] as any[],
-      } as GameState;
+        currentPlayer: 1,
+        currentPhase: 'capture',
+      } as unknown as GameState;
 
-      const ruleEngine = new RuleEngine(boardManager, boardType);
-      const moves = getCaptureOptionsFromPosition(from, 1, gameState, {
-        boardManager,
-        ruleEngine,
-      });
+      const { availableContinuations: moves } = getChainCaptureContinuationInfo(gameState, 1, from);
 
       const hasExpected = moves.some(
         (m) =>

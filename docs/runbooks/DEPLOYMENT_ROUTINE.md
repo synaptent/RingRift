@@ -59,13 +59,15 @@ curl -s https://api.ringrift.com/health | jq '.version'
 curl -s https://staging.ringrift.com/health | jq '.version'
 # Expected: "1.2.3" (target version)
 
-# Run smoke tests against staging
-npm run test:smoke -- --env=staging
+# Run health check verification against staging
+curl -s https://staging.ringrift.com/health | jq
+curl -s https://staging.ringrift.com/ready | jq
 ```
 
 ### 4. Review Release Notes
 
 Check for:
+
 - [ ] Database migrations required
 - [ ] Environment variable changes
 - [ ] Breaking API changes
@@ -308,7 +310,7 @@ curl -s http://localhost:3000/ready | jq
 # Database
 docker compose exec postgres pg_isready -U ringrift -d ringrift
 
-# Redis  
+# Redis
 docker compose exec redis redis-cli ping
 
 # AI Service
@@ -388,10 +390,10 @@ docker compose -f docker-compose.blue.yml up -d
 
 ## Deployment Schedule Best Practices
 
-| Environment | Recommended Time | Avoid |
-|-------------|-----------------|-------|
-| Staging | Any time | - |
-| Production | Tue-Thu, 10am-2pm local | Fridays, weekends, holidays |
+| Environment | Recommended Time        | Avoid                       |
+| ----------- | ----------------------- | --------------------------- |
+| Staging     | Any time                | -                           |
+| Production  | Tue-Thu, 10am-2pm local | Fridays, weekends, holidays |
 
 ### Deployment Freeze Periods
 
@@ -406,13 +408,13 @@ docker compose -f docker-compose.blue.yml up -d
 
 Watch these metrics for 15-30 minutes after deployment:
 
-| Metric | Normal Range | Alert Threshold |
-|--------|-------------|-----------------|
-| Response time (p95) | <200ms | >500ms |
-| Error rate | <0.1% | >1% |
-| Active connections | Baseline ±20% | >50% change |
-| Memory usage | <400MB | >450MB |
-| CPU usage | <30% | >60% |
+| Metric              | Normal Range  | Alert Threshold |
+| ------------------- | ------------- | --------------- |
+| Response time (p95) | <200ms        | >500ms          |
+| Error rate          | <0.1%         | >1%             |
+| Active connections  | Baseline ±20% | >50% change     |
+| Memory usage        | <400MB        | >450MB          |
+| CPU usage           | <30%          | >60%            |
 
 ```bash
 # Quick metrics check

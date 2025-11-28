@@ -43,8 +43,10 @@ function makeStack(playerNumber: number, height: number, position: Position) {
 // TODO-MOVE-DRIVEN-DECISION-PHASES: Skipping - move-driven decision phase tests
 // involve async phase transitions and stubbed RuleEngine/BoardManager that can
 // cause timeouts in the test environment. The underlying move-driven path is
-// experimental and needs stabilization before these tests can reliably pass.
-// Investigation needed to identify which specific phase transitions are hanging.
+// experimental/legacy relative to the shared orchestrator + ClientSandboxEngine
+// move-driven adapters and needs stabilization before these tests can reliably
+// pass. Investigation needed to identify which specific phase transitions are
+// hanging.
 describe.skip('GameEngine move-driven decision phases', () => {
   const boardType: BoardType = 'square8';
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };

@@ -84,6 +84,13 @@ export interface CaptureApplyAdapters {
  * Apply a single overtaking capture segment, including marker processing and
  * top-ring-only overtaking semantics, mutating the provided board.
  *
+ * IMPORTANT:
+ * - This helper is intentionally NON-CANONICAL and is used only by sandbox-side
+ *   analysis/debug tooling (e.g. capture sequence search, parity harnesses).
+ * - Live sandbox engine flows (ClientSandboxEngine, sandboxMovementEngine) now
+ *   delegate capture mutation exclusively to the shared CaptureAggregate via
+ *   {@link applyCaptureSegment} / {@link applyCapture} in src/shared/engine.
+ *
  * Marker behaviour mirrors backend GameEngine.performOvertakingCapture:
  *   - Leave a marker on the true departure space (`from`).
  *   - Process markers along the path from `from` to `target`.

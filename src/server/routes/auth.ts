@@ -304,10 +304,11 @@ router.post(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    // Check if user already exists
+    // Check if user already exists (exclude soft-deleted users to allow email/username reuse)
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [{ email }, { username }],
+        deletedAt: null,
       },
     });
 
@@ -531,9 +532,12 @@ router.post(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
+    // Find user (exclude soft-deleted users)
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+        deletedAt: null,
+      },
       select: {
         id: true,
         email: true,
@@ -773,7 +777,7 @@ router.post(
   asyncHandler(async (req: Request, res: Response) => {
     // Accept refresh token from cookie OR request body for flexibility
     let refreshToken = req.cookies?.refreshToken;
-    
+
     if (!refreshToken) {
       const parsed = RefreshTokenSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -964,15 +968,15 @@ router.post(
   authenticate,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const prisma = getDatabaseClient();
-    
+
     // Best-effort: revoke the refresh token if present
     const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
-    
+
     if (prisma && refreshToken) {
       try {
         const hashedToken = hashRefreshToken(refreshToken);
         const prismaAny = prisma as any;
-        
+
         // Mark the token as revoked (not deleted) for reuse detection
         await prismaAny.refreshToken.updateMany({
           where: {
@@ -1159,13 +1163,14 @@ router.post(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    // Find user with valid token
+    // Find user with valid token (exclude soft-deleted users)
     const user = await prisma.user.findFirst({
       where: {
         verificationToken: token,
         verificationTokenExpires: {
           gt: new Date(),
         },
+        deletedAt: null,
       },
     });
 
@@ -1275,8 +1280,12 @@ router.post(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
+    // Exclude soft-deleted users from password reset
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+        deletedAt: null,
+      },
     });
 
     if (!user) {
@@ -1402,13 +1411,14 @@ router.post(
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    // Find user with valid token
+    // Find user with valid token (exclude soft-deleted users)
     const user = await prisma.user.findFirst({
       where: {
         passwordResetToken: token,
         passwordResetExpires: {
           gt: new Date(),
         },
+        deletedAt: null,
       },
     });
 

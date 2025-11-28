@@ -1,11 +1,18 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** November 26, 2025
-**Last Test Run:** November 26, 2025 (TypeScript: 1195+ tests passing, Python: 245 tests passing)
+**Assessment Date:** November 27, 2025
+**Last Test Run:** November 27, 2025 (TypeScript: 1629+ tests passing, Python: 245 tests passing)
 **Assessor:** Code + Test Review + CI Analysis
 **Purpose:** Factual status of the codebase as it exists today
 
-> This document is the **Single Source of Truth** for the project's implementation status.
+> **Doc Status (2025-11-27): Active**  
+> Current high-level snapshot of implementation status across backend, client, shared engine, Python AI service, and tests. This document is **not** a rules or lifecycle SSoT; it reports factual status against the canonical semantics and lifecycle sources of truth.
+>
+> - **Rules semantics SSoT:** Shared TypeScript engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts) plus contract vectors and runners (`tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) and rules docs (`RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`).
+> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/**`, `src/shared/engine/orchestration/types.ts`, and `src/shared/validation/websocketSchemas.ts` (plus `docs/API_REFERENCE.md` for transport details).
+> - Historical architecture or remediation context lives in `ARCHITECTURE_ASSESSMENT.md`, `ARCHITECTURE_REMEDIATION_PLAN.md`, and archived reports; this file should remain narrowly focused on **current factual status**.
+>
+> This document is the **Single Source of Truth** for the project's _implementation status_ only.
 > It supersedes `IMPLEMENTATION_STATUS.md` and should be read together with:
 >
 > - `KNOWN_ISSUES.md` – P0/P1 issues and gaps
@@ -26,12 +33,12 @@ The intent here is accuracy, not optimism. When in doubt, the **code and tests**
   - Contract testing framework with 100% Python parity on 12 test vectors
   - Feature flags for gradual production rollout
 
-- **Core Rules:** Movement, markers, captures (including chains), lines, territory, forced elimination, and victory are implemented in the shared TypeScript rules engine under [`src/shared/engine`](src/shared/engine/types.ts) and reused by backend and sandbox hosts. These helpers are exercised by focused Jest suites with 200+ test files providing comprehensive coverage.
+- **Core Rules:** Movement, markers, captures (including chains), lines, territory, forced elimination, and victory are implemented in the shared TypeScript rules engine under [`src/shared/engine`](src/shared/engine/types.ts) and reused by backend and sandbox hosts. These helpers are exercised by focused Jest suites with 230+ test files providing comprehensive coverage.
 - **Backend & Sandbox Hosts:** The backend `RuleEngine` / `GameEngine` and the client `ClientSandboxEngine` act as thin adapters over the shared helpers, wiring in IO (WebSockets/HTTP, persistence, AI) while delegating core game mechanics to shared validators/mutators and geometry helpers.
 - **Backend Play:** WebSocket-backed games work end-to-end, including AI turns via the Python service / local fallback and server-driven PlayerChoices surfaced to the client.
 - **Session Management:** `GameSessionManager` and `GameSession` provide robust, lock-protected game state access with Redis caching.
 - **Frontend:** The React client has a usable lobby, backend GamePage (board + HUD + victory modal), and a rich local sandbox harness with full rules implementation.
-- **Testing:** Comprehensive coverage with 200+ test files across shared helpers, host parity, AI integration, and rules/FAQ scenario matrix covering Q1–Q24. Contract tests ensure cross-language parity.
+- **Testing:** Comprehensive coverage with 230+ test files across shared helpers, host parity, AI integration, and rules/FAQ scenario matrix covering Q1–Q24. Contract tests ensure cross-language parity. All shared helper modules fully implemented with 100+ dedicated tests.
 - **CI/CD:** Mature GitHub Actions workflow with separated job types (lint, test, build, security scan, Docker, E2E) and proper timeout protections.
 
 A reasonable label for the current state is: **stable beta with consolidated architecture, suitable for developers, AI work, and comprehensive playtesting**, ready for production hardening.
@@ -47,7 +54,12 @@ A reasonable label for the current state is: **stable beta with consolidated arc
   - **Movement & captures:** [`movementLogic.ts`](src/shared/engine/movementLogic.ts), [`captureLogic.ts`](src/shared/engine/captureLogic.ts), with full mutator support
   - **Lines:** [`lineDetection.ts`](src/shared/engine/lineDetection.ts), [`lineDecisionHelpers.ts`](src/shared/engine/lineDecisionHelpers.ts) with canonical Move enumeration
   - **Territory:** [`territoryProcessing.ts`](src/shared/engine/territoryProcessing.ts), [`territoryBorders.ts`](src/shared/engine/territoryBorders.ts), [`territoryDecisionHelpers.ts`](src/shared/engine/territoryDecisionHelpers.ts)
-  - **Victory & placement:** [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts), [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts) with no-dead-placement validation
+  - **Victory & placement:** [`victoryLogic.ts`](src/shared/engine/victoryLogic.ts), [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts:1) with full canonical placement validation (16 tests)
+  - **Shared helpers:** All 4 previously stubbed modules now fully implemented:
+    - [`movementApplication.ts`](src/shared/engine/movementApplication.ts:1) – canonical movement application (13 tests)
+    - [`placementHelpers.ts`](src/shared/engine/placementHelpers.ts:1) – no-dead-placement validation (16 tests)
+    - [`captureChainHelpers.ts`](src/shared/engine/captureChainHelpers.ts:1) – chain capture orchestration (20 tests)
+    - [`captureLogic.ts`](src/shared/engine/captureLogic.ts:1) – capture search and execution (existing comprehensive tests)
   - **Turn lifecycle:** [`turnLogic.ts`](src/shared/engine/turnLogic.ts), [`turnLifecycle.ts`](src/shared/engine/turnLifecycle.ts) with canonical phase transitions
 
 - **Canonical Turn Orchestrator (`src/shared/engine/orchestration/`)** (NEW)
@@ -136,13 +148,17 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 ### 5. Testing & Quality Assurance
 
 - **Test Infrastructure**
-  - **Comprehensive:** 200+ test files across unit, integration, scenario, and E2E categories
+  - **Comprehensive:** 230+ test files across unit, integration, scenario, and E2E categories
   - **Test types:** Jest (unit/integration), Playwright (E2E), pytest (Python AI service)
   - **Coverage:** Structured test matrix covering rules, parity, AI boundary, and UI integration
   - **Timeout protection:** Robust test execution with proper timeout handling via scripts
 
 - **Test Categories**
-  - **Shared engine tests:** Movement, captures, lines, territory, victory with focused unit tests
+  - **Shared engine tests:** Movement, captures, lines, territory, victory with focused unit tests (100+ tests for shared helpers)
+  - **Component tests:** 209 component tests including 160 core components and 49 ChoiceDialog tests
+  - **Hooks tests:** 98 tests covering useGameState, useGameActions, useGameConnection
+  - **Context tests:** 51 tests covering AuthContext and GameContext
+  - **Service tests:** 27 HealthCheckService tests for health monitoring
   - **Parity suites:** Backend ↔ sandbox ↔ shared engine alignment validation
   - **Scenario tests:** Rules/FAQ matrix covering Q1-Q24 from `ringrift_complete_rules.md`
   - **AI boundary tests:** Service integration, fallbacks, choice delegation
@@ -219,9 +235,9 @@ Key remaining work for production deployment:
 
 ## 📈 Test Coverage Status
 
-**Current Test Run:** 200+ test files
+**Current Test Run:** 230+ test files
 
-- **TypeScript tests:** 1195+ tests passing
+- **TypeScript tests:** 1629+ tests passing
 - **Python tests:** 245 tests passing, 15 contract tests
 - **Contract tests:** 12 test vectors with 100% cross-language parity
 
@@ -234,10 +250,15 @@ Key remaining work for production deployment:
 - **Contract tests:** ✅ 100% pass rate on 12 vectors across TypeScript and Python
 - **Decision phase tests:** ✅ Timeout guards verified via `GameSession.decisionPhaseTimeout.test.ts`
 - **Adapter tests:** ✅ 46 tests for orchestrator adapters
+- **Component tests:** ✅ 209 tests (160 core + 49 ChoiceDialog)
+- **Hooks tests:** ✅ 98 tests for client hooks
+- **Context tests:** ✅ 51 tests for React contexts
+- **Service tests:** ✅ 27 HealthCheckService tests
+- **Shared helper tests:** ✅ 49 tests (13 movementApplication + 16 placementHelpers + 20 captureChainHelpers)
 
 **Test Infrastructure:**
 
-- **200+ total test files** providing comprehensive coverage
+- **230+ total test files** providing comprehensive coverage
 - **Timeout protection** via `scripts/run-tests-with-timeout.sh` preventing CI hangs
 - **Categorized execution** with `test:core`, `test:diagnostics`, `test:ts-rules-engine` scripts
 - **Coverage reporting** integrated with Codecov for PR feedback

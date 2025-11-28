@@ -41,12 +41,30 @@ export default defineConfig({
   testDir: './tests/e2e',
 
   /* ============================================
+   * Snapshot Configuration for Visual Regression Testing
+   * ============================================ */
+  snapshotDir: './tests/e2e/__snapshots__',
+  snapshotPathTemplate:
+    '{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}{ext}',
+
+  /* ============================================
    * Timeout Configuration
    * CI environments get longer timeouts for stability
    * ============================================ */
   timeout: CI ? 60_000 : 30_000, // Per-test timeout: 60s CI, 30s local
   expect: {
     timeout: CI ? 10_000 : 5_000, // Assertion timeout: 10s CI, 5s local
+    /* ============================================
+     * Visual Regression Comparison Settings
+     * ============================================ */
+    toHaveScreenshot: {
+      maxDiffPixels: 100, // Allow minor differences (anti-aliasing, font rendering)
+      threshold: 0.2, // 20% color threshold per pixel
+      animations: 'disabled', // Disable CSS animations for consistent screenshots
+    },
+    toMatchSnapshot: {
+      maxDiffPixelRatio: 0.01, // Allow 1% pixel difference
+    },
   },
 
   /* ============================================
@@ -110,23 +128,47 @@ export default defineConfig({
 
   /* ============================================
    * Project Configuration
-   * Currently testing on Chromium only
-   * Add more browsers as needed (firefox, webkit)
+   * Multi-browser testing support:
+   * - Desktop: Chromium, Firefox, WebKit
+   * - Mobile: Pixel 5 (Chrome), iPhone 12 (Safari)
+   *
+   * Run specific browsers:
+   *   npm run test:e2e:chromium
+   *   npm run test:e2e:firefox
+   *   npm run test:e2e:webkit
+   *   npm run test:e2e:all
+   *
+   * Install all browsers:
+   *   npx playwright install
+   *   npx playwright install firefox webkit (for specific browsers)
+   *
+   * Browser-specific notes:
+   * - WebKit may have WebSocket timing differences
+   * - Mobile viewports useful for responsive testing
    * ============================================ */
   projects: [
+    // Desktop browsers
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-    // Uncomment to add more browsers:
-    // {
-    //   name: 'firefox',
-    //   use: { ...devices['Desktop Firefox'] },
-    // },
-    // {
-    //   name: 'webkit',
-    //   use: { ...devices['Desktop Safari'] },
-    // },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+    // Mobile viewports (valuable for responsive testing)
+    {
+      name: 'Mobile Chrome',
+      use: { ...devices['Pixel 5'] },
+    },
+    {
+      name: 'Mobile Safari',
+      use: { ...devices['iPhone 12'] },
+    },
   ],
 
   /* ============================================

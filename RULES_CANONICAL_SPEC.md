@@ -1,6 +1,17 @@
 # RingRift Canonical Rules Specification
 
-**Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`ringrift_complete_rules.md`](ringrift_complete_rules.md) ("Complete Rules") and [`ringrift_compact_rules.md`](ringrift_compact_rules.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
+> **Doc Status (2025-11-26): Active**
+>
+> - This document is the **rules-level canonical spec** for RingRift semantics. It normalizes the narrative sources into precise, implementation-ready constraints.
+> - It defines **RR-CANON-RXXX** rule IDs for core invariants, resources, turn/phase structure, line/territory semantics, and victory conditions.
+> - It intentionally **does not** re-specify the engine API or Move/decision/WebSocket lifecycle. For those, see:
+>   - [`docs/CANONICAL_ENGINE_API.md` §3.9–3.10](docs/CANONICAL_ENGINE_API.md) for `Move`, `PendingDecision`, `PlayerChoice*`, WebSocket payloads, and the orchestrator-backed decision loop.
+>   - `src/shared/types/game.ts` and `src/shared/engine/orchestration/types.ts` for the canonical type definitions.
+> - Engine implementations in TS and Python must:
+>   - Treat `src/shared/engine/` (**helpers → aggregates → orchestrator → contracts**) as the SSoT for rules behavior.
+>   - Treat this file as the **rules invariant SSoT** whenever the prose sources diverge.
+>
+> **Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`ringrift_complete_rules.md`](ringrift_complete_rules.md) ("Complete Rules") and [`ringrift_compact_rules.md`](ringrift_compact_rules.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
 
 The canonical rules here are binding whenever the two source documents diverge. For each rule we provide:
 
@@ -140,7 +151,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - `ringsInHand`.
       - `eliminatedRings` (credited to that player).
       - `territorySpaces`.
-    - Turn/phase: `currentPlayer`, `currentPhase` ∈ { `ring_placement`, `movement`, `capture`, `line_processing`, `territory_processing` }.
+    - Turn/phase: `currentPlayer`, `currentPhase` ∈ { `ring_placement`, `movement`, `capture`, `chain_capture`, `line_processing`, `territory_processing` }.
     - Victory metadata: `totalRingsInPlay`, `totalRingsEliminated`, `victoryThreshold`, `territoryVictoryThreshold`.
     - History: `moveHistory` (implementation-defined structure).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §2, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4, 13, 15.2.

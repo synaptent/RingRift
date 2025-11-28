@@ -1,6 +1,9 @@
-> **Status:** Historical deep-dive. This document captures an in-depth analysis and set of recommendations from an earlier revision of the AI stack. For the **current architecture and behaviour**, see `AI_ARCHITECTURE.md`. For the **current backlog and follow-up tasks**, see `AI_IMPROVEMENT_BACKLOG.md`.
+> **Doc Status (2025-11-27): Archived (historical AI host deep-dive, Python + TS integration)**
 >
-> Some implementation details here (especially difficulty ladders, RNG plumbing, and rules parity) have since been updated; defer to the canonical documents above for ground truth.
+> - Role: earlier in-depth analysis and set of recommendations for the AI stack (TS backend orchestration, client sandbox AI, and Python AI/rules) before the current architecture docs were consolidated. Retained for historical context and archaeology only.
+> - Superseded by: the modern architecture and improvement docs [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md), [`ai-service/AI_ASSESSMENT_REPORT.md`](../ai-service/AI_ASSESSMENT_REPORT.md), [`ai-service/AI_IMPROVEMENT_PLAN.md`](../ai-service/AI_IMPROVEMENT_PLAN.md), [`docs/AI_TRAINING_AND_DATASETS.md`](../docs/AI_TRAINING_AND_DATASETS.md), [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](../docs/AI_TRAINING_PREPARATION_GUIDE.md), and [`docs/PYTHON_PARITY_REQUIREMENTS.md`](../docs/PYTHON_PARITY_REQUIREMENTS.md).
+> - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
+> - Related docs: archived AI-focused reports in `archive/` such as [`AI_ASSESSMENT_REPORT.md`](./AI_ASSESSMENT_REPORT.md), [`AI_IMPROVEMENT_PLAN.md`](./AI_IMPROVEMENT_PLAN.md), and [`AI_CODE_REVIEW_REPORT.md`](./AI_CODE_REVIEW_REPORT.md), plus stall/tournament reports (`AI_STALL_*.md`, `AI_TOURNAMENT_RESULTS*.md`).
 
 ### Subtask 1 – High-Level AI Architecture & Integration Review
 

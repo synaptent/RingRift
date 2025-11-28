@@ -1,5 +1,19 @@
 # RingRift Rules Implementation Mapping
 
+> **SSoT alignment:** This document is a derived mapping between canonical rules and implementation. It defers to:
+>
+> - **Rules/invariants semantics SSoT:** `RULES_CANONICAL_SPEC.md` (RR‑CANON rules), `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers → aggregates → orchestrator → contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`).
+> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`) for the executable Move + decision + WebSocket lifecycle.
+> - **Precedence:** Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules/AI engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. If this document ever contradicts the rules spec, shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this mapping must be updated to match.
+>
+> This file is for traceability (rules ↔ implementation/tests), not a standalone semantics SSoT.
+
+**Doc Status (2025-11-26): Active**
+
+- Rules/invariants semantics SSoT lives in `RULES_CANONICAL_SPEC.md` (RR‑CANON rules) + the shared TypeScript rules engine under `src/shared/engine/` (helpers → aggregates → orchestrator → contracts).
+- Move/decision/WebSocket lifecycle semantics SSoT lives in `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`).
+- Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules/AI engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over this SSoT and are validated via shared tests, contract vectors, and parity suites.
+
 This document maps the canonical RingRift rules in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md) to the current implementation and tests, and provides the inverse view from implementation components back to canonical rules.
 
 Canonical rule IDs of the form `RR-CANON-RXXX` always refer to entries in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md). The original narrative rules in [`ringrift_complete_rules.md`](ringrift_complete_rules.md) and the compact spec in [`ringrift_compact_rules.md`](ringrift_compact_rules.md) are treated as commentary and traceability sources only.
@@ -65,7 +79,7 @@ Frameworks and libraries that materially affect rules behaviour:
 - **Tests & parity harnesses**
   - Shared-engine unit tests (movement, capture, lines, territory, victory) under `tests/unit/**`.
   - Scenario/FAQ matrix tests under `tests/scenarios/**` (e.g. disconnected-region examples and FAQ Q15/Q23).
-  - Backend-versus-sandbox parity suites such as [`tests/unit/ClientSandboxEngine.lines.test.ts`](tests/unit/ClientSandboxEngine.lines.test.ts) and [`tests/unit/Seed17Move52Parity.GameEngine_vs_Sandbox.test.ts`](tests/unit/Seed17Move52Parity.GameEngine_vs_Sandbox.test.ts).
+  - Backend-versus-sandbox parity suites such as [`tests/unit/ClientSandboxEngine.lines.test.ts`](tests/unit/ClientSandboxEngine.lines.test.ts) and [`tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`](tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts).
 
 ### 1.3 Core data models
 
@@ -76,7 +90,7 @@ The core game models live in [`TypeScript.types`](src/shared/types/game.ts:1) an
 - Global counters `totalRingsInPlay`, `totalRingsEliminated`, `victoryThreshold`, `territoryVictoryThreshold`.
 - Board metadata `size`, `type`, and cached `formedLines`, `eliminatedRings`, `territories` for diagnostics/tests.
 
-These types are used consistently by the shared TS engine, server backend, client sandbox, Python parity service, and AI training code, and thus serve as the canonical concrete schema for many of RR‑CANON rules (R001–R003, R020–R023, R050–R052, R060–R062).
+These types are used consistently by the shared TS engine, server backend, client sandbox, Python parity service, and AI training code, and thus serve as the canonical concrete schema for many of RR‑CANON rules (R001–R003, R010, R020–R023, R050–R052, R060–R062).
 
 ---
 
@@ -85,9 +99,9 @@ These types are used consistently by the shared TS engine, server backend, clien
 For mapping purposes, the RR‑CANON rules are grouped into the following clusters:
 
 1. **Board & entities**
-   - Geometry & configs: R001–R003.
-   - Rings, stacks, control, markers, regions: R020–R023, R030–R031, R040–R041.
-   - State validity & resource accounting: R050–R052, R060–R062.
+   - Geometry & configs: R001–R003 (including coordinate systems R002).
+   - Rings, stacks, control, markers, regions: R020–R023, R030–R031, R040–R041 (explicitly including control/cap-height R022).
+   - State validity & resource accounting: R050–R052, R060–R062 (with GameState fields R051).
 2. **Turn, phases, and forced elimination**
    - Turn structure and deterministic phase ordering: R070–R072.
    - Forced elimination when blocked: R100 (entry condition).
@@ -102,7 +116,7 @@ For mapping purposes, the RR‑CANON rules are grouped into the following cluste
 7. **Territory disconnection & region processing**
    - Region discovery, physical disconnection, representation, self‑elimination prerequisite, processing order and mechanics: R140–R145.
 8. **Victory and termination**
-   - Ring‑elimination, territory, last‑player‑standing, global stalemate ladder: R170–R173.
+   - Ring‑elimination, territory, last‑player‑standing, global stalemate ladder: R170–R173 (including elimination victory R170, territory victory R171, last-player-standing R172, stalemate and tiebreaks R173).
    - Randomness constraint and S‑invariant: R190–R191.
 
 The sections below first map these clusters forward to implementation, then map major implementation components back to RR‑CANON rules.
@@ -120,6 +134,8 @@ Status legend:
 ### 3.1 Board & entities (R001–R003, R020–R023, R030–R031, R040–R041, R050–R052, R060–R062)
 
 **R001–R003 Board types, coordinates, adjacency (HC)**
+
+(Explicitly covering R001 board-type configuration, R002 coordinate systems, and R003 adjacency relations.)
 
 - **Primary implementation**
   - Board configs and geometry parameters in [`TypeScript.types`](src/shared/types/game.ts:1) (`BoardType`, `BOARD_CONFIGS`).
@@ -142,7 +158,7 @@ Status legend:
   - Overtaking stack mutation in:
     - Shared capture helpers in [`TypeScript.enumerateCaptureMoves()`](src/shared/engine/captureLogic.ts:26).
     - Backend capture application in [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) near `performOvertakingCapture()`.
-    - Sandbox capture in [`TypeScript.sandboxCaptures.applyCaptureSegmentOnBoard`](src/client/sandbox/sandboxCaptures.ts:98) and [`TypeScript.sandboxMovementEngine`](src/client/sandbox/sandboxMovementEngine.ts:1) near `applyCaptureSegmentWithHooks()`.
+    - Sandbox capture in [`TypeScript.sandboxCaptures.applyCaptureSegmentOnBoard`](src/client/sandbox/sandboxCaptures.ts:98) and [`TypeScript.ClientSandboxEngine.applyCaptureSegment`](src/client/sandbox/ClientSandboxEngine.ts:701).
   - Cap and ring removal operations (forced elimination, line rewards, territory, self‑elimination) in:
     - [`TypeScript.BoardManager`](src/server/game/BoardManager.ts:37) and backend helpers.
     - Sandbox elimination helper [`TypeScript.sandboxElimination.forceEliminateCapOnBoard`](src/client/sandbox/sandboxElimination.ts:1).
@@ -158,7 +174,7 @@ Status legend:
   - Marker path behaviour and collapse rules in [`TypeScript.applyMarkerEffectsAlongPathOnBoard()`](src/shared/engine/core.ts:619).
   - Sandbox equivalents in:
     - [`TypeScript.ClientSandboxEngine.setMarker`](src/client/sandbox/ClientSandboxEngine.ts:964), `flipMarker`, `collapseMarker`.
-    - [`TypeScript.ClientSandboxEngine.applyMarkerEffectsAlongPath`](src/client/sandbox/ClientSandboxEngine.ts:1089) and [`TypeScript.sandboxMovementEngine`](src/client/sandbox/sandboxMovementEngine.ts:1) near `applyMarkerEffectsAlongPathWithHooks()`.
+    - [`TypeScript.ClientSandboxEngine.applyMarkerEffectsAlongPath`](src/client/sandbox/ClientSandboxEngine.ts:1089), which in turn delegates to the shared helper; simple movement and capture chains in the sandbox now rely on the shared Movement/Capture aggregates rather than their own marker-path mutators.
 - **Supporting / tests**
   - Landing-on-own-marker behaviour in [`tests/unit/ClientSandboxEngine.landingOnOwnMarker.test.ts`](tests/unit/ClientSandboxEngine.landingOnOwnMarker.test.ts).
   - Movement tests that exercise marker flips/collapses in [`tests/unit/movement.shared.test.ts`](tests/unit/movement.shared.test.ts).
@@ -216,7 +232,7 @@ Status legend:
     - Forced elimination callback.
     - Next-player computation.
   - Backend move application and automatic consequences (lines, territory, victory, phase/turn advancement) in [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) (`makeMove()`, `applyDecisionMove()`, `advanceGame()`).
-  - Sandbox equivalent phase progression via [`TypeScript.sandboxTurnEngine.startTurnForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:164), [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228), and [`TypeScript.sandboxTurnEngine.advanceTurnAndPhaseForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:81).
+  - Sandbox equivalent phase progression via [`TypeScript.ClientSandboxEngine.startTurnForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1513), [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1539), and [`TypeScript.ClientSandboxEngine.advanceTurnAndPhaseForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1603), which delegate to shared `advanceTurnAndPhase` with sandbox-specific delegates.
 - **Supporting / tests**
   - Turn/phase sequencing tests under [`tests/unit/RefactoredEngine.test.ts`](tests/unit/RefactoredEngine.test.ts) and parity suites that replay canonical move sequences into both backend and sandbox engines.
 
@@ -225,7 +241,7 @@ Status legend:
 - **Primary implementation**
   - Turn-logic delegates used in [`TypeScript.advanceGameForCurrentPlayer`](src/server/game/turn/TurnEngine.ts:91) and shared [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:135) to decide when a player has no placements, movements, or captures and must apply forced elimination.
   - Backend blocked-state resolution & stress tests in [`TypeScript.GameEngine.resolveBlockedStateForCurrentPlayerForTesting`](src/server/game/GameEngine.ts:2583).
-  - Sandbox forced-elimination detection (no placements, no movement, at-or-above per-player cap) in [`TypeScript.sandboxTurnEngine.maybeProcessForcedEliminationForCurrentPlayerSandbox`](src/client/sandbox/sandboxTurnEngine.ts:228).
+  - Sandbox forced-elimination detection (no placements, no movement, at-or-above per-player cap) in [`TypeScript.ClientSandboxEngine.maybeProcessForcedEliminationForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1539).
 - **Supporting / tests**
   - Regression tests in `ai-service/tests/invariants/test_active_no_moves_movement_forced_elimination_regression.py`.
   - Backend turn/forced-elimination scenarios under `tests/unit/**` and `tests/scenarios/**`.
@@ -244,13 +260,14 @@ Status legend:
 
 ### 3.3 Placement & skip (R080–R082)
 
-**R080–R082 Placement on empty/stack + no-dead-placement, skip semantics (HC for checks; LC for complete coverage of all textual edge cases)**
+**R080–R082 Placement on empty/stack + no-dead-placement, skip semantics (HC for checks; LC for complete coverage of all textual edge cases, covering R080 mandatory/optional/forbidden placement, R081 empty-cell placement, R082 placement on existing stacks)**
 
 - **Primary implementation**
   - Shared placement validation helper [`TypeScript.validatePlacementOnBoard()`](src/shared/engine/validators/PlacementValidator.ts:1) encodes empty/stack placement legality, capacity, and no‑dead‑placement preconditions given a `PlacementContext`.
-  - Backend placement validation in [`TypeScript.RuleEngine.validateRingPlacement`](src/server/game/RuleEngine.ts:161) and enumeration in [`TypeScript.RuleEngine.getValidRingPlacements`](src/server/game/RuleEngine.ts:839).
-  - Backend skip semantics in [`TypeScript.RuleEngine.validateSkipPlacement`](src/server/game/RuleEngine.ts:116) and placement-phase move generation in [`TypeScript.RuleEngine.getValidMoves`](src/server/game/RuleEngine.ts:839), which produce explicit `skip_placement` moves when R080 conditions are met.
+  - Backend placement validation in [`TypeScript.RuleEngine.validateRingPlacement`](src/server/game/RuleEngine.ts:161), which now delegates to `PlacementAggregate.validatePlacement`, and enumeration in [`TypeScript.RuleEngine.getValidRingPlacements`](src/server/game/RuleEngine.ts:839).
+  - Backend skip semantics in [`TypeScript.RuleEngine.validateSkipPlacement`](src/server/game/RuleEngine.ts:116) and placement-phase move generation in [`TypeScript.RuleEngine.getValidMoves`](src/server/game/RuleEngine.ts:839), both delegating to `PlacementAggregate.validateSkipPlacement` / `evaluateSkipPlacementEligibility` and producing explicit `skip_placement` moves when R080 conditions are met.
   - Shared no‑dead‑placement helper [`TypeScript.hasAnyLegalMoveOrCaptureFromOnBoard()`](src/shared/engine/core.ts:367).
+  - Shared placement mutators in [`TypeScript.applyPlacementOnBoard()` / `mutatePlacement()` / `applyPlacementMove()`](src/shared/engine/aggregates/PlacementAggregate.ts:687) act as the single source of truth for placement side‑effects and are consumed by backend `RuleEngine.processRingPlacement`, backend `GameEngine.applyMove`, and sandbox `ClientSandboxEngine.tryPlaceRings()` / canonical move application.
   - Sandbox placement logic aligned with shared helpers:
     - Placement enumeration in [`TypeScript.sandboxPlacement.enumerateLegalRingPlacements`](src/client/sandbox/sandboxPlacement.ts:125).
     - Hypothetical stack creation and no‑dead‑placement checks in [`TypeScript.sandboxPlacement.createHypotheticalBoardWithPlacement`](src/client/sandbox/sandboxPlacement.ts:29) and [`TypeScript.sandboxPlacement.hasAnyLegalMoveOrCaptureFrom`](src/client/sandbox/sandboxPlacement.ts:85).
@@ -266,26 +283,26 @@ Status legend:
 **R090–R091 Movement availability and path/distance rules (HC)**
 
 - **Primary implementation**
-  - Shared movement target enumeration in [`TypeScript.enumerateSimpleMoveTargetsFromStack()`](src/shared/engine/movementLogic.ts:55) using `MovementBoardView`.
-  - Shared legality checks in [`TypeScript.hasAnyLegalMoveOrCaptureFromOnBoard()`](src/shared/engine/core.ts:367).
-  - Backend movement validation in [`TypeScript.RuleEngine.processStackMovement`](src/server/game/RuleEngine.ts:426) and associated helpers.
-  - Backend movement application in [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) near `applyMove()`.
-  - Sandbox movement enumeration in [`TypeScript.sandboxMovement.enumerateSimpleMovementLandings`](src/client/sandbox/sandboxMovement.ts:23) and click-driven movement engine [`TypeScript.sandboxMovementEngine.handleMovementClickSandbox`](src/client/sandbox/sandboxMovementEngine.ts:120).
+  - Shared movement target enumeration in [`TypeScript.enumerateSimpleMoveTargetsFromStack()`](src/shared/engine/movementLogic.ts:55) using `MovementBoardView`, consolidated in [`TypeScript.MovementAggregate`](src/shared/engine/aggregates/MovementAggregate.ts:1) (`validateMovement`, `enumerateMovementTargets`, `enumerateSimpleMovesForPlayer`, `applySimpleMovement`, `applyMovement`).
+  - Shared legality checks in [`TypeScript.hasAnyLegalMoveOrCaptureFromOnBoard()`](src/shared/engine/core.ts:367) and `MovementAggregate.validateMovement`.
+  - Backend movement validation in [`TypeScript.RuleEngine.validateStackMovement`](src/server/game/RuleEngine.ts:209) (delegating to shared movement helpers) and backend movement application in [`TypeScript.RuleEngine.processStackMovement`](src/server/game/RuleEngine.ts:404) / [`TypeScript.GameEngine.applyMove`](src/server/game/GameEngine.ts:92), both wired through `MovementAggregate.applySimpleMovement`.
+  - Sandbox movement enumeration in [`TypeScript.sandboxMovement.enumerateSimpleMovementLandings`](src/client/sandbox/sandboxMovement.ts:23) and click-driven movement host [`TypeScript.ClientSandboxEngine.handleLegacyMovementClick`](src/client/sandbox/ClientSandboxEngine.ts:1897).
 - **Supporting / tests**
-  - Movement reachability tests in [`tests/unit/movement.shared.test.ts`](tests/unit/movement.shared.test.ts).
-  - Sandbox movement tests and backend–sandbox parity in `tests/unit/ClientSandboxEngine.*.test.ts` and `tests/unit/Seed17Move52Parity.GameEngine_vs_Sandbox.test.ts`.
+  - Shared movement/aggregate tests in [`tests/unit/movement.shared.test.ts`](tests/unit/movement.shared.test.ts) and [`tests/unit/MovementAggregate.shared.test.ts`](tests/unit/MovementAggregate.shared.test.ts).
+  - Backend aggregate integration in [`tests/unit/GameEngine.movement.shared.test.ts`](tests/unit/GameEngine.movement.shared.test.ts).
+  - Sandbox movement/aggregate parity in [`tests/unit/ClientSandboxEngine.movementParity.shared.test.ts`](tests/unit/ClientSandboxEngine.movementParity.shared.test.ts) and broader backend–sandbox parity in `tests/unit/ClientSandboxEngine.*.test.ts` and `tests/unit/Seed17Move16And33Parity.GameEngine_vs_Sandbox.test.ts`.
 
 **R092 Marker interaction during non-capture movement (HC)**
 
 - **Primary implementation**
   - Shared path helper [`TypeScript.applyMarkerEffectsAlongPathOnBoard()`](src/shared/engine/core.ts:619), used by both movement and capture segments.
   - Backend usage in movement and capture application inside [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) (`applyMove()`, `performOvertakingCapture()`).
-  - Sandbox usage in [`TypeScript.ClientSandboxEngine.applyMarkerEffectsAlongPath`](src/client/sandbox/ClientSandboxEngine.ts:1089) and [`TypeScript.sandboxMovementEngine`](src/client/sandbox/sandboxMovementEngine.ts:1) near `applyMarkerEffectsAlongPathWithHooks()`.
+  - Sandbox usage in [`TypeScript.ClientSandboxEngine.applyMarkerEffectsAlongPath`](src/client/sandbox/ClientSandboxEngine.ts:1089).
 - **Landing-on-own-marker elimination**
   - Implemented in:
     - Shared progress accounting (marker removed + immediate top-ring elimination) within backend movement and capture application logic.
-    - Sandbox movement in [`TypeScript.sandboxMovementEngine.handleMovementClickSandbox`](src/client/sandbox/sandboxMovementEngine.ts:120) (checks `landedOnOwnMarker` and performs cap reduction and elimination).
-    - Sandbox capture application in [`TypeScript.sandboxMovementEngine`](src/client/sandbox/sandboxMovementEngine.ts:1) near `applyCaptureSegmentWithHooks()` and [`TypeScript.ClientSandboxEngine.applyCaptureSegment`](src/client/sandbox/ClientSandboxEngine.ts:702).
+    - Sandbox movement in [`TypeScript.ClientSandboxEngine.handleLegacyMovementClick`](src/client/sandbox/ClientSandboxEngine.ts:1897) (checks `landedOnOwnMarker` and performs cap reduction and elimination via MovementAggregate).
+    - Sandbox capture application in [`TypeScript.ClientSandboxEngine.applyCaptureSegment`](src/client/sandbox/ClientSandboxEngine.ts:702).
 - **Supporting / tests**
   - Dedicated landing-on-own-marker invariants in [`tests/unit/ClientSandboxEngine.landingOnOwnMarker.test.ts`](tests/unit/ClientSandboxEngine.landingOnOwnMarker.test.ts).
   - Shared movement tests verifying marker flipping and collapsing behaviour.
@@ -300,7 +317,7 @@ Status legend:
   - Backend validation in [`TypeScript.RuleEngine.validateCapture`](src/server/game/RuleEngine.ts:286) and [`TypeScript.RuleEngine.validateChainCaptureContinuation`](src/server/game/RuleEngine.ts:326).
   - Backend application in [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) via `performOvertakingCapture()`.
   - Sandbox capture enumeration in [`TypeScript.sandboxCaptures.enumerateCaptureSegmentsFromBoard`](src/client/sandbox/sandboxCaptures.ts:37).
-  - Sandbox application in [`TypeScript.sandboxCaptures.applyCaptureSegmentOnBoard`](src/client/sandbox/sandboxCaptures.ts:98) and movement-engine wrapper [`TypeScript.sandboxMovementEngine`](src/client/sandbox/sandboxMovementEngine.ts:1) near `applyCaptureSegmentWithHooks()`.
+  - Sandbox application in [`TypeScript.sandboxCaptures.applyCaptureSegmentOnBoard`](src/client/sandbox/sandboxCaptures.ts:98) and movement host [`TypeScript.ClientSandboxEngine.applyCaptureSegment`](src/client/sandbox/ClientSandboxEngine.ts:702).
 - **Supporting / tests**
   - Shared capture tests in [`tests/unit/captureLogic.shared.test.ts`](tests/unit/captureLogic.shared.test.ts).
   - Server chain-capture tests such as [`tests/unit/GameEngine.chainCapture.test.ts`](tests/unit/GameEngine.chainCapture.test.ts) and cyclic/hex-specific suites (e.g. `GameEngine.cyclicCapture.hex.height3.test.ts`).
@@ -310,8 +327,9 @@ Status legend:
 
 - **Primary implementation**
   - Shared enumeration of follow-up segments via [`TypeScript.enumerateCaptureMoves()`](src/shared/engine/captureLogic.ts:26).
-  - Backend chain state tracked in `chainCaptureState` within [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) and helper module [`TypeScript.captureChainHelpers`](src/shared/engine/captureChainHelpers.ts:1); exposed also via legacy server module [`TypeScript.captureChainEngine`](src/server/game/rules/captureChainEngine.ts:45).
-  - Sandbox chain engine [`TypeScript.sandboxMovementEngine.performCaptureChainSandbox`](src/client/sandbox/sandboxMovementEngine.ts:400) which:
+  - Backend chain state tracked in `chainCaptureState` within [`TypeScript.GameEngine`](src/server/game/GameEngine.ts:92) and helper module [`TypeScript.captureChainHelpers`](src/shared/engine/captureChainHelpers.ts:1).
+    - Historically this was also exposed via a legacy server module `captureChainEngine` under `src/server/game/rules/captureChainEngine.ts` (now removed); it is retained here only as a historical naming anchor for older docs and parity reports.
+  - Sandbox chain engine now lives in [`TypeScript.ClientSandboxEngine.performCaptureChainInternal`](src/client/sandbox/ClientSandboxEngine.ts:1960), which:
     - Applies an initial segment.
     - Transitions the game into `chain_capture` phase while continuations exist.
     - Forces continuation until no legal segments remain.
@@ -341,12 +359,10 @@ Status legend:
     - `applyProcessLineDecision()`, `applyChooseLineRewardDecision()`.
   - Backend decision-phase integration in [`TypeScript.GameEngine.getValidLineProcessingMoves`](src/server/game/GameEngine.ts:1199) and [`TypeScript.GameEngine.applyDecisionMove`](src/server/game/GameEngine.ts:1258), including `pendingLineRewardElimination` and explicit `eliminate_rings_from_stack` moves.
   - Sandbox canonical application path in:
-    - [`TypeScript.sandboxLinesEngine.getValidLineProcessingMoves`](src/client/sandbox/sandboxLinesEngine.ts:151).
-    - [`TypeScript.sandboxLinesEngine.applyLineDecisionMove`](src/client/sandbox/sandboxLinesEngine.ts:190).
-    - [`TypeScript.ClientSandboxEngine.getValidLineProcessingMovesForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1492) and `processLinesForCurrentPlayer()` (automatic sandbox behaviour built on top of canonical moves).
-  - Legacy non-move-driven helpers retained for reference and backwards-compatible flows:
-    - [`TypeScript.sandboxLinesEngine.processLinesForCurrentPlayer`](src/client/sandbox/sandboxLinesEngine.ts:215).
-    - Server `lineProcessing.ts` in [`TypeScript.lineProcessing.processLinesForCurrentPlayer`](src/server/game/rules/lineProcessing.ts:30).
+    - [`TypeScript.ClientSandboxEngine.getValidLineProcessingMovesForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1492), which now calls the shared `enumerateProcessLineMoves()` / `enumerateChooseLineRewardMoves()` helpers and `findLinesForPlayer()` directly.
+    - [`TypeScript.ClientSandboxEngine.processLinesForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:1515), which applies `process_line` / `choose_line_reward` Moves via `applyProcessLineDecision()` / `applyChooseLineRewardDecision()` and then enforces sandbox-specific automatic cap elimination and history recording policy.
+  - Legacy non-move-driven helper (historical only; module now removed):
+    - Former server helper `lineProcessing.ts` exposed [`TypeScript.lineProcessing.processLinesForCurrentPlayer`], but its behaviour has since been consolidated into shared `lineDecisionHelpers` + backend `GameEngine`/`RuleEngine` flows. The file `src/server/game/rules/lineProcessing.ts` no longer exists in the current tree.
 - **Supporting / tests**
   - Line reward and option-1/option-2 semantics in [`tests/unit/lineDecisionHelpers.shared.test.ts`](tests/unit/lineDecisionHelpers.shared.test.ts).
   - AI and WebSocket integration tests for line-reward choices in:
@@ -373,10 +389,10 @@ Status legend:
   - Shared gating helper [`TypeScript.territoryProcessing.canProcessTerritoryRegion`](src/shared/engine/territoryProcessing.ts:99), used by both TS backend and sandbox to enforce the hypothetical-outside-stack requirement.
   - Backend gating in:
     - [`TypeScript.RuleEngine.canProcessDisconnectedRegionForRules`](src/server/game/RuleEngine.ts:1).
-    - Legacy server territory processor [`TypeScript.territoryProcessing.processDisconnectedRegionsForCurrentPlayer`](src/server/game/rules/territoryProcessing.ts:41).
+    - Legacy server territory processor (historical only; module now removed). Earlier revisions exposed [`TypeScript.territoryProcessing.processDisconnectedRegionsForCurrentPlayer`], but that behaviour has been consolidated into shared `territoryProcessing` + backend `GameEngine`/`RuleEngine` flows. The file `src/server/game/rules/territoryProcessing.ts` no longer exists in the current tree.
   - Sandbox gating in:
     - [`TypeScript.ClientSandboxEngine.canProcessDisconnectedRegion`](src/client/sandbox/ClientSandboxEngine.ts:1315).
-    - [`TypeScript.sandboxTerritoryEngine.getValidTerritoryProcessingMoves`](src/client/sandbox/sandboxTerritoryEngine.ts:98).
+    - [`TypeScript.ClientSandboxEngine.getValidTerritoryProcessingMovesForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:2156), which filters shared `enumerateProcessTerritoryRegionMoves()` by the same prerequisite.
 - **Supporting / tests**
   - Territory decision helper tests in [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts).
   - FAQ Q23 scenarios in [`tests/scenarios/FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts) and matrix tests driving explicit self-elimination decisions.
@@ -389,8 +405,8 @@ Status legend:
     - RuleEngine decision move generation for `process_territory_region` and `eliminate_rings_from_stack` (territory context) in [`TypeScript.RuleEngine.getValidMoves`](src/server/game/RuleEngine.ts:839).
     - Legacy automatic processor [`TypeScript.territoryProcessing.processDisconnectedRegionsForCurrentPlayer`](src/server/game/rules/territoryProcessing.ts:41), now partly replaced by move-driven phases in `GameEngine`.
   - Sandbox integration:
-    - Region discovery and processing in [`TypeScript.sandboxTerritoryEngine.processDisconnectedRegionsForCurrentPlayerEngine`](src/client/sandbox/sandboxTerritoryEngine.ts:151).
-    - Canonical move application in [`TypeScript.sandboxTerritoryEngine.applyTerritoryDecisionMove`](src/client/sandbox/sandboxTerritoryEngine.ts:132) and in [`TypeScript.ClientSandboxEngine.applyCanonicalMoveInternal`](src/client/sandbox/ClientSandboxEngine.ts:1746) for `process_territory_region` and `eliminate_rings_from_stack`.
+    - Region discovery and automatic processing in [`TypeScript.ClientSandboxEngine.processDisconnectedRegionsForCurrentPlayer`](src/client/sandbox/ClientSandboxEngine.ts:2057), which now drives `process_territory_region` and in-loop self-elimination via shared `applyProcessTerritoryRegionDecision()` and `applyEliminateRingsFromStackDecision()`.
+    - Canonical move application in [`TypeScript.ClientSandboxEngine.applyCanonicalMoveInternal`](src/client/sandbox/ClientSandboxEngine.ts:1746) for `process_territory_region` and `eliminate_rings_from_stack`.
     - Flags `_pendingTerritorySelfElimination` and `_pendingLineRewardElimination` used to mirror backend phase behaviour in sandbox parity traces.
 - **Supporting / tests**
   - Territory region and self-elimination tests under [`tests/unit/territoryDecisionHelpers.shared.test.ts`](tests/unit/territoryDecisionHelpers.shared.test.ts).
@@ -400,6 +416,8 @@ Status legend:
 ### 3.8 Victory, last-player-standing, stalemate, and S‑invariant (R170–R173, R190–R191)
 
 **R170–R172 Elimination and territory victories and last-player-standing (HC)**
+
+(Explicitly covering R170 ring-elimination victory, R171 territory-control victory, and R172 last-player-standing.)
 
 - **Primary implementation**
   - Victory evaluation in [`TypeScript.victoryLogic.evaluateVictory`](src/shared/engine/victoryLogic.ts:45), which:
@@ -474,7 +492,7 @@ This section lists the major rules-related components and the canonical rules th
   - **Notes:** Encodes the canonical graduated reward options; hosts that bypass these helpers risk drifting from RR‑CANON.
 
 - [`TypeScript.territoryDetection`](src/shared/engine/territoryDetection.ts:36)
-  - **Rules:** R040–R042, R140–R142 (region discovery, physical disconnection, representation).
+  - **Rules:** R040–R041, R140–R142 (region discovery, physical disconnection, representation, explicitly including R141 physical disconnection criterion).
   - **Notes:** Old bespoke territory search code in sandbox and server remains for reference but is explicitly marked deprecated in favour of this module.
 
 - [`TypeScript.territoryProcessing`](src/shared/engine/territoryProcessing.ts:1)
@@ -531,14 +549,14 @@ This section lists the major rules-related components and the canonical rules th
     - Placement and no‑dead‑placement: R080–R082.
     - Movement, capture, and chain capture: R090–R092, R101–R103.
     - Line and territory decision phases including explicit `eliminate_rings_from_stack`: R120–R122, R140–R145.
-    - Turn and forced elimination via sandbox turn engine: R070–R072, R100.
+    - Turn and forced elimination via shared `turnLogic.advanceTurnAndPhase` plus ClientSandboxEngine turn helpers (start-of-turn/forced-elimination glue): R070–R072, R100.
     - Victory and S‑invariant tracking: R170–R173, R190–R191.
   - **Implementation-without-canonical-rule:**
     - `traceMode`, `_debugCheckpointHook`, and history-normalisation details are instrumentation for parity and testing rather than rules of play.
 
-- Sandbox helper modules (`sandboxMovement.ts`, `sandboxMovementEngine.ts`, `sandboxCaptures.ts`, `sandboxLines.ts`, `sandboxLinesEngine.ts`, `sandboxTerritory.ts`, `sandboxTerritoryEngine.ts`, `sandboxTurnEngine.ts`, `sandboxVictory.ts`, `sandboxElimination.ts`)
-  - **Rules:** These modules collectively re-express R090–R092, R101–R103, R120–R122, R140–R145, R070–R072, R170–R173 and R191 in pure, often functional form for browser-safe clients.
-  - **Notes:** Where they diverged historically from backend behaviour (e.g., marker handling on capture landing, collapsed-only region detection), recent changes have intentionally realigned them to shared helpers and RR‑CANON.
+- Sandbox helper modules (`sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxLines.ts`, `sandboxTerritory.ts`, `sandboxVictory.ts`, `sandboxElimination.ts`)
+  - **Rules:** These modules collectively re-express R090–R092, R101–R103, R120–R122, R140–R145, R170–R173 and R191 in pure, often functional form for browser-safe clients. Turn/phase sequencing and forced elimination (R070–R072, R100) are now canonical in shared `turnLogic` + host delegates rather than in a separate sandbox turn engine. `sandboxTurnEngine.ts`, `sandboxLinesEngine.ts`, and `sandboxTerritoryEngine.ts` have been removed; their responsibilities now live in shared turn/line/territory helpers and in `ClientSandboxEngine` orchestration.
+  - **Notes:** Where they diverged historically from backend behaviour (e.g., marker handling on capture landing, collapsed-only region detection), recent changes have intentionally realigned them to shared helpers and RR‑CANON, with remaining legacy surfaces marked tests/tools-only in `LEGACY_CODE_ELIMINATION_PLAN.md`.
 
 - AI and training env (`ai-service/app/training/env.py`, `generate_data.py`, `generate_territory_dataset.py`)
   - **Rules:** These components assume the correctness of the TS/Python engines and use them to generate trajectories and labels. They depend implicitly on all clusters but do not define new rules.
