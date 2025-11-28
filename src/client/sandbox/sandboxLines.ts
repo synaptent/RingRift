@@ -1,3 +1,19 @@
+/**
+ * Sandbox line-detection helpers.
+ *
+ * This module is a thin adapter between the client-local sandbox engine
+ * (ClientSandboxEngine) and the canonical shared line-detection helpers.
+ * Line geometry and victory semantics live in the shared engine; sandbox
+ * code should not re-introduce bespoke line logic here.
+ *
+ * - Geometry and detection: src/shared/engine/lineDetection.ts
+ * - Public adapter: findAllLinesOnBoard -> findAllLinesShared(board)
+ *
+ * Do NOT add new line-detection semantics in this file. Extend the shared
+ * helpers instead so backend, sandbox, and rules-layer tests remain aligned.
+ *
+ * @module client/sandbox/sandboxLines
+ */
 import type { BoardState, BoardType, LineInfo, Position } from '../../shared/engine';
 import { positionToString, findAllLines as findAllLinesShared } from '../../shared/engine';
 

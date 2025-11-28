@@ -548,58 +548,58 @@ This section enumerates the canonical modules and scripts for heuristic-weight t
 
 ### 11.1 Heuristic definitions
 
-- [`heuristic_weights.py`](ai-service/app/ai/heuristic_weights.py:1)
-  - Exposes the canonical heuristic weight schema via [`HEURISTIC_WEIGHT_KEYS`](ai-service/app/ai/heuristic_weights.py:1) and the baseline profile [`BASE_V1_BALANCED_WEIGHTS`](ai-service/app/ai/heuristic_weights.py:1), together with the registered `heuristic_v1_*` profiles.
-  - All CMA-ES, GA, axis-aligned, and diagnostic scripts should treat candidate heuristics as dicts over [`HEURISTIC_WEIGHT_KEYS`](ai-service/app/ai/heuristic_weights.py:1), typically initialized from [`BASE_V1_BALANCED_WEIGHTS`](ai-service/app/ai/heuristic_weights.py:1) before applying per-experiment perturbations.
+- [`heuristic_weights.py`](../ai-service/app/ai/heuristic_weights.py)
+  - Exposes the canonical heuristic weight schema via [`HEURISTIC_WEIGHT_KEYS`](../ai-service/app/ai/heuristic_weights.py) and the baseline profile [`BASE_V1_BALANCED_WEIGHTS`](../ai-service/app/ai/heuristic_weights.py), together with the registered `heuristic_v1_*` profiles.
+  - All CMA-ES, GA, axis-aligned, and diagnostic scripts should treat candidate heuristics as dicts over [`HEURISTIC_WEIGHT_KEYS`](../ai-service/app/ai/heuristic_weights.py), typically initialized from [`BASE_V1_BALANCED_WEIGHTS`](../ai-service/app/ai/heuristic_weights.py) before applying per-experiment perturbations.
 
 ### 11.2 CMA-ES training harness
 
-- [`run_cmaes_optimization.py`](ai-service/scripts/run_cmaes_optimization.py:1)
+- [`run_cmaes_optimization.py`](../ai-service/scripts/run_cmaes_optimization.py)
   - Provides the core heuristic optimization harness:
-    - [`create_heuristic_ai_with_weights()`](ai-service/scripts/run_cmaes_optimization.py:1) constructs heuristic-playing AI instances from a weight dict.
-    - [`play_single_game_from_state()`](ai-service/scripts/run_cmaes_optimization.py:1) and [`play_single_game()`](ai-service/scripts/run_cmaes_optimization.py:1) implement deterministic self-play game loops.
-    - [`evaluate_fitness()`](ai-service/scripts/run_cmaes_optimization.py:1) defines single-board fitness (e.g., win rate vs baseline).
-    - [`evaluate_fitness_over_boards()`](ai-service/scripts/run_cmaes_optimization.py:1) wraps multi-board evaluation.
-    - [`CMAESConfig`](ai-service/scripts/run_cmaes_optimization.py:1) and the main CMA-ES loop drive the optimization run.
-  - In the multi-board, multi-start regime, CMA-ES runs should evaluate each candidate via [`evaluate_fitness_over_boards()`](ai-service/scripts/run_cmaes_optimization.py:1) with an explicit board set (e.g. `["square8", "square19", "hex_d6"]`) and `eval_mode="multi-start"`, using state pools loaded through [`eval_pools.py`](ai-service/app/training/eval_pools.py:1) for reproducible fixed-start evaluation.
+    - [`create_heuristic_ai_with_weights()`](../ai-service/scripts/run_cmaes_optimization.py) constructs heuristic-playing AI instances from a weight dict.
+    - [`play_single_game_from_state()`](../ai-service/scripts/run_cmaes_optimization.py) and [`play_single_game()`](../ai-service/scripts/run_cmaes_optimization.py) implement deterministic self-play game loops.
+    - [`evaluate_fitness()`](../ai-service/scripts/run_cmaes_optimization.py) defines single-board fitness (e.g., win rate vs baseline).
+    - [`evaluate_fitness_over_boards()`](../ai-service/scripts/run_cmaes_optimization.py) wraps multi-board evaluation.
+    - [`CMAESConfig`](../ai-service/scripts/run_cmaes_optimization.py) and the main CMA-ES loop drive the optimization run.
+  - In the multi-board, multi-start regime, CMA-ES runs should evaluate each candidate via [`evaluate_fitness_over_boards()`](../ai-service/scripts/run_cmaes_optimization.py) with an explicit board set (e.g. `["square8", "square19", "hex_d6"]`) and `eval_mode="multi-start"`, using state pools loaded through [`eval_pools.py`](../ai-service/app/training/eval_pools.py) for reproducible fixed-start evaluation.
 
-- [`run_heuristic_experiment.py`](ai-service/scripts/run_heuristic_experiment.py:1)
-  - User-facing CLI wrapper for CMA-ES heuristic runs; constructs a [`CMAESConfig`](ai-service/scripts/run_cmaes_optimization.py:1), resolves baseline profiles from [`heuristic_weights.py`](ai-service/app/ai/heuristic_weights.py:1), and delegates to the optimization loop in [`run_cmaes_optimization.py`](ai-service/scripts/run_cmaes_optimization.py:1).
+- [`run_heuristic_experiment.py`](../ai-service/scripts/run_heuristic_experiment.py)
+  - User-facing CLI wrapper for CMA-ES heuristic runs; constructs a [`CMAESConfig`](../ai-service/scripts/run_cmaes_optimization.py), resolves baseline profiles from [`heuristic_weights.py`](../ai-service/app/ai/heuristic_weights.py), and delegates to the optimization loop in [`run_cmaes_optimization.py`](../ai-service/scripts/run_cmaes_optimization.py).
   - Treat this script as the canonical entry point for launching CMA-ES heuristic campaigns (including multi-board/multi-start runs) from the command line or higher-level orchestrators.
 
 ### 11.3 Genetic algorithm (GA) harness
 
-- [`run_genetic_heuristic_search.py`](ai-service/scripts/run_genetic_heuristic_search.py:1)
+- [`run_genetic_heuristic_search.py`](../ai-service/scripts/run_genetic_heuristic_search.py)
   - Implements a GA over heuristic weight profiles:
-    - [`Individual`](ai-service/scripts/run_genetic_heuristic_search.py:1) dataclass encapsulates `weights` and `fitness`.
-    - [`_evaluate_population()`](ai-service/scripts/run_genetic_heuristic_search.py:1) applies [`evaluate_fitness()`](ai-service/scripts/run_cmaes_optimization.py:1) / [`evaluate_fitness_over_boards()`](ai-service/scripts/run_cmaes_optimization.py:1) to a population of candidates.
-    - [`main()`](ai-service/scripts/run_genetic_heuristic_search.py:1) exposes a CLI for configuring generations, population size, elite count, mutation sigma, eval mode, eval boards, and related GA hyperparameters.
-  - GA runs should route all fitness computation through [`_evaluate_population()`](ai-service/scripts/run_genetic_heuristic_search.py:1) so that evaluation is shared with CMA-ES; for the multi-board, multi-start regime this means using [`evaluate_fitness_over_boards()`](ai-service/scripts/run_cmaes_optimization.py:1) with `eval_mode="multi-start"` and a configured state pool from [`eval_pools.py`](ai-service/app/training/eval_pools.py:1).
+    - [`Individual`](../ai-service/scripts/run_genetic_heuristic_search.py) dataclass encapsulates `weights` and `fitness`.
+    - [`_evaluate_population()`](../ai-service/scripts/run_genetic_heuristic_search.py) applies [`evaluate_fitness()`](../ai-service/scripts/run_cmaes_optimization.py) / [`evaluate_fitness_over_boards()`](../ai-service/scripts/run_cmaes_optimization.py) to a population of candidates.
+    - [`main()`](../ai-service/scripts/run_genetic_heuristic_search.py) exposes a CLI for configuring generations, population size, elite count, mutation sigma, eval mode, eval boards, and related GA hyperparameters.
+  - GA runs should route all fitness computation through [`_evaluate_population()`](../ai-service/scripts/run_genetic_heuristic_search.py) so that evaluation is shared with CMA-ES; for the multi-board, multi-start regime this means using [`evaluate_fitness_over_boards()`](../ai-service/scripts/run_cmaes_optimization.py) with `eval_mode="multi-start"` and a configured state pool from [`eval_pools.py`](../ai-service/app/training/eval_pools.py).
 
 ### 11.4 Axis-aligned diagnostic tools
 
-- [`generate_axis_aligned_profiles.py`](ai-service/scripts/generate_axis_aligned_profiles.py:1)
-  - Generates per-feature axis-aligned profiles `{key}_pos` and `{key}_neg` under `logs/axis_aligned/profiles/`, starting from [`BASE_V1_BALANCED_WEIGHTS`](ai-service/app/ai/heuristic_weights.py:1) and perturbing a single weight at a time.
+- [`generate_axis_aligned_profiles.py`](../ai-service/scripts/generate_axis_aligned_profiles.py)
+  - Generates per-feature axis-aligned profiles `{key}_pos` and `{key}_neg` under `logs/axis_aligned/profiles/`, starting from [`BASE_V1_BALANCED_WEIGHTS`](../ai-service/app/ai/heuristic_weights.py) and perturbing a single weight at a time.
   - Use this script to create a standardized library of axis-aligned heuristic profiles that can be fed into tournaments or evaluation harnesses to probe sensitivity of the heuristic to each feature across different boards.
 
-- [`run_axis_aligned_tournament.py`](ai-service/scripts/run_axis_aligned_tournament.py:1)
+- [`run_axis_aligned_tournament.py`](../ai-service/scripts/run_axis_aligned_tournament.py)
   - Runs round-robin tournaments among the generated axis-aligned profiles (currently at least for the Square8 configuration), reporting head-to-head performance.
   - For multi-board analysis, this harness should be configured or extended to schedule tournaments on each target board while reusing the same `{key}_pos` / `{key}_neg` profiles, so axis-aligned diagnostics remain consistent with CMA-ES and GA evaluation settings.
 
 ### 11.5 State pools and multi-start evaluation
 
-- [`run_self_play_soak.py`](ai-service/scripts/run_self_play_soak.py:1)
+- [`run_self_play_soak.py`](../ai-service/scripts/run_self_play_soak.py)
   - Self-play soak generator that produces JSONL state pools (currently Square8) under `data/eval_pools/...` by running long self-play sessions with configured AIs and difficulty bands.
   - Use this script to build or refresh fixed evaluation pools; these JSONL pools are the canonical source of multi-start positions for heuristic training and diagnostics and should be treated as read-only inputs for CMA-ES, GA, and policy-equivalence checks.
 
-- [`eval_pools.py`](ai-service/app/training/eval_pools.py:1)
-  - Provides [`load_state_pool`](ai-service/app/training/eval_pools.py:1) and related helpers for loading JSONL state pools into sequences of game states suitable for evaluation.
-  - All `eval_mode="multi-start"` workflows (for both [`evaluate_fitness()`](ai-service/scripts/run_cmaes_optimization.py:1) and [`evaluate_fitness_over_boards()`](ai-service/scripts/run_cmaes_optimization.py:1)) should obtain their state pools exclusively through this module, ensuring that pool formats, filtering, and sampling strategies are centralized.
-- [`env.py`](ai-service/app/training/env.py:1)
-  - Defines [`DEFAULT_TRAINING_EVAL_CONFIG`](ai-service/app/training/env.py:1) and [`build_training_eval_kwargs()`](ai-service/app/training/env.py:1), the canonical default board set and helper for constructing multi-board, multi-start heuristic evaluation kwargs that CMA-ES / GA scripts should import rather than re-encoding board lists and `eval_mode` by hand.
+- [`eval_pools.py`](../ai-service/app/training/eval_pools.py)
+  - Provides [`load_state_pool`](../ai-service/app/training/eval_pools.py) and related helpers for loading JSONL state pools into sequences of game states suitable for evaluation.
+  - All `eval_mode="multi-start"` workflows (for both [`evaluate_fitness()`](../ai-service/scripts/run_cmaes_optimization.py) and [`evaluate_fitness_over_boards()`](../ai-service/scripts/run_cmaes_optimization.py)) should obtain their state pools exclusively through this module, ensuring that pool formats, filtering, and sampling strategies are centralized.
+- [`env.py`](../ai-service/app/training/env.py)
+  - Defines [`DEFAULT_TRAINING_EVAL_CONFIG`](../ai-service/app/training/env.py) and [`build_training_eval_kwargs()`](../ai-service/app/training/env.py), the canonical default board set and helper for constructing multi-board, multi-start heuristic evaluation kwargs that CMA-ES / GA scripts should import rather than re-encoding board lists and `eval_mode` by hand.
 
 ### 11.6 Policy equivalence diagnostics
 
-- [`diagnose_policy_equivalence.py`](ai-service/scripts/diagnose_policy_equivalence.py:1)
+- [`diagnose_policy_equivalence.py`](../ai-service/scripts/diagnose_policy_equivalence.py)
   - Compares the policies induced by candidate weight sets against a baseline over a fixed pool of game states, computing metrics such as `difference_rate` and `weight_l2`.
-  - Use this script to quantify how far GA/CMA-ES or axis-aligned candidates deviate from [`BASE_V1_BALANCED_WEIGHTS`](ai-service/app/ai/heuristic_weights.py:1) at the decision level, ideally reusing the same multi-start state pools loaded via [`eval_pools.py`](ai-service/app/training/eval_pools.py:1) that are used for fitness evaluation, so that strength and policy-difference measurements are aligned.
+  - Use this script to quantify how far GA/CMA-ES or axis-aligned candidates deviate from [`BASE_V1_BALANCED_WEIGHTS`](../ai-service/app/ai/heuristic_weights.py) at the decision level, ideally reusing the same multi-start state pools loaded via [`eval_pools.py`](../ai-service/app/training/eval_pools.py) that are used for fitness evaluation, so that strength and policy-difference measurements are aligned.

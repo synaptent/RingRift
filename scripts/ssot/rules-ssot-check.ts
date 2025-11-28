@@ -169,6 +169,65 @@ function checkDiagnosticsOnlyClientImports(projectRoot: string): string[] {
   return problems;
 }
 
+/**
+ * Guardrail: sandbox-only helper modules must not be imported from
+ * non-sandbox client hosts or any server code. These helpers exist to
+ * support the /sandbox route, diagnostics, and Jest parity tests; they
+ * are not general-purpose UI or backend utilities.
+ *
+ * Allowed import sites:
+ * - src/client/sandbox/** (sandbox engine + helpers)
+ * - tests/** (Jest suites)
+ * - archive/** and docs/scripts that consume sandbox helpers for diagnostics
+ *
+ * Under src/** we enforce that only the sandbox subtree may import these
+ * helpers; other client/server modules must rely on shared engine
+ * aggregates instead.
+ */
+function checkSandboxHelperImportBoundaries(projectRoot: string): string[] {
+  const problems: string[] = [];
+  const srcRoot = path.join(projectRoot, 'src');
+  if (!fs.existsSync(srcRoot)) {
+    return problems;
+  }
+
+  const sandboxRoot = path.join(srcRoot, 'client', 'sandbox');
+  const helpers = [
+    'sandboxLines',
+    'sandboxTerritory',
+    'sandboxVictory',
+    'sandboxGameEnd',
+    'sandboxElimination',
+    'sandboxCaptureSearch',
+  ];
+
+  const candidates = walkFiles(srcRoot, ['.ts', '.tsx']);
+
+  for (const filePath of candidates) {
+    // Allow imports from the sandbox subtree itself.
+    if (filePath.startsWith(sandboxRoot)) continue;
+
+    const content = readFileSafe(filePath);
+    const rel = path.relative(projectRoot, filePath);
+
+    for (const helper of helpers) {
+      if (
+        content.includes(`from './${helper}'`) ||
+        content.includes(`from "../sandbox/${helper}"`) ||
+        content.includes(`from '../sandbox/${helper}'`) ||
+        content.includes(`from "../../client/sandbox/${helper}"`) ||
+        content.includes(`from '../../client/sandbox/${helper}'`)
+      ) {
+        problems.push(
+          `Sandbox-only helper '${helper}' must not be imported from ${rel}. It is reserved for src/client/sandbox hosts and tests; other modules should depend on shared engine aggregates instead.`
+        );
+      }
+    }
+  }
+
+  return problems;
+}
+
 export async function runRulesSsotCheck(): Promise<CheckResult> {
   try {
     const projectRoot = path.resolve(__dirname, '..', '..');
@@ -220,7 +279,8 @@ export async function runRulesSsotCheck(): Promise<CheckResult> {
     // sites (GameEngine and test-parity-cli).
     const legacyImportProblems = checkLegacyRuleEngineImports(projectRoot);
     const diagnosticsImportProblems = checkDiagnosticsOnlyClientImports(projectRoot);
-    problems.push(...legacyImportProblems, ...diagnosticsImportProblems);
+    const sandboxImportProblems = checkSandboxHelperImportBoundaries(projectRoot);
+    problems.push(...legacyImportProblems, ...diagnosticsImportProblems, ...sandboxImportProblems);
 
     if (problems.length === 0) {
       return {

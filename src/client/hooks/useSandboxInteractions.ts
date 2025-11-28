@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Position, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
-import { LocalSandboxState, handleLocalSandboxCellClick } from '../sandbox/localSandboxController';
 import { useSandbox } from '../contexts/SandboxContext';
 
 interface UseSandboxInteractionsOptions {
-  localSandbox: LocalSandboxState | null;
-  setLocalSandbox: React.Dispatch<React.SetStateAction<LocalSandboxState | null>>;
   selected: Position | undefined;
   setSelected: React.Dispatch<React.SetStateAction<Position | undefined>>;
   validTargets: Position[];
@@ -17,8 +14,6 @@ interface UseSandboxInteractionsOptions {
 }
 
 export function useSandboxInteractions({
-  localSandbox,
-  setLocalSandbox,
   selected,
   setSelected,
   validTargets,
@@ -211,13 +206,6 @@ export function useSandboxInteractions({
       // select a different stack by first clearing and then re-clicking.
       return;
     }
-
-    if (!localSandbox) return;
-
-    const next = handleLocalSandboxCellClick(localSandbox, pos);
-    setLocalSandbox(next);
-    setSelected(pos);
-    setValidTargets([]); // movement/capture targets will be added in a later phase
   };
 
   /**

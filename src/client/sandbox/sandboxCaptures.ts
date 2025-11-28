@@ -81,6 +81,8 @@ export interface CaptureApplyAdapters {
 }
 
 /**
+ * DIAGNOSTICS-ONLY (SANDBOX ANALYSIS TOOL)
+ *
  * Apply a single overtaking capture segment, including marker processing and
  * top-ring-only overtaking semantics, mutating the provided board.
  *

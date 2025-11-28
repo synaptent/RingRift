@@ -5,7 +5,6 @@ import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal } from '../components/VictoryModal';
 import { GameHUD } from '../components/GameHUD';
 import { GameEventLog } from '../components/GameEventLog';
-import { LocalSandboxState } from '../sandbox/localSandboxController';
 import { SandboxInteractionHandler } from '../sandbox/ClientSandboxEngine';
 import {
   BoardState,
@@ -283,14 +282,11 @@ export default function GamePage() {
   const lastChoiceIdRef = useRef<string | null>(null);
   const lastConnectionStatusRef = useRef<ConnectionStatus | null>(null);
 
-  // Local-only sandbox state (legacy; retained for now as a fallback)
-  const [localSandbox, setLocalSandbox] = useState<LocalSandboxState | null>(null);
-
   const sandboxChoiceResolverRef = useRef<
     ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
   >(null);
 
-  // UI selection state (used in both modes)
+  // UI selection state (used in both backend and sandbox modes)
   const [selected, setSelected] = useState<Position | undefined>();
   const [validTargets, setValidTargets] = useState<Position[]>([]);
   const {
@@ -299,8 +295,6 @@ export default function GamePage() {
     handleCellContextMenu: handleSandboxCellContextMenu,
     maybeRunSandboxAiIfNeeded,
   } = useSandboxInteractions({
-    localSandbox,
-    setLocalSandbox,
     selected,
     setSelected,
     validTargets,
@@ -503,7 +497,6 @@ export default function GamePage() {
       interactionHandler,
     });
 
-    setLocalSandbox(null);
     setSelected(undefined);
     setValidTargets([]);
     setSandboxPendingChoice(null);
@@ -1254,7 +1247,7 @@ export default function GamePage() {
   const selectedBoardPreset =
     BOARD_PRESETS.find((preset) => preset.value === config.boardType) ?? BOARD_PRESETS[0];
 
-  if (!isConfigured || (!localSandbox && !sandboxEngine)) {
+  if (!isConfigured || !sandboxEngine) {
     return (
       <div className="container mx-auto px-4 py-8 space-y-6">
         <header>
@@ -1431,33 +1424,7 @@ export default function GamePage() {
   }
 
   // Game view once configured (local sandbox)
-  const sandboxEngine = sandboxEngine;
-  const sandboxGameState: GameState | null = sandboxEngine
-    ? sandboxEngine.getGameState()
-    : localSandbox
-      ? ({
-          // Minimal projection when falling back to legacy LocalSandboxState
-          id: 'sandbox-legacy',
-          boardType: config.boardType,
-          board: localSandbox.board,
-          players: localSandbox.players,
-          currentPhase: localSandbox.currentPhase,
-          currentPlayer: localSandbox.currentPlayer,
-          moveHistory: [],
-          history: [],
-          timeControl: { type: 'rapid', initialTime: 600, increment: 0 },
-          spectators: [],
-          gameStatus: 'active',
-          createdAt: new Date(),
-          lastMoveAt: new Date(),
-          isRated: false,
-          maxPlayers: config.numPlayers,
-          totalRingsInPlay: 0,
-          totalRingsEliminated: 0,
-          victoryThreshold: 0,
-          territoryVictoryThreshold: 0,
-        } as GameState)
-      : null;
+  const sandboxGameState: GameState | null = sandboxEngine ? sandboxEngine.getGameState() : null;
 
   const sandboxBoardState: BoardState | null = sandboxGameState?.board ?? null;
   const sandboxVictoryResult = sandboxEngine ? sandboxEngine.getVictoryResult() : null;
@@ -1588,7 +1555,6 @@ export default function GamePage() {
           }}
           onReturnToLobby={() => {
             resetSandboxEngine();
-            setLocalSandbox(null);
             setSelected(undefined);
             setValidTargets([]);
             setBackendSandboxError(null);
@@ -1630,7 +1596,6 @@ export default function GamePage() {
                     type="button"
                     onClick={() => {
                       resetSandboxEngine();
-                      setLocalSandbox(null);
                       setSelected(undefined);
                       setValidTargets([]);
                       setBackendSandboxError(null);

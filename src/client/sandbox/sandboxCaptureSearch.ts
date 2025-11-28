@@ -1,3 +1,15 @@
+/**
+ * DIAGNOSTICS-ONLY (SANDBOX CAPTURE CHAIN SEARCH)
+ *
+ * This module provides analysis/search helpers for exploring overtaking capture
+ * chains on cloned BoardState snapshots. It is not part of the canonical rules
+ * semantics and must never be wired into production legality or move-generation
+ * surfaces (e.g. ClientSandboxEngine, SandboxContext, GamePage).
+ *
+ * All rules-level capture enumeration and application must go through the shared
+ * CaptureAggregate and orchestrator. This file is reserved for tests, CLI tools,
+ * and deep diagnostics only. See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C).
+ */
 import type { BoardState, BoardType, Position, RingStack } from '../../shared/engine';
 import { positionToString } from '../../shared/engine';
 import {

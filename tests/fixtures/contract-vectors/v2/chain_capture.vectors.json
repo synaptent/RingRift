@@ -1,0 +1,265 @@
+{
+  "version": "v2",
+  "generated": "2025-11-28T00:00:00.000Z",
+  "count": 3,
+  "categories": ["chain_capture"],
+  "description": "Orchestrator-focused chain capture vectors exercising multi-segment captures",
+  "vectors": [
+    {
+      "id": "chain_capture.depth2.segment1.square19",
+      "version": "v2",
+      "category": "chain_capture",
+      "description": "First segment of a two-step vertical chain capture on square19; continuation required",
+      "tags": ["chain_capture", "orchestrator", "parity"],
+      "source": "manual",
+      "createdAt": "2025-11-28T00:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-chain-capture-001",
+          "board": {
+            "type": "square19",
+            "size": 19,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1, 1],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 1
+              },
+              "7,3": {
+                "position": { "x": 7, "y": 3 },
+                "rings": [2, 2],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 1,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-chain-001a",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "captureTarget": { "x": 7, "y": 3 },
+          "to": { "x": 11, "y": 3 },
+          "timestamp": "2025-11-28T00:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "expectedOutput": {
+        "status": "awaiting_decision",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "stackCount": 2,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "chain_capture.depth2.segment2.square19",
+      "version": "v2",
+      "category": "chain_capture",
+      "description": "Second segment of a two-step vertical chain capture on square19; chain terminates and turn advances",
+      "tags": ["chain_capture", "orchestrator", "parity"],
+      "source": "manual",
+      "createdAt": "2025-11-28T00:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-chain-capture-002",
+          "board": {
+            "type": "square19",
+            "size": 19,
+            "stacks": {
+              "11,3": {
+                "position": { "x": 11, "y": 3 },
+                "rings": [1, 1, 2],
+                "stackHeight": 3,
+                "capHeight": 2,
+                "controllingPlayer": 1
+              },
+              "7,3": {
+                "position": { "x": 7, "y": 3 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "player": 1,
+                "type": "regular"
+              }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 2,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-chain-001b",
+          "type": "continue_capture_segment",
+          "player": 1,
+          "from": { "x": 11, "y": 3 },
+          "captureTarget": { "x": 7, "y": 3 },
+          "to": { "x": 3, "y": 3 },
+          "timestamp": "2025-11-28T00:00:01.000Z",
+          "thinkTime": 0,
+          "moveNumber": 2
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 1,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "player1EliminatedRings": 1,
+          "sInvariantDelta": 1
+        }
+      }
+    },
+    {
+      "id": "chain_capture.depth2.segment1.capture_phase.square19",
+      "version": "v2",
+      "category": "chain_capture",
+      "description": "First segment of the same chain capture when starting from capture phase",
+      "tags": ["chain_capture", "orchestrator", "parity"],
+      "source": "manual",
+      "createdAt": "2025-11-28T00:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-chain-capture-003",
+          "board": {
+            "type": "square19",
+            "size": 19,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1, 1],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 1
+              },
+              "7,3": {
+                "position": { "x": 7, "y": 3 },
+                "rings": [2, 2],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 18,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "capture",
+          "turnNumber": 1,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-chain-001c",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "captureTarget": { "x": 7, "y": 3 },
+          "to": { "x": 11, "y": 3 },
+          "timestamp": "2025-11-28T00:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "expectedOutput": {
+        "status": "awaiting_decision",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "capture",
+          "gameStatus": "active",
+          "stackCount": 2,
+          "markerCount": 1,
+          "collapsedCount": 0,
+          "sInvariantDelta": 1
+        }
+      }
+    }
+  ]
+}
