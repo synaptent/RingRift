@@ -349,13 +349,25 @@ class NeuralNetAI(BaseAI):
         self.game_history = {}
         
         # Device detection
-        if torch.backends.mps.is_available():
+        import os
+
+        disable_mps = bool(
+            os.environ.get("RINGRIFT_DISABLE_MPS")
+            or os.environ.get("PYTORCH_MPS_DISABLE")
+        )
+        force_cpu = bool(os.environ.get("RINGRIFT_FORCE_CPU"))
+
+        if (
+            torch.backends.mps.is_available()
+            and not disable_mps
+            and not force_cpu
+        ):
             self.device = torch.device("mps")
-        elif torch.cuda.is_available():
+        elif torch.cuda.is_available() and not force_cpu:
             self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
-            
+
         print(f"NeuralNetAI using device: {self.device}")
         
         # Initialize with default 8x8, but architecture is now adaptive
@@ -1328,13 +1340,21 @@ class ActionEncoderHex:
     (331-cell) region is treated as invalid and returns None.
     """
 
-    def __init__(self, board_size: int = HEX_BOARD_SIZE, policy_size: int = 0) -> None:
+    def __init__(
+        self,
+        board_size: int = HEX_BOARD_SIZE,
+        policy_size: int = 0,
+    ) -> None:
         # Spatial dimension of the hex bounding box (2N+1 for side N).
         self.board_size = board_size
         # Hex-specific action space dimension.
         self.policy_size = policy_size or P_HEX
 
-    def _encode_canonical_xy(self, board: BoardState, pos: Position) -> Optional[tuple[int, int]]:
+    def _encode_canonical_xy(
+        self,
+        board: BoardState,
+        pos: Position,
+    ) -> Optional[tuple[int, int]]:
         """Return (cx, cy) in [0, 21)×[0, 21) or None if off-grid."""
         cx, cy = _to_canonical_xy(board, pos)
         if not (0 <= cx < HEX_BOARD_SIZE and 0 <= cy < HEX_BOARD_SIZE):
