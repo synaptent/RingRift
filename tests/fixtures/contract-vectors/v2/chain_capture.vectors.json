@@ -10,7 +10,7 @@
       "version": "v2",
       "category": "chain_capture",
       "description": "First segment of a two-step vertical chain capture on square19; continuation required",
-      "tags": ["chain_capture", "orchestrator", "parity"],
+      "tags": ["chain_capture", "orchestrator", "parity", "sequence:chain_capture.depth2.square19"],
       "source": "manual",
       "createdAt": "2025-11-28T00:00:00.000Z",
       "input": {
@@ -92,7 +92,7 @@
       "version": "v2",
       "category": "chain_capture",
       "description": "Second segment of a two-step vertical chain capture on square19; chain terminates and turn advances",
-      "tags": ["chain_capture", "orchestrator", "parity"],
+      "tags": ["chain_capture", "orchestrator", "parity", "sequence:chain_capture.depth2.square19"],
       "source": "manual",
       "createdAt": "2025-11-28T00:00:00.000Z",
       "input": {
