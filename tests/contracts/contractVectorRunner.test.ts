@@ -18,7 +18,10 @@ import {
   validateAgainstAssertions,
   type ContractTestVector,
 } from '../../src/shared/engine/contracts';
-import { deserializeGameState } from '../../src/shared/engine/contracts/serialization';
+import {
+  deserializeGameState,
+  serializeGameState,
+} from '../../src/shared/engine/contracts/serialization';
 import { processTurn } from '../../src/shared/engine/orchestration/turnOrchestrator';
 import type { Move } from '../../src/shared/types/game';
 
@@ -51,6 +54,41 @@ function loadAllVectors(): ContractTestVector[] {
   }
 
   return allVectors;
+}
+
+/**
+ * Group vectors by a `sequence:<id>` tag so we can run multi-step
+ * contract sequences end-to-end using the orchestrator.
+ *
+ * This allows us to:
+ * - Verify that the serialized input state for each subsequent step matches
+ *   the actual nextState of the previous step, and
+ * - Reuse the existing single-step assertion helper for each hop.
+ */
+function groupVectorsBySequenceTag(
+  vectors: ContractTestVector[]
+): Map<string, ContractTestVector[]> {
+  const sequences = new Map<string, ContractTestVector[]>();
+
+  for (const vector of vectors) {
+    const sequenceTag = vector.tags.find((t) => t.startsWith('sequence:'));
+    if (!sequenceTag) continue;
+
+    const sequenceId = sequenceTag.slice('sequence:'.length);
+    const existing = sequences.get(sequenceId);
+    if (existing) {
+      existing.push(vector);
+    } else {
+      sequences.set(sequenceId, [vector]);
+    }
+  }
+
+  // Ensure deterministic ordering within each sequence (e.g. segment1, segment2, ...)
+  for (const [, seqVectors] of sequences) {
+    seqVectors.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  return sequences;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -296,6 +334,61 @@ describe('Contract Test Vectors', () => {
       }
     });
   });
+});
+
+describe('Multi-step contract sequences', () => {
+  const allVectors = loadAllVectors();
+  const sequences = groupVectorsBySequenceTag(allVectors);
+  const sequenceEntries = Array.from(sequences.entries());
+
+  if (sequenceEntries.length === 0) {
+    it('has no multi-step contract sequences defined', () => {
+      expect(sequenceEntries.length).toBe(0);
+    });
+    return;
+  }
+
+  for (const [sequenceId, seqVectors] of sequenceEntries) {
+    it(`sequence ${sequenceId} is internally consistent across steps`, () => {
+      expect(seqVectors.length).toBeGreaterThan(1);
+
+      // Initialise from the first step's serialized state
+      let currentState = deserializeGameState(seqVectors[0].input.state);
+
+      seqVectors.forEach((vector, index) => {
+        // For subsequent steps, ensure the stored input state matches the
+        // previous step's nextState (round-tripped through serialization).
+        if (index > 0) {
+          const serialized = serializeGameState(currentState);
+          expect(serialized).toEqual(vector.input.state);
+        }
+
+        const move = convertVectorMove(vector.input.move);
+        const result = processTurn(currentState, move);
+
+        const validation = validateAgainstAssertions(
+          result.nextState,
+          vector.expectedOutput.assertions
+        );
+
+        if (vector.expectedOutput.status && vector.expectedOutput.status !== result.status) {
+          validation.valid = false;
+          validation.failures.push(
+            `Expected status '${vector.expectedOutput.status}', got '${result.status}'`
+          );
+        }
+
+        if (!validation.valid) {
+          const failures = validation.failures.join('\n');
+          throw new Error(
+            `Multi-step sequence '${sequenceId}', step ${index} (vector ${vector.id}) failed:\n${failures}`
+          );
+        }
+
+        currentState = result.nextState;
+      });
+    });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

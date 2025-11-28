@@ -1,6 +1,6 @@
 # RingRift - Multiplayer Strategy Game
 
-**Doc Status (2025-11-27): Active (project overview & navigation)**
+**Doc Status (2025-11-28): Active (project overview & navigation)**
 
 - High-level project overview, setup, and API surface.
 - Not a rules or lifecycle SSoT. For rules semantics, defer to `RULES_CANONICAL_SPEC.md` plus the shared TypeScript rules engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts + v2 contract vectors). For lifecycle semantics (move/decision/WebSocket), defer to `docs/CANONICAL_ENGINE_API.md` plus shared TS/WebSocket types and schemas.
@@ -13,7 +13,7 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 
 ## 📋 Current Status
 
-**Last Updated:** November 26, 2025
+**Last Updated:** November 28, 2025
 **Verification:** Code-verified assessment (see `CURRENT_STATE_ASSESSMENT.md`)
 **Overall Progress:** Strong foundation with critical gaps; see `CURRENT_STATE_ASSESSMENT.md` for the latest high-level summary.
 

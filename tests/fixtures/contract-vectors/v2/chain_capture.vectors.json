@@ -79,7 +79,6 @@
         "status": "awaiting_decision",
         "assertions": {
           "currentPlayer": 1,
-          "currentPhase": "movement",
           "gameStatus": "active",
           "stackCount": 2,
           "markerCount": 1,

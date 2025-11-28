@@ -287,7 +287,7 @@ jobs:
         run: npm run build
 
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
@@ -324,7 +324,7 @@ jobs:
         run: npx @cyclonedx/cyclonedx-npm --output-format JSON --output-file sbom-node.json
 
       - name: Upload Node SBOM artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom-node
           path: sbom-node.json
@@ -457,7 +457,7 @@ jobs:
           python -m cyclonedx_py environment --output-format json --output-file sbom-python.json
 
       - name: Upload Python SBOM artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom-python
           path: ai-service/sbom-python.json

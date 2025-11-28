@@ -50,6 +50,7 @@ VECTOR_CATEGORIES = [
     "capture",
     "line_detection",
     "territory",
+    "chain_capture",
 ]
 
 

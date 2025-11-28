@@ -535,6 +535,65 @@ This section summarises the plan for use by Track A implementation tasks:
   `applyMoveById` therefore apply moves via the shared orchestrator-only
   backend path in production.
 
+### 7.2 Phase B – Sandbox orchestrator-only status (2025-11-28)
+
+- `/sandbox` and the React host in [`GamePage`](../src/client/pages/GamePage.tsx:1) now
+  drive all canonical local sandbox moves through:
+  - `ClientSandboxEngine.processMoveViaAdapter`
+  - [`SandboxOrchestratorAdapter`](../src/client/sandbox/SandboxOrchestratorAdapter.ts:1)
+  - `processTurnAsync` in the shared orchestrator.
+- The legacy `LocalSandboxState` + `localSandboxController` harness is fully
+  fenced off from production sandbox flows:
+  - `GamePage.tsx` no longer imports `LocalSandboxState` or projects it into a
+    faux `GameState` for the live `/sandbox` view.
+  - [`useSandboxInteractions`](../src/client/hooks/useSandboxInteractions.ts:1) no longer
+    imports or calls `handleLocalSandboxCellClick`; it always uses
+    `ClientSandboxEngine` when a sandbox is configured.
+  - `SandboxContext` continues to construct `ClientSandboxEngine` via
+    `initLocalSandboxEngine`; no code paths re-instantiate the legacy harness
+    for production `/sandbox` usage.
+- The `localSandboxController.ts` module remains in place as a
+  **DIAGNOSTICS-ONLY (legacy)** harness for tests and CLI tooling, and is
+  fenced by `scripts/ssot/rules-ssot-check.ts` so it cannot be imported from
+  `GamePage`, `SandboxContext`, or `ClientSandboxEngine`.
+
+### 7.3 Phase C – Legacy helper shutdown & diagnostics fencing status (2025-11-28)
+
+- **Backend helpers**
+  - Legacy helpers in [`RuleEngine`](../src/server/game/RuleEngine.ts:1)
+    (`processMove`, `processChainReactions`, `processLineFormation`,
+    `processTerritoryDisconnection`) are explicitly documented as
+    **DIAGNOSTICS-ONLY (legacy backend pipeline)** and are not called from:
+    - `GameEngine.makeMove`
+    - `GameSession`
+    - WebSocket handlers under `src/server/websocket/**`.
+  - `GameEngine` uses `RuleEngine` only for validation/enumeration
+    (`validateMove`, `getValidMoves`, `checkGameEnd`); all production move
+    application is driven via shared aggregates and the orchestrator.
+  - No additional backend deletions were required for this pass; legacy helpers
+    remain available for deep diagnostics and archived tests but are fully
+    fenced from production hosts by call-site search and SSOT checks.
+- **Sandbox diagnostics surface**
+  - [`sandboxCaptures.applyCaptureSegmentOnBoard`](../src/client/sandbox/sandboxCaptures.ts:103)
+    now carries a top-level **DIAGNOSTICS-ONLY (SANDBOX ANALYSIS TOOL)** banner.
+    It is only used by:
+    - Capture/chain diagnostics tests (e.g.
+      [`captureSequenceEnumeration.test.ts`](../tests/unit/captureSequenceEnumeration.test.ts:1),
+      cyclic-capture suites).
+    - Diagnostic helpers built on cloned boards; live sandbox capture mutation
+      in `ClientSandboxEngine` delegates exclusively to `CaptureAggregate`.
+  - [`sandboxCaptureSearch`](../src/client/sandbox/sandboxCaptureSearch.ts:1) now has a
+    module header declaring it **DIAGNOSTICS-ONLY (SANDBOX CAPTURE CHAIN SEARCH)**:
+    - It performs DFS over cloned `BoardState`s using shared
+      `enumerateCaptureSegmentsFromBoard` + `applyCaptureSegmentOnBoard`.
+    - It is imported only from tests and diagnostics/CLI code, never from
+      `ClientSandboxEngine`, `SandboxContext`, or `/sandbox` UI components.
+  - `scripts/ssot/rules-ssot-check.ts` includes narrow, string-based guards that
+    fail the SSOT check if `localSandboxController` or `sandboxCaptureSearch`
+    are imported from production hosts (backend game stack, `GamePage`,
+    `SandboxContext`, `ClientSandboxEngine`), preventing accidental reintroduction
+    of legacy rules paths.
+
 Once all phases are complete, **all production and sandbox rules paths will route exclusively through**:
 
 - `processTurnAsync` in the shared orchestrator as the lifecycle SSOT.
