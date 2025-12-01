@@ -50,10 +50,8 @@ describe('ClientSandboxEngine.getValidMoves – chain_capture (legacy sandbox pa
     };
 
     const engine = new ClientSandboxEngine({ config, interactionHandler: handler });
-    // Force legacy path so applyCanonicalMoveInternal exercises the
-    // local capture/chain logic instead of delegating to the
-    // SandboxOrchestratorAdapter.
-    engine.disableOrchestratorAdapter();
+    // Now uses orchestrator-backed engine which delegates to shared capture
+    // aggregate for chain_capture processing.
     return engine;
   }
 

@@ -17,6 +17,7 @@ import {
   enumerateProcessLineMoves,
   enumerateChooseLineRewardMoves,
 } from '../../src/shared/engine/aggregates/LineAggregate';
+import { getEffectiveLineLengthThreshold } from '../../src/shared/engine/rulesConfig';
 
 /**
  * Line-formation scenario tests aligned with rules/FAQ.
@@ -34,7 +35,9 @@ import {
 describe('GameEngine line formation scenarios (square8)', () => {
   const boardType: BoardType = 'square8';
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  // For 2-player games, use the effective threshold (4 for square8 2p) instead of raw config
+  const numPlayers = 2;
+  const requiredLength = getEffectiveLineLengthThreshold(boardType, numPlayers, undefined);
 
   const basePlayers: Player[] = [
     {

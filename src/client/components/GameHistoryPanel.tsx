@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { gameApi, GameHistoryResponse, GameHistoryMove } from '../services/api';
 import { Badge } from './ui/Badge';
+import { formatVictoryReason } from '../adapters/gameViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -263,7 +264,7 @@ export function GameHistoryPanel({
           {history?.result && !loading && !error && (
             <div className="px-4 py-2 border-b border-slate-700/50 bg-slate-900/60 text-xs text-slate-200 flex items-center justify-between">
               <span className="font-semibold">
-                Result: {history.result.reason.replace(/_/g, ' ')}
+                Result: {formatVictoryReason(history.result.reason)}
               </span>
               {history.result.winner !== undefined && history.result.winner !== null && (
                 <span className="text-slate-400">Winner: P{history.result.winner}</span>

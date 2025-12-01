@@ -316,11 +316,22 @@ export const EnvSchema = z.object({
   /** Rules engine mode */
   RINGRIFT_RULES_MODE: RulesModeSchema.optional(),
 
-  /** Enable orchestrator adapter for turn processing (Phase 3 migration - now default) */
+  /**
+   * Orchestrator adapter for turn processing.
+   *
+   * PERMANENTLY ENABLED as of 2025-12-01 (Phase 3 migration complete).
+   * The orchestrator is now the canonical turn processor. Legacy path removed.
+   *
+   * This flag is hardcoded to `true` and no longer reads from environment variables.
+   * The `useOrchestratorAdapter` property on GameEngine/ClientSandboxEngine remains
+   * for internal state management but always evaluates to true.
+   *
+   * @see docs/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md
+   */
   ORCHESTRATOR_ADAPTER_ENABLED: z
-    .string()
-    .default('true')
-    .transform((val) => val === 'true' || val === '1'),
+    .any()
+    .transform((): true => true)
+    .default(true),
 
   /** Enable AI analysis mode (position evaluation streaming) */
   ENABLE_ANALYSIS_MODE: z
@@ -331,9 +342,6 @@ export const EnvSchema = z.object({
   // ===================================================================
   // ORCHESTRATOR ROLLOUT CONFIGURATION
   // ===================================================================
-
-  /** Percentage of sessions to route through orchestrator (0-100) */
-  ORCHESTRATOR_ROLLOUT_PERCENTAGE: z.coerce.number().int().min(0).max(100).default(100),
 
   /** Enable shadow mode - run both engines, compare results */
   ORCHESTRATOR_SHADOW_MODE_ENABLED: z

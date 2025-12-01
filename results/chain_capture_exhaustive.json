@@ -1,0 +1,487 @@
+{
+  "config": {
+    "boardTypes": ["square19", "hexagonal"],
+    "gamesPerBoard": 50,
+    "maxDepth": 20,
+    "maxSequences": 100000,
+    "seed": 42,
+    "verbose": false,
+    "outputPath": "results/chain_capture_exhaustive.json"
+  },
+  "startTime": "2025-12-01T16:21:47.351Z",
+  "endTime": "2025-12-01T16:21:55.737Z",
+  "totalDurationMs": 8386,
+  "boardTypeStats": {
+    "square19": {
+      "boardType": "square19",
+      "totalGames": 50,
+      "totalSequences": 276363,
+      "maxSequencesInSingleGame": 75474,
+      "maxChainLengthOverall": 10,
+      "avgChainLength": 7.2722470084635065,
+      "gamesWithLongChains": 14,
+      "gamesHitMaxSequences": 0,
+      "gamesHitMaxDepth": 0,
+      "chainLengthDistribution": {
+        "1": 17,
+        "2": 510,
+        "3": 1896,
+        "4": 8657,
+        "5": 11598,
+        "6": 43505,
+        "7": 75908,
+        "8": 102055,
+        "9": 20559,
+        "10": 11658
+      },
+      "topResults": [
+        {
+          "boardIndex": 11,
+          "seed": 2146095206,
+          "boardType": "square19",
+          "attackerPos": "17,11",
+          "stackCount": 5,
+          "sequenceCount": 58275,
+          "maxChainLength": 10,
+          "chainLengthDistribution": {
+            "3": 174,
+            "4": 421,
+            "5": 2916,
+            "6": 5673,
+            "7": 14071,
+            "8": 19788,
+            "9": 4600,
+            "10": 10632
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 1486
+        },
+        {
+          "boardIndex": 31,
+          "seed": 2307637706,
+          "boardType": "square19",
+          "attackerPos": "14,4",
+          "stackCount": 5,
+          "sequenceCount": 1050,
+          "maxChainLength": 10,
+          "chainLengthDistribution": {
+            "2": 36,
+            "3": 120,
+            "4": 500,
+            "5": 330,
+            "6": 3,
+            "7": 28,
+            "8": 3,
+            "9": 12,
+            "10": 18
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 23
+        },
+        {
+          "boardIndex": 35,
+          "seed": 1635343518,
+          "boardType": "square19",
+          "attackerPos": "5,3",
+          "stackCount": 5,
+          "sequenceCount": 13881,
+          "maxChainLength": 10,
+          "chainLengthDistribution": {
+            "2": 30,
+            "3": 44,
+            "4": 454,
+            "5": 541,
+            "6": 3102,
+            "7": 1365,
+            "8": 7211,
+            "9": 126,
+            "10": 1008
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 421
+        },
+        {
+          "boardIndex": 7,
+          "seed": 508781842,
+          "boardType": "square19",
+          "attackerPos": "1,3",
+          "stackCount": 5,
+          "sequenceCount": 5055,
+          "maxChainLength": 9,
+          "chainLengthDistribution": {
+            "1": 1,
+            "3": 175,
+            "4": 30,
+            "5": 140,
+            "6": 639,
+            "7": 1430,
+            "8": 1383,
+            "9": 1257
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 59
+        },
+        {
+          "boardIndex": 9,
+          "seed": 4271921684,
+          "boardType": "square19",
+          "attackerPos": "17,11",
+          "stackCount": 5,
+          "sequenceCount": 75474,
+          "maxChainLength": 9,
+          "chainLengthDistribution": {
+            "2": 49,
+            "3": 76,
+            "4": 1161,
+            "5": 2350,
+            "6": 16203,
+            "7": 12359,
+            "8": 39214,
+            "9": 4062
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 1782
+        },
+        {
+          "boardIndex": 16,
+          "seed": 602196497,
+          "boardType": "square19",
+          "attackerPos": "2,12",
+          "stackCount": 5,
+          "sequenceCount": 72674,
+          "maxChainLength": 9,
+          "chainLengthDistribution": {
+            "1": 2,
+            "3": 84,
+            "4": 971,
+            "5": 1765,
+            "6": 9639,
+            "7": 25019,
+            "8": 26245,
+            "9": 8949
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 1586
+        },
+        {
+          "boardIndex": 19,
+          "seed": 3820240078,
+          "boardType": "square19",
+          "attackerPos": "12,11",
+          "stackCount": 5,
+          "sequenceCount": 816,
+          "maxChainLength": 9,
+          "chainLengthDistribution": {
+            "1": 2,
+            "2": 13,
+            "3": 8,
+            "4": 309,
+            "5": 24,
+            "6": 346,
+            "8": 90,
+            "9": 24
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 13
+        },
+        {
+          "boardIndex": 21,
+          "seed": 775312688,
+          "boardType": "square19",
+          "attackerPos": "5,11",
+          "stackCount": 5,
+          "sequenceCount": 28312,
+          "maxChainLength": 9,
+          "chainLengthDistribution": {
+            "2": 10,
+            "3": 30,
+            "4": 311,
+            "5": 1363,
+            "6": 2670,
+            "7": 14278,
+            "8": 8121,
+            "9": 1529
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 661
+        },
+        {
+          "boardIndex": 36,
+          "seed": 2515376997,
+          "boardType": "square19",
+          "attackerPos": "14,9",
+          "stackCount": 5,
+          "sequenceCount": 587,
+          "maxChainLength": 7,
+          "chainLengthDistribution": {
+            "1": 1,
+            "2": 1,
+            "3": 32,
+            "4": 29,
+            "5": 241,
+            "6": 165,
+            "7": 118
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 14
+        },
+        {
+          "boardIndex": 39,
+          "seed": 3086441138,
+          "boardType": "square19",
+          "attackerPos": "8,18",
+          "stackCount": 4,
+          "sequenceCount": 9139,
+          "maxChainLength": 7,
+          "chainLengthDistribution": {
+            "2": 1,
+            "3": 78,
+            "4": 666,
+            "5": 464,
+            "6": 690,
+            "7": 7240
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 192
+        }
+      ]
+    },
+    "hexagonal": {
+      "boardType": "hexagonal",
+      "totalGames": 50,
+      "totalSequences": 66861,
+      "maxSequencesInSingleGame": 24180,
+      "maxChainLengthOverall": 9,
+      "avgChainLength": 5.852170921763061,
+      "gamesWithLongChains": 24,
+      "gamesHitMaxSequences": 0,
+      "gamesHitMaxDepth": 0,
+      "chainLengthDistribution": {
+        "1": 13,
+        "2": 705,
+        "3": 1717,
+        "4": 7651,
+        "5": 14912,
+        "6": 16373,
+        "7": 23550,
+        "8": 1004,
+        "9": 936
+      },
+      "topResults": [
+        {
+          "boardIndex": 12,
+          "seed": 555593847,
+          "boardType": "hexagonal",
+          "attackerPos": "-9,2,7",
+          "stackCount": 5,
+          "sequenceCount": 1486,
+          "maxChainLength": 9,
+          "chainLengthDistribution": {
+            "2": 29,
+            "3": 60,
+            "4": 58,
+            "5": 327,
+            "6": 40,
+            "8": 36,
+            "9": 936
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 58
+        },
+        {
+          "boardIndex": 29,
+          "seed": 2981923386,
+          "boardType": "hexagonal",
+          "attackerPos": "8,-1,-7",
+          "stackCount": 5,
+          "sequenceCount": 24180,
+          "maxChainLength": 8,
+          "chainLengthDistribution": {
+            "2": 15,
+            "3": 30,
+            "4": 501,
+            "5": 5479,
+            "6": 2115,
+            "7": 15230,
+            "8": 810
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 890
+        },
+        {
+          "boardIndex": 37,
+          "seed": 2318479650,
+          "boardType": "hexagonal",
+          "attackerPos": "0,0,0",
+          "stackCount": 4,
+          "sequenceCount": 10942,
+          "maxChainLength": 8,
+          "chainLengthDistribution": {
+            "1": 1,
+            "3": 78,
+            "4": 1191,
+            "5": 1058,
+            "6": 4920,
+            "7": 3568,
+            "8": 126
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 177
+        },
+        {
+          "boardIndex": 44,
+          "seed": 331796631,
+          "boardType": "hexagonal",
+          "attackerPos": "3,3,-6",
+          "stackCount": 5,
+          "sequenceCount": 2463,
+          "maxChainLength": 8,
+          "chainLengthDistribution": {
+            "1": 1,
+            "3": 16,
+            "4": 262,
+            "5": 276,
+            "6": 408,
+            "7": 1468,
+            "8": 32
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 47
+        },
+        {
+          "boardIndex": 17,
+          "seed": 1859532862,
+          "boardType": "hexagonal",
+          "attackerPos": "7,1,-8",
+          "stackCount": 4,
+          "sequenceCount": 2122,
+          "maxChainLength": 7,
+          "chainLengthDistribution": {
+            "2": 29,
+            "3": 9,
+            "4": 93,
+            "5": 975,
+            "6": 996,
+            "7": 20
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 72
+        },
+        {
+          "boardIndex": 28,
+          "seed": 976248455,
+          "boardType": "hexagonal",
+          "attackerPos": "-3,-7,10",
+          "stackCount": 5,
+          "sequenceCount": 303,
+          "maxChainLength": 7,
+          "chainLengthDistribution": {
+            "1": 1,
+            "3": 228,
+            "5": 32,
+            "7": 42
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 7
+        },
+        {
+          "boardIndex": 31,
+          "seed": 3508814204,
+          "boardType": "hexagonal",
+          "attackerPos": "0,-4,4",
+          "stackCount": 4,
+          "sequenceCount": 3904,
+          "maxChainLength": 7,
+          "chainLengthDistribution": {
+            "2": 13,
+            "3": 72,
+            "4": 242,
+            "5": 1237,
+            "6": 702,
+            "7": 1638
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 59
+        },
+        {
+          "boardIndex": 32,
+          "seed": 2994319019,
+          "boardType": "hexagonal",
+          "attackerPos": "-5,5,0",
+          "stackCount": 4,
+          "sequenceCount": 1757,
+          "maxChainLength": 7,
+          "chainLengthDistribution": {
+            "1": 1,
+            "2": 14,
+            "3": 12,
+            "4": 406,
+            "5": 28,
+            "6": 1120,
+            "7": 176
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 29
+        },
+        {
+          "boardIndex": 46,
+          "seed": 4203618529,
+          "boardType": "hexagonal",
+          "attackerPos": "-5,8,-3",
+          "stackCount": 4,
+          "sequenceCount": 3497,
+          "maxChainLength": 7,
+          "chainLengthDistribution": {
+            "2": 21,
+            "4": 176,
+            "5": 1782,
+            "6": 110,
+            "7": 1408
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 110
+        },
+        {
+          "boardIndex": 5,
+          "seed": 3791881090,
+          "boardType": "hexagonal",
+          "attackerPos": "0,-4,4",
+          "stackCount": 5,
+          "sequenceCount": 3282,
+          "maxChainLength": 6,
+          "chainLengthDistribution": {
+            "2": 8,
+            "3": 63,
+            "4": 860,
+            "5": 300,
+            "6": 2051
+          },
+          "hitMaxSequences": false,
+          "hitMaxDepth": false,
+          "enumerationTimeMs": 94
+        }
+      ]
+    }
+  },
+  "overallMaxChainLength": 10,
+  "overallMaxSequences": 75474
+}

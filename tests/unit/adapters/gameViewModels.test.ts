@@ -263,8 +263,8 @@ describe('toHUDViewModel', () => {
       { phase: 'movement', expectedLabel: 'Movement Phase', expectedIcon: '⚡' },
       { phase: 'capture', expectedLabel: 'Capture Phase', expectedIcon: '⚔️' },
       { phase: 'chain_capture', expectedLabel: 'Chain Capture', expectedIcon: '🔗' },
-      { phase: 'line_processing', expectedLabel: 'Line Reward', expectedIcon: '📏' },
-      { phase: 'territory_processing', expectedLabel: 'Territory Claim', expectedIcon: '🏰' },
+      { phase: 'line_processing', expectedLabel: 'Line Processing', expectedIcon: '📏' },
+      { phase: 'territory_processing', expectedLabel: 'Territory Processing', expectedIcon: '🏰' },
     ];
 
     phaseTests.forEach(({ phase, expectedLabel, expectedIcon }) => {
@@ -666,9 +666,7 @@ describe('toHUDViewModel - decisionPhase mapping', () => {
     expect(hud.decisionPhase).toBeDefined();
     expect(hud.decisionPhase?.isLocalActor).toBe(false);
     expect(hud.decisionPhase?.actingPlayerName).toBe('Alice');
-    expect(hud.decisionPhase?.label).toBe(
-      'Waiting for Alice to choose a line reward option'
-    );
+    expect(hud.decisionPhase?.label).toBe('Waiting for Alice to choose a line reward option');
   });
 
   it('omits decisionPhase when no pending choice is provided', () => {
@@ -913,7 +911,7 @@ describe('toEventLogViewModel', () => {
       const result = toEventLogViewModel(history, [], null);
 
       expect(result.entries[0].text).toBe(
-        '#3 — P2 invoked the pie rule and swapped colours with P1',
+        '#3 — P2 invoked the pie rule and swapped colours with P1'
       );
     });
   });
@@ -1049,7 +1047,7 @@ describe('toEventLogViewModel', () => {
 
       const hud = toHUDViewModel(
         gameState,
-        createDefaultHUDOptions({ currentUserId: baseState.players[0].id }),
+        createDefaultHUDOptions({ currentUserId: baseState.players[0].id })
       );
 
       expect(hud.pieRuleSummary).toBe('P2 swapped colours with P1');
@@ -1074,7 +1072,7 @@ describe('toEventLogViewModel', () => {
 
       const hud = toHUDViewModel(
         gameState,
-        createDefaultHUDOptions({ currentUserId: baseState.players[0].id }),
+        createDefaultHUDOptions({ currentUserId: baseState.players[0].id })
       );
 
       expect(hud.pieRuleSummary).toBeUndefined();
@@ -1425,12 +1423,12 @@ describe('toVictoryViewModel', () => {
       {
         reason: 'ring_elimination',
         expectedTitlePattern: /Wins!/,
-        expectedDescPattern: /eliminating.*(opponent|rings)/i,
+        expectedDescPattern: /capturing.*50%.*rings/i,
       },
       {
         reason: 'territory_control',
         expectedTitlePattern: /Wins!/,
-        expectedDescPattern: /controlling.*majority/i,
+        expectedDescPattern: /controlling.*majority.*territory/i,
       },
       {
         reason: 'last_player_standing',

@@ -373,52 +373,6 @@ export class RuleEngine {
   }
 
   /**
-   * DIAGNOSTICS-ONLY (legacy): process a move and return the new game state.
-   *
-   * This method implements the pre-orchestrator backend pipeline:
-   *   - apply placement / movement / capture via legacy helpers
-   *   - then resolve automatic line formation and territory disconnection via
-   *     processLineFormation/processTerritoryDisconnection.
-   *
-   * Canonical backend turn processing is now handled by TurnEngineAdapter +
-   * processTurnAsync in the shared orchestrator, with RuleEngine restricted to:
-   *   - validateMove
-   *   - getValidMoves
-   *   - checkGameEnd
-   * and related enumeration helpers.
-   *
-   * There are no production call sites for this method; it is retained only
-   * for legacy tests and debugging harnesses. See
-   * docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase A/B, Phase C – legacy helper
-   * shutdown) before modifying or reusing this method.
-   *
-   * @deprecated Phase 4 legacy path — use TurnEngineAdapter + shared orchestrator instead.
-   * This method will be removed once all tests migrate to orchestrator-backed flows.
-   * See Wave 5.4 in TODO.md for deprecation timeline.
-   */
-  processMove(move: Move, gameState: GameState): GameState {
-    const newState = this.cloneGameState(gameState);
-
-    switch (move.type) {
-      case 'place_ring':
-        this.processRingPlacement(move, newState);
-        break;
-      case 'move_stack':
-        this.processStackMovement(move, newState);
-        break;
-      case 'overtaking_capture':
-        this.processCapture(move, newState);
-        break;
-    }
-
-    // Process automatic consequences
-    this.processLineFormation(newState);
-    this.processTerritoryDisconnection(newState);
-
-    return newState;
-  }
-
-  /**
    * Processes ring placement
    */
   private processRingPlacement(move: Move, gameState: GameState): void {
@@ -494,126 +448,6 @@ export class RuleEngine {
     // tests that inspect the returned state) observe the canonical capture
     // outcome produced by the shared engine.
     Object.assign(gameState, result.newState);
-  }
-  /**
-   * DIAGNOSTICS-ONLY (legacy): process chain reactions from captures.
-   *
-   * This helper comes from the historical backend capture-chain pipeline and
-   * is no longer part of the canonical semantics. Capture and chain-capture
-   * behaviour are now implemented exclusively in
-   * src/shared/engine/aggregates/CaptureAggregate.ts and driven via the
-   * shared orchestrator.
-   *
-   * There are no production call sites for this helper; it is retained only
-   * for legacy tests and exploratory diagnostics. Do not introduce new
-   * production usages. See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C).
-   *
-   * @deprecated Phase 4 legacy path — capture chain semantics now handled by CaptureAggregate.
-   * This method will be removed once all tests migrate to orchestrator-backed flows.
-   * See Wave 5.4 in TODO.md for deprecation timeline.
-   */
-  private processChainReactions(triggerPos: Position, gameState: GameState): void {
-    const triggerKey = positionToString(triggerPos);
-    const triggerStack = gameState.board.stacks.get(triggerKey);
-    if (!triggerStack) return;
-
-    const adjacentPositions = this.getAdjacentPositions(triggerPos);
-
-    for (const adjPos of adjacentPositions) {
-      const adjKey = positionToString(adjPos);
-      const adjStack = gameState.board.stacks.get(adjKey);
-      if (
-        adjStack &&
-        adjStack.controllingPlayer !== triggerStack.controllingPlayer &&
-        triggerStack.capHeight >= adjStack.capHeight
-      ) {
-        // Trigger another capture
-        const captureMove: Move = {
-          id: `chain-${Date.now()}`,
-          type: 'overtaking_capture',
-          player: triggerStack.controllingPlayer,
-          from: triggerPos,
-          to: adjPos,
-          capturedStacks: [adjStack],
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: gameState.moveHistory.length + 1,
-        };
-
-        this.processCapture(captureMove, gameState);
-      }
-    }
-  }
-
-  /**
-   * DIAGNOSTICS-ONLY (legacy): process line formation and marker collapse.
-   *
-   * This helper predates the shared LineAggregate / lineDecisionHelpers stack
-   * and is not used by the canonical backend turn pipeline. Line detection
-   * and rewards now live in src/shared/engine/lineDecisionHelpers.ts and are
-   * surfaced via:
-   *   - enumerateProcessLineMoves / enumerateChooseLineRewardMoves
-   *   - applyProcessLineDecision
-   * through the shared orchestrator and GameEngine.applyDecisionMove.
-   *
-   * It is retained only for legacy tests that exercise the old automatic
-   * pipeline. See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C – legacy helper
-   * shutdown) before modifying or reusing this helper.
-   *
-   * @deprecated Phase 4 legacy path — use lineDecisionHelpers + shared orchestrator instead.
-   * This method will be removed once all tests migrate to orchestrator-backed flows.
-   * See Wave 5.4 in TODO.md for deprecation timeline.
-   */
-  private processLineFormation(gameState: GameState): void {
-    const lines = this.boardManager.findAllLines(gameState.board);
-
-    for (const line of lines) {
-      if (line.positions.length >= this.boardConfig.lineLength) {
-        // Collapse line - remove all stacks in the line
-        for (const pos of line.positions) {
-          this.boardManager.removeStack(pos, gameState.board);
-        }
-      }
-    }
-  }
-
-  /**
-   * DIAGNOSTICS-ONLY (legacy): process territory disconnection.
-   *
-   * This helper predates the shared TerritoryAggregate and
-   * territoryDecisionHelpers stack. Canonical territory semantics (disconnected
-   * region detection, Q23 self-elimination prerequisite, collapse and
-   * eliminations) are now implemented in
-   * src/shared/engine/territoryProcessing.ts and consumed via:
-   *   - enumerateProcessTerritoryRegionMoves / enumerateTerritoryEliminationMoves
-   *   - applyProcessTerritoryRegionDecision
-   * surfaced through RuleEngine.getValidMoves and GameEngine.applyDecisionMove.
-   *
-   * There are no production call sites for this helper; it is retained only
-   * for legacy tests and diagnostics. Do not introduce new production usages.
-   * See docs/ORCHESTRATOR_ROLLOUT_PLAN.md (Phase C – legacy helper shutdown).
-   *
-   * @deprecated Phase 4 legacy path — use territoryDecisionHelpers + shared orchestrator instead.
-   * This method will be removed once all tests migrate to orchestrator-backed flows.
-   * See Wave 5.4 in TODO.md for deprecation timeline.
-   */
-  private processTerritoryDisconnection(gameState: GameState): void {
-    // Check territories for each player
-    for (const player of gameState.players) {
-      const territories = this.boardManager.findAllTerritories(
-        player.playerNumber,
-        gameState.board
-      );
-
-      for (const territory of territories) {
-        if (territory.isDisconnected) {
-          // Remove all stacks in disconnected territory
-          for (const pos of territory.spaces) {
-            this.boardManager.removeStack(pos, gameState.board);
-          }
-        }
-      }
-    }
   }
 
   /**
@@ -1477,10 +1311,9 @@ export class RuleEngine {
     void this.isPathClear;
     void this.isStraightLineMovement;
 
-    // Keep legacy diagnostics-only helpers and type adapters referenced so that
+    // Keep diagnostics-only helpers and type adapters referenced so that
     // ts-node/TypeScript with noUnusedLocals can compile backend entrypoints
     // (including orchestrator soak harnesses) without treating them as dead code.
-    void this.processChainReactions;
     void this.canProcessDisconnectedRegionForRules;
     void this.hasAnyLegalMoveOrCaptureFrom;
 

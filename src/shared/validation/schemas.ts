@@ -289,7 +289,7 @@ export const RegisterSchema = z
       ),
     confirmPassword: z.string(),
   })
-  .refine((data: any) => data.password === data.confirmPassword, {
+  .refine((data) => data.password === data.confirmPassword, {
     message: "Passwords don't match",
     path: ['confirmPassword'],
   });
@@ -368,7 +368,7 @@ export const ChangePasswordSchema = z
       ),
     confirmPassword: z.string(),
   })
-  .refine((data: any) => data.newPassword === data.confirmPassword, {
+  .refine((data) => data.newPassword === data.confirmPassword, {
     message: "Passwords don't match",
     path: ['confirmPassword'],
   });
@@ -393,7 +393,7 @@ export const MatchmakingPreferencesSchema = z.object({
       min: z.number().min(60).max(7200),
       max: z.number().min(60).max(7200),
     })
-    .refine((data: any) => data.min <= data.max, {
+    .refine((data) => data.min <= data.max, {
       message: 'Minimum time must be less than or equal to maximum time',
     }),
   ratingRange: z
@@ -401,7 +401,7 @@ export const MatchmakingPreferencesSchema = z.object({
       min: z.number().min(100).max(3000),
       max: z.number().min(100).max(3000),
     })
-    .refine((data: any) => data.min <= data.max, {
+    .refine((data) => data.min <= data.max, {
       message: 'Minimum rating must be less than or equal to maximum rating',
     }),
   allowAI: z.boolean().default(false),
@@ -428,7 +428,7 @@ export const CreateTournamentSchema = z
     registrationDeadline: z.date().optional(),
   })
   .refine(
-    (data: any) => {
+    (data) => {
       if (data.registrationDeadline) {
         return data.registrationDeadline <= data.startsAt;
       }
@@ -443,7 +443,7 @@ export const CreateTournamentSchema = z
 // WebSocket event validation
 export const SocketEventSchema = z.object({
   event: z.string().min(1),
-  data: z.any(),
+  data: z.unknown(),
   timestamp: z.date().optional(),
 });
 
@@ -495,7 +495,7 @@ export const PaginationSchema = z.object({
 export const SearchSchema = z.object({
   query: z.string().min(1).max(100),
   type: z.enum(['users', 'games', 'tournaments']).optional(),
-  filters: z.record(z.string(), z.any()).optional(),
+  filters: z.record(z.string(), z.unknown()).optional(),
 });
 
 // File upload validation
@@ -512,7 +512,7 @@ export const createSuccessResponse = <T>(data: T) => ({
   timestamp: new Date(),
 });
 
-export const createErrorResponse = (message: string, code?: string, details?: any) => ({
+export const createErrorResponse = (message: string, code?: string, details?: unknown) => ({
   success: false,
   error: {
     message,

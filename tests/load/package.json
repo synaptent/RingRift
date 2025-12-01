@@ -1,0 +1,42 @@
+{
+  "name": "@ringrift/load-tests",
+  "version": "1.0.0",
+  "description": "k6 load testing framework for RingRift production-scale validation",
+  "private": true,
+  "scripts": {
+    "test:smoke:game-creation": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/game-creation.js",
+    "test:smoke:concurrent-games": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/concurrent-games.js",
+    "test:smoke:player-moves": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/player-moves.js",
+    "test:smoke:websocket-stress": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} --env WS_URL=${WS_URL:-ws://localhost:3001} scenarios/websocket-stress.js",
+    "test:load:all": "npm run test:load:game-creation && npm run test:load:concurrent-games && npm run test:load:player-moves && npm run test:load:websocket-stress",
+    "test:load:game-creation": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/game-creation.js",
+    "test:load:concurrent-games": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/concurrent-games.js",
+    "test:load:player-moves": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} scenarios/player-moves.js",
+    "test:load:websocket-stress": "k6 run --env BASE_URL=${BASE_URL:-http://localhost:3001} --env WS_URL=${WS_URL:-ws://localhost:3001} scenarios/websocket-stress.js",
+    "validate:syntax": "k6 inspect scenarios/game-creation.js && k6 inspect scenarios/concurrent-games.js && k6 inspect scenarios/player-moves.js && k6 inspect scenarios/websocket-stress.js",
+    "validate:dry-run": "npm run validate:dry-run:game-creation && npm run validate:dry-run:concurrent-games && npm run validate:dry-run:player-moves && npm run validate:dry-run:websocket-stress",
+    "validate:dry-run:game-creation": "k6 run --dry-run scenarios/game-creation.js",
+    "validate:dry-run:concurrent-games": "k6 run --dry-run scenarios/concurrent-games.js",
+    "validate:dry-run:player-moves": "k6 run --dry-run scenarios/player-moves.js",
+    "validate:dry-run:websocket-stress": "k6 run --dry-run scenarios/websocket-stress.js"
+  },
+  "keywords": [
+    "k6",
+    "load-testing",
+    "performance",
+    "websocket",
+    "stress-testing"
+  ],
+  "author": "RingRift Team",
+  "license": "UNLICENSED",
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "k6": {
+    "version": ">=0.46.0",
+    "required_extensions": [
+      "websocket"
+    ]
+  }
+}

@@ -112,6 +112,20 @@ class HeuristicAI(BaseAI):
     # Stack mobility weights (previously hardcoded)
     WEIGHT_BLOCKED_STACK_PENALTY = 5.0  # Penalty for completely blocked stacks
 
+    # v1.2: Swap (pie rule) opening evaluation weights
+    # These reward P2 for swapping into advantageous P1 opening positions
+    WEIGHT_SWAP_OPENING_CENTER = 15.0     # Bonus per P1 stack in center
+    WEIGHT_SWAP_OPENING_ADJACENCY = 3.0   # Bonus for P1 stacks near center
+    WEIGHT_SWAP_OPENING_HEIGHT = 2.0      # Bonus per stack height on P1 stacks
+
+    # v1.3: Enhanced swap evaluation - Opening Position Classifier weights
+    # These provide finer-grained control over swap decisions based on
+    # position type (beyond just center/adjacency)
+    WEIGHT_SWAP_CORNER_PENALTY = 8.0      # Penalty for corner positions (weak openings)
+    WEIGHT_SWAP_EDGE_BONUS = 2.0          # Bonus for edge positions (moderate)
+    WEIGHT_SWAP_DIAGONAL_BONUS = 6.0      # Bonus for key diagonal positions
+    WEIGHT_SWAP_OPENING_STRENGTH = 20.0   # Multiplier for normalized opening strength (0-1)
+
     def __init__(self, player_number: int, config: AIConfig):
         """
         Initialise HeuristicAI with an optional heuristic weight profile.
@@ -245,6 +259,11 @@ class HeuristicAI(BaseAI):
                 # Simulate the move to get the resulting state
                 next_state = self.rules_engine.apply_move(game_state, move)
                 score = self.evaluate_position(next_state)
+
+                # Add swap opening bonus for SWAP_SIDES moves
+                # This makes the AI more likely to swap into strong openings
+                if move.type == "SWAP_SIDES":
+                    score += self.evaluate_swap_opening_bonus(game_state)
 
                 if score > best_score:
                     # New best score - clear previous candidates
@@ -1246,3 +1265,254 @@ class HeuristicAI(BaseAI):
             game_state.board.type,
             game_state.board.size
         )
+
+    def evaluate_swap_opening_bonus(
+        self,
+        game_state: GameState,
+    ) -> float:
+        """
+        Evaluate the strategic value of P1's opening position.
+
+        This method computes a bonus score that represents how valuable it
+        would be for P2 to swap into P1's position. The bonus is based on:
+
+        - How many P1 stacks occupy center positions (highest weight)
+        - How many P1 stacks are adjacent to center positions
+        - Total stack height of P1's stacks
+
+        This method is called from ``select_move()`` when evaluating
+        SWAP_SIDES moves to add a strategic bonus that makes the AI more
+        likely to swap into advantageous P1 openings.
+
+        Returns
+        -------
+        float
+            Swap opening bonus score (0.0 if swap is not strategically
+            valuable, positive otherwise based on P1's opening strength).
+        """
+        # Only applies to 2-player games
+        if len(game_state.players) != 2:
+            return 0.0
+
+        # Find P1's stacks (the opponent's stacks at the time of swap)
+        # When P2 is considering swap, P1 is player 1
+        p1_number = 1
+        p1_stacks = [
+            s for s in game_state.board.stacks.values()
+            if s.controlling_player == p1_number
+        ]
+
+        if not p1_stacks:
+            return 0.0
+
+        center_positions = self._get_center_positions(game_state)
+        bonus = 0.0
+
+        for stack in p1_stacks:
+            pos_key = stack.position.to_key()
+
+            # High bonus for center stacks
+            if pos_key in center_positions:
+                bonus += self.WEIGHT_SWAP_OPENING_CENTER
+
+            # Adjacency bonus - check if near center
+            adjacent = self._get_adjacent_positions(
+                stack.position,
+                game_state
+            )
+            for adj_pos in adjacent:
+                if adj_pos.to_key() in center_positions:
+                    bonus += self.WEIGHT_SWAP_OPENING_ADJACENCY
+                    break  # Only count once per stack
+
+            # Height bonus
+            bonus += stack.stack_height * self.WEIGHT_SWAP_OPENING_HEIGHT
+
+        return bonus
+
+    def _is_corner_position(
+        self,
+        position: Position,
+        game_state: GameState,
+    ) -> bool:
+        """Check if a position is at a board corner.
+
+        Corner positions are generally weak for openings as they have
+        limited mobility and expansion potential.
+        """
+        size = game_state.board.size
+        x, y = position.x, position.y
+        corners = {(0, 0), (0, size - 1), (size - 1, 0), (size - 1, size - 1)}
+        return (x, y) in corners
+
+    def _is_edge_position(
+        self,
+        position: Position,
+        game_state: GameState,
+    ) -> bool:
+        """Check if a position is on an edge (but not a corner).
+
+        Edge positions have moderate strategic value - better than corners
+        but not as flexible as center positions.
+        """
+        size = game_state.board.size
+        x, y = position.x, position.y
+        # On edge if x or y is 0 or size-1
+        on_edge = (x == 0 or x == size - 1 or y == 0 or y == size - 1)
+        # Not a corner
+        is_corner = self._is_corner_position(position, game_state)
+        return on_edge and not is_corner
+
+    def _is_strategic_diagonal_position(
+        self,
+        position: Position,
+        game_state: GameState,
+    ) -> bool:
+        """Check if a position is on a key diagonal (one step from center).
+
+        Strategic diagonal positions offer good line-forming potential
+        and board control. For an 8x8 board, these include positions like
+        (2,2), (2,5), (5,2), (5,5) - one step diagonally from center.
+        """
+        size = game_state.board.size
+        center_positions = self._get_center_positions(game_state)
+        pos_key = position.to_key()
+
+        # Already a center position - not a "diagonal" position
+        if pos_key in center_positions:
+            return False
+
+        # Check if diagonally adjacent to any center position
+        x, y = position.x, position.y
+        diagonal_offsets = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+
+        for dx, dy in diagonal_offsets:
+            adj_x, adj_y = x + dx, y + dy
+            if 0 <= adj_x < size and 0 <= adj_y < size:
+                adj_key = f"{adj_x},{adj_y}"
+                if adj_key in center_positions:
+                    return True
+        return False
+
+    def compute_opening_strength(
+        self,
+        position: Position,
+        game_state: GameState,
+    ) -> float:
+        """Compute opening strength score for a position (0-1 scale).
+
+        This classifier evaluates how strong an opening move is based on
+        the position's strategic value:
+
+        - Center positions: 0.9-1.0 (highest value)
+        - Adjacent to center: 0.7-0.8
+        - Strategic diagonals: 0.5-0.6
+        - Edge positions: 0.3-0.4
+        - Corner positions: 0.1-0.2 (lowest value)
+
+        Parameters
+        ----------
+        position : Position
+            The position to evaluate
+        game_state : GameState
+            Current game state for board geometry
+
+        Returns
+        -------
+        float
+            Opening strength score between 0.0 and 1.0
+        """
+        pos_key = position.to_key()
+        center_positions = self._get_center_positions(game_state)
+
+        # Center: highest value
+        if pos_key in center_positions:
+            return 0.95
+
+        # Adjacent to center: high value
+        adjacent = self._get_adjacent_positions(position, game_state)
+        for adj_pos in adjacent:
+            if adj_pos.to_key() in center_positions:
+                return 0.75
+
+        # Strategic diagonal: medium-high value
+        if self._is_strategic_diagonal_position(position, game_state):
+            return 0.55
+
+        # Edge (not corner): medium-low value
+        if self._is_edge_position(position, game_state):
+            return 0.35
+
+        # Corner: lowest value
+        if self._is_corner_position(position, game_state):
+            return 0.15
+
+        # Default: moderate value for other positions
+        return 0.45
+
+    def evaluate_swap_with_classifier(
+        self,
+        game_state: GameState,
+    ) -> float:
+        """Evaluate swap decision using the Opening Position Classifier.
+
+        This enhanced swap evaluation uses the opening strength classifier
+        to compute a normalized swap value. Unlike the simpler bonus-based
+        approach in `evaluate_swap_opening_bonus()`, this method:
+
+        1. Computes a 0-1 opening strength for each P1 position
+        2. Applies position-type-specific weight adjustments
+        3. Returns a score that directly indicates swap desirability
+
+        Parameters
+        ----------
+        game_state : GameState
+            Current game state where P2 is deciding whether to swap
+
+        Returns
+        -------
+        float
+            Swap value score. Higher scores indicate swapping is more
+            advantageous. The score combines:
+            - Normalized opening strength × WEIGHT_SWAP_OPENING_STRENGTH
+            - Position-type bonuses/penalties (corner, edge, diagonal)
+        """
+        if len(game_state.players) != 2:
+            return 0.0
+
+        p1_number = 1
+        p1_stacks = [
+            s for s in game_state.board.stacks.values()
+            if s.controlling_player == p1_number
+        ]
+
+        if not p1_stacks:
+            return 0.0
+
+        total_strength = 0.0
+        total_bonus = 0.0
+
+        for stack in p1_stacks:
+            pos = stack.position
+
+            # Compute normalized opening strength (0-1)
+            strength = self.compute_opening_strength(pos, game_state)
+            total_strength += strength
+
+            # Apply position-type-specific adjustments
+            if self._is_corner_position(pos, game_state):
+                total_bonus -= self.WEIGHT_SWAP_CORNER_PENALTY
+            elif self._is_edge_position(pos, game_state):
+                total_bonus += self.WEIGHT_SWAP_EDGE_BONUS
+            elif self._is_strategic_diagonal_position(pos, game_state):
+                total_bonus += self.WEIGHT_SWAP_DIAGONAL_BONUS
+
+            # Stack height still matters
+            total_bonus += stack.stack_height * self.WEIGHT_SWAP_OPENING_HEIGHT
+
+        # Combine strength-based and bonus-based evaluation
+        # Average strength for multiple stacks (normalize by stack count)
+        avg_strength = total_strength / len(p1_stacks) if p1_stacks else 0.0
+        strength_score = avg_strength * self.WEIGHT_SWAP_OPENING_STRENGTH
+
+        return strength_score + total_bonus

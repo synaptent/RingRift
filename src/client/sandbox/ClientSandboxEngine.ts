@@ -60,7 +60,6 @@ import type {
   PlayerChoiceResponseFor,
   PlayerChoiceResponse,
   CaptureDirectionChoice,
-  RegionOrderChoice as GameRegionOrderChoice,
 } from '../../shared/types/game';
 import {
   isSandboxAiTraceModeEnabled,
@@ -156,20 +155,16 @@ export class ClientSandboxEngine {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Feature flag: when true, applyCanonicalMoveInternal delegates to the
-   * shared orchestrator via SandboxOrchestratorAdapter instead of using
-   * the legacy sandbox-specific logic.
+   * Orchestrator adapter for turn processing.
    *
-   * Default: enabled (true). Set ORCHESTRATOR_ADAPTER_ENABLED=false to disable.
+   * PERMANENTLY ENABLED as of 2025-12-01 (Phase 3 migration complete).
+   * The orchestrator is now the canonical turn processor. Legacy path removed.
    *
    * The orchestrator adapter provides single-source-of-truth rules processing
    * via the shared engine, eliminating duplicated logic between client/server.
    *
-   * Override explicitly for testing:
-   *   engine.enableOrchestratorAdapter();
-   *   engine.disableOrchestratorAdapter();
+   * @see docs/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md
    */
-  private useOrchestratorAdapter: boolean = readEnv('ORCHESTRATOR_ADAPTER_ENABLED') !== 'false';
 
   /** Lazily-initialized adapter instance */
   private orchestratorAdapter: SandboxOrchestratorAdapter | null = null;
@@ -426,50 +421,6 @@ export class ClientSandboxEngine {
 
     // Initialize orchestrator adapter lazily when first needed
     this.orchestratorAdapter = null;
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Orchestrator Adapter Public API
-  // ═══════════════════════════════════════════════════════════════════════
-
-  /**
-   * Enable delegation to the shared orchestrator adapter.
-   *
-   * When enabled, applyCanonicalMoveInternal() will delegate rules logic
-   * to the shared orchestrator (processTurnAsync), keeping only sandbox-
-   * specific concerns (state management, decision UI, callbacks) local.
-   *
-   * This is designed for:
-   * - Gradual rollout and validation of the unified orchestrator
-   * - Parity testing between legacy sandbox logic and orchestrator
-   * - Future removal of duplicated sandbox rules code
-   *
-   * Usage:
-   * ```typescript
-   * const engine = new ClientSandboxEngine(opts);
-   * engine.enableOrchestratorAdapter();
-   * await engine.applyCanonicalMove(move); // Now uses orchestrator
-   * ```
-   */
-  public enableOrchestratorAdapter(): void {
-    this.useOrchestratorAdapter = true;
-    // Ensure adapter is initialized
-    this.getOrchestratorAdapter();
-  }
-
-  /**
-   * Disable delegation to the shared orchestrator adapter.
-   * Returns to using legacy sandbox-specific rules logic.
-   */
-  public disableOrchestratorAdapter(): void {
-    this.useOrchestratorAdapter = false;
-  }
-
-  /**
-   * Check whether the orchestrator adapter is enabled.
-   */
-  public isOrchestratorAdapterEnabled(): boolean {
-    return this.useOrchestratorAdapter;
   }
 
   /**
@@ -984,250 +935,14 @@ export class ClientSandboxEngine {
    * to drive both engines with the same canonical Move sequence.
    */
   public getValidMoves(playerNumber: number): Move[] {
-    // When the orchestrator adapter is enabled, delegate move enumeration
-    // directly to the shared orchestrator so that sandbox AI and parity
-    // harnesses see the exact same canonical Move surface as backend hosts.
-    if (this.useOrchestratorAdapter) {
-      const adapter = this.getOrchestratorAdapter();
-      const state = this.gameState;
-      if (state.currentPlayer !== playerNumber || state.gameStatus !== 'active') {
-        return [];
-      }
-      return adapter.getValidMoves();
-    }
-
+    // Delegate move enumeration to the shared orchestrator so that sandbox AI
+    // and parity harnesses see the exact same canonical Move surface as backend hosts.
+    const adapter = this.getOrchestratorAdapter();
     const state = this.gameState;
     if (state.currentPlayer !== playerNumber || state.gameStatus !== 'active') {
       return [];
     }
-
-    const phase = state.currentPhase;
-    const moves: Move[] = [];
-
-    if (phase === 'ring_placement') {
-      // P0.4 unified-Move model: enumerate all legal ring placements including
-      // multi-ring placements (1-3 rings on empty cells, 1 ring on stacks).
-      // This mirrors RuleEngine.getValidRingPlacements for parity.
-      const placements = this.enumerateLegalRingPlacements(playerNumber);
-      const baseMoveNumber = state.history.length + 1;
-      const boardType = state.board.type;
-      const boardConfig = BOARD_CONFIGS[boardType];
-      const player = state.players.find((p) => p.playerNumber === playerNumber);
-
-      if (player && player.ringsInHand > 0) {
-        const ctx: PlacementContext = {
-          boardType,
-          player: playerNumber,
-          ringsInHand: player.ringsInHand,
-          ringsPerPlayerCap: boardConfig.ringsPerPlayer,
-        };
-
-        for (const pos of placements) {
-          const posKey = positionToString(pos);
-          const stack = state.board.stacks.get(posKey);
-          const isOccupied = !!(stack && stack.rings.length > 0);
-
-          // Per-cell cap: 1 for existing stacks, up to 3 for empty cells
-          const perCellCap = isOccupied ? 1 : 3;
-
-          for (let count = 1; count <= perCellCap; count++) {
-            const validation = validatePlacementOnBoard(state.board, pos, count, ctx);
-            if (!validation.valid) {
-              continue;
-            }
-
-            const moveId = isOccupied ? `place-${posKey}-stack` : `place-${posKey}-x${count}`;
-
-            moves.push({
-              id: moveId,
-              type: 'place_ring',
-              player: playerNumber,
-              to: pos,
-              placedOnStack: isOccupied,
-              placementCount: count,
-              timestamp: new Date(),
-              thinkTime: 0,
-              moveNumber: baseMoveNumber,
-            } as Move);
-          }
-        }
-      }
-
-      // Mirror backend RuleEngine skip semantics: only surface skip_placement
-      // when the active player has rings in hand and the placement aggregate
-      // reports that skipping is legal.
-      const skipPlayer = state.players.find((p) => p.playerNumber === playerNumber);
-      if (skipPlayer && skipPlayer.ringsInHand > 0) {
-        const eligibility: SkipPlacementEligibilityResult =
-          evaluateSkipPlacementEligibilityAggregate(state, playerNumber);
-        const aggregateEligible = eligibility.eligible;
-
-        if (aggregateEligible) {
-          moves.push({
-            id: 'skip-placement',
-            type: 'skip_placement',
-            player: playerNumber,
-            // Sentinel coordinate; not inspected by rules logic.
-            to: { x: 0, y: 0 },
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: baseMoveNumber + placements.length,
-          } as Move);
-        }
-      }
-
-      // RR-CANON-R204 / compact rules §2.1: When ringsInHand == 0 (placement forbidden)
-      // but the player controls stacks, the engine must enumerate movement moves.
-      // Fall through to the movement enumeration below instead of returning empty.
-      if (player && player.ringsInHand === 0) {
-        const playerStacks = this.getPlayerStacks(playerNumber, state.board);
-        if (playerStacks.length > 0) {
-          // Fall through to movement enumeration - don't return here
-        } else {
-          return moves; // No stacks and no rings in hand - no valid moves
-        }
-      } else {
-        return moves;
-      }
-    }
-
-    if (phase === 'line_processing') {
-      // P0.4 unified-Move model: expose line processing decision moves
-      // via getValidMoves() so sandbox AI and parity harnesses see the same
-      // canonical Move surface as the backend GameEngine.
-      const processMoves = enumerateProcessLineMoves(state, playerNumber, {
-        detectionMode: 'detect_now',
-      });
-
-      // For each line, also enumerate reward choices (if any).
-      const rewardMoves: Move[] = [];
-      processMoves.forEach((_, index) => {
-        rewardMoves.push(...enumerateChooseLineRewardMoves(state, playerNumber, index));
-      });
-
-      return [...processMoves, ...rewardMoves];
-    }
-
-    if (phase === 'territory_processing') {
-      // Test-only decision surface for parity harnesses: mirror the backend
-      // GameEngine territory_processing branch by exposing both
-      // process_territory_region and (when owed) eliminate_rings_from_stack
-      // Moves for the current player, using the same shared helpers that
-      // drive backend RuleEngine / GameEngine.
-      const territoryMoves = this.getValidTerritoryProcessingMovesForCurrentPlayer();
-      const eliminationMoves = this.getValidEliminationDecisionMovesForCurrentPlayer();
-
-      if (territoryMoves.length === 0 && eliminationMoves.length === 0) {
-        return [];
-      }
-
-      return [...territoryMoves, ...eliminationMoves];
-    }
-
-    if (phase === 'chain_capture') {
-      // Legacy chain_capture continuation surface: when running without the
-      // orchestrator adapter, expose continue_capture_segment Moves derived
-      // from the same shared capture aggregate used by the backend
-      // GameEngine. This keeps sandbox getValidMoves aligned with the
-      // unified Move model for tests that drive chains explicitly.
-      const chainPlayer = this._chainCapturePlayer;
-      const chainPosition = this._chainCaptureCurrentPosition;
-      if (chainPlayer == null || !chainPosition) {
-        return [];
-      }
-
-      const continuationInfo = getChainCaptureContinuationInfoAggregate(
-        this.gameState,
-        chainPlayer,
-        chainPosition
-      );
-
-      const continuations = continuationInfo.availableContinuations.filter(isCaptureMove);
-      if (continuations.length === 0) {
-        return [];
-      }
-
-      return continuations.map((m) => ({
-        ...m,
-        type: 'continue_capture_segment' as const,
-        player: chainPlayer,
-        id:
-          m.id && m.id.length > 0
-            ? m.id.startsWith('capture-')
-              ? m.id.replace('capture-', 'continue-')
-              : m.id
-            : `continue-${positionToString(m.from)}-${positionToString(
-                m.captureTarget
-              )}-${positionToString(m.to)}`,
-      }));
-    }
-
-    // RR-CANON-R204: Also enumerate movement moves when in ring_placement phase
-    // but ringsInHand == 0 (placement forbidden) and player controls stacks.
-    // In that case, the code above falls through without returning.
-    const shouldEnumerateMovement =
-      phase === 'movement' ||
-      (phase === 'ring_placement' &&
-        state.players.find((p) => p.playerNumber === playerNumber)?.ringsInHand === 0);
-
-    if (shouldEnumerateMovement) {
-      const board = state.board;
-      const baseMoveNumber = state.history.length + 1;
-      const playerStacks = this.getPlayerStacks(playerNumber, board);
-
-      // Capture segments.
-      for (const stack of playerStacks) {
-        const segments = this.enumerateCaptureSegmentsFrom(stack.position, playerNumber);
-        segments.forEach((seg) => {
-          // Generate stable deterministic ID: capture-{from}-{target}-{landing}
-          const captureId = `capture-${positionToString(seg.from)}-${positionToString(seg.target)}-${positionToString(seg.landing)}`;
-          moves.push({
-            id: captureId,
-            type: 'overtaking_capture',
-            player: playerNumber,
-            from: seg.from,
-            captureTarget: seg.target,
-            to: seg.landing,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: baseMoveNumber + moves.length,
-          } as Move);
-        });
-      }
-
-      // Simple non-capturing movement.
-      const simpleLandings = this.enumerateSimpleMovementLandings(playerNumber);
-      const stringToPositionLocal = (posStr: string): Position => {
-        const parts = posStr.split(',').map(Number);
-        if (parts.length === 2) {
-          const [x, y] = parts;
-          return { x, y };
-        }
-        if (parts.length === 3) {
-          const [x, y, z] = parts;
-          return { x, y, z };
-        }
-        return { x: 0, y: 0 };
-      };
-
-      simpleLandings.forEach((cand) => {
-        const fromPos = stringToPositionLocal(cand.fromKey);
-        // Generate stable deterministic ID: move-{from}-{to}
-        const moveId = `move-${cand.fromKey}-${positionToString(cand.to)}`;
-        moves.push({
-          id: moveId,
-          type: 'move_stack',
-          player: playerNumber,
-          from: fromPos,
-          to: cand.to,
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber: baseMoveNumber + moves.length,
-        } as Move);
-      });
-    }
-
-    return moves;
+    return adapter.getValidMoves();
   }
 
   /**
@@ -2466,166 +2181,37 @@ export class ClientSandboxEngine {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Adapter-based movement (when orchestrator adapter is enabled)
+    // Adapter-based movement (orchestrator is permanently enabled)
     // ═══════════════════════════════════════════════════════════════════════
-    if (this.useOrchestratorAdapter) {
-      const adapter = this.getOrchestratorAdapter();
-      const validMoves = adapter.getValidMoves();
+    const adapter = this.getOrchestratorAdapter();
+    const validMoves = adapter.getValidMoves();
 
-      // Find moves from selected stack to clicked position
-      const matchingMoves = validMoves.filter(
-        (m) =>
-          m.from &&
-          positionToString(m.from) === this._selectedStackKey &&
-          m.to &&
-          positionToString(m.to) === key
-      );
+    // Find moves from selected stack to clicked position
+    const matchingMoves = validMoves.filter(
+      (m) =>
+        m.from &&
+        positionToString(m.from) === this._selectedStackKey &&
+        m.to &&
+        positionToString(m.to) === key
+    );
 
-      if (matchingMoves.length === 0) {
-        // No valid move to this position - leave selection unchanged
-        return;
+    if (matchingMoves.length === 0) {
+      // No valid move to this position - leave selection unchanged
+      return;
+    }
+
+    let moveToApply: Move = matchingMoves[0];
+
+    // Handle multiple capture options (same from/to but different targets)
+    if (matchingMoves.length > 1) {
+      const captureOptions = matchingMoves.filter((m) => m.captureTarget);
+      if (captureOptions.length > 1) {
+        moveToApply = await this.promptForCaptureDirection(captureOptions);
       }
-
-      let moveToApply: Move = matchingMoves[0];
-
-      // Handle multiple capture options (same from/to but different targets)
-      if (matchingMoves.length > 1) {
-        const captureOptions = matchingMoves.filter((m) => m.captureTarget);
-        if (captureOptions.length > 1) {
-          moveToApply = await this.promptForCaptureDirection(captureOptions);
-        }
-      }
-
-      // Apply via applyCanonicalMove which handles history recording
-      await this.applyCanonicalMove(moveToApply);
-      this._selectedStackKey = undefined;
-      return;
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // Legacy movement (when orchestrator adapter is disabled)
-    // ═══════════════════════════════════════════════════════════════════════
-    await this.handleLegacyMovementClick(position, key, stackAtPos);
-  }
-
-  /**
-   * Legacy sandbox-specific movement handler used when the orchestrator
-   * adapter is disabled.
-   *
-   * @deprecated Phase 4 legacy path — use SandboxOrchestratorAdapter with the
-   * shared turn orchestrator instead. This helper will be removed once all
-   * tests and UI flows rely on orchestrator-backed movement. See Wave 5.4 in
-   * TODO.md for deprecation timeline.
-   */
-  private async handleLegacyMovementClick(
-    position: Position,
-    key: string,
-    stackAtPos: RingStack | undefined
-  ): Promise<void> {
-    const state = this.gameState;
-    const board = state.board;
-
-    // Determine selected source stack using existing selection semantics.
-    const selectedFromKey = this._selectedStackKey;
-
-    const isCanonicalReplay = this._movementInvocationContext === 'canonical';
-
-    // No source selected yet: select a stack belonging to the current player.
-    if (!selectedFromKey) {
-      if (stackAtPos && stackAtPos.controllingPlayer === state.currentPlayer) {
-        this._selectedStackKey = key;
-      }
-      return;
-    }
-
-    // Clicking the same cell clears selection.
-    if (key === selectedFromKey) {
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    const movingStack = board.stacks.get(selectedFromKey);
-    if (!movingStack || movingStack.controllingPlayer !== state.currentPlayer) {
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    const fromPos = movingStack.position;
-
-    // Disallow landing on collapsed spaces.
-    if (this.isCollapsedSpace(position, board)) {
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    // Determine whether this click represents a capture or a simple move.
-    const captureOptions = this.enumerateCaptureSegmentsFrom(
-      fromPos,
-      movingStack.controllingPlayer
-    );
-
-    const matchingCapture = captureOptions.find(
-      (seg) => positionToString(seg.landing) === positionToString(position)
-    );
-
-    if (matchingCapture) {
-      // Start a mandatory capture chain beginning with this canonical segment.
-      await this.performCaptureChainInternal(
-        matchingCapture.from,
-        matchingCapture.target,
-        matchingCapture.landing,
-        movingStack.controllingPlayer,
-        isCanonicalReplay
-      );
-
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    // No capture segment matches; treat as simple non-capturing move.
-    const simpleLandings = enumerateSimpleMovementLandings(
-      state.boardType,
-      board,
-      movingStack.controllingPlayer,
-      (pos: Position) => this.isValidPosition(pos)
-    );
-
-    const fromKeyForMove = positionToString(fromPos);
-    const isLegalSimpleMove = simpleLandings.some(
-      (landing) =>
-        landing.fromKey === fromKeyForMove &&
-        positionToString(landing.to) === positionToString(position)
-    );
-
-    if (!isLegalSimpleMove) {
-      this._selectedStackKey = undefined;
-      return;
-    }
-
-    // Apply simple movement via MovementAggregate.
-    const beforeState: GameState = this.gameState;
-    const outcome = applySimpleMovement(beforeState, {
-      from: fromPos,
-      to: position,
-      player: movingStack.controllingPlayer,
-    });
-
-    this.gameState = outcome.nextState;
-
-    // Post-movement consequences.
-    await this.advanceAfterMovement();
-
-    // Emit canonical history for human-driven simple moves.
-    if (!isCanonicalReplay) {
-      await this.handleSimpleMoveApplied({
-        before: beforeState,
-        after: this.gameState,
-        from: fromPos,
-        landing: position,
-        playerNumber: state.currentPlayer,
-      });
-    }
-
+    // Apply via applyCanonicalMove which handles history recording
+    await this.applyCanonicalMove(moveToApply);
     this._selectedStackKey = undefined;
   }
 
@@ -3464,444 +3050,19 @@ export class ClientSandboxEngine {
     const beforeHash = hashGameState(this.getGameState());
 
     // ═══════════════════════════════════════════════════════════════════════
-    // Orchestrator Adapter Delegation
+    // Orchestrator Adapter Delegation (permanently enabled)
     // ═══════════════════════════════════════════════════════════════════════
-    // When the orchestrator adapter is enabled, delegate all rules logic
-    // to the shared orchestrator. This eliminates duplicated logic and
-    // ensures sandbox and backend use identical rules processing.
-    if (this.useOrchestratorAdapter) {
-      const beforeState = this.getGameState();
-      const changed = await this.processMoveViaAdapter(move, beforeState);
+    // Delegate all rules logic to the shared orchestrator. This eliminates
+    // duplicated logic and ensures sandbox and backend use identical rules processing.
+    const beforeState = this.getGameState();
+    const changed = await this.processMoveViaAdapter(move, beforeState);
 
-      // Debug checkpoint after adapter processing
-      this.debugCheckpoint(`after-applyCanonicalMoveInternal-adapter-${move.type}`);
+    // Debug checkpoint after adapter processing
+    this.debugCheckpoint(`after-applyCanonicalMoveInternal-adapter-${move.type}`);
 
-      // Verify state actually changed
-      const afterHash = hashGameState(this.getGameState());
-      return changed && beforeHash !== afterHash;
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // Legacy Sandbox Logic (when adapter is disabled)
-    // ═══════════════════════════════════════════════════════════════════════
-
-    // This path should not be used in normal gameplay; log for diagnostics
-    // so we can detect any remaining legacy usage in staging/production.
-
-    console.warn(
-      '[ClientSandboxEngine.applyCanonicalMoveInternal] Falling back to legacy sandbox logic (orchestrator adapter disabled).'
-    );
-
-    // Ensure currentPlayer matches the move's player for the purposes of
-    // canonical application.
-    if (move.player !== this.gameState.currentPlayer) {
-      this.gameState = {
-        ...this.gameState,
-        currentPlayer: move.player,
-      };
-    }
-
-    let applied = false;
-
-    switch (move.type) {
-      case 'place_ring': {
-        if (!move.to) {
-          break;
-        }
-        if (opts.bypassNoDeadPlacement) {
-          // Backend-style placement: bypass no-dead-placement validation but
-          // delegate mutation to the shared PlacementAggregate so board
-          // updates stay aligned with the canonical engine.
-          const placementCount = Math.max(1, move.placementCount ?? 1);
-          const beforeState = this.gameState;
-
-          const placementMove: Move = {
-            ...move,
-            type: 'place_ring',
-            placementCount: placementCount,
-          } as Move;
-
-          const outcome = applyPlacementMoveAggregate(beforeState, placementMove);
-
-          if (hashGameState(outcome.nextState) !== hashGameState(beforeState)) {
-            const key = positionToString(move.to);
-
-            this.gameState = {
-              ...outcome.nextState,
-              currentPhase: 'movement',
-            };
-
-            this._hasPlacedThisTurn = true;
-            this._mustMoveFromStackKey = key;
-            this._selectedStackKey = key;
-
-            applied = true;
-          }
-        } else {
-          // Sandbox-style placement: enforce no-dead-placement via
-          // tryPlaceRings so AI turns share the same gating as human
-          // sandbox interaction.
-          const count = Math.max(1, move.placementCount ?? 1);
-          const placed = await this.tryPlaceRings(move.to, count);
-          applied = placed;
-        }
-        break;
-      }
-
-      case 'skip_placement': {
-        const state = this.gameState;
-        const playerState = state.players.find((p) => p.playerNumber === move.player);
-
-        // Backend-style tightening: skip_placement is only legal when the
-        // active player still has rings in hand and the aggregate reports
-        // that skipping is allowed.
-        if (!playerState || playerState.ringsInHand <= 0) {
-          break;
-        }
-
-        const eligibility: SkipPlacementEligibilityResult =
-          evaluateSkipPlacementEligibilityAggregate(state, move.player);
-        const aggregateEligible = eligibility.eligible;
-
-        if (!aggregateEligible) {
-          break;
-        }
-
-        this.gameState = {
-          ...state,
-          currentPhase: 'movement',
-        };
-        applied = true;
-        break;
-      }
-
-      case 'move_ring':
-      case 'move_stack': {
-        if (!move.from || !move.to) {
-          break;
-        }
-        // Reuse existing movement handler by simulating a source
-        // selection followed by a destination click. Mark this invocation
-        // as canonical so movement hooks do not emit duplicate history.
-        this._movementInvocationContext = 'canonical';
-        try {
-          this._selectedStackKey = positionToString(move.from);
-          await this.handleMovementClick(move.to);
-        } finally {
-          this._movementInvocationContext = null;
-        }
-        // handleMovementClick calls advanceAfterMovement internally via hooks,
-        // so we don't need to call it again here.
-        applied = true;
-        break;
-      }
-
-      case 'overtaking_capture':
-      case 'continue_capture_segment': {
-        if (!move.from || !move.to || !move.captureTarget) {
-          break;
-        }
-
-        // Apply the segment using the same helper used by sandbox-driven chains,
-        // delegating all marker + stack semantics to the shared capture aggregate.
-        this.applyCaptureSegment(move.from, move.captureTarget, move.to, move.player);
-
-        // After applying the segment, ask the shared capture core whether any
-        // further captures exist from the landing position. This keeps chain
-        // continuation semantics aligned with the backend GameEngine and Python
-        // rules engine.
-        const continuationInfo = getChainCaptureContinuationInfoAggregate(
-          this.gameState,
-          move.player,
-          move.to
-        );
-
-        if (continuationInfo.mustContinue) {
-          // At least one follow-up capture segment is available. Mirror backend
-          // behaviour by entering the interactive 'chain_capture' phase while
-          // deferring automatic post-movement consequences until the chain
-          // eventually terminates.
-          if (this.gameState.currentPhase !== 'chain_capture') {
-            this.gameState = {
-              ...this.gameState,
-              currentPhase: 'chain_capture',
-            };
-          }
-          // Record minimal chain-capture state for legacy sandbox getValidMoves()
-          // so tests can enumerate continue_capture_segment options from the
-          // correct landing position.
-          this._chainCapturePlayer = move.player;
-          this._chainCaptureCurrentPosition = move.to as Position;
-        } else {
-          // No legal continuations remain; clear any stale legacy chain state.
-          this._chainCapturePlayer = null;
-          this._chainCaptureCurrentPosition = null;
-
-          // No legal continuations remain; the capture chain is complete.
-          // Process lines and territory consequences but do NOT advance the
-          // turn yet - that happens AFTER appendHistoryEntry in applyCanonicalMove
-          // to match backend GameEngine ordering where history is recorded BEFORE
-          // advanceGame().
-          await this.processLinesForCurrentPlayer();
-          if (this.gameState.currentPhase === 'line_processing') {
-            applied = true;
-            break;
-          }
-
-          await this.processDisconnectedRegionsForCurrentPlayer();
-          if (this.gameState.currentPhase === 'territory_processing') {
-            applied = true;
-            break;
-          }
-
-          this.checkAndApplyVictory();
-
-          // Set phase to territory_processing so the caller knows to advance
-          // the turn after recording history.
-          if (this.gameState.gameStatus === 'active') {
-            this.gameState = {
-              ...this.gameState,
-              currentPhase: 'territory_processing',
-            };
-          }
-        }
-
-        applied = true;
-        break;
-      }
-
-      case 'process_line':
-      case 'choose_line_reward': {
-        // Use shared helpers for line decision application.
-        // This unifies traceMode and normal mode logic for applying the move.
-        const outcome =
-          move.type === 'process_line'
-            ? applyProcessLineDecision(this.gameState, move)
-            : applyChooseLineRewardDecision(this.gameState, move);
-
-        const nextState = outcome.nextState;
-
-        if (hashGameState(nextState) !== hashGameState(this.gameState)) {
-          this.gameState = nextState;
-          applied = true;
-
-          // Update pending elimination flag based on the outcome.
-          if (outcome.pendingLineRewardElimination) {
-            this._pendingLineRewardElimination = true;
-          }
-
-          // In traceMode, we stop here and let the AI/harness drive the next step.
-          if (this.traceMode) {
-            this.gameState = {
-              ...this.gameState,
-              currentPhase: 'line_processing',
-            };
-          } else {
-            // In normal mode, continue processing lines or advance.
-            const remainingLines = this.findAllLines(this.gameState.board).filter(
-              (line) => line.player === move.player
-            );
-
-            if (remainingLines.length > 0) {
-              this.gameState = {
-                ...this.gameState,
-                currentPhase: 'line_processing',
-              };
-            } else {
-              // Check for territory processing
-              const disconnected = findDisconnectedRegionsOnBoard(this.gameState.board);
-              const eligible = disconnected.filter((region) =>
-                this.canProcessDisconnectedRegion(region.spaces, move.player, this.gameState.board)
-              );
-
-              if (eligible.length > 0) {
-                this.gameState = {
-                  ...this.gameState,
-                  currentPhase: 'territory_processing',
-                };
-              } else {
-                this.checkAndApplyVictory();
-                if (this.gameState.gameStatus === 'active') {
-                  this._hasPlacedThisTurn = false;
-                  this._mustMoveFromStackKey = undefined;
-                  const nextPlayer = this.getNextPlayerNumber(this.gameState.currentPlayer);
-                  this.gameState = {
-                    ...this.gameState,
-                    currentPlayer: nextPlayer,
-                  };
-                  this.startTurnForCurrentPlayer();
-                }
-              }
-            }
-          }
-        }
-        break;
-      }
-
-      case 'process_territory_region': {
-        // Use shared helper for territory region application.
-        const outcome = applyProcessTerritoryRegionDecision(this.gameState, move);
-        const nextState = outcome.nextState;
-
-        if (hashGameState(nextState) !== hashGameState(this.gameState)) {
-          this.gameState = nextState;
-          applied = true;
-
-          // Update pending elimination flag based on the outcome.
-          if (outcome.pendingSelfElimination) {
-            this._pendingTerritorySelfElimination = true;
-          }
-
-          if (this.traceMode) {
-            // In trace/parity mode, run victory checks immediately but stay in
-            // territory_processing so explicit elimination can follow.
-            this.checkAndApplyVictory();
-            if (this.gameState.gameStatus === 'active') {
-              this.gameState = {
-                ...this.gameState,
-                currentPhase: 'territory_processing',
-              };
-            }
-          } else {
-            // In normal mode, check if more regions remain or advance.
-            const disconnected = findDisconnectedRegionsOnBoard(this.gameState.board);
-            const eligible = disconnected.filter((region) =>
-              this.canProcessDisconnectedRegion(region.spaces, move.player, this.gameState.board)
-            );
-
-            if (eligible.length === 0) {
-              this.checkAndApplyVictory();
-              if (this.gameState.gameStatus === 'active') {
-                this._hasPlacedThisTurn = false;
-                this._mustMoveFromStackKey = undefined;
-                const nextPlayer = this.getNextPlayerNumber(this.gameState.currentPlayer);
-                this.gameState = {
-                  ...this.gameState,
-                  currentPlayer: nextPlayer,
-                };
-                this.startTurnForCurrentPlayer();
-              }
-            }
-          }
-        }
-        break;
-      }
-
-      case 'eliminate_rings_from_stack': {
-        const wasTerritorySelfElimination = this._pendingTerritorySelfElimination;
-        const wasLineRewardElimination = this._pendingLineRewardElimination;
-
-        // Use shared helper for elimination application.
-        const { nextState } = applyEliminateRingsFromStackDecision(this.gameState, move);
-
-        if (hashGameState(nextState) !== hashGameState(this.gameState)) {
-          this.gameState = nextState;
-          applied = true;
-
-          // Clear pending flags.
-          this._pendingTerritorySelfElimination = false;
-          this._pendingLineRewardElimination = false;
-
-          if (wasLineRewardElimination) {
-            // Line-reward elimination complete.
-            this.checkAndApplyVictory();
-
-            if (this.gameState.gameStatus === 'active') {
-              const remainingLines = this.findAllLines(this.gameState.board).filter(
-                (line) => line.player === move.player
-              );
-
-              if (remainingLines.length > 0) {
-                this.gameState = {
-                  ...this.gameState,
-                  currentPhase: 'line_processing',
-                };
-              } else {
-                this.gameState = {
-                  ...this.gameState,
-                  currentPhase: 'territory_processing',
-                };
-              }
-            }
-          } else if (wasTerritorySelfElimination) {
-            // Territory-origin self-elimination.
-            const disconnected = findDisconnectedRegionsOnBoard(this.gameState.board);
-            const eligible = disconnected.filter((region) =>
-              this.canProcessDisconnectedRegion(region.spaces, move.player, this.gameState.board)
-            );
-
-            if (eligible.length > 0) {
-              this.gameState = {
-                ...this.gameState,
-                currentPhase: 'territory_processing',
-              };
-            } else {
-              this.checkAndApplyVictory();
-              if (this.gameState.gameStatus === 'active') {
-                this._hasPlacedThisTurn = false;
-                this._mustMoveFromStackKey = undefined;
-                const nextPlayer = this.getNextPlayerNumber(this.gameState.currentPlayer);
-                this.gameState = {
-                  ...this.gameState,
-                  currentPlayer: nextPlayer,
-                };
-                this.startTurnForCurrentPlayer();
-              }
-            }
-          } else {
-            // Fallback / generic elimination.
-            const disconnected = findDisconnectedRegionsOnBoard(this.gameState.board);
-            const eligible = disconnected.filter((region) =>
-              this.canProcessDisconnectedRegion(region.spaces, move.player, this.gameState.board)
-            );
-
-            if (eligible.length === 0) {
-              this.checkAndApplyVictory();
-              if (this.gameState.gameStatus === 'active') {
-                this._hasPlacedThisTurn = false;
-                this._mustMoveFromStackKey = undefined;
-                const nextPlayer = this.getNextPlayerNumber(this.gameState.currentPlayer);
-                this.gameState = {
-                  ...this.gameState,
-                  currentPlayer: nextPlayer,
-                };
-                this.startTurnForCurrentPlayer();
-              }
-            }
-          }
-        }
-        break;
-      }
-
-      default: {
-        // Unsupported move types are treated as no-ops here; callers that
-        // care about strictness (e.g. applyCanonicalMove) can enforce
-        // additional checks around this helper.
-        break;
-      }
-    }
-
-    if (!applied) {
-      return false;
-    }
-
-    this.debugCheckpoint(`after-applyCanonicalMoveInternal-${move.type}`);
+    // Verify state actually changed
     const afterHash = hashGameState(this.getGameState());
-    const changed = beforeHash !== afterHash;
-
-    // Test-only board invariant enforcement: when running under Jest, assert
-    // that the sandbox never commits a board state with overlapping stacks,
-    // markers, or collapsed spaces. This mirrors the backend
-    // BoardManager.assertBoardInvariants helper but is intentionally wired
-    // only for tests so production builds avoid the extra scan cost.
-    if (changed && isTestEnvironment()) {
-      const testAugmented = this as unknown as ClientSandboxEngineTestAugmented;
-      if (typeof testAugmented.assertBoardInvariants === 'function') {
-        testAugmented.assertBoardInvariants(`applyCanonicalMoveInternal:${move.type}`);
-      }
-    }
-
-    return changed;
+    return changed && beforeHash !== afterHash;
   }
 
   /**

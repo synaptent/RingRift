@@ -812,6 +812,103 @@
         "thinkTime": 0,
         "moveNumber": 20
       }
+    },
+    {
+      "id": "advanced.multi_phase_turn",
+      "name": "Multi-Phase Turn Demo",
+      "description": "Experience a turn with multiple phases. Player 1's capture triggers a chain capture, which leads to line processing. Watch how phases flow: capture → chain_capture → line_processing → territory_processing.",
+      "category": "advanced",
+      "difficulty": "advanced",
+      "tags": [
+        "multi_phase",
+        "turn_lifecycle",
+        "capture",
+        "chain_capture",
+        "line_processing",
+        "advanced"
+      ],
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-12-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-multi-phase-turn",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "0,3": {
+              "position": { "x": 0, "y": 3 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "1,3": {
+              "position": { "x": 1, "y": 3 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "7,3": {
+              "position": { "x": 7, "y": 3 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            }
+          },
+          "markers": {
+            "4,3": { "position": { "x": 4, "y": 3 }, "player": 1, "type": "regular" },
+            "5,3": { "position": { "x": 5, "y": 3 }, "player": 1, "type": "regular" },
+            "6,3": { "position": { "x": 6, "y": 3 }, "player": 1, "type": "regular" }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 14,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 16,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 5,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 19,
+        "territoryVictoryThreshold": 33
+      },
+      "suggestedMove": {
+        "id": "suggested-multi-phase-capture",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": { "x": 0, "y": 3 },
+        "captureTarget": { "x": 1, "y": 3 },
+        "to": { "x": 2, "y": 3 },
+        "timestamp": "2025-12-01T00:00:00.000Z",
+        "thinkTime": 0,
+        "moveNumber": 5
+      }
     }
   ]
 }

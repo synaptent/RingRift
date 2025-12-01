@@ -115,7 +115,7 @@ especially in less-tested corners of the rules.
 
 **P18.5-\* Resolution (December 2025):**
 
-- **Extended Contract Vectors:** 43 vectors across 4 families (chain capture, forced elimination, territory/line, hex edge cases) with **0 mismatches** between TS and Python.
+- **Extended Contract Vectors:** 49 vectors across the core families (placement, movement, capture/chain_capture including extended chains, forced elimination, territory/line endgames including near_victory_territory, hex edge cases, meta moves such as swap_sides and multi-phase turns) with **0 mismatches** between TS and Python.
 - **swap_sides Parity:** Verified across all layers (TS backend, TS sandbox, Python) per [P18.5-4_SWAP_SIDES_PARITY_REPORT.md](docs/P18.5-4_SWAP_SIDES_PARITY_REPORT.md).
 - **Orchestrator Phase 4:** 100% rollout, all hosts using orchestrator adapters as the canonical rules path.
 
@@ -503,7 +503,7 @@ loop and tests are further stabilised.
 **Status:** Design clarification, not a bug
 **Date:** December 1, 2025
 
-The extended contract vectors (43 vectors across chain_capture, forced_elimination, territory_line_endgame, and hex_edge_cases families) are designed for **single-step parity testing** – verifying that a specific move applied to a specific state produces the expected output.
+The extended contract vectors (49 vectors across the v2 bundles – including chain_capture and chain_capture_extended, forced_elimination, territory/territory_line_endgame and near_victory_territory, hex_edge_cases, and meta moves) are designed for **single-step parity testing** – verifying that a specific move applied to a specific state produces the expected output.
 
 When the orchestrator soak harness attempted to use these vectors as starting points for random game continuation, 13 of 23 vectors flagged `ACTIVE_NO_CANDIDATE_MOVES` violations immediately at turn 0. This is **expected behavior**, not a rules engine bug:
 

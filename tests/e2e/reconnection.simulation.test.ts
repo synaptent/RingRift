@@ -40,6 +40,7 @@ import {
   createFixtureGame,
   type TestUser,
 } from './helpers/test-utils';
+import { HomePage } from './pages';
 
 test.describe('Network Partition Simulation with NetworkSimulator', () => {
   // Mark all tests as slow since they involve network simulation
@@ -817,15 +818,140 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
 
         expect(p2GameOver?.data?.gameResult).toBeDefined();
         const reason = p2GameOver.data.gameResult.reason;
-        expect(reason === 'timeout' || reason === 'abandonment').toBe(true);
+        // Reconnection-window expiry should be treated as abandonment, not a bare timeout.
+        expect(reason).toBe('abandonment');
 
         // Reconnect player1 and ensure they also see the same final result.
         await coordinator.network.simulateReconnect('player1', 1_000);
         const p1GameOver = (await coordinator.waitForGameOver('player1', 10_000)) as any;
 
         expect(p1GameOver?.data?.gameResult).toBeDefined();
-        expect(p1GameOver.data.gameResult.reason).toBe(reason);
+        expect(p1GameOver.data.gameResult.reason).toBe('abandonment');
         expect(p1GameOver.data.gameResult.winner).toBe(p2GameOver.data.gameResult.winner);
+      } finally {
+        await coordinator.cleanup();
+        await context1.close();
+        await context2.close();
+      }
+    });
+
+    test('rated vs unrated reconnection-window abandonment updates rating appropriately', async ({
+      browser,
+    }) => {
+      const coordinator = createNetworkAwareCoordinator(serverUrl);
+
+      const context1 = await browser.newContext();
+      const context2 = await browser.newContext();
+      const page1 = await context1.newPage();
+      const page2 = await context2.newPage();
+
+      const user1 = generateTestUser();
+      const user2 = generateTestUser();
+
+      const readRating = async (page: import('@playwright/test').Page): Promise<number> => {
+        const homePage = new HomePage(page);
+        await homePage.goto();
+        await homePage.goToProfile();
+        await page.waitForURL('**/profile', { timeout: 10_000 });
+        const ratingText = await page.locator('.text-emerald-400').first().textContent();
+        return parseInt((ratingText || '').replace(/[^0-9]/g, ''), 10);
+      };
+
+      try {
+        // Register users and obtain JWT tokens via UI.
+        const token1 = await createUserAndGetToken(page1, user1);
+        const token2 = await createUserAndGetToken(page2, user2);
+
+        const initialP1Rating = await readRating(page1);
+        expect(initialP1Rating).toBeGreaterThan(0);
+
+        // --- Rated abandonment: rating should change for the abandoning player (P1) ---
+        const rated = await createFixtureGame(page1, {
+          scenario: 'line_processing',
+          isRated: true,
+          shortTimeoutMs: 4_000,
+          shortWarningBeforeMs: 2_000,
+        });
+
+        await coordinator.connect('player1', {
+          playerId: user1.username,
+          userId: user1.username,
+          token: token1,
+        });
+        await coordinator.connect('player2', {
+          playerId: user2.username,
+          userId: user2.username,
+          token: token2,
+        });
+
+        await coordinator.joinGame('player1', rated.gameId);
+        await coordinator.joinGame('player2', rated.gameId);
+
+        await coordinator.waitForPhase('player1', 'line_processing', 15_000);
+
+        // Player 1 disconnects mid-decision and never reconnects → abandonment.
+        await coordinator.network.forceDisconnect('player1');
+
+        const ratedResults = await coordinator.waitForAll(['player1', 'player2'], {
+          type: 'gameOver',
+          predicate: (data) => true,
+          timeout: 30_000,
+        });
+
+        const ratedP1 = ratedResults.get('player1') as any;
+        const ratedP2 = ratedResults.get('player2') as any;
+        expect(ratedP1?.data?.gameResult.reason).toBe('abandonment');
+        expect(ratedP2?.data?.gameResult.reason).toBe('abandonment');
+
+        // Allow backend to persist rating updates.
+        await page1.waitForTimeout(2_000);
+
+        const afterRatedAbandonRating = await readRating(page1);
+        expect(afterRatedAbandonRating).not.toBe(initialP1Rating);
+
+        await coordinator.disconnectAll();
+
+        // --- Unrated abandonment: rating should NOT change ---
+        const unrated = await createFixtureGame(page1, {
+          scenario: 'line_processing',
+          isRated: false,
+          shortTimeoutMs: 4_000,
+          shortWarningBeforeMs: 2_000,
+        });
+
+        await coordinator.connect('player1', {
+          playerId: user1.username,
+          userId: user1.username,
+          token: token1,
+        });
+        await coordinator.connect('player2', {
+          playerId: user2.username,
+          userId: user2.username,
+          token: token2,
+        });
+
+        await coordinator.joinGame('player1', unrated.gameId);
+        await coordinator.joinGame('player2', unrated.gameId);
+
+        await coordinator.waitForPhase('player1', 'line_processing', 15_000);
+
+        await coordinator.network.forceDisconnect('player1');
+
+        const unratedResults = await coordinator.waitForAll(['player1', 'player2'], {
+          type: 'gameOver',
+          predicate: (data) => true,
+          timeout: 30_000,
+        });
+
+        const unratedP1 = unratedResults.get('player1') as any;
+        const unratedP2 = unratedResults.get('player2') as any;
+        expect(unratedP1?.data?.gameResult.reason).toBe('abandonment');
+        expect(unratedP2?.data?.gameResult.reason).toBe('abandonment');
+
+        await page1.waitForTimeout(2_000);
+
+        const afterUnratedAbandonRating = await readRating(page1);
+        expect(afterUnratedAbandonRating).toBe(afterRatedAbandonRating);
       } finally {
         await coordinator.cleanup();
         await context1.close();

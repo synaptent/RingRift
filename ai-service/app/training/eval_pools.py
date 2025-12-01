@@ -34,13 +34,14 @@ POOL_PATHS: Dict[Tuple[BoardType, str], str] = {
     (BoardType.SQUARE8, "v1"): "data/eval_pools/square8/pool_v1.jsonl",
     (BoardType.SQUARE19, "v1"): "data/eval_pools/square19/pool_v1.jsonl",
     (BoardType.HEXAGONAL, "v1"): "data/eval_pools/hex/pool_v1.jsonl",
-    # Multi-player evaluation pools (diagnostic / experimental).
-    (BoardType.SQUARE19, "square19_3p_pool_v1"): (
-        "data/eval_pools/square19_3p/pool_v1.jsonl"
-    ),
-    (BoardType.HEXAGONAL, "hex_4p_pool_v1"): (
-        "data/eval_pools/hex_4p/pool_v1.jsonl"
-    ),
+    # 3-player evaluation pools.
+    (BoardType.SQUARE8, "3p_v1"): "data/eval_pools/square8_3p/pool_v1.jsonl",
+    (BoardType.SQUARE19, "3p_v1"): "data/eval_pools/square19_3p/pool_v1.jsonl",
+    (BoardType.HEXAGONAL, "3p_v1"): "data/eval_pools/hex_3p/pool_v1.jsonl",
+    # 4-player evaluation pools.
+    (BoardType.SQUARE8, "4p_v1"): "data/eval_pools/square8_4p/pool_v1.jsonl",
+    (BoardType.SQUARE19, "4p_v1"): "data/eval_pools/square19_4p/pool_v1.jsonl",
+    (BoardType.HEXAGONAL, "4p_v1"): "data/eval_pools/hex_4p/pool_v1.jsonl",
 }
 
 

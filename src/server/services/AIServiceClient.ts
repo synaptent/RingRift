@@ -325,12 +325,14 @@ export class AIServiceClient {
   /**
    * Categorize error type for better diagnostics
    */
-  private categorizeError(error: any): string {
-    if (error.code === 'ECONNREFUSED') return 'connection_refused';
-    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') return 'timeout';
-    if (error.response?.status === 500) return 'server_error';
-    if (error.response?.status === 503) return 'service_unavailable';
-    if (error.response?.status >= 400 && error.response?.status < 500) return 'client_error';
+  private categorizeError(error: unknown): string {
+    const err = error as { code?: string; response?: { status?: number } };
+    if (err.code === 'ECONNREFUSED') return 'connection_refused';
+    if (err.code === 'ETIMEDOUT' || err.code === 'ECONNABORTED') return 'timeout';
+    if (err.response?.status === 500) return 'server_error';
+    if (err.response?.status === 503) return 'service_unavailable';
+    if (err.response?.status && err.response.status >= 400 && err.response.status < 500)
+      return 'client_error';
     return 'unknown';
   }
 
@@ -431,7 +433,8 @@ export class AIServiceClient {
           // Preserve the low-level error classification set by the axios
           // interceptor so AIEngine and observability layers can distinguish
           // between timeouts, connection failures, and other errors.
-          const aiErrorType = (error as any)?.aiErrorType as string | undefined;
+          const errorWithType = error as Error & { aiErrorType?: string };
+          const aiErrorType = errorWithType.aiErrorType;
 
           logger.error('Failed to get AI move', {
             error,
@@ -970,7 +973,7 @@ export class AIServiceClient {
   /**
    * Get service information.
    */
-  async getServiceInfo(): Promise<any> {
+  async getServiceInfo(): Promise<Record<string, unknown> | null> {
     try {
       const response = await this.client.get('/');
       return response.data;

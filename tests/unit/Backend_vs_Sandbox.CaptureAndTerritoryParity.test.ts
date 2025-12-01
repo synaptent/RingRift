@@ -38,6 +38,18 @@ import * as sharedLineDetection from '../../src/shared/engine/lineDetection';
 /**
  * Backend vs Sandbox advanced-phase parity harness.
  *
+ * HISTORICAL NOTE (Phase 3 Migration, 2025-12-01):
+ * This test was originally designed to compare both hosts with orchestrator
+ * disabled (legacy paths). As of Phase 3, the orchestrator adapter is
+ * permanently enabled on ClientSandboxEngine and cannot be disabled.
+ *
+ * The test now compares:
+ *  - GameEngine (backend host, orchestrator can still be disabled for tests)
+ *  - ClientSandboxEngine (sandbox host, orchestrator permanently enabled)
+ *
+ * This still validates parity between backend and sandbox when processing
+ * the same canonical Move sequences in advanced phases.
+ *
  * Scope:
  *  - Pure capture chains (multi-step, with branching choices).
  *  - Territory disconnection and Q23-style self-elimination.
@@ -50,18 +62,15 @@ import * as sharedLineDetection from '../../src/shared/engine/lineDetection';
  *      - ClientSandboxEngine (sandbox host).
  *  - Both hosts are then driven through the SAME canonical sequence of
  *    advanced-phase decisions using their public APIs:
- *      - backend: makeMove (move-driven decision phases enabled, orchestrator
- *        adapter disabled for determinism in tests),
- *      - sandbox: applyCanonicalMove (orchestrator adapter disabled).
+ *      - backend: makeMove (move-driven decision phases enabled),
+ *      - sandbox: applyCanonicalMove (orchestrator adapter enabled).
  *  - At each step we:
  *      1. Assert that legal decision surfaces match (capture / line / territory).
  *      2. Apply the same canonical Move to both hosts.
  *      3. Compare resulting board state, player statistics, and S/T metrics.
  *
- * These tests are intended to be sensitive to host divergences in advanced
- * phases while remaining stable under orchestrator-first rollout, since they
- * do not depend on global feature flags and only toggle per-instance adapter
- * settings for deterministic test harness behaviour.
+ * These tests validate that both hosts produce identical results when
+ * processing the same canonical Move sequences.
  */
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -156,14 +165,11 @@ function createDeterministicSandboxHandler(): SandboxInteractionHandler {
  *   - move-driven decision phases enabled so line/territory decisions are
  *     expressed as canonical Moves (process_line, choose_line_reward,
  *     process_territory_region, eliminate_rings_from_stack).
- *   - Orchestrator adapter disabled to keep behaviour deterministic and
- *     focused on host-local advanced-phase plumbing for this harness.
  *
  * - Sandbox:
  *   - traceMode=true so line/territory decisions are surfaced as explicit
  *     canonical Moves instead of being auto-applied.
- *   - Orchestrator adapter disabled so behaviour is driven by the local
- *     sandbox logic that mirrors the backend host.
+ *   - Orchestrator adapter is permanently enabled (Phase 3 migration).
  */
 function createHostsFromBaseState(baseState: GameState): HostPair {
   const boardType: BoardType = baseState.boardType;
@@ -179,7 +185,9 @@ function createHostsFromBaseState(baseState: GameState): HostPair {
     timeControl,
     false
   );
-  backend.disableOrchestratorAdapter();
+  // NOTE: Backend may still support disableOrchestratorAdapter() for test isolation.
+  // For parity with sandbox (which now permanently uses orchestrator), we keep
+  // it enabled on backend as well.
   backend.enableMoveDrivenDecisionPhases();
   const backendAny: any = backend;
   backendAny.gameState = cloneGameState(baseState);
@@ -195,7 +203,8 @@ function createHostsFromBaseState(baseState: GameState): HostPair {
     interactionHandler: sandboxHandler,
     traceMode: true,
   });
-  sandbox.disableOrchestratorAdapter();
+  // NOTE: As of Phase 3 migration, orchestrator adapter is permanently enabled
+  // on ClientSandboxEngine. The disableOrchestratorAdapter() method no longer exists.
   const sandboxAny: any = sandbox;
   sandboxAny.gameState = cloneGameState(baseState);
 

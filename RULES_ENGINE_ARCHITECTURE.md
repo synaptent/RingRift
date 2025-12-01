@@ -85,6 +85,8 @@ important groups are:
     - `EngineSelection.SHADOW` – legacy remains authoritative, but the orchestrator runs in parallel on a cloned state via `ShadowModeComparator` and reports mismatch/error/latency metrics to Prometheus. Used for safe rollout and regression detection.
     - `EngineSelection.LEGACY` – test/tools‑only path: bypasses the adapter and uses the legacy `GameEngine`/`RuleEngine` turn pipeline. In production this mode is reachable only via the orchestrator kill switch or an open circuit breaker (see `OrchestratorRolloutService` and the rollout docs listed below). Normal gameplay is expected to use `ORCHESTRATOR` or `SHADOW`.
 
+      **Legacy mode (REMOVED in PASS20):** Previously available as circuit-breaker fallback; ~1,147 lines of legacy code removed in December 2025. Orchestrator is now the only production path.
+
 > **Rollout & runbooks:** The canonical description of environment phases, feature flags, SLOs, and rollback levers for orchestrator rollout now lives in:
 >
 > - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – environment phases 0–4, CI/SLO gates, and flag matrices.

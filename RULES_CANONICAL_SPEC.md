@@ -441,7 +441,10 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Each `pi` currently contains a **marker** of P (no stacks, no collapsed spaces).
     - Each `pi` is adjacent to `pi+1` along a single line axis (per `lineAdjacency`).
     - No empty cells, opponent markers, stacks, or collapsed spaces appear between positions in the sequence.
-  - A line is **eligible** if `len = k+1 ≥ lineLength` for the board type.
+  - A line is **eligible** if `len = k+1 ≥ requiredLength`, where `requiredLength` is:
+    - 4 for `square8` in 2-player games (RR-CANON-R123).
+    - 3 for `square8` in 3-4 player games.
+    - 4 for `square19` and `hexagonal` (all player counts).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§11.1, 15.3, 16.3, 16.9.4.3.
 
 - **[RR-CANON-R121] Line processing order.**
@@ -454,7 +457,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5, 11.2–11.3, 15.4 Q7.
 
 - **[RR-CANON-R122] Line collapse and elimination.**
-  - Let requiredLen = `lineLength` for this board type (3 or 4).
+  - Let requiredLen be the effective threshold defined in RR-CANON-R120 (3 or 4).
   - For a chosen eligible line of length len:
     - **Case 1: len == requiredLen.**
       - Collapse **all** markers in the line to collapsed spaces owned by P.

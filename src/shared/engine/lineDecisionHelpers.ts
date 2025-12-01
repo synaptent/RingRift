@@ -194,7 +194,7 @@ function collapseLinePositions(
     // Return any rings on this space to their owners' hands, then remove the
     // stack entirely. This matches the "returned to supply" semantics from
     // the line rules (as opposed to elimination).
-    const stack: any = nextBoard.stacks.get(key);
+    const stack = nextBoard.stacks.get(key);
     if (stack && Array.isArray(stack.rings) && stack.rings.length > 0) {
       for (const ringOwner of stack.rings as number[]) {
         const idx = nextPlayers.findIndex((p) => p.playerNumber === ringOwner);
@@ -281,10 +281,23 @@ export function enumerateProcessLineMoves(
     return [];
   }
 
+  const boardType = getEffectiveBoardType(state, options);
+  const requiredLength = getEffectiveLineLengthThreshold(
+    boardType,
+    state.players.length,
+    state.rulesOptions
+  );
+
   const nextMoveNumber = computeNextMoveNumber(state);
   const moves: Move[] = [];
 
   playerLines.forEach((line, index) => {
+    // Filter out lines that do not meet the effective threshold (e.g. 3-in-a-row
+    // on 2p 8x8).
+    if (line.length < requiredLength) {
+      return;
+    }
+
     const representative = line.positions[0] ?? { x: 0, y: 0 };
     const lineKey = line.positions.map((p) => positionToString(p)).join('|');
 
@@ -302,7 +315,6 @@ export function enumerateProcessLineMoves(
 
   return moves;
 }
-
 /**
  * Enumerate `choose_line_reward` decision moves for a specific line that has
  * already been selected for processing.

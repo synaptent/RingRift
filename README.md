@@ -1,5 +1,12 @@
 # RingRift - Multiplayer Strategy Game
 
+<!-- CI Status Badge -->
+
+![RingRift CI/CD](https://github.com/OWNER/ringrift/actions/workflows/ci.yml/badge.svg)
+![Python Tests](https://github.com/OWNER/ringrift/actions/workflows/ci.yml/badge.svg?branch=main)
+
+> **Note:** Replace `OWNER` above with your GitHub username or organization name once the repository is hosted on GitHub.
+
 **Doc Status (2025-12-01): Active (project overview & navigation)**
 
 - High-level project overview, setup, and API surface.
@@ -14,7 +21,14 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 ## 📋 Current Status
 
 **Last Updated:** 2025-12-01
-**Test Health:** 2,670 TypeScript tests passing, 0 failing, 176 skipped; 824 Python tests passing
+
+| Metric           | Status                                                                      |
+| ---------------- | --------------------------------------------------------------------------- |
+| CI Tests         | ![CI](https://github.com/OWNER/ringrift/actions/workflows/ci.yml/badge.svg) |
+| TypeScript Tests | 2,987 passing, 0 failing, ~130 skipped                                      |
+| Python Tests     | ~824 passing                                                                |
+| Contract Vectors | 91 vectors (16 files)                                                       |
+
 **Verification:** Code-verified assessment (see `CURRENT_STATE_ASSESSMENT.md` and `docs/PASS18_ASSESSMENT_REPORT_PASS3.md`)
 **Overall Progress:** Stable beta approaching production readiness; see `CURRENT_STATE_ASSESSMENT.md` for the latest high-level summary.
 
@@ -170,7 +184,7 @@ RingRift is a sophisticated turn-based strategy game featuring:
 - **Orchestration**: Docker Compose for local development and basic deployment
 - **Database**: PostgreSQL with connection pooling
 - **Caching**: Redis for high-performance data access
-- **Monitoring Stack**: Prometheus + Grafana containers are scaffolded in `docker-compose.yml` (application-level metrics wiring still future work)
+- **Monitoring Stack**: Prometheus + Grafana + Alertmanager run by default with production-ready dashboards for game performance, rules correctness, and system health
 - **Environment**: Environment-based configuration via `.env`
 
 ### System Architecture
@@ -324,11 +338,9 @@ To avoid flaky behaviour in `/game/:gameId` and WebSocket tests, ensure that you
 # Build application
 npm run build
 
-# Start with Docker (core stack: app, nginx, postgres, redis, ai-service)
+# Start with Docker (full stack including monitoring)
+# Includes: app, nginx, postgres, redis, ai-service, prometheus, alertmanager, grafana
 docker-compose up -d
-
-# Include monitoring (prometheus, alertmanager, grafana)
-docker-compose --profile monitoring up -d
 
 # Or manual deployment
 npm start

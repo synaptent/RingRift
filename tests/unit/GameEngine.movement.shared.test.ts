@@ -35,9 +35,9 @@ describe('GameEngine movement integration with shared MovementAggregate', () => 
       false
     );
 
-    // For this test we want to exercise the legacy GameEngine.applyMove path
-    // directly rather than delegating to the shared orchestrator adapter.
-    (engine as any).disableOrchestratorAdapter?.();
+    // This test now uses the orchestrator-backed engine which delegates to
+    // the shared MovementAggregate, ensuring parity between orchestrator and
+    // direct aggregate usage.
 
     return engine;
   }

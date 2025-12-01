@@ -79,6 +79,12 @@ interface DisconnectState {
   gameId?: string;
 }
 
+/** Type for Socket.IO emit function - accepts event and variable arguments */
+type SocketEmitFunction = (
+  event: string,
+  ...args: unknown[]
+) => Socket<ServerToClientEvents, ClientToServerEvents>;
+
 /**
  * Internal state for a client's network simulation.
  */
@@ -91,8 +97,8 @@ interface ClientNetworkState {
   nextMessageInterceptor?: MessageInterceptor;
   /** Timeout for automatic disconnect */
   disconnectTimeout?: NodeJS.Timeout;
-  /** Original emit function before wrapping (typed as any to handle Socket.IO's complex types) */
-  originalEmit?: (...args: any[]) => any;
+  /** Original emit function before wrapping */
+  originalEmit?: SocketEmitFunction;
   /** Whether we've wrapped the socket's emit */
   isWrapped: boolean;
 }

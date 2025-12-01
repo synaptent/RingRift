@@ -10,7 +10,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient, UseQueryResult } from '@tanstack/react-query';
-import { ReplayService, getReplayService } from '../services/ReplayService';
+import { getReplayService } from '../services/ReplayService';
 import type {
   ReplayGameListResponse,
   ReplayGameMetadata,
@@ -94,7 +94,10 @@ export function useGame(
 
   return useQuery({
     queryKey: replayKeys.game(gameId ?? ''),
-    queryFn: () => service.getGame(gameId!),
+    queryFn: () => {
+      if (!gameId) throw new Error('Game ID required');
+      return service.getGame(gameId);
+    },
     enabled: enabled && gameId !== null,
     staleTime: 60_000, // Game metadata doesn't change after completion
   });
@@ -112,7 +115,10 @@ export function useReplayStateAt(
 
   return useQuery({
     queryKey: replayKeys.state(gameId ?? '', moveNumber),
-    queryFn: () => service.getStateAtMove(gameId!, moveNumber),
+    queryFn: () => {
+      if (!gameId) throw new Error('Game ID required');
+      return service.getStateAtMove(gameId, moveNumber);
+    },
     enabled: enabled && gameId !== null,
     staleTime: Infinity, // State at a specific move never changes
   });
@@ -131,7 +137,10 @@ export function useMoves(
 
   return useQuery({
     queryKey: replayKeys.moves(gameId ?? '', start, end),
-    queryFn: () => service.getMoves(gameId!, start, end),
+    queryFn: () => {
+      if (!gameId) throw new Error('Game ID required');
+      return service.getMoves(gameId, start, end);
+    },
     enabled: enabled && gameId !== null,
     staleTime: Infinity, // Move history never changes for completed games
   });
@@ -173,7 +182,10 @@ export function useChoices(
 
   return useQuery({
     queryKey: replayKeys.choices(gameId ?? '', moveNumber),
-    queryFn: () => service.getChoices(gameId!, moveNumber),
+    queryFn: () => {
+      if (!gameId) throw new Error('Game ID required');
+      return service.getChoices(gameId, moveNumber);
+    },
     enabled: enabled && gameId !== null,
     staleTime: Infinity,
   });

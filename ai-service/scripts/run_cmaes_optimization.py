@@ -1039,6 +1039,136 @@ def evaluate_fitness_multiplayer(
     return total_score / games_played if games_played > 0 else 0.0
 
 
+def run_axis_aligned_multiplayer_eval(
+    profiles_dir: str,
+    baseline_weights: HeuristicWeights,
+    num_players: int,
+    boards: List[BoardType],
+    state_pool_id: str,
+    games_per_eval: int,
+    seed: Optional[int],
+    output_path: str,
+    include_baseline: bool = True,
+) -> None:
+    """Evaluate axis-aligned profiles in a 3p/4p setting.
+
+    This helper loads axis-aligned profiles from ``profiles_dir`` and scores
+    each profile using :func:`evaluate_fitness_multiplayer` against the
+    provided baseline weights. It writes a JSON summary to ``output_path``.
+    """
+    baseline_keys = set(baseline_weights.keys())
+    profiles: List[AxisAlignedProfile] = []
+
+    if not os.path.isdir(profiles_dir):
+        raise ValueError(
+            "Axis-aligned profiles dir does not exist or is not a directory: "
+            f"{profiles_dir!r}"
+        )
+
+    for name in sorted(os.listdir(profiles_dir)):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(profiles_dir, name)
+        if not os.path.isfile(path):
+            continue
+
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+        weights_obj = payload.get("weights")
+        if not isinstance(weights_obj, dict):
+            raise ValueError(
+                "Axis-aligned profile "
+                f"{path!r} is missing a 'weights' object or it is not a dict"
+            )
+
+        weight_keys = set(weights_obj.keys())
+        if weight_keys != baseline_keys:
+            missing = sorted(baseline_keys - weight_keys)
+            extra = sorted(weight_keys - baseline_keys)
+            raise ValueError(
+                "Axis-aligned profile "
+                f"{path!r} weight keys mismatch baseline schema: "
+                f"missing={missing}, extra={extra}"
+            )
+
+        weights: HeuristicWeights = {
+            str(k): float(v) for k, v in weights_obj.items()
+        }
+
+        meta = payload.get("meta") or {}
+        factor = meta.get("factor")
+        sign = meta.get("sign")
+        if isinstance(factor, str) and isinstance(sign, str):
+            pid = f"{factor}_{sign}"
+        else:
+            pid = os.path.splitext(name)[0]
+
+        profiles.append(
+            AxisAlignedProfile(
+                id=pid,
+                weights=weights,
+                meta=dict(meta),
+                is_baseline=False,
+            )
+        )
+
+    if include_baseline:
+        profiles.insert(
+            0,
+            AxisAlignedProfile(
+                id="baseline_v1_balanced",
+                weights=dict(baseline_weights),
+                meta={"source": "BASE_V1_BALANCED_WEIGHTS"},
+                is_baseline=True,
+            ),
+        )
+
+    results: List[Dict[str, Any]] = []
+    for profile in profiles:
+        raw_score = evaluate_fitness_multiplayer(
+            candidate_weights=profile.weights,
+            baseline_weights=baseline_weights,
+            num_players=num_players,
+            games_per_eval=games_per_eval,
+            boards=boards,
+            state_pool_id=state_pool_id,
+            seed=seed,
+        )
+        fitness = (raw_score + 1.0) / 2.0
+        results.append(
+            {
+                "id": profile.id,
+                "is_baseline": profile.is_baseline,
+                "raw_score": raw_score,
+                "fitness": fitness,
+                "meta": profile.meta,
+            }
+        )
+
+    results.sort(key=lambda r: r["fitness"], reverse=True)
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    payload: Dict[str, Any] = {
+        "meta": {
+            "mode": "axis_aligned_multiplayer",
+            "num_players": num_players,
+            "boards": [b.value for b in boards],
+            "state_pool_id": state_pool_id,
+            "games_per_eval": games_per_eval,
+            "profiles_dir": profiles_dir,
+        },
+        "results": results,
+    }
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+
+    print(
+        "Axis-aligned multi-player evaluation written to "
+        f"{output_path}"
+    )
+
+
 def load_weights_from_file(path: str) -> HeuristicWeights:
     """Load weights from a JSON file.
 
@@ -1096,6 +1226,16 @@ def save_weights_to_file(
 
 
 @dataclass
+class AxisAlignedProfile:
+    """Axis-aligned profile wrapper for diagnostics."""
+
+    id: str
+    weights: HeuristicWeights
+    meta: Dict[str, Any]
+    is_baseline: bool = False
+
+
+@dataclass
 class CMAESConfig:
     """Configuration for CMA-ES optimization."""
 
@@ -1117,6 +1257,9 @@ class CMAESConfig:
     state_pool_id: Optional[str] = None
     eval_boards: Optional[List[BoardType]] = None
     eval_randomness: float = 0.0
+    # Number of players for the evaluation games. 2 uses the standard
+    # 2-player evaluation loop; 3 or 4 uses evaluate_fitness_multiplayer().
+    num_players: int = 2
     # When enabled, log per-candidate evaluation details (W/D/L, fitness,
     # L2 distance) to help diagnose plateau/0.5 behaviour. Disabled by
     # default to avoid noisy logs in normal runs.
@@ -1206,6 +1349,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         "eval_mode": config.eval_mode,
         "state_pool_id": config.state_pool_id,
         "eval_randomness": config.eval_randomness,
+        "num_players": config.num_players,
         "debug_plateau": config.debug_plateau,
         "progress_interval_sec": config.progress_interval_sec,
         "enable_eval_progress": config.enable_eval_progress,
@@ -1283,6 +1427,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     if len(eval_boards) > 1:
         print("  Aggregate fitness: mean across boards")
     print(f"  Max moves per game: {config.max_moves}")
+    print(f"  Number of players: {config.num_players}")
     print(f"  Opponent mode: {config.opponent_mode}")
     print(f"  Eval mode: {config.eval_mode}")
     print(f"  Eval randomness: {config.eval_randomness}")
@@ -1309,13 +1454,16 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     # Compute per-weight bounds that accommodate all baseline weights. The
     # baseline includes weights like WEIGHT_VICTORY_THRESHOLD_BONUS=1000 and
     # proximity factors at 50, so we need weight-specific upper bounds.
-    max_baseline_weight = max(baseline_weights.values())
-    upper_bound = max(100, max_baseline_weight * 2)  # 2x headroom
+    # Use symmetric bounds to allow both positive and negative weights,
+    # enabling the optimizer to explore inverted features (sensitivity
+    # analysis showed some weights hurt when overweighted).
+    max_abs_baseline_weight = max(abs(v) for v in baseline_weights.values())
+    bound_magnitude = max(100, max_abs_baseline_weight * 2)  # 2x headroom
 
     cma_options = {
         "popsize": config.population_size,
         "maxiter": config.generations + resume_generation_offset,
-        "bounds": [0, upper_bound],  # Keep weights in reasonable range
+        "bounds": [-bound_magnitude, bound_magnitude],  # Symmetric bounds
         "verbose": -9,  # Suppress cma's own logging
         # Disable ALL early stopping - use infinity to disable tolerances
         "tolfun": float("inf"),
@@ -1397,7 +1545,28 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             else:
                 cmaes_debug_hook = None  # type: ignore[assignment]
 
-            if len(boards_for_eval) == 1:
+            # Multi-player evaluation (3p/4p) uses a different fitness function.
+            if config.num_players > 2:
+                # evaluate_fitness_multiplayer returns a score in [-1, 1].
+                # Normalise this to [0, 1] so that CMA-ES sees a consistent
+                # fitness range with the 2-player win-rate metric.
+                raw_score = evaluate_fitness_multiplayer(
+                    candidate_weights=candidate_weights,
+                    baseline_weights=baseline_weights,
+                    num_players=config.num_players,
+                    games_per_eval=config.games_per_eval,
+                    boards=boards_for_eval,
+                    state_pool_id=config.state_pool_id or "",
+                    seed=config.seed,
+                )
+                fitness = (raw_score + 1.0) / 2.0
+                # We do not have per-board breakdown from the multi-player
+                # helper, so mirror the aggregate fitness across all boards
+                # for reporting purposes.
+                per_board_fitness = {
+                    board: fitness for board in boards_for_eval
+                }
+            elif len(boards_for_eval) == 1:
                 board_type = boards_for_eval[0]
                 fitness = evaluate_fitness(
                     candidate_weights,
@@ -1677,7 +1846,10 @@ def main():
         default="v1",
         help=(
             "Identifier for the evaluation state pool when using "
-            "eval-mode=multi-start (default: v1)."
+            "eval-mode=multi-start (default: v1). For multi-player runs, "
+            "pass an explicit id such as 'square19_3p_pool_v1' or "
+            "'hex_4p_pool_v1' that matches configured entries in "
+            "app.training.eval_pools.POOL_PATHS."
         ),
     )
     parser.add_argument(
@@ -1721,6 +1893,21 @@ def main():
             "when only outer-loop heartbeats are required. By default "
             "per-board evaluation progress is enabled; this flag "
             "turns it off."
+        ),
+    )
+    parser.add_argument(
+        "--num-players",
+        type=int,
+        choices=[2, 3, 4],
+        default=2,
+        help=(
+            "Number of players for evaluation games (default: 2). "
+            "When set to 3 or 4, uses evaluate_fitness_multiplayer() "
+            "which assigns the candidate to one random seat and uses "
+            "baseline weights for all other players. Requires "
+            "corresponding N-player state pools (for example, use "
+            "--state-pool-id square19_3p_pool_v1 for 3p Square19 or "
+            "--state-pool-id hex_4p_pool_v1 for 4p Hex)."
         ),
     )
 
@@ -1778,6 +1965,12 @@ def main():
             run_dir, "checkpoints"
         )
 
+    # Resolve state_pool_id from CLI. For multi-player runs (num_players > 2),
+    # callers are expected to provide an explicit pool id that matches
+    # app.training.eval_pools.POOL_PATHS (for example, 'square19_3p_pool_v1'
+    # or 'hex_4p_pool_v1').
+    state_pool_id = args.state_pool_id
+
     config = CMAESConfig(
         generations=args.generations,
         population_size=args.population_size,
@@ -1794,9 +1987,10 @@ def main():
         run_dir=run_dir,
         resume_from=args.resume_from,
         eval_mode=args.eval_mode,
-        state_pool_id=args.state_pool_id,
+        state_pool_id=state_pool_id,
         eval_boards=eval_boards,
         eval_randomness=args.eval_randomness,
+        num_players=args.num_players,
         debug_plateau=args.debug_plateau,
         progress_interval_sec=args.progress_interval_sec,
         enable_eval_progress=not args.disable_eval_progress,

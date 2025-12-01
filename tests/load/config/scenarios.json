@@ -1,0 +1,291 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "k6 load test scenario configurations for RingRift. Each profile defines VU ramp patterns and durations.",
+  "version": "1.0.0",
+  "last_updated": "2025-12-01",
+
+  "profiles": {
+    "smoke": {
+      "description": "Quick validation test with minimal load - runs in CI/CD pipelines",
+      "duration_total_seconds": 60,
+      "max_vus": 5,
+      "use_case": "Pre-deployment validation, quick sanity check",
+
+      "game_creation": {
+        "stages": [
+          { "duration": "10s", "target": 2 },
+          { "duration": "30s", "target": 5 },
+          { "duration": "10s", "target": 5 },
+          { "duration": "10s", "target": 0 }
+        ]
+      },
+
+      "concurrent_games": {
+        "stages": [
+          { "duration": "15s", "target": 3 },
+          { "duration": "30s", "target": 5 },
+          { "duration": "15s", "target": 0 }
+        ]
+      },
+
+      "player_moves": {
+        "stages": [
+          { "duration": "10s", "target": 3 },
+          { "duration": "30s", "target": 5 },
+          { "duration": "10s", "target": 5 },
+          { "duration": "10s", "target": 0 }
+        ]
+      },
+
+      "websocket_stress": {
+        "stages": [
+          { "duration": "15s", "target": 5 },
+          { "duration": "30s", "target": 10 },
+          { "duration": "15s", "target": 0 }
+        ]
+      }
+    },
+
+    "load": {
+      "description": "Realistic production load - validates normal operating capacity",
+      "duration_total_seconds": 300,
+      "max_vus": 50,
+      "use_case": "Pre-production validation, baseline performance",
+
+      "game_creation": {
+        "stages": [
+          { "duration": "30s", "target": 10 },
+          { "duration": "1m", "target": 50 },
+          { "duration": "2m", "target": 50 },
+          { "duration": "30s", "target": 0 }
+        ]
+      },
+
+      "concurrent_games": {
+        "stages": [
+          { "duration": "2m", "target": 30 },
+          { "duration": "3m", "target": 50 },
+          { "duration": "5m", "target": 50 },
+          { "duration": "2m", "target": 0 }
+        ]
+      },
+
+      "player_moves": {
+        "stages": [
+          { "duration": "1m", "target": 20 },
+          { "duration": "3m", "target": 40 },
+          { "duration": "5m", "target": 40 },
+          { "duration": "1m", "target": 0 }
+        ]
+      },
+
+      "websocket_stress": {
+        "stages": [
+          { "duration": "2m", "target": 100 },
+          { "duration": "5m", "target": 200 },
+          { "duration": "3m", "target": 200 },
+          { "duration": "2m", "target": 0 }
+        ]
+      }
+    },
+
+    "stress": {
+      "description": "Production-scale maximum capacity test - identifies breaking points",
+      "duration_total_seconds": 780,
+      "max_vus": 100,
+      "use_case": "Capacity planning, bottleneck identification",
+
+      "game_creation": {
+        "stages": [
+          { "duration": "1m", "target": 20 },
+          { "duration": "2m", "target": 50 },
+          { "duration": "2m", "target": 80 },
+          { "duration": "3m", "target": 100 },
+          { "duration": "5m", "target": 100 },
+          { "duration": "2m", "target": 0 }
+        ]
+      },
+
+      "concurrent_games": {
+        "stages": [
+          { "duration": "2m", "target": 50 },
+          { "duration": "3m", "target": 100 },
+          { "duration": "5m", "target": 100 },
+          { "duration": "2m", "target": 50 },
+          { "duration": "1m", "target": 0 }
+        ]
+      },
+
+      "player_moves": {
+        "stages": [
+          { "duration": "2m", "target": 30 },
+          { "duration": "3m", "target": 60 },
+          { "duration": "5m", "target": 80 },
+          { "duration": "3m", "target": 80 },
+          { "duration": "2m", "target": 0 }
+        ]
+      },
+
+      "websocket_stress": {
+        "stages": [
+          { "duration": "2m", "target": 100 },
+          { "duration": "2m", "target": 300 },
+          { "duration": "3m", "target": 500 },
+          { "duration": "5m", "target": 500 },
+          { "duration": "2m", "target": 100 },
+          { "duration": "1m", "target": 0 }
+        ]
+      }
+    },
+
+    "spike": {
+      "description": "Sudden traffic surge - tests auto-scaling and error handling",
+      "duration_total_seconds": 420,
+      "max_vus": 100,
+      "use_case": "Resilience testing, circuit breaker validation",
+
+      "game_creation": {
+        "stages": [
+          { "duration": "10s", "target": 5 },
+          { "duration": "30s", "target": 100 },
+          { "duration": "2m", "target": 100 },
+          { "duration": "30s", "target": 5 },
+          { "duration": "2m", "target": 5 },
+          { "duration": "30s", "target": 0 }
+        ]
+      },
+
+      "concurrent_games": {
+        "stages": [
+          { "duration": "30s", "target": 10 },
+          { "duration": "1m", "target": 100 },
+          { "duration": "3m", "target": 100 },
+          { "duration": "1m", "target": 10 },
+          { "duration": "1m", "target": 0 }
+        ]
+      },
+
+      "player_moves": {
+        "stages": [
+          { "duration": "30s", "target": 10 },
+          { "duration": "1m", "target": 80 },
+          { "duration": "3m", "target": 80 },
+          { "duration": "1m", "target": 10 },
+          { "duration": "30s", "target": 0 }
+        ]
+      },
+
+      "websocket_stress": {
+        "stages": [
+          { "duration": "30s", "target": 50 },
+          { "duration": "1m", "target": 500 },
+          { "duration": "3m", "target": 500 },
+          { "duration": "1m", "target": 50 },
+          { "duration": "30s", "target": 0 }
+        ]
+      }
+    },
+
+    "soak": {
+      "description": "Extended duration test - detects memory leaks and performance degradation",
+      "duration_total_seconds": 3600,
+      "max_vus": 40,
+      "use_case": "Stability validation, memory leak detection",
+
+      "game_creation": {
+        "stages": [
+          { "duration": "5m", "target": 30 },
+          { "duration": "50m", "target": 30 },
+          { "duration": "5m", "target": 0 }
+        ]
+      },
+
+      "concurrent_games": {
+        "stages": [
+          { "duration": "5m", "target": 40 },
+          { "duration": "50m", "target": 40 },
+          { "duration": "5m", "target": 0 }
+        ]
+      },
+
+      "player_moves": {
+        "stages": [
+          { "duration": "5m", "target": 30 },
+          { "duration": "50m", "target": 30 },
+          { "duration": "5m", "target": 0 }
+        ]
+      },
+
+      "websocket_stress": {
+        "stages": [
+          { "duration": "5m", "target": 200 },
+          { "duration": "50m", "target": 200 },
+          { "duration": "5m", "target": 0 }
+        ]
+      }
+    }
+  },
+
+  "recommended_execution_order": {
+    "description": "Suggested order for comprehensive load testing validation",
+    "sequence": [
+      {
+        "step": 1,
+        "profile": "smoke",
+        "scenarios": ["game_creation", "concurrent_games"],
+        "purpose": "Quick sanity check - verify infrastructure is ready"
+      },
+      {
+        "step": 2,
+        "profile": "load",
+        "scenarios": ["game_creation", "player_moves"],
+        "purpose": "Baseline performance - establish healthy state metrics"
+      },
+      {
+        "step": 3,
+        "profile": "load",
+        "scenarios": ["concurrent_games", "websocket_stress"],
+        "purpose": "Baseline concurrency - validate connection handling"
+      },
+      {
+        "step": 4,
+        "profile": "stress",
+        "scenarios": ["concurrent_games"],
+        "purpose": "Production scale validation - 100+ games target"
+      },
+      {
+        "step": 5,
+        "profile": "stress",
+        "scenarios": ["websocket_stress"],
+        "purpose": "Connection limit validation - 500+ WebSocket connections"
+      },
+      {
+        "step": 6,
+        "profile": "spike",
+        "scenarios": ["game_creation"],
+        "purpose": "Surge resilience - validate circuit breakers and error handling"
+      },
+      {
+        "step": 7,
+        "profile": "soak",
+        "scenarios": ["concurrent_games"],
+        "purpose": "Long-running stability - detect memory leaks (run overnight)"
+      }
+    ]
+  },
+
+  "environment_mapping": {
+    "development": {
+      "recommended_profiles": ["smoke"],
+      "notes": "Local development validation only"
+    },
+    "staging": {
+      "recommended_profiles": ["smoke", "load", "stress"],
+      "notes": "Full pre-production validation suite"
+    },
+    "production": {
+      "recommended_profiles": ["smoke"],
+      "notes": "Pre-deployment smoke test only. Do NOT run stress/spike in production."
+    }
+  }
+}

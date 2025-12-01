@@ -110,16 +110,16 @@ services:
           memory: 256M
 
   # ==========================================================================
-  # OPTIONAL MONITORING STACK
+  # MONITORING STACK (Default)
   # ==========================================================================
-  # To enable monitoring, use: docker-compose --profile monitoring up
-  # Or set COMPOSE_PROFILES=monitoring in your environment
+  # Prometheus, Alertmanager, and Grafana are now included by default for
+  # production-ready observability. The stack adds ~200MB memory overhead
+  # and provides essential metrics for game performance, rules correctness,
+  # and system health. All 3 Grafana dashboards auto-provision on startup.
   # ==========================================================================
 
   prometheus:
     image: prom/prometheus:v2.47.0
-    profiles:
-      - monitoring
     ports:
       - '9090:9090'
     volumes:
@@ -145,8 +145,6 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.26.0
-    profiles:
-      - monitoring
     ports:
       - '9093:9093'
     volumes:
@@ -167,8 +165,6 @@ services:
 
   grafana:
     image: grafana/grafana:10.1.0
-    profiles:
-      - monitoring
     ports:
       - '3002:3000'
     environment:
@@ -177,6 +173,9 @@ services:
       - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3002}
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./monitoring/grafana/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
     depends_on:
       - prometheus
     restart: unless-stopped

@@ -628,7 +628,43 @@ code {
 
 /* Enhanced focus visibility for buttons and interactive elements */
 button:focus-visible,
-[role="gridcell"]:focus-visible {
+[role="gridcell"]:focus-visible,
+[role="option"]:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.25);
+}
+
+/* Focus styles for dialog options */
+[role="option"]:focus {
+  outline: 2px solid #f59e0b;
+  outline-offset: 1px;
+}
+
+/* Focus ring for links and anchors */
+a:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Skip link for keyboard users - visible only on focus */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 8px 16px;
+  z-index: 100;
+  text-decoration: none;
+  font-weight: 600;
+  border-radius: 0 0 4px 0;
+  transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+  top: 0;
   outline: 2px solid #f59e0b;
   outline-offset: 2px;
 }
@@ -636,9 +672,16 @@ button:focus-visible,
 /* High contrast focus mode support */
 @media (prefers-contrast: high) {
   button:focus-visible,
-  [role="gridcell"]:focus-visible {
+  [role="gridcell"]:focus-visible,
+  [role="option"]:focus-visible,
+  a:focus-visible {
     outline: 3px solid currentColor;
     outline-offset: 3px;
+    box-shadow: none;
+  }
+  
+  .skip-link:focus {
+    outline: 3px solid currentColor;
   }
 }
 
@@ -657,4 +700,31 @@ button:focus-visible,
   .interactive-piece {
     transition: none;
   }
+  
+  .skip-link {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Keyboard Shortcuts Help Styles
+   ========================================================================== */
+
+/* Keyboard key styling */
+kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 2px 6px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  color: #e2e8f0;
+  background: linear-gradient(180deg, #475569 0%, #334155 100%);
+  border: 1px solid #64748b;
+  border-radius: 4px;
+  box-shadow: 0 2px 0 #1e293b, inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }

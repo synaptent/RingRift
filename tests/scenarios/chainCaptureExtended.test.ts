@@ -21,8 +21,11 @@ import {
 } from '../../src/shared/types/game';
 import { getChainCaptureContinuationInfo } from '../../src/shared/engine/aggregates/CaptureAggregate';
 import {
+  createChainCapture3Fixture,
   createChainCapture4Fixture,
   createChainCapture5PlusFixture,
+  createChainCaptureZigzagFixture,
+  createChainCaptureEdgeTerminationFixture,
   ChainCaptureExtendedFixture,
 } from '../fixtures/chainCaptureExtendedFixture';
 
@@ -411,5 +414,240 @@ describe('Scenario: Extended chain capture with 4+ targets (P19B.2-2)', () => {
     // The original attacker position should have a marker
     expect(markers.has(positionToString({ x: 0, y: 0 }))).toBe(true);
     expect(markers.get(positionToString({ x: 0, y: 0 })).player).toBe(1);
+  });
+
+  test('should complete 3-target chain capture (simpler case)', async () => {
+    const fixture = createChainCapture3Fixture();
+    const engine = createEngine();
+
+    setupBoardFromFixture(engine, fixture);
+
+    const engineAny: any = engine;
+
+    // Start the chain with the initial overtaking_capture
+    const initialMove = fixture.initialMove;
+    const step1 = await engine.makeMove({
+      player: initialMove.player,
+      type: 'overtaking_capture',
+      from: initialMove.from,
+      captureTarget: initialMove.captureTarget,
+      to: initialMove.to,
+    } as any);
+
+    expect(step1.success).toBe(true);
+
+    // Resolve all mandatory chain continuations
+    const additionalCaptures = await resolveChainIfPresent(engine);
+
+    // Total captures should be 3 (1 initial + 2 continuations)
+    const totalCaptures = 1 + additionalCaptures;
+    expect(totalCaptures).toBe(fixture.expectedCaptureCount);
+
+    // Verify final board state
+    const board = engineAny.gameState.board;
+    const stacks = board.stacks as Map<string, RingStack>;
+    const allStacks: RingStack[] = Array.from(stacks.values());
+
+    const blueStacks = allStacks.filter((s) => s.controllingPlayer === 1);
+    const redStacks = allStacks.filter((s) => s.controllingPlayer === 2);
+
+    // One Blue-controlled stack of height 4, no remaining Red stacks
+    expect(blueStacks.length).toBe(1);
+    expect(blueStacks[0].stackHeight).toBe(fixture.expectedFinalHeight);
+    expect(redStacks.length).toBe(0);
+
+    // Verify final position
+    const finalStack = stacks.get(positionToString(fixture.expectedFinalPosition));
+    expect(finalStack).toBeDefined();
+    expect(finalStack!.controllingPlayer).toBe(1);
+  });
+
+  test('should complete zigzag chain capture with direction changes', async () => {
+    const fixture = createChainCaptureZigzagFixture();
+    const engine = createEngine();
+
+    setupBoardFromFixture(engine, fixture);
+
+    const engineAny: any = engine;
+
+    // Start the chain with the initial overtaking_capture
+    const initialMove = fixture.initialMove;
+    const step1 = await engine.makeMove({
+      player: initialMove.player,
+      type: 'overtaking_capture',
+      from: initialMove.from,
+      captureTarget: initialMove.captureTarget,
+      to: initialMove.to,
+    } as any);
+
+    expect(step1.success).toBe(true);
+
+    // Track the directions used during the chain
+    const directionsUsed: string[] = [];
+    let prevPos = initialMove.to as Position;
+
+    while ((engineAny.gameState as GameState).currentPhase === 'chain_capture') {
+      const state = engineAny.gameState as GameState;
+      const currentPlayer = state.currentPlayer;
+      const moves = engine.getValidMoves(currentPlayer);
+
+      const chainMoves = moves.filter((m: any) => m.type === 'continue_capture_segment');
+      if (chainMoves.length === 0) break;
+
+      const next = chainMoves[0];
+
+      // Determine direction of this capture
+      const dx = (next.to as Position).x - prevPos.x;
+      const dy = (next.to as Position).y - prevPos.y;
+      let dir = '';
+      if (dx > 0 && dy === 0) dir = 'E';
+      else if (dx < 0 && dy === 0) dir = 'W';
+      else if (dx === 0 && dy > 0) dir = 'S';
+      else if (dx === 0 && dy < 0) dir = 'N';
+      else if (dx > 0 && dy > 0) dir = 'SE';
+      else if (dx < 0 && dy < 0) dir = 'NW';
+      else if (dx > 0 && dy < 0) dir = 'NE';
+      else if (dx < 0 && dy > 0) dir = 'SW';
+      directionsUsed.push(dir);
+
+      await engine.makeMove({
+        player: next.player,
+        type: 'continue_capture_segment',
+        from: next.from,
+        captureTarget: next.captureTarget,
+        to: next.to,
+      } as any);
+
+      prevPos = next.to as Position;
+    }
+
+    // Verify we had direction changes (not all same direction)
+    // This tests that chain captures CAN change direction per the rules
+    const uniqueDirections = new Set(directionsUsed);
+    expect(uniqueDirections.size).toBeGreaterThan(1);
+
+    // Verify all targets were captured (no red stacks remain)
+    const board = engineAny.gameState.board;
+    const stacks = board.stacks as Map<string, RingStack>;
+    const allStacks: RingStack[] = Array.from(stacks.values());
+    const redStacks = allStacks.filter((s) => s.controllingPlayer === 2);
+    expect(redStacks.length).toBe(0);
+
+    // Verify the chain captured all expected targets
+    const blueStacks = allStacks.filter((s) => s.controllingPlayer === 1);
+    expect(blueStacks.length).toBe(1);
+    expect(blueStacks[0].stackHeight).toBe(fixture.expectedFinalHeight);
+  });
+
+  test('should terminate chain at board edge when no valid landing exists', async () => {
+    const fixture = createChainCaptureEdgeTerminationFixture();
+    const engine = createEngine();
+
+    setupBoardFromFixture(engine, fixture);
+
+    const engineAny: any = engine;
+
+    // Start the chain with the initial overtaking_capture
+    const initialMove = fixture.initialMove;
+    const step1 = await engine.makeMove({
+      player: initialMove.player,
+      type: 'overtaking_capture',
+      from: initialMove.from,
+      captureTarget: initialMove.captureTarget,
+      to: initialMove.to,
+    } as any);
+
+    expect(step1.success).toBe(true);
+
+    // After the single capture, there should be no chain continuation
+    // because from (7,7) there's no valid landing position (board edge)
+    const additionalCaptures = await resolveChainIfPresent(engine);
+
+    // Should be exactly 1 capture (the initial one, no continuations)
+    const totalCaptures = 1 + additionalCaptures;
+    expect(totalCaptures).toBe(fixture.expectedCaptureCount);
+    expect(totalCaptures).toBe(1);
+
+    // Verify final board state
+    const board = engineAny.gameState.board;
+    const stacks = board.stacks as Map<string, RingStack>;
+
+    // Final stack at corner (7,7)
+    const finalStack = stacks.get(positionToString(fixture.expectedFinalPosition));
+    expect(finalStack).toBeDefined();
+    expect(finalStack!.stackHeight).toBe(2);
+    expect(finalStack!.controllingPlayer).toBe(1);
+
+    // Phase should have moved past chain_capture
+    expect(engineAny.gameState.currentPhase).not.toBe('chain_capture');
+  });
+
+  /**
+   * NOTE: For generating chain capture contract vectors, use the existing generator:
+   *   npx ts-node scripts/generate-extended-contract-vectors.ts
+   *
+   * This generates:
+   * - Family A: Chain capture long-tail vectors (depth-3 linear on square8/19/hex)
+   * - Family B: Forced elimination vectors
+   * - Family C: Territory + line endgame vectors
+   * - Family D: Hex edge case vectors
+   * - Family E: Meta-moves (swap_sides)
+   *
+   * Output goes to: tests/fixtures/contract-vectors/v2/
+   */
+
+  test('should verify all markers are placed at departure positions', async () => {
+    const fixture = createChainCapture3Fixture();
+    const engine = createEngine();
+
+    setupBoardFromFixture(engine, fixture);
+
+    const engineAny: any = engine;
+    const departurePositions: string[] = [];
+
+    // Track all departure positions
+    departurePositions.push(positionToString(fixture.initialMove.from as Position));
+
+    // Start the chain
+    const initialMove = fixture.initialMove;
+    await engine.makeMove({
+      player: initialMove.player,
+      type: 'overtaking_capture',
+      from: initialMove.from,
+      captureTarget: initialMove.captureTarget,
+      to: initialMove.to,
+    } as any);
+
+    // Continue and track each departure
+    while ((engineAny.gameState as GameState).currentPhase === 'chain_capture') {
+      const state = engineAny.gameState as GameState;
+      const moves = engine.getValidMoves(state.currentPlayer);
+      const chainMoves = moves.filter((m: any) => m.type === 'continue_capture_segment');
+
+      if (chainMoves.length === 0) break;
+
+      const next = chainMoves[0];
+      departurePositions.push(positionToString(next.from as Position));
+
+      await engine.makeMove({
+        player: next.player,
+        type: 'continue_capture_segment',
+        from: next.from,
+        captureTarget: next.captureTarget,
+        to: next.to,
+      } as any);
+    }
+
+    // Verify all departure positions have markers
+    const board = engineAny.gameState.board;
+    const markers = board.markers;
+
+    for (const pos of departurePositions) {
+      expect(markers.has(pos)).toBe(true);
+      expect(markers.get(pos).player).toBe(1);
+    }
+
+    // Should have exactly 3 markers (one per capture segment)
+    expect(departurePositions.length).toBe(3);
   });
 });

@@ -209,6 +209,45 @@ class TestRingRiftEnv(unittest.TestCase):
                 f"Expected to observe at least two players taking turns for num_players={num_players}",
             )
 
+    def test_swap_rule_enabled_by_default_for_two_player_games(self):
+        """2-player training env should enable the pie rule by default.
+
+        RingRiftEnv.reset() delegates to create_initial_state, which now
+        enables rulesOptions.swapRuleEnabled=True for 2-player games unless
+        explicitly disabled via RINGRIFT_TRAINING_DISABLE_SWAP_RULE.
+        """
+        # Ensure the disable flag is not set for this test.
+        os.environ.pop("RINGRIFT_TRAINING_DISABLE_SWAP_RULE", None)
+
+        env = RingRiftEnv(BoardType.SQUARE8, num_players=2)
+        state = env.reset()
+
+        # rulesOptions should be present with swapRuleEnabled=True.
+        self.assertIsNotNone(state.rules_options)
+        self.assertTrue(bool(state.rules_options.get("swapRuleEnabled")))
+
+    def test_swap_rule_can_be_disabled_via_env_flag(self):
+        """RINGRIFT_TRAINING_DISABLE_SWAP_RULE must force the pie rule off.
+
+        This preserves a clean escape hatch for experiments that need to run
+        2-player training games without swap_sides enabled.
+        """
+        os.environ["RINGRIFT_TRAINING_DISABLE_SWAP_RULE"] = "1"
+
+        try:
+            env = RingRiftEnv(BoardType.SQUARE8, num_players=2)
+            state = env.reset()
+
+            # When the disable flag is set, rulesOptions should either be
+            # absent or explicitly falsy for swapRuleEnabled.
+            rules_options = state.rules_options
+            if rules_options is None:
+                return
+
+            self.assertFalse(bool(rules_options.get("swapRuleEnabled")))
+        finally:
+            os.environ.pop("RINGRIFT_TRAINING_DISABLE_SWAP_RULE", None)
+
 
 if __name__ == '__main__':
     unittest.main()

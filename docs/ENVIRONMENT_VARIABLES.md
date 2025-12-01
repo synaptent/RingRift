@@ -43,6 +43,7 @@ This document provides comprehensive documentation for all environment variables
 - [Application Topology](#application-topology)
 - [Testing Configuration](#testing-configuration)
 - [Data Retention](#data-retention)
+- [Python Training Flags](#python-training-flags)
 - [Debug Flags](#debug-flags)
 
 ---
@@ -1038,6 +1039,52 @@ cron.schedule('0 3 * * *', async () => {
 - [API Reference](./API_REFERENCE.md) - Account deletion and data export endpoints
 
 ---
+
+## Python Training Flags
+
+These flags configure the standalone Python training and self-play stack under
+`ai-service/`. They are consumed by `RingRiftEnv` and data-generation scripts
+and **do not affect the live TypeScript game server**.
+
+### `RINGRIFT_TRAINING_DISABLE_SWAP_RULE`
+
+| Property | Value                                       |
+| -------- | ------------------------------------------- |
+| Type     | `boolean` (string flag)                     |
+| Values   | `1`, `true`, `yes`, `on` (case-insensitive) |
+| Default  | `false` (flag unset or any other value)     |
+| Required | No                                          |
+
+Controls whether the **swap (pie) rule** is available in 2-player Python
+training and evaluation environments.
+
+Behaviour:
+
+- **When unset / falsey** (default):
+  - 2-player environments created via `create_initial_state()` / `RingRiftEnv`
+    default to `rulesOptions.swapRuleEnabled = True`.
+  - The `swap_sides` meta-move is available to player 2 after player 1's first
+    non-swap move (subject to the usual gate and "at most once" invariant).
+- **When set to a truthy value** (`1`, `true`, `yes`, `on`):
+  - 2-player environments are created with the pie rule **disabled**
+    (`rulesOptions.swapRuleEnabled` is omitted), and `swap_sides` will not be
+    emitted by the Python rules engine.
+- **3-player and 4-player games** never enable the pie rule, regardless of this
+  flag.
+
+Historical behaviour:
+
+- Training previously used an opt-in `RINGRIFT_TRAINING_ENABLE_SWAP_RULE` flag
+  to enable the pie rule.
+- That opt-in is now effectively **superseded**: 2-player training defaults to
+  swap **enabled** when `RINGRIFT_TRAINING_DISABLE_SWAP_RULE` is absent.
+- New experiments should prefer this single opt-out flag; the implementation in
+  `create_initial_state()` is the canonical source of truth.
+
+**References:**
+
+- Implementation: `ai-service/app/training/generate_data.py::create_initial_state`
+- Tests: `ai-service/tests/test_env_interface.py`
 
 ## Debug Flags
 

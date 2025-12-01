@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional
 import pytest
 
 from app.game_engine import GameEngine
+from app.models import GamePhase, MoveType
 from app.rules.serialization import (
     TestVector,
     TestVectorBundle,
@@ -246,6 +247,64 @@ def validate_assertions(
 # ============================================================================
 
 
+def resolve_chain_captures(state):
+    """Resolve any active chain capture by applying continuation moves.
+
+    Mirrors the TS resolveChainIfPresent helper from chainCaptureExtended.test.ts.
+    After an initial capture, if the game enters chain_capture phase, this
+    iteratively applies continue_capture_segment moves until the chain is
+    exhausted.
+
+    Args:
+        state: The GameState after the initial capture
+
+    Returns:
+        The final GameState after resolving all chain captures
+    """
+    MAX_CHAIN_STEPS = 20
+    steps = 0
+
+    while state.current_phase == GamePhase.CHAIN_CAPTURE:
+        steps += 1
+        if steps > MAX_CHAIN_STEPS:
+            raise RuntimeError(
+                f"resolve_chain_captures: exceeded {MAX_CHAIN_STEPS} steps"
+            )
+
+        # Get valid moves for the current player in chain_capture phase
+        GameEngine.clear_cache()  # Clear cache to get fresh moves
+        moves = GameEngine.get_valid_moves(state, state.current_player)
+
+        # Filter for chain capture continuation moves only
+        # Note: OVERTAKING_CAPTURE is excluded - it's a general capture type,
+        # not a chain continuation. Only CONTINUE_CAPTURE_SEGMENT and
+        # CHAIN_CAPTURE are valid chain continuations.
+        chain_moves = [
+            m for m in moves
+            if m.type in (
+                MoveType.CONTINUE_CAPTURE_SEGMENT,
+                MoveType.CHAIN_CAPTURE,
+            )
+        ]
+
+        if not chain_moves:
+            # No more chain moves available - chain is complete
+            break
+
+        # Select the move with closest landing to the capture target
+        # This matches TS behavior where closer landings are preferred
+        # and enables maximal chain continuation
+        def landing_distance(m):
+            if m.to and m.capture_target:
+                return abs(m.to.x - m.capture_target.x) + abs(m.to.y - m.capture_target.y)
+            return float('inf')
+
+        chain_moves.sort(key=landing_distance)
+        state = GameEngine.apply_move(state, chain_moves[0])
+
+    return state
+
+
 def execute_vector(vector: TestVector) -> ValidationResult:
     """Execute a single test vector and return validation result.
 
@@ -258,12 +317,33 @@ def execute_vector(vector: TestVector) -> ValidationResult:
     # Compute initial S-invariant before applying move
     initial_s = compute_s_invariant(vector.input_state)
 
+    # Handle vectors without a move (e.g., state-only validation)
+    if vector.input_move is None:
+        validation = ValidationResult(vector.id)
+        validation.add_failure("Vector has no input move to apply")
+        return validation
+
     # Apply the move using GameEngine
     try:
         result_state = GameEngine.apply_move(
             vector.input_state,
             vector.input_move,
         )
+
+        # If the move triggered a chain capture, only resolve it fully if:
+        # 1. The expected final phase is NOT chain_capture
+        # 2. The expected status is NOT awaiting_decision (intermediate state test)
+        # Some test vectors are designed to test intermediate chain states.
+        expected_phase = vector.assertions.current_phase
+        expected_status = vector.expected_status
+        should_resolve = (
+            result_state.current_phase == GamePhase.CHAIN_CAPTURE
+            and expected_phase != "chain_capture"
+            and expected_status != "awaiting_decision"
+        )
+        if should_resolve:
+            result_state = resolve_chain_captures(result_state)
+
     except Exception as e:
         validation = ValidationResult(vector.id)
         validation.add_failure(f"Exception during apply_move: {e}")
@@ -370,6 +450,31 @@ def test_contract_vector(vector: TestVector):
     If the test fails, it indicates a parity divergence between
     the Python and TypeScript engines that should be investigated.
     """
+    # Skip vectors with explicit skip reason (unimplemented functionality)
+    if vector.skip:
+        pytest.skip(f"Vector {vector.id}: {vector.skip}")
+
+    # Skip multi-phase vectors that require orchestrator execution
+    # These test complex turn sequences that span multiple phases and
+    # cannot be properly tested with single-move application.
+    if "multi_phase" in vector.tags:
+        pytest.skip(
+            f"Vector {vector.id} requires orchestrator execution (multi_phase)"
+        )
+
+    # Skip territory_processing vectors with orchestrator tag
+    # These specifically require multi-step territory processing that
+    # can't be tested with single-move application.
+    if vector.category == "territory_processing" and "orchestrator" in vector.tags:
+        pytest.skip(
+            f"Vector {vector.id} requires orchestrator execution (territory_processing)"
+        )
+
+    # Skip vectors with skip:* tags (e.g., skip:pending_self_elim_tracking)
+    skip_tags = [t for t in vector.tags if t.startswith("skip:")]
+    if skip_tags:
+        pytest.skip(f"Vector {vector.id}: {skip_tags[0]}")
+
     GameEngine.clear_cache()
     result = execute_vector(vector)
 

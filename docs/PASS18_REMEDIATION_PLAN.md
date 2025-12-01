@@ -184,11 +184,11 @@ These tasks advance the hardest outstanding problem: executing orchestrator-firs
 
 - **Agent Mode:** Architect
 - **Priority:** P1
-- **Status:** ✅ Complete (2025-12-01) – 43 contract vectors (0 mismatches), swap_sides parity verified
+- **Status:** ✅ Complete (2025-12-01) – 49 contract vectors (0 mismatches), swap_sides parity verified
 
 - **Scope:**
   - Design and add at least 10 new contract vectors and/or snapshot traces covering "long tail" interactions, including:
-    - **Actual delivery: 43 vectors across 4 families** (chain_capture, forced_elimination, territory_line_endgame, hex_edge_cases)
+    - **Actual delivery: 49 vectors across the core families** (placement, movement, capture/chain_capture including extended chains, forced_elimination, territory/territory_line endgames including near_victory_territory, hex_edge_cases, and meta moves such as swap_sides)
     - Hex board territory disconnection with simultaneous line formation.
     - Three- and four-player capture chains with mixed line/territory consequences.
     - Combined ANM and territory-processing edge cases already documented in [`docs/STRICT_INVARIANT_SOAKS.md`](docs/STRICT_INVARIANT_SOAKS.md:1) and [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:1).

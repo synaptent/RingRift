@@ -82,6 +82,67 @@ test.describe('Sandbox host E2E', () => {
     await expect(gamePage.boardView).toBeVisible();
     await gamePage.assertConnected();
     await expect(gamePage.turnIndicator).toBeVisible();
+  });
+
+  test('sandbox rules lab overlays: curated scenario shows line and territory highlights', async ({
+    page,
+  }) => {
+    // Navigate to the sandbox pre-game setup.
+    await goToSandbox(page);
+
+    // Launch a local sandbox game (fallback is acceptable here).
+    await page.getByRole('button', { name: /Launch Game/i }).click();
+
+    // Either we navigated to /game/:id (backend) or remained on /sandbox.
+    // For the rules-lab overlays we specifically want the local sandbox host.
+    if (page.url().includes('/game/')) {
+      // Go back to sandbox explicitly.
+      await goToSandbox(page);
+      await page.getByRole('button', { name: /Launch Game/i }).click();
     }
+
+    // Wait for a sandbox board to be visible.
+    const board = page.getByTestId('board-view');
+    await expect(board).toBeVisible({ timeout: 30_000 });
+
+    // Open the Scenario Picker and load a curated scenario that exercises
+    // line and territory overlays. We rely on the curated bundle including
+    // at least one scenario tagged with Rules_* metadata.
+    await page.getByRole('button', { name: /Load Scenario/i }).click();
+    await expect(page.getByRole('dialog', { name: /Load Scenario/i })).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // Prefer a line/territory-focused curated scenario if present.
+    const candidateScenarioButton =
+      (await page
+        .getByRole('button', { name: /Line Completion Tutorial|Territory Disconnection/i })
+        .first()
+        .isVisible()) &&
+      page
+        .getByRole('button', { name: /Line Completion Tutorial|Territory Disconnection/i })
+        .first();
+
+    if (candidateScenarioButton) {
+      await candidateScenarioButton.click();
+    } else {
+      // Fallback: load the first curated scenario in the list.
+      await page
+        .getByRole('dialog', { name: /Load Scenario/i })
+        .getByRole('button', { name: /Load/i })
+        .first()
+        .click();
+    }
+
+    // After loading, the sandbox board should still be present.
+    await expect(board).toBeVisible({ timeout: 30_000 });
+
+    // Assert that at least one cell has a line overlay and at least one has
+    // a territory/region overlay, indicating that BoardView wiring is active.
+    const lineOverlayCell = board.locator('[data-line-overlay="true"]').first();
+    const regionOverlayCell = board.locator('[data-region-overlay="true"]').first();
+
+    await expect(lineOverlayCell).toBeVisible({ timeout: 10_000 });
+    await expect(regionOverlayCell).toBeVisible({ timeout: 10_000 });
   });
 });

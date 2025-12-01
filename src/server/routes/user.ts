@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma, GameStatus as PrismaGameStatus } from '@prisma/client';
 import { getDatabaseClient, TransactionClient } from '../database/connection';
 import { AuthenticatedRequest, getAuthUserId } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
@@ -222,7 +222,7 @@ router.put(
       data: {
         ...(username && { username }),
         ...(email && { email }),
-        ...(preferences && { preferences: preferences as any }),
+        ...(preferences && { preferences: preferences as Prisma.InputJsonValue }),
         updatedAt: new Date(),
       },
       select: {
@@ -316,8 +316,7 @@ router.get(
           { player3Id: userId },
           { player4Id: userId },
         ],
-        // Cast to any so we don't depend on the exact Prisma GameStatus TS enum
-        status: 'completed' as any,
+        status: PrismaGameStatus.completed,
       },
       orderBy: { endedAt: 'desc' },
       take: 10,
@@ -650,16 +649,20 @@ export function getDisplayUsername(username: string | null | undefined): string 
  * @param player Player data from database query
  * @returns Player object with display-friendly username
  */
+export function formatPlayerForDisplay(player: null | undefined): null;
+export function formatPlayerForDisplay<T extends { username: string }>(
+  player: T
+): T & { displayName: string };
 export function formatPlayerForDisplay<T extends { username: string } | null | undefined>(
   player: T
-): T extends null | undefined ? null : T & { displayName: string } {
+): (T & { displayName: string }) | null {
   if (!player) {
-    return null as any;
+    return null;
   }
   return {
     ...player,
     displayName: getDisplayUsername(player.username),
-  } as any;
+  };
 }
 
 /**
@@ -888,7 +891,7 @@ router.get(
         },
       });
     } catch (error) {
-      if ((error as any)?.code === 'USER_NOT_FOUND') {
+      if (error instanceof Error && 'code' in error && error.code === 'USER_NOT_FOUND') {
         throw error;
       }
       throw createError('Database not available', 503, 'DATABASE_UNAVAILABLE');
@@ -996,10 +999,7 @@ router.delete(
       });
 
       // Best-effort cleanup of any persisted refresh tokens for this user.
-      const refreshTokenModel = (tx as any).refreshToken;
-      if (refreshTokenModel && typeof refreshTokenModel.deleteMany === 'function') {
-        await refreshTokenModel.deleteMany({ where: { userId } });
-      }
+      await tx.refreshToken.deleteMany({ where: { userId } });
     });
 
     // Terminate any active WebSocket connections for the deleted user.

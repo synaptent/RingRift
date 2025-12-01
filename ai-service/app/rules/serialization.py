@@ -235,7 +235,7 @@ def serialize_move(move: Move) -> Dict[str, Any]:
     return result
 
 
-def deserialize_move(data: Dict[str, Any]) -> Move:
+def deserialize_move(data: Dict[str, Any]) -> Optional[Move]:
     """Deserialize a Move from JSON dict.
 
     This mirrors the TypeScript contract move format from
@@ -243,7 +243,13 @@ def deserialize_move(data: Dict[str, Any]) -> Move:
     decision-phase metadata such as formedLines, disconnectedRegions,
     collapsedMarkers, and eliminatedRings so that parity tests can
     reconstruct rich decision moves exactly.
+
+    Returns None for empty/invalid move data.
     """
+    # Return None for empty move data (e.g., multi-phase vectors that use initialMove)
+    if not data or ("type" not in data and "to" not in data):
+        return None
+
     # Parse move type
     move_type_str = data.get("type", "place_ring")
     move_type = MoveType(move_type_str)
@@ -259,8 +265,8 @@ def deserialize_move(data: Dict[str, Any]) -> Move:
     else:
         timestamp = datetime.now()
 
-    # Parse positions
-    to_pos = deserialize_position(data["to"])
+    # Parse positions - 'to' is optional for some move types (e.g., process_line)
+    to_pos = deserialize_position(data["to"]) if "to" in data else None
     from_pos = (
         deserialize_position(data["from"])
         if "from" in data
@@ -480,13 +486,17 @@ class ContractVector:
         self.tags: List[str] = data.get("tags", [])
         self.source: str = data.get("source", "manual")
         self.created_at: str = data.get("createdAt", "")
+        # Skip reason if present (for tests requiring unimplemented functionality)
+        self.skip: Optional[str] = data.get("skip")
 
         # Input
         input_data = data.get("input", {})
         self.input_state: GameState = deserialize_game_state(
             input_data.get("state", {})
         )
-        self.input_move: Move = deserialize_move(input_data.get("move", {}))
+        # Check for 'move' first, then fall back to 'initialMove' for multi-phase vectors
+        move_data = input_data.get("move") or input_data.get("initialMove") or {}
+        self.input_move: Optional[Move] = deserialize_move(move_data)
 
         # Expected output
         expected_data = data.get("expectedOutput", {})

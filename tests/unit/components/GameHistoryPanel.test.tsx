@@ -102,17 +102,17 @@ describe('GameHistoryPanel', () => {
   });
 
   it.each([
-    { reason: 'timeout', winner: 1, expectedLabel: 'Result: timeout', expectWinner: true },
+    { reason: 'timeout', winner: 1, expectedLabel: 'Result: Timeout', expectWinner: true },
     {
       reason: 'resignation',
       winner: 2,
-      expectedLabel: 'Result: resignation',
+      expectedLabel: 'Result: Resignation',
       expectWinner: true,
     },
     {
       reason: 'abandonment',
       winner: null,
-      expectedLabel: 'Result: abandonment',
+      expectedLabel: 'Result: Abandonment',
       expectWinner: false,
     },
   ] as const)(

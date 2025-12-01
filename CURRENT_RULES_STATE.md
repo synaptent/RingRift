@@ -71,7 +71,7 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 - **Backend TS & Python:** Both engines now treat `swap_sides` as a first‑class meta‑move for 2‑player games, with identical gating (P2’s interactive turn, `rulesOptions.swapRuleEnabled === true`, exactly after P1’s first non‑swap move, and at most once per game). Production remains TS‑authoritative; Python is used for validation, AI, and training.
 - **Client sandbox:** `ClientSandboxEngine` mirrors the backend pie‑rule gate and applies `swap_sides` locally for 2‑player sandbox games, with `/sandbox` exposing a “Swap colours (pie rule)” control once for P2 after P1’s opening move.
-- **AI training/eval:** Python training and soak harnesses can opt into production‑style pie‑rule availability by setting `rulesOptions.swapRuleEnabled: true` on initial states (for example via `RINGRIFT_TRAINING_ENABLE_SWAP_RULE=1` in self‑play generators). CMA‑ES/GA evaluation pipelines now emit lightweight diagnostics on how often AIs select `swap_sides` during runs.
+- **AI training/eval:** Python training and soak harnesses now enable production‑style pie‑rule availability **by default** for 2‑player games by setting `rulesOptions.swapRuleEnabled: true` on initial states. For experiments that must run without the pie rule, callers can explicitly opt out via the `RINGRIFT_TRAINING_DISABLE_SWAP_RULE=1` flag. CMA‑ES/GA evaluation pipelines emit lightweight diagnostics on how often AIs select `swap_sides` during runs.
 
 ---
 

@@ -94,14 +94,19 @@ def create_initial_state(
         for idx in range(1, num_players + 1)
     ]
 
-    # Optional training-time pie rule toggle. When enabled via
-    # RINGRIFT_TRAINING_ENABLE_SWAP_RULE, 2-player training games start with
-    # rulesOptions.swapRuleEnabled=true so Python AIs can exercise the
-    # swap_sides meta-move during self-play. Multi-player games ignore this
-    # flag and never expose swap_sides.
+    # Training-time pie rule configuration. By default, 2-player training
+    # games start with rulesOptions.swapRuleEnabled=True so Python AIs can
+    # exercise the swap_sides meta-move during self-play. Multi-player games
+    # ignore this and never expose swap_sides.
+    #
+    # For backwards compatibility, the historical
+    # RINGRIFT_TRAINING_ENABLE_SWAP_RULE flag is no longer required: the
+    # swap rule is enabled by default for 2-player games. Callers that need
+    # to explicitly disable the pie rule for experiments may set
+    # RINGRIFT_TRAINING_DISABLE_SWAP_RULE=1 (or "true"/"yes"/"on").
     rules_options = None
-    env_flag = os.getenv("RINGRIFT_TRAINING_ENABLE_SWAP_RULE", "").lower()
-    if num_players == 2 and env_flag in {"1", "true", "yes", "on"}:
+    disable_flag = os.getenv("RINGRIFT_TRAINING_DISABLE_SWAP_RULE", "").lower()
+    if num_players == 2 and disable_flag not in {"1", "true", "yes", "on"}:
         rules_options = {"swapRuleEnabled": True}
 
     return GameState(
@@ -418,6 +423,7 @@ def generate_dataset(
     max_moves: int = 200,
     batch_size: Optional[int] = None,
     replay_db: Optional[GameReplayDB] = None,
+    num_players: int = 2,
 ) -> None:
     """
     Generate self-play data using DescentAI and RingRiftEnv.
@@ -445,6 +451,8 @@ def generate_dataset(
     replay_db:
         Optional GameReplayDB instance for recording completed games.
         If provided, all games are recorded to this database.
+    num_players:
+        Number of players in each game (2, 3, or 4). Default: 2.
     """
     if seed is not None:
         import torch
@@ -462,25 +470,32 @@ def generate_dataset(
     new_policy_indices = []
     new_policy_values = []
 
-    # Initialize AI if not provided
-    if ai1 is None:
-        ai1 = DescentAI(
-            player_number=1,
-            config=AIConfig(difficulty=10, randomness=0.1, think_time=500)
-        )
-    if ai2 is None:
-        ai2 = DescentAI(
-            player_number=2,
-            config=AIConfig(difficulty=10, randomness=0.1, think_time=500)
-        )
+    # Initialize AI players for all players in the game.
+    # For 2-player games, use provided ai1/ai2 if available.
+    # For 3p/4p games, always create fresh AI instances.
+    ai_players: dict = {}
+    for player_num in range(1, num_players + 1):
+        if player_num == 1 and ai1 is not None:
+            ai_players[player_num] = ai1
+        elif player_num == 2 and ai2 is not None:
+            ai_players[player_num] = ai2
+        else:
+            ai_players[player_num] = DescentAI(
+                player_number=player_num,
+                config=AIConfig(difficulty=10, randomness=0.1, think_time=500)
+            )
 
-    ai_p1 = ai1
-    ai_p2 = ai2
+    # Keep legacy references for 2-player backward compatibility
+    ai_p1 = ai_players[1]
+    ai_p2 = ai_players.get(2, ai_players[1])  # Fallback for edge cases
 
-    print(f"Generating {num_games} games on {board_type}...")
+    print(f"Generating {num_games} {num_players}-player games on {board_type}...")
 
     env = RingRiftEnv(
-        board_type=board_type, max_moves=max_moves, reward_on="terminal"
+        board_type=board_type,
+        max_moves=max_moves,
+        reward_on="terminal",
+        num_players=num_players,
     )
 
     # Initialize progress reporter for time-based progress output (~10s intervals)
@@ -515,7 +530,7 @@ def generate_dataset(
             and move_count < env.max_moves
         ):
             current_player = state.current_player
-            ai = ai_p1 if current_player == 1 else ai_p2
+            ai = ai_players.get(current_player, ai_p1)
 
             # Use DescentAI to select move
             # DescentAI doesn't return a policy distribution, but we can
@@ -921,6 +936,13 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable game recording to database (overrides --record-db).",
     )
+    parser.add_argument(
+        "--num-players",
+        type=int,
+        choices=[2, 3, 4],
+        default=2,
+        help="Number of players in each game (default: 2).",
+    )
     return parser.parse_args()
 
 
@@ -967,6 +989,7 @@ def main() -> None:
         max_moves=args.max_moves,
         batch_size=args.batch_size,
         replay_db=replay_db,
+        num_players=args.num_players,
     )
 
 

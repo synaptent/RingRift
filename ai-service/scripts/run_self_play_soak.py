@@ -795,6 +795,9 @@ def run_self_play_soak(
                 used_pie_rule=swap_sides_moves_for_game > 0,
             )
             log_f.write(json.dumps(asdict(rec)) + "\n")
+            # Ensure per-game records are visible to tail/analysis tools even
+            # while a long soak is still in progress.
+            log_f.flush()
             records.append(rec)
 
             # Record full game to database if enabled
@@ -922,8 +925,19 @@ def _summarise(
         ),
         "invariant_violations_by_id": invariant_violations_by_id,
         "violation_counts_by_type": violation_counts_by_type,
+        # Pie-rule usage aggregates
         "swap_sides_total_moves": total_swap_sides_moves,
         "swap_sides_games": games_with_swap_sides,
+        "swap_sides_games_fraction": (
+            games_with_swap_sides / total
+        )
+        if total
+        else 0.0,
+        "avg_swap_sides_moves_per_game": (
+            total_swap_sides_moves / total
+        )
+        if total
+        else 0.0,
     }
 
     if invariant_samples is not None:

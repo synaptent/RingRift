@@ -7,7 +7,7 @@ This document tracks the project's **single weakest aspect** and **single hardes
 
 > **Post-P18.5 Note (2025-12-01):** The "hardest problem" from the initial PASS18 assessment (Deep Multi-Engine Parity) has been **substantially resolved** through P18.1-5 remediation work:
 >
-> - 43 extended contract vectors with 0 mismatches
+> - 49 extended contract vectors with 0 mismatches
 > - swap_sides (pie rule) parity verified across all layers
 > - Orchestrator at Phase 4 (100% rollout, staging complete, production preview ready)
 > - See Section 4 for detailed remediation summary.
@@ -18,31 +18,31 @@ This document tracks the project's **single weakest aspect** and **single hardes
 
 > **Progress Note (Pass 19B):** Near-victory fixture API created enabling E2E game completion tests. 6 tests enabled (3 E2E, 3 scenario). V2 test bug fixed. All skip rationales documented. Focus: E2E infrastructure for complex multiplayer scenarios.
 
-### 1.1 Weakest Aspect: E2E Test Coverage for Game Completion Scenarios
+### 1.1 Weakest Aspect: Production Observability & Operational Readiness
 
-**Score: 3.5/5.0** (Lowest Coverage Area, refined from Frontend UX)
+**Score: 3.8/5.0** (Previously 4.0/5.0 for E2E game completion coverage)
 
 Progress made:
 
-- ✅ **Near-Victory Fixture API:** `near_victory_elimination` scenario enables E2E game completion tests.
-- ✅ **E2E Tests Enabled:** Victory modal (return to lobby, rematch), rating updates after rated game.
-- ✅ **Scenario Tests Enabled:** M2 (Disconnection Ladder), C2 (Capture Chain Endgame).
-- ✅ **V2 Test Bug Fixed:** Stale `gameState` reference issue resolved.
-- ✅ **Chat Test Enabled:** Multiplayer chat feature test now runs.
+- ✅ **Parity / invariants wired into metrics:** Orchestrator and Python invariant counters exported and hooked into alerts (see `INVARIANTS_AND_PARITY_FRAMEWORK.md`, `ORCHESTRATOR_ROLLOUT_PLAN.md`).
+- ✅ **Basic dashboards & alerts:** Rule/AI parity, orchestrator invariant violations, and health checks surfaced in Grafana-style dashboards with alerting thresholds documented in `ALERTING_THRESHOLDS.md`.
+- ✅ **E2E game-completion coverage no longer weakest:**
+  - `decision-phase-timeout.e2e.spec.ts` now covers line, territory **and chain_capture** decision-phase timeouts via shortTimeoutMs fixtures, asserting deterministic `decision_phase_timed_out` payloads for both players.
+  - `multiPlayer.coordination.test.ts` now exercises back‑to‑back near‑victory fixtures (elimination and territory_control) across two players **and a spectator**, asserting consistent `game_over.data.gameResult.reason`/`winner` on all clients.
+  - `reconnection.simulation.test.ts` and `timeout-and-ratings.e2e.spec.ts` already cover rated vs unrated abandonment/timeout, including rating behaviour.
 
 Remaining gaps:
 
-1. **Multiplayer Coordination:** Timeout notifications, concurrent player flows.
-2. **WebSocket Interception:** Network partition simulation for reconnection tests.
-3. **Time Acceleration:** Decision timeout tests require real-time waiting.
-4. **Complex Fixtures:** Territory victory, multi-phase turns.
+1. **End‑to‑end SLOs & dashboards:** No single “red/green” view combining WebSocket health, AI latency, decision timeouts, and invariant violations for operators.
+2. **Load / scale validation:** Orchestrator and WebSocket soaks exist, but there is no repeatable high‑load staging drill with clear pass/fail criteria.
+3. **Operational drills:** Backups, secrets rotation, and incident runbooks are documented but not yet exercised as recurring drills against staging/production‑like stacks.
 
 **Why it is the weakest:**
-Single-player game completion is now testable via fixtures, but multiplayer scenarios require infrastructure that doesn't exist. The backend and rules engine are robust (scores ≥ 4.5).
+Core rules, host integration, and multiplayer game‑completion E2Es are now in good shape (scores ≥ 4.3). The biggest remaining risk is **seeing problems quickly and confidently in production**—without stronger observability and rehearsed operational playbooks, subtle regressions or outages would be harder to diagnose and mitigate.
 
 ### 1.2 Hardest Outstanding Problem: Production E2E Infrastructure
 
-**Difficulty: 4/5** (Increased from 3/5 due to refined scope)
+**Difficulty: 3.5/5** (Previously 4/5 – infra largely in place, now about breadth and maintainability)
 
 Testing multiplayer coordination scenarios requires infrastructure beyond current capabilities:
 
@@ -62,6 +62,12 @@ Testing multiplayer coordination scenarios requires infrastructure beyond curren
 - ✅ E2E test helpers (`createFixtureGame`, `createNearVictoryGame`).
 - ✅ V2 test bug fix (stale gameState reference).
 - ✅ All skip rationales documented with specific blockers.
+- ✅ Multi-client/WebSocket harness (`MultiClientCoordinator`, `NetworkSimulator`) exercised in:
+  - Swap-rule meta-move flows and deep chain-capture decisions.
+  - Reconnection-window abandonment and rated vs unrated abandonment rating behaviour.
+- ✅ Timeout & ratings E2E slice (`timeout-and-ratings.e2e.spec.ts`) using short time-controls to validate:
+  - `game_over.data.gameResult.reason === 'timeout'` for move-clock expiry.
+  - Rating updates for rated timeouts and no rating changes for unrated timeouts.
 
 ---
 
@@ -121,7 +127,7 @@ The initial PASS18 assessment identified **Deep Multi-Engine Parity** as the har
 
 ### 3.5 P18.5-\*: Extended Contract Vectors and swap_sides Parity ✅
 
-- **43 contract vectors** across 4 families: chain capture, forced elimination, territory/line, hex edge cases
+- **49 contract vectors** across the core families: placement, movement, capture/chain_capture (including extended/deep chains), forced elimination, territory/line endgames (including near-victory territory), hex edge cases, and meta moves (e.g. swap_sides)
 - **0 mismatches** between TS and Python
 - swap_sides (pie rule) verified across all layers (TS backend, TS sandbox, Python)
 - **Design clarification (P18.5-3):** Mid-phase vectors are for single-step parity testing, not game seeding

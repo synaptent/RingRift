@@ -46,9 +46,8 @@ function createSandboxEngineForTest(boardType: BoardType = 'square8'): ClientSan
     },
   };
 
+  // Orchestrator adapter is permanently enabled as of Phase 3 migration.
   const engine = new ClientSandboxEngine({ config, interactionHandler: handler });
-  // Ensure orchestrator adapter is enabled explicitly for clarity.
-  engine.enableOrchestratorAdapter();
   return engine;
 }
 

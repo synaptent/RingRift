@@ -17,12 +17,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getReplayService } from '../services/ReplayService';
-import type {
-  ReplayGameMetadata,
-  ReplayMoveRecord,
-  ReplayPlaybackState,
-  PlaybackSpeed,
-} from '../types/replay';
+import type { ReplayMoveRecord, ReplayPlaybackState, PlaybackSpeed } from '../types/replay';
 import type { GameState } from '../../shared/types/game';
 
 const INITIAL_STATE: ReplayPlaybackState = {

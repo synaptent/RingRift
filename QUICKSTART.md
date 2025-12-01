@@ -348,40 +348,43 @@ Or visit `http://localhost:8001/docs` in a browser and use the interactive Swagg
 
 ## 3. Running the Full Stack with Docker Compose
 
-The root `docker-compose.yml` currently defines the **main application stack**:
+The root `docker-compose.yml` currently defines the **full application stack** (monitoring included by default):
 
 - `app` – Node.js backend (builds from `Dockerfile` and exposes port 3000; HTTP API and Socket.IO WebSockets share this port)
 - `nginx` – Reverse proxy (80/443) using `nginx.conf`
 - `postgres` – PostgreSQL database
 - `redis` – Redis instance
 - `ai-service` – Python FastAPI AI microservice (exposes port 8001; used by `AIServiceClient`)
-- `prometheus` – Prometheus TSDB
-- `grafana` – Grafana dashboards
+- `prometheus` – Prometheus TSDB (default, production-ready metrics)
+- `alertmanager` – Alert management (default)
+- `grafana` – Grafana dashboards (default, auto-provisions 3 dashboards)
 
 > The AI Service is now included as the `ai-service` service; you do not need to
 > start it manually when using `docker compose up`. The `app` container is
 > configured with `AI_SERVICE_URL=http://ai-service:8001`.
 
-### 3.1 Start the Core Stack
+### 3.1 Start the Full Stack
 
 From the project root:
 
 ```bash
-# Build and run the main stack
+# Build and run the full stack (including monitoring)
 docker compose up
 # or in the background
 docker compose up -d
 ```
 
-By default you’ll have:
+By default you'll have:
 
 - **App container (`app`)** listening on `http://localhost:3000`
   - Runs as a **single instance** by default (`deploy.replicas: 1`) with `RINGRIFT_APP_TOPOLOGY=single`, meaning it assumes it is the only app instance talking to this database and Redis for authoritative game sessions.
 - **Nginx** proxy on `http://localhost/` (80) and `https://localhost/` (443), if configured
 - **PostgreSQL** on port `5432`
 - **Redis** on port `6379`
-- **Prometheus** on `http://localhost:9090` (requires `--profile monitoring`)
-- **Grafana** on `http://localhost:3002` (requires `--profile monitoring`)
+- **AI Service** on `http://localhost:8001` (internal), `http://ai-service:8001` (from containers)
+- **Prometheus** on `http://localhost:9090` (default, production-ready)
+- **Alertmanager** on `http://localhost:9093` (default)
+- **Grafana** on `http://localhost:3002` (default, 3 dashboards auto-load)
 
 > If you manually scale the `app` service (for example, `docker compose up --scale app=2`), you are leaving the default, supported topology. Update `RINGRIFT_APP_TOPOLOGY` and ensure infrastructure-enforced sticky sessions for WebSocket + game-affecting HTTP traffic before doing so.
 
@@ -613,9 +616,10 @@ Once the stack is healthy, you should have:
   - PostgreSQL: `localhost:5432`
 - **Redis**:
   - Redis: `localhost:6379`
-- **Observability** (requires `--profile monitoring`):
+- **Observability** (default):
   - Prometheus: `http://localhost:9090`
-  - Grafana: `http://localhost:3002`
+  - Alertmanager: `http://localhost:9093`
+  - Grafana: `http://localhost:3002` (3 dashboards: Game Performance, Rules Correctness, System Health)
 
 ### 8.4 Verifying the Staging Stack
 

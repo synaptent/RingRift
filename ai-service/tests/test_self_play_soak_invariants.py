@@ -61,6 +61,87 @@ def test_summarise_aggregates_invariant_counts() -> None:
     assert summary["invariant_violation_samples"] == samples
 
 
+def test_summarise_includes_swap_rule_metrics() -> None:
+    """Summary should always include pie-rule (swap) usage metrics.
+
+    The summary JSON must expose:
+    - swap_sides_total_moves: raw count of SWAP_SIDES moves across all games.
+    - swap_sides_games: number of games where swap was used at least once.
+    - swap_sides_games_fraction: fraction ∈ [0, 1] of games with swap.
+    - avg_swap_sides_moves_per_game: average swap moves per game (≤1 for
+      correct pie-rule semantics, but may be >1 if multiple swaps somehow
+      occurred due to bugs).
+    """
+    records: List[soak.GameRecord] = [
+        soak.GameRecord(
+            index=0,
+            num_players=2,
+            board_type="square8",
+            engine_mode="mixed",
+            seed=None,
+            length=10,
+            status="finished",
+            winner=1,
+            termination_reason="status:finished",
+            invariant_violations_by_type={},
+            swap_sides_moves=1,
+            used_pie_rule=True,
+        ),
+        soak.GameRecord(
+            index=1,
+            num_players=2,
+            board_type="square8",
+            engine_mode="mixed",
+            seed=None,
+            length=12,
+            status="finished",
+            winner=2,
+            termination_reason="status:finished",
+            invariant_violations_by_type={},
+            swap_sides_moves=0,
+            used_pie_rule=False,
+        ),
+        soak.GameRecord(
+            index=2,
+            num_players=2,
+            board_type="square8",
+            engine_mode="mixed",
+            seed=None,
+            length=8,
+            status="finished",
+            winner=1,
+            termination_reason="status:finished",
+            invariant_violations_by_type={},
+            swap_sides_moves=1,
+            used_pie_rule=True,
+        ),
+    ]
+
+    summary = soak._summarise(records, None)
+
+    # Raw aggregate fields
+    assert summary["swap_sides_total_moves"] == 2
+    assert summary["swap_sides_games"] == 2
+
+    # Derived metrics
+    assert "swap_sides_games_fraction" in summary
+    assert summary["swap_sides_games_fraction"] == pytest.approx(2 / 3)
+
+    assert "avg_swap_sides_moves_per_game" in summary
+    assert summary["avg_swap_sides_moves_per_game"] == pytest.approx(2 / 3)
+
+
+def test_summarise_swap_metrics_with_zero_games() -> None:
+    """Swap metrics should be 0 when there are no games."""
+    records: List[soak.GameRecord] = []
+    summary = soak._summarise(records, None)
+
+    assert summary["swap_sides_total_moves"] == 0
+    assert summary["swap_sides_games"] == 0
+    assert summary["swap_sides_games_fraction"] == 0.0
+    assert summary["avg_swap_sides_moves_per_game"] == 0.0
+
+
 def test_record_invariant_violation_counts_and_samples_capped() -> None:
     class DummyState:
         def __init__(self) -> None:

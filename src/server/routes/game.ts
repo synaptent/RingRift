@@ -1,5 +1,9 @@
 import { Router, Response } from 'express';
-import { Prisma } from '@prisma/client';
+import {
+  Prisma,
+  GameStatus as PrismaGameStatus,
+  BoardType as PrismaBoardType,
+} from '@prisma/client';
 import { getDatabaseClient } from '../database/connection';
 import { AuthenticatedRequest, getAuthUserId } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
@@ -323,12 +327,36 @@ router.get(
       skip: offset,
     });
 
+    // Project a lightweight terminal result reason for completed/abandoned games
+    // so profile/recent-games views can distinguish resignation/abandonment/timeout
+    // without requiring an additional history/details call.
+    const serializedGames = games.map((game) => {
+      let resultReason: string | undefined;
+
+      if (
+        game.status === PrismaGameStatus.completed ||
+        game.status === PrismaGameStatus.abandoned ||
+        game.status === ('finished' as any)
+      ) {
+        const finalState = game.finalState as Prisma.JsonObject | null | undefined;
+        const gameResult = (finalState?.gameResult ?? null) as { reason?: string } | null;
+        if (gameResult && typeof gameResult.reason === 'string') {
+          resultReason = gameResult.reason;
+        }
+      }
+
+      return {
+        ...game,
+        ...(resultReason && { resultReason }),
+      };
+    });
+
     const total = await prisma.game.count({ where: whereClause });
 
     res.json({
       success: true,
       data: {
-        games,
+        games: serializedGames,
         pagination: {
           total,
           limit,
@@ -639,7 +667,7 @@ router.post(
 
     // Determine initial game status: AI games start immediately, human-only games wait
     const hasAIOpponents = gameData.aiOpponents && gameData.aiOpponents.count > 0;
-    const initialStatus = hasAIOpponents ? ('active' as any) : ('waiting' as any);
+    const initialStatus = hasAIOpponents ? PrismaGameStatus.active : PrismaGameStatus.waiting;
     const startedAt = hasAIOpponents ? new Date() : undefined;
 
     // Compute the canonical per-game RNG seed. When the client supplies an
@@ -651,14 +679,14 @@ router.post(
     // Create game in database
     const game = await prisma.game.create({
       data: {
-        boardType: gameData.boardType as any,
+        boardType: gameData.boardType as PrismaBoardType,
         maxPlayers: gameData.maxPlayers,
         timeControl: gameData.timeControl,
         isRated: gameData.isRated,
         allowSpectators: !gameData.isPrivate,
         player1Id: userId,
         status: initialStatus,
-        gameState: initialGameState as any,
+        gameState: initialGameState as Prisma.InputJsonValue,
         // Store the per-game RNG seed explicitly; avoid undefined to satisfy
         // Prisma's `number | null` type.
         rngSeed,
@@ -811,7 +839,7 @@ router.post(
       throw createError('Game not found', 404, 'GAME_NOT_FOUND');
     }
 
-    if (game.status !== ('waiting' as any)) {
+    if (game.status !== PrismaGameStatus.waiting) {
       throw createError('Game is not accepting players', 400, 'GAME_NOT_JOINABLE');
     }
 
@@ -879,7 +907,7 @@ router.post(
         const startedGame = await prisma.game.update({
           where: { id: gameId },
           data: {
-            status: 'active' as any,
+            status: PrismaGameStatus.active,
             startedAt: new Date(),
             updatedAt: new Date(),
           },
@@ -1010,7 +1038,7 @@ router.post(
       player4Id: game.player4Id,
     });
 
-    if (game.status === ('active' as any)) {
+    if (game.status === PrismaGameStatus.active) {
       // If game is active, this is a resignation.
       // Prefer routing through the WebSocket/GameSession host so that the
       // engine produces a canonical GameResult and ratings are updated via
@@ -1069,7 +1097,7 @@ router.post(
         await prisma.game.update({
           where: { id: gameId },
           data: {
-            status: 'completed' as any,
+            status: PrismaGameStatus.completed,
             winnerId: winnerId,
             endedAt: new Date(),
             updatedAt: new Date(),
@@ -1132,7 +1160,7 @@ router.post(
         // Cancel the game
         await prisma.game.update({
           where: { id: gameId },
-          data: { status: 'abandoned' as any, endedAt: new Date(), updatedAt: new Date() },
+          data: { status: PrismaGameStatus.abandoned, endedAt: new Date(), updatedAt: new Date() },
         });
 
         // Broadcast game cancelled to lobby
@@ -1399,8 +1427,8 @@ router.get(
     // Format response according to the API specification
     // Player names are transformed to show "Deleted Player" for anonymized users
     const formattedMoves = moves.map((move) => {
-      const moveData = (move as any).moveData as Record<string, unknown> | null;
-      const rawAutoResolved = moveData && (moveData as any).decisionAutoResolved;
+      const moveData = move.moveData as Prisma.JsonObject | null;
+      const rawAutoResolved = moveData?.decisionAutoResolved as Prisma.JsonObject | undefined;
 
       // Project any persisted decisionAutoResolved metadata into a compact
       // autoResolved badge payload for the history API. This intentionally
@@ -1431,11 +1459,11 @@ router.get(
     // victory conditions without making a separate details request.
     let result: { reason: string; winner?: number | null } | undefined;
     if (game.status === 'completed' || game.status === 'abandoned' || game.status === 'finished') {
-      const finalState = (game as any).finalState as
-        | { gameResult?: { reason?: string; winner?: number | null } }
-        | null
-        | undefined;
-      const gameResult = finalState?.gameResult;
+      const finalState = game.finalState as Prisma.JsonObject | null | undefined;
+      const gameResult = (finalState?.gameResult ?? null) as {
+        reason?: string;
+        winner?: number | null;
+      } | null;
       if (gameResult && typeof gameResult.reason === 'string') {
         // Use spread to conditionally add winner only when valid (exactOptionalPropertyTypes)
         result = {

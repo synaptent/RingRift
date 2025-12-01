@@ -17,7 +17,7 @@ Thank you for your interest in contributing to RingRift! This document provides 
 ## 🚦 Development Status
 
 **Current State:** Stable beta with consolidated rules engine – **orchestrator at 100% rollout**
-**Test Status:** 2621 tests passing, comprehensive coverage across all rule domains
+**Test Status:** 2,987 tests passing (CI-gated suites), comprehensive coverage across all rule domains
 **Priority Focus:** Production hardening, UX polish, and AI improvements
 
 Before contributing, please review:
@@ -35,14 +35,14 @@ Before contributing, please review:
 
 ### Active Work (see TODO.md for details)
 
-| Area | Status | Priority |
-|------|--------|----------|
-| **Orchestrator Rollout** | ✅ Complete (100% in all environments) | P0 |
-| **Rules Parity** | ✅ All tests passing | P0 |
-| **Backend/Sandbox Hosts** | ✅ Using TurnEngineAdapter/SandboxOrchestratorAdapter | P0 |
-| **Legacy Cleanup** | In progress (Wave 5.4) | P1 |
-| **UX Polish** | Ongoing | P1 |
-| **AI Improvements** | Backlog | P2 |
+| Area                      | Status                                                | Priority |
+| ------------------------- | ----------------------------------------------------- | -------- |
+| **Orchestrator Rollout**  | ✅ Complete (100% in all environments)                | P0       |
+| **Rules Parity**          | ✅ All tests passing                                  | P0       |
+| **Backend/Sandbox Hosts** | ✅ Using TurnEngineAdapter/SandboxOrchestratorAdapter | P0       |
+| **Legacy Cleanup**        | In progress (Wave 5.4)                                | P1       |
+| **UX Polish**             | Ongoing                                               | P1       |
+| **AI Improvements**       | Backlog                                               | P2       |
 
 ### Architecture Overview
 
@@ -61,6 +61,7 @@ Hosts:
 ```
 
 For architectural details, see:
+
 - `RULES_ENGINE_ARCHITECTURE.md` – Architecture overview
 - `docs/RULES_SSOT_MAP.md` – SSOT boundaries and host integration
 - `docs/CANONICAL_ENGINE_API.md` – Lifecycle and API reference

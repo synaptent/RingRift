@@ -114,6 +114,11 @@ export interface BoardViewProps {
    * Callback when an animation completes. Used to clear the animation state.
    */
   onAnimationComplete?: () => void;
+  /**
+   * Optional callback to show keyboard shortcuts help overlay.
+   * Triggered when user presses "?" key while focused on the board.
+   */
+  onShowKeyboardHelp?: () => void;
 }
 
 // Tailwind-friendly, fixed color classes per player number to avoid
@@ -497,6 +502,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   showTerritoryRegionOverlays = false,
   pendingAnimation,
   onAnimationComplete,
+  onShowKeyboardHelp,
 }) => {
   // Animation state tracking
   const [animations, setAnimations] = useState<AnimationState[]>([]);
@@ -741,11 +747,23 @@ export const BoardView: React.FC<BoardViewProps> = ({
           e.preventDefault();
           clearSelection();
           break;
+        case '?':
+          e.preventDefault();
+          onShowKeyboardHelp?.();
+          break;
         default:
           break;
       }
     },
-    [focusedPosition, onCellClick, isSpectator, board.stacks, moveFocus, clearSelection]
+    [
+      focusedPosition,
+      onCellClick,
+      isSpectator,
+      board.stacks,
+      moveFocus,
+      clearSelection,
+      onShowKeyboardHelp,
+    ]
   );
 
   // Announce valid moves when selection changes
@@ -1631,7 +1649,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       tabIndex={0}
       onKeyDown={handleKeyDown}
       role="grid"
-      aria-label={`${effectiveBoardType} game board. Use arrow keys to navigate, Enter or Space to select, Escape to clear selection`}
+      aria-label={`${effectiveBoardType} game board. Use arrow keys to navigate, Enter or Space to select, Escape to clear selection, question mark for keyboard shortcuts`}
     >
       {renderBoard()}
       {/* Screen reader announcements */}

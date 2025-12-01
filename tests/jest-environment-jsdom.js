@@ -16,6 +16,19 @@ class CustomJSDOMEnvironment extends JSDOMEnvironment {
         VITE_WS_URL: 'http://localhost:3000',
       },
     };
+
+    // Polyfill structuredClone for jsdom environment
+    // structuredClone is available in Node 17+ but jsdom doesn't expose it by default
+    // Use Node's native structuredClone if available, otherwise use JSON fallback
+    if (typeof this.global.structuredClone === 'undefined') {
+      if (typeof structuredClone !== 'undefined') {
+        // Node 17+ has native structuredClone - use it
+        this.global.structuredClone = structuredClone;
+      } else {
+        // Fallback for older Node versions
+        this.global.structuredClone = (obj) => JSON.parse(JSON.stringify(obj));
+      }
+    }
   }
 }
 

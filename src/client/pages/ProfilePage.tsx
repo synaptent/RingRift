@@ -2,14 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { authApi, gameApi } from '../services/api';
 import { User } from '../../shared/types/user';
-import { Game } from '../../shared/types/game';
+import { Game, GameResult } from '../../shared/types/game';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { extractErrorMessage } from '../utils/errorReporting';
+import { formatVictoryReason } from '../adapters/gameViewModels';
+
+type RecentGame = Game & { resultReason?: GameResult['reason'] };
 
 export default function ProfilePage() {
   const { user: currentUser } = useAuth();
   const [profile, setProfile] = useState<User | null>(null);
-  const [recentGames, setRecentGames] = useState<Game[]>([]);
+  const [recentGames, setRecentGames] = useState<RecentGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ username: '' });
@@ -27,7 +30,7 @@ export default function ProfilePage() {
         gameApi.getGames({ limit: 5 }),
       ]);
       setProfile(userData);
-      setRecentGames(gamesData.games);
+      setRecentGames(gamesData.games as RecentGame[]);
       setEditForm({ username: userData.username });
     } catch (err) {
       console.error('Failed to fetch profile:', err);
@@ -161,6 +164,7 @@ export default function ProfilePage() {
           {recentGames.map((game) => {
             const isWinner = game.winnerId === profile.id;
             const isDraw = game.status === 'completed' && !game.winnerId;
+            const reasonLabel = game.resultReason ? formatVictoryReason(game.resultReason) : null;
 
             return (
               <div
@@ -178,6 +182,12 @@ export default function ProfilePage() {
                     </span>
                     <span className="text-slate-500 text-xs">•</span>
                     <span className="text-slate-300 text-sm">{game.boardType}</span>
+                    {reasonLabel && (
+                      <>
+                        <span className="text-slate-500 text-xs">•</span>
+                        <span className="text-slate-400 text-xs">{reasonLabel}</span>
+                      </>
+                    )}
                   </div>
                   <div className="text-xs text-slate-500">
                     {new Date(game.createdAt).toLocaleDateString()}

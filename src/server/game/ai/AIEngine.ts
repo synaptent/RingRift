@@ -338,7 +338,8 @@ export class AIEngine {
 
         // Classify the failure reason using the structured aiErrorType set by
         // AIServiceClient so Prometheus can track why we fall back.
-        const errorType = (error as any).aiErrorType as string | undefined;
+        const errorWithType = error as Error & { aiErrorType?: string };
+        const errorType = errorWithType.aiErrorType;
         let reason: string;
         switch (errorType) {
           case 'connection_refused':
@@ -723,7 +724,7 @@ export class AIEngine {
 
     // Normalise any historical 'place' type to the canonical
     // 'place_ring'.
-    if (normalized.type === ('place' as any)) {
+    if ((normalized.type as string) === 'place') {
       normalized.type = 'place_ring';
     }
 
@@ -742,7 +743,7 @@ export class AIEngine {
 
     const board = gameState.board;
     const posKey = positionToString(normalized.to);
-    const stack = board.stacks.get(posKey as any);
+    const stack = board.stacks.get(posKey);
     const isOccupied = !!stack && stack.rings.length > 0;
 
     if (isOccupied) {

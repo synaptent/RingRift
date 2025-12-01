@@ -195,9 +195,9 @@ Canonical rules semantics are expressed in terms of **`Move`** (from `src/shared
 
 ### Next Steps
 
-1.  Enable orchestrator adapters by default
-2.  Remove legacy duplicated code in client sandbox (~2,200 lines)
-3.  Complete production hardening (see historical `archive/PHASE1_REMEDIATION_PLAN.md` for the original remediation checklist and compare against the current consolidated engine state)
+- ✅ Adapters enabled by default (PASS20 complete - December 2025)
+- ✅ Legacy code removed (PASS20: ~1,147 lines; Phase 4 deferred to post-MVP)
+- Complete production hardening (see historical `archive/PHASE1_REMEDIATION_PLAN.md` for the original remediation checklist and compare against the current consolidated engine state)
 
 ---
 

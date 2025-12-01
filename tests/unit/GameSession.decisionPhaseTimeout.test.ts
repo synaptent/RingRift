@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { GameSession } from '../../src/server/game/GameSession';
 import { config } from '../../src/server/config';
+import { withTimeControl, waitForConditionWithTimeAdvance } from '../helpers/TimeController';
 
 // Mock dependencies
 jest.mock('../../src/server/database/connection', () => ({
@@ -889,5 +890,108 @@ describe('Decision Phase Timeout Integration', () => {
 
     expect(resolvedMoveIds.size).toBe(1);
     expect([...resolvedMoveIds][0]).toBe('region-B');
+  });
+});
+
+describe('Decision Phase Timeout with TimeController helper', () => {
+  /**
+   * This test demonstrates using the shared TimeController helper to
+   * drive a GameSession decision-phase timeout with accelerated time,
+   * mirroring the multiplayer decision-phase fixtures used in E2E tests.
+   */
+  it('auto-resolves a line_processing decision using accelerated virtual time', async () => {
+    await withTimeControl(async (timeController) => {
+      const io = {
+        to: jest.fn().mockReturnThis(),
+        emit: jest.fn(),
+        sockets: {
+          adapter: { rooms: new Map() },
+          sockets: new Map(),
+        },
+      } as any as jest.Mocked<SocketIOServer>;
+
+      const session = new GameSession('line-timeout-with-timecontroller', io, {} as any, new Map());
+
+      const baseState: any = {
+        gameStatus: 'active',
+        currentPlayer: 1,
+        currentPhase: 'line_processing',
+        players: [{ playerNumber: 1, type: 'human', id: 'p1' }],
+        board: {
+          stacks: new Map(),
+          markers: new Map(),
+          collapsedSpaces: new Map(),
+          territories: new Map(),
+          formedLines: [],
+        },
+        moveHistory: [],
+      };
+
+      const decisionMove = {
+        id: 'line-move-fast',
+        type: 'process_line' as const,
+        player: 1,
+      };
+
+      const appliedState: any = {
+        ...baseState,
+        moveHistory: [
+          {
+            ...decisionMove,
+            moveNumber: 1,
+            timestamp: new Date(),
+            thinkTime: 0,
+          },
+        ],
+        gameStatus: 'active',
+      };
+
+      const getGameStateMock = jest
+        .fn()
+        // scheduleDecisionPhaseTimeout / guards read base state
+        .mockReturnValueOnce(baseState)
+        // handleDecisionPhaseTimedOut sees applied state after rulesFacade.applyMoveById
+        .mockReturnValue(appliedState);
+
+      (session as any).gameEngine = {
+        getGameState: getGameStateMock,
+        getValidMoves: jest.fn(() => [decisionMove]),
+      };
+
+      (session as any).rulesFacade = {
+        applyMoveById: jest.fn().mockResolvedValue({ success: true, gameState: appliedState }),
+      };
+
+      jest.spyOn(session as any, 'persistMove').mockResolvedValue(undefined);
+      jest.spyOn(session as any, 'broadcastUpdate').mockResolvedValue(undefined);
+      jest.spyOn(session as any, 'maybePerformAITurn').mockResolvedValue(undefined);
+
+      // Schedule the decision-phase timeout as production code does when entering line_processing.
+      (session as any).scheduleDecisionPhaseTimeout(baseState);
+
+      const timeoutMs = config.decisionPhaseTimeouts.defaultTimeoutMs;
+
+      await waitForConditionWithTimeAdvance(
+        timeController,
+        () =>
+          // Rules engine invoked with the deterministic move id
+          (session as any).rulesFacade.applyMoveById.mock.calls.some(
+            ([playerNumber, moveId]: [number, string]) =>
+              playerNumber === 1 && moveId === 'line-move-fast'
+          ) &&
+          // And a matching decision_phase_timed_out event has been emitted
+          io.emit.mock.calls.some(
+            ([eventName, payload]: [string, any]) =>
+              eventName === 'decision_phase_timed_out' &&
+              payload?.data?.phase === 'line_processing' &&
+              payload?.data?.autoSelectedMoveId === 'line-move-fast'
+          ),
+        {
+          maxTime: timeoutMs + 1_000,
+          stepSize: 5_000,
+          description: 'line_processing decision timeout with TimeController',
+        }
+      );
+    });
   });
 });

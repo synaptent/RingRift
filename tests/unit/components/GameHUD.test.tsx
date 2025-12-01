@@ -81,7 +81,7 @@ describe('GameHUD – legacy props', () => {
         connectionStatus="connected"
         isSpectator={true}
         currentUserId="p1"
-      />,
+      />
     );
 
     // Connection line and instruction banner
@@ -94,13 +94,13 @@ describe('GameHUD – legacy props', () => {
     // Ring stats labels
     expect(screen.getAllByText('In Hand').length).toBeGreaterThan(0);
     expect(screen.getAllByText('On Board').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Lost').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Captured').length).toBeGreaterThan(0);
 
     // Territory stats: only first player has non-zero spaces
     // The text is split across elements (<span>2</span> territory spaces)
     // so we use a custom matcher that checks the full text content
     expect(
-      screen.getByText((_, element) => element?.textContent === '2 territory spaces'),
+      screen.getByText((_, element) => element?.textContent === '2 territory spaces')
     ).toBeInTheDocument();
   });
 });
@@ -174,7 +174,7 @@ describe('GameHUD – view-model props', () => {
       <GameHUD
         viewModel={viewModel}
         timeControl={{ type: 'rapid', initialTime: 600, increment: 0 }}
-      />,
+      />
     );
 
     // Connection label with stale hint
@@ -197,8 +197,9 @@ describe('GameHUD – view-model props', () => {
     expect(screen.getByText('Bot')).toBeInTheDocument();
     // Territory spaces text is split across elements, verify at least one matches
     expect(
-      screen.getAllByText((_, element) => element?.textContent?.includes('territory space') ?? false)
-        .length,
+      screen.getAllByText(
+        (_, element) => element?.textContent?.includes('territory space') ?? false
+      ).length
     ).toBeGreaterThan(0);
     expect(screen.getByText(/AI/)).toBeInTheDocument();
     expect(screen.getByText(/Advanced · Minimax Lv3/)).toBeInTheDocument();
@@ -211,4 +212,3 @@ describe('GameHUD – view-model props', () => {
     jest.useRealTimers();
   });
 });
-

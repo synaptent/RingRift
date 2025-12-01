@@ -161,7 +161,7 @@ describe('ChoiceDialog', () => {
 
     it('renders dialog container with proper styling', () => {
       render(<ChoiceDialog {...defaultProps} />);
-      const dialog = screen.getByRole('button', { name: /Line 1/ }).closest('.bg-slate-900');
+      const dialog = screen.getByRole('option', { name: /Line 1/ }).closest('.bg-slate-900');
       expect(dialog).toHaveClass('rounded-md', 'border', 'border-slate-700');
     });
   });

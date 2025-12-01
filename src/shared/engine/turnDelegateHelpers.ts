@@ -70,7 +70,7 @@ export function hasAnyPlacementForPlayer(state: GameState, player: number): bool
   // Global own-colour supply cap: if the player has no remaining capacity
   // under ringsPerPlayer, no placements are possible regardless of board
   // geometry.
-  const ringsOnBoard = countRingsOnBoardForPlayer(board as any, player);
+  const ringsOnBoard = countRingsOnBoardForPlayer(board, player);
   const remainingByCap = boardConfig.ringsPerPlayer - ringsOnBoard;
   const remainingBySupply = playerObj.ringsInHand;
   const maxAvailableGlobal = Math.min(remainingByCap, remainingBySupply);
@@ -89,7 +89,7 @@ export function hasAnyPlacementForPlayer(state: GameState, player: number): bool
   };
 
   const hasPlacementAt = (pos: Position): boolean => {
-    const result = validatePlacementOnBoard(board as any, pos, 1, baseContext);
+    const result = validatePlacementOnBoard(board, pos, 1, baseContext);
     return result.valid;
   };
 
@@ -247,7 +247,7 @@ export function createDefaultTurnLogicDelegates(
   return {
     getPlayerStacks: (state: GameState, player: number) => {
       // Minimal adapter returning just the fields required by the sequencer.
-      const stacks: Array<{ position: any; stackHeight: number }> = [];
+      const stacks: Array<{ position: Position; stackHeight: number }> = [];
       for (const stack of state.board.stacks.values()) {
         if (stack.controllingPlayer !== player) continue;
         stacks.push({ position: stack.position, stackHeight: stack.stackHeight });

@@ -128,13 +128,15 @@ Testing multiplayer coordination requires infrastructure that doesn't currently 
 
 ## 5. Test Health Summary (Pass 19B)
 
-| Suite                 | Passed | Failed | Skipped | Total  |      Health      |
-| :-------------------- | :----: | :----: | :-----: | :----: | :--------------: |
-| **TypeScript (Jest)** | ~2,710 |   0    |  ~170   | ~2,880 |     ✅ 94.1%     |
-| **Python (pytest)**   |  836   |   0    |   ~4    |  840   |     ✅ 99.5%     |
-| **Parity suites**     |   71   |   0    |   17    |   88   | ✅ 100% (active) |
-| **Contract vectors**  | 12/12  |   0    |    0    |   12   |     ✅ 100%      |
-| **E2E (Playwright)**  |  ~45   |   0    |   ~8    |  ~53   |      ✅ 85%      |
+> **Scope clarification (added post-PASS20):** The TypeScript numbers below describe the **CI-gated Jest suites** (e.g. `npm run test:ci`, `npm run test:ts-rules-engine`, orchestrator parity jobs) at the time of PASS19B. A later, broader Jest profile run – captured in `jest-results.json` and analysed in `PASS20_ASSESSMENT.md` – also exercises diagnostic/parity suites and currently reports 72 failing tests across 31 suites. Those additional failures are expected or tracked diagnostics and are **not** part of the CI gating set summarised here.
+
+| Suite                           | Passed | Failed | Skipped | Total  |      Health      |
+| :------------------------------ | :----: | :----: | :-----: | :----: | :--------------: |
+| **TypeScript (Jest, CI-gated)** | ~2,710 |   0    |  ~170   | ~2,880 |     ✅ 94.1%     |
+| **Python (pytest)**             |  836   |   0    |   ~4    |  840   |     ✅ 99.5%     |
+| **Parity suites (CI jobs)**     |   71   |   0    |   17    |   88   | ✅ 100% (active) |
+| **Contract vectors**            | 49/49  |   0    |    0    |   49   |     ✅ 100%      |
+| **E2E (Playwright)**            |  ~45   |   0    |   ~8    |  ~53   |      ✅ 85%      |
 
 **TypeScript Error Count:** 0 (target: 0) ✅
 

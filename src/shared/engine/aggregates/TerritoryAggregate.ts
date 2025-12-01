@@ -36,6 +36,7 @@ import type {
   Move,
   Territory,
   AdjacencyType,
+  RingStack,
 } from '../../types/game';
 import { BOARD_CONFIGS, positionToString, stringToPosition } from '../../types/game';
 
@@ -328,7 +329,7 @@ function isCollapsedSpace(position: Position, board: BoardState): boolean {
   return board.collapsedSpaces.has(posKey);
 }
 
-function getStack(position: Position, board: BoardState): any | undefined {
+function getStack(position: Position, board: BoardState): RingStack | undefined {
   const posKey = positionToString(position);
   return board.stacks.get(posKey);
 }

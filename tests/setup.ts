@@ -3,9 +3,11 @@
  * Runs AFTER test framework is installed
  */
 
-// Set orchestrator adapter default for tests (Phase 3 migration complete)
-// This ensures tests and ClientSandboxEngine have consistent behavior
-process.env.ORCHESTRATOR_ADAPTER_ENABLED = process.env.ORCHESTRATOR_ADAPTER_ENABLED ?? 'true';
+// LEGACY: Orchestrator adapter is now permanently enabled (2025-12-01).
+// This env var assignment is kept for any old tests that might still check it,
+// but the config no longer reads from environment variables - it's hardcoded to true.
+// This line can be removed in a future cleanup pass (P20.7-2+).
+process.env.ORCHESTRATOR_ADAPTER_ENABLED = 'true';
 
 // Import Testing Library jest-dom matchers
 import '@testing-library/jest-dom';

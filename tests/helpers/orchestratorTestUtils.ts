@@ -153,7 +153,8 @@ export function createBackendOrchestratorHarness(engine: GameEngine): BackendOrc
  * GameEngine.makeMove / RulesBackendFacade.applyMove.
  */
 export function toEngineMove(move: Move): Omit<Move, 'id' | 'timestamp' | 'moveNumber'> {
-  const { id, timestamp, moveNumber, ...rest } = move as any;
+  // Destructure known properties explicitly to avoid 'any' cast
+  const { id: _id, timestamp: _timestamp, moveNumber: _moveNumber, ...rest } = move;
   return {
     ...rest,
     thinkTime: 0,
@@ -180,10 +181,7 @@ export function seedOverlengthLineForPlayer(
   // Use the effective line length threshold which accounts for 2-player elevation
   // on square8 (3 → 4). This ensures the seeded line is actually overlength
   // relative to the threshold used by enumerateChooseLineRewardMoves.
-  const requiredLength = getEffectiveLineLengthThreshold(
-    state.boardType,
-    state.players.length
-  );
+  const requiredLength = getEffectiveLineLengthThreshold(state.boardType, state.players.length);
   const length = requiredLength + overlengthBy;
 
   // Clear any pre-existing markers on the target row to avoid interference.

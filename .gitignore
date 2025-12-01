@@ -32,6 +32,7 @@ build/
 # Testing
 coverage/
 .nyc_output/
+jest-results.json
 
 # Playwright
 test-results/

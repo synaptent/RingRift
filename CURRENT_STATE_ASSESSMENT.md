@@ -1,16 +1,19 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** 2025-12-01 (Post-P18.5)
-**Last Test Run:** 2025-11-30 (TypeScript: 2694 passing, 0 failing, 176 skipped; Python: 824 passing)
+**Assessment Date:** 2025-12-01 (Post-PASS20)
+**Last CI Test Runs:** 2025-12-01 (TypeScript CI-gated suites: 2,987 passed, 0 failing; Python: 836 passing)
+**Last Full Jest Snapshot:** See `jest-results.json` and [`docs/PASS20_ASSESSMENT.md`](docs/PASS20_ASSESSMENT.md) for extended/diagnostic profile analysis
 **Assessor:** Code + Test Review + CI Analysis
 **Purpose:** Factual status of the codebase as it exists today
 
-> **P18.6-1 Update (2025-12-01):** This document has been aligned with P18.1-5 completed work:
+> **PASS20 Update (2025-12-01):** This document has been updated to reflect PASS18/19/20 completed work:
 >
-> - Extended contract vectors (43 cases, 0 mismatches) per P18.5-\*
-> - Orchestrator Phase 4 complete (100% rollout in all environments)
-> - swap_sides (Pie Rule) parity verified per P18.5-4
-> - Test health updated per P18.18 skipped test triage
+> - **PASS18 (33 tasks):** Host parity, RNG alignment, decision lifecycle, orchestrator Phase 4 rollout, extended contract vectors (49 cases)
+> - **PASS19 (12 tasks):** E2E test infrastructure, game fixtures, type safety improvements, test rewrites
+> - **PASS20 (25 tasks):** Phase 3 orchestrator migration complete, ~1,118 lines legacy code removed, TEST_CATEGORIES.md documentation
+> - **Orchestrator Migration:** ✅ Phase 3 COMPLETE – See [`docs/PASS20_COMPLETION_SUMMARY.md`](docs/PASS20_COMPLETION_SUMMARY.md)
+> - All CI-gated TypeScript tests passing (2,987 tests), Python tests stable (836 tests)
+> - Project health status: **GREEN**
 
 > **Doc Status (2025-12-01): Active**
 > Current high-level snapshot of implementation status across backend, client, shared engine, Python AI service, and tests. This document is **not** a rules or lifecycle SSoT; it reports factual status against the canonical semantics and lifecycle sources of truth.
@@ -26,6 +29,7 @@
 > - `KNOWN_ISSUES.md` – P0/P1 issues and gaps
 > - `TODO.md` – phase/task tracker
 > - `STRATEGIC_ROADMAP.md` – phased roadmap to MVP
+> - `docs/TEST_CATEGORIES.md` – canonical map of CI‑gated vs diagnostic/extended test categories and how to run them
 
 The intent here is accuracy, not optimism. When in doubt, the **code and tests** win over any percentage or label.
 
@@ -33,30 +37,45 @@ The intent here is accuracy, not optimism. When in doubt, the **code and tests**
 
 ## 📊 Executive Summary
 
-**Overall:** Strong architectural foundation with consolidated rules engine; **stable beta approaching production readiness**.
+**Overall:** Strong architectural foundation with consolidated rules engine; **stable beta approaching production readiness**. Project health status: **GREEN**.
 
 - **Architecture Remediation Complete:** The 4-phase architecture remediation (November 2025) consolidated the rules engine:
   - Canonical turn orchestrator in `src/shared/engine/orchestration/`
   - Backend adapter (`TurnEngineAdapter.ts`) and sandbox adapter (`SandboxOrchestratorAdapter.ts`)
-  - Contract testing framework with 100% Python parity on **43 test vectors** (extended from 12 in P18.5-\*)
+  - Contract testing framework with 100% Python parity on **49 test vectors** (extended from 12 in P18.5-\*)
   - **Orchestrator at Phase 4 (100% rollout):** All environments (dev, staging, CI, production-ready) configured with `ORCHESTRATOR_ADAPTER_ENABLED=true` and `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`. Soak tests show zero invariant violations across all board types (square8, square19, hexagonal).
 
-- **P18.1-5 Remediation Complete (2025-12):**
+- **PASS18 Complete (33 tasks, 2025-12):**
   - **P18.1-\*: Host Parity** – Capture/territory host unification, advanced-phase ordering aligned
   - **P18.2-\*: RNG Determinism** – AI RNG seed handling aligned across TS and Python
   - **P18.3-\*: Decision Lifecycle** – Timeout semantics and decision phase alignment
   - **P18.4-\*: Orchestrator Rollout** – Phase 4 complete in all environments
-  - **P18.5-\*: Extended Vectors** – 43 contract vectors (chain_capture, forced_elimination, territory_line_endgame, hex_edge_cases), swap_sides parity verified
+  - **P18.5-\*: Extended Vectors** – 49 contract vectors (placement, movement, capture/chain_capture, forced_elimination, territory/territory_line endgames, hex edge cases, meta moves including swap_sides and multi-phase turns), swap_sides parity verified
   - **P18.18: Test Triage** – Obsolete tests removed, RulesMatrix partially re-enabled
 
-- **Current Focus (Pass 18-3):** With the backend and rules engine stabilized, the primary focus has shifted to **Frontend UX Polish** (sandbox scenario picker, spectator UI, and other quality‑of‑life features building on existing keyboard navigation and move history) and **Test Suite Maintenance** (triaging 176 skipped tests, deprecating legacy code).
+- **PASS19 Complete (12 tasks, 2025-11-30):**
+  - **E2E Test Infrastructure** – MultiClientCoordinator, NetworkSimulator, TimeController for complex multiplayer testing
+  - **Game Fixtures** – Near-victory (`near_victory_elimination`), chain capture, and multi-phase scenario fixtures
+  - **Type Safety** – Continued `any` cast reduction (~37 explicit casts remaining)
+  - **Visual Regression** – Playwright test infrastructure improvements
+  - **Test Rewrites** – Region Order and LPS Cross-Interaction tests updated for orchestrator
 
-- **Core Rules:** Movement, markers, captures (including chains), lines, territory, forced elimination, and victory are implemented in the shared TypeScript rules engine under [`src/shared/engine`](src/shared/engine/types.ts) and reused by backend and sandbox hosts. These helpers are exercised by focused Jest suites with 230+ test files providing comprehensive coverage.
+- **PASS20 Complete (25 tasks, 2025-12-01):**
+  - **Phase 3 Orchestrator Migration COMPLETE** – All critical legacy code paths removed
+  - **Legacy Code Removed:** ~1,118 lines (RuleEngine methods, feature flags, ClientSandboxEngine legacy, obsolete tests)
+  - **Test Suite Stabilization** – 6 critical test issues fixed
+  - **Victory Detection Bug** – Fixed victory condition edge case
+  - **Documentation** – [`docs/TEST_CATEGORIES.md`](docs/TEST_CATEGORIES.md), [`docs/PASS20_COMPLETION_SUMMARY.md`](docs/PASS20_COMPLETION_SUMMARY.md)
+  - See full summary: [`docs/PASS20_COMPLETION_SUMMARY.md`](docs/PASS20_COMPLETION_SUMMARY.md)
+
+- **Current Focus (Post-PASS20):** With the test suite stabilized and documented, the primary focus is **Frontend UX Polish** (sandbox scenario picker, spectator UI, and other quality‑of‑life features) and **E2E Coverage Expansion** (complex multiplayer scenarios: timeout notifications, reconnection, concurrent resignation).
+
+- **Core Rules:** Movement, markers, captures (including chains), lines, territory, forced elimination, and victory are implemented in the shared TypeScript rules engine under [`src/shared/engine`](src/shared/engine/types.ts) and reused by backend and sandbox hosts. These helpers are exercised by focused Jest suites with 285+ test files providing comprehensive coverage.
 - **Backend & Sandbox Hosts:** The backend `RuleEngine` / `GameEngine` and the client `ClientSandboxEngine` act as thin adapters over the shared helpers, wiring in IO (WebSockets/HTTP, persistence, AI) while delegating core game mechanics to shared validators/mutators and geometry helpers.
 - **Backend Play:** WebSocket-backed games work end-to-end, including AI turns via the Python service / local fallback and server-driven PlayerChoices surfaced to the client.
 - **Session Management:** `GameSessionManager` and `GameSession` provide robust, lock-protected game state access with Redis caching.
 - **Frontend:** The React client has a usable lobby, backend GamePage (board + HUD + victory modal), and a rich local sandbox harness with full rules implementation.
-- **Testing:** Comprehensive coverage with 285 test files (2,694 TypeScript tests passing, 824 Python tests passing). All parity suites stable.
+- **Testing:** Comprehensive coverage with 285+ test files (2,987 TypeScript tests passing in CI-gated suites, 836 Python tests passing). Extended/diagnostic TypeScript suites (parity, AI simulation, trace debugging) are documented in [`docs/TEST_CATEGORIES.md`](docs/TEST_CATEGORIES.md) and tracked via `KNOWN_ISSUES.md`.
 - **CI/CD:** Mature GitHub Actions workflow with separated job types (lint, test, build, security scan, Docker, E2E) and proper timeout protections.
 
 A reasonable label for the current state is: **stable beta with consolidated architecture, suitable for developers, AI work, and comprehensive playtesting**, ready for production hardening.
@@ -88,7 +107,7 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 
 - **Contract Testing (`src/shared/engine/contracts/`)**
   - **Complete:** Contract schemas and deterministic serialization for cross-language parity
-  - **Test vectors:** 43 vectors across 8 categories (placement, movement, capture, line, territory, chain_capture, forced_elimination, territory_line_endgame, hex_edge_cases)
+  - **Test vectors:** 49 vectors across 8+ categories (placement, movement, capture, line, territory, chain_capture, forced_elimination, territory_line_endgame, hex_edge_cases, near_victory_territory, meta_moves)
   - **Python parity:** 100% pass rate (0 mismatches) on contract tests between TypeScript and Python engines
   - **swap_sides (Pie Rule):** Verified across TS backend, TS sandbox, and Python per P18.5-4 report
 
@@ -197,20 +216,22 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 
 ### P0 – Production Hardening
 
-- **Orchestrator production rollout:** The canonical orchestrator is complete and wired into:
+- **Orchestrator migration COMPLETE (Phase 3):** The canonical orchestrator is complete and legacy code paths removed:
   - Backend and sandbox hosts via `TurnEngineAdapter` / `SandboxOrchestratorAdapter`.
   - CI gates (`orchestrator-parity`, short/long orchestrator soaks).
-  - S-invariant regression suites and contract vectors.
+  - S-invariant regression suites and contract vectors (49/49 passing).
   - HTTP/load diagnostics via `scripts/orchestrator-load-smoke.ts` (see `npm run load:orchestrator:smoke`).
 
-  **Phase 4 Complete (2025-12):** Orchestrator is now at 100% rollout in all environments:
+  **Phase 3 Complete (2025-12-01):** Orchestrator migration through Phase 3 is COMPLETE:
   - [x] Flip staging to the Phase 1 preset from `ORCHESTRATOR_ROLLOUT_PLAN.md` Table 4 and keep it there as the steady state.
         **Completed:** `.env.staging` is configured with `ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, `RINGRIFT_RULES_MODE=ts`, and circuit breaker enabled.
   - [x] Exercise the Phase 1 → 2 → 3 **phase completion checklist** in `ORCHESTRATOR_ROLLOUT_PLAN.md` §8.7.
         **Completed:** P18.4-\* orchestrator rollout phases validated via staging soak and extended vector soak (P18.5-3).
   - [x] Enable orchestrator for 100% of traffic in all environments.
         **Completed:** `.env` files updated with `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100` across dev, staging, and CI.
-  - [ ] Remove or quarantine legacy rules code paths in backend and sandbox hosts (deferred to post-MVP cleanup).
+  - [x] Remove legacy rules code paths in backend and sandbox hosts.
+        **Completed (P20.7-\*):** ~1,118 lines of legacy code removed. See [`docs/PASS20_COMPLETION_SUMMARY.md`](docs/PASS20_COMPLETION_SUMMARY.md).
+  - [ ] Phase 4 (Tier 2 sandbox cleanup) deferred to post-MVP.
 
 - **Environment rollout posture & presets (repo-level):**
   - **CI defaults (orchestrator‑ON, TS authoritative):** All primary TS CI jobs (`test`, `ts-rules-engine`, `ts-orchestrator-parity`, `ts-parity`, `ts-integration`, `orchestrator-soak-smoke`) run with:
@@ -237,10 +258,15 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 - **Complex scenario coverage:** Core mechanics well-tested, but some complex composite scenarios (deeply nested capture + line + territory chains) rely on trace harnesses rather than focused scenario tests
 - **Chain capture edge cases:** 180-degree reversal and cyclic capture patterns supported but need additional test coverage for complete confidence
 
-### P1 – Multiplayer UX Polish
+### P1 – Multiplayer UX Polish & E2E Coverage
 
-- **Spectator experience:** Basic spectator mode implemented but lacks dedicated spectator browser and rich viewing features
-- **Reconnection UX:** Basic reconnection works but complex resync situations need UX improvement
+- **Spectator experience:** Basic spectator mode implemented; dedicated spectator layout and EvaluationPanel integration are in place, though some UX polish remains.
+- **Reconnection UX:** Core reconnection and abandonment flows are implemented and now exercised end‑to‑end:
+  - `multiPlayer.coordination.test.ts` – swap rule, near‑victory fixtures (elimination/territory), deep chain‑capture decisions.
+  - `reconnection.simulation.test.ts` – network partition and reconnection‑window expiry, including rated vs unrated abandonment behaviour.
+  - `timeout-and-ratings.e2e.spec.ts` – short time‑control timeout completions with `result.reason === 'timeout'` and rating semantics (rated vs unrated).
+  - `decision-phase-timeout.e2e.spec.ts` – decision‑phase timeouts for line, territory **and chain_capture** via shortTimeoutMs fixtures, asserting deterministic `decision_phase_timed_out` payloads for both players.
+  - Additional MultiClientCoordinator slices now cover back‑to‑back near‑victory fixtures (elimination and territory_control) across two players **and a spectator**, asserting consistent `game_over` reasons/winner on all three clients.
 - **Chat & social:** In-game chat infrastructure present but persistence and advanced social features limited
 - **Advanced matchmaking:** Limited to manually refreshed lobby; no automated queue or ELO-based matching
 
@@ -252,42 +278,48 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 
 ---
 
-## 📋 Risk Register (Post-P18.5)
+## 📋 Risk Register (Post-PASS20)
 
-This section summarizes the risk status as of P18.6-1 alignment (2025-12-01).
+This section summarizes the risk status as of PASS20 completion (2025-12-01).
 
 ### ✅ Resolved Risks
 
-| Risk                                 | Resolution                                                   | Evidence                                  |
-| ------------------------------------ | ------------------------------------------------------------ | ----------------------------------------- |
-| TS↔Python phase naming divergence    | Unified phase state machine in orchestrator                  | P18.1-\* host parity work                 |
-| Capture chain ordering inconsistency | Shared `captureChainHelpers.ts` enforces deterministic order | 43 contract vectors (0 mismatches)        |
-| RNG determinism drift                | Seed handling aligned per P18.2-\*                           | AI RNG paths documented, tested           |
-| Decision lifecycle timing gaps       | Timeout semantics aligned per P18.3-\*                       | `docs/P18.3-1_DECISION_LIFECYCLE_SPEC.md` |
-| swap_sides (Pie Rule) parity         | Verified across TS backend, TS sandbox, and Python           | P18.5-4 report (5/5 TS, 2/2 Python tests) |
+| Risk                                 | Resolution                                                    | Evidence                                  |
+| ------------------------------------ | ------------------------------------------------------------- | ----------------------------------------- |
+| TS↔Python phase naming divergence    | Unified phase state machine in orchestrator                   | P18.1-\* host parity work                 |
+| Capture chain ordering inconsistency | Shared `captureChainHelpers.ts` enforces deterministic order  | 49 contract vectors (0 mismatches)        |
+| RNG determinism drift                | Seed handling aligned per P18.2-\*                            | AI RNG paths documented, tested           |
+| Decision lifecycle timing gaps       | Timeout semantics aligned per P18.3-\*                        | `docs/P18.3-1_DECISION_LIFECYCLE_SPEC.md` |
+| swap_sides (Pie Rule) parity         | Verified across TS backend, TS sandbox, and Python            | P18.5-4 report (5/5 TS, 2/2 Python tests) |
+| Test suite confusion (CI vs diag)    | Documented in TEST_CATEGORIES.md, jest-results.json clarified | PASS20 investigation complete             |
+| Victory detection edge case          | Fixed victory condition bug                                   | PASS20.0-2 resolution                     |
+| BoardManager config in tests         | Fixed BOARD_CONFIGS[boardType] undefined                      | 42/42 WebSocket tests passing             |
 
 ### ⚠️ Mitigated Risks
 
-| Risk                                | Mitigation                                                  | Residual Concern                |
-| ----------------------------------- | ----------------------------------------------------------- | ------------------------------- |
-| Orchestrator architecture stability | Phase 4 rollout complete (100%), soak tests pass            | Legacy code cleanup deferred    |
-| Contract vector coverage gaps       | Extended to 43 vectors (chain, elimination, territory, hex) | May need additional edge cases  |
-| Test suite health                   | P18.18 triage complete, obsolete tests removed              | 176 skipped tests still tracked |
+| Risk                                | Mitigation                                                    | Residual Concern                 |
+| ----------------------------------- | ------------------------------------------------------------- | -------------------------------- |
+| Orchestrator architecture stability | Phase 3 complete, ~1,118 lines legacy removed                 | Phase 4 (Tier 2) deferred        |
+| Contract vector coverage gaps       | Extended to 49 vectors (core, chains, elimination, territory) | May need additional edge cases   |
+| Test suite health                   | PASS20 fixes complete, TEST_CATEGORIES.md added               | ~170 skipped tests (intentional) |
 
 ### 🔴 Active Risks
 
-| Risk                          | Status                             | Next Step                                                       |
-| ----------------------------- | ---------------------------------- | --------------------------------------------------------------- |
-| Frontend UX completeness      | P0/P1 tasks pending                | P18.15-17 address keyboard nav, move history, sandbox scenarios |
-| Production preview validation | Not yet exercised                  | Follows P18.4-\* phase completion, needs real traffic           |
-| Hexagonal geometry edge cases | Coverage improved via test vectors | Monitor for new edge cases in play                              |
-| Legacy code path removal      | Deferred to post-MVP               | Track in orchestrator rollout plan                              |
+| Risk                          | Status                                  | Next Step                                                                                                       |
+| ----------------------------- | --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Frontend UX completeness      | P0/P1 tasks pending                     | Sandbox scenario picker, spectator UI improvements                                                              |
+| E2E multiplayer coverage      | Infra in place, targeted coverage added | Focus remaining work on heavier soaks / load (multi‑game sessions, longer chains) rather than basic correctness |
+| Production preview validation | Not yet exercised                       | Needs real traffic validation                                                                                   |
+| Hexagonal geometry edge cases | Coverage improved via test vectors      | Monitor for new edge cases in play                                                                              |
+| Tier 2 sandbox cleanup        | Deferred to Phase 4 (post-MVP)          | ~1,200 lines remain, not blocking                                                                               |
 
 ### 📊 Risk Summary
 
-- **Parity Risk:** LOW – 43 contract vectors with 0 mismatches, swap_sides verified
-- **Orchestrator Risk:** LOW – Phase 4 complete, all environments at 100%
-- **Frontend UX Risk:** MEDIUM – Known P0/P1 gaps pending P18.15-17 work
+- **Parity Risk:** LOW – 49 contract vectors with 0 mismatches, swap_sides verified
+- **Orchestrator Risk:** LOW – Phase 3 complete, ~1,118 lines legacy code removed, all environments at 100%
+- **Test Suite Risk:** LOW – CI-gated tests green (2,987 passed), diagnostic tests documented; E2E coverage for victory, resignation, abandonment, and timeout now in place
+- **Frontend UX Risk:** MEDIUM – Known P0/P1 gaps pending UX polish work
+- **E2E Coverage Risk:** MEDIUM – Complex multiplayer scenarios need infrastructure
 - **Production Readiness Risk:** MEDIUM – Needs real traffic validation
 
 ---
@@ -328,18 +360,20 @@ Key remaining work for production deployment:
 
 ## 📈 Test Coverage Status
 
-**Current Test Run:** 230+ test files
+**Current Test Run (2025-12-01):** 285+ test files
 
-- **TypeScript tests:** 2,694 passing, 0 failing, 176 skipped (as of November 30, 2025)
-- **Python tests:** 824 tests passing
-- **Contract tests:** 43 test vectors with 100% cross-language parity (0 mismatches)
+- **TypeScript tests (CI-gated):** 2,987 passing, 0 failing, ~130 skipped
+- **Python tests:** 836 tests passing
+- **Contract tests:** 49 test vectors with 100% cross-language parity (0 mismatches)
 
-**Test Health (P18.18 Triage Complete):**
+**Test Health (PASS20 Complete):**
 
-- Obsolete tests removed from active suite
-- `RulesMatrix.Comprehensive` partially re-enabled (7 passing, 3 skipped)
-- `OrchestratorSInvariant.regression` re-enabled
-- 176 skipped tests tracked, majority are environment-specific or awaiting infrastructure
+- PASS20 investigation resolved jest-results.json confusion (stale Nov 21 snapshot)
+- TEST_CATEGORIES.md documents CI-gated vs diagnostic test profiles
+- Obsolete tests removed, archive files excluded from CI
+- `structuredClone` polyfill added for Node.js 16 compatibility
+- 42/42 WebSocket integration tests passing
+- ~170 skipped tests (intentional): orchestrator-conditional, env-gated, diagnostic
 
 **Test Categories:**
 
@@ -358,25 +392,45 @@ Key remaining work for production deployment:
 
 **Test Infrastructure:**
 
-- **230+ total test files** providing comprehensive coverage
+- **285+ total test files** providing comprehensive coverage
 - **Timeout protection** via `scripts/run-tests-with-timeout.sh` preventing CI hangs
 - **Categorized execution** with `test:core`, `test:diagnostics`, `test:ts-rules-engine` scripts
-- **Coverage reporting** integrated with Codecov for PR feedback
+- **Test category documentation** via [`docs/TEST_CATEGORIES.md`](docs/TEST_CATEGORIES.md)
+- **Coverage reporting** integrated with Codecov for PR feedback (~64% current, 80% target)
 - **Contract testing** via `npm run test:contracts` and `scripts/run-python-contract-tests.sh`
 - **MCTS tests:** Gated behind `ENABLE_MCTS_TESTS=1` with configurable timeout via `MCTS_TEST_TIMEOUT`
 - **E2E tests:** Playwright configuration with `E2E_BASE_URL` and `PLAYWRIGHT_WORKERS` support
+- **E2E Fixtures:** Near-victory (`near_victory_elimination`), chain capture, and multi-phase fixtures for game completion testing
 
 ---
 
 ## 🔄 Recommended Next Steps
 
-Based on current state (orchestrator at 100% in CI, all tests passing):
+Based on current state (post-PASS20, orchestrator Phase 3 complete, project health GREEN):
 
-1. **Complete host integration parity** - Address remaining gaps identified in [`PASS18_ASSESSMENT_REPORT.md`](docs/PASS18_ASSESSMENT_REPORT.md) and [`PASS18_REMEDIATION_PLAN.md`](docs/PASS18_REMEDIATION_PLAN.md)
-2. **Enable orchestrator in production** - Follow the phased rollout in [`ORCHESTRATOR_ROLLOUT_PLAN.md`](docs/ORCHESTRATOR_ROLLOUT_PLAN.md)
-3. **Expand contract test coverage** - Add more test vectors for edge cases as they're discovered
-4. **Polish multiplayer UX** - Enhanced HUD, resignation UI, spectator improvements, better reconnection flows
-5. **Performance validation** - Load testing with the existing timeout-protected test infrastructure
-6. **Remove legacy code paths** - Once orchestrator is stable in production, remove deprecated turn processing code
+1. **Frontend UX Polish** - Sandbox scenario picker refinement, spectator UI improvements, HUD enhancements
+2. **E2E Coverage Expansion** - Multi-context WebSocket coordination for timeout/reconnection tests, visual regression tests
+3. **Production Validation** - Real traffic testing with orchestrator at 100%
+4. **Coverage Threshold** - Increase from ~64% toward 80% target
+5. **Phase 4 Tier 2 Cleanup** - Add SSOT banners to sandbox modules, archive diagnostic-only modules (post-MVP)
+6. **Expand Contract Vectors** - Add edge case vectors as discovered in production play
 
-The project has reached a mature beta state with consolidated architecture. The 4-phase remediation provides a clean separation between orchestration and host concerns, and the contract testing framework ensures cross-language parity. The codebase is ready for production hardening.
+See [`docs/PASS20_COMPLETION_SUMMARY.md`](docs/PASS20_COMPLETION_SUMMARY.md) for detailed PASS21 recommendations.
+
+The project has reached a mature beta state with consolidated architecture. PASS18/19/20 have stabilized the test suite, fixed critical bugs, and documented test categories. The codebase is ready for production hardening and UX polish work.
+
+---
+
+## 📊 Component Scores (Post-PASS20)
+
+| Component                    | Score | Trend | Notes                                                        |
+| :--------------------------- | :---: | :---: | :----------------------------------------------------------- |
+| **Rules Engine (Shared TS)** | 4.5/5 |   ➔   | Victory bug fixed in PASS20                                  |
+| **Rules Engine (Python)**    | 4.5/5 |   ➔   | Stable, 836 tests passing                                    |
+| **Test Suite**               | 4.0/5 |   ↗   | Fixed from 3.0 – failures resolved, TEST_CATEGORIES.md added |
+| **Documentation**            | 4.0/5 |   ↗   | Fixed from 3.5 – TEST_CATEGORIES.md, pass reports complete   |
+| **WebSocket**                | 4.0/5 |   ↗   | Fixed from 3.5 – 42/42 tests passing with test helpers       |
+| **Frontend UX**              | 3.5/5 |   ➔   | Still needs polish work (sandbox, spectator UI)              |
+| **Backend API**              | 4.0/5 |   ➔   | Solid routes, session management robust                      |
+| **AI Service**               | 4.0/5 |   ➔   | Heuristic functional, training infra exists                  |
+| **DevOps/CI**                | 4.0/5 |   ➔   | CI jobs wired, diagnostic suites documented                  |

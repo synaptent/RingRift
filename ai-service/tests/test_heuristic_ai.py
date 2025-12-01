@@ -265,6 +265,50 @@ class TestHeuristicAI(unittest.TestCase):
         score = self.ai._evaluate_forced_elimination_risk(self.game_state)
         self.assertEqual(score, 0.0)
 
+    def test_victory_proximity_increases_with_territory_progress(self):
+        """
+        Victory proximity should increase as we get closer to the
+        territory victory threshold.
+        """
+        # Baseline: no territory spaces for either player.
+        self.game_state.victory_threshold = 19
+        self.game_state.territory_victory_threshold = 33
+        p1, p2 = self.game_state.players
+        p1.eliminated_rings = 0
+        p1.territory_spaces = 0
+        p2.eliminated_rings = 0
+        p2.territory_spaces = 0
+
+        base = self.ai._evaluate_victory_proximity(self.game_state)
+
+        # Near-victory territory configuration: Player 1 at 32/33 spaces.
+        p1.territory_spaces = 32
+        closer = self.ai._evaluate_victory_proximity(self.game_state)
+
+        self.assertGreater(closer, base)
+
+    def test_victory_proximity_increases_with_elimination_progress(self):
+        """
+        Victory proximity should increase as we get closer to the
+        ring-elimination threshold.
+        """
+        self.game_state.victory_threshold = 10
+        self.game_state.territory_victory_threshold = 100
+
+        p1, p2 = self.game_state.players
+        p1.eliminated_rings = 0
+        p1.territory_spaces = 0
+        p2.eliminated_rings = 0
+        p2.territory_spaces = 0
+
+        base = self.ai._evaluate_victory_proximity(self.game_state)
+
+        # Move Player 1 to a near-elimination state (9/10 rings).
+        p1.eliminated_rings = 9
+        nearer = self.ai._evaluate_victory_proximity(self.game_state)
+
+        self.assertGreater(nearer, base)
+
     def test_evaluate_lps_action_advantage_rewards_unique_actions(self):
         """
         LPS action advantage should reward being one of the few players
@@ -766,6 +810,441 @@ class TestHeuristicAIMoveSampling(unittest.TestCase):
 
             result = ai._sample_moves_for_training(moves)
             self.assertEqual(len(result), 20, f"Failed for limit={limit}")
+
+
+class TestHeuristicAISwapEvaluation(unittest.TestCase):
+    """Test HeuristicAI swap (pie rule) opening evaluation."""
+
+    def setUp(self):
+        self.config = AIConfig(difficulty=5)
+        self.ai = HeuristicAI(player_number=2, config=self.config)  # P2 evaluates swap
+
+        # Create a mock game state for 2-player game
+        self.game_state = GameState(
+            id="swap-test-game",
+            boardType=BoardType.SQUARE8,
+            rngSeed=None,
+            board=BoardState(
+                type=BoardType.SQUARE8,
+                size=8,
+                stacks={},
+                markers={},
+                collapsed_spaces={},
+                eliminatedRings={},
+            ),
+            players=[
+                Player(
+                    id="p1",
+                    username="P1",
+                    type="human",
+                    playerNumber=1,
+                    isReady=True,
+                    timeRemaining=600,
+                    ringsInHand=10,
+                    eliminatedRings=0,
+                    territorySpaces=0,
+                    aiDifficulty=None,
+                ),
+                Player(
+                    id="p2",
+                    username="P2",
+                    type="human",
+                    playerNumber=2,
+                    isReady=True,
+                    timeRemaining=600,
+                    ringsInHand=10,
+                    eliminatedRings=0,
+                    territorySpaces=0,
+                    aiDifficulty=None,
+                ),
+            ],
+            currentPhase=GamePhase.MOVEMENT,
+            currentPlayer=2,
+            moveHistory=[],
+            timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
+            spectators=[],
+            gameStatus=GameStatus.ACTIVE,
+            createdAt=datetime.now(),
+            lastMoveAt=datetime.now(),
+            isRated=False,
+            maxPlayers=2,
+            totalRingsInPlay=36,
+            totalRingsEliminated=0,
+            victoryThreshold=19,
+            territoryVictoryThreshold=33,
+            chainCaptureState=None,
+            mustMoveFromStackKey=None,
+            zobristHash=None,
+            lpsRoundIndex=0,
+            lpsCurrentRoundActorMask={},
+            lpsExclusivePlayerForCompletedRound=None,
+        )
+
+    def test_swap_bonus_zero_for_three_plus_players(self):
+        """Swap bonus should be 0.0 for 3+ player games (swap is 2P only)."""
+        # Add a third player
+        self.game_state.players.append(
+            Player(
+                id="p3",
+                username="P3",
+                type="human",
+                playerNumber=3,
+                isReady=True,
+                timeRemaining=600,
+                ringsInHand=10,
+                eliminatedRings=0,
+                territorySpaces=0,
+                aiDifficulty=None,
+            )
+        )
+
+        # Even with P1 having a center stack, bonus should be 0
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+
+        bonus = self.ai.evaluate_swap_opening_bonus(self.game_state)
+        self.assertEqual(bonus, 0.0)
+
+    def test_swap_bonus_zero_when_p1_has_no_stacks(self):
+        """Swap bonus should be 0.0 when P1 has no stacks."""
+        # No stacks on board
+        bonus = self.ai.evaluate_swap_opening_bonus(self.game_state)
+        self.assertEqual(bonus, 0.0)
+
+    def test_swap_bonus_positive_for_center_stack(self):
+        """Swap bonus should be positive when P1 has a center stack."""
+        # Place P1 stack in center (3,3 or 4,4 on 8x8 board)
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+
+        bonus = self.ai.evaluate_swap_opening_bonus(self.game_state)
+        self.assertGreater(bonus, 0.0)
+
+    def test_swap_bonus_higher_for_taller_stacks(self):
+        """Swap bonus should be higher for taller P1 stacks."""
+        # Height-1 stack at center
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+        bonus_height1 = self.ai.evaluate_swap_opening_bonus(self.game_state)
+
+        # Height-3 stack at center
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1, 1, 1],
+            stackHeight=3,
+            capHeight=3,
+            controllingPlayer=1,
+        )
+        bonus_height3 = self.ai.evaluate_swap_opening_bonus(self.game_state)
+
+        self.assertGreater(bonus_height3, bonus_height1)
+
+    def test_swap_bonus_center_vs_edge(self):
+        """Center position should provide higher swap bonus than edge."""
+        # Edge stack (0,0)
+        self.game_state.board.stacks["0,0"] = RingStack(
+            position=Position(x=0, y=0),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+        bonus_edge = self.ai.evaluate_swap_opening_bonus(self.game_state)
+
+        # Clear and add center stack (3,3)
+        self.game_state.board.stacks.clear()
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+        bonus_center = self.ai.evaluate_swap_opening_bonus(self.game_state)
+
+        # Center should be significantly higher (center weight = 15, adj = 3)
+        self.assertGreater(bonus_center, bonus_edge)
+
+
+class TestOpeningPositionClassifier(unittest.TestCase):
+    """Test HeuristicAI Opening Position Classifier (v1.3 enhanced swap evaluation)."""
+
+    def setUp(self):
+        self.config = AIConfig(difficulty=5)
+        self.ai = HeuristicAI(player_number=2, config=self.config)
+
+        # Create a mock game state for 2-player game
+        self.game_state = GameState(
+            id="classifier-test-game",
+            boardType=BoardType.SQUARE8,
+            rngSeed=None,
+            board=BoardState(
+                type=BoardType.SQUARE8,
+                size=8,
+                stacks={},
+                markers={},
+                collapsed_spaces={},
+                eliminatedRings={},
+            ),
+            players=[
+                Player(
+                    id="p1",
+                    username="P1",
+                    type="human",
+                    playerNumber=1,
+                    isReady=True,
+                    timeRemaining=600,
+                    ringsInHand=10,
+                    eliminatedRings=0,
+                    territorySpaces=0,
+                    aiDifficulty=None,
+                ),
+                Player(
+                    id="p2",
+                    username="P2",
+                    type="human",
+                    playerNumber=2,
+                    isReady=True,
+                    timeRemaining=600,
+                    ringsInHand=10,
+                    eliminatedRings=0,
+                    territorySpaces=0,
+                    aiDifficulty=None,
+                ),
+            ],
+            currentPhase=GamePhase.MOVEMENT,
+            currentPlayer=2,
+            moveHistory=[],
+            timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
+            spectators=[],
+            gameStatus=GameStatus.ACTIVE,
+            createdAt=datetime.now(),
+            lastMoveAt=datetime.now(),
+            isRated=False,
+            maxPlayers=2,
+            totalRingsInPlay=36,
+            totalRingsEliminated=0,
+            victoryThreshold=19,
+            territoryVictoryThreshold=33,
+            chainCaptureState=None,
+            mustMoveFromStackKey=None,
+            zobristHash=None,
+            lpsRoundIndex=0,
+            lpsCurrentRoundActorMask={},
+            lpsExclusivePlayerForCompletedRound=None,
+        )
+
+    # --- Position helper tests ---
+
+    def test_is_corner_position(self):
+        """Corner positions should be correctly identified."""
+        corners = [(0, 0), (0, 7), (7, 0), (7, 7)]
+        for x, y in corners:
+            pos = Position(x=x, y=y)
+            self.assertTrue(
+                self.ai._is_corner_position(pos, self.game_state),
+                f"({x},{y}) should be a corner"
+            )
+
+        # Non-corners
+        non_corners = [(1, 0), (0, 1), (3, 3), (4, 4)]
+        for x, y in non_corners:
+            pos = Position(x=x, y=y)
+            self.assertFalse(
+                self.ai._is_corner_position(pos, self.game_state),
+                f"({x},{y}) should not be a corner"
+            )
+
+    def test_is_edge_position(self):
+        """Edge (non-corner) positions should be correctly identified."""
+        edges = [(0, 3), (3, 0), (7, 4), (5, 7)]
+        for x, y in edges:
+            pos = Position(x=x, y=y)
+            self.assertTrue(
+                self.ai._is_edge_position(pos, self.game_state),
+                f"({x},{y}) should be an edge"
+            )
+
+        # Corners are not "edge" positions for our purposes
+        pos = Position(x=0, y=0)
+        self.assertFalse(self.ai._is_edge_position(pos, self.game_state))
+
+        # Center is not edge
+        pos = Position(x=3, y=3)
+        self.assertFalse(self.ai._is_edge_position(pos, self.game_state))
+
+    def test_is_strategic_diagonal_position(self):
+        """Strategic diagonal positions (one diagonal step from center)."""
+        # On an 8x8 board, center positions are 3,3 / 3,4 / 4,3 / 4,4
+        # Diagonal from (3,3) includes (2,2), (2,4), (4,2)
+        # Diagonal from (4,4) includes (3,5), (5,3), (5,5)
+        diagonals = [(2, 2), (2, 5), (5, 2), (5, 5)]
+        for x, y in diagonals:
+            pos = Position(x=x, y=y)
+            self.assertTrue(
+                self.ai._is_strategic_diagonal_position(pos, self.game_state),
+                f"({x},{y}) should be a strategic diagonal"
+            )
+
+        # Center positions themselves are not "diagonal" positions
+        pos = Position(x=3, y=3)
+        self.assertFalse(
+            self.ai._is_strategic_diagonal_position(pos, self.game_state)
+        )
+
+    # --- Opening strength classifier tests ---
+
+    def test_opening_strength_center_highest(self):
+        """Center positions should have highest opening strength."""
+        center_pos = Position(x=3, y=3)
+        strength = self.ai.compute_opening_strength(center_pos, self.game_state)
+        self.assertGreaterEqual(strength, 0.9)
+        self.assertLessEqual(strength, 1.0)
+
+    def test_opening_strength_corner_lowest(self):
+        """Corner positions should have lowest opening strength."""
+        corner_pos = Position(x=0, y=0)
+        strength = self.ai.compute_opening_strength(corner_pos, self.game_state)
+        self.assertGreaterEqual(strength, 0.0)
+        self.assertLessEqual(strength, 0.2)
+
+    def test_opening_strength_ordering(self):
+        """Opening strength should follow: center > adjacent > interior > edge > corner.
+
+        Note: "Strategic diagonal" positions are a subset of "adjacent to center"
+        because diagonal adjacency is included in adjacency. The ordering tested:
+        - Center (3,3): 0.95
+        - Adjacent to center (3,2): 0.75
+        - Interior position not adjacent to center (1,1): 0.45
+        - Edge position (0,3): 0.35
+        - Corner (0,0): 0.15
+        """
+        center = self.ai.compute_opening_strength(Position(x=3, y=3), self.game_state)
+        adjacent = self.ai.compute_opening_strength(Position(x=3, y=2), self.game_state)
+        interior = self.ai.compute_opening_strength(Position(x=1, y=1), self.game_state)
+        edge = self.ai.compute_opening_strength(Position(x=0, y=3), self.game_state)
+        corner = self.ai.compute_opening_strength(Position(x=0, y=0), self.game_state)
+
+        self.assertGreater(center, adjacent)
+        self.assertGreater(adjacent, interior)
+        self.assertGreater(interior, edge)
+        self.assertGreater(edge, corner)
+
+    def test_opening_strength_range(self):
+        """All opening strengths should be in [0, 1] range."""
+        test_positions = [
+            (0, 0), (0, 4), (3, 3), (4, 4), (7, 7), (2, 2), (5, 5)
+        ]
+        for x, y in test_positions:
+            pos = Position(x=x, y=y)
+            strength = self.ai.compute_opening_strength(pos, self.game_state)
+            self.assertGreaterEqual(strength, 0.0, f"Strength at ({x},{y}) < 0")
+            self.assertLessEqual(strength, 1.0, f"Strength at ({x},{y}) > 1")
+
+    # --- Enhanced swap evaluation tests ---
+
+    def test_classifier_swap_zero_for_three_plus_players(self):
+        """Classifier swap should be 0.0 for 3+ player games."""
+        self.game_state.players.append(
+            Player(
+                id="p3",
+                username="P3",
+                type="human",
+                playerNumber=3,
+                isReady=True,
+                timeRemaining=600,
+                ringsInHand=10,
+                eliminatedRings=0,
+                territorySpaces=0,
+                aiDifficulty=None,
+            )
+        )
+
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+
+        score = self.ai.evaluate_swap_with_classifier(self.game_state)
+        self.assertEqual(score, 0.0)
+
+    def test_classifier_swap_zero_when_no_stacks(self):
+        """Classifier swap should be 0.0 when P1 has no stacks."""
+        score = self.ai.evaluate_swap_with_classifier(self.game_state)
+        self.assertEqual(score, 0.0)
+
+    def test_classifier_swap_high_for_center_stack(self):
+        """Classifier swap should be high for center P1 stack."""
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+
+        score = self.ai.evaluate_swap_with_classifier(self.game_state)
+        # With center stack: strength ~0.95 * 20 = 19 + height bonus
+        self.assertGreater(score, 15.0)
+
+    def test_classifier_swap_low_for_corner_stack(self):
+        """Classifier swap should be low (possibly negative) for corner P1 stack."""
+        self.game_state.board.stacks["0,0"] = RingStack(
+            position=Position(x=0, y=0),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+
+        score = self.ai.evaluate_swap_with_classifier(self.game_state)
+        # Corner has penalty of 8.0, low strength (~0.15 * 20 = 3)
+        # Net should be much lower than center
+        self.assertLess(score, 5.0)
+
+    def test_classifier_swap_center_vs_corner_difference(self):
+        """Center position should have much higher swap value than corner."""
+        # Corner stack
+        self.game_state.board.stacks["0,0"] = RingStack(
+            position=Position(x=0, y=0),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+        score_corner = self.ai.evaluate_swap_with_classifier(self.game_state)
+
+        # Clear and add center stack
+        self.game_state.board.stacks.clear()
+        self.game_state.board.stacks["3,3"] = RingStack(
+            position=Position(x=3, y=3),
+            rings=[1],
+            stackHeight=1,
+            capHeight=1,
+            controllingPlayer=1,
+        )
+        score_center = self.ai.evaluate_swap_with_classifier(self.game_state)
+
+        # Center should be significantly higher
+        self.assertGreater(score_center - score_corner, 10.0)
 
 
 if __name__ == "__main__":

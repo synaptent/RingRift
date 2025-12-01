@@ -1,0 +1,322 @@
+{
+  "version": "v2",
+  "generated": "2025-12-01T11:00:00.000Z",
+  "count": 2,
+  "categories": ["chain-capture"],
+  "description": "THEORETICAL test vectors for chain captures - These represent the IDEAL scenarios but may not work due to distance constraints (landing distance must be >= stack height per §10.2). See chain_capture_extended.vectors.json for working scenarios.",
+  "status": "theoretical",
+  "vectors": [
+    {
+      "id": "chain_capture.4_targets.diagonal_with_turn_theoretical",
+      "version": "v2",
+      "category": "chain-capture",
+      "description": "Chain capture with exactly 4 targets: diagonal SE followed by W turn (THEORETICAL - may fail distance constraints)",
+      "tags": ["chain-capture", "extended", "4-targets", "theoretical"],
+      "source": "manual",
+      "createdAt": "2025-12-01T11:00:00.000Z",
+      "ruleReferences": ["§10.3", "FAQ 15.3.1", "FAQ 15.3.2"],
+      "notes": "This scenario may not work because capture 3 landing at (6,6) is only distance 2 from (4,4), but stack height is 3",
+      "input": {
+        "state": {
+          "gameId": "test-chain-capture-4",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "0,0": {
+                "position": { "x": 0, "y": 0 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "1,1": {
+                "position": { "x": 1, "y": 1 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "5,5": {
+                "position": { "x": 5, "y": 5 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "5,6": {
+                "position": { "x": 5, "y": 6 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 14,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 5,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "initialMove": {
+          "id": "move-chain-4-start",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 0, "y": 0 },
+          "captureTarget": { "x": 1, "y": 1 },
+          "to": { "x": 2, "y": 2 },
+          "timestamp": "2025-12-01T11:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 5
+        },
+        "expectedChainSequence": [
+          {
+            "segment": 1,
+            "from": { "x": 0, "y": 0 },
+            "captureTarget": { "x": 1, "y": 1 },
+            "landing": { "x": 2, "y": 2 },
+            "direction": "SE",
+            "attackerHeightAfter": 2
+          },
+          {
+            "segment": 2,
+            "from": { "x": 2, "y": 2 },
+            "captureTarget": { "x": 3, "y": 3 },
+            "landing": { "x": 4, "y": 4 },
+            "direction": "SE",
+            "attackerHeightAfter": 3
+          },
+          {
+            "segment": 3,
+            "from": { "x": 4, "y": 4 },
+            "captureTarget": { "x": 5, "y": 5 },
+            "landing": { "x": 6, "y": 6 },
+            "direction": "SE",
+            "attackerHeightAfter": 4
+          },
+          {
+            "segment": 4,
+            "from": { "x": 6, "y": 6 },
+            "captureTarget": { "x": 5, "y": 6 },
+            "landing": { "x": 4, "y": 6 },
+            "direction": "W",
+            "attackerHeightAfter": 5
+          }
+        ]
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "totalCapturesInChain": 4,
+          "finalStackHeight": 5,
+          "finalStackController": 1,
+          "targetStacksRemaining": 0,
+          "markersCreated": 4,
+          "sInvariantDelta": 4
+        },
+        "finalState": {
+          "finalStackPosition": { "x": 4, "y": 6 },
+          "markerPositions": [
+            { "x": 0, "y": 0 },
+            { "x": 1, "y": 1 },
+            { "x": 3, "y": 3 },
+            { "x": 5, "y": 5 }
+          ]
+        }
+      }
+    },
+    {
+      "id": "chain_capture.5_plus_targets.extended_zigzag_theoretical",
+      "version": "v2",
+      "category": "chain-capture",
+      "description": "Chain capture with 5 targets: diagonal SE, W turn, then SW (THEORETICAL - may fail distance constraints)",
+      "tags": ["chain-capture", "extended", "5-targets", "zigzag", "theoretical"],
+      "source": "manual",
+      "createdAt": "2025-12-01T11:00:00.000Z",
+      "ruleReferences": ["§10.3", "FAQ 15.3.1", "FAQ 15.3.2"],
+      "notes": "This scenario has multiple distance constraint issues",
+      "input": {
+        "state": {
+          "gameId": "test-chain-capture-5",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "0,0": {
+                "position": { "x": 0, "y": 0 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "1,1": {
+                "position": { "x": 1, "y": 1 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "5,5": {
+                "position": { "x": 5, "y": 5 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "5,6": {
+                "position": { "x": 5, "y": 6 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "3,5": {
+                "position": { "x": 3, "y": 5 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {},
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 13,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 6,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "initialMove": {
+          "id": "move-chain-5-start",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 0, "y": 0 },
+          "captureTarget": { "x": 1, "y": 1 },
+          "to": { "x": 2, "y": 2 },
+          "timestamp": "2025-12-01T11:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 6
+        },
+        "expectedChainSequence": [
+          {
+            "segment": 1,
+            "from": { "x": 0, "y": 0 },
+            "captureTarget": { "x": 1, "y": 1 },
+            "landing": { "x": 2, "y": 2 },
+            "direction": "SE",
+            "attackerHeightAfter": 2
+          },
+          {
+            "segment": 2,
+            "from": { "x": 2, "y": 2 },
+            "captureTarget": { "x": 3, "y": 3 },
+            "landing": { "x": 4, "y": 4 },
+            "direction": "SE",
+            "attackerHeightAfter": 3
+          },
+          {
+            "segment": 3,
+            "from": { "x": 4, "y": 4 },
+            "captureTarget": { "x": 5, "y": 5 },
+            "landing": { "x": 6, "y": 6 },
+            "direction": "SE",
+            "attackerHeightAfter": 4
+          },
+          {
+            "segment": 4,
+            "from": { "x": 6, "y": 6 },
+            "captureTarget": { "x": 5, "y": 6 },
+            "landing": { "x": 4, "y": 6 },
+            "direction": "W",
+            "attackerHeightAfter": 5
+          },
+          {
+            "segment": 5,
+            "from": { "x": 4, "y": 6 },
+            "captureTarget": { "x": 3, "y": 5 },
+            "landing": { "x": 2, "y": 4 },
+            "direction": "NW",
+            "attackerHeightAfter": 6
+          }
+        ]
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "totalCapturesInChain": 5,
+          "finalStackHeight": 6,
+          "finalStackController": 1,
+          "targetStacksRemaining": 0,
+          "markersCreated": 5,
+          "sInvariantDelta": 5
+        },
+        "finalState": {
+          "finalStackPosition": { "x": 2, "y": 4 },
+          "markerPositions": [
+            { "x": 0, "y": 0 },
+            { "x": 1, "y": 1 },
+            { "x": 3, "y": 3 },
+            { "x": 5, "y": 5 },
+            { "x": 5, "y": 6 }
+          ]
+        }
+      }
+    }
+  ]
+}

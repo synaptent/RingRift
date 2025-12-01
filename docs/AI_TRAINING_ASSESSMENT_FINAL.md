@@ -255,9 +255,9 @@ These tools confirm that, in the current 8×8 self-play setting, profiles near `
 
 ### Neural Network Training
 
-| Metric             | Value                                                                                  |
-| ------------------ | -------------------------------------------------------------------------------------- |
-| Epochs             | 5                                                                                      |
+| Metric | Value |
+| ------ | ----- |
+| Epochs | 5     |
 
 ---
 
@@ -328,11 +328,11 @@ This keeps the AI boundary consistent:
 
 - Moves, `line_reward_option`, `ring_elimination`, `region_order`, `line_order`, and `capture_direction` are all **optionally service‑backed**, with robust local fallbacks.
 - Training iterations can observe and tune Python‑side heuristics without changing TypeScript call sites, and tests (`AIEngine.serviceClient`, `AIInteractionHandler`) already exercise these endpoints.
-| Initial loss       | 1.5467                                                                                 |
-| Final loss         | 0.7188                                                                                 |
-| **Loss reduction** | **53.5%**                                                                              |
-| Architecture       | HexNeuralNet (CNN + global features)                                                   |
-| Checkpoint         | [`checkpoint_epoch_5.pth`](../ai-service/checkpoints/checkpoint_epoch_5.pth) (~283 MB) |
+  | Initial loss | 1.5467 |
+  | Final loss | 0.7188 |
+  | **Loss reduction** | **53.5%** |
+  | Architecture | HexNeuralNet (CNN + global features) |
+  | Checkpoint | [`checkpoint_epoch_5.pth`](../ai-service/checkpoints/checkpoint_epoch_5.pth) (~283 MB) |
 
 ---
 
@@ -674,7 +674,6 @@ This section enumerates the canonical modules and scripts for heuristic-weight t
   - Compares the policies induced by candidate weight sets against a baseline over a fixed pool of game states, computing metrics such as `difference_rate` and `weight_l2`.
   - Use this script to quantify how far GA/CMA-ES or axis-aligned candidates deviate from [`BASE_V1_BALANCED_WEIGHTS`](../ai-service/app/ai/heuristic_weights.py) at the decision level, ideally reusing the same multi-start state pools loaded via [`eval_pools.py`](../ai-service/app/training/eval_pools.py) that are used for fitness evaluation, so that strength and policy-difference measurements are aligned.
 
-
 ## 12. Recommended CMA-ES Training Presets & Diagnostics
 
 This section captures the current “happy path” for heuristic CMA-ES training and diagnostics so future runs do not silently regress to weaker single-board / initial-only configurations.
@@ -683,45 +682,45 @@ This section captures the current “happy path” for heuristic CMA-ES training
 
 The canonical 2-player CMA-ES / GA training configuration is encoded in the training environment module:
 
-- [`DEFAULT_TRAINING_EVAL_CONFIG`](../ai-service/app/training/env.py)  
-  - Boards: `Square8`, `Square19`, `Hexagonal`.  
-  - `eval_mode="multi-start"` from fixed state pools.  
-  - `state_pool_id="v1"`.  
-  - `games_per_eval=16`, `max_moves=200`.  
+- [`DEFAULT_TRAINING_EVAL_CONFIG`](../ai-service/app/training/env.py)
+  - Boards: `Square8`, `Square19`, `Hexagonal`.
+  - `eval_mode="multi-start"` from fixed state pools.
+  - `state_pool_id="v1"`.
+  - `games_per_eval=16`, `max_moves=200`.
   - `eval_randomness=0.0` (purely deterministic baseline).
 
-- `TWO_PLAYER_TRAINING_PRESET` (same file)  
-  - Starts from `DEFAULT_TRAINING_EVAL_CONFIG`.  
+- `TWO_PLAYER_TRAINING_PRESET` (same file)
+  - Starts from `DEFAULT_TRAINING_EVAL_CONFIG`.
   - Overrides `eval_randomness` to a small, non-zero value (currently `0.02`) to break perfect symmetry and avoid degenerate 0.5 plateaus while remaining reproducible when a seed is supplied.
 
-- `get_two_player_training_kwargs(games_per_eval, seed)`  
+- `get_two_player_training_kwargs(games_per_eval, seed)`
   - Returns a kwargs dict suitable for `evaluate_fitness_over_boards(...)`, wiring:
-    - The canonical multi-board set (Square8/19/Hex).  
-    - `eval_mode="multi-start"` with `state_pool_id="v1"`.  
-    - `eval_randomness` from `TWO_PLAYER_TRAINING_PRESET`.  
+    - The canonical multi-board set (Square8/19/Hex).
+    - `eval_mode="multi-start"` with `state_pool_id="v1"`.
+    - `eval_randomness` from `TWO_PLAYER_TRAINING_PRESET`.
     - Per-run `games_per_eval` and `seed`.
 
 **Operational guidance (2p CMA-ES runs):**
 
-- For CLI-driven runs via the heuristic experiment harness:  
-  - Use [`run_heuristic_experiment.py`](../ai-service/scripts/run_heuristic_experiment.py) in `--mode cmaes-train`.  
+- For CLI-driven runs via the heuristic experiment harness:
+  - Use [`run_heuristic_experiment.py`](../ai-service/scripts/run_heuristic_experiment.py) in `--mode cmaes-train`.
   - The helper `run_cmaes_train(...)` constructs a [`CMAESConfig`](../ai-service/scripts/run_cmaes_optimization.py) that:
-    - Seeds CMA-ES with a baseline profile (`heuristic_v1_balanced` by default).  
-    - Sets `eval_boards`, `eval_mode`, `state_pool_id`, and `eval_randomness` from `get_two_player_training_kwargs(...)`.  
+    - Seeds CMA-ES with a baseline profile (`heuristic_v1_balanced` by default).
+    - Sets `eval_boards`, `eval_mode`, `state_pool_id`, and `eval_randomness` from `get_two_player_training_kwargs(...)`.
     - Ensures evaluation uses multi-board, multi-start, light-randomness defaults for serious 2-player training.
 
-- For direct CLI use of the core CMA-ES driver:  
+- For direct CLI use of the core CMA-ES driver:
   - [`run_cmaes_optimization.py`](../ai-service/scripts/run_cmaes_optimization.py) exposes:
-    - `--eval-boards` (defaults to `square8`).  
-    - `--eval-mode` (`initial-only` vs `multi-start`, default `multi-start`).  
-    - `--state-pool-id` (`v1` by default).  
-    - `--eval-randomness` (default `0.02`, matching the 2p preset).  
+    - `--eval-boards` (defaults to `square8`).
+    - `--eval-mode` (`initial-only` vs `multi-start`, default `multi-start`).
+    - `--state-pool-id` (`v1` by default).
+    - `--eval-randomness` (default `0.02`, matching the 2p preset).
   - When run with:
-    - `--eval-boards square8,square19,hex`  
-    - `--eval-mode multi-start`  
-    - `--state-pool-id v1`  
+    - `--eval-boards square8,square19,hex`
+    - `--eval-mode multi-start`
+    - `--state-pool-id v1`
     - `--eval-randomness 0.02`  
-    the configuration matches the 2p training preset used by `run_heuristic_experiment.py`.
+      the configuration matches the 2p training preset used by `run_heuristic_experiment.py`.
 
 At startup, the CMA-ES driver logs the effective evaluation preset (boards, eval mode, randomness, games_per_eval) so the training configuration is visible in run logs.
 
@@ -729,10 +728,10 @@ At startup, the CMA-ES driver logs the effective evaluation preset (boards, eval
 
 The fixed evaluation pools used by the preset live under `data/eval_pools/**` and are loaded exclusively via:
 
-- [`eval_pools.py`](../ai-service/app/training/eval_pools.py)  
+- [`eval_pools.py`](../ai-service/app/training/eval_pools.py)
   - `POOL_PATHS` maps `(BoardType, pool_id)` to JSONL paths:
-    - `(Square8, "v1") -> data/eval_pools/square8/pool_v1.jsonl`  
-    - `(Square19, "v1") -> data/eval_pools/square19/pool_v1.jsonl`  
+    - `(Square8, "v1") -> data/eval_pools/square8/pool_v1.jsonl`
+    - `(Square19, "v1") -> data/eval_pools/square19/pool_v1.jsonl`
     - `(Hexagonal, "v1") -> data/eval_pools/hex/pool_v1.jsonl`
   - The `"v1"` pools are explicitly documented as **mid/late-game heavy** for 2-player evaluation.
   - Multi-player pools use explicit ids (e.g. `"square19_3p_pool_v1"`, `"hex_4p_pool_v1"`) so 2-player optimisation never accidentally mixes 3p/4p states.
@@ -753,8 +752,7 @@ Pools are generated or refreshed via the long self-play soak harness:
 Before launching a long CMA-ES run with the preset, the recommended workflow is:
 
 1. **Plateau / spread check over candidate weight vectors**
-
-   - Script: [`probe_plateau_diagnostics.py`](../ai-service/scripts/probe_plateau_diagnostics.py)  
+   - Script: [`probe_plateau_diagnostics.py`](../ai-service/scripts/probe_plateau_diagnostics.py)
    - CLI (matches the 2p preset by default):
 
      ```bash
@@ -783,8 +781,7 @@ Before launching a long CMA-ES run with the preset, the recommended workflow is:
    - Goal: confirm that the intended training configuration actually produces a spread of fitness values across diverse candidates (i.e., avoids a trivial 0.5 plateau) before committing to a long CMA-ES run.
 
 2. **Policy-equivalence diagnostics after training**
-
-   - Script: [`diagnose_policy_equivalence.py`](../ai-service/scripts/diagnose_policy_equivalence.py)  
+   - Script: [`diagnose_policy_equivalence.py`](../ai-service/scripts/diagnose_policy_equivalence.py)
    - Usage:
 
      ```bash
@@ -813,3 +810,138 @@ Together, these tools and presets provide a stable, documented path for:
 - Ensuring evaluation is driven from mid/late-game pools where heuristic quality matters.
 - Verifying, ahead of time, that a given configuration yields non-trivial fitness spread.
 - Inspecting post-run policy differences between baseline and trained weights.
+
+---
+
+## 13. Multi-Player (3p/4p) Training and Evaluation
+
+### 13.1 Evaluation Pool Generation
+
+The 3-player and 4-player evaluation pools are generated using the same self-play soak harness as the 2-player pools:
+
+**3-player Square19 pool:**
+
+```bash
+cd ai-service
+mkdir -p data/eval_pools/square19_3p
+
+python scripts/run_self_play_soak.py \
+  --num-games 200 \
+  --board-type square19 \
+  --engine-mode mixed \
+  --num-players 3 \
+  --max-moves 250 \
+  --seed 12345 \
+  --log-jsonl logs/selfplay/soak.square19_3p.mixed.jsonl \
+  --summary-json logs/selfplay/soak.square19_3p.mixed.summary.json \
+  --square19-state-pool-output data/eval_pools/square19_3p/pool_v1.jsonl \
+  --square19-state-pool-max-states 500 \
+  --square19-state-pool-sampling-interval 4
+```
+
+**4-player Hex pool:**
+
+```bash
+cd ai-service
+mkdir -p data/eval_pools/hex_4p
+
+python scripts/run_self_play_soak.py \
+  --num-games 200 \
+  --board-type hexagonal \
+  --engine-mode mixed \
+  --num-players 4 \
+  --max-moves 250 \
+  --seed 23456 \
+  --log-jsonl logs/selfplay/soak.hex_4p.mixed.jsonl \
+  --summary-json logs/selfplay/soak.hex_4p.mixed.summary.json \
+  --hex-state-pool-output data/eval_pools/hex_4p/pool_v1.jsonl \
+  --hex-state-pool-max-states 500 \
+  --hex-state-pool-sampling-interval 4
+```
+
+**Note on MPS/GPU compatibility:** If running on macOS with Apple Silicon and encountering MPS adaptive pooling errors, you may need to force CPU device via environment variable or use `--engine-mode descent-only` to avoid Neural Net inference.
+
+### 13.2 CMA-ES 3-Player and 4-Player Smoke Runs
+
+Once the evaluation pools are generated, you can run small CMA-ES smoke tests for multi-player configurations:
+
+**3-player Square19 smoke run:**
+
+```bash
+cd ai-service
+python scripts/run_cmaes_optimization.py \
+  --generations 2 \
+  --population-size 8 \
+  --games-per-eval 4 \
+  --sigma 0.5 \
+  --output logs/cmaes/multiplayer_square19_3p_smoke_01/best_weights.json \
+  --baseline logs/cmaes/runs/v2_balanced_preset_smoke_02/baseline_weights.json \
+  --board square19 \
+  --eval-boards square19 \
+  --eval-mode multi-start \
+  --state-pool-id 3p_v1 \
+  --num-players 3 \
+  --max-moves 200 \
+  --seed 12345
+```
+
+**4-player Hex smoke run:**
+
+```bash
+cd ai-service
+python scripts/run_cmaes_optimization.py \
+  --generations 2 \
+  --population-size 8 \
+  --games-per-eval 4 \
+  --sigma 0.5 \
+  --output logs/cmaes/multiplayer_hex_4p_smoke_01/best_weights.json \
+  --baseline logs/cmaes/runs/v2_balanced_preset_smoke_02/baseline_weights.json \
+  --board hex \
+  --eval-boards hex \
+  --eval-mode multi-start \
+  --state-pool-id 4p_v1 \
+  --num-players 4 \
+  --max-moves 200 \
+  --seed 23456
+```
+
+These smoke runs use:
+
+- Small population (8) and few generations (2) for quick validation
+- `--num-players` to select N-player evaluation
+- `--state-pool-id` matching the pool IDs defined in [`eval_pools.py`](../ai-service/app/training/eval_pools.py)
+- `--eval-mode multi-start` to use the generated state pools
+
+### 13.3 Multi-Player Axis-Aligned Diagnostics
+
+For multi-player axis-aligned weight diagnostics, use the existing `probe_plateau_diagnostics.py` script with N-player settings:
+
+**3-player diagnostics:**
+
+```bash
+cd ai-service
+python scripts/probe_plateau_diagnostics.py \
+  --boards square19 \
+  --games-per-eval 8 \
+  --eval-mode multi-start \
+  --state-pool-id 3p_v1 \
+  --eval-randomness 0.02 \
+  --num-players 3 \
+  --output logs/plateau_probe/square19_3p_diagnostics.json
+```
+
+**4-player diagnostics:**
+
+```bash
+cd ai-service
+python scripts/probe_plateau_diagnostics.py \
+  --boards hex \
+  --games-per-eval 8 \
+  --eval-mode multi-start \
+  --state-pool-id 4p_v1 \
+  --eval-randomness 0.02 \
+  --num-players 4 \
+  --output logs/plateau_probe/hex_4p_diagnostics.json
+```
+
+The diagnostic script evaluates baseline, zero, scaled, and near-baseline weight profiles and reports fitness spread across the specified boards, helping identify whether the multi-player fitness landscape exhibits useful gradients for optimization.

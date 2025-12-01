@@ -410,7 +410,9 @@ describe('BackendGameHost (React host behaviour)', () => {
     const { rerender } = render(<BackendGameHost gameId="game-123" />);
 
     // Ring placement instruction
-    expect(screen.getByText('Place a ring on an empty edge space.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Place rings on an empty cell or on top of an existing stack.')
+    ).toBeInTheDocument();
 
     // Auto-highlighted placement targets should be visible
     const board = screen.getByTestId('board-view');
@@ -422,7 +424,9 @@ describe('BackendGameHost (React host behaviour)', () => {
     mockGameState = lineState;
     rerender(<BackendGameHost gameId="game-123" />);
 
-    expect(screen.getByText('Choose a line to collapse.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Line processing – choose how to resolve your completed line.')
+    ).toBeInTheDocument();
 
     // Third render: territory_processing phase with a victory result
     const victory: GameResult = {
@@ -445,7 +449,9 @@ describe('BackendGameHost (React host behaviour)', () => {
     rerender(<BackendGameHost gameId="game-123" />);
 
     // Territory instruction
-    expect(screen.getByText('Choose a region to claim.', { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText('Territory processing – resolve disconnected regions.')
+    ).toBeInTheDocument();
 
     // Victory modal should be open (Return to Lobby button visible)
     expect(screen.getByText('Return to Lobby')).toBeInTheDocument();
@@ -497,7 +503,9 @@ describe('BackendGameHost (React host behaviour)', () => {
     const { rerender } = render(<BackendGameHost gameId="game-123" />);
 
     // Instruction for line_processing
-    expect(screen.getByText('Choose a line to collapse.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Line processing – choose how to resolve your completed line.')
+    ).toBeInTheDocument();
 
     // Transition to chain_capture with a pending capture_direction choice
     const stateChain: GameState = { ...stateLine, currentPhase: 'chain_capture' as GamePhase };
@@ -513,7 +521,9 @@ describe('BackendGameHost (React host behaviour)', () => {
     rerender(<BackendGameHost gameId="game-123" />);
 
     // Instruction for chain_capture
-    expect(screen.getByText('Continue the capture chain.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Chain capture in progress – select next capture target.')
+    ).toBeInTheDocument();
 
     // Transition to territory_processing and clear choice
     const stateTerritory: GameState = {
@@ -526,7 +536,9 @@ describe('BackendGameHost (React host behaviour)', () => {
     rerender(<BackendGameHost gameId="game-123" />);
 
     // Instruction for territory_processing
-    expect(screen.getByText('Choose a region to claim.', { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByText('Territory processing – resolve disconnected regions.')
+    ).toBeInTheDocument();
 
     // Event log should reflect the phase progression in order.
     const log = screen.getByTestId('game-event-log');

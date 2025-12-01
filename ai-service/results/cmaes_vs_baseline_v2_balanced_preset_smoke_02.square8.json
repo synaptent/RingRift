@@ -1,0 +1,2033 @@
+{
+  "config": {
+    "player1": "cmaes_heuristic",
+    "player2": "baseline_heuristic",
+    "games": 200,
+    "board": "square8",
+    "seed": 12345,
+    "max_moves_per_game": 200,
+    "minimax_depth": 3,
+    "timestamp": "2025-12-01T09:35:45.967250"
+  },
+  "results": {
+    "player1_wins": 107,
+    "player2_wins": 93,
+    "draws": 0,
+    "player1_win_rate": 0.535,
+    "player1_win_rate_ci95": [0.4659, 0.6028],
+    "avg_game_length": 45.84,
+    "avg_game_length_std": 5.02,
+    "avg_decision_time_p1": 0.1133,
+    "avg_decision_time_p2": 0.111,
+    "total_runtime_seconds": 1036.15,
+    "victory_types": {
+      "elimination": 187,
+      "territory": 13
+    },
+    "avg_p1_final_pieces": 13.98,
+    "avg_p2_final_pieces": 13.98,
+    "piece_advantage_p1": 0.0
+  },
+  "games": [
+    {
+      "game_number": 1,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 50,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 2,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 3,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 56,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 4,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 5,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 6,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 7,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 8,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 9,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 49,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 10,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 11,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 12,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 13,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 14,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 15,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 16,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 17,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 57,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 18,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 19,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 20,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 56,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 21,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 22,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 23,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 24,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 25,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 37,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 26,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 27,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 28,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 29,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 30,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 55,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 31,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 32,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 34,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 33,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 34,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 38,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 35,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 62,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 36,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 37,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 54,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 38,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 36,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 39,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 40,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "territory",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 41,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 42,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 43,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 44,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 45,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 50,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 46,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 47,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 48,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 49,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 50,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 51,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 52,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 53,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 54,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 55,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 56,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 57,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 58,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 59,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 60,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 38,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 61,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 57,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 62,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 63,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 33,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 64,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 38,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 65,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 66,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 67,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 68,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 69,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 70,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 71,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 52,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 72,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 73,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 74,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 75,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 76,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 77,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 78,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 79,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 80,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 81,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 50,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 82,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 83,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 84,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 85,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 86,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 55,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 87,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 31,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 88,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 89,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 90,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 91,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 92,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 93,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 94,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 52,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 95,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 61,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 96,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 55,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 97,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 98,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 99,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 100,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 101,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 102,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 103,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 104,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 105,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 106,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 38,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 107,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 108,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 109,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 110,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 111,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 112,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 113,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 114,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 50,
+      "victory_type": "territory",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 115,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 116,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 117,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 118,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 119,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 120,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 121,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 53,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 122,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 123,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 124,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 125,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 126,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 127,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 128,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 52,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 129,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 130,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 131,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 132,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 55,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 133,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 134,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 52,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 135,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 54,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 136,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 137,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 138,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "territory",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 139,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 52,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 140,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 141,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 142,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 143,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 144,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 56,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 145,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 52,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 146,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "territory",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 147,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 148,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 149,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 150,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 151,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 152,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 50,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 153,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 154,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 39,
+      "victory_type": "territory",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 155,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 156,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 157,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 158,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 159,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 160,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 46,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 161,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 162,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 53,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 163,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 164,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 165,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 166,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 167,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 168,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 169,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 170,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 171,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 172,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 55,
+      "victory_type": "territory",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 173,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 49,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 174,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 56,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 175,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 176,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 177,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 55,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 178,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 36,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 179,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 180,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 33,
+      "victory_type": "territory",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 181,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "territory",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 182,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 183,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 41,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 184,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 42,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 185,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 186,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 38,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 187,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 188,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 58,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 189,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 48,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 190,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 191,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 45,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 192,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 193,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 47,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 194,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 195,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 50,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 196,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 43,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 197,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 198,
+      "winner": "cmaes_heuristic",
+      "winner_number": 1,
+      "length": 44,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 199,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 32,
+      "victory_type": "elimination",
+      "p1_was": "cmaes_heuristic",
+      "p2_was": "baseline_heuristic",
+      "error": null
+    },
+    {
+      "game_number": 200,
+      "winner": "baseline_heuristic",
+      "winner_number": 2,
+      "length": 51,
+      "victory_type": "elimination",
+      "p1_was": "baseline_heuristic",
+      "p2_was": "cmaes_heuristic",
+      "error": null
+    }
+  ]
+}

@@ -1,14 +1,13 @@
 /**
- * ClientSandboxEngine orchestrator vs legacy parity (smoke)
+ * ClientSandboxEngine orchestrator parity test (smoke)
  *
- * These tests run a short, deterministic sequence of canonical Moves through
- * two ClientSandboxEngine instances:
- *   - one using the legacy sandbox rules path, and
- *   - one delegating to SandboxOrchestratorAdapter (shared orchestrator).
+ * HISTORICAL NOTE: This test was originally designed to compare legacy sandbox
+ * rules path vs orchestrator-delegated path. As of 2025-12-01 (Phase 3 migration),
+ * the legacy path has been removed and the orchestrator is permanently enabled.
  *
- * For the chosen scenario, the final GameState hashes and key fields should
- * match, providing a fast signal that the sandbox host stays in sync with the
- * shared orchestrator.
+ * This test now verifies that two independent sandbox engine instances produce
+ * identical results when processing the same canonical Move sequence, confirming
+ * determinism of the orchestrator-based rules processing.
  */
 
 import {
@@ -55,34 +54,32 @@ function canonicalEngineMove(move: Move): Omit<Move, 'id' | 'timestamp' | 'moveN
   };
 }
 
-describe('ClientSandboxEngine orchestrator vs legacy parity (short sequence)', () => {
-  it('keeps states in lockstep for a short ring_placement + movement sequence on square8', async () => {
+describe('ClientSandboxEngine orchestrator determinism (short sequence)', () => {
+  it('keeps two independent engines in lockstep for a short ring_placement + movement sequence on square8', async () => {
     const config = createSandboxConfig();
     const handler = createNoopInteractionHandler();
 
-    const legacy = new ClientSandboxEngine({ config, interactionHandler: handler });
-    legacy.disableOrchestratorAdapter();
-
-    const orchestrator = new ClientSandboxEngine({ config, interactionHandler: handler });
-    orchestrator.enableOrchestratorAdapter();
+    // Both engines now use the orchestrator (permanently enabled)
+    const engine1 = new ClientSandboxEngine({ config, interactionHandler: handler });
+    const engine2 = new ClientSandboxEngine({ config, interactionHandler: handler });
 
     // Initial snapshots must match
-    expect(snapshot(orchestrator.getGameState())).toEqual(snapshot(legacy.getGameState()));
+    expect(snapshot(engine1.getGameState())).toEqual(snapshot(engine2.getGameState()));
 
     const maxSteps = 6;
 
     for (let i = 0; i < maxSteps; i++) {
-      const legacyStateBefore = legacy.getGameState();
-      const orchStateBefore = orchestrator.getGameState();
+      const state1Before = engine1.getGameState();
+      const state2Before = engine2.getGameState();
 
-      expect(snapshot(orchStateBefore)).toEqual(snapshot(legacyStateBefore));
+      expect(snapshot(state2Before)).toEqual(snapshot(state1Before));
 
-      if (legacyStateBefore.gameStatus !== 'active') {
+      if (state1Before.gameStatus !== 'active') {
         break;
       }
 
-      const currentPlayer = legacyStateBefore.currentPlayer;
-      const candidates = legacy.getValidMoves(currentPlayer);
+      const currentPlayer = state1Before.currentPlayer;
+      const candidates = engine1.getValidMoves(currentPlayer);
       expect(candidates.length).toBeGreaterThan(0);
 
       // Deterministic choice: sort by type and coordinates and pick first
@@ -102,15 +99,15 @@ describe('ClientSandboxEngine orchestrator vs legacy parity (short sequence)', (
       const chosen = sorted[0];
       const engineMove = canonicalEngineMove(chosen);
 
-      await legacy.applyCanonicalMove(engineMove as Move);
-      await orchestrator.applyCanonicalMove(engineMove as Move);
+      await engine1.applyCanonicalMove(engineMove as Move);
+      await engine2.applyCanonicalMove(engineMove as Move);
 
-      const legacyAfter = legacy.getGameState();
-      const orchAfter = orchestrator.getGameState();
+      const state1After = engine1.getGameState();
+      const state2After = engine2.getGameState();
 
-      expect(snapshot(orchAfter)).toEqual(snapshot(legacyAfter));
+      expect(snapshot(state2After)).toEqual(snapshot(state1After));
 
-      if (legacyAfter.gameStatus !== 'active') {
+      if (state1After.gameStatus !== 'active') {
         break;
       }
     }

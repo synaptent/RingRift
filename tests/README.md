@@ -213,6 +213,55 @@ CI runs these lanes with the orchestrator adapter forced ON:
 and the **TS Orchestrator Parity (adapter‑ON)** job is intended to be a required
 status check for `main` alongside the core `TS Rules Engine (rules-level)` lane.
 
+### CI‑gated vs diagnostic commands (P0-TEST-002)
+
+For quick reference, these are the primary commands used in CI vs the broader
+diagnostic/extended profiles:
+
+**CI‑gated lanes (must stay green):**
+
+- `npm run test:ci` – core Jest CI profile (unit + integration, E2E excluded; heavy/diagnostic suites filtered via `testPathIgnorePatterns`).
+- `npm run test:ts-rules-engine` – rules‑level + RulesMatrix/FAQ coverage (shared engine, orchestrator parity).
+- `npm run orchestrator:gating` – orchestrator gating bundle (contract vectors and extended‑vector soak + short orchestrator soaks).
+
+**Extended / diagnostic lanes (opt‑in, may include expected failures):**
+
+- `npm run test:ai-backend:quiet` / `npm run test:ai-sandbox:quiet` – backend and sandbox AI S‑invariant simulations (`GameEngine.aiSimulation.test.ts`, `ClientSandboxEngine.aiSimulation.test.ts`).
+- `npm run test:ai-movement:quiet` – sandbox AI movement/capture diagnostics.
+- `npm run test:ts-parity` – trace and host parity suites (Backend_vs_Sandbox trace parity, Python_vs_TS trace parity, deep seed parity diagnostics).
+- `npm run test:ts-integration` – heavier WebSocket/integration flows (multi‑player, reconnect, rules‑backend integration).
+- `npm run test:all:quiet:log` – full Jest run with output captured to `logs/jest/latest.log` (used to generate `jest-results.json`; includes CI‑gated + diagnostic suites).
+
+In documentation:
+
+- **PASS19B_ASSESSMENT_REPORT.md** and **CURRENT_STATE_ASSESSMENT.md** report counts for the **CI‑gated** profile.
+- **PASS20_ASSESSMENT.md** and `jest-results.json` analyse the broader **extended/diagnostic** profile. When interpreting failures there, cross‑check `KNOWN_ISSUES.md` and `docs/PARITY_SEED_TRIAGE.md` to distinguish expected diagnostics from regressions.
+
+### Mapping jest-results.json failures to TEST_CATEGORIES (P0-TEST-003)
+
+When inspecting `jest-results.json` (or `logs/jest/latest.view.txt` from `npm run test:all:quiet:log`), use the file path to locate the test **category**:
+
+- `tests/unit/Backend_vs_Sandbox.*.test.ts`, `tests/unit/TraceParity.seed*.test.ts`, `tests/unit/Sandbox_vs_Backend.*.test.ts`  
+  → **Diagnostic parity/trace** category (see “Parity & Trace Diagnostics (TS)” in `docs/TEST_CATEGORIES.md`).
+- `tests/unit/GameEngine.aiSimulation.test.ts`, `tests/unit/ClientSandboxEngine.aiSimulation.test.ts`  
+  → **AI Simulation (Diagnostic)** category.
+- `tests/scenarios/RulesMatrix.*.test.ts`, `tests/scenarios/FAQ_Q*.test.ts`, `tests/contracts/contractVectorRunner.test.ts`  
+  → **Rules/Contracts (CI‑gated)** category.
+- `tests/e2e/*.e2e.spec.ts`, `tests/e2e/*reconnection*.test.ts`, `tests/e2e/*multiPlayer*.test.ts`  
+  → **E2E (Playwright)** category.
+- `ai-service/tests/contracts/test_contract_vectors.py`, `ai-service/tests/parity/*.py`  
+  → **Python Contract/Parity** category.
+
+For each category, `docs/TEST_CATEGORIES.md` documents:
+
+- Whether failures are **CI‑gated** vs **diagnostic/optional**.
+- Which commands drive them (e.g. `npm run test:ci`, `npm run test:ts-parity`, `npm run test:ai-backend:quiet`, `pytest ai-service/tests/...`).
+
+**Legacy RuleEngine/GameEngine diagnostics examples:**
+
+- `tests/unit/GameEngine.lines.scenarios.test.ts`, `tests/unit/GameEngine.lineRewardChoiceWebSocketIntegration.test.ts`  
+  → **Legacy RuleEngine / GameEngine Diagnostics** (see “Diagnostic Tests → Legacy RuleEngine / GameEngine Diagnostics” in `docs/TEST_CATEGORIES.md`). These suites exist for historical coverage and migration safety and are not CI‑gated; new rules work should target orchestrator/shared‑engine suites instead.
+
 #### Shadow-mode TS↔Python parity profile (`RINGRIFT_RULES_MODE=shadow`)
 
 For targeted runtime parity debugging (matching the **Prod Phase 2 – legacy authoritative + shadow** posture in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.4), you can run the backend with Python in shadow while keeping the legacy/TS engine authoritative:

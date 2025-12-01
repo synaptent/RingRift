@@ -5,6 +5,19 @@
 
 import { MessageChannel as NodeMessageChannel } from 'worker_threads';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// structuredClone Polyfill for Node.js 16 Compatibility
+// ═══════════════════════════════════════════════════════════════════════════
+// structuredClone is available in Node 17+, but not in Node 16.
+// This polyfill uses JSON serialization as a fallback for basic object cloning.
+// For more complex objects (with circular refs, Map, Set, etc.), the polyfill
+// will fail, but for typical game state objects it works.
+if (typeof globalThis.structuredClone === 'undefined') {
+  (globalThis as any).structuredClone = <T>(obj: T): T => {
+    return JSON.parse(JSON.stringify(obj));
+  };
+}
+
 // Ensure MessageChannel is available for React 18+/19 scheduling logic in
 // environments where jsdom does not provide it by default. We alias Node's
 // worker_threads implementation onto the global object so that React's

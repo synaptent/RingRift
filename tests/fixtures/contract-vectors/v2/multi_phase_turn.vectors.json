@@ -1,0 +1,286 @@
+{
+  "version": "v2",
+  "generated": "2025-12-01T11:30:00.000Z",
+  "count": 2,
+  "categories": ["turn", "multi_phase"],
+  "description": "Test vectors for multi-phase turn scenarios - P19B.2-3. Tests the complete turn lifecycle where a single action triggers placement → capture → line → territory phases.",
+  "vectors": [
+    {
+      "id": "multi_phase.placement_capture_line",
+      "version": "v2",
+      "category": "turn",
+      "description": "Placement triggers capture opportunity followed by line detection. Player 1 places a ring, creating a stack that must move. The capture leads to a chain capture, and the final landing completes a line of 5 markers.",
+      "tags": ["multi_phase", "turn", "placement", "capture", "chain_capture", "line_processing"],
+      "source": "manual",
+      "createdAt": "2025-12-01T11:30:00.000Z",
+      "ruleReferences": ["§4", "§10", "§11", "§15.2"],
+      "input": {
+        "state": {
+          "gameId": "test-multi-phase-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "0,3": {
+                "position": { "x": 0, "y": 3 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "1,3": {
+                "position": { "x": 1, "y": 3 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "7,3": {
+                "position": { "x": 7, "y": 3 },
+                "rings": [1, 1],
+                "stackHeight": 2,
+                "capHeight": 2,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {
+              "4,3": { "position": { "x": 4, "y": 3 }, "player": 1, "type": "regular" },
+              "5,3": { "position": { "x": 5, "y": 3 }, "player": 1, "type": "regular" },
+              "6,3": { "position": { "x": 6, "y": 3 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 14,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 16,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 5,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "initialMove": {
+          "id": "move-multi-phase-capture-start",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 0, "y": 3 },
+          "captureTarget": { "x": 1, "y": 3 },
+          "to": { "x": 2, "y": 3 },
+          "timestamp": "2025-12-01T11:30:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 5
+        },
+        "expectedPhaseSequence": [
+          "movement",
+          "chain_capture",
+          "line_processing",
+          "territory_processing"
+        ],
+        "phaseTransitions": [
+          {
+            "phaseAfter": "chain_capture",
+            "description": "After first capture at (1,3), chain capture detected at (3,3)",
+            "stackPosition": { "x": 2, "y": 3 },
+            "stackHeight": 2,
+            "availableChainTarget": { "x": 3, "y": 3 }
+          },
+          {
+            "phaseAfter": "line_processing",
+            "description": "After chain capture completes at landing (4,3), a line is formed with 5 markers in row 3",
+            "expectedLandingPosition": { "x": 4, "y": 3 },
+            "linePositions": [
+              { "x": 0, "y": 3 },
+              { "x": 1, "y": 3 },
+              { "x": 2, "y": 3 },
+              { "x": 3, "y": 3 },
+              { "x": 4, "y": 3 }
+            ]
+          },
+          {
+            "phaseAfter": "territory_processing",
+            "description": "After line processing, territory check for disconnected regions"
+          }
+        ]
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "stackCount": 2,
+          "markerCount": 5,
+          "sInvariantDelta": 4
+        }
+      }
+    },
+    {
+      "id": "multi_phase.full_sequence_with_territory",
+      "version": "v2",
+      "category": "turn",
+      "description": "Full multi-phase turn demonstrating all phases: placement → movement → capture → chain_capture → line_processing → territory_processing. A placement on an existing stack triggers must-move, which leads to a capture chain that completes a line, and the line completion disconnects a region.",
+      "tags": [
+        "multi_phase",
+        "turn",
+        "full_sequence",
+        "placement",
+        "capture",
+        "chain_capture",
+        "line_processing",
+        "territory_processing"
+      ],
+      "source": "manual",
+      "createdAt": "2025-12-01T11:30:00.000Z",
+      "ruleReferences": ["§4", "§10", "§11", "§12", "§15.2"],
+      "input": {
+        "state": {
+          "gameId": "test-multi-phase-002",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "1,1": {
+                "position": { "x": 1, "y": 1 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "2,1": {
+                "position": { "x": 2, "y": 1 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "4,1": {
+                "position": { "x": 4, "y": 1 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "0,0": {
+                "position": { "x": 0, "y": 0 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "7,7": {
+                "position": { "x": 7, "y": 7 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              }
+            },
+            "markers": {
+              "0,1": { "position": { "x": 0, "y": 1 }, "player": 1, "type": "regular" },
+              "5,1": { "position": { "x": 5, "y": 1 }, "player": 1, "type": "regular" },
+              "6,1": { "position": { "x": 6, "y": 1 }, "player": 1, "type": "regular" },
+              "7,1": { "position": { "x": 7, "y": 1 }, "player": 1, "type": "regular" },
+              "1,0": { "position": { "x": 1, "y": 0 }, "player": 2, "type": "regular" }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 14,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 15,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 6,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "initialMove": {
+          "id": "move-multi-phase-full-start",
+          "type": "overtaking_capture",
+          "player": 1,
+          "from": { "x": 1, "y": 1 },
+          "captureTarget": { "x": 2, "y": 1 },
+          "to": { "x": 3, "y": 1 },
+          "timestamp": "2025-12-01T11:30:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 6
+        },
+        "expectedPhaseSequence": [
+          "movement",
+          "chain_capture",
+          "line_processing",
+          "territory_processing"
+        ],
+        "phaseTransitions": [
+          {
+            "phaseAfter": "chain_capture",
+            "description": "After first capture at (2,1), chain capture opportunity detected at (4,1)",
+            "stackPosition": { "x": 3, "y": 1 },
+            "stackHeight": 2,
+            "availableChainTarget": { "x": 4, "y": 1 }
+          },
+          {
+            "phaseAfter": "line_processing",
+            "description": "Chain capture lands at (5,1), completing line of 5 markers: (1,1), (3,1), (5,1), (6,1), (7,1) + original markers",
+            "expectedLandingPosition": { "x": 5, "y": 1 }
+          },
+          {
+            "phaseAfter": "territory_processing",
+            "description": "Line processing may disconnect the corner region at (0,0) which becomes territory"
+          }
+        ],
+        "territoryExpectation": {
+          "potentiallyDisconnectedRegion": [{ "x": 0, "y": 0 }],
+          "cause": "Line completion at row 1 may disconnect corner"
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "sInvariantDelta": 4
+        }
+      }
+    }
+  ]
+}

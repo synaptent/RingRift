@@ -230,7 +230,7 @@ const ConfigSchema = z.object({
   featureFlags: z.object({
     orchestrator: z.object({
       adapterEnabled: z.boolean(),
-      rolloutPercentage: z.number().int().min(0).max(100),
+      // NOTE: rolloutPercentage removed in Phase 3 migration - orchestrator is permanently enabled
       shadowModeEnabled: z.boolean(),
       allowlistUsers: z.array(z.string()),
       denylistUsers: z.array(z.string()),
@@ -255,8 +255,7 @@ const ConfigSchema = z.object({
     rulesMode: RulesModeSchema,
     /** Master switch for using the orchestrator adapter on backend hosts. */
     adapterEnabled: z.boolean(),
-    /** Percentage of eligible sessions routed through the orchestrator (0–100). */
-    rolloutPercentage: z.number().int().min(0).max(100),
+    // NOTE: rolloutPercentage removed in Phase 3 migration - orchestrator is permanently enabled
     /** Whether orchestrator shadow mode is enabled. */
     shadowModeEnabled: z.boolean(),
     /** Whether the orchestrator circuit breaker is enabled. */
@@ -315,7 +314,7 @@ const preliminaryConfig = {
   orchestrator: {
     rulesMode: getRulesMode(),
     adapterEnabled: env.ORCHESTRATOR_ADAPTER_ENABLED,
-    rolloutPercentage: env.ORCHESTRATOR_ROLLOUT_PERCENTAGE,
+    // NOTE: rolloutPercentage removed in Phase 3 migration - orchestrator is permanently enabled
     shadowModeEnabled: env.ORCHESTRATOR_SHADOW_MODE_ENABLED,
     circuitBreakerEnabled: env.ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED,
   },
@@ -330,7 +329,7 @@ const preliminaryConfig = {
   featureFlags: {
     orchestrator: {
       adapterEnabled: env.ORCHESTRATOR_ADAPTER_ENABLED,
-      rolloutPercentage: env.ORCHESTRATOR_ROLLOUT_PERCENTAGE,
+      // NOTE: rolloutPercentage removed in Phase 3 migration - orchestrator is permanently enabled
       shadowModeEnabled: env.ORCHESTRATOR_SHADOW_MODE_ENABLED,
       allowlistUsers: env.ORCHESTRATOR_ALLOWLIST_USERS.split(',').filter(Boolean),
       denylistUsers: env.ORCHESTRATOR_DENYLIST_USERS.split(',').filter(Boolean),

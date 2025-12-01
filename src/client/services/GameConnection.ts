@@ -166,7 +166,7 @@ export class SocketGameConnection implements GameConnection {
       }
     });
 
-    socket.on('error', (payload: WebSocketErrorPayload | any) => {
+    socket.on('error', (payload: WebSocketErrorPayload) => {
       this.handlers.onError(payload);
     });
 
@@ -226,9 +226,10 @@ export class SocketGameConnection implements GameConnection {
       choice.type === 'region_order' ||
       choice.type === 'ring_elimination'
     ) {
+      const optionWithMoveId = selectedOption as { moveId?: string } | undefined;
       moveId =
-        selectedOption && typeof (selectedOption as any).moveId === 'string'
-          ? (selectedOption as any).moveId
+        optionWithMoveId && typeof optionWithMoveId.moveId === 'string'
+          ? optionWithMoveId.moveId
           : undefined;
     } else if (choice.type === 'line_reward_option') {
       const optionKey = selectedOption as string;

@@ -84,9 +84,8 @@ describe('ClientSandboxEngine chain capture parity', () => {
       },
     };
 
+    // Orchestrator adapter is permanently enabled as of Phase 3 migration.
     const engine = new ClientSandboxEngine({ config, interactionHandler: handler });
-    // Enable the orchestrator adapter for canonical Move-based processing
-    engine.enableOrchestratorAdapter();
     return engine;
   }
 
@@ -362,10 +361,7 @@ describe('ClientSandboxEngine chain capture parity', () => {
 
     const capture = captureMoves.find(
       (m: Move) =>
-        m.from?.x === 2 &&
-        m.from?.y === 2 &&
-        m.captureTarget?.x === 2 &&
-        m.captureTarget?.y === 3
+        m.from?.x === 2 && m.from?.y === 2 && m.captureTarget?.x === 2 && m.captureTarget?.y === 3
     );
 
     expect(capture).toBeDefined();

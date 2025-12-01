@@ -63,10 +63,11 @@ export class PythonRulesClient {
         gameStatus: data.game_status,
       };
     } catch (error) {
+      const err = error as Error & { response?: { data?: unknown; status?: number } };
       logger.error('Python rules evaluate_move failed', {
-        message: (error as any)?.message,
-        response: (error as any)?.response?.data,
-        status: (error as any)?.response?.status,
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
       });
 
       throw error;

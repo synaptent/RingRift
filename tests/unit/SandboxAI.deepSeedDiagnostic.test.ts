@@ -12,7 +12,6 @@ import {
   GameState,
   Move,
   Player,
-  Position,
   positionToString,
 } from '../../src/shared/types/game';
 import { hashGameState } from '../../src/shared/engine/core';
@@ -21,10 +20,7 @@ import {
   SandboxConfig,
   SandboxInteractionHandler,
 } from '../../src/client/sandbox/ClientSandboxEngine';
-import {
-  enumerateSimpleMovesForPlayer,
-  computeValidLandingsForStack,
-} from '../../src/shared/engine/aggregates/MovementAggregate';
+import { enumerateSimpleMovesForPlayer } from '../../src/shared/engine/aggregates/MovementAggregate';
 import { enumerateAllCaptureMoves } from '../../src/shared/engine/aggregates/CaptureAggregate';
 import { getValidMoves } from '../../src/shared/engine/orchestration/turnOrchestrator';
 
@@ -250,11 +246,15 @@ describe('Deep seed diagnostic for sandbox AI stalls', () => {
       const targetStep = 2000; // Run to completion or actual stall
 
       const rng = makePrng(seed);
-      const backend = createBackendEngine(boardType, numPlayers);
-      const sandbox = createSandboxEngine(boardType, numPlayers);
 
+      // IMPORTANT: Replace Math.random BEFORE creating engines to ensure
+      // generateGameSeed() inside ClientSandboxEngine uses the seeded RNG.
+      // This prevents flakiness when other tests consume Math.random first.
       const originalRandom = Math.random;
       Math.random = rng;
+
+      const backend = createBackendEngine(boardType, numPlayers);
+      const sandbox = createSandboxEngine(boardType, numPlayers);
 
       try {
         let firstDivergenceStep: number | null = null;
@@ -310,11 +310,11 @@ describe('Deep seed diagnostic for sandbox AI stalls', () => {
 
               // Show all stack differences
               console.log(`\n--- All Stack Differences ---`);
-              const allStackKeys = new Set([
-                ...Array.from(backendBefore.board.stacks.keys()),
-                ...Array.from(sandboxBefore.board.stacks.keys()),
+              const allStackKeys = new Set<string>([
+                ...Array.from(backendBefore.board.stacks.keys() as Iterable<string>),
+                ...Array.from(sandboxBefore.board.stacks.keys() as Iterable<string>),
               ]);
-              allStackKeys.forEach((key) => {
+              allStackKeys.forEach((key: string) => {
                 const bStack = backendBefore.board.stacks.get(key);
                 const sStack = sandboxBefore.board.stacks.get(key);
                 if (!bStack && sStack) {
@@ -342,7 +342,7 @@ describe('Deep seed diagnostic for sandbox AI stalls', () => {
               console.log(`\n--- Player Rings ---`);
               sandboxBefore.players.forEach((p) => {
                 const bPlayer = backendBefore.players.find(
-                  (bp) => bp.playerNumber === p.playerNumber
+                  (bp: Player) => bp.playerNumber === p.playerNumber
                 );
                 const match = p.ringsInHand === bPlayer?.ringsInHand ? '✓' : '✗';
                 console.log(
@@ -474,12 +474,12 @@ describe('Deep seed diagnostic for sandbox AI stalls', () => {
 
               // Check if backend and sandbox agree on stacks at movement-relevant positions
               console.log('\n--- Stack Position Comparison ---');
-              const allStackKeys = new Set([
-                ...Array.from(backendBefore.board.stacks.keys()),
-                ...Array.from(sandboxBefore.board.stacks.keys()),
+              const allStackKeys = new Set<string>([
+                ...Array.from(backendBefore.board.stacks.keys() as Iterable<string>),
+                ...Array.from(sandboxBefore.board.stacks.keys() as Iterable<string>),
               ]);
               let mismatchCount = 0;
-              allStackKeys.forEach((key) => {
+              allStackKeys.forEach((key: string) => {
                 const bStack = backendBefore.board.stacks.get(key);
                 const sStack = sandboxBefore.board.stacks.get(key);
                 if (!bStack && sStack) {
@@ -512,7 +512,7 @@ describe('Deep seed diagnostic for sandbox AI stalls', () => {
               console.log('\n--- Player Rings In Hand ---');
               sandboxBefore.players.forEach((p) => {
                 const bPlayer = backendBefore.players.find(
-                  (bp) => bp.playerNumber === p.playerNumber
+                  (bp: Player) => bp.playerNumber === p.playerNumber
                 );
                 console.log(
                   `  P${p.playerNumber}: sandbox=${p.ringsInHand}, backend=${bPlayer?.ringsInHand}`
@@ -610,7 +610,7 @@ describe('Deep seed diagnostic for sandbox AI stalls', () => {
             console.log(`\n--- Players ---`);
             sandboxBefore.players.forEach((p) => {
               const bPlayer = backendBefore.players.find(
-                (bp) => bp.playerNumber === p.playerNumber
+                (bp: Player) => bp.playerNumber === p.playerNumber
               );
               console.log(
                 `P${p.playerNumber}: sandbox ringsInHand=${p.ringsInHand}, backend=${bPlayer?.ringsInHand}`

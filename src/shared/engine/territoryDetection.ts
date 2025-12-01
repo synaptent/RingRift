@@ -2,10 +2,14 @@ import {
   BoardState,
   Territory,
   Position,
+  RingStack,
   BOARD_CONFIGS,
   positionToString,
   stringToPosition,
 } from '../types/game';
+
+/** Minimal board shape needed for adjacency/position generation. */
+type MinimalBoardConfig = Pick<BoardState, 'type' | 'size'>;
 
 const adjacencyCache = new Map<string, Map<string, string[]>>();
 
@@ -18,11 +22,15 @@ function getAdjacencyGraph(boardType: string): Map<string, string[]> {
   const adjType = config.territoryAdjacency;
 
   // Generate valid positions based on config
-  const positions = generateValidPositions({ type: boardType, size: config.size } as any);
+  const minimalBoard: MinimalBoardConfig = {
+    type: boardType as BoardState['type'],
+    size: config.size,
+  };
+  const positions = generateValidPositions(minimalBoard as BoardState);
 
   for (const posStr of positions) {
     const pos = stringToPosition(posStr);
-    const neighbors = getNeighbors(pos, adjType, { type: boardType, size: config.size } as any);
+    const neighbors = getNeighbors(pos, adjType, minimalBoard as BoardState);
     graph.set(posStr, neighbors.map(positionToString));
   }
 
@@ -364,7 +372,7 @@ function isCollapsedSpace(position: Position, board: BoardState): boolean {
   return board.collapsedSpaces.has(posKey);
 }
 
-function getStack(position: Position, board: BoardState): any | undefined {
+function getStack(position: Position, board: BoardState): RingStack | undefined {
   const posKey = positionToString(position);
   return board.stacks.get(posKey);
 }

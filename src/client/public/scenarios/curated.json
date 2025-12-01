@@ -345,6 +345,242 @@
         "victoryThreshold": 19,
         "territoryVictoryThreshold": 33
       }
+    },
+    {
+      "id": "rules.territory.near_victory_territory",
+      "name": "Q23 – Near-Victory Territory (RulesMatrix)",
+      "description": "Player 1 is one region away from winning on territory. Processing the pending region mirrors the near_victory_territory.process.single_region vector and pushes P1 from 32 to 33 territory spaces for a territory_control victory.",
+      "category": "territory_processing",
+      "difficulty": "advanced",
+      "tags": [
+        "territory",
+        "victory",
+        "near_victory",
+        "territory_control",
+        "Rules_12_2_Q23_mini_region_square8_numeric_invariant",
+        "near_victory_territory.process.single_region"
+      ],
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-12-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-near-victory-territory",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "7,7": {
+              "position": { "x": 7, "y": 7 },
+              "rings": [1, 1],
+              "stackHeight": 2,
+              "capHeight": 2,
+              "controllingPlayer": 1
+            },
+            "6,7": {
+              "position": { "x": 6, "y": 7 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {
+            "1,0": 1,
+            "0,1": 1,
+            "1,1": 1,
+            "2,0": 1,
+            "2,1": 1,
+            "2,2": 1,
+            "0,2": 1,
+            "1,2": 1,
+            "0,3": 1,
+            "1,3": 1,
+            "2,3": 1,
+            "3,0": 1,
+            "3,1": 1,
+            "3,2": 1,
+            "3,3": 1,
+            "0,4": 1,
+            "1,4": 1,
+            "2,4": 1,
+            "3,4": 1,
+            "4,0": 1,
+            "4,1": 1,
+            "4,2": 1,
+            "4,3": 1,
+            "4,4": 1,
+            "0,5": 1,
+            "1,5": 1,
+            "2,5": 1,
+            "3,5": 1,
+            "4,5": 1,
+            "5,0": 1,
+            "5,1": 1,
+            "5,2": 1
+          },
+          "territories": {
+            "pending_victory_region": {
+              "spaces": [{ "x": 0, "y": 0 }],
+              "controllingPlayer": 1,
+              "isDisconnected": true
+            }
+          },
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 10,
+            "eliminatedRings": 0,
+            "territorySpaces": 32,
+            "isActive": true,
+            "username": "You",
+            "type": "human"
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 10,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "AI",
+            "type": "ai"
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "territory_processing",
+        "turnNumber": 20,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 19,
+        "territoryVictoryThreshold": 33,
+        "pendingTerritoryDecision": {
+          "territories": ["pending_victory_region"],
+          "currentIndex": 0
+        }
+      },
+      "suggestedMove": {
+        "id": "process-victory-region",
+        "type": "process_territory_region",
+        "player": 1,
+        "to": { "x": 0, "y": 0 },
+        "disconnectedRegions": [
+          {
+            "spaces": [{ "x": 0, "y": 0 }],
+            "controllingPlayer": 1,
+            "isDisconnected": true
+          }
+        ],
+        "timestamp": "2025-12-01T10:55:00.000Z",
+        "thinkTime": 0,
+        "moveNumber": 20
+      }
+    },
+    {
+      "id": "advanced.chain_capture_extended.C4",
+      "name": "C4 – Extended Chain Capture (RulesMatrix)",
+      "description": "Deep multi-target chain capture on square8, mirroring the chain_capture.4_targets.diagonal_with_turn vector and C4 axis in RULES_SCENARIO_MATRIX.",
+      "category": "chain_capture",
+      "difficulty": "advanced",
+      "tags": [
+        "chain_capture",
+        "extended_chain",
+        "Rules_C4_chain_capture_extended",
+        "Axis_C4",
+        "chain_capture_extended",
+        "chain_capture.4_targets.diagonal_with_turn"
+      ],
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-12-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "curated-chain-capture-extended-C4",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "0,0": {
+              "position": { "x": 0, "y": 0 },
+              "rings": [1],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 1
+            },
+            "1,1": {
+              "position": { "x": 1, "y": 1 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "3,3": {
+              "position": { "x": 3, "y": 3 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "5,5": {
+              "position": { "x": 5, "y": 5 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            },
+            "5,6": {
+              "position": { "x": 5, "y": 6 },
+              "rings": [2],
+              "stackHeight": 1,
+              "capHeight": 1,
+              "controllingPlayer": 2
+            }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 17,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "You",
+            "type": "human"
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 14,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "AI",
+            "type": "ai"
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 5,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 19,
+        "territoryVictoryThreshold": 33
+      },
+      "suggestedMove": {
+        "id": "move-chain-4-start",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": { "x": 0, "y": 0 },
+        "captureTarget": { "x": 1, "y": 1 },
+        "to": { "x": 2, "y": 2 },
+        "timestamp": "2025-12-01T11:00:00.000Z",
+        "thinkTime": 0,
+        "moveNumber": 5
+      }
     }
   ]
 }

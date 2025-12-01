@@ -372,4 +372,58 @@ describe('ClientSandboxEngine line processing', () => {
       initialTerritory + linePositions.length
     );
   });
+
+  test('2p-8x8: 3-in-a-row does NOT trigger line processing', () => {
+    const engine = createEngine();
+    const engineAny = engine as any;
+    const state: GameState = engineAny.gameState as GameState;
+
+    state.currentPlayer = 1;
+    const board = state.board;
+
+    board.markers.clear();
+    board.stacks.clear();
+    board.collapsedSpaces.clear();
+
+    // Place a 3-length horizontal line of markers for player 1 at y=1.
+    // On 2p-8x8, this should NOT be enough to trigger line processing.
+    const linePositions: Position[] = [];
+    for (let i = 0; i < 3; i++) {
+      const pos: Position = { x: i, y: 1 };
+      linePositions.push(pos);
+      board.markers.set(positionToString(pos), {
+        player: 1,
+        position: pos,
+        type: 'regular',
+      });
+    }
+
+    // Add a stack for player 1 so there is a cap to eliminate if it were processed.
+    const stackPos: Position = { x: 7, y: 7 };
+    makeStack(1, 2, stackPos, board);
+
+    const initialTotalEliminated = state.totalRingsEliminated;
+    const initialTerritory = state.players.find((p) => p.playerNumber === 1)!.territorySpaces;
+
+    // Invoke line processing directly.
+    engineAny.processLinesForCurrentPlayer();
+
+    const finalState = engine.getGameState();
+    const finalBoard = finalState.board;
+    const player1 = finalState.players.find((p) => p.playerNumber === 1)!;
+
+    // Markers should remain as markers.
+    for (const pos of linePositions) {
+      const key = positionToString(pos);
+      expect(finalBoard.markers.has(key)).toBe(true);
+      expect(finalBoard.collapsedSpaces.has(key)).toBe(false);
+    }
+
+    // No elimination should have occurred.
+    expect(player1.eliminatedRings).toBe(0);
+    expect(finalState.totalRingsEliminated).toBe(initialTotalEliminated);
+
+    // Territory spaces should be unchanged.
+    expect(player1.territorySpaces).toBe(initialTerritory);
+  });
 });

@@ -63,7 +63,7 @@ describe('ClientSandboxEngine movement parity with shared MovementAggregate', ()
 
   it('simple non-capture move via sandbox movement engine matches aggregate outcome', async () => {
     const engine = createEngine();
-    engine.disableOrchestratorAdapter();
+    // Now uses orchestrator-backed engine which delegates to shared MovementAggregate
 
     const engineAny = engine as any;
     const internalState: GameState = engineAny.gameState as GameState;
@@ -98,29 +98,48 @@ describe('ClientSandboxEngine movement parity with shared MovementAggregate', ()
       player: 1,
     });
 
-    // Sandbox path: reset the engine's internal state to the same snapshot and
-    // invoke the legacy movement click handler wired to sandboxMovementEngine.
+    // Sandbox/orchestrator path: apply canonical move via applyCanonicalMove
+    // which delegates to the orchestrator.
     engineAny.gameState = startingState;
 
-    const originalAdvanceAfterMovement = engineAny.advanceAfterMovement;
-    engineAny.advanceAfterMovement = async () => {
-      // No-op for this parity test: we only care about immediate movement effects.
+    const moveStackMove = {
+      id: 'move-1',
+      type: 'move_stack' as const,
+      player: 1,
+      from: origin,
+      to: dest,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
     };
 
-    const originKey = positionToString(origin);
-    engineAny._movementInvocationContext = 'canonical';
-    engineAny._selectedStackKey = originKey;
-
-    await engineAny.handleMovementClick(dest);
-
-    engineAny._movementInvocationContext = null;
-    engineAny.advanceAfterMovement = originalAdvanceAfterMovement;
+    await engine.applyCanonicalMove(moveStackMove);
 
     const sandboxStateAfter: GameState = engine.getGameState();
 
-    const coreHash = hashGameState(coreOutcome.nextState);
-    const sandboxHash = hashGameState(sandboxStateAfter);
+    // Compare board-level changes (stacks, markers) which is what the aggregate
+    // transforms. The orchestrator also advances the turn, so we compare
+    // specific board effects rather than full state hash.
+    const coreBoard = coreOutcome.nextState.board;
+    const sandboxBoard = sandboxStateAfter.board;
 
-    expect(sandboxHash).toEqual(coreHash);
+    // Origin should be empty in both
+    expect(coreBoard.stacks.has(positionToString(origin))).toBe(false);
+    expect(sandboxBoard.stacks.has(positionToString(origin))).toBe(false);
+
+    // Destination should have the stack in both
+    const coreDestStack = coreBoard.stacks.get(positionToString(dest));
+    const sandboxDestStack = sandboxBoard.stacks.get(positionToString(dest));
+
+    expect(coreDestStack).toBeDefined();
+    expect(sandboxDestStack).toBeDefined();
+    expect(sandboxDestStack?.controllingPlayer).toBe(coreDestStack?.controllingPlayer);
+    expect(sandboxDestStack?.stackHeight).toBe(coreDestStack?.stackHeight);
+    expect(sandboxDestStack?.capHeight).toBe(coreDestStack?.capHeight);
+
+    // Markers left behind should match
+    const coreMarkerAtOrigin = coreBoard.markers.get(positionToString(origin));
+    const sandboxMarkerAtOrigin = sandboxBoard.markers.get(positionToString(origin));
+    expect(sandboxMarkerAtOrigin).toEqual(coreMarkerAtOrigin);
   });
 });

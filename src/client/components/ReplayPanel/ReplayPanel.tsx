@@ -67,7 +67,7 @@ export function ReplayPanel({
   const playback = useReplayPlayback();
 
   // Animation state for move transitions
-  const { pendingAnimation, clearAnimation } = useReplayAnimation({
+  const { pendingAnimation } = useReplayAnimation({
     currentMoveNumber: playback.currentMoveNumber,
     moves: playback.moves,
     isPlaying: playback.isPlaying,

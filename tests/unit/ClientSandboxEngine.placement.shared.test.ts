@@ -41,7 +41,7 @@ describe('ClientSandboxEngine placement parity with shared PlacementAggregate', 
     };
 
     const engine = new ClientSandboxEngine({ config, interactionHandler: handler });
-    engine.disableOrchestratorAdapter();
+    // Now uses orchestrator-backed engine which delegates to shared PlacementAggregate
     return engine;
   }
 

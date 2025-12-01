@@ -1,0 +1,227 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Performance SLO thresholds for RingRift load testing. Aligned with STRATEGIC_ROADMAP.md §2 and monitoring/prometheus/alerts.yml",
+  "version": "1.0.0",
+  "last_updated": "2025-12-01",
+
+  "environments": {
+    "staging": {
+      "description": "Staging environment thresholds - more permissive for testing and validation",
+
+      "http_api": {
+        "auth_login": {
+          "latency_p95_ms": 500,
+          "latency_p99_ms": 1000,
+          "error_rate_5xx_percent": 1.0
+        },
+        "game_creation": {
+          "latency_p95_ms": 800,
+          "latency_p99_ms": 1500,
+          "error_rate_5xx_percent": 1.0
+        },
+        "game_state_fetch": {
+          "latency_p95_ms": 400,
+          "latency_p99_ms": 800,
+          "error_rate_5xx_percent": 1.0
+        }
+      },
+
+      "websocket_gameplay": {
+        "move_submission": {
+          "end_to_end_latency_p95_ms": 300,
+          "end_to_end_latency_p99_ms": 600,
+          "server_processing_p95_ms": 200,
+          "server_processing_p99_ms": 400,
+          "stall_threshold_ms": 2000,
+          "stall_rate_percent": 0.5
+        },
+        "connection_stability": {
+          "max_concurrent_connections": 1000,
+          "connection_success_rate_percent": 99.0
+        }
+      },
+
+      "ai_service": {
+        "cpu_baseline": {
+          "move_latency_p95_ms": 1500,
+          "move_latency_p99_ms": 3000,
+          "max_concurrent_games": 10,
+          "fallback_rate_percent": 1.0
+        },
+        "end_to_end_turn": {
+          "ai_turn_p95_ms": 3000,
+          "ai_turn_p99_ms": 5000
+        }
+      },
+
+      "scale_targets": {
+        "max_concurrent_games": 20,
+        "max_active_players": 60,
+        "max_ai_controlled_seats": 40
+      }
+    },
+
+    "production": {
+      "description": "Production environment thresholds - stricter SLOs for user-facing deployment",
+
+      "http_api": {
+        "auth_login": {
+          "latency_p95_ms": 250,
+          "latency_p99_ms": 500,
+          "error_rate_5xx_percent": 0.5
+        },
+        "game_creation": {
+          "latency_p95_ms": 400,
+          "latency_p99_ms": 800,
+          "error_rate_5xx_percent": 0.5
+        },
+        "game_state_fetch": {
+          "latency_p95_ms": 200,
+          "latency_p99_ms": 400,
+          "error_rate_5xx_percent": 0.5
+        }
+      },
+
+      "websocket_gameplay": {
+        "move_submission": {
+          "end_to_end_latency_p95_ms": 200,
+          "end_to_end_latency_p99_ms": 400,
+          "server_processing_p95_ms": 150,
+          "server_processing_p99_ms": 300,
+          "stall_threshold_ms": 2000,
+          "stall_rate_percent": 0.2
+        },
+        "connection_stability": {
+          "max_concurrent_connections": 1000,
+          "connection_success_rate_percent": 99.5
+        }
+      },
+
+      "ai_service": {
+        "cpu_baseline": {
+          "move_latency_p95_ms": 1000,
+          "move_latency_p99_ms": 2000,
+          "max_concurrent_games": 10,
+          "fallback_rate_percent": 0.5
+        },
+        "gpu_accelerated": {
+          "move_latency_p95_ms": 500,
+          "move_latency_p99_ms": 1000,
+          "max_concurrent_games": 20,
+          "fallback_rate_percent": 0.5
+        },
+        "end_to_end_turn": {
+          "ai_turn_p95_ms": 2000,
+          "ai_turn_p99_ms": 4000
+        }
+      },
+
+      "scale_targets": {
+        "max_concurrent_games": 100,
+        "max_active_players": 300,
+        "max_spectators": 50,
+        "max_ai_controlled_seats": 210
+      },
+
+      "availability": {
+        "core_gameplay_uptime_percent": 99.5,
+        "monthly_error_budget_percent": 0.5
+      }
+    }
+  },
+
+  "alert_correlation": {
+    "description": "Maps load test metrics to Prometheus alerts in monitoring/prometheus/alerts.yml",
+    "mappings": [
+      {
+        "metric": "http_req_duration",
+        "alert": "HighP95Latency",
+        "threshold_ref": "http_api.*.latency_p95_ms"
+      },
+      {
+        "metric": "http_req_failed",
+        "alert": "HighErrorRate",
+        "threshold_ref": "http_api.*.error_rate_5xx_percent"
+      },
+      {
+        "metric": "game_move_latency_ms",
+        "alert": "HighGameMoveLatency",
+        "threshold_ref": "websocket_gameplay.move_submission.server_processing_p99_ms"
+      },
+      {
+        "metric": "websocket_connections_active",
+        "alert": "HighWebSocketConnections",
+        "threshold_ref": "websocket_gameplay.connection_stability.max_concurrent_connections"
+      },
+      {
+        "metric": "ai_move_latency_ms",
+        "alert": "AIRequestHighLatency",
+        "threshold_ref": "ai_service.*.move_latency_p99_ms"
+      },
+      {
+        "metric": "ai_fallback_total",
+        "alert": "AIFallbackRateHigh",
+        "threshold_ref": "ai_service.*.fallback_rate_percent"
+      }
+    ]
+  },
+
+  "test_scenario_requirements": {
+    "game_creation": {
+      "required_metrics": [
+        "http_req_duration",
+        "http_req_failed",
+        "game_creation_latency_ms",
+        "game_creation_success_rate"
+      ],
+      "duration_minimum_minutes": 3,
+      "target_load_description": "50 concurrent users creating games"
+    },
+    "concurrent_games": {
+      "required_metrics": [
+        "http_req_duration",
+        "concurrent_active_games",
+        "game_state_check_success",
+        "resource_overhead_ms"
+      ],
+      "duration_minimum_minutes": 10,
+      "target_load_description": "100+ simultaneous active games"
+    },
+    "player_moves": {
+      "required_metrics": [
+        "move_submission_latency_ms",
+        "move_submission_success_rate",
+        "stalled_moves_total",
+        "turn_processing_latency_ms"
+      ],
+      "duration_minimum_minutes": 9,
+      "target_load_description": "40 concurrent games with realistic move submission"
+    },
+    "websocket_stress": {
+      "required_metrics": [
+        "websocket_connections_active",
+        "websocket_connection_success_rate",
+        "websocket_message_latency_ms",
+        "websocket_connection_duration_ms"
+      ],
+      "duration_minimum_minutes": 15,
+      "target_load_description": "500+ simultaneous WebSocket connections for 5+ minutes"
+    }
+  },
+
+  "prometheus_integration": {
+    "description": "Expected Prometheus metrics to correlate with k6 load test results",
+    "metrics": [
+      "ringrift_games_active",
+      "ringrift_websocket_connections",
+      "ringrift_game_move_latency_seconds",
+      "ringrift_ai_fallback_total",
+      "ringrift_ai_request_duration_seconds",
+      "http_requests_total",
+      "http_request_duration_seconds",
+      "process_resident_memory_bytes",
+      "nodejs_eventloop_lag_seconds"
+    ],
+    "dashboard_panels": ["Game Performance", "AI Service Health", "Infrastructure Metrics"]
+  }
+}

@@ -75,7 +75,7 @@ describe('GameHUD', () => {
     render(<GameHUD gameState={gameState} currentPlayer={currentPlayer} />);
 
     expect(screen.getByText('Movement Phase')).toBeInTheDocument();
-    expect(screen.getByText('Move a stack or capture opponent pieces')).toBeInTheDocument();
+    expect(screen.getByText('Move a stack or capture opponent rings')).toBeInTheDocument();
   });
 
   it('should highlight current player', () => {
@@ -97,7 +97,7 @@ describe('GameHUD', () => {
     // appear multiple times. We only assert that at least one is present.
     expect(screen.getAllByText('In Hand').length).toBeGreaterThan(0);
     expect(screen.getAllByText('On Board').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Lost').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Captured').length).toBeGreaterThan(0);
   });
 
   it('should show timer when time controls active', () => {

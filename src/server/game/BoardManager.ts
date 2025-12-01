@@ -24,8 +24,24 @@ const TERRITORY_TRACE_DEBUG = flagEnabled('RINGRIFT_TRACE_DEBUG');
 // hard errors (throwing in tests) rather than best-effort diagnostics. This
 // mirrors the ClientSandboxEngine assertBoardInvariants helper and is used
 // by rules/parity tests to surface exclusivity bugs early.
-const BOARD_INVARIANTS_STRICT =
-  isTestEnvironment() || flagEnabled('RINGRIFT_ENABLE_BACKEND_BOARD_INVARIANTS');
+//
+// Test-only override: allows specific tests to simulate non-strict mode.
+let _testStrictModeOverride: boolean | undefined = undefined;
+
+/**
+ * Test-only helper: allows tests to temporarily override the strict mode
+ * setting. Pass `undefined` to restore default behaviour.
+ */
+export function __testSetStrictModeOverride(value: boolean | undefined): void {
+  _testStrictModeOverride = value;
+}
+
+function isBoardInvariantsStrict(): boolean {
+  if (_testStrictModeOverride !== undefined) {
+    return _testStrictModeOverride;
+  }
+  return isTestEnvironment() || flagEnabled('RINGRIFT_ENABLE_BACKEND_BOARD_INVARIANTS');
+}
 
 export class BoardManager {
   private boardType: BoardType;
@@ -171,7 +187,7 @@ export class BoardManager {
 
     console.error(message);
 
-    if (BOARD_INVARIANTS_STRICT) {
+    if (isBoardInvariantsStrict()) {
       throw new Error(message);
     }
   }

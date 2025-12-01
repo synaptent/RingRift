@@ -1448,33 +1448,3 @@ export interface MoveScoringParams {
 export function scoreMove(_params: MoveScoringParams): number {
   throw new Error('scoreMove is not yet implemented – awaiting shared mutator integration');
 }
-
-// ============================================================================
-// Backward Compatibility: Legacy 4-weight interface
-// ============================================================================
-
-/**
- * Legacy 4-weight interface for backward compatibility.
- * New code should use the full HeuristicWeights interface.
- * @deprecated Use HeuristicWeights instead
- */
-export interface LegacyHeuristicWeights {
-  stackControl: number;
-  stackHeight: number;
-  territory: number;
-  vulnerability: number;
-}
-
-/**
- * Convert legacy 4-weight profile to full 18-weight profile.
- * @deprecated Use HeuristicWeights directly
- */
-export function upgradeLegacyWeights(legacy: LegacyHeuristicWeights): HeuristicWeights {
-  return {
-    ...HEURISTIC_WEIGHTS_V1_BALANCED,
-    stackControl: legacy.stackControl,
-    stackHeight: legacy.stackHeight,
-    territory: legacy.territory,
-    vulnerability: legacy.vulnerability,
-  };
-}

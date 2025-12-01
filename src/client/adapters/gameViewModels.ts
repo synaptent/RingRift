@@ -887,7 +887,7 @@ function describeHistoryEntry(entry: GameHistoryEntry): string {
   }
 }
 
-function formatVictoryReason(reason: GameResult['reason']): string {
+export function formatVictoryReason(reason: GameResult['reason']): string {
   switch (reason) {
     case 'ring_elimination':
       return 'Ring Elimination';

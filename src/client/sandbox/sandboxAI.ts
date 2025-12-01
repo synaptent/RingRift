@@ -22,6 +22,11 @@ import {
 const SANDBOX_AI_CAPTURE_DEBUG_ENABLED = isSandboxAiCaptureDebugEnabled();
 const SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED = isSandboxAiStallDiagnosticsEnabled();
 
+/** Type-safe window extension for sandbox AI diagnostic traces. */
+interface SandboxTraceWindow extends Window {
+  __RINGRIFT_SANDBOX_TRACE__?: SandboxAITurnTraceEntry[];
+}
+
 const SANDBOX_NOOP_STALL_THRESHOLD = 5;
 const SANDBOX_NOOP_MAX_THRESHOLD = 10; // Stop execution after this many consecutive no-ops
 const MAX_SANDBOX_TRACE_ENTRIES = 2000;
@@ -73,12 +78,12 @@ function getSandboxTraceBuffer(): SandboxAITurnTraceEntry[] | null {
     return null;
   }
 
-  const anyWindow = window as any;
-  if (!Array.isArray(anyWindow.__RINGRIFT_SANDBOX_TRACE__)) {
-    anyWindow.__RINGRIFT_SANDBOX_TRACE__ = [];
+  const traceWindow = window as SandboxTraceWindow;
+  if (!Array.isArray(traceWindow.__RINGRIFT_SANDBOX_TRACE__)) {
+    traceWindow.__RINGRIFT_SANDBOX_TRACE__ = [];
   }
 
-  return anyWindow.__RINGRIFT_SANDBOX_TRACE__ as SandboxAITurnTraceEntry[];
+  return traceWindow.__RINGRIFT_SANDBOX_TRACE__;
 }
 
 export interface SandboxAIHooks {
@@ -531,8 +536,9 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         gameState,
         current.playerNumber
       );
-      const canSkipAggregate =
-        (skipEligibility as any).eligible ?? (skipEligibility as any).canSkip ?? false;
+      // Handle both aggregate (eligible) and legacy (canSkip) return shapes
+      const skipResult = skipEligibility as { eligible?: boolean; canSkip?: boolean };
+      const canSkipAggregate = skipResult.eligible ?? skipResult.canSkip ?? false;
 
       const placementCandidates = hooks.enumerateLegalRingPlacements(current.playerNumber);
       debugPlacementCandidateCount = placementCandidates.length;

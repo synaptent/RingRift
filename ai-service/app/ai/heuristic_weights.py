@@ -84,6 +84,16 @@ BASE_V1_BALANCED_WEIGHTS: HeuristicWeights = {
     "WEIGHT_CONNECTED_NEIGHBOR": 1.0,
     "WEIGHT_GAP_POTENTIAL": 0.5,
     "WEIGHT_BLOCKED_STACK_PENALTY": 5.0,
+    # v1.2: Swap (pie rule) opening evaluation - rewards swapping into
+    # advantageous P1 openings (center control, strong positions)
+    "WEIGHT_SWAP_OPENING_CENTER": 15.0,     # Bonus per P1 stack in center
+    "WEIGHT_SWAP_OPENING_ADJACENCY": 3.0,   # Bonus for P1 stacks near center
+    "WEIGHT_SWAP_OPENING_HEIGHT": 2.0,      # Bonus per stack height on P1 stacks
+    # v1.3: Enhanced swap evaluation - Opening Position Classifier weights
+    "WEIGHT_SWAP_CORNER_PENALTY": 8.0,      # Penalty for corner positions (weak)
+    "WEIGHT_SWAP_EDGE_BONUS": 2.0,          # Bonus for edge positions (moderate)
+    "WEIGHT_SWAP_DIAGONAL_BONUS": 6.0,      # Bonus for key diagonal positions
+    "WEIGHT_SWAP_OPENING_STRENGTH": 20.0,   # Multiplier for normalized strength
 }
  
  
@@ -130,6 +140,15 @@ HEURISTIC_WEIGHT_KEYS: list[str] = [
     "WEIGHT_CONNECTED_NEIGHBOR",
     "WEIGHT_GAP_POTENTIAL",
     "WEIGHT_BLOCKED_STACK_PENALTY",
+    # v1.2: Swap (pie rule) opening evaluation
+    "WEIGHT_SWAP_OPENING_CENTER",
+    "WEIGHT_SWAP_OPENING_ADJACENCY",
+    "WEIGHT_SWAP_OPENING_HEIGHT",
+    # v1.3: Enhanced swap evaluation - Opening Position Classifier
+    "WEIGHT_SWAP_CORNER_PENALTY",
+    "WEIGHT_SWAP_EDGE_BONUS",
+    "WEIGHT_SWAP_DIAGONAL_BONUS",
+    "WEIGHT_SWAP_OPENING_STRENGTH",
 ]
  
  

@@ -383,15 +383,13 @@ router.post(
     // Each registration creates a new token family for rotation tracking.
     const familyId = generateFamilyId();
     try {
-      const refreshTokenModel = (prisma as any).refreshToken;
-      if (refreshTokenModel && typeof refreshTokenModel.create === 'function') {
+      const refreshTokenModel = prisma.refreshToken;
+      if (refreshTokenModel) {
         const hashedToken = hashRefreshToken(refreshToken);
 
         // Ensure we only keep a single active refresh token per user. This is
         // stricter than required (per-tokenVersion) but keeps the model simple.
-        if (typeof refreshTokenModel.deleteMany === 'function') {
-          await refreshTokenModel.deleteMany({ where: { userId: user.id } });
-        }
+        await refreshTokenModel.deleteMany({ where: { userId: user.id } });
 
         await refreshTokenModel.create({
           data: {
@@ -563,7 +561,7 @@ router.post(
     // as invalid credentials rather than 500-level server errors.
     let isValidPassword = false;
     try {
-      const hash = (user as any).passwordHash;
+      const hash = user.passwordHash;
       if (typeof hash === 'string' && hash.length > 0) {
         isValidPassword = await bcrypt.compare(password, hash);
       } else {
@@ -595,7 +593,7 @@ router.post(
     // increment (via /logout-all) will invalidate these tokens.
     let tokenVersion = 0;
     try {
-      const userWithVersion = await (prisma as any).user.findUnique({
+      const userWithVersion = await prisma.user.findUnique({
         where: { id: user.id },
         select: { tokenVersion: true },
       });
@@ -626,15 +624,13 @@ router.post(
     // Each login creates a new family for rotation tracking.
     const familyId = generateFamilyId();
     try {
-      const refreshTokenModel = (prisma as any).refreshToken;
-      if (refreshTokenModel && typeof refreshTokenModel.create === 'function') {
+      const refreshTokenModel = prisma.refreshToken;
+      if (refreshTokenModel) {
         const hashedToken = hashRefreshToken(refreshToken);
 
         // Ensure a single active refresh token per user by removing any
         // previously stored tokens for this account.
-        if (typeof refreshTokenModel.deleteMany === 'function') {
-          await refreshTokenModel.deleteMany({ where: { userId: user.id } });
-        }
+        await refreshTokenModel.deleteMany({ where: { userId: user.id } });
 
         await refreshTokenModel.create({
           data: {
@@ -802,11 +798,10 @@ router.post(
     // tokens by validating the user against the current DB state.
     await validateUser(decoded.userId, decoded.tokenVersion);
 
-    const prismaAny = prisma as any;
     const hashedToken = hashRefreshToken(refreshToken);
 
     // Look up the token, including revoked ones to detect reuse attacks
-    const storedToken = await prismaAny.refreshToken.findFirst({
+    const storedToken = await prisma.refreshToken.findFirst({
       where: {
         token: hashedToken,
         userId: decoded.userId,
@@ -842,14 +837,14 @@ router.post(
 
       // Revoke ALL tokens in this family to prevent further abuse
       if (storedToken.familyId) {
-        await prismaAny.refreshToken.updateMany({
+        await prisma.refreshToken.updateMany({
           where: { familyId: storedToken.familyId },
           data: { revokedAt: new Date() },
         });
       }
 
       // Also increment tokenVersion to invalidate all access tokens
-      await prismaAny.user.update({
+      await prisma.user.update({
         where: { id: decoded.userId },
         data: { tokenVersion: { increment: 1 } },
       });
@@ -890,12 +885,12 @@ router.post(
     // This allows us to detect reuse of the old token later.
     await prisma.$transaction([
       // Mark the current token as revoked (not deleted, for reuse detection)
-      prismaAny.refreshToken.update({
+      prisma.refreshToken.update({
         where: { id: storedToken.id },
         data: { revokedAt: new Date() },
       }),
       // Create the new token in the same family
-      prismaAny.refreshToken.create({
+      prisma.refreshToken.create({
         data: {
           token: newHashedToken,
           userId: storedToken.user.id,
@@ -972,16 +967,15 @@ router.post(
     // Best-effort: revoke the refresh token if present
     const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
 
-    if (prisma && refreshToken) {
+    if (prisma && refreshToken && req.user?.id) {
       try {
         const hashedToken = hashRefreshToken(refreshToken);
-        const prismaAny = prisma as any;
 
         // Mark the token as revoked (not deleted) for reuse detection
-        await prismaAny.refreshToken.updateMany({
+        await prisma.refreshToken.updateMany({
           where: {
             token: hashedToken,
-            userId: req.user?.id,
+            userId: req.user.id,
           },
           data: { revokedAt: new Date() },
         });
@@ -1056,30 +1050,23 @@ router.post(
       throw createError('Authentication required', 401, 'AUTH_REQUIRED');
     }
 
-    const prismaAny = prisma as any;
-
     // Increment the per-user tokenVersion to revoke all existing access and
     // refresh tokens for this account.
-    if (prismaAny.user && typeof prismaAny.user.update === 'function') {
-      await prismaAny.user.update({
-        where: { id: req.user.id },
-        data: {
-          tokenVersion: {
-            increment: 1,
-          },
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: {
+        tokenVersion: {
+          increment: 1,
         },
-      });
-    }
+      },
+    });
 
     // Best-effort: clear any stored refresh tokens for this user so that
     // refresh attempts with old tokens fail even if tokenVersion is not
     // checked for some reason.
-    const refreshTokenModel = prismaAny.refreshToken;
-    if (refreshTokenModel && typeof refreshTokenModel.deleteMany === 'function') {
-      await refreshTokenModel.deleteMany({
-        where: { userId: req.user.id },
-      });
-    }
+    await prisma.refreshToken.deleteMany({
+      where: { userId: req.user.id },
+    });
 
     res.json({
       success: true,
@@ -1430,8 +1417,6 @@ router.post(
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
 
-    const prismaAny = prisma as any;
-
     // Update user password and increment tokenVersion to invalidate all existing
     // tokens. This is a critical security measure: when a user resets their
     // password, all previous sessions should be invalidated.
@@ -1447,7 +1432,7 @@ router.post(
 
     // Also revoke all refresh tokens for this user
     try {
-      await prismaAny.refreshToken.updateMany({
+      await prisma.refreshToken.updateMany({
         where: { userId: user.id },
         data: { revokedAt: new Date() },
       });

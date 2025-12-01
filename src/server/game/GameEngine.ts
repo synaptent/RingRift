@@ -449,6 +449,9 @@ export class GameEngine {
    * @deprecated Phase 4 complete — orchestrator always uses move-driven phases.
    * This method is now a no-op since enableOrchestratorAdapter() sets this flag.
    * The legacy automatic-consequence flow will be removed in a future release.
+   *
+   * DO NOT REMOVE - still called by GameSession.ts for production WebSocket games.
+   * See P20.3-2 for deprecation timeline.
    */
   public enableMoveDrivenDecisionPhases(): void {
     this.useMoveDrivenDecisionPhases = true;
@@ -477,6 +480,9 @@ export class GameEngine {
    * @deprecated Phase 4 complete — orchestrator is now at 100% rollout.
    * This method should only be used for diagnostic/test scenarios.
    * The legacy turn-processing paths will be removed in a future release.
+   *
+   * DO NOT REMOVE - used for parity testing (Backend_vs_Sandbox, orchestratorParity tests).
+   * See P20.3-2 for deprecation timeline.
    */
   public disableOrchestratorAdapter(): void {
     this.useOrchestratorAdapter = false;
@@ -2344,6 +2350,9 @@ export class GameEngine {
    * @deprecated Phase 4 legacy path — use lineDecisionHelpers + shared orchestrator instead.
    * This method will be removed once all tests migrate to orchestrator-backed flows.
    * See Wave 5.4 in TODO.md for deprecation timeline.
+   *
+   * DO NOT REMOVE - used for parity testing (RulesMatrix.GameEngine.test.ts).
+   * See P20.3-2 for deprecation timeline.
    */
   /**
    * Apply a single line-, territory-, or explicit elimination decision
@@ -2723,6 +2732,9 @@ export class GameEngine {
    * in src/shared/engine/lineDecisionHelpers.ts via the shared orchestrator instead.
    * This method will be removed once all tests migrate to orchestrator-backed flows.
    * See Wave 5.4 in TODO.md for deprecation timeline.
+   *
+   * DO NOT REMOVE - still called internally by applyDecisionMove and processLineFormations.
+   * See P20.3-2 for deprecation timeline.
    */
   private async processOneLine(line: LineInfo, requiredLength: number): Promise<void> {
     const lineLength = line.positions.length;
@@ -3042,6 +3054,9 @@ export class GameEngine {
    * in src/shared/engine/territoryDecisionHelpers.ts via the shared orchestrator instead.
    * This method will be removed once all tests migrate to orchestrator-backed flows.
    * See Wave 5.4 in TODO.md for deprecation timeline.
+   *
+   * DO NOT REMOVE - used for parity testing (TerritoryCore.GameEngine_vs_Sandbox.test.ts).
+   * See P20.3-2 for deprecation timeline.
    */
   private processDisconnectedRegionCore(region: Territory, movingPlayer: number): void {
     // Delegate the geometric core (internal eliminations + region/border
@@ -3083,6 +3098,9 @@ export class GameEngine {
    * in src/shared/engine/territoryDecisionHelpers.ts via the shared orchestrator instead.
    * This method will be removed once all tests migrate to orchestrator-backed flows.
    * See Wave 5.4 in TODO.md for deprecation timeline.
+   *
+   * DO NOT REMOVE - still called internally by applyDecisionMove and processDisconnectedRegions.
+   * See P20.3-2 for deprecation timeline.
    */
   private async processOneDisconnectedRegion(
     region: Territory,
@@ -3117,6 +3135,9 @@ export class GameEngine {
    * in src/shared/engine/territoryDecisionHelpers.ts via the shared orchestrator instead.
    * This method will be removed once all tests migrate to orchestrator-backed flows.
    * See Wave 5.4 in TODO.md for deprecation timeline.
+   *
+   * DO NOT REMOVE - used for parity testing (GameEngine.territoryDisconnection.test.ts).
+   * See P20.3-2 for deprecation timeline.
    */
   public async processDisconnectedRegions(): Promise<void> {
     const movingPlayer = this.gameState.currentPlayer;
@@ -4170,6 +4191,9 @@ export class GameEngine {
    * and shared turnLogic/advanceTurnAndPhase flows instead. This resolver will
    * be removed once all tests migrate to orchestrator-backed decision lifecycles.
    * See Wave 5.4 in TODO.md for deprecation timeline.
+   *
+   * DO NOT REMOVE - called by getValidMoves() as production safety net for ACTIVE_NO_MOVES.
+   * Also used extensively in parity testing. See P20.3-2 for deprecation timeline.
    */
   public resolveBlockedStateForCurrentPlayerForTesting(): void {
     if (this.gameState.gameStatus !== 'active') {
@@ -4392,6 +4416,9 @@ export class GameEngine {
    * and shared decision lifecycle (see docs/P18.3-1_DECISION_LIFECYCLE_SPEC.md)
    * instead. This method will be removed once all tests migrate to
    * orchestrator-backed flows. See Wave 5.4 in TODO.md for deprecation timeline.
+   *
+   * DO NOT REMOVE - still called internally by makeMove() legacy path and in parity tests.
+   * See P20.3-2 for deprecation timeline.
    */
   public async stepAutomaticPhasesForTesting(): Promise<void> {
     // First, handle line_processing and territory_processing automatic phases

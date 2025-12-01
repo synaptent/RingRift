@@ -141,7 +141,7 @@ describe('VictoryModal', () => {
 
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Victory by eliminating over half of opponent rings/)
+      screen.getByText(/Victory by capturing over 50% of the total rings/)
     ).toBeInTheDocument();
   });
 
@@ -160,7 +160,9 @@ describe('VictoryModal', () => {
     );
 
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
-    expect(screen.getByText(/Victory by controlling majority of the board/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Victory by controlling the majority of territory/)
+    ).toBeInTheDocument();
   });
 
   it('should display last player standing victory message', () => {
@@ -277,7 +279,7 @@ describe('VictoryModal', () => {
     // Header row should contain the expected column labels
     expect(within(rows[0]).getByText('Player')).toBeInTheDocument();
     expect(within(rows[0]).getByText('Rings on Board')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('Rings Lost')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('Rings Captured')).toBeInTheDocument();
     expect(within(rows[0]).getByText('Territory')).toBeInTheDocument();
     expect(within(rows[0]).getByText('Moves')).toBeInTheDocument();
 
@@ -558,7 +560,7 @@ describe('VictoryModal', () => {
     // Title and description come from the view model path
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Victory by eliminating over half of opponent rings/)
+      screen.getByText(/Victory by capturing over 50% of the total rings/)
     ).toBeInTheDocument();
 
     // Stats table is rendered via the view model finalStats

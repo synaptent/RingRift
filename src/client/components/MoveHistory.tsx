@@ -1,7 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { formatMove, formatPosition, MoveNotationOptions } from '../../shared/engine/notation';
 import type { Move, BoardType, GameHistoryEntry } from '../../shared/types/game';
-import { getPlayerColors } from '../adapters/gameViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -129,7 +128,6 @@ interface MoveItemProps {
 }
 
 function MoveItem({ move, index, isCurrentMove, boardType, onClick }: MoveItemProps) {
-  const playerColors = getPlayerColors(move.player);
   const notationOptions: MoveNotationOptions = { boardType };
   const notation = formatMoveCompact(move, notationOptions);
 

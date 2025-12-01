@@ -1,4 +1,6 @@
 /**
+ * PARITY TEST - Keep both legacy and orchestrator paths for comparison
+ *
  * GameEngine orchestrator vs legacy parity (smoke)
  *
  * These tests run a short, deterministic sequence of canonical Moves through
@@ -9,6 +11,9 @@
  * For the chosen scenarios, the final GameState hashes and high-level fields
  * should match, providing a fast integration-level signal that the adapter
  * path stays in lockstep with the legacy behaviour.
+ *
+ * This test intentionally disables orchestrator on one engine to compare
+ * legacy vs orchestrator outputs. Do NOT remove disableOrchestratorAdapter().
  */
 
 import { GameEngine } from '../../src/server/game/GameEngine';

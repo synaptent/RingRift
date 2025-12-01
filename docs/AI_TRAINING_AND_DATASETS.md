@@ -396,3 +396,47 @@ The territory generator is deliberately wired to the **same canonical rules logi
 - The CLI smoke test [`test_generate_territory_dataset_mixed_smoke`](../ai-service/tests/test_generate_territory_dataset_smoke.py) is the end-to-end guard that exercises the module in `engine_mode="mixed"`, asserts no `TerritoryMutator diverged from GameEngine.apply_move` messages appear on stderr, and verifies that a non-empty JSONL file is produced.
 
 For a deeper discussion of how TS and Python engines are kept in sync (trace parity, mutator equivalence tests, and shadow modes), see [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md) and the incident report in [`docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md`](./INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md).
+
+---
+
+## 8. Swap (Pie) Rule Metrics in Self-Play
+
+### 8.1 Baseline Pie-Rule Usage (2025-12-01)
+
+The self-play soak harness (`run_self_play_soak.py`) now tracks swap-rule (pie-rule) usage metrics:
+
+- `swap_sides_moves`: Per-game count of `SWAP_SIDES` moves executed.
+- `used_pie_rule`: Boolean flag indicating whether a game used the swap rule at least once.
+- `swap_sides_total_moves`: Aggregate across all games.
+- `swap_sides_games`: Number of games where swap was used.
+- `swap_sides_games_fraction`: `swap_sides_games / total_games`.
+- `avg_swap_sides_moves_per_game`: `swap_sides_total_moves / total_games`.
+
+#### Baseline Soak Results
+
+A 30-game `mixed` engine-mode soak on `square8` (2-player, seed 42, light difficulty band) established the initial baseline:
+
+| Metric                        | Value |
+| ----------------------------- | ----- |
+| games_total                   | 30    |
+| swap_sides_games              | 0     |
+| swap_sides_games_fraction     | 0.0%  |
+| swap_sides_total_moves        | 0     |
+| avg_swap_sides_moves_per_game | 0.0   |
+
+**Key Observation:** Current AI implementations (Random, Heuristic, Minimax, MCTS, Descent) do not utilise the swap (pie) rule at all in self-play, despite it being enabled by default for 2-player games via `RingRiftEnv.create_initial_state()`. This 0% baseline usage rate reflects that:
+
+1. The swap rule is **legally available** (P2 can invoke after P1's first non-swap move, at most once per game, only during `ACTIVE` status).
+2. No AI policy currently assigns meaningful value to the swap action, which is expected given:
+   - Heuristic/material evaluators don't explicitly model first-move advantage.
+   - Tree search AIs (Minimax, MCTS, Descent) don't observe enough strategic value to prefer swapping over other legal moves.
+
+### 8.2 Future Exploration
+
+To increase pie-rule adoption in training data, potential directions include:
+
+1. **Explicit swap-rule bonus:** Add a heuristic term that rewards swapping when P1's opening position is strong.
+2. **Opening book injection:** Pre-seed P2's early-game policy with swap probability.
+3. **Self-play curriculum:** Train an auxiliary classifier on human-labelled "strong openings" and use it to guide swap decisions.
+
+For now, the 0% baseline is documented for comparison against future experiments. Swap metrics are captured in `summary.json` for all soak runs and can be monitored over time.

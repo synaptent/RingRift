@@ -1,5 +1,5 @@
 import { Move, positionToString } from '../types/game';
-import type { Position, Territory } from '../types/game';
+import type { Position, Territory, LineInfo } from '../types/game';
 import { flagEnabled, debugLog } from '../utils/envFlags';
 import {
   GameState as EngineGameState,
@@ -70,7 +70,7 @@ export function moveToGameAction(move: Move, state: EngineGameState): GameAction
       );
     default: {
       const exhaustive: never = move.type as never;
-      throw new MoveMappingError(`Unknown Move type ${(exhaustive as any) ?? move.type}`, move);
+      throw new MoveMappingError(`Unknown Move type ${String(exhaustive) || move.type}`, move);
     }
   }
 }
@@ -107,7 +107,9 @@ export function gameActionToMove(action: GameAction, before: EngineGameState): B
       return actionToEliminateStackMove(action as EliminateStackAction, before);
     default: {
       const exhaustive: never = action;
-      throw new MoveMappingError(`Unsupported GameAction type ${(exhaustive as any).type}`);
+      throw new MoveMappingError(
+        `Unsupported GameAction type ${(exhaustive as { type?: string }).type ?? 'unknown'}`
+      );
     }
   }
 }
@@ -390,17 +392,25 @@ function actionToProcessLineMove(action: ProcessLineAction, before: EngineGameSt
   const lines = before.board.formedLines as unknown as Array<{
     player: number;
     positions: Position[];
+    length?: number;
+    direction?: Position;
   }>;
   const line = lines[action.lineIndex];
   if (!line) {
     throw new MoveMappingError('PROCESS_LINE action references missing formedLines index');
   }
+  const lineInfo: LineInfo = {
+    player: line.player,
+    positions: line.positions,
+    length: line.length ?? line.positions.length,
+    direction: line.direction ?? { x: 0, y: 0 },
+  };
   return {
     type: 'process_line',
     player: action.playerId,
     // Use the first position in the line as a representative landing point.
     to: line.positions[0] ?? { x: 0, y: 0 },
-    formedLines: [line as any],
+    formedLines: [lineInfo],
     thinkTime: 0,
   } as BareMove;
 }
@@ -412,24 +422,29 @@ function actionToChooseLineRewardMove(
   const lines = before.board.formedLines as unknown as Array<{
     player: number;
     positions: Position[];
+    length?: number;
+    direction?: Position;
   }>;
   const line = lines[action.lineIndex];
   if (!line) {
     throw new MoveMappingError('CHOOSE_LINE_REWARD action references missing formedLines index');
   }
+  const lineInfo: LineInfo = {
+    player: line.player,
+    positions: line.positions,
+    length: line.length ?? line.positions.length,
+    direction: line.direction ?? { x: 0, y: 0 },
+  };
   const collapsedMarkers =
     action.selection === 'MINIMUM_COLLAPSE' ? (action.collapsedPositions ?? []) : undefined;
-  const move: BareMove = {
+  return {
     type: 'choose_line_reward',
     player: action.playerId,
     to: line.positions[0] ?? { x: 0, y: 0 },
-    formedLines: [line as any],
+    formedLines: [lineInfo],
     thinkTime: 0,
-  };
-  if (collapsedMarkers && collapsedMarkers.length > 0) {
-    (move as any).collapsedMarkers = collapsedMarkers;
-  }
-  return move;
+    ...(collapsedMarkers && collapsedMarkers.length > 0 ? { collapsedMarkers } : {}),
+  } as BareMove;
 }
 
 function actionToProcessTerritoryMove(
@@ -458,19 +473,20 @@ function actionToEliminateStackMove(
   const key = positionToString(action.stackPosition);
   const stack = before.board.stacks.get(key);
   const capHeight = stack ? stack.capHeight : 0;
-  const move: BareMove = {
+  return {
     type: 'eliminate_rings_from_stack',
     player: action.playerId,
     to: action.stackPosition,
     thinkTime: 0,
-  };
-  if (capHeight > 0) {
-    (move as any).eliminatedRings = [{ player: action.playerId, count: capHeight }];
-    (move as any).eliminationFromStack = {
-      position: action.stackPosition,
-      capHeight,
-      totalHeight: stack?.stackHeight ?? capHeight,
-    };
-  }
-  return move;
+    ...(capHeight > 0
+      ? {
+          eliminatedRings: [{ player: action.playerId, count: capHeight }],
+          eliminationFromStack: {
+            position: action.stackPosition,
+            capHeight,
+            totalHeight: stack?.stackHeight ?? capHeight,
+          },
+        }
+      : {}),
+  } as BareMove;
 }

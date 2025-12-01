@@ -279,7 +279,6 @@ describe('EnvSchema', () => {
       const result = parseEnv(baseValidEnv);
       expect(result.success).toBe(true);
       expect(result.data?.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
-      expect(result.data?.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(100);
       expect(result.data?.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(false);
       expect(result.data?.ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED).toBe(true);
       expect(result.data?.ORCHESTRATOR_ERROR_THRESHOLD_PERCENT).toBe(5);
@@ -287,14 +286,18 @@ describe('EnvSchema', () => {
       expect(result.data?.ORCHESTRATOR_LATENCY_THRESHOLD_MS).toBe(500);
     });
 
-    it('should respect orchestrator adapter and shadow mode flags', () => {
+    it('should respect orchestrator shadow mode flag (adapter is permanently enabled)', () => {
+      // Note: ORCHESTRATOR_ADAPTER_ENABLED is permanently hardcoded to true as of 2025-12-01
+      // (Phase 3 migration complete). The env var value is ignored.
+      // ORCHESTRATOR_ROLLOUT_PERCENTAGE was removed in Phase 3 - orchestrator is always at 100%.
       const result = parseEnv({
         ...baseValidEnv,
-        ORCHESTRATOR_ADAPTER_ENABLED: '0',
+        ORCHESTRATOR_ADAPTER_ENABLED: '0', // Ignored - always returns true
         ORCHESTRATOR_SHADOW_MODE_ENABLED: '1',
       });
       expect(result.success).toBe(true);
-      expect(result.data?.ORCHESTRATOR_ADAPTER_ENABLED).toBe(false);
+      // Always true - orchestrator is permanently enabled
+      expect(result.data?.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
       expect(result.data?.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(true);
     });
   });
@@ -414,11 +417,12 @@ describe('EnvSchema', () => {
     });
 
     it('CI orchestrator profile matches orchestrator-ON defaults', () => {
+      // Note: ORCHESTRATOR_ROLLOUT_PERCENTAGE was removed in Phase 3 migration.
+      // Orchestrator is permanently enabled at 100%.
       const env = withBaseEnv({
         NODE_ENV: 'test',
         RINGRIFT_RULES_MODE: 'ts',
         ORCHESTRATOR_ADAPTER_ENABLED: 'true',
-        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '100',
         ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
       });
 
@@ -429,17 +433,17 @@ describe('EnvSchema', () => {
       expect(data.NODE_ENV).toBe('test');
       expect(data.RINGRIFT_RULES_MODE).toBe('ts');
       expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
-      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(100);
       expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(false);
     });
 
     it('staging Phase 1 (orchestrator-only) profile is valid', () => {
+      // Note: ORCHESTRATOR_ROLLOUT_PERCENTAGE was removed in Phase 3 migration.
+      // Orchestrator is permanently enabled at 100%.
       const env = withBaseEnv({
         NODE_ENV: 'staging',
         RINGRIFT_APP_TOPOLOGY: 'multi-sticky',
         RINGRIFT_RULES_MODE: 'ts',
         ORCHESTRATOR_ADAPTER_ENABLED: 'true',
-        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '100',
         ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
       });
 
@@ -451,17 +455,17 @@ describe('EnvSchema', () => {
       expect(data.RINGRIFT_APP_TOPOLOGY).toBe('multi-sticky');
       expect(data.RINGRIFT_RULES_MODE).toBe('ts');
       expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
-      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(100);
       expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(false);
     });
 
     it('production Phase 2 (legacy authoritative + shadow) profile is valid', () => {
+      // Note: ORCHESTRATOR_ROLLOUT_PERCENTAGE was removed in Phase 3 migration.
+      // This test preserves the shadow mode validation but no longer tests rollout percentage.
       const env = withBaseEnv({
         NODE_ENV: 'production',
         RINGRIFT_APP_TOPOLOGY: 'multi-sticky',
         RINGRIFT_RULES_MODE: 'shadow',
         ORCHESTRATOR_ADAPTER_ENABLED: 'true',
-        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '0',
         ORCHESTRATOR_SHADOW_MODE_ENABLED: 'true',
       });
 
@@ -473,17 +477,17 @@ describe('EnvSchema', () => {
       expect(data.RINGRIFT_APP_TOPOLOGY).toBe('multi-sticky');
       expect(data.RINGRIFT_RULES_MODE).toBe('shadow');
       expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
-      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(0);
       expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(true);
     });
 
-    it('production Phase 3 (incremental rollout) profile accepts 1–99% rollout', () => {
+    it('production profile validates with orchestrator permanently enabled', () => {
+      // Note: ORCHESTRATOR_ROLLOUT_PERCENTAGE was removed in Phase 3 migration.
+      // Orchestrator is permanently enabled at 100% - incremental rollout no longer supported.
       const env = withBaseEnv({
         NODE_ENV: 'production',
         RINGRIFT_APP_TOPOLOGY: 'multi-sticky',
         RINGRIFT_RULES_MODE: 'ts',
         ORCHESTRATOR_ADAPTER_ENABLED: 'true',
-        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '25',
         ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
       });
 
@@ -495,7 +499,6 @@ describe('EnvSchema', () => {
       expect(data.RINGRIFT_APP_TOPOLOGY).toBe('multi-sticky');
       expect(data.RINGRIFT_RULES_MODE).toBe('ts');
       expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
-      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(25);
       expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(false);
     });
   });

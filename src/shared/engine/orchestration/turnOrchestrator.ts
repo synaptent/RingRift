@@ -720,6 +720,7 @@ function processPostMovePhases(stateMachine: PhaseStateMachine): {
     stateMachine.updateGameState({
       ...stateMachine.gameState,
       gameStatus: 'completed',
+      winner: victoryResult.winner,
     });
     return { victoryResult };
   }

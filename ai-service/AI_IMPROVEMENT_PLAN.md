@@ -33,7 +33,25 @@ The AI Service implements a multi-tier difficulty system with six AI implementat
 | [`MinimaxAI`](app/ai/minimax_ai.py)     | 3–6               | Alpha-beta + PVS + Quiescence search   |
 | [`MCTSAI`](app/ai/mcts_ai.py)           | 7–8               | PUCT + RAVE + tree reuse               |
 | [`DescentAI`](app/ai/descent_ai.py)     | 9–10              | UBFM-style search with neural guidance |
-| [`NeuralNetAI`](app/ai/neural_net.py)   | Backend for 7–10  | ResNet CNN with policy/value heads     |
+
+### 1.3 MPS-Compatible Architecture (Apple Silicon)
+
+For running on Apple Silicon (M1/M2/M3) Macs, an MPS-compatible variant of the neural network architecture is available. See [`docs/MPS_ARCHITECTURE.md`](./docs/MPS_ARCHITECTURE.md) for details.
+
+| Architecture                                  | MPS Support | Pooling Method         | Use Case           |
+| --------------------------------------------- | ----------- | ---------------------- | ------------------ |
+| [`RingRiftCNN`](app/ai/neural_net.py:202)     | ❌ No       | `nn.AdaptiveAvgPool2d` | CUDA GPUs, CPU     |
+| [`RingRiftCNN_MPS`](app/ai/neural_net.py:325) | ✅ Yes      | `torch.mean()`         | Apple Silicon GPUs |
+
+**Usage:**
+
+```bash
+# Auto-select MPS architecture on Apple Silicon
+export RINGRIFT_NN_ARCHITECTURE=auto
+python scripts/run_self_play_soak.py ...
+```
+
+| [`NeuralNetAI`](app/ai/neural_net.py) | Backend for 7–10 | ResNet CNN with policy/value heads |
 
 ### 1.2 Canonical Difficulty Ladder & Product-Facing Profiles
 

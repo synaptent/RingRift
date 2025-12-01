@@ -322,6 +322,134 @@ class RingRiftCNN(nn.Module):
         return float(v.item()), p.cpu().numpy()[0]
 
 
+class RingRiftCNN_MPS(nn.Module):
+    """
+    MPS-compatible variant of RingRiftCNN for Apple Silicon.
+    
+    This model uses the same ResNet-style backbone as RingRiftCNN but replaces
+    AdaptiveAvgPool2d (not supported on MPS) with manual global average pooling
+    via torch.mean(). This maintains similar model capacity while ensuring
+    compatibility with PyTorch's MPS backend on macOS.
+    
+    Architecture Version:
+        v1.0.0 - Initial MPS-compatible architecture mirroring RingRiftCNN
+                 but using manual average pooling instead of AdaptiveAvgPool2d.
+    
+    Key Differences from RingRiftCNN:
+        - Uses torch.mean(dim=[-2, -1]) instead of nn.AdaptiveAvgPool2d((4, 4))
+        - Fully compatible with MPS backend on Apple Silicon
+        - Same parameter count and similar performance characteristics
+    """
+    
+    # Architecture version for checkpoint compatibility checking
+    ARCHITECTURE_VERSION = "v1.0.0-mps"
+    
+    def __init__(
+        self,
+        board_size: int = 8,
+        in_channels: int = 10,
+        global_features: int = 10,
+        num_res_blocks: int = 10,
+        num_filters: int = 128,
+        history_length: int = 3,
+    ):
+        super(RingRiftCNN_MPS, self).__init__()
+        self.board_size = board_size
+        
+        # Input channels = base_channels * (history_length + 1)
+        # Base channels = 10
+        # Default history length = 3 (Current + 3 Previous)
+        #
+        # State Encoding (10 channels):
+        # 0: My stacks (height normalized)
+        # 1: Opponent stacks (height normalized)
+        # 2: My markers
+        # 3: Opponent markers
+        # 4: My collapsed spaces
+        # 5: Opponent collapsed spaces
+        # 6: My liberties
+        # 7: Opponent liberties
+        # 8: My line potential
+        # 9: Opponent line potential
+        self.total_in_channels = in_channels * (history_length + 1)
+        
+        # Initial convolution
+        self.conv1 = nn.Conv2d(
+            self.total_in_channels, num_filters, kernel_size=3, padding=1
+        )
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+        
+        # Residual blocks
+        self.res_blocks = nn.ModuleList([
+            ResidualBlock(num_filters) for _ in range(num_res_blocks)
+        ])
+        
+        # MPS-compatible pooling: We use manual global average pooling
+        # instead of AdaptiveAvgPool2d. This produces a fixed-size output
+        # regardless of input spatial dimensions, allowing the same model
+        # to handle 8x8, 19x19, and 21x21 boards.
+        # The output is num_filters channels (no spatial dimensions).
+        
+        # Fully connected layers
+        # Input size is now just num_filters (after global average pooling)
+        conv_out_size = num_filters
+        self.fc1 = nn.Linear(conv_out_size + global_features, 256)
+        self.dropout = nn.Dropout(0.3)
+        
+        # Value head
+        self.value_head = nn.Linear(256, 1)
+        self.tanh = nn.Tanh()
+        
+        # Policy head
+        # We use a large fixed size to accommodate up to 19x19 boards.
+        # For smaller boards, we mask the invalid logits during
+        # inference/training.
+        # Max size 19x19: ~55,000
+        self.policy_size = 55000
+        self.policy_head = nn.Linear(256, self.policy_size)
+    
+    def forward(self, x, globals):
+        x = self.relu(self.bn1(self.conv1(x)))
+        
+        for block in self.res_blocks:
+            x = block(x)
+        
+        # MPS-compatible global average pooling
+        # Shape: [batch, num_filters, H, W] -> [batch, num_filters]
+        x = torch.mean(x, dim=[-2, -1])
+        
+        # Concatenate global features
+        x = torch.cat((x, globals), dim=1)
+        
+        x = self.relu(self.fc1(x))
+        x = self.dropout(x)
+        
+        value = self.tanh(self.value_head(x))  # Output between -1 and 1
+        policy = self.policy_head(x)  # Logits for CrossEntropyLoss
+        
+        return value, policy
+    
+    def forward_single(
+        self, feature: np.ndarray, globals_vec: np.ndarray
+    ) -> tuple[float, np.ndarray]:
+        """
+        Convenience method for single-sample inference.
+        Returns (value, policy_logits).
+        """
+        self.eval()
+        with torch.no_grad():
+            x = torch.from_numpy(feature[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            g = torch.from_numpy(globals_vec[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            v, p = self.forward(x, g)
+        return float(v.item()), p.cpu().numpy()[0]
+
+
+
 class NeuralNetAI(BaseAI):
     """AI that uses a CNN to evaluate positions"""
     
@@ -356,32 +484,79 @@ class NeuralNetAI(BaseAI):
             or os.environ.get("PYTORCH_MPS_DISABLE")
         )
         force_cpu = bool(os.environ.get("RINGRIFT_FORCE_CPU"))
-
-        if (
-            torch.backends.mps.is_available()
-            and not disable_mps
-            and not force_cpu
-        ):
-            self.device = torch.device("mps")
-        elif torch.cuda.is_available() and not force_cpu:
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
-
-        print(f"NeuralNetAI using device: {self.device}")
         
-        # Initialize with default 8x8, but architecture is now adaptive
-        self.model = RingRiftCNN(
-            board_size=self.board_size, in_channels=10, global_features=10,
-            num_res_blocks=10, num_filters=128,
-            history_length=self.history_length
-        )
+        # Architecture selection
+        # RINGRIFT_NN_ARCHITECTURE can be:
+        # - "default": Use RingRiftCNN (default)
+        # - "mps": Use RingRiftCNN_MPS (MPS-compatible)
+        # - "auto": Auto-select MPS architecture if MPS available
+        arch_type = os.environ.get("RINGRIFT_NN_ARCHITECTURE", "default")
+        use_mps_arch = False
+        
+        if arch_type == "mps":
+            use_mps_arch = True
+        elif arch_type == "auto":
+            # Auto-select MPS architecture if MPS is available
+            if (torch.backends.mps.is_available() and
+                not disable_mps and not force_cpu):
+                use_mps_arch = True
+        
+        # Device selection - prefer MPS when using MPS architecture
+        if use_mps_arch:
+            if (torch.backends.mps.is_available() and
+                not disable_mps and not force_cpu):
+                self.device = torch.device("mps")
+                logger.info("Using MPS device with MPS-compatible architecture")
+            else:
+                self.device = torch.device("cpu")
+                logger.warning(
+                    "MPS architecture selected but MPS not available, "
+                    "falling back to CPU"
+                )
+        else:
+            # Standard device selection for default architecture
+            if (torch.backends.mps.is_available() and
+                not disable_mps and not force_cpu):
+                self.device = torch.device("mps")
+            elif torch.cuda.is_available() and not force_cpu:
+                self.device = torch.device("cuda")
+            else:
+                self.device = torch.device("cpu")
+        
+        # Create model based on architecture selection
+        if use_mps_arch:
+            self.model = RingRiftCNN_MPS(
+                board_size=self.board_size,
+                in_channels=10,
+                global_features=10,
+                num_res_blocks=10,
+                num_filters=128,
+                history_length=self.history_length
+            )
+            self.architecture_type = "mps"
+            logger.info("Initialized RingRiftCNN_MPS architecture")
+        else:
+            self.model = RingRiftCNN(
+                board_size=self.board_size,
+                in_channels=10,
+                global_features=10,
+                num_res_blocks=10,
+                num_filters=128,
+                history_length=self.history_length
+            )
+            self.architecture_type = "default"
+            logger.info("Initialized RingRiftCNN architecture")
+        
+        print(f"NeuralNetAI using device: {self.device}, "
+              f"architecture: {self.architecture_type}")
+        
         self.model.to(self.device)
 
         # Load weights if available. When config.nn_model_id is provided, use
         # it as the logical model identifier (e.g. "ringrift_v1" or
         # "v1-nn-heuristic-5") and resolve to ``<base_dir>/models/<id>.pth``.
         # Otherwise we fall back to the historical default "ringrift_v1.pth".
+        # For MPS architecture, append "_mps" suffix to model ID.
         import os
         # Use absolute path relative to this file. Go up 3 levels:
         # neural_net.py -> ai/ -> app/ -> ai-service/
@@ -392,8 +567,14 @@ class NeuralNetAI(BaseAI):
         model_id = getattr(self.config, "nn_model_id", None)
         if not model_id:
             model_id = "ringrift_v1"
-
-        model_filename = f"{model_id}.pth"
+        
+        # Architecture-specific checkpoint naming
+        # MPS checkpoints use "_mps" suffix (e.g., "ringrift_v1_mps.pth")
+        if self.architecture_type == "mps":
+            model_filename = f"{model_id}_mps.pth"
+        else:
+            model_filename = f"{model_id}.pth"
+        
         model_path = os.path.join(base_dir, "models", model_filename)
         
         import os as os_mod
