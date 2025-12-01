@@ -1,6 +1,6 @@
 # RingRift Testing Guide
 
-> **Doc Status (2025-11-29): Active (test meta-doc, non-semantics)**
+> **Doc Status (2025-11-30): Active (test meta-doc, non-semantics)**
 >
 > **Role:** High-level guide to the RingRift TS+Python test suites: how they are structured, how to run them in different profiles (core/diagnostics/CI), and where to start when adding or debugging tests. This doc is a **test/meta reference only** – it explains how tests are organised and which commands/environments to use; it does **not** define game rules or lifecycle semantics.
 >
@@ -160,6 +160,49 @@ npm run test:orchestrator:s-invariant  # Seeded S-invariant regression tests pro
 npm run ssot-check
 ```
 
+For a lightweight HTTP load/scale smoke against a running backend under the
+orchestrator‑ON profile, you can also run:
+
+```bash
+TS_NODE_PROJECT=tsconfig.server.json npm run load:orchestrator:smoke
+#
+# Or run the full orchestrator preflight bundle (invariant soak smoke +
+# HTTP/load smoke + metrics/observability smoke) via:
+#
+npm run smoke:orchestrator:preflight
+```
+
+This script:
+
+- Registers a small number of throwaway users via `/api/auth/register`.
+- Creates short games via `/api/games` and fetches game lists/details.
+- Optionally inspects `/metrics` for orchestrator rollout metrics.
+
+It is intended as a developer‑driven smoke harness rather than a hard CI gate,
+and assumes the server is already running with orchestrator enabled as in
+`ORCHESTRATOR_ROLLOUT_PLAN.md` Table 4.
+
+For a **metrics & observability smoke** that validates the `/metrics` endpoint
+and the presence of key orchestrator gauges, there is a dedicated Playwright
+E2E spec:
+
+```bash
+npm run test:e2e -- tests/e2e/metrics.e2e.spec.ts
+```
+
+This suite:
+
+- Waits for the backend API to become ready (`/ready`).
+- Scrapes `/metrics` via `E2E_API_BASE_URL` (or `http://localhost:3000`).
+- Asserts Prometheus-format output and the presence of:
+  - `ringrift_orchestrator_error_rate`
+  - `ringrift_orchestrator_rollout_percentage`
+  - `ringrift_orchestrator_circuit_breaker_state`
+
+It is a fast, non-exhaustive guardrail to catch regressions where metrics are
+disabled or orchestrator gauges are removed/renamed, and complements the
+alert definitions and dashboard guidance in `docs/ALERTING_THRESHOLDS.md`.
+
 CI runs these lanes with the orchestrator adapter forced ON:
 
 - `RINGRIFT_RULES_MODE=ts`
@@ -169,6 +212,31 @@ CI runs these lanes with the orchestrator adapter forced ON:
 
 and the **TS Orchestrator Parity (adapter‑ON)** job is intended to be a required
 status check for `main` alongside the core `TS Rules Engine (rules-level)` lane.
+
+#### Shadow-mode TS↔Python parity profile (`RINGRIFT_RULES_MODE=shadow`)
+
+For targeted runtime parity debugging (matching the **Prod Phase 2 – legacy authoritative + shadow** posture in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.4), you can run the backend with Python in shadow while keeping the legacy/TS engine authoritative:
+
+```bash
+RINGRIFT_RULES_MODE=shadow \
+ORCHESTRATOR_ADAPTER_ENABLED=true \
+ORCHESTRATOR_ROLLOUT_PERCENTAGE=0 \
+ORCHESTRATOR_SHADOW_MODE_ENABLED=true \
+npm run dev:server
+```
+
+Then, in a separate terminal, drive a small amount of traffic (for example via the orchestrator HTTP/load smoke):
+
+```bash
+TS_NODE_PROJECT=tsconfig.server.json npm run load:orchestrator:smoke
+```
+
+and inspect `/metrics` for:
+
+- `ringrift_rules_parity_mismatches_total{suite="runtime_shadow",mismatch_type=...}`
+- `ringrift_orchestrator_shadow_mismatch_rate`
+
+This profile is **not** used by default in CI (which runs with `RINGRIFT_RULES_MODE=ts`); it is intended for ad‑hoc parity investigations and to exercise the shadow‑mode counters and alerts described in `docs/ALERTING_THRESHOLDS.md` and `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`.
 
 ### High-Level Testing Overview (by purpose)
 
@@ -977,6 +1045,34 @@ To lock in behaviour around a historically problematic square8/2p plateau (seed 
   - Asserts that S remains non-decreasing from the plateau and that the game either completes or continues to evolve under additional AI play within a generous bound.
 
 These tests are safe to run in normal CI and serve as targeted, reproducible guards around the fuzz harness findings, without re-running the full heavy aiSimulation suite.
+
+## Backend AI-style simulations (diagnostic)
+
+For backend-focused termination and S-invariant diagnostics, there is a
+companion AI-vs-AI harness under `tests/unit/GameEngine.aiSimulation.test.ts`.
+Like the sandbox fuzz harness, it is intended as a **diagnostic** tool rather
+than a default CI gate and is disabled unless explicitly opted in:
+
+```bash
+RINGRIFT_ENABLE_BACKEND_AI_SIM=1 npm run test:ai-backend:quiet
+```
+
+The backend harness:
+
+- Drives `GameEngine` (using the orchestrator adapter when enabled) via
+  `getValidMoves` and `makeMove`, across multiple board types and player
+  counts with a deterministic PRNG.
+- Enforces global non-decreasing S (`S = markers + collapsed + eliminated`)
+  over the lifetime of each game, mirroring the rules-level invariant from
+  `computeProgressSnapshot`.
+- Detects stalls and non-terminating games via a combination of:
+  - per-game move caps,
+  - a stagnant-state detector (no state change for multiple consecutive moves),
+  - and time-based guards to prevent runaway simulations.
+
+When chasing tricky termination or S-invariant regressions in backend hosts,
+run this harness alongside the sandbox AI simulation diagnostics and the
+orchestrator S-invariant regression suite.
 
 ## Sandbox AI stall diagnostics (engine parity and repro)
 

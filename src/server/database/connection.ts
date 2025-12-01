@@ -1,6 +1,23 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { logger } from '../utils/logger';
 import { config } from '../config';
+
+/**
+ * Prisma event types for logging
+ */
+interface PrismaQueryEvent {
+  timestamp: Date;
+  query: string;
+  params: string;
+  duration: number;
+  target: string;
+}
+
+interface PrismaLogEvent {
+  timestamp: Date;
+  message: string;
+  target: string;
+}
 
 let prisma: PrismaClient | null = null;
 
@@ -33,30 +50,36 @@ export const connectDatabase = async (): Promise<PrismaClient> => {
     });
 
     // Log database queries in development
+    // Note: $on events require Prisma log configuration which we set above
     if (config.isDevelopment) {
-      (prisma as any).$on('query', (e: any) => {
+      // Type-safe event handling using Prisma's built-in event types
+      const prismaWithEvents = prisma as PrismaClient & {
+        $on: (event: 'query' | 'error' | 'info' | 'warn', callback: (e: PrismaQueryEvent | PrismaLogEvent) => void) => void;
+      };
+
+      prismaWithEvents.$on('query', (e) => {
+        const event = e as PrismaQueryEvent;
         logger.debug('Database Query:', {
-          query: e.query,
-          params: e.params,
-          duration: `${e.duration}ms`,
+          query: event.query,
+          params: event.params,
+          duration: `${event.duration}ms`,
         });
       });
+
+      prismaWithEvents.$on('error', (e) => {
+        logger.error('Database Error:', e);
+      });
+
+      prismaWithEvents.$on('info', (e) => {
+        const event = e as PrismaLogEvent;
+        logger.info('Database Info:', event.message);
+      });
+
+      prismaWithEvents.$on('warn', (e) => {
+        const event = e as PrismaLogEvent;
+        logger.warn('Database Warning:', event.message);
+      });
     }
-
-    // Log database errors
-    (prisma as any).$on('error', (e: any) => {
-      logger.error('Database Error:', e);
-    });
-
-    // Log database info
-    (prisma as any).$on('info', (e: any) => {
-      logger.info('Database Info:', e.message);
-    });
-
-    // Log database warnings
-    (prisma as any).$on('warn', (e: any) => {
-      logger.warn('Database Warning:', e.message);
-    });
 
     // Test the connection
     await prisma.$connect();
@@ -96,16 +119,24 @@ export const checkDatabaseHealth = async (): Promise<boolean> => {
   }
 };
 
+/**
+ * Prisma transaction client type (excludes interactive transaction methods)
+ */
+export type TransactionClient = Omit<
+  PrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+>;
+
 // Transaction wrapper
 export const withTransaction = async <T>(
-  callback: (tx: PrismaClient) => Promise<T>
+  callback: (tx: TransactionClient) => Promise<T>
 ): Promise<T> => {
   if (!prisma) {
     throw new Error('Database not connected');
   }
 
-  return await prisma.$transaction(async (tx: any) => {
-    return await callback(tx as PrismaClient);
+  return await prisma.$transaction(async (tx) => {
+    return await callback(tx);
   });
 };
 

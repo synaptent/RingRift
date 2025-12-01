@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-"""Regression for ACTIVE/MOVEMENT no-move invariant with fully eliminated player.
+"""Regression for ACTIVE/MOVEMENT no-move invariant with a
+fully eliminated player.
 
 This test guards the scenario captured in
 ``ai-service/logs/invariant_failures/active_no_moves_p1_1764002534.json``.
@@ -47,6 +48,7 @@ if ROOT not in sys.path:
 
 from app.models import GameState, Move, GameStatus  # noqa: E402
 from app.game_engine import GameEngine  # noqa: E402
+from app.rules import global_actions as ga  # noqa: E402
 
 
 SNAPSHOT_PATH = os.path.join(
@@ -62,7 +64,10 @@ SNAPSHOT_PATH = os.path.join(
 @pytest.mark.slow
 @pytest.mark.skipif(
     not os.path.exists(SNAPSHOT_PATH),
-    reason="Invariant-failure snapshot not found; run strict soak to regenerate",
+    reason=(
+        "Invariant-failure snapshot not found; "
+        "run strict soak to regenerate"
+    ),
 )
 def test_movement_fully_eliminated_player_invariant_regression(
     monkeypatch: pytest.MonkeyPatch,
@@ -129,13 +134,28 @@ def test_movement_fully_eliminated_player_invariant_regression(
             next_state,
             next_state.current_player,
         )
-        forced = GameEngine._get_forced_elimination_moves(  # type: ignore[attr-defined]
+        forced = GameEngine._get_forced_elimination_moves(
             next_state,
             next_state.current_player,
         )
+        summary = ga.global_legal_actions_summary(
+            next_state,
+            next_state.current_player,
+        )
+
         assert (
             legal or forced
-        ), "Regression: ACTIVE state with neither legal moves nor forced eliminations"
+        ), (
+            "Regression: ACTIVE state with neither legal moves nor "
+            "forced eliminations"
+        )
+
+        # INV-ACTIVE-NO-MOVES / INV-ANM-TURN-MATERIAL-SKIP:
+        # any ACTIVE state we keep must give the current player both
+        # turn-material and at least one global action, and ANM(state)
+        # must be false.
+        assert summary.has_turn_material is True
+        assert ga.is_anm_state(next_state) is False
 
         # A fully eliminated player must not remain the active player in an
         # ACTIVE state.
@@ -149,4 +169,7 @@ def test_movement_fully_eliminated_player_invariant_regression(
         if not p1_after_stacks and p1_after.rings_in_hand == 0:
             assert (
                 next_state.current_player != 1
-            ), "Regression: fully eliminated player kept as current_player in ACTIVE state"
+            ), (
+                "Regression: fully eliminated player kept as current_player "
+                "in ACTIVE state"
+            )

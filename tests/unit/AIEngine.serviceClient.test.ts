@@ -9,6 +9,8 @@ import {
   MoveResponse,
   RingEliminationChoiceResponsePayload,
   RegionOrderChoiceResponsePayload,
+  LineOrderChoiceResponsePayload,
+  CaptureDirectionChoiceResponsePayload,
 } from '../../src/server/services/AIServiceClient';
 import {
   GameState,
@@ -16,6 +18,8 @@ import {
   AIProfile,
   RingEliminationChoice,
   RegionOrderChoice,
+  LineOrderChoice,
+  CaptureDirectionChoice,
 } from '../../src/shared/types/game';
 
 jest.mock('../../src/server/services/AIServiceClient');
@@ -245,6 +249,111 @@ describe('AIEngine service integration (profile-driven)', () => {
     const callArgs = fakeClient.getRegionOrderChoice.mock.calls[0];
     expect(callArgs[0]).toBeNull();
     expect(callArgs[1]).toBe(3);
+    expect(callArgs[2]).toBe(6);
+    expect(callArgs[3]).toBe(ServiceAIType.HEURISTIC);
+    expect(callArgs[4]).toBe(options);
+
+    expect(selected).toBe(options[1]);
+  });
+
+  it('getLineOrderChoice calls AIServiceClient.getLineOrderChoice and returns the selected option', async () => {
+    const mockedGetClient = getAIServiceClient as jest.MockedFunction<typeof getAIServiceClient>;
+
+    const options: LineOrderChoice['options'] = [
+      {
+        moveId: 'm-short',
+        lineId: 'short',
+        markerPositions: [{ x: 0, y: 0 }],
+      },
+      {
+        moveId: 'm-long',
+        lineId: 'long',
+        markerPositions: [
+          { x: 1, y: 1 },
+          { x: 2, y: 2 },
+        ],
+      },
+    ];
+
+    const fakeResponse: LineOrderChoiceResponsePayload = {
+      selectedOption: options[0],
+      aiType: 'heuristic',
+      difficulty: 5,
+    };
+
+    const fakeClient = {
+      getLineOrderChoice: jest.fn().mockResolvedValue(fakeResponse),
+    } as any;
+
+    mockedGetClient.mockReturnValue(fakeClient);
+
+    const engine = new AIEngine();
+
+    const profile: AIProfile = {
+      difficulty: 5,
+      mode: 'service',
+      aiType: 'heuristic',
+    };
+
+    engine.createAIFromProfile(4, profile);
+
+    const selected = await engine.getLineOrderChoice(4, null, options);
+
+    expect(fakeClient.getLineOrderChoice).toHaveBeenCalledTimes(1);
+    const callArgs = fakeClient.getLineOrderChoice.mock.calls[0];
+    expect(callArgs[0]).toBeNull();
+    expect(callArgs[1]).toBe(4);
+    expect(callArgs[2]).toBe(5);
+    expect(callArgs[3]).toBe(ServiceAIType.HEURISTIC);
+    expect(callArgs[4]).toBe(options);
+
+    expect(selected).toBe(options[0]);
+  });
+
+  it('getCaptureDirectionChoice calls AIServiceClient.getCaptureDirectionChoice and returns the selected option', async () => {
+    const mockedGetClient = getAIServiceClient as jest.MockedFunction<typeof getAIServiceClient>;
+
+    const options: CaptureDirectionChoice['options'] = [
+      {
+        targetPosition: { x: 3, y: 3 },
+        landingPosition: { x: 5, y: 5 },
+        capturedCapHeight: 2,
+      },
+      {
+        targetPosition: { x: 4, y: 4 },
+        landingPosition: { x: 6, y: 6 },
+        capturedCapHeight: 3,
+      },
+    ];
+
+    const fakeResponse: CaptureDirectionChoiceResponsePayload = {
+      selectedOption: options[1],
+      aiType: 'heuristic',
+      difficulty: 6,
+    };
+
+    const fakeClient = {
+      getCaptureDirectionChoice: jest.fn().mockResolvedValue(fakeResponse),
+    } as any;
+
+    mockedGetClient.mockReturnValue(fakeClient);
+
+    const engine = new AIEngine();
+
+    const profile: AIProfile = {
+      difficulty: 6,
+      mode: 'service',
+      aiType: 'heuristic',
+    };
+
+    engine.createAIFromProfile(5, profile);
+
+    const selected = await engine.getCaptureDirectionChoice(5, null, options);
+
+    expect(fakeClient.getCaptureDirectionChoice).toHaveBeenCalledTimes(1);
+    const callArgs = fakeClient.getCaptureDirectionChoice.mock.calls[0];
+    expect(callArgs[0]).toBeNull();
+    expect(callArgs[1]).toBe(5);
     expect(callArgs[2]).toBe(6);
     expect(callArgs[3]).toBe(ServiceAIType.HEURISTIC);
     expect(callArgs[4]).toBe(options);

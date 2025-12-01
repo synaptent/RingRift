@@ -436,5 +436,11 @@ describe('Capture + marker + elimination semantics parity (backend vs sandbox)',
     }
 
     expect(snapshotsEqual(backendSnap, sandboxSnap)).toBe(true);
+
+    // In addition to board/parity checks, ensure that backend and sandbox
+    // agree on the active player and phase after the same chain capture
+    // sequence. This guards against subtle capture/phase tracking drift.
+    expect(backendAny.gameState.currentPlayer).toBe(sandboxAny.gameState.currentPlayer);
+    expect(backendAny.gameState.currentPhase).toBe(sandboxAny.gameState.currentPhase);
   });
 });

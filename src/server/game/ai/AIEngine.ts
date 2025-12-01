@@ -9,9 +9,11 @@ import {
   AIProfile,
   AITacticType,
   AIControlMode,
+  LineOrderChoice,
   LineRewardChoice,
   RingEliminationChoice,
   RegionOrderChoice,
+  CaptureDirectionChoice,
   Position,
   positionToString,
 } from '../../../shared/types/game';
@@ -24,6 +26,7 @@ import {
   chooseLocalMoveFromCandidates as chooseSharedLocalMoveFromCandidates,
   LocalAIRng,
 } from '../../../shared/engine/localAIMoveSelection';
+import { SeededRNG } from '../../../shared/utils/rng';
 import { aiFallbackCounter, aiMoveLatencyHistogram } from '../../utils/rulesParityMetrics';
 
 export enum AIType {
@@ -241,11 +244,34 @@ export class AIEngine {
     }
 
     const difficultyLabel = String(config.difficulty ?? 'n/a');
+    const effectiveRng: LocalAIRng =
+      rng ?? this.createDeterministicLocalRng(gameState, playerNumber);
 
     // Get valid moves for validation
     const boardManager = new BoardManager(gameState.boardType);
     const ruleEngine = new RuleEngine(boardManager, gameState.boardType);
-    const validMoves = ruleEngine.getValidMoves(gameState);
+    let validMoves = ruleEngine.getValidMoves(gameState);
+
+    // Layer in the swap_sides meta-move (pie rule) for Player 2 when
+    // enabled, mirroring backend GameEngine.shouldOfferSwapSidesMetaMove.
+    if (this.shouldOfferSwapSidesForGameState(gameState)) {
+      const alreadyHasSwap = validMoves.some((m) => m.type === 'swap_sides');
+
+      if (!alreadyHasSwap) {
+        const moveNumber = gameState.moveHistory.length + 1;
+        const swapMove: Move = {
+          id: `swap_sides-${moveNumber}`,
+          type: 'swap_sides',
+          player: 2,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber,
+        } as Move;
+
+        validMoves = [...validMoves, swapMove];
+      }
+    }
 
     if (validMoves.length === 0) {
       logger.warn('No valid moves available for AI player', { playerNumber });
@@ -355,7 +381,7 @@ export class AIEngine {
     // Level 2: Local heuristic AI
     try {
       const heuristicStart = performance.now();
-      const localMove = this.selectLocalHeuristicMove(gameState, validMoves, rng ?? Math.random);
+      const localMove = this.selectLocalHeuristicMove(gameState, validMoves, effectiveRng);
 
       if (localMove) {
         const duration = performance.now() - heuristicStart;
@@ -386,9 +412,47 @@ export class AIEngine {
       lastError: lastError?.message,
     });
 
-    const randomRng = rng ?? Math.random;
-    const randomIndex = Math.floor(randomRng() * validMoves.length);
+    const randomIndex = Math.floor(effectiveRng() * validMoves.length);
     return validMoves[randomIndex];
+  }
+
+  /**
+   * Determine whether the given GameState should expose a swap_sides
+   * meta-move (pie rule) for Player 2, mirroring the gate in
+   * GameEngine.shouldOfferSwapSidesMetaMove.
+   */
+  private shouldOfferSwapSidesForGameState(state: GameState): boolean {
+    // Config gating: swap_sides is only offered when explicitly enabled
+    // via state.rulesOptions.swapRuleEnabled. When the flag is absent or
+    // false, the pie rule is considered disabled.
+    if (!state.rulesOptions?.swapRuleEnabled) {
+      return false;
+    }
+
+    if (state.gameStatus !== 'active') return false;
+    if (state.players.length !== 2) return false;
+    if (state.currentPlayer !== 2) return false;
+
+    // Only in interactive phases.
+    if (
+      state.currentPhase !== 'ring_placement' &&
+      state.currentPhase !== 'movement' &&
+      state.currentPhase !== 'capture' &&
+      state.currentPhase !== 'chain_capture'
+    ) {
+      return false;
+    }
+
+    if (state.moveHistory.length === 0) return false;
+
+    const hasSwapMove = state.moveHistory.some((m) => m.type === 'swap_sides');
+    if (hasSwapMove) return false;
+
+    const hasP1Move = state.moveHistory.some((m) => m.player === 1);
+    const hasP2Move = state.moveHistory.some((m) => m.player === 2 && m.type !== 'swap_sides');
+
+    // Exactly: at least one move from P1, none from P2 yet (excluding swap_sides).
+    return hasP1Move && !hasP2Move;
   }
 
   /**
@@ -460,6 +524,20 @@ export class AIEngine {
   }
 
   /**
+   * Create a deterministic RNG for local fallback paths when callers do not
+   * supply an explicit RNG. This RNG is derived solely from the per-game
+   * GameState.rngSeed and the player number so that for a fixed seed and game
+   * configuration, local fallback behaviour is reproducible.
+   */
+  private createDeterministicLocalRng(gameState: GameState, playerNumber: number): LocalAIRng {
+    const baseSeed =
+      typeof gameState.rngSeed === 'number' ? gameState.rngSeed : 0;
+    const mixed = (baseSeed ^ (playerNumber * 0x9e3779b1)) >>> 0;
+    const seeded = new SeededRNG(mixed);
+    return () => seeded.next();
+  }
+
+  /**
    * Generate a move using local heuristics when the AI service is unavailable.
    * Uses RuleEngine to find valid moves and selects one randomly. The
    * optional rng parameter allows test harnesses and parity tools to share
@@ -468,7 +546,7 @@ export class AIEngine {
   private getLocalAIMove(
     playerNumber: number,
     gameState: GameState,
-    rng: LocalAIRng = Math.random
+    rng: LocalAIRng
   ): Move | null {
     try {
       const boardManager = new BoardManager(gameState.boardType);
@@ -567,7 +645,8 @@ export class AIEngine {
     gameState: GameState,
     rng?: LocalAIRng
   ): Move | null {
-    const move = this.getLocalAIMove(playerNumber, gameState, rng ?? Math.random);
+    const effectiveRng = rng ?? this.createDeterministicLocalRng(gameState, playerNumber);
+    const move = this.getLocalAIMove(playerNumber, gameState, effectiveRng);
 
     if (move) {
       const diag = this.getOrCreateDiagnostics(playerNumber);
@@ -593,7 +672,7 @@ export class AIEngine {
     playerNumber: number,
     gameState: GameState,
     candidates: Move[],
-    rng: LocalAIRng = Math.random
+    rng: LocalAIRng
   ): Move | null {
     const selectedMove = chooseSharedLocalMoveFromCandidates(
       playerNumber,
@@ -867,6 +946,98 @@ export class AIEngine {
       return response.selectedOption;
     } catch (error) {
       logger.error('Failed to get region_order choice from service', {
+        playerNumber,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Ask the AI service to choose a line_order option for an
+   * AI-controlled player. This mirrors the TypeScript
+   * AIInteractionHandler heuristic (prefer longest line) but keeps
+   * the remote call behind this façade so callers do not need to
+   * know about the Python service directly.
+   */
+  async getLineOrderChoice(
+    playerNumber: number,
+    gameState: GameState | null,
+    options: LineOrderChoice['options']
+  ): Promise<LineOrderChoice['options'][number]> {
+    const config = this.aiConfigs.get(playerNumber);
+
+    if (!config) {
+      throw new Error(`No AI configuration found for player number ${playerNumber}`);
+    }
+
+    try {
+      const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const serviceAIType = this.mapInternalTypeToServiceType(aiType);
+      const response = await getAIServiceClient().getLineOrderChoice(
+        gameState,
+        playerNumber,
+        config.difficulty,
+        serviceAIType,
+        options
+      );
+
+      logger.info('AI line_order choice generated', {
+        playerNumber,
+        difficulty: response.difficulty,
+        aiType: response.aiType,
+        selectedOption: response.selectedOption,
+      });
+
+      return response.selectedOption;
+    } catch (error) {
+      logger.error('Failed to get line_order choice from service', {
+        playerNumber,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Ask the AI service to choose a capture_direction option for an
+   * AI-controlled player. This mirrors the TypeScript
+   * AIInteractionHandler heuristic (prefer highest capturedCapHeight,
+   * then central landingPosition) but keeps the remote call behind
+   * this façade.
+   */
+  async getCaptureDirectionChoice(
+    playerNumber: number,
+    gameState: GameState | null,
+    options: CaptureDirectionChoice['options']
+  ): Promise<CaptureDirectionChoice['options'][number]> {
+    const config = this.aiConfigs.get(playerNumber);
+
+    if (!config) {
+      throw new Error(`No AI configuration found for player number ${playerNumber}`);
+    }
+
+    try {
+      const aiType = config.aiType ?? this.selectAITypeForDifficulty(config.difficulty);
+      const serviceAIType = this.mapInternalTypeToServiceType(aiType);
+      const response = await getAIServiceClient().getCaptureDirectionChoice(
+        gameState,
+        playerNumber,
+        config.difficulty,
+        serviceAIType,
+        options
+      );
+
+      logger.info('AI capture_direction choice generated', {
+        playerNumber,
+        difficulty: response.difficulty,
+        aiType: response.aiType,
+        selectedOption: response.selectedOption,
+      });
+
+      return response.selectedOption;
+    } catch (error) {
+      logger.error('Failed to get capture_direction choice from service', {
         playerNumber,
         error: error instanceof Error ? error.message : 'Unknown error',
       });

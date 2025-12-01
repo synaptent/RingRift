@@ -39,6 +39,7 @@ export type {
   PlayerType,
   AIProfile,
   TimeControl,
+  RulesOptions,
 } from '../types/game';
 
 // Moves & Actions
@@ -68,7 +69,7 @@ export type {
 // Progress Tracking & History
 export type { ProgressSnapshot, BoardSummary, GameHistoryEntry, GameTrace } from '../types/game';
 
-// Configuration
+ // Configuration
 export { BOARD_CONFIGS } from '../types/game';
 
 // Position Utilities
@@ -498,3 +499,35 @@ export {
   getTerritoryCount,
   getMarkerCount,
 } from './aggregates/VictoryAggregate';
+
+// =============================================================================
+// GLOBAL ACTIONS &amp; ANM HELPERS
+// =============================================================================
+// Location: globalActions.ts
+// Rule Reference: RR-CANON R200–R207, INV-ACTIVE-NO-MOVES, INV-TERMINATION
+
+export type { GlobalLegalActionsSummary } from './globalActions';
+
+export {
+  hasTurnMaterial,
+  hasGlobalPlacementAction,
+  hasPhaseLocalInteractiveMove,
+  hasForcedEliminationAction,
+  computeGlobalLegalActionsSummary,
+  isANMState,
+  computeSMetric,
+  computeTMetric,
+} from './globalActions';
+
+
+export type { ForcedEliminationOutcome } from './globalActions';
+
+export { applyForcedEliminationForPlayer } from './globalActions';
+
+// =============================================================================
+// RULES CONFIGURATION HELPERS
+// =============================================================================
+// Location: rulesConfig.ts
+// Rule Reference: RR-CANON-R001 (board parameters) + 2p line-length variant
+
+export { getEffectiveLineLengthThreshold } from './rulesConfig';

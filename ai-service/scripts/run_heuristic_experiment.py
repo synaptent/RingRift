@@ -15,8 +15,10 @@ Supported modes
 
 2. Trained vs trained (A/B, two trained files):
 
-   - Profile A: ``"<base_profile_id_a>_A"`` loaded from ``--trained-profiles-a``.
-   - Profile B: ``"<base_profile_id_b>_B"`` loaded from ``--trained-profiles-b``.
+   - Profile A: ``"<base_profile_id_a>_A"`` loaded from
+     ``--trained-profiles-a``.
+   - Profile B: ``"<base_profile_id_b>_B"`` loaded from
+     ``--trained-profiles-b``.
 
 The script can sweep over multiple difficulties and board types and emit an
 aggregated CSV/JSON report for downstream analysis.
@@ -29,7 +31,8 @@ From the ``ai-service`` root::
     # Baseline vs trained, difficulty 5 on Square8
     python scripts/run_heuristic_experiment.py \
         --mode baseline-vs-trained \
-        --trained-profiles-a logs/heuristic/heuristic_profiles.v1.trained.json \
+        --trained-profiles-a \
+          logs/heuristic/heuristic_profiles.v1.trained.json \
         --base-profile-id-a heuristic_v1_balanced \
         --difficulties 5 \
         --boards Square8 \
@@ -65,12 +68,12 @@ from typing import Dict, Iterable, List
 # Ensure project root (containing ``app`` and ``scripts``) is on sys.path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scripts.run_cmaes_optimization import (  # type: ignore
+from scripts.run_cmaes_optimization import (  # type: ignore  # noqa: E402
     CMAESConfig,
     run_cmaes_optimization,
 )
 
-from app.models import (  # type: ignore
+from app.models import (  # type: ignore  # noqa: E402
     AIConfig,
     BoardState,
     BoardType,
@@ -80,12 +83,17 @@ from app.models import (  # type: ignore
     Player,
     TimeControl,
 )
-from app.ai.heuristic_ai import HeuristicAI  # type: ignore
-from app.ai.heuristic_weights import (  # type: ignore
+from app.ai.heuristic_ai import HeuristicAI  # type: ignore  # noqa: E402
+from app.ai.heuristic_weights import (  # type: ignore  # noqa: E402
     HEURISTIC_WEIGHT_PROFILES,
     load_trained_profiles_if_available,
 )
-from app.rules.default_engine import DefaultRulesEngine  # type: ignore
+from app.rules.default_engine import (  # type: ignore  # noqa: E402
+    DefaultRulesEngine,
+)
+from app.training.env import (  # type: ignore  # noqa: E402
+    get_two_player_training_kwargs,
+)
 
 
 BOARD_TYPES: Dict[str, BoardType] = {
@@ -97,7 +105,9 @@ BOARD_TYPES: Dict[str, BoardType] = {
 
 @dataclass
 class MatchStats:
-    """Aggregate results for a single (profileA, profileB, difficulty, board)."""
+    """Aggregate results for one (profileA, profileB, difficulty, board)
+    configuration.
+    """
 
     mode: str
     difficulty: int
@@ -188,6 +198,7 @@ def create_empty_game_state(
     return GameState(
         id="heuristic-experiment",
         boardType=board_type,
+        rngSeed=None,
         board=board,
         players=players,
         currentPhase=GamePhase.RING_PLACEMENT,
@@ -206,6 +217,8 @@ def create_empty_game_state(
         chainCaptureState=None,
         mustMoveFromStackKey=None,
         zobristHash=None,
+        lpsRoundIndex=0,
+        lpsExclusivePlayerForCompletedRound=None,
     )
 
 
@@ -224,7 +237,7 @@ def play_single_game(
             difficulty=difficulty,
             think_time=0,
             randomness=0.0,
-            rng_seed=None,
+            rngSeed=None,
             heuristic_profile_id=profile_p1,
         ),
     )
@@ -234,7 +247,7 @@ def play_single_game(
             difficulty=difficulty,
             think_time=0,
             randomness=0.0,
-            rng_seed=None,
+            rngSeed=None,
             heuristic_profile_id=profile_p2,
         ),
     )
@@ -291,7 +304,12 @@ def run_match(
     for i in range(games):
         if i % 2 == 0:
             # A plays as Player 1
-            winner = play_single_game(profile_a_id, profile_b_id, difficulty, board)
+            winner = play_single_game(
+                profile_a_id,
+                profile_b_id,
+                difficulty,
+                board,
+            )
             if winner == 1:
                 wins_a += 1
             elif winner == 2:
@@ -300,7 +318,12 @@ def run_match(
                 draws += 1
         else:
             # B plays as Player 1
-            winner = play_single_game(profile_b_id, profile_a_id, difficulty, board)
+            winner = play_single_game(
+                profile_b_id,
+                profile_a_id,
+                difficulty,
+                board,
+            )
             if winner == 1:
                 wins_b += 1
             elif winner == 2:
@@ -392,7 +415,8 @@ def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
     if mode == "baseline-vs-trained":
         if not args.trained_profiles_a:
             raise SystemExit(
-                "--trained-profiles-a is required when mode=baseline-vs-trained"
+                "--trained-profiles-a is required when "
+                "mode=baseline-vs-trained"
             )
 
         # Load trained profiles under *_trained ids for A/B comparison.
@@ -478,6 +502,19 @@ def run_cmaes_train(args: argparse.Namespace) -> None:
     writes them to disk for the CMA-ES driver, and then invokes
     :func:`run_cmaes_optimization` with a constructed
     :class:`CMAESConfig`.
+
+    For 2-player heuristic optimisation runs, this helper wires the
+    CMA-ES driver into the shared 2-player training preset exposed by
+    :mod:`app.training.env`:
+
+    - multi-board evaluation on Square8, Square19, and Hexagonal boards;
+    - ``eval_mode='multi-start'`` from the ``'v1'`` state pools; and
+    - a small non-zero ``eval_randomness`` for symmetry breaking.
+
+    Callers that need a different evaluation regime (for example,
+    single-board experiments) should invoke
+    :func:`run_cmaes_optimization` directly with a custom
+    :class:`CMAESConfig`.
     """
     # Resolve baseline heuristic profile to raw weights.
     baseline_profile_id = args.cmaes_baseline_profile_id
@@ -489,7 +526,9 @@ def run_cmaes_train(args: argparse.Namespace) -> None:
 
     # Derive run identifiers and directories.
     base_output_dir = args.cmaes_output_dir or "logs/cmaes"
-    run_id = args.cmaes_run_id or datetime.now().strftime("cmaes_%Y%m%d_%H%M%S")
+    run_id = args.cmaes_run_id or datetime.now().strftime(
+        "cmaes_%Y%m%d_%H%M%S",
+    )
     run_dir = os.path.join(base_output_dir, "runs", run_id)
     os.makedirs(run_dir, exist_ok=True)
 
@@ -510,10 +549,23 @@ def run_cmaes_train(args: argparse.Namespace) -> None:
     }
     board_type = board_type_map[args.cmaes_board]
 
+    # Canonical 2-player training evaluation kwargs. These are threaded into
+    # CMAESConfig so that the driver evaluates candidates using the same
+    # multi-board, multi-start, light-randomness regime as
+    # DEFAULT_TRAINING_EVAL_CONFIG / TWO_PLAYER_TRAINING_PRESET.
+    two_player_kwargs = get_two_player_training_kwargs(
+        games_per_eval=args.cmaes_games_per_eval,
+        seed=args.cmaes_seed or 0,
+    )
+    eval_boards = two_player_kwargs["boards"]
+    eval_mode = two_player_kwargs["eval_mode"]
+    state_pool_id = two_player_kwargs["state_pool_id"]
+    eval_randomness = two_player_kwargs["eval_randomness"]
+
     config = CMAESConfig(
         generations=args.cmaes_generations,
         population_size=args.cmaes_population_size,
-        games_per_eval=args.cmaes_games_per_eval,
+        games_per_eval=two_player_kwargs["games_per_eval"],
         sigma=args.cmaes_sigma,
         output_path=output_path,
         baseline_path=baseline_path,
@@ -525,9 +577,16 @@ def run_cmaes_train(args: argparse.Namespace) -> None:
         run_id=run_id,
         run_dir=run_dir,
         resume_from=None,
+        eval_mode=eval_mode,
+        state_pool_id=state_pool_id,
+        eval_boards=eval_boards,
+        eval_randomness=eval_randomness,
     )
 
-    print("\n=== Starting CMA-ES training via heuristic experiment harness ===")
+    print(
+        "\n=== Starting CMA-ES training via heuristic "
+        "experiment harness ==="
+    )
     print(f"Baseline profile id: {baseline_profile_id}")
     print(f"Run directory:       {run_dir}")
     print(f"Baseline weights:    {baseline_path}")

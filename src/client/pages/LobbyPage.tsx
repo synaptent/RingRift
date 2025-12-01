@@ -568,6 +568,13 @@ export default function LobbyPage() {
                 aiType: form.aiType,
               }
             : undefined,
+        // For now, expose the swap rule as a default-on 2-player variant from
+        // the lobby. Future UI can add an explicit toggle; until then, hosts
+        // can still disable it via direct API calls.
+        rulesOptions:
+          form.maxPlayers === 2
+            ? { swapRuleEnabled: true }
+            : undefined,
       };
 
       const game = await gameApi.createGame(payload);

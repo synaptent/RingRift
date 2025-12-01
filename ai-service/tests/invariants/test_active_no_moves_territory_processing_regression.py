@@ -45,6 +45,7 @@ if ROOT not in sys.path:
 
 from app.models import GameState, Move, GameStatus  # noqa: E402
 from app.game_engine import GameEngine  # noqa: E402
+from app.rules import global_actions as ga  # noqa: E402
 
 
 SNAPSHOT_PATH = os.path.join(
@@ -60,7 +61,10 @@ SNAPSHOT_PATH = os.path.join(
 @pytest.mark.slow
 @pytest.mark.skipif(
     not os.path.exists(SNAPSHOT_PATH),
-    reason="Invariant-failure snapshot not found; run strict soak to regenerate",
+    reason=(
+        "Invariant-failure snapshot not found; "
+        "run strict soak to regenerate"
+    ),
 )
 def test_territory_processing_invariant_regression(
     monkeypatch: pytest.MonkeyPatch,
@@ -101,13 +105,30 @@ def test_territory_processing_invariant_regression(
     next_state = GameEngine.apply_move(state, move)
 
     # As an extra guard, ensure that any ACTIVE state we reach obeys the
-    # no-dead-action invariant from the snapshot's perspective.
+    # no-dead-action invariant from both the legacy and global-actions views.
     if next_state.game_status == GameStatus.ACTIVE:
-        legal = GameEngine.get_valid_moves(next_state, next_state.current_player)
-        forced = GameEngine._get_forced_elimination_moves(  # type: ignore[attr-defined]
+        legal = GameEngine.get_valid_moves(
             next_state,
             next_state.current_player,
         )
+        get_forced_elim = GameEngine._get_forced_elimination_moves
+        forced = get_forced_elim(
+            next_state,
+            next_state.current_player,
+        )
+        summary = ga.global_legal_actions_summary(
+            next_state,
+            next_state.current_player,
+        )
+
+        # INV-ACTIVE-NO-MOVES / INV-PHASE-CONSISTENCY (ANM-SCEN-04):
+        # current player in TERRITORY_PROCESSING must have at least one
+        # global action; ANM(state) must be false.
         assert (
             legal or forced
-        ), "Regression: ACTIVE state with neither legal moves nor forced eliminations"
+        ), (
+            "Regression: ACTIVE state with neither legal moves nor "
+            "forced eliminations"
+        )
+        assert summary.has_turn_material is True
+        assert ga.is_anm_state(next_state) is False

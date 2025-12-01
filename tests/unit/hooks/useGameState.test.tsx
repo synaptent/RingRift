@@ -70,6 +70,10 @@ const createMockGameContext = (overrides: Record<string, unknown> = {}) => ({
   gameState: createMockGameState(),
   validMoves: null,
   victoryState: null,
+  // No auto-resolve metadata by default; tests can override as needed.
+  decisionAutoResolved: null,
+   // No timeout warning metadata by default; tests can override as needed.
+  decisionPhaseTimeoutWarning: null,
   connectionStatus: 'connected' as const,
   lastHeartbeatAt: Date.now(),
   error: null,
@@ -214,6 +218,40 @@ describe('useGameState', () => {
     const { result } = renderHook(() => useGameState());
 
     expect(result.current.victoryState).toEqual(victoryState);
+  });
+
+  it('exposes decisionAutoResolved metadata from context when present', () => {
+    const decisionAutoResolved = {
+      choiceType: 'line_reward_option',
+      choiceKind: 'line_reward',
+      actingPlayerNumber: 1,
+      resolvedMoveId: 'move-123',
+      reason: 'timeout',
+    } as any;
+
+    mockContextValue = createMockGameContext({ decisionAutoResolved });
+    const { result } = renderHook(() => useGameState());
+
+    expect(result.current.decisionAutoResolved).toEqual(decisionAutoResolved);
+  });
+
+  it('exposes decisionPhaseTimeoutWarning metadata from context when present', () => {
+    const decisionPhaseTimeoutWarning = {
+      type: 'decision_phase_timeout_warning',
+      data: {
+        gameId: 'game-123',
+        playerNumber: 1,
+        phase: 'line_processing',
+        remainingMs: 5000,
+        choiceId: 'choice-1',
+      },
+      timestamp: new Date().toISOString(),
+    } as any;
+
+    mockContextValue = createMockGameContext({ decisionPhaseTimeoutWarning });
+    const { result } = renderHook(() => useGameState());
+
+    expect(result.current.decisionPhaseTimeoutWarning).toEqual(decisionPhaseTimeoutWarning);
   });
 });
 

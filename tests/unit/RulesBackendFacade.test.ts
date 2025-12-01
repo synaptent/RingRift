@@ -225,6 +225,8 @@ describe('RulesBackendFacade', () => {
     const afterState = { id: 'after', moveHistory: [lastMove] } as any;
     const tsResult = { success: true, gameState: afterState };
     (engine.makeMoveById as jest.Mock).mockResolvedValue(tsResult);
+    // Must mock getValidMoves so applyMoveById can resolve the move by id
+    (engine.getValidMoves as jest.Mock).mockReturnValue([lastMove]);
 
     (pythonClient.evaluateMove as jest.Mock).mockRejectedValue(new Error('py-fail'));
 
@@ -297,5 +299,102 @@ describe('RulesBackendFacade', () => {
     expect(engine.makeMoveById).toHaveBeenCalledWith(1, 'm1');
     expect(result).toBe(tsResult);
     expect(logSpy).not.toHaveBeenCalled();
+  });
+
+  it('records rules parity mismatches under the runtime_python_mode suite in python mode', async () => {
+    const engine = makeFakeEngine();
+    const pythonClient = makeFakePythonClient();
+
+    jest.spyOn(envFlags, 'getRulesMode').mockReturnValue('python');
+    jest.spyOn(envFlags, 'isRulesShadowMode').mockReturnValue(false);
+    const metricsSpy = jest
+      .spyOn(parity, 'recordRulesParityMismatch')
+      .mockImplementation(() => {});
+
+    const beforeState = createTestGameState();
+    (engine.getGameState as jest.Mock).mockReturnValue(beforeState);
+
+    const tsAfter = createTestGameState();
+    const tsResult = { success: true, gameState: tsAfter };
+    (engine.makeMove as jest.Mock).mockResolvedValue(tsResult);
+
+    const tsHash = hashGameState(tsAfter as any);
+    const tsProgress = computeProgressSnapshot(tsAfter as any);
+    const tsS = tsProgress.S;
+    const tsStatus = tsAfter.gameStatus;
+
+    // Intentionally introduce a hash mismatch while keeping other fields aligned.
+    (pythonClient.evaluateMove as jest.Mock).mockResolvedValue({
+      valid: true,
+      validationError: undefined,
+      nextState: tsAfter,
+      stateHash: `${tsHash}-mismatch`,
+      sInvariant: tsS,
+      gameStatus: tsStatus,
+    });
+
+    const facade = new RulesBackendFacade(engine as any, pythonClient as any);
+    const move = { type: 'move_stack', player: 1 } as any;
+
+    const result = await facade.applyMove(move);
+
+    expect(result).toBe(tsResult);
+    expect(engine.makeMove).toHaveBeenCalled();
+    expect(pythonClient.evaluateMove).toHaveBeenCalled();
+
+    expect(metricsSpy).toHaveBeenCalledWith({
+      mismatchType: 'hash',
+      suite: 'runtime_python_mode',
+    });
+  });
+
+  it('records rules parity mismatches under the runtime_shadow suite in shadow mode', async () => {
+    const engine = makeFakeEngine();
+    const pythonClient = makeFakePythonClient();
+
+    jest.spyOn(envFlags, 'getRulesMode').mockReturnValue('shadow');
+    jest.spyOn(envFlags, 'isRulesShadowMode').mockReturnValue(true);
+    const metricsSpy = jest
+      .spyOn(parity, 'recordRulesParityMismatch')
+      .mockImplementation(() => {});
+
+    const beforeState = createTestGameState();
+    (engine.getGameState as jest.Mock).mockReturnValue(beforeState);
+
+    const tsAfter = createTestGameState();
+    const tsResult = { success: true, gameState: tsAfter };
+    (engine.makeMove as jest.Mock).mockResolvedValue(tsResult);
+
+    const tsHash = hashGameState(tsAfter as any);
+    const tsProgress = computeProgressSnapshot(tsAfter as any);
+    const tsS = tsProgress.S;
+    const tsStatus = tsAfter.gameStatus;
+
+    // Intentionally introduce a hash mismatch while keeping other fields aligned.
+    (pythonClient.evaluateMove as jest.Mock).mockResolvedValue({
+      valid: true,
+      validationError: undefined,
+      nextState: tsAfter,
+      stateHash: `${tsHash}-mismatch`,
+      sInvariant: tsS,
+      gameStatus: tsStatus,
+    });
+
+    const facade = new RulesBackendFacade(engine as any, pythonClient as any);
+    const move = { type: 'move_stack', player: 1 } as any;
+
+    const result = await facade.applyMove(move);
+
+    expect(result).toBe(tsResult);
+    expect(engine.makeMove).toHaveBeenCalledTimes(1);
+    expect(pythonClient.evaluateMove).toHaveBeenCalledTimes(1);
+
+    // Allow the shadow parity call to complete.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(metricsSpy).toHaveBeenCalledWith({
+      mismatchType: 'hash',
+      suite: 'runtime_shadow',
+    });
   });
 });

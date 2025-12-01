@@ -11,6 +11,9 @@ This directory contains operational runbooks for deploying, managing, and troubl
 | [DEPLOYMENT_ROLLBACK.md](./DEPLOYMENT_ROLLBACK.md) | Rollback procedures | When a deployment causes issues |
 | [DEPLOYMENT_SCALING.md](./DEPLOYMENT_SCALING.md) | Scaling operations | Adjusting capacity up/down |
 | [DATABASE_MIGRATION.md](./DATABASE_MIGRATION.md) | Database schema changes | Prisma migration procedures |
+| [DATABASE_BACKUP_AND_RESTORE_DRILL.md](./DATABASE_BACKUP_AND_RESTORE_DRILL.md) | Backup/restore drill for Postgres | Periodic staging drills and pre-change rehearsals |
+| [SECRETS_ROTATION_DRILL.md](./SECRETS_ROTATION_DRILL.md) | JWT and DB secrets rotation drill | Periodic security drills and pre-launch hardening |
+| [ORCHESTRATOR_ROLLOUT_RUNBOOK.md](./ORCHESTRATOR_ROLLOUT_RUNBOOK.md) | Orchestrator rollout, rollback, and incident handling | Changing orchestrator rollout phase or responding to orchestrator-specific alerts |
 
 ## Quick Reference
 
@@ -66,6 +69,7 @@ curl -s http://localhost:8001/health | jq
 - [OPERATIONS_DB.md](../OPERATIONS_DB.md) - Database operations guide
 - [SECRETS_MANAGEMENT.md](../SECRETS_MANAGEMENT.md) - Secrets handling procedures
 - [ENVIRONMENT_VARIABLES.md](../ENVIRONMENT_VARIABLES.md) - Complete environment variable reference
+ - [ORCHESTRATOR_ROLLOUT_PLAN.md](../ORCHESTRATOR_ROLLOUT_PLAN.md) - Orchestrator rollout phases, SLOs, and environment profiles
 
 ## Emergency Contacts
 

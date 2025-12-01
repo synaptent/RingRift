@@ -188,7 +188,7 @@ const ctx: PlacementContext = {
 
 const result = validatePlacementOnBoard(state.board, targetPos, 1, ctx);
 if (result.valid) {
-  // Apply placement via mutator or custom logic
+  // Apply placement via the canonical helpers (applyPlacementMove / processTurn), not host-specific logic.
 }
 ```
 
@@ -757,13 +757,14 @@ In both cases, **`Move` remains the canonical action**, and all decision/choice 
 
 Beneath the orchestrator, the domain aggregates and helper modules under `src/shared/engine/**` form the rules-semantics SSoT for their respective domains:
 
-- [`MovementAggregate`](../src/shared/engine/aggregates/MovementAggregate.ts:1) together with [`movementLogic.ts`](../src/shared/engine/movementLogic.ts:1) for non-capturing movement.
-- [`CaptureAggregate`](../src/shared/engine/aggregates/CaptureAggregate.ts:1) together with [`captureLogic.ts`](../src/shared/engine/captureLogic.ts:1) and [`captureChainHelpers.ts`](../src/shared/engine/captureChainHelpers.ts:1) for capture and chain-capture semantics.
-- [`PlacementAggregate`](../src/shared/engine/aggregates/PlacementAggregate.ts:1) together with [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts:1) for placement and no-dead-placement.
-- Line helpers such as [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts:1) and territory helpers such as [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts:1).
-- Victory helpers such as [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts:1) and [`VictoryAggregate`](../src/shared/engine/aggregates/VictoryAggregate.ts:1).
+- [`MovementAggregate`](../src/shared/engine/aggregates/MovementAggregate.ts) together with [`movementLogic.ts`](../src/shared/engine/movementLogic.ts) for non-capturing movement.
+- [`CaptureAggregate`](../src/shared/engine/aggregates/CaptureAggregate.ts) together with [`captureLogic.ts`](../src/shared/engine/captureLogic.ts) and [`captureChainHelpers.ts`](../src/shared/engine/captureChainHelpers.ts) for capture and chain-capture semantics.
+- [`PlacementAggregate`](../src/shared/engine/aggregates/PlacementAggregate.ts) together with [`placementHelpers.ts`](../src/shared/engine/placementHelpers.ts) for placement, multi-ring placement on empty cells, stacking rules, and the no-dead-placement rule.
+- [`LineAggregate`](../src/shared/engine/aggregates/LineAggregate.ts) together with helpers such as [`lineDetection.ts`](../src/shared/engine/lineDetection.ts) and [`lineDecisionHelpers.ts`](../src/shared/engine/lineDecisionHelpers.ts) for line detection and line-reward decisions.
+- [`TerritoryAggregate`](../src/shared/engine/aggregates/TerritoryAggregate.ts) together with helpers such as [`territoryDetection.ts`](../src/shared/engine/territoryDetection.ts), [`territoryProcessing.ts`](../src/shared/engine/territoryProcessing.ts), and [`territoryDecisionHelpers.ts`](../src/shared/engine/territoryDecisionHelpers.ts) for Territory disconnection, Q23 self-elimination prerequisites, and explicit Territory decisions.
+- Victory helpers such as [`victoryLogic.ts`](../src/shared/engine/victoryLogic.ts) and [`VictoryAggregate`](../src/shared/engine/aggregates/VictoryAggregate.ts) for ring-elimination, Territory-control, and last-player-standing victory semantics.
 
-Hosts should treat these aggregates and helpers as the **only authoritative implementation** of movement, capture, placement, line, territory, and victory semantics; alternative host-side implementations are reserved for diagnostics and test harnesses only. For consolidation and rollout details, see [`docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md`](../docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md:1) and [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../docs/ORCHESTRATOR_ROLLOUT_PLAN.md:1).
+Hosts (backend and sandbox) must treat these aggregates and helpers as the **only authoritative implementation** of movement, capture, placement, line, Territory, and victory rules semantics. Production hosts must go through the orchestrator (`processTurn` / `processTurnAsync` together with `validateMove` / `getValidMoves` / `hasValidMoves`) via [`TurnEngineAdapter`](../src/server/game/turn/TurnEngineAdapter.ts) or [`SandboxOrchestratorAdapter`](../src/client/sandbox/SandboxOrchestratorAdapter.ts); direct calls into aggregates or helpers are reserved for tests, diagnostics, and tooling. For a design-level view of these aggregates see [`docs/DOMAIN_AGGREGATE_DESIGN.md`](../docs/DOMAIN_AGGREGATE_DESIGN.md), and for rule-ID → implementation mapping see [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md). For consolidation and rollout details, see [`docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md`](../docs/SHARED_ENGINE_CONSOLIDATION_PLAN.md) and [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](../docs/ORCHESTRATOR_ROLLOUT_PLAN.md).
 
 ##### 3.9.0a High-level turn + decision flow (diagram)
 
@@ -872,16 +873,100 @@ This architecture ensures that **`Move` remains the single canonical description
 - Enforce timeouts and defaults.
 - Log and replay decisions in terms of stable `Move.id`s across backend, sandbox, and Python parity harnesses.
 
+#### 3.9.3 Operational metrics & invariants (orchestrator-facing)
+
+While this document focuses on **function-level** API, the orchestrator
+surface is also wired into a small set of metrics that form part of the
+operational contract for rollout, scale, and invariant soaks. These metrics
+are emitted by [`MetricsService.ts`](../src/server/services/MetricsService.ts)
+and referenced from the rollout and alerting docs:
+
+- **Orchestrator error rate:**  
+  `ringrift_orchestrator_error_rate` – fraction of orchestrator‑backed
+  operations that resulted in an error within the current circuit‑breaker
+  window. Backed by `OrchestratorRolloutService.recordSuccess/recordError`
+  and used by both:
+  - CI SLOs (`SLO-CI-ORCH-PARITY`, `SLO-STAGE-ORCH-ERROR`,
+    `SLO-PROD-ORCH-ERROR` in `ORCHESTRATOR_ROLLOUT_PLAN.md`), and
+  - alerts such as `OrchestratorErrorRateWarning` in
+    `monitoring/prometheus/alerts.yml`.
+
+- **Circuit‑breaker state:**  
+  `ringrift_orchestrator_circuit_breaker_state` – `0` when closed,
+  `1` when open. Driven by `OrchestratorRolloutService` and mirrored in:
+  - the admin status endpoint
+    (`/api/admin/orchestrator/status`), and
+  - the `OrchestratorCircuitBreakerOpen` alert.
+
+- **Rollout percentage:**  
+  `ringrift_orchestrator_rollout_percentage` – current effective rollout
+  percentage as seen by the backend host. This is a **derived view over**
+  `config.orchestrator.rolloutPercentage` and
+  `config.featureFlags.orchestrator.rolloutPercentage`, and is used in
+  rollout dashboards and in the environment/phase mapping tables in
+  `ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1.
+
+- **Shadow mismatch rate:**  
+  `ringrift_orchestrator_shadow_mismatch_rate` – rate of divergences between
+  orchestrator and legacy paths when shadow mode is enabled. This complements
+  the TS↔Python rules‑parity metrics and is referenced by the
+  `OrchestratorShadowMismatches` alert group and by
+  `SLO-STAGE-ORCH-PARITY` / `SLO-PROD-RULES-PARITY` in
+  `ORCHESTRATOR_ROLLOUT_PLAN.md`.
+
+- **Invariant violations (invariant soaks):**  
+  `ringrift_orchestrator_invariant_violations_total{type, invariant_id}` – counter for detected
+  violations of S‑invariant and related progress invariants during normal
+  traffic and orchestrator soaks.  
+  - `type` is a low‑level violation identifier emitted by hosts and the soak harness
+    (for example `S_INVARIANT_DECREASED`, `ACTIVE_NO_MOVES`,
+    `NEGATIVE_STACK_HEIGHT`, `ORCHESTRATOR_VALIDATE_MOVE_FAILED`).  
+  - `invariant_id` is a high‑level invariant ID from
+    `docs/INVARIANTS_AND_PARITY_FRAMEWORK.md` (for example `INV-S-MONOTONIC`,
+    `INV-ACTIVE-NO-MOVES`, `INV-STATE-STRUCTURAL`, `INV-ORCH-VALIDATION`,
+    `INV-TERMINATION`), derived from `type` by `MetricsService`.  
+  Violations are:
+  - surfaced via short/long soak JSON summaries
+    (`results/orchestrator_soak_smoke.json`,
+    `results/orchestrator_soak_nightly.json`),
+  - checked in CI by `orchestrator-soak-smoke` /
+    `orchestrator-short-soak` (`SLO-CI-ORCH-SHORT-SOAK`), and
+  - monitored in staging/production via alert thresholds described in
+    `docs/ALERTING_THRESHOLDS.md`. Dashboards and alert queries should
+    generally group by `invariant_id` rather than raw `type` strings.
+
+- **Rules-parity mismatches (TS ↔ Python):**  
+  In addition to the per-dimension counters used by `RulesParity*` alerts:  
+  - `ringrift_rules_parity_valid_mismatch_total`  
+  - `ringrift_rules_parity_hash_mismatch_total`  
+  - `ringrift_rules_parity_game_status_mismatch_total`  
+  the backend also exposes a unified counter:  
+  `ringrift_rules_parity_mismatches_total{mismatch_type, suite}` – incremented by `RulesBackendFacade.compareTsAndPython()` via `rulesParityMetrics` / `MetricsService.recordRulesParityMismatch`.  
+  - `mismatch_type` ∈ {`validation`, `hash`, `s_invariant`, `game_status`} and matches the parity IDs in `docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`.  
+  - `suite` identifies the parity harness, for example `runtime_shadow`, `runtime_python_mode`, or `runtime_ts`.  
+  This metric allows dashboards to aggregate and break down parity incidents across suites while keeping alert expressions focused on the per-dimension counters above.
+
+Host implementors must treat these metrics as **observability surfaces over
+the canonical orchestrator behaviour**, not as alternative sources of truth
+for rules semantics. Changes to their meaning or emission points must remain
+aligned with:
+
+- `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §6.6 (metrics and SLOs),
+- `docs/ALERTING_THRESHOLDS.md` (alert expressions and thresholds), and
+- the invariant‑soak profiles in `docs/STRICT_INVARIANT_SOAKS.md`.
+
 #### 3.9.2 Worked example: `PendingDecision → PlayerChoice → WebSocket → Move`
 
 This section gives a concrete, code-aligned example of how a **line reward decision** flows from the orchestrator through backend adapters and WebSockets, and back into a canonical `Move`.
 
-> **Scope:** This describes the **target orchestrator-backed backend path**.
-> Today, `GameEngine` + `WebSocketInteractionHandler` already use `PlayerChoice` with
-> `moveId` fields for line/territory/elimination decisions. As Phase 3 migration
-> completes, `TurnEngineAdapter` will become the primary entry point for these
-> decisions, but the contracts shown here (Move IDs carried through PlayerChoice
-> and WebSocket payloads) are already in place.
+> **Scope:** This describes the **canonical orchestrator-backed backend path**.
+> Today, `GameEngine` + `TurnEngineAdapter` form the primary backend integration
+> over `processTurnAsync`, and `WebSocketInteractionHandler` already uses
+> `PlayerChoice` with `moveId` fields for line/territory/elimination decisions.
+> Legacy `RuleEngine`/`GameEngine` pipelines are retained only for tests,
+> diagnostics, or circuit‑breaker/rollback scenarios; new backend behaviour
+> must integrate via `TurnEngineAdapter` and the orchestrator contracts shown
+> here (Move IDs carried through `PlayerChoice` and WebSocket payloads).
 
 ##### Step 1: Orchestrator produces a `PendingDecision`
 
@@ -1312,9 +1397,11 @@ The Client Sandbox similarly delegates to shared helpers. Remaining work:
 2. ✅ Replace `sandboxTerritoryEngine` internals with shared territory helpers – territory decisions and automatic region processing now flow through `territoryDecisionHelpers` via `ClientSandboxEngine.getValidTerritoryProcessingMovesForCurrentPlayer()` / `processDisconnectedRegionsForCurrentPlayer()`, and `sandboxTerritoryEngine.ts` has been removed.
 3. Consolidate turn progression logic via `advanceTurnAndPhase()`
 
-### 8.3 For Python AI Service
+### 8.3 For Python AI Service (host mirror, historical context)
 
-The Python AI Service currently duplicates rules logic. Long-term options:
+> **Non-SSOT note:** The Python AI Service is a **host/adapter** over the shared TS rules engine, validated via contract vectors and parity suites. It is not a separate rules semantics SSoT; any behavioural disagreements must be resolved in favour of the shared TS engine + orchestrator.
+
+The Python AI Service currently duplicates rules logic in its own `GameEngine`. Long-term options:
 
 1. **Shadow Contracts** (current): Validate against TS engine at runtime
 2. **Code Generation**: Generate Python from TS source

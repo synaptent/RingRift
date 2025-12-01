@@ -438,6 +438,25 @@ describe('MetricsService', () => {
       expect(output).toContain('ringrift_orchestrator_error_rate');
       expect(output).toContain('ringrift_orchestrator_rollout_percentage');
     });
+
+    it('should record orchestrator invariant violations with invariant_id labels', async () => {
+      const metrics = getMetricsService();
+
+      // S-invariant decrease and ACTIVE-no-moves should be mapped to their
+      // corresponding high-level invariant IDs.
+      metrics.recordOrchestratorInvariantViolation('S_INVARIANT_DECREASED');
+      metrics.recordOrchestratorInvariantViolation('ACTIVE_NO_MOVES');
+
+      const output = await metrics.getMetrics();
+
+      expect(output).toContain('ringrift_orchestrator_invariant_violations_total');
+      expect(output).toContain(
+        'ringrift_orchestrator_invariant_violations_total{type="S_INVARIANT_DECREASED",invariant_id="INV-S-MONOTONIC"}'
+      );
+      expect(output).toContain(
+        'ringrift_orchestrator_invariant_violations_total{type="ACTIVE_NO_MOVES",invariant_id="INV-ACTIVE-NO-MOVES"}'
+      );
+    });
   });
 
   describe('Default Node.js Metrics', () => {

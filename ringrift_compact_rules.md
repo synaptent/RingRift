@@ -300,7 +300,7 @@ After a turn’s movement/captures:
 
 ### 5.3 Collapse & elimination logic
 
-Let `L` be a chosen line of `len = |L|`, belonging to player `P`, with `requiredLen = lineLength` (4 or 5).
+Let `L` be a chosen line of `len = |L|`, belonging to player `P`, with `requiredLen = lineLength` (3 or 4, depending on board type).
 
 Two cases:
 

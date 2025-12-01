@@ -92,9 +92,12 @@ describe('GameEngine landing on own marker eliminates top ring', () => {
     // Bypass RuleEngine and apply the move directly to test board mutations.
     engineAny.applyMove(move);
 
-    const stackAtFrom = boardManager.getStack(from, gameState.board);
-    const stackAtTo = boardManager.getStack(to, gameState.board) as RingStack | undefined;
-    const markerAtTo = boardManager.getMarker(to, gameState.board);
+    // Re-read gameState after applyMove (it's reassigned internally)
+    const updatedState = engineAny.gameState as any;
+
+    const stackAtFrom = boardManager.getStack(from, updatedState.board);
+    const stackAtTo = boardManager.getStack(to, updatedState.board) as RingStack | undefined;
+    const markerAtTo = boardManager.getMarker(to, updatedState.board);
 
     expect(stackAtFrom).toBeUndefined();
     expect(stackAtTo).toBeDefined();
@@ -104,9 +107,10 @@ describe('GameEngine landing on own marker eliminates top ring', () => {
     expect(stackAtTo!.stackHeight).toBe(1);
 
     // One ring eliminated globally and credited to player 1.
-    expect(gameState.totalRingsEliminated).toBe(1);
-    expect(gameState.board.eliminatedRings[1]).toBe(1);
-    expect(player1.eliminatedRings).toBe(1);
+    const updatedPlayer1 = updatedState.players.find((p: Player) => p.playerNumber === 1)!;
+    expect(updatedState.totalRingsEliminated).toBe(1);
+    expect(updatedState.board.eliminatedRings[1]).toBe(1);
+    expect(updatedPlayer1.eliminatedRings).toBe(1);
 
     // The landing marker should have been removed.
     expect(markerAtTo).toBeUndefined();
@@ -166,10 +170,13 @@ describe('GameEngine landing on own marker eliminates top ring', () => {
 
     engineAny.applyMove(move);
 
-    const stackAtFrom = boardManager.getStack(from, gameState.board);
-    const stackAtTarget = boardManager.getStack(target, gameState.board);
-    const stackAtLanding = boardManager.getStack(landing, gameState.board) as RingStack | undefined;
-    const markerAtLanding = boardManager.getMarker(landing, gameState.board);
+    // Re-read gameState after applyMove (it's reassigned internally)
+    const updatedState = engineAny.gameState as any;
+
+    const stackAtFrom = boardManager.getStack(from, updatedState.board);
+    const stackAtTarget = boardManager.getStack(target, updatedState.board);
+    const stackAtLanding = boardManager.getStack(landing, updatedState.board) as RingStack | undefined;
+    const markerAtLanding = boardManager.getMarker(landing, updatedState.board);
 
     expect(stackAtFrom).toBeUndefined();
     expect(stackAtTarget).toBeUndefined();
@@ -179,9 +186,10 @@ describe('GameEngine landing on own marker eliminates top ring', () => {
     // eliminated for landing on own marker => final height 2.
     expect(stackAtLanding!.stackHeight).toBe(2);
 
-    expect(gameState.totalRingsEliminated).toBe(1);
-    expect(gameState.board.eliminatedRings[1]).toBe(1);
-    expect(player1.eliminatedRings).toBe(1);
+    const updatedPlayer1 = updatedState.players.find((p: Player) => p.playerNumber === 1)!;
+    expect(updatedState.totalRingsEliminated).toBe(1);
+    expect(updatedState.board.eliminatedRings[1]).toBe(1);
+    expect(updatedPlayer1.eliminatedRings).toBe(1);
 
     // Landing marker should have been removed as part of the rule.
     expect(markerAtLanding).toBeUndefined();

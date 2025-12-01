@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
 import {
   BoardType,
   BoardState,
@@ -8,6 +8,7 @@ import {
   positionsEqual,
 } from '../../shared/types/game';
 import { computeBoardMovementGrid } from '../utils/boardMovementGrid';
+import type { MovementGrid } from '../utils/boardMovementGrid';
 import type { BoardViewModel, CellViewModel, StackViewModel } from '../adapters/gameViewModels';
 
 // Keyboard navigation helpers
@@ -288,6 +289,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Keyboard navigation state
   const [focusedPosition, setFocusedPosition] = useState<Position | null>(null);
   const boardContainerRef = useRef<HTMLDivElement>(null);
+  // Geometry container for DOM-based movement grid alignment (the element
+  // that the SVG overlay is absolutely positioned inside of).
+  const boardGeometryRef = useRef<HTMLDivElement | null>(null);
   const cellRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   // Screen reader announcements
@@ -299,6 +303,20 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const map = new Map<string, CellViewModel>();
     for (const cell of viewModel.cells) {
       map.set(cell.positionKey, cell);
+    }
+    return map;
+  }, [viewModel]);
+
+  // Precompute a lookup map for decision highlights when provided. When
+  // multiple highlights target the same cell, primary intensity wins.
+  const highlightByKey = useMemo(() => {
+    const map = new Map<string, 'primary' | 'secondary'>();
+    if (viewModel?.decisionHighlights) {
+      for (const h of viewModel.decisionHighlights.highlights) {
+        const existing = map.get(h.positionKey);
+        if (existing === 'primary') continue;
+        map.set(h.positionKey, h.intensity);
+      }
     }
     return map;
   }, [viewModel]);
@@ -577,7 +595,189 @@ export const BoardView: React.FC<BoardViewProps> = ({
   // Hex board: rendered using the same cube/axial coordinate system
   // as BoardManager (q = x, r = y, s = z, with q + r + s = 0).
 
-  const movementGrid = showMovementGrid ? computeBoardMovementGrid(board) : null;
+  // DOM-aware movement grid: build grid entirely from DOM cell positions.
+  // This ensures perfect alignment regardless of CSS changes.
+  // Store both the grid AND the dimensions used to compute it, so we can
+  // render with exactly the same coordinate system.
+  // Also store the scale factor for containers with CSS transforms.
+  const [movementGridData, setMovementGridData] = useState<{
+    grid: MovementGrid;
+    width: number;
+    height: number;
+    scaleFactor: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!showMovementGrid) {
+      setMovementGridData(null);
+      return;
+    }
+
+    const container = boardGeometryRef.current;
+    if (!container) {
+      // Fallback to logical grid if no DOM container - use 1x1 viewBox
+      const fallbackGrid = computeBoardMovementGrid(board);
+      setMovementGridData({ grid: fallbackGrid, width: 1, height: 1, scaleFactor: 1 });
+      return;
+    }
+
+    // Detect CSS scale transform on the container
+    // getBoundingClientRect() returns scaled dimensions, but we need unscaled
+    // dimensions for the SVG to render correctly inside the scaled container.
+    const computedStyle = window.getComputedStyle(container);
+    const transform = computedStyle.transform;
+    let scaleFactor = 1;
+    if (transform && transform !== 'none') {
+      // Try matrix format first: matrix(a, b, c, d, tx, ty) where scaleX is 'a'
+      const matrixMatch = transform.match(/matrix\(([^,]+),/);
+      if (matrixMatch) {
+        scaleFactor = parseFloat(matrixMatch[1]) || 1;
+      } else {
+        // Try scale format: scale(x) or scale(x, y) 
+        const scaleMatch = transform.match(/scale\(([^,)]+)/);
+        if (scaleMatch) {
+          scaleFactor = parseFloat(scaleMatch[1]) || 1;
+        }
+      }
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    // getBoundingClientRect returns scaled dimensions - unscale them for internal coords
+    const width = containerRect.width / scaleFactor;
+    const height = containerRect.height / scaleFactor;
+
+    if (!width || !height) {
+      const fallbackGrid = computeBoardMovementGrid(board);
+      setMovementGridData({ grid: fallbackGrid, width: 1, height: 1, scaleFactor: 1 });
+      return;
+    }
+
+    // Build centers entirely from DOM - no dependency on computeBoardMovementGrid
+    const centers: MovementGrid['centers'] = [];
+    const centersByKey = new Map<string, { cx: number; cy: number; position: Position }>();
+
+    const cellElements = container.querySelectorAll<HTMLButtonElement>('button[data-x]');
+    cellElements.forEach((el) => {
+      const xAttr = el.getAttribute('data-x');
+      const yAttr = el.getAttribute('data-y');
+      if (xAttr == null || yAttr == null) return;
+
+      const zAttr = el.getAttribute('data-z');
+      const position: Position =
+        zAttr != null
+          ? { x: Number(xAttr), y: Number(yAttr), z: Number(zAttr) }
+          : { x: Number(xAttr), y: Number(yAttr) };
+
+      const key = positionToString(position);
+      const rect = el.getBoundingClientRect();
+      // Unscale the positions from screen coords to pre-transform coords
+      const centerX = (rect.left + rect.width / 2 - containerRect.left) / scaleFactor;
+      const centerY = (rect.top + rect.height / 2 - containerRect.top) / scaleFactor;
+
+      const cx = centerX / width;
+      const cy = centerY / height;
+
+      centersByKey.set(key, { cx, cy, position });
+      centers.push({ key, position, cx, cy });
+    });
+
+    if (centers.length === 0) {
+      const fallbackGrid = computeBoardMovementGrid(board);
+      setMovementGridData({ grid: fallbackGrid, width: 1, height: 1, scaleFactor: 1 });
+      return;
+    }
+
+    // Build edges based on board type adjacency rules
+    const edges: MovementGrid['edges'] = [];
+    const addedEdges = new Set<string>();
+
+    const isHex = effectiveBoardType === 'hexagonal';
+
+    if (isHex) {
+      // Hex adjacency: 6 neighbors using cube coordinates
+      const hexDirections = [
+        { dx: 1, dy: -1, dz: 0 },
+        { dx: 1, dy: 0, dz: -1 },
+        { dx: 0, dy: 1, dz: -1 },
+        { dx: -1, dy: 1, dz: 0 },
+        { dx: -1, dy: 0, dz: 1 },
+        { dx: 0, dy: -1, dz: 1 },
+      ];
+
+      for (const center of centers) {
+        const { position } = center;
+        const q = position.x;
+        const r = position.y;
+        const s = position.z ?? -q - r;
+
+        for (const { dx, dy, dz } of hexDirections) {
+          const nq = q + dx;
+          const nr = r + dy;
+          const ns = s + dz;
+          if (nq + nr + ns !== 0) continue;
+
+          const neighborKey = positionToString({ x: nq, y: nr, z: ns });
+          if (!centersByKey.has(neighborKey)) continue;
+
+          // Only add each edge once (undirected)
+          const edgeKey = center.key < neighborKey 
+            ? `${center.key}->${neighborKey}` 
+            : `${neighborKey}->${center.key}`;
+          if (addedEdges.has(edgeKey)) continue;
+          addedEdges.add(edgeKey);
+
+          if (center.key < neighborKey) {
+            edges.push({ fromKey: center.key, toKey: neighborKey });
+          } else {
+            edges.push({ fromKey: neighborKey, toKey: center.key });
+          }
+        }
+      }
+    } else {
+      // Square board adjacency: 8 neighbors (orthogonal + diagonal)
+      const squareDeltas = [
+        { dx: 1, dy: 0 },
+        { dx: -1, dy: 0 },
+        { dx: 0, dy: 1 },
+        { dx: 0, dy: -1 },
+        { dx: 1, dy: 1 },
+        { dx: 1, dy: -1 },
+        { dx: -1, dy: 1 },
+        { dx: -1, dy: -1 },
+      ];
+
+      for (const center of centers) {
+        const { position } = center;
+        for (const { dx, dy } of squareDeltas) {
+          const nx = position.x + dx;
+          const ny = position.y + dy;
+          const neighborKey = positionToString({ x: nx, y: ny });
+          if (!centersByKey.has(neighborKey)) continue;
+
+          const edgeKey = center.key < neighborKey 
+            ? `${center.key}->${neighborKey}` 
+            : `${neighborKey}->${center.key}`;
+          if (addedEdges.has(edgeKey)) continue;
+          addedEdges.add(edgeKey);
+
+          if (center.key < neighborKey) {
+            edges.push({ fromKey: center.key, toKey: neighborKey });
+          } else {
+            edges.push({ fromKey: neighborKey, toKey: center.key });
+          }
+        }
+      }
+    }
+
+    // Store grid with the exact dimensions used to compute normalized coords
+    setMovementGridData({ grid: { centers, edges }, width, height, scaleFactor });
+  }, [showMovementGrid, board, effectiveBoardType]);
+
+  // Extract grid and stored dimensions for rendering
+  const movementGrid = movementGridData?.grid ?? null;
+  const storedWidth = movementGridData?.width ?? 0;
+  const storedHeight = movementGridData?.height ?? 0;
+
   const centersByKey = movementGrid
     ? new Map(movementGrid.centers.map((center) => [center.key, center] as const))
     : null;
@@ -587,26 +787,49 @@ export const BoardView: React.FC<BoardViewProps> = ({
       return null;
     }
 
+    // Use the stored dimensions from when grid was computed
+    // This ensures perfect alignment since normalized coords were computed 
+    // against these exact dimensions
+    const width = storedWidth;
+    const height = storedHeight;
+    
+    if (!width || !height) return null;
+
+    // Scale factors for stroke/circle sizes based on container
+    const scale = Math.min(width, height);
+    const strokeWidth = Math.max(1, scale * 0.003);
+    const dotRadius = Math.max(2, scale * 0.006);
+
     return (
       <svg
-        className="pointer-events-none absolute inset-0 z-10"
-        viewBox="0 0 1 1"
-        preserveAspectRatio="xMidYMid meet"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          width: '100%',
+          height: '100%',
+        }}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid slice"
       >
         {movementGrid.edges.map((edge) => {
           const from = centersByKey.get(edge.fromKey);
           const to = centersByKey.get(edge.toKey);
           if (!from || !to) return null;
 
+          // Convert normalized coords back to pixels
+          const x1 = from.cx * width;
+          const y1 = from.cy * height;
+          const x2 = to.cx * width;
+          const y2 = to.cy * height;
+
           return (
             <line
               key={`${edge.fromKey}->${edge.toKey}`}
-              x1={from.cx}
-              y1={from.cy}
-              x2={to.cx}
-              y2={to.cy}
-              stroke="rgba(148, 163, 184, 0.45)" // slate-400/45
-              strokeWidth={0.0025}
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke="rgba(148, 163, 184, 0.45)"
+              strokeWidth={strokeWidth}
             />
           );
         })}
@@ -614,10 +837,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
         {movementGrid.centers.map((center) => (
           <circle
             key={center.key}
-            cx={center.cx}
-            cy={center.cy}
-            r={0.004}
-            fill="rgba(148, 163, 184, 0.75)" // slightly brighter node dots
+            cx={center.cx * width}
+            cy={center.cy * height}
+            r={dotRadius}
+            fill="rgba(148, 163, 184, 0.75)"
           />
         ))}
       </svg>
@@ -700,7 +923,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   };
 
   const renderSquareBoard = (size: number) => {
-    const rows: JSX.Element[] = [];
+    const rows: React.ReactNode[] = [];
     // Cell sizing: make 8x8 squares roughly 2x the original size, and
     // 19x19 squares ~30% larger, so stacks up to height 10 remain legible
     // without overwhelming the viewport.
@@ -708,7 +931,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       boardType === 'square8' ? 'w-16 h-16 md:w-20 md:h-20' : 'w-11 h-11 md:w-14 md:h-14';
 
     for (let y = 0; y < size; y++) {
-      const cells: JSX.Element[] = [];
+      const cells: React.ReactNode[] = [];
       for (let x = 0; x < size; x++) {
         const pos: Position = { x, y };
         const key = positionToString(pos);
@@ -732,15 +955,27 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const baseSquareBg = isDarkSquare ? 'bg-slate-300' : 'bg-slate-100';
 
         const collapsedOwner =
-          cellVM?.collapsedSpace?.ownerPlayerNumber ??
-          (collapsedOwnerFromBoard ? collapsedOwnerFromBoard.controllingPlayer : undefined);
+          cellVM?.collapsedSpace?.ownerPlayerNumber ||
+          (collapsedOwnerFromBoard !== undefined ? collapsedOwnerFromBoard : undefined);
         const territoryClasses = collapsedOwner ? getPlayerColors(collapsedOwner).territory : '';
+
+        // Decision-phase highlight intensity for this cell, if any. Primary highlights
+        // are rendered more prominently than secondary ones, but both should coexist
+        // cleanly with selection and valid-move styling.
+        const decisionHighlight = highlightByKey.get(key);
+        const decisionHighlightClass =
+          decisionHighlight === 'primary'
+            ? 'decision-highlight-primary'
+            : decisionHighlight === 'secondary'
+              ? 'decision-highlight-secondary'
+              : '';
 
         const cellClasses = [
           'relative border flex items-center justify-center text-[11px] md:text-xs rounded-sm',
           squareCellSizeClasses,
           'border-slate-600 text-slate-900',
           territoryClasses || baseSquareBg,
+          decisionHighlightClass,
           effectiveIsSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
           // Valid target highlighting on square boards: thin, bright-green inset
           // ring plus a light near-white emerald tint that reads clearly even
@@ -782,6 +1017,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
             key={key}
             ref={(ref) => registerCellRef(key, ref)}
             type="button"
+            data-x={x}
+            data-y={y}
+            data-decision-highlight={decisionHighlight || undefined}
             onClick={() => !isSpectator && onCellClick?.(pos)}
             onDoubleClick={() => !isSpectator && onCellDoubleClick?.(pos)}
             onContextMenu={(e) => {
@@ -844,7 +1082,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
         : 'relative space-y-0.5 bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner inline-block scale-75 origin-top-left';
 
     return (
-      <div className={containerClasses}>
+      <div ref={boardGeometryRef} className={containerClasses}>
         {rows}
         {renderMovementOverlay()}
         {showCoordinateLabels ? renderSquareCoordinateLabels(size) : null}
@@ -862,7 +1100,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     // with slight negative spacing to reduce vertical gaps.
 
     const radius = board.size - 1; // e.g. size=11 => radius=10
-    const rows: JSX.Element[] = [];
+    const rows: React.ReactNode[] = [];
 
     // Helper to generate algebraic labels for hex cells
     // Matches logic in notation.ts:
@@ -880,7 +1118,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       const r1 = Math.max(-radius, -q - radius);
       const r2 = Math.min(radius, -q + radius);
 
-      const cells: JSX.Element[] = [];
+      const cells: React.ReactNode[] = [];
       for (let r = r1; r <= r2; r++) {
         const s = -q - r;
         const pos: Position = { x: q, y: r, z: s };
@@ -901,17 +1139,27 @@ export const BoardView: React.FC<BoardViewProps> = ({
         const stackOwner = stack?.rings?.[0];
 
         const collapsedOwner =
-          cellVM?.collapsedSpace?.ownerPlayerNumber ??
-          (collapsedOwnerFromBoard ? collapsedOwnerFromBoard.controllingPlayer : undefined);
+          cellVM?.collapsedSpace?.ownerPlayerNumber ||
+          (collapsedOwnerFromBoard !== undefined ? collapsedOwnerFromBoard : undefined);
 
         const territoryClasses = collapsedOwner
           ? getPlayerColors(collapsedOwner).territory
           : 'bg-slate-300/80';
 
+        // Decision-phase highlight intensity for this hex cell, if any.
+        const decisionHighlight = highlightByKey.get(key);
+        const decisionHighlightClass =
+          decisionHighlight === 'primary'
+            ? 'decision-highlight-primary'
+            : decisionHighlight === 'secondary'
+              ? 'decision-highlight-secondary'
+              : '';
+
         const cellClasses = [
           'relative w-8 h-8 md:w-9 md:h-9 mx-0 flex items-center justify-center text-[11px] md:text-xs rounded-full border',
           'border-slate-600 text-slate-100',
           territoryClasses,
+          decisionHighlightClass,
           effectiveIsSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
           // Valid target highlighting with subtle pulse animation
           effectiveIsValid
@@ -951,6 +1199,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
             key={key}
             ref={(ref) => registerCellRef(key, ref)}
             type="button"
+            data-x={pos.x}
+            data-y={pos.y}
+            data-z={typeof pos.z === 'number' ? pos.z : undefined}
+            data-decision-highlight={decisionHighlight || undefined}
             onClick={() => !isSpectator && onCellClick?.(pos)}
             onDoubleClick={() => !isSpectator && onCellDoubleClick?.(pos)}
             onContextMenu={(e) => {
@@ -1017,7 +1269,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
     // Wrap all rows in a column with slight negative vertical spacing so
     // circles appear in a tight hexagonal packing without overlaps.
-    return <div className="flex flex-col -space-y-1">{rows}</div>;
+    // This inner container is the geometry reference for DOM-based grid alignment.
+    return (
+      <div ref={boardGeometryRef} className="relative flex flex-col -space-y-1">
+        {rows}
+        {renderMovementOverlay()}
+      </div>
+    );
   };
 
   // Render the board with keyboard navigation wrapper
@@ -1029,10 +1287,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
       return renderSquareBoard(19);
     }
     if (effectiveBoardType === 'hexagonal') {
+      // Hex board has boardGeometryRef and overlay inside renderHexBoard()
+      // for tighter alignment with the actual cell grid (no padding interference)
       return (
         <div className="relative inline-block p-2 border border-slate-300 rounded-md bg-white text-slate-900 shadow-inner">
           {renderHexBoard()}
-          {renderMovementOverlay()}
         </div>
       );
     }

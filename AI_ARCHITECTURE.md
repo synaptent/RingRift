@@ -199,41 +199,41 @@ At runtime there are three tightly coupled layers that share the **same rules se
 * - **Search data structures:** use [`BoundedTranspositionTable`](ai-service/app/ai/bounded_transposition_table.py) in `MinimaxAI` and `DescentAI` instead of unbounded dicts, to prevent OOMs during long searches and tournaments.
 * - **Training loops:** size batches and (where applicable) DataLoader workers in [`train.py`](ai-service/app/training/train.py) according to `max_memory_gb`, preferring memory‑mapped NPZ datasets for large runs as described in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §3](docs/AI_TRAINING_PREPARATION_GUIDE.md).
 * - **Self-play / soaks:** select difficulty bands and GC intervals in [`run_self_play_soak.py`](ai-service/scripts/run_self_play_soak.py) that keep memory usage within the configured limit (see [`docs/STRICT_INVARIANT_SOAKS.md` §2](docs/STRICT_INVARIANT_SOAKS.md)).
-* +- **Validate weight initialization and training stability**
-* - **NNs:** follow the Xavier/He initialization and validation helpers in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §4](docs/AI_TRAINING_PREPARATION_GUIDE.md):
-* - Check initial weight statistics, policy entropy, and value distributions on a small real batch before running long epochs.
-* - Confirm no NaNs or explosive gradients (NaN/instability bugs in early pipelines are documented and fixed in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §4](docs/AI_TRAINING_ASSESSMENT_FINAL.md)).
-* - **Heuristics:** treat new or retuned features conservatively:
-* - Use plateaus/ordering constraints from regression fixtures under `tests/fixtures/heuristic/v1/**` plus parity tests in `ai-service/tests/test_heuristic_parity.py` and `tests/unit/heuristicParity.shared.test.ts` to guard against sign/magnitude mistakes.
-* +- **Define baselines, evaluation harness, and scenario battery**
-* - Baselines:
-* - Random AI, canonical heuristic profiles, and the current NN are all available as `AIType`/difficulty presets (see difficulty ladder mapping earlier in this doc).
-* - Evaluation harness:
-* - Use [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py) for structured head‑to‑head matches and [`generate_statistical_report.py`](ai-service/scripts/generate_statistical_report.py) for CI‑style reports (Wilson CIs, p‑values, effect sizes), as summarized in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §§6,10](docs/AI_TRAINING_ASSESSMENT_FINAL.md).
-* - Scenario batteries:
-* - Plan targeted tests over:
-*      - Rules matrix and FAQ scenarios (`RULES_SCENARIO_MATRIX.md`, `tests/scenarios/RulesMatrix.*.test.ts`).
-*      - Invariant and strict‑no‑move soaks described in [`docs/STRICT_INVARIANT_SOAKS.md`](docs/STRICT_INVARIANT_SOAKS.md).
-* - Plug these into the same evaluation/reporting scripts so regressions show up in the same statistical pipeline.
-* +- **Reproducibility and experiment management**
-* - Fix seeds for:
-* - Self‑play generators (`--seed` flags in [`generate_data.py`](ai-service/app/training/generate_data.py) and [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py)).
-* - Training runs (`TrainConfig.seed` and seeding helpers in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §7.1](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
-* - Evaluation batteries (`--seed` options in [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py)).
-* - Record for each run:
-* - Git commit hash and dirty state.
-* - Dataset manifest/version (see the manifest format in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §7.4](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
-* - `MemoryConfig` values and key hyperparameters.
-* - Paths to checkpoints, evaluation JSONs, and generated statistical reports.
-* +- **Documentation & ethical notes**
-* - For **RingRift game AI**, ethical risk is low, but:
-* - Difficulty and AI type must match user expectations.
-* - Behaviour should be reproducible enough to debug and reason about (see RNG determinism section later in this doc).
-* - Any reuse of this infrastructure outside game AI must additionally respect the data/privacy and security guidance in [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](docs/DATA_LIFECYCLE_AND_PRIVACY.md) and related security docs.
-* +For end‑to‑end, procedural guidance (including concrete CLI examples and more detailed checklists), see:
-* +- [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](docs/AI_TRAINING_PREPARATION_GUIDE.md) for the full pre‑flight and infrastructure checklist.
-  +- [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md) for dataset schemas and generator usage.
-  +- [`docs/AI_TRAINING_ASSESSMENT_FINAL.md`](docs/AI_TRAINING_ASSESSMENT_FINAL.md) for the implemented memory limits, bug fixes, and empirical results that motivated these guidelines.
+* - **Validate weight initialization and training stability**
+*   - **NNs:** follow the Xavier/He initialization and validation helpers in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §4](docs/AI_TRAINING_PREPARATION_GUIDE.md):
+*     - Check initial weight statistics, policy entropy, and value distributions on a small real batch before running long epochs.
+*     - Confirm no NaNs or explosive gradients (NaN/instability bugs in early pipelines are documented and fixed in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §4](docs/AI_TRAINING_ASSESSMENT_FINAL.md)).
+*   - **Heuristics:** treat new or retuned features conservatively:
+*     - Use plateaus/ordering constraints from regression fixtures under `tests/fixtures/heuristic/v1/**` plus parity tests in `ai-service/tests/test_heuristic_parity.py` and `tests/unit/heuristicParity.shared.test.ts` to guard against sign/magnitude mistakes.
+* - **Define baselines, evaluation harness, and scenario battery**
+*   - **Baselines:**
+*     - Random AI, canonical heuristic profiles, and the current NN are all available as `AIType`/difficulty presets (see difficulty ladder mapping earlier in this doc).
+*   - **Evaluation harness:**
+*     - Use [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py) for structured head‑to‑head matches and [`generate_statistical_report.py`](ai-service/scripts/generate_statistical_report.py) for CI‑style reports (Wilson CIs, p‑values, effect sizes), as summarized in [`docs/AI_TRAINING_ASSESSMENT_FINAL.md` §§6,10](docs/AI_TRAINING_ASSESSMENT_FINAL.md).
+*   - **Scenario batteries:**
+*     - Plan targeted tests over:
+*       - Rules matrix and FAQ scenarios (`RULES_SCENARIO_MATRIX.md`, `tests/scenarios/RulesMatrix.*.test.ts`).
+*       - Invariant and strict‑no‑move soaks described in [`docs/STRICT_INVARIANT_SOAKS.md`](docs/STRICT_INVARIANT_SOAKS.md).
+*     - Plug these into the same evaluation/reporting scripts so regressions show up in the same statistical pipeline.
+* - **Reproducibility and experiment management**
+*   - Fix seeds for:
+*     - Self‑play generators (`--seed` flags in [`generate_data.py`](ai-service/app/training/generate_data.py) and [`generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py)).
+*     - Training runs (`TrainConfig.seed` and seeding helpers in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §7.1](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
+*     - Evaluation batteries (`--seed` options in [`evaluate_ai_models.py`](ai-service/scripts/evaluate_ai_models.py)).
+*   - Record for each run:
+*     - Git commit hash and dirty state.
+*     - Dataset manifest/version (see the manifest format in [`docs/AI_TRAINING_PREPARATION_GUIDE.md` §7.4](docs/AI_TRAINING_PREPARATION_GUIDE.md)).
+*     - `MemoryConfig` values and key hyperparameters.
+*     - Paths to checkpoints, evaluation JSONs, and generated statistical reports.
+* - **Documentation & ethical notes**
+*   - For **RingRift game AI**, ethical risk is low, but:
+*     - Difficulty and AI type must match user expectations.
+*     - Behaviour should be reproducible enough to debug and reason about (see RNG determinism section later in this doc).
+*   - Any reuse of this infrastructure outside game AI must additionally respect the data/privacy and security guidance in [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](docs/DATA_LIFECYCLE_AND_PRIVACY.md) and related security docs.
+* - For end‑to‑end, procedural guidance (including concrete CLI examples and more detailed checklists), see:
+*   - [`docs/AI_TRAINING_PREPARATION_GUIDE.md`](docs/AI_TRAINING_PREPARATION_GUIDE.md) for the full pre‑flight and infrastructure checklist.
+*   - [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md) for dataset schemas and generator usage.
+*   - [`docs/AI_TRAINING_ASSESSMENT_FINAL.md`](docs/AI_TRAINING_ASSESSMENT_FINAL.md) for the implemented memory limits, bug fixes, and empirical results that motivated these guidelines.
 
 ### Difficulty-to-AI-Type Mapping
 
@@ -460,8 +460,8 @@ appropriate network + action encoder for:
 #### MCTS Agent (`mcts_ai.py`)
 
 - **Status:** **Improved**
-- **Strengths:** Implements PUCT with RAVE heuristics. Supports batched inference.
-- **Weaknesses:** Fallback rollout policy is weak. Tree reuse is not fully implemented. State copying during simulation is expensive.
+- **Strengths:** Implements PUCT with RAVE heuristics. Supports batched inference. Uses make/unmake pattern via `MCTSNodeLite` and `_search_incremental()` for efficient state manipulation.
+- **Weaknesses:** Fallback rollout policy is weak. Tree reuse is not fully implemented.
 
 #### Neural Network (`neural_net.py`)
 
@@ -901,7 +901,7 @@ Endpoint: `/health/ai-service` (when implemented)
 
 1.  **Input Features:** Add history planes (last 3-5 moves) to capture dynamics.
 2.  **Network Size:** Experiment with MobileNet vs ResNet-50 for different difficulty levels.
-3.  **In-place State Updates:** Refactor `GameEngine` or create a specialized `FastGameEngine` for MCTS to eliminate copying overhead.
+3.  ~~**In-place State Updates:** Refactor `GameEngine` or create a specialized `FastGameEngine` for MCTS to eliminate copying overhead.~~ ✅ **COMPLETE** (as of 2025-11-30) - Implemented via `MutableGameState` with `make_move()`/`unmake_move()` pattern in [`mutable_state.py`](ai-service/app/rules/mutable_state.py). All tactical AI engines (MinimaxAI, MCTSAI, DescentAI) now use this for efficient O(1) state manipulation during search.
 
 ### Phase 4: Production Readiness (Long-term)
 

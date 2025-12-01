@@ -9,6 +9,7 @@ import type {
 import {
   advanceTurnAndPhase,
   enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
+  applyForcedEliminationForPlayer,
 } from '../../../shared/engine';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
@@ -305,47 +306,40 @@ function hasValidMovements(
 }
 
 /**
- * Force player to eliminate a cap when blocked with no valid moves
- * Rule Reference: Section 4.4 - Forced Elimination When Blocked
+ * Force player to eliminate a cap when blocked with no valid moves.
+ *
+ * This is now a thin wrapper around the shared
+ * {@link applyForcedEliminationForPlayer} helper (RR-CANON R205), which:
+ *
+ * - Checks the formal forced-elimination preconditions (R072/R100/R205).
+ * - Selects a stack controlled by the player, preferring the smallest
+ *   positive capHeight and falling back to the first stack when no caps
+ *   exist.
+ * - Eliminates that stack's cap via {@code eliminate_rings_from_stack},
+ *   updating board.eliminatedRings, players[].eliminatedRings, and
+ *   totalRingsEliminated in a way that satisfies INV-ELIMINATION-MONOTONIC
+ *   and contributes to INV-S-MONOTONIC.
+ *
+ * TurnEngine mutates the provided {@link gameState} reference in-place so
+ * that backend GameEngine callers observe the updated state without
+ * changing their object identity contracts.
  */
 function processForcedElimination(
   gameState: GameState,
-  deps: TurnEngineDeps,
-  hooks: TurnEngineHooks,
+  _deps: TurnEngineDeps,
+  _hooks: TurnEngineHooks,
   playerNumber: number
 ): void {
-  const { boardManager } = deps;
-  const playerStacks = boardManager.getPlayerStacks(gameState.board, playerNumber);
-
-  if (playerStacks.length === 0) {
-    // No stacks to eliminate from - player forfeits turn
+  const outcome = applyForcedEliminationForPlayer(gameState, playerNumber);
+  if (!outcome) {
+    // Preconditions not satisfied (no stacks or actions); nothing to do.
     return;
   }
 
-  // Auto-execute elimination: Select the best stack to eliminate.
-  // Strategy:
-  // 1. Prefer stacks with capHeight > 0 (actual caps).
-  // 2. Among those, prefer the one with the SMALLEST capHeight to minimize loss.
-  // 3. If no caps (e.g. test fixtures), pick the first available stack.
-
-  let bestStack = playerStacks[0];
-  let minCapHeight = Infinity;
-
-  for (const stack of playerStacks) {
-    const capHeight = (stack as any).capHeight;
-    if (typeof capHeight === 'number' && capHeight > 0) {
-      if (capHeight < minCapHeight) {
-        minCapHeight = capHeight;
-        bestStack = stack;
-      }
-    }
-  }
-
-  // If we found a stack with a cap, bestStack is the one with the smallest cap.
-  // If we didn't find any (minCapHeight is still Infinity), bestStack remains the first stack.
-  // This handles both real game scenarios and simplified test fixtures.
-
-  hooks.eliminatePlayerRingOrCap(playerNumber, bestStack.position);
+  // applyForcedEliminationForPlayer returns a new GameState instance; merge
+  // it back into the caller-owned reference so downstream logic (including
+  // advanceTurnAndPhase and GameEngine) continues to see mutations in-place.
+  Object.assign(gameState, outcome.nextState);
 }
 
 /**

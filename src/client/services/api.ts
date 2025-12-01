@@ -12,6 +12,16 @@ export interface GameHistoryMove {
   moveType: string;
   moveData: Record<string, unknown>;
   timestamp: string;
+  /**
+   * Present when the move was auto-resolved by the server (for example due to
+   * decision-phase timeout). This is a compact projection of the
+   * decisionAutoResolved metadata persisted in moveData.decisionAutoResolved.
+   */
+  autoResolved?: {
+    reason: 'timeout' | 'disconnected' | 'fallback';
+    choiceKind?: string;
+    choiceType?: string;
+  };
 }
 
 export interface GameHistoryResponse {

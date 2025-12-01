@@ -5,6 +5,8 @@ import { BoardView } from '../components/BoardView';
 import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal } from '../components/VictoryModal';
 import { GameEventLog } from '../components/GameEventLog';
+import { SandboxTouchControlsPanel } from '../components/SandboxTouchControlsPanel';
+import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import {
   BoardState,
   BoardType,
@@ -22,6 +24,7 @@ import {
   toBoardViewModel,
   toEventLogViewModel,
   toVictoryViewModel,
+  deriveBoardDecisionHighlights,
 } from '../adapters/gameViewModels';
 import { gameApi } from '../services/api';
 import type { SandboxInteractionHandler } from '../sandbox/ClientSandboxEngine';
@@ -147,6 +150,13 @@ export const SandboxGameHost: React.FC = () => {
   // Selection + valid target highlighting
   const [selected, setSelected] = useState<Position | undefined>();
   const [validTargets, setValidTargets] = useState<Position[]>([]);
+  // Start with the movement grid overlay enabled by default; it helps
+  // players understand valid moves and adjacency patterns.
+  const [showMovementGrid, setShowMovementGrid] = useState(true);
+  const [showValidTargetsOverlay, setShowValidTargetsOverlay] = useState(true);
+
+  // Help / controls overlay for the active sandbox host
+  const [showBoardControls, setShowBoardControls] = useState(false);
 
   const sandboxChoiceResolverRef = useRef<
     ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
@@ -157,6 +167,7 @@ export const SandboxGameHost: React.FC = () => {
     handleCellDoubleClick: handleSandboxCellDoubleClick,
     handleCellContextMenu: handleSandboxCellContextMenu,
     maybeRunSandboxAiIfNeeded,
+    clearSelection: clearSandboxSelection,
   } = useSandboxInteractions({
     selected,
     setSelected,
@@ -269,6 +280,13 @@ export const SandboxGameHost: React.FC = () => {
             aiType: 'heuristic',
           };
         })(),
+        // Mirror lobby behaviour: default-enable the pie rule for 2-player
+        // backend sandbox games. Local-only sandbox games (fallback path)
+        // continue to use the shared engine's defaults.
+        rulesOptions:
+          config.numPlayers === 2
+            ? { swapRuleEnabled: true }
+            : undefined,
       };
 
       const game = await gameApi.createGame(payload);
@@ -374,13 +392,27 @@ export const SandboxGameHost: React.FC = () => {
   const aiSeatCount = sandboxPlayersList.length - humanSeatCount;
 
   // Derive board VM + HUD-like summaries
-  const displayedValidTargets =
+  const primaryValidTargets =
     sandboxCaptureTargets.length > 0 ? sandboxCaptureTargets : validTargets;
+
+  const displayedValidTargets = showValidTargetsOverlay ? primaryValidTargets : [];
+
+  // Derive decision-phase highlights from the current sandbox GameState and
+  // whichever PlayerChoice is currently active. Capture-direction choices
+  // take precedence over generic pending choices so that landing/target
+  // geometry is always visible while the capture UI is open.
+  const activePendingChoice: PlayerChoice | null = sandboxCaptureChoice ?? sandboxPendingChoice;
+
+  const decisionHighlights =
+    sandboxGameState && activePendingChoice
+      ? deriveBoardDecisionHighlights(sandboxGameState, activePendingChoice)
+      : undefined;
 
   const sandboxBoardViewModel = sandboxBoardState
     ? toBoardViewModel(sandboxBoardState, {
         selectedPosition: selected,
         validTargets: displayedValidTargets,
+        decisionHighlights,
       })
     : null;
 
@@ -446,20 +478,61 @@ export const SandboxGameHost: React.FC = () => {
   const selectedBoardPreset =
     BOARD_PRESETS.find((preset) => preset.value === config.boardType) ?? BOARD_PRESETS[0];
 
+  // Keyboard shortcuts for sandbox overlay:
+  // - "?" (Shift + "/") toggles the Board Controls overlay when a sandbox game is active.
+  // - "Escape" closes the overlay when open.
+  useEffect(() => {
+    if (!isConfigured || !sandboxEngine) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName;
+        const isEditableTag =
+          tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+        const isContentEditable = target.isContentEditable;
+        if (isEditableTag || isContentEditable) {
+          return;
+        }
+      }
+
+      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+        event.preventDefault();
+        setShowBoardControls((prev) => !prev);
+        return;
+      }
+
+      if (event.key === 'Escape' && showBoardControls) {
+        event.preventDefault();
+        setShowBoardControls(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isConfigured, sandboxEngine, showBoardControls]);
+
   // Pre-game setup view
   if (!isConfigured || !sandboxEngine) {
     return (
-      <div className="container mx-auto px-4 py-8 space-y-6">
-        <header>
-          <h1 className="text-3xl font-bold mb-1">Start a RingRift Game (Local Sandbox)</h1>
-          <p className="text-sm text-gray-500">
-            This mode runs entirely in the browser using a local board. To view or play a real
-            server-backed game, navigate to a URL with a game ID (e.g.
-            <code className="ml-1 text-xs">/game/:gameId</code>).
-          </p>
-        </header>
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <div className="container mx-auto px-4 py-8 space-y-6">
+          <header>
+            <h1 className="text-3xl font-bold mb-1">Start a RingRift Game (Local Sandbox)</h1>
+            <p className="text-sm text-slate-400">
+              This mode runs entirely in the browser using a local board. To view or play a real
+              server-backed game, navigate to a URL with a game ID (e.g.
+              <code className="ml-1 text-xs text-slate-300">/game/:gameId</code>).
+            </p>
+          </header>
 
-        <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <div className="p-5 rounded-2xl bg-slate-800/70 border border-slate-700 space-y-6 text-slate-100 shadow-lg">
             {backendSandboxError && (
               <div className="p-3 text-sm text-red-300 bg-red-900/40 border border-red-700 rounded-lg">
@@ -616,15 +689,17 @@ export const SandboxGameHost: React.FC = () => {
               </button>
             </div>
           </div>
-        </section>
+          </section>
+        </div>
       </div>
     );
   }
 
   // === Active sandbox game ===
   return (
-    <div className="container mx-auto px-4 py-8 space-y-4">
-      {sandboxStallWarning && (
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="container mx-auto px-4 py-8 space-y-4">
+        {sandboxStallWarning && (
         <div className="p-3 rounded-xl border border-amber-500/70 bg-amber-900/40 text-amber-100 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <span>{sandboxStallWarning}</span>
           <div className="flex gap-2">
@@ -646,13 +721,13 @@ export const SandboxGameHost: React.FC = () => {
         </div>
       )}
 
-      {sandboxGameOverBannerText && (
+        {sandboxGameOverBannerText && (
         <div className="p-3 rounded-xl border border-emerald-500/70 bg-emerald-900/40 text-emerald-100 text-xs">
           {sandboxGameOverBannerText}
         </div>
       )}
 
-      {sandboxGameState && (
+        {sandboxGameState && (
         <VictoryModal
           isOpen={!!sandboxVictoryResult && !isSandboxVictoryModalDismissed}
           viewModel={sandboxVictoryViewModel}
@@ -670,7 +745,7 @@ export const SandboxGameHost: React.FC = () => {
         />
       )}
 
-      <ChoiceDialog
+        <ChoiceDialog
         choice={sandboxPendingChoice}
         deadline={null}
         onSelectOption={(choice, option) => {
@@ -688,7 +763,7 @@ export const SandboxGameHost: React.FC = () => {
         }}
       />
 
-      <main className="flex flex-col md:flex-row md:space-x-8 space-y-4 md:space-y-0">
+        <main className="flex flex-col md:flex-row md:space-x-8 space-y-4 md:space-y-0">
         <section className="flex justify-center md:block">
           {sandboxBoardState && (
             <div className="inline-block space-y-3">
@@ -698,22 +773,33 @@ export const SandboxGameHost: React.FC = () => {
                     <p className="text-xs uppercase tracking-wide text-slate-400">Local Sandbox</p>
                     <h1 className="text-2xl font-bold text-white">Game – {boardDisplayLabel}</h1>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      resetSandboxEngine();
-                      setSelected(undefined);
-                      setValidTargets([]);
-                      setBackendSandboxError(null);
-                      setSandboxPendingChoice(null);
-                      setSandboxStallWarning(null);
-                      setSandboxLastProgressAt(null);
-                      setIsSandboxVictoryModalDismissed(false);
-                    }}
-                    className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
-                  >
-                    Change Setup
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetSandboxEngine();
+                        setSelected(undefined);
+                        setValidTargets([]);
+                        setBackendSandboxError(null);
+                        setSandboxPendingChoice(null);
+                        setSandboxStallWarning(null);
+                        setSandboxLastProgressAt(null);
+                        setIsSandboxVictoryModalDismissed(false);
+                      }}
+                      className="px-3 py-1 rounded-lg border border-slate-600 text-xs font-semibold text-slate-100 hover:border-emerald-400 hover:text-emerald-200 transition"
+                    >
+                      Change Setup
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Show board controls"
+                      data-testid="board-controls-button"
+                      onClick={() => setShowBoardControls(true)}
+                      className="h-8 w-8 rounded-full border border-slate-600 text-[11px] leading-none text-slate-200 hover:bg-slate-800/80"
+                    >
+                      ?
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -727,7 +813,7 @@ export const SandboxGameHost: React.FC = () => {
                   onCellClick={(pos) => handleSandboxCellClick(pos)}
                   onCellDoubleClick={(pos) => handleSandboxCellDoubleClick(pos)}
                   onCellContextMenu={(pos) => handleSandboxCellContextMenu(pos)}
-                  showMovementGrid
+                  showMovementGrid={showMovementGrid}
                   showCoordinateLabels={
                     sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
                   }
@@ -809,44 +895,68 @@ export const SandboxGameHost: React.FC = () => {
             </div>
           </div>
 
+          {sandboxEngine &&
+            sandboxGameState &&
+            sandboxGameState.gameStatus === 'active' &&
+            sandboxGameState.players.length === 2 &&
+            sandboxGameState.rulesOptions?.swapRuleEnabled === true &&
+            sandboxEngine.canCurrentPlayerSwapSides() && (
+              <div className="p-3 border border-amber-500/60 rounded-2xl bg-amber-900/40 text-xs space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-amber-100">
+                    Pie rule available: swap colours with Player 1.
+                  </span>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold"
+                    onClick={() => {
+                      sandboxEngine.applySwapSidesForCurrentPlayer();
+                      setSelected(undefined);
+                      setValidTargets([]);
+                      setSandboxPendingChoice(null);
+                      setSandboxStateVersion((v) => v + 1);
+                    }}
+                  >
+                    Swap colours
+                  </button>
+                </div>
+                <p className="text-amber-100/80">
+                  As Player 2, you may use this once, immediately after Player 1’s first turn.
+                </p>
+              </div>
+            )}
+
           <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60">
             <GameEventLog viewModel={sandboxEventLogViewModel} />
           </div>
 
-          <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Selection</h2>
-              {displayedValidTargets && (
-                <span className="text-xs text-slate-400">
-                  Targets: {displayedValidTargets?.length ?? 0}
-                </span>
-              )}
-            </div>
-            {selected ? (
-              <div className="space-y-2">
-                <div className="text-lg font-mono font-semibold text-white">
-                  ({selected.x}, {selected.y}
-                  {selected.z !== undefined ? `, ${selected.z}` : ''})
-                </div>
-                {selectedStackDetails ? (
-                  <ul className="text-xs text-slate-300 space-y-1">
-                    <li>Stack height: {selectedStackDetails.height}</li>
-                    <li>Cap height: {selectedStackDetails.cap}</li>
-                    <li>Controlled by: P{selectedStackDetails.controllingPlayer}</li>
-                  </ul>
-                ) : (
-                  <p className="text-xs text-slate-300">Empty cell – choose a placement target.</p>
-                )}
-                <p className="text-xs text-slate-400">
-                  Click a highlighted destination to commit the move, or select a new source.
-                </p>
-              </div>
-            ) : (
-              <div className="text-slate-200">
-                Click a cell to inspect stacks and available moves.
-              </div>
-            )}
-          </div>
+          <SandboxTouchControlsPanel
+            selectedPosition={selected}
+            selectedStackDetails={selectedStackDetails}
+            validTargets={primaryValidTargets}
+            isCaptureDirectionPending={!!sandboxCaptureChoice}
+            captureTargets={sandboxCaptureTargets}
+            // Multi-segment capture undo is not yet exposed by the sandbox
+            // engine; this remains a no-op until the underlying rules
+            // pipeline supports segment-level rewind.
+            canUndoSegment={false}
+            onClearSelection={() => {
+              clearSandboxSelection();
+            }}
+            onUndoSegment={() => {
+              // no-op for now
+            }}
+            // For now, treat "Finish move" as an explicit selection reset that
+            // clears highlights without issuing additional engine actions.
+            onApplyMove={() => {
+              clearSandboxSelection();
+            }}
+            showMovementGrid={showMovementGrid}
+            onToggleMovementGrid={(next) => setShowMovementGrid(next)}
+            showValidTargets={showValidTargetsOverlay}
+            onToggleValidTargets={(next) => setShowValidTargetsOverlay(next)}
+            phaseLabel={sandboxPhaseDetails.label}
+          />
 
           <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
             <h2 className="font-semibold">Phase Guide</h2>
@@ -869,7 +979,16 @@ export const SandboxGameHost: React.FC = () => {
             </ul>
           </div>
         </aside>
-      </main>
+        </main>
+
+        {showBoardControls && (
+        <BoardControlsOverlay
+          mode="sandbox"
+          hasTouchControlsPanel
+          onClose={() => setShowBoardControls(false)}
+        />
+        )}
+      </div>
     </div>
   );
 };

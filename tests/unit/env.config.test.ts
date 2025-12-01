@@ -406,6 +406,99 @@ describe('EnvSchema', () => {
       expect(result.errors?.some((e) => e.path.includes('NODE_ENV'))).toBe(true);
     });
   });
+
+  describe('Environment preset profiles', () => {
+    const withBaseEnv = (overrides: Record<string, string>): Record<string, string> => ({
+      ...baseValidEnv,
+      ...overrides,
+    });
+
+    it('CI orchestrator profile matches orchestrator-ON defaults', () => {
+      const env = withBaseEnv({
+        NODE_ENV: 'test',
+        RINGRIFT_RULES_MODE: 'ts',
+        ORCHESTRATOR_ADAPTER_ENABLED: 'true',
+        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '100',
+        ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
+      });
+
+      const result = parseEnv(env);
+      expect(result.success).toBe(true);
+
+      const data = result.data!;
+      expect(data.NODE_ENV).toBe('test');
+      expect(data.RINGRIFT_RULES_MODE).toBe('ts');
+      expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
+      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(100);
+      expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(false);
+    });
+
+    it('staging Phase 1 (orchestrator-only) profile is valid', () => {
+      const env = withBaseEnv({
+        NODE_ENV: 'staging',
+        RINGRIFT_APP_TOPOLOGY: 'multi-sticky',
+        RINGRIFT_RULES_MODE: 'ts',
+        ORCHESTRATOR_ADAPTER_ENABLED: 'true',
+        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '100',
+        ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
+      });
+
+      const result = parseEnv(env);
+      expect(result.success).toBe(true);
+
+      const data = result.data!;
+      expect(data.NODE_ENV).toBe('staging');
+      expect(data.RINGRIFT_APP_TOPOLOGY).toBe('multi-sticky');
+      expect(data.RINGRIFT_RULES_MODE).toBe('ts');
+      expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
+      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(100);
+      expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(false);
+    });
+
+    it('production Phase 2 (legacy authoritative + shadow) profile is valid', () => {
+      const env = withBaseEnv({
+        NODE_ENV: 'production',
+        RINGRIFT_APP_TOPOLOGY: 'multi-sticky',
+        RINGRIFT_RULES_MODE: 'shadow',
+        ORCHESTRATOR_ADAPTER_ENABLED: 'true',
+        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '0',
+        ORCHESTRATOR_SHADOW_MODE_ENABLED: 'true',
+      });
+
+      const result = parseEnv(env);
+      expect(result.success).toBe(true);
+
+      const data = result.data!;
+      expect(data.NODE_ENV).toBe('production');
+      expect(data.RINGRIFT_APP_TOPOLOGY).toBe('multi-sticky');
+      expect(data.RINGRIFT_RULES_MODE).toBe('shadow');
+      expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
+      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(0);
+      expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(true);
+    });
+
+    it('production Phase 3 (incremental rollout) profile accepts 1–99% rollout', () => {
+      const env = withBaseEnv({
+        NODE_ENV: 'production',
+        RINGRIFT_APP_TOPOLOGY: 'multi-sticky',
+        RINGRIFT_RULES_MODE: 'ts',
+        ORCHESTRATOR_ADAPTER_ENABLED: 'true',
+        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '25',
+        ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
+      });
+
+      const result = parseEnv(env);
+      expect(result.success).toBe(true);
+
+      const data = result.data!;
+      expect(data.NODE_ENV).toBe('production');
+      expect(data.RINGRIFT_APP_TOPOLOGY).toBe('multi-sticky');
+      expect(data.RINGRIFT_RULES_MODE).toBe('ts');
+      expect(data.ORCHESTRATOR_ADAPTER_ENABLED).toBe(true);
+      expect(data.ORCHESTRATOR_ROLLOUT_PERCENTAGE).toBe(25);
+      expect(data.ORCHESTRATOR_SHADOW_MODE_ENABLED).toBe(false);
+    });
+  });
 });
 
 describe('Environment helper functions', () => {

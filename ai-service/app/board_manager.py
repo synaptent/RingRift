@@ -106,7 +106,7 @@ class BoardManager:
     @staticmethod
     def find_all_lines(board: BoardState) -> List[LineInfo]:
         """
-        Find all marker lines on the board (3+ for 8x8, 4+ for 19x19/hex).
+        Find all marker lines on the board (4+ for 8x8, 4+ for 19x19/hex).
 
         Mirrors src/shared/engine/lineDetection.findAllLines and the server
         BoardManager.findAllLines implementation:
@@ -118,7 +118,7 @@ class BoardManager:
         processed_keys = set()
 
         # Determine line length based on board type
-        min_length = 3 if board.type == BoardType.SQUARE8 else 4
+        min_length = 4 if board.type == BoardType.SQUARE8 else 4
 
         directions = BoardManager._get_line_directions(board.type)
 

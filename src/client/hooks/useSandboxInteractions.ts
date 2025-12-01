@@ -332,6 +332,20 @@ export function useSandboxInteractions({
     })();
   };
 
+  /**
+   * Explicit selection clearer used by touch-centric sandbox controls.
+   * This keeps BoardView highlights and the sandbox engine's internal
+   * selection state (_selectedStackKey) in sync without embedding any
+   * rules logic in the host.
+   */
+  const clearSelection = () => {
+    setSelected(undefined);
+    setValidTargets([]);
+    if (sandboxEngine) {
+      sandboxEngine.clearSelection();
+    }
+  };
+
   // Auto-trigger AI turns when state version changes (after human moves).
   useEffect(() => {
     if (!isConfigured || !sandboxEngine) {
@@ -364,5 +378,6 @@ export function useSandboxInteractions({
     handleCellDoubleClick,
     handleCellContextMenu,
     maybeRunSandboxAiIfNeeded,
+    clearSelection,
   };
 }

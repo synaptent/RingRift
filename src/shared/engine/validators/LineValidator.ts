@@ -1,5 +1,6 @@
 import { GameState, ProcessLineAction, ChooseLineRewardAction, ValidationResult } from '../types';
-import { BOARD_CONFIGS, positionToString } from '../../types/game';
+import { positionToString, BoardType } from '../../types/game';
+import { getEffectiveLineLengthThreshold } from '../rulesConfig';
 
 export function validateProcessLine(state: GameState, action: ProcessLineAction): ValidationResult {
   // 1. Phase Check
@@ -47,14 +48,20 @@ export function validateChooseLineReward(
   }
 
   const line = state.board.formedLines[action.lineIndex];
-
+ 
   // 4. Line Ownership Check
   if (line.player !== action.playerId) {
     return { valid: false, reason: 'Cannot process opponent line', code: 'NOT_YOUR_LINE' };
   }
-
-  const config = BOARD_CONFIGS[state.board.type];
-  const requiredLength = config.lineLength;
+ 
+  // Effective threshold depends on board + player count. The current engine
+  // GameState type does not carry per-game rulesOptions (those are host-level),
+  // but the only active variant (2p 8x8 → 4-in-a-row) is determined purely by
+  // boardType and number of players.
+  const requiredLength = getEffectiveLineLengthThreshold(
+    state.board.type as BoardType,
+    state.players.length
+  );
 
   // 5. Option Validity Check
   if (line.length === requiredLength) {

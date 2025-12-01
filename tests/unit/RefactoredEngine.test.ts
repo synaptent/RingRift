@@ -361,12 +361,12 @@ describe('Refactored GameEngine', () => {
 
   describe('Line Formation', () => {
     it('should detect and process a line', () => {
-      // Setup: Create a line of 3 markers for P1 on row 0.
-      // For square8, lineLength = 3 (minimum), so this is an exact-length line.
+      // Setup: Create a line of 4 markers for P1 on row 0.
+      // For square8, lineLength = 4 (minimum), so this is an exact-length line.
       // Exact-length lines can use PROCESS_LINE (no choice needed).
-      // Overlength (4+) lines would require CHOOSE_LINE_REWARD action.
+      // Overlength (5+) lines would require CHOOSE_LINE_REWARD action.
 
-      // Manually inject markers (3 for exact-length on square8)
+      // Manually inject markers (4 for exact-length on square8)
       initialState.board.markers.set('0,0', {
         player: 1,
         position: { x: 0, y: 0 },
@@ -380,6 +380,11 @@ describe('Refactored GameEngine', () => {
       initialState.board.markers.set('2,0', {
         player: 1,
         position: { x: 2, y: 0 },
+        type: 'regular',
+      });
+      initialState.board.markers.set('3,0', {
+        player: 1,
+        position: { x: 3, y: 0 },
         type: 'regular',
       });
 
@@ -402,7 +407,7 @@ describe('Refactored GameEngine', () => {
       let state = engine.getGameState();
       expect(state.board.formedLines.length).toBeGreaterThan(0);
       expect(state.board.formedLines[0].player).toBe(1);
-      expect(state.board.formedLines[0].length).toBe(3);
+      expect(state.board.formedLines[0].length).toBe(4);
 
       // Now process the line
       // Action: PROCESS_LINE (valid for exact-length lines)
@@ -528,14 +533,15 @@ describe('Refactored GameEngine', () => {
     it('allows CHOOSE_LINE_REWARD MINIMUM_COLLAPSE for overlength lines and collapses only the chosen subset', () => {
       initialState = createInitialGameState('choose-line-reward', 'square8', players, timeControl);
 
-      // Set up a single overlength line for player 1 on row 0: 5 markers.
-      // For square8, lineLength = 3 (minimum), so this is an overlength line.
+      // Set up a single overlength line for player 1 on row 0: 6 markers.
+      // For square8, lineLength = 4 (minimum), so this is an overlength line.
       const linePositions = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
         { x: 3, y: 0 },
         { x: 4, y: 0 },
+        { x: 5, y: 0 },
       ];
 
       // Seed formedLines directly; this is independent of BoardManager.
@@ -552,8 +558,8 @@ describe('Refactored GameEngine', () => {
 
       engine = new GameEngine(initialState);
 
-      // For square8, required line length is 3.
-      const minLength = 3;
+      // For square8, required line length is 4.
+      const minLength = 4;
       const collapsedSubset = linePositions.slice(0, minLength);
 
       const action = {
@@ -569,13 +575,13 @@ describe('Refactored GameEngine', () => {
 
       const state = engine.getGameState();
 
-      // First 3 positions collapsed to player 1; positions 4 and 5 remain non-collapsed.
+      // First 4 positions collapsed to player 1; positions 5 and 6 remain non-collapsed.
       const collapsedKeys = collapsedSubset.map((p) => `${p.x},${p.y}`);
       for (const key of collapsedKeys) {
         expect(state.board.collapsedSpaces.get(key)).toBe(1);
       }
-      expect(state.board.collapsedSpaces.get('3,0')).toBeUndefined();
       expect(state.board.collapsedSpaces.get('4,0')).toBeUndefined();
+      expect(state.board.collapsedSpaces.get('5,0')).toBeUndefined();
 
       // Processed line removed from formedLines.
       expect(state.board.formedLines.length).toBe(0);
@@ -589,13 +595,14 @@ describe('Refactored GameEngine', () => {
         timeControl
       );
 
-      // For square8, lineLength = 3. A 4-marker line is overlength,
+      // For square8, lineLength = 4. A 5-marker line is overlength,
       // so MINIMUM_COLLAPSE is a valid selection option.
       const linePositions = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
         { x: 3, y: 0 },
+        { x: 4, y: 0 },
       ];
 
       (initialState.board as any).formedLines = [
@@ -611,9 +618,14 @@ describe('Refactored GameEngine', () => {
 
       engine = new GameEngine(initialState);
 
-      // Provide exactly 3 positions (the required count), but non-consecutive.
-      // Choose positions 0, 1, and 3 (skipping 2).
-      const badCollapsed = [linePositions[0], linePositions[1], linePositions[3]];
+      // Provide exactly 4 positions (the required count), but non-consecutive.
+      // Choose positions 0, 1, 2, and 4 (skipping 3).
+      const badCollapsed = [
+        linePositions[0],
+        linePositions[1],
+        linePositions[2],
+        linePositions[4],
+      ];
 
       const badAction = {
         type: 'CHOOSE_LINE_REWARD',
@@ -677,7 +689,7 @@ describe('Refactored GameEngine', () => {
       expect(state.board.eliminatedRings[1]).toBe(1);
     });
 
-    it('applies PROCESS_TERRITORY to mark a chosen region as connected without throwing', () => {
+    it('applies PROCESS_TERRITORY to collapse a region into territory without throwing', () => {
       initialState = createInitialGameState('process-territory', 'square8', players, timeControl);
 
       // Seed a single disconnected region controlled by player 1.
@@ -703,9 +715,18 @@ describe('Refactored GameEngine', () => {
       expect(event.type).toBe('ACTION_PROCESSED');
 
       const state = engine.getGameState();
-      const kept = (state.board.territories as any).get('region-1');
-      expect(kept).toBeDefined();
-      expect(kept.isDisconnected).toBe(false);
+
+      // Territory should be removed from territories map after collapsing
+      const removed = (state.board.territories as any).get('region-1');
+      expect(removed).toBeUndefined();
+
+      // Space should now be collapsed to player 1
+      const collapsed = (state.board.collapsedSpaces as any).get('0,0');
+      expect(collapsed).toBe(1);
+
+      // Player 1 should have gained 1 territory space
+      const p1 = state.players.find((p) => p.playerNumber === 1)!;
+      expect(p1.territorySpaces).toBe(1);
     });
   });
 });

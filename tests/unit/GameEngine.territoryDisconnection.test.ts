@@ -1,5 +1,6 @@
 import { GameEngine } from '../../src/server/game/GameEngine';
 import { BoardType, GameState, Player, Position, TimeControl } from '../../src/shared/types/game';
+import { computeSMetric, computeTMetric, isANMState } from '../../src/shared/engine';
 import { addMarker, addStack, pos } from '../utils/fixtures';
 
 /**
@@ -18,8 +19,22 @@ import { addMarker, addStack, pos } from '../utils/fixtures';
  *   to the moving player, plus one mandatory self-elimination.
  */
 
-// Classification: legacy backend 19x19 territory integration tests; semantics now
-// covered by shared helpers and RulesMatrix.Territory.*. Kept for reference but skipped.
+/**
+ * SKIP REASON: Legacy 19x19 territory integration tests
+ *
+ * These tests are skipped because:
+ * 1. They use square19 board (slow execution compared to square8 tests)
+ * 2. They test the legacy non-orchestrator code path (processDisconnectedRegions)
+ * 3. The same semantics are now covered by:
+ *    - tests/scenarios/RulesMatrix.Territory.GameEngine.test.ts (square8, faster)
+ *    - tests/scenarios/RulesMatrix.Territory.MiniRegion.test.ts (focused scenarios)
+ *    - tests/scenarios/RulesMatrix.Territory.ClientSandboxEngine.test.ts (sandbox parity)
+ * 4. The orchestrator adapter + TerritoryAggregate now handles territory in production
+ *
+ * The underlying GameEngine methods (processDisconnectedRegions, processOneDisconnectedRegion)
+ * still exist and work, but are exercised through the above test suites on smaller boards.
+ * These tests are preserved for reference and can be enabled for debugging 19x19 edge cases.
+ */
 describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () => {
   const boardType: BoardType = 'square19';
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
@@ -121,6 +136,10 @@ describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () =
     expect(gameState.players[0].territorySpaces).toBe(0);
     expect(gameState.players[0].eliminatedRings).toBe(0);
 
+    // INV-S-MONOTONIC / INV-ELIMINATION-MONOTONIC (R191, R207)
+    const sBefore = computeSMetric(gameState);
+    const tBefore = computeTMetric(gameState);
+
     // Directly invoke the core territory collapse operation for this
     // region. This mirrors the Rust engine's `core_apply_disconnect_region`
     // behaviour and keeps this test focused on GameEngine's application
@@ -135,6 +154,12 @@ describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () =
       },
       /*movingPlayer*/ 1
     );
+
+    const sAfter = computeSMetric(gameState);
+    const tAfter = computeTMetric(gameState);
+
+    expect(sAfter).toBeGreaterThanOrEqual(sBefore);
+    expect(tAfter).toBeGreaterThan(tBefore);
 
     // Compute expected sets for assertions.
     const interiorKeys = new Set(
@@ -183,6 +208,11 @@ describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () =
     expect(gameState.board.eliminatedRings[1]).toBe(expectedEliminatedForP1);
     expect(gameState.players[0].eliminatedRings).toBe(expectedEliminatedForP1);
     expect(gameState.totalRingsEliminated).toBe(expectedEliminatedForP1);
+
+    // INV-ACTIVE-NO-MOVES / INV-PHASE-CONSISTENCY: any resulting ACTIVE state is non-ANM.
+    if (gameState.gameStatus === 'active') {
+      expect(isANMState(gameState)).toBe(false);
+    }
   });
 
   test('collapses territory correctly when triggered via makeMove + processAutomaticConsequences (mocked detection)', async () => {
@@ -241,6 +271,10 @@ describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () =
     // Sanity: no collapsed spaces yet.
     expect(board.collapsedSpaces.size).toBe(0);
 
+    // INV-S-MONOTONIC / INV-ELIMINATION-MONOTONIC (R191, R207)
+    const sBefore = computeSMetric(gameState);
+    const tBefore = computeTMetric(gameState);
+
     // Trigger the territory processing via a normal move: a simple
     // ring placement for player 1 that does not affect the region.
     const placePos = pos(10, 10);
@@ -251,6 +285,12 @@ describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () =
     } as any);
 
     expect(result.success).toBe(true);
+
+    const sAfter = computeSMetric(gameState);
+    const tAfter = computeTMetric(gameState);
+
+    expect(sAfter).toBeGreaterThanOrEqual(sBefore);
+    expect(tAfter).toBeGreaterThan(tBefore);
 
     // Ensure our spy was exercised (i.e., territory processing was
     // driven through the normal move pipeline).
@@ -284,6 +324,11 @@ describe.skip('GameEngine territory disconnection (square19, Von Neumann)', () =
     expect(gameState.board.eliminatedRings[1]).toBe(expectedEliminatedForP1);
     expect(gameState.players[0].eliminatedRings).toBe(expectedEliminatedForP1);
     expect(gameState.totalRingsEliminated).toBe(expectedEliminatedForP1);
+
+    // INV-ACTIVE-NO-MOVES / INV-PHASE-CONSISTENCY: any resulting ACTIVE state is non-ANM.
+    if (gameState.gameStatus === 'active') {
+      expect(isANMState(gameState)).toBe(false);
+    }
   });
 
   test('Q15_Q20_territory_disconnection_real_detection_backend', async () => {

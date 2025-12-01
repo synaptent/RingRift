@@ -213,29 +213,29 @@ describe('ChoiceDialog', () => {
       expect(screen.getByText(choice.prompt)).toBeInTheDocument();
     });
 
-    it('renders Option 1 button', () => {
+    it('renders Full Collapse option button', () => {
       const choice = createLineRewardChoice();
       render(<ChoiceDialog {...defaultProps} choice={choice} />);
-      expect(screen.getByText('Option 1')).toBeInTheDocument();
-      expect(screen.getByText(/Collapse entire line and eliminate/)).toBeInTheDocument();
+      expect(screen.getByText('Full Collapse + Elimination Bonus')).toBeInTheDocument();
+      expect(screen.getByText(/Convert entire line to territory/)).toBeInTheDocument();
     });
 
-    it('renders Option 2 button', () => {
+    it('renders Minimum Collapse option button', () => {
       const choice = createLineRewardChoice();
       render(<ChoiceDialog {...defaultProps} choice={choice} />);
-      expect(screen.getByText('Option 2')).toBeInTheDocument();
-      expect(screen.getByText(/Collapse only the minimum required markers/)).toBeInTheDocument();
+      expect(screen.getByText('Minimum Collapse')).toBeInTheDocument();
+      expect(screen.getByText(/Convert minimum markers to territory/)).toBeInTheDocument();
     });
 
     it('calls onSelectOption with option 1 when clicked', () => {
       const choice = createLineRewardChoice();
       render(<ChoiceDialog {...defaultProps} choice={choice} />);
 
-      fireEvent.click(screen.getByText('Option 1'));
+      fireEvent.click(screen.getByText('Full Collapse + Elimination Bonus'));
 
       expect(mockOnSelectOption).toHaveBeenCalledWith(
         choice,
-        'option_1_collapse_all_and_eliminate'
+        'option_1_collapse_all_and_eliminate',
       );
     });
 
@@ -243,11 +243,11 @@ describe('ChoiceDialog', () => {
       const choice = createLineRewardChoice();
       render(<ChoiceDialog {...defaultProps} choice={choice} />);
 
-      fireEvent.click(screen.getByText('Option 2'));
+      fireEvent.click(screen.getByText('Minimum Collapse'));
 
       expect(mockOnSelectOption).toHaveBeenCalledWith(
         choice,
-        'option_2_min_collapse_no_elimination'
+        'option_2_min_collapse_no_elimination',
       );
     });
   });
@@ -377,7 +377,7 @@ describe('ChoiceDialog', () => {
           choice={choice}
           deadline={Date.now() + 30000}
           timeRemainingMs={25000}
-        />
+        />,
       );
 
       expect(screen.getByText('Respond within')).toBeInTheDocument();
@@ -392,7 +392,7 @@ describe('ChoiceDialog', () => {
           choice={choice}
           deadline={Date.now() + 30000}
           timeRemainingMs={null}
-        />
+        />,
       );
 
       expect(screen.getByText('Choice timeout active')).toBeInTheDocument();
@@ -401,7 +401,7 @@ describe('ChoiceDialog', () => {
     it('does not show timer when no deadline', () => {
       const choice = createLineOrderChoice();
       render(
-        <ChoiceDialog {...defaultProps} choice={choice} deadline={null} timeRemainingMs={null} />
+        <ChoiceDialog {...defaultProps} choice={choice} deadline={null} timeRemainingMs={null} />,
       );
 
       expect(screen.queryByText('Respond within')).not.toBeInTheDocument();
@@ -410,16 +410,16 @@ describe('ChoiceDialog', () => {
 
     it('renders progress bar with correct width percentage', () => {
       const choice = createLineOrderChoice();
-      const { container } = render(
+      render(
         <ChoiceDialog
           {...defaultProps}
           choice={choice}
           deadline={Date.now() + 30000}
           timeRemainingMs={15000} // 50% remaining
-        />
+        />,
       );
 
-      const progressBar = container.querySelector('.bg-amber-400');
+      const progressBar = screen.getByTestId('choice-countdown-bar');
       expect(progressBar).toHaveStyle({ width: '50%' });
     });
 
@@ -431,7 +431,7 @@ describe('ChoiceDialog', () => {
           choice={choice}
           deadline={Date.now() - 5000}
           timeRemainingMs={-5000}
-        />
+        />,
       );
 
       expect(screen.getByText('0s')).toBeInTheDocument();
@@ -445,10 +445,108 @@ describe('ChoiceDialog', () => {
           choice={choice}
           deadline={Date.now() + 30000}
           timeRemainingMs={15500} // Should display 16s
-        />
+        />,
       );
 
       expect(screen.getByText('16s')).toBeInTheDocument();
+    });
+  });
+
+  describe('countdown severity and server-capped semantics', () => {
+    it('applies normal severity and default label when above 10 seconds', () => {
+      const choice = createLineOrderChoice();
+      render(
+        <ChoiceDialog
+          {...defaultProps}
+          choice={choice}
+          deadline={Date.now() + 30000}
+          timeRemainingMs={25000}
+        />,
+      );
+
+      const countdown = screen.getByTestId('choice-countdown');
+      expect(countdown).toHaveAttribute('data-severity', 'normal');
+      expect(countdown).not.toHaveAttribute('data-server-capped');
+      expect(screen.getByText('Respond within')).toBeInTheDocument();
+      expect(screen.getByText('25s')).toBeInTheDocument();
+    });
+
+    it('applies warning severity at the 10s threshold', () => {
+      const choice = createLineOrderChoice();
+      render(
+        <ChoiceDialog
+          {...defaultProps}
+          choice={choice}
+          deadline={Date.now() + 30000}
+          timeRemainingMs={10_000}
+        />,
+      );
+
+      const countdown = screen.getByTestId('choice-countdown');
+      expect(countdown).toHaveAttribute('data-severity', 'warning');
+    });
+
+    it('applies warning severity just above the critical boundary', () => {
+      const choice = createLineOrderChoice();
+      render(
+        <ChoiceDialog
+          {...defaultProps}
+          choice={choice}
+          deadline={Date.now() + 30000}
+          timeRemainingMs={3_001}
+        />,
+      );
+
+      const countdown = screen.getByTestId('choice-countdown');
+      expect(countdown).toHaveAttribute('data-severity', 'warning');
+    });
+
+    it('applies critical severity at or below 3s', () => {
+      const choice = createLineOrderChoice();
+      render(
+        <ChoiceDialog
+          {...defaultProps}
+          choice={choice}
+          deadline={Date.now() + 30000}
+          timeRemainingMs={3_000}
+        />,
+      );
+
+      const countdown = screen.getByTestId('choice-countdown');
+      expect(countdown).toHaveAttribute('data-severity', 'critical');
+    });
+
+    it('applies critical severity at zero remaining time', () => {
+      const choice = createLineOrderChoice();
+      render(
+        <ChoiceDialog
+          {...defaultProps}
+          choice={choice}
+          deadline={Date.now() + 30000}
+          timeRemainingMs={0}
+        />,
+      );
+
+      const countdown = screen.getByTestId('choice-countdown');
+      expect(countdown).toHaveAttribute('data-severity', 'critical');
+    });
+
+    it('switches to server deadline label and sets data-server-capped when capped by server', () => {
+      const choice = createLineOrderChoice();
+      render(
+        <ChoiceDialog
+          {...defaultProps}
+          choice={choice}
+          deadline={Date.now() + 30000}
+          timeRemainingMs={3000}
+          isServerCapped
+        />,
+      );
+
+      const countdown = screen.getByTestId('choice-countdown');
+      expect(countdown).toHaveAttribute('data-server-capped', 'true');
+      expect(screen.getByText('Server deadline – respond within')).toBeInTheDocument();
+      expect(screen.getByText('3s')).toBeInTheDocument();
     });
   });
 
@@ -598,19 +696,29 @@ describe('ChoiceDialog', () => {
   });
 
   describe('unknown choice type', () => {
-    it('returns null for unsupported choice types', () => {
+    it('falls back to a generic decision UI for unsupported choice types', () => {
       const unknownChoice = {
         id: 'unknown',
         gameId: 'game-1',
         playerNumber: 1,
         type: 'unknown_type' as any,
         prompt: 'Unknown choice',
-        options: [],
-      } as PlayerChoice;
+        options: ['a', 'b'],
+      } as unknown as PlayerChoice;
 
-      const { container } = render(<ChoiceDialog {...defaultProps} choice={unknownChoice} />);
+      render(<ChoiceDialog {...defaultProps} choice={unknownChoice} />);
 
-      expect(container.firstChild).toBeNull();
+      // Header comes from the fallback view model in choiceViewModels.ts
+      expect(screen.getByText(/decision required/i)).toBeInTheDocument();
+      expect(screen.getByText(/unknown choice/i)).toBeInTheDocument();
+      // Generic options should still be selectable
+      const option1 = screen.getByText('Option 1');
+      const option2 = screen.getByText('Option 2');
+      expect(option1).toBeInTheDocument();
+      expect(option2).toBeInTheDocument();
+
+      fireEvent.click(option1);
+      expect(mockOnSelectOption).toHaveBeenCalledWith(unknownChoice, unknownChoice.options[0]);
     });
   });
 
@@ -650,6 +758,26 @@ describe('ChoiceDialog', () => {
 
       const scrollContainer = container.querySelector('.max-h-48.overflow-auto');
       expect(scrollContainer).toBeInTheDocument();
+    });
+  });
+
+  describe('mapping header', () => {
+    it('renders mapping-based header for line order choices', () => {
+      const choice = createLineOrderChoice();
+      render(<ChoiceDialog {...defaultProps} choice={choice} />);
+
+      // shortLabel from mapping
+      expect(screen.getByText('Line order')).toBeInTheDocument();
+      // title from mapping
+      expect(screen.getByText(/choose line order/i)).toBeInTheDocument();
+    });
+
+    it('falls back to prompt-only content when mapping header is absent', () => {
+      const choice = createCaptureDirectionChoice();
+      render(<ChoiceDialog {...defaultProps} choice={choice} />);
+
+      // The prompt should always be shown regardless of mapping
+      expect(screen.getByText(choice.prompt)).toBeInTheDocument();
     });
   });
 

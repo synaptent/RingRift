@@ -29,8 +29,9 @@
 
 import type { GameState, BoardState, Position, Move, BoardType, LineInfo } from '../../types/game';
 import { BOARD_CONFIGS, positionToString, stringToPosition } from '../../types/game';
-
+ 
 import type { ProcessLineAction, ChooseLineRewardAction } from '../types';
+import { getEffectiveLineLengthThreshold } from '../rulesConfig';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -440,7 +441,7 @@ function collapseLinePositions(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Detect all marker lines on the board (3+ for 8x8, 4+ for 19x19/hex)
+ * Detect all marker lines on the board (4+ for 8x8, 4+ for 19x19/hex)
  * according to the canonical RingRift line rules (Section 11.1).
  *
  * This helper is the single source of truth for line geometry used by:
@@ -588,14 +589,17 @@ export function validateChooseLineReward(
   }
 
   const line = state.board.formedLines[action.lineIndex];
-
+ 
   // 4. Line Ownership Check
   if (line.player !== action.playerId) {
     return { valid: false, reason: 'Cannot process opponent line', code: 'NOT_YOUR_LINE' };
   }
-
-  const config = BOARD_CONFIGS[state.board.type];
-  const requiredLength = config.lineLength;
+ 
+  const requiredLength = getEffectiveLineLengthThreshold(
+    state.board.type as BoardType,
+    state.players.length,
+    state.rulesOptions
+  );
 
   // 5. Option Validity Check
   if (line.length === requiredLength) {
@@ -760,7 +764,11 @@ export function enumerateChooseLineRewardMoves(
 
   const line = playerLines[lineIndex];
   const boardType = state.board.type as BoardType;
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  const requiredLength = getEffectiveLineLengthThreshold(
+    boardType,
+    state.players.length,
+    state.rulesOptions
+  );
 
   if (!line.positions || line.positions.length === 0) {
     return [];
@@ -837,7 +845,11 @@ export function enumerateLineCollapseOptions(
   line: DetectedLine
 ): LineCollapseDecision[] {
   const boardType = state.board.type as BoardType;
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  const requiredLength = getEffectiveLineLengthThreshold(
+    boardType,
+    state.players.length,
+    state.rulesOptions
+  );
   const decisions: LineCollapseDecision[] = [];
 
   // Find the line index
@@ -887,9 +899,13 @@ export function enumerateLineCollapseOptions(
  */
 export function mutateProcessLine(state: GameState, action: ProcessLineAction): GameState {
   const line = state.board.formedLines[action.lineIndex];
-  const config = BOARD_CONFIGS[state.board.type];
-
-  if (line.length > config.lineLength) {
+  const requiredLength = getEffectiveLineLengthThreshold(
+    state.board.type as BoardType,
+    state.players.length,
+    state.rulesOptions
+  );
+ 
+  if (line.length > requiredLength) {
     throw new Error('LineMutator: Line length > minimum requires ChooseLineRewardAction');
   }
 

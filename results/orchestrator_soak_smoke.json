@@ -1,19 +1,23 @@
 {
-  "timestamp": "2025-11-29T15:54:36.331Z",
+  "timestamp": "2025-12-01T00:02:54.835Z",
   "config": {
-    "boardTypes": ["square8"],
+    "boardTypes": [
+      "square8"
+    ],
     "gamesPerBoard": 1,
     "maxTurns": 20,
-    "randomSeed": 1347601292,
+    "randomSeed": 1463299789,
     "mode": "backend",
     "outputPath": "results/orchestrator_soak_smoke.json",
-    "failOnViolation": true
+    "failOnViolation": true,
+    "enableTraceDebug": false
   },
   "overall": {
     "totalGames": 1,
     "completedGames": 0,
-    "maxTurnsGames": 0,
-    "invariantViolations": 1
+    "maxTurnsGames": 1,
+    "invariantViolations": 0,
+    "invariantViolationsById": {}
   },
   "buckets": [
     {
@@ -21,186 +25,16 @@
       "hostMode": "backend",
       "totalGames": 1,
       "completedGames": 0,
-      "maxTurnsGames": 0,
-      "invariantViolations": 1,
+      "maxTurnsGames": 1,
+      "invariantViolations": 0,
+      "invariantViolationsById": {},
       "gameLength": {
-        "min": 15,
-        "max": 15,
-        "median": 15,
-        "p95": 15
+        "min": 20,
+        "max": 20,
+        "median": 20,
+        "p95": 20
       }
     }
   ],
-  "violations": [
-    {
-      "id": "S_INVARIANT_DECREASED",
-      "message": "S-invariant decreased from 7 to 5",
-      "boardType": "square8",
-      "hostMode": "backend",
-      "gameId": "soak-square8-backend-0",
-      "gameIndex": 0,
-      "turnIndex": 15,
-      "seed": 265064459,
-      "gameStatus": "active",
-      "currentPlayer": 2,
-      "currentPhase": "movement",
-      "markers": 5,
-      "collapsed": 0,
-      "sInvariant": 5,
-      "eliminatedRings": 0,
-      "totalRingsEliminated": 0,
-      "movesTail": [
-        {
-          "id": "move-7,3-4,3",
-          "type": "move_stack",
-          "player": 1,
-          "from": {
-            "x": 7,
-            "y": 3
-          },
-          "to": {
-            "x": 4,
-            "y": 3
-          },
-          "timestamp": "2025-11-29T15:54:36.317Z",
-          "thinkTime": 0,
-          "moveNumber": 6
-        },
-        {
-          "id": "place-2,0-x2",
-          "type": "place_ring",
-          "player": 2,
-          "to": {
-            "x": 2,
-            "y": 0
-          },
-          "placedOnStack": false,
-          "placementCount": 2,
-          "timestamp": "2025-11-29T15:54:36.318Z",
-          "thinkTime": 0,
-          "moveNumber": 7
-        },
-        {
-          "id": "move-5,0-5,2",
-          "type": "move_stack",
-          "player": 2,
-          "from": {
-            "x": 5,
-            "y": 0
-          },
-          "to": {
-            "x": 5,
-            "y": 2
-          },
-          "timestamp": "2025-11-29T15:54:36.320Z",
-          "thinkTime": 0,
-          "moveNumber": 8
-        },
-        {
-          "id": "place-4,4-x2",
-          "type": "place_ring",
-          "player": 1,
-          "to": {
-            "x": 4,
-            "y": 4
-          },
-          "placedOnStack": false,
-          "placementCount": 2,
-          "timestamp": "2025-11-29T15:54:36.322Z",
-          "thinkTime": 0,
-          "moveNumber": 9
-        },
-        {
-          "id": "move-4,3-2,1",
-          "type": "move_stack",
-          "player": 1,
-          "from": {
-            "x": 4,
-            "y": 3
-          },
-          "to": {
-            "x": 2,
-            "y": 1
-          },
-          "timestamp": "2025-11-29T15:54:36.324Z",
-          "thinkTime": 0,
-          "moveNumber": 10
-        },
-        {
-          "id": "place-3,1-x2",
-          "type": "place_ring",
-          "player": 2,
-          "to": {
-            "x": 3,
-            "y": 1
-          },
-          "placedOnStack": false,
-          "placementCount": 2,
-          "timestamp": "2025-11-29T15:54:36.326Z",
-          "thinkTime": 0,
-          "moveNumber": 11
-        },
-        {
-          "id": "move-3,1-6,4",
-          "type": "move_stack",
-          "player": 2,
-          "from": {
-            "x": 3,
-            "y": 1
-          },
-          "to": {
-            "x": 6,
-            "y": 4
-          },
-          "timestamp": "2025-11-29T15:54:36.327Z",
-          "thinkTime": 0,
-          "moveNumber": 12
-        },
-        {
-          "id": "place-4,4-stack",
-          "type": "place_ring",
-          "player": 1,
-          "to": {
-            "x": 4,
-            "y": 4
-          },
-          "placedOnStack": true,
-          "placementCount": 1,
-          "timestamp": "2025-11-29T15:54:36.328Z",
-          "thinkTime": 0,
-          "moveNumber": 13
-        },
-        {
-          "id": "move-2,1-7,6",
-          "type": "move_stack",
-          "player": 1,
-          "from": {
-            "x": 2,
-            "y": 1
-          },
-          "to": {
-            "x": 7,
-            "y": 6
-          },
-          "timestamp": "2025-11-29T15:54:36.329Z",
-          "thinkTime": 0,
-          "moveNumber": 14
-        },
-        {
-          "id": "place-6,2-x1",
-          "type": "place_ring",
-          "player": 2,
-          "to": {
-            "x": 6,
-            "y": 2
-          },
-          "placedOnStack": false,
-          "placementCount": 1,
-          "timestamp": "2025-11-29T15:54:36.330Z",
-          "thinkTime": 0,
-          "moveNumber": 15
-        }
-      ]
-    }
-  ]
+  "violations": []
 }

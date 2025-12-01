@@ -8,37 +8,35 @@ import {
   GameState,
   Position,
   RingStack,
-  Player,
+  Move,
   PlayerChoice,
   PlayerChoiceResponseFor,
   CaptureDirectionChoice,
   positionToString,
 } from '../../src/shared/types/game';
+import { SandboxOrchestratorAdapter } from '../../src/client/sandbox/SandboxOrchestratorAdapter';
 
 /**
  * Sandbox chain capture parity tests.
  *
- * These tests mirror a core Rust chain-capture scenario and the
- * GameEngine.chainCapture tests, but run against the client-local
- * ClientSandboxEngine to ensure consistent overtaking behaviour
- * (top-ring-only), marker handling, and mandatory chain continuation.
+ * These tests mirror core chain-capture scenarios from the backend GameEngine
+ * tests and run against ClientSandboxEngine with the orchestrator adapter
+ * enabled. They verify consistent overtaking behaviour (top-ring-only),
+ * marker handling, and mandatory chain continuation via the unified Move model.
  *
- * Note: Some tests in this suite manipulate internal gameState fields
- * (currentPhase, board stacks) directly, which is incompatible with the
- * orchestrator adapter. These tests are skipped when
- * ORCHESTRATOR_ADAPTER_ENABLED=true.
+ * Tests use applyCanonicalMove() and the orchestrator's getValidMoves() to
+ * drive chain-capture sequences, ensuring parity with backend GameEngine
+ * behaviour.
  */
-
-const orchestratorEnabled = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
 
 describe('ClientSandboxEngine chain capture parity', () => {
   const boardType: BoardType = 'square8';
 
-  function createEngine(): ClientSandboxEngine {
+  function createEngine(numPlayers: number = 3): ClientSandboxEngine {
     const config: SandboxConfig = {
       boardType,
-      numPlayers: 3,
-      playerKinds: ['human', 'human', 'human'],
+      numPlayers,
+      playerKinds: Array(numPlayers).fill('human') as ('human' | 'ai')[],
     };
 
     const handler: SandboxInteractionHandler = {
@@ -74,8 +72,7 @@ describe('ClientSandboxEngine chain capture parity', () => {
           } as PlayerChoiceResponseFor<TChoice>;
         }
 
-        // Fallback for other choice types used by the sandbox: pick the
-        // first option if present.
+        // Fallback for other choice types: pick the first option if present.
         const selectedOption = anyChoice.options ? anyChoice.options[0] : undefined;
 
         return {
@@ -87,252 +84,308 @@ describe('ClientSandboxEngine chain capture parity', () => {
       },
     };
 
-    return new ClientSandboxEngine({ config, interactionHandler: handler });
+    const engine = new ClientSandboxEngine({ config, interactionHandler: handler });
+    // Enable the orchestrator adapter for canonical Move-based processing
+    engine.enableOrchestratorAdapter();
+    return engine;
   }
 
-  // This test sets state.currentPhase directly and expects specific chain continuation
-  // behavior that differs under the orchestrator adapter's phase management
-  (orchestratorEnabled ? test.skip : test)(
-    'two-step chain capture mirrors backend/Rust behaviour in sandbox',
-    async () => {
-      // Q10 / Rust test_start_chain_capture + test_complete_chain_capture baseline.
-      // This anchors the simplest straight two-step chain in the sandbox.
-      // Scenario:
-      // - Player 1 (Red) at (2,2) height 2
-      // - Player 2 (Blue) at (2,3) height 1
-      // - Player 3 (Green) at (2,5) height 1
-      // Expected (matching GameEngine/Rust tests):
-      // Red captures Blue and then Green in a chain, finishing at (2,7)
-      // with height 4, and original target positions are empty.
+  function getAdapter(engine: ClientSandboxEngine): SandboxOrchestratorAdapter {
+    const engineAny = engine as any;
+    return engineAny.getOrchestratorAdapter() as SandboxOrchestratorAdapter;
+  }
 
-      const engine = createEngine();
-      const engineAny = engine as any;
-      const state: GameState = engineAny.gameState as GameState;
+  function setupBoard(
+    engine: ClientSandboxEngine,
+    stacks: { pos: Position; player: number; height: number }[],
+    currentPlayer: number = 1,
+    phase: GameState['currentPhase'] = 'movement'
+  ): void {
+    const engineAny = engine as any;
+    const state: GameState = engineAny.gameState;
+    const board = state.board;
 
-      // Ensure we are in movement phase with player 1 to allow capture via
-      // handleHumanCellClick.
-      state.currentPhase = 'movement';
-      state.currentPlayer = 1;
+    // Clear existing stacks
+    board.stacks.clear();
 
-      const board = state.board;
-
-      const makeStack = (playerNumber: number, height: number, position: Position) => {
-        const rings = Array(height).fill(playerNumber);
-        const stack: RingStack = {
-          position,
-          rings,
-          stackHeight: rings.length,
-          capHeight: rings.length,
-          controllingPlayer: playerNumber,
-        };
-        const key = positionToString(position);
-        board.stacks.set(key, stack);
+    for (const s of stacks) {
+      const rings = Array(s.height).fill(s.player);
+      const stack: RingStack = {
+        position: s.pos,
+        rings,
+        stackHeight: rings.length,
+        capHeight: rings.length,
+        controllingPlayer: s.player,
       };
-
-      const redPos: Position = { x: 2, y: 2 };
-      const bluePos: Position = { x: 2, y: 3 };
-      const greenPos: Position = { x: 2, y: 5 };
-
-      makeStack(1, 2, redPos); // Red height 2 at (2,2)
-      makeStack(2, 1, bluePos); // Blue height 1 at (2,3)
-      makeStack(3, 1, greenPos); // Green height 1 at (2,5)
-
-      // Simulate user selecting the attacking stack, then choosing the first
-      // capture landing at (2,4). The sandbox engine will drive the rest of
-      // the chain internally using the interaction handler.
-      await engine.handleHumanCellClick(redPos);
-      await engine.handleHumanCellClick({ x: 2, y: 4 });
-
-      // At this point, handleHumanCellClick has awaited the full chain
-      // resolution (including any capture_direction choices), so we can
-      // safely inspect the final state.
-
-      const finalState = engine.getGameState();
-      const finalBoard = finalState.board;
-
-      const stackAtRed = finalBoard.stacks.get('2,2');
-      const stackAtBlue = finalBoard.stacks.get('2,3');
-      const stackAtGreen = finalBoard.stacks.get('2,5');
-      const stackAtFinal = finalBoard.stacks.get('2,7');
-
-      expect(stackAtRed).toBeUndefined();
-      expect(stackAtBlue).toBeUndefined();
-      expect(stackAtGreen).toBeUndefined();
-      expect(stackAtFinal).toBeDefined();
-      expect(stackAtFinal!.stackHeight).toBe(4);
-      expect(stackAtFinal!.controllingPlayer).toBe(1);
+      board.stacks.set(positionToString(s.pos), stack);
     }
-  );
 
-  // This test sets state.currentPhase directly and expects capture_direction choices
-  // which are handled differently under the orchestrator adapter
-  (orchestratorEnabled ? test.skip : test)(
-    'orthogonal multi-branch chain capture uses capture_direction choices (Rust player-choice scenario parity)',
-    async () => {
-      // Mirrors the Rust `test_chain_capture_player_choice_simulation` and the
-      // backend GameEngine chain‑capture choice integration tests:
-      //
-      // - Red at (3,3) h2 (attacker)
-      // - Blue at (3,4) h1 (initial target)
-      // - Green at (4,5) h1
-      // - Yellow at (2,5) h1
-      //
-      // After Red captures Blue and lands at (3,5), there are multiple legal
-      // follow‑up capture directions. The sandbox engine must:
-      //   - detect those options using the same capture geometry as the backend
-      //   - issue a capture_direction PlayerChoice
-      //   - apply the selected chain branch deterministically (lexicographic
-      //     landing selection) and finish the chain.
+    state.currentPlayer = currentPlayer;
+    state.currentPhase = phase;
+    state.gameStatus = 'active';
+  }
 
-      const config: SandboxConfig = {
-        boardType,
-        numPlayers: 4,
-        playerKinds: ['human', 'human', 'human', 'human'],
-      };
+  /**
+   * Resolve any active chain by repeatedly applying continue_capture_segment
+   * moves from the orchestrator adapter until no more chain moves are available.
+   */
+  async function resolveChainIfPresent(engine: ClientSandboxEngine): Promise<void> {
+    const adapter = getAdapter(engine);
+    const engineAny = engine as any;
 
-      const choices: CaptureDirectionChoice[] = [];
+    const MAX_STEPS = 16;
+    let steps = 0;
 
-      const handler: SandboxInteractionHandler = {
-        async requestChoice<TChoice extends PlayerChoice>(
-          choice: TChoice
-        ): Promise<PlayerChoiceResponseFor<TChoice>> {
-          const anyChoice = choice as any;
+    while ((engineAny.gameState as GameState).currentPhase === 'chain_capture') {
+      steps++;
+      if (steps > MAX_STEPS) {
+        throw new Error('resolveChainIfPresent: exceeded maximum chain-capture steps');
+      }
 
-          if (anyChoice.type === 'capture_direction') {
-            const cd = anyChoice as CaptureDirectionChoice;
-            choices.push(cd);
-            const options = cd.options || [];
-            expect(options.length).toBeGreaterThan(0);
+      const moves = adapter.getValidMoves();
+      const chainMoves = moves.filter((m: Move) => m.type === 'continue_capture_segment');
 
-            // Deterministically choose the option with the smallest
-            // landingPosition (x, then y) to mirror backend tests.
-            let selected = options[0];
-            for (const opt of options) {
-              if (
-                opt.landingPosition.x < selected.landingPosition.x ||
-                (opt.landingPosition.x === selected.landingPosition.x &&
-                  opt.landingPosition.y < selected.landingPosition.y)
-              ) {
-                selected = opt;
-              }
-            }
+      if (chainMoves.length === 0) {
+        // No more chain moves - chain should terminate
+        break;
+      }
 
-            return {
-              choiceId: cd.id,
-              playerNumber: cd.playerNumber,
-              choiceType: cd.type,
-              selectedOption: selected,
-            } as PlayerChoiceResponseFor<TChoice>;
-          }
-
-          const selectedOption = anyChoice.options ? anyChoice.options[0] : undefined;
-          return {
-            choiceId: anyChoice.id,
-            playerNumber: anyChoice.playerNumber,
-            choiceType: anyChoice.type,
-            selectedOption,
-          } as PlayerChoiceResponseFor<TChoice>;
-        },
-      };
-
-      const engine = new ClientSandboxEngine({ config, interactionHandler: handler });
-      const engineAny = engine as any;
-      const state: GameState = engineAny.gameState as GameState;
-
-      state.currentPhase = 'movement';
-      state.currentPlayer = 1;
-
-      const board = state.board;
-
-      const makeStack = (playerNumber: number, height: number, position: Position) => {
-        const rings = Array(height).fill(playerNumber);
-        const stack: RingStack = {
-          position,
-          rings,
-          stackHeight: rings.length,
-          capHeight: rings.length,
-          controllingPlayer: playerNumber,
-        };
-        const key = positionToString(position);
-        board.stacks.set(key, stack);
-      };
-
-      const redPos: Position = { x: 3, y: 3 };
-      const bluePos: Position = { x: 3, y: 4 };
-      const greenPos: Position = { x: 4, y: 5 };
-      const yellowPos: Position = { x: 2, y: 5 };
-
-      makeStack(1, 2, redPos); // Red attacker
-      makeStack(2, 1, bluePos);
-      makeStack(3, 1, greenPos);
-      makeStack(4, 1, yellowPos);
-
-      // Human performs the initial capture: select Red at (3,3), then click a
-      // landing beyond Blue. We choose (3,5) to mirror the Rust/backend tests.
-      await engine.handleHumanCellClick(redPos);
-      await engine.handleHumanCellClick({ x: 3, y: 5 });
-
-      // By awaiting both clicks, we ensure that any capture_direction choices
-      // and mandatory chain continuation have fully resolved before we
-      // inspect the final state.
-
-      const finalState = engine.getGameState();
-      const finalBoard = finalState.board;
-
-      // At least one capture_direction choice should have been issued.
-      expect(choices.length).toBeGreaterThan(0);
-
-      const allPairs = choices.flatMap((ch) =>
-        (ch.options || []).map(
-          (o) =>
-            `${o.targetPosition.x},${o.targetPosition.y}->${o.landingPosition.x},${o.landingPosition.y}`
-        )
-      );
-
-      // The core rule-faithful options from the first branching point should
-      // appear somewhere in the accumulated choices, matching the backend
-      // GameEngine.chainCaptureChoiceIntegration expectations.
-      expect(allPairs).toEqual(expect.arrayContaining(['4,5->6,5', '4,5->7,5', '2,5->0,5']));
-
-      // Use the final choice to locate the branch actually taken and assert on
-      // the resulting board state.
-      const lastChoice = choices[choices.length - 1];
-      const options = lastChoice.options || [];
-      const selected = options.reduce((prev, cur) =>
-        cur.landingPosition.x < prev.landingPosition.x ||
-        (cur.landingPosition.x === prev.landingPosition.x &&
-          cur.landingPosition.y < prev.landingPosition.y)
-          ? cur
-          : prev
-      );
-
-      const startKey = '3,3';
-      const blueKey = '3,4';
-      const intermediateKey = '3,5';
-
-      const stackAtStart = finalBoard.stacks.get(startKey);
-      const stackAtBlue = finalBoard.stacks.get(blueKey);
-      const stackAtIntermediate = finalBoard.stacks.get(intermediateKey);
-
-      // The original attacker and first target must be gone; the chain
-      // continues from (3,5) along one of the rule‑legal directions.
-      expect(stackAtStart).toBeUndefined();
-      expect(stackAtBlue).toBeUndefined();
-      expect(stackAtIntermediate).toBeUndefined();
-
-      // There should be exactly one Red-controlled stack on the board,
-      // representing the final capturing stack after the chosen branch.
-      const redStacks = Array.from(finalBoard.stacks.values()).filter(
-        (s) => s.controllingPlayer === 1
-      );
-      expect(redStacks.length).toBe(1);
-      expect(redStacks[0].stackHeight).toBeGreaterThanOrEqual(3);
-
-      // Sandbox has no explicit chain state; successful completion is implied
-      // by the movement phase having advanced after the chain resolves.
-      expect(
-        finalState.currentPhase === 'movement' || finalState.currentPhase === 'ring_placement'
-      ).toBe(true);
+      // Select the first chain move (deterministic)
+      const next = chainMoves[0];
+      await engine.applyCanonicalMove(next);
     }
-  );
+  }
+
+  test('two-step chain capture mirrors backend behaviour via orchestrator adapter', async () => {
+    // Q10 / Rust test_start_chain_capture + test_complete_chain_capture baseline.
+    // Scenario:
+    // - Player 1 (Red) at (2,2) height 2
+    // - Player 2 (Blue) at (2,3) height 1
+    // - Player 3 (Green) at (2,5) height 1
+    // Expected:
+    // Red captures Blue and then Green in a chain, finishing at (2,7)
+    // with height 4, and original target positions are empty.
+
+    const engine = createEngine(3);
+    const adapter = getAdapter(engine);
+
+    const redPos: Position = { x: 2, y: 2 };
+    const bluePos: Position = { x: 2, y: 3 };
+    const greenPos: Position = { x: 2, y: 5 };
+
+    setupBoard(
+      engine,
+      [
+        { pos: redPos, player: 1, height: 2 },
+        { pos: bluePos, player: 2, height: 1 },
+        { pos: greenPos, player: 3, height: 1 },
+      ],
+      1,
+      'movement'
+    );
+
+    // Get valid moves - should include overtaking_capture options
+    const moves = adapter.getValidMoves();
+    const captureMoves = moves.filter((m: Move) => m.type === 'overtaking_capture');
+
+    // Find the capture that targets Blue at (2,3) with landing at (2,4)
+    const initialCapture = captureMoves.find(
+      (m: Move) =>
+        m.from?.x === 2 &&
+        m.from?.y === 2 &&
+        m.captureTarget?.x === 2 &&
+        m.captureTarget?.y === 3 &&
+        m.to?.x === 2 &&
+        m.to?.y === 4
+    );
+
+    expect(initialCapture).toBeDefined();
+    if (!initialCapture) return;
+
+    // Apply the initial capture
+    await engine.applyCanonicalMove(initialCapture);
+
+    // Engine should now be in chain_capture phase
+    const stateAfterFirst = engine.getGameState();
+    expect(stateAfterFirst.currentPhase).toBe('chain_capture');
+
+    // Resolve the rest of the chain
+    await resolveChainIfPresent(engine);
+
+    // Verify final state
+    const finalState = engine.getGameState();
+    const finalBoard = finalState.board;
+
+    const stackAtRed = finalBoard.stacks.get('2,2');
+    const stackAtBlue = finalBoard.stacks.get('2,3');
+    const stackAtGreen = finalBoard.stacks.get('2,5');
+    const stackAtFinal = finalBoard.stacks.get('2,7');
+
+    expect(stackAtRed).toBeUndefined();
+    expect(stackAtBlue).toBeUndefined();
+    expect(stackAtGreen).toBeUndefined();
+    expect(stackAtFinal).toBeDefined();
+    expect(stackAtFinal!.stackHeight).toBe(4);
+    expect(stackAtFinal!.controllingPlayer).toBe(1);
+
+    // Phase should have advanced past chain_capture
+    expect(finalState.currentPhase).not.toBe('chain_capture');
+  });
+
+  test('orthogonal multi-branch chain capture exposes multiple continue_capture_segment options', async () => {
+    // Mirrors the Rust `test_chain_capture_player_choice_simulation` and the
+    // backend GameEngine chain‑capture choice integration tests:
+    //
+    // - Red at (3,3) h2 (attacker)
+    // - Blue at (3,4) h1 (initial target)
+    // - Green at (4,5) h1
+    // - Yellow at (2,5) h1
+    //
+    // After Red captures Blue and lands at (3,5), there are multiple legal
+    // follow‑up capture directions exposed via continue_capture_segment moves.
+
+    const engine = createEngine(4);
+    const adapter = getAdapter(engine);
+
+    const redPos: Position = { x: 3, y: 3 };
+    const bluePos: Position = { x: 3, y: 4 };
+    const greenPos: Position = { x: 4, y: 5 };
+    const yellowPos: Position = { x: 2, y: 5 };
+
+    setupBoard(
+      engine,
+      [
+        { pos: redPos, player: 1, height: 2 },
+        { pos: bluePos, player: 2, height: 1 },
+        { pos: greenPos, player: 3, height: 1 },
+        { pos: yellowPos, player: 4, height: 1 },
+      ],
+      1,
+      'movement'
+    );
+
+    // Get the initial capture move: Red at (3,3) captures Blue at (3,4), lands at (3,5)
+    const moves = adapter.getValidMoves();
+    const captureMoves = moves.filter((m: Move) => m.type === 'overtaking_capture');
+
+    const initialCapture = captureMoves.find(
+      (m: Move) =>
+        m.from?.x === 3 &&
+        m.from?.y === 3 &&
+        m.captureTarget?.x === 3 &&
+        m.captureTarget?.y === 4 &&
+        m.to?.x === 3 &&
+        m.to?.y === 5
+    );
+
+    expect(initialCapture).toBeDefined();
+    if (!initialCapture) return;
+
+    // Apply the initial capture
+    await engine.applyCanonicalMove(initialCapture);
+
+    // Should be in chain_capture phase
+    const stateAfterFirst = engine.getGameState();
+    expect(stateAfterFirst.currentPhase).toBe('chain_capture');
+
+    // Get chain continuation moves
+    const chainMoves = adapter.getValidMoves();
+    const continuations = chainMoves.filter((m: Move) => m.type === 'continue_capture_segment');
+
+    // Should have multiple continuation options (towards Green and Yellow)
+    expect(continuations.length).toBeGreaterThan(1);
+
+    // Verify the expected target options exist
+    const targetKeys = continuations.map(
+      (m: Move) => `${m.captureTarget?.x},${m.captureTarget?.y}`
+    );
+
+    // Should be able to capture Green at (4,5) or Yellow at (2,5)
+    expect(targetKeys).toContain('4,5');
+    expect(targetKeys).toContain('2,5');
+
+    // Pick lexicographically smallest landing (deterministic selection)
+    const selected = continuations.reduce((prev: Move, cur: Move) =>
+      (cur.to?.x ?? 0) < (prev.to?.x ?? 0) ||
+      ((cur.to?.x ?? 0) === (prev.to?.x ?? 0) && (cur.to?.y ?? 0) < (prev.to?.y ?? 0))
+        ? cur
+        : prev
+    );
+
+    await engine.applyCanonicalMove(selected);
+
+    // Resolve any remaining chain
+    await resolveChainIfPresent(engine);
+
+    // Verify final state
+    const finalState = engine.getGameState();
+    const finalBoard = finalState.board;
+
+    // Original attacker and first target should be gone
+    expect(finalBoard.stacks.get('3,3')).toBeUndefined();
+    expect(finalBoard.stacks.get('3,4')).toBeUndefined();
+    expect(finalBoard.stacks.get('3,5')).toBeUndefined();
+
+    // There should be exactly one Red-controlled stack on the board
+    const redStacks = Array.from(finalBoard.stacks.values()).filter(
+      (s) => s.controllingPlayer === 1
+    );
+    expect(redStacks.length).toBe(1);
+    expect(redStacks[0].stackHeight).toBeGreaterThanOrEqual(3);
+
+    // Phase should have advanced past chain_capture
+    expect(finalState.currentPhase).not.toBe('chain_capture');
+  });
+
+  test('chain capture with no follow-up targets terminates correctly', async () => {
+    // Single capture with no further targets - should complete immediately
+    //
+    // - Red at (2,2) h2
+    // - Blue at (2,3) h1
+    // - No other stacks in capture range
+
+    const engine = createEngine(2);
+    const adapter = getAdapter(engine);
+
+    setupBoard(
+      engine,
+      [
+        { pos: { x: 2, y: 2 }, player: 1, height: 2 },
+        { pos: { x: 2, y: 3 }, player: 2, height: 1 },
+      ],
+      1,
+      'movement'
+    );
+
+    const moves = adapter.getValidMoves();
+    const captureMoves = moves.filter((m: Move) => m.type === 'overtaking_capture');
+
+    const capture = captureMoves.find(
+      (m: Move) =>
+        m.from?.x === 2 &&
+        m.from?.y === 2 &&
+        m.captureTarget?.x === 2 &&
+        m.captureTarget?.y === 3
+    );
+
+    expect(capture).toBeDefined();
+    if (!capture) return;
+
+    await engine.applyCanonicalMove(capture);
+
+    // Resolve chain if any (should be none)
+    await resolveChainIfPresent(engine);
+
+    const finalState = engine.getGameState();
+    const finalBoard = finalState.board;
+
+    // Only one stack should remain - the capturing stack
+    expect(finalBoard.stacks.size).toBe(1);
+    const redStack = Array.from(finalBoard.stacks.values())[0];
+    expect(redStack.controllingPlayer).toBe(1);
+    expect(redStack.stackHeight).toBe(3); // 2 original + 1 captured
+
+    // Phase should not be chain_capture
+    expect(finalState.currentPhase).not.toBe('chain_capture');
+  });
 });

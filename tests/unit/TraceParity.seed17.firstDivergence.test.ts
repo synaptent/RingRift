@@ -28,9 +28,19 @@ import { pos } from '../utils/fixtures';
  * matcher to locate the first move index where backend and sandbox diverge
  * for seed 17. It requires complex trace infrastructure and is a
  * diagnostic helper, not a regression test.
- * Skipped pending dedicated parity investigation.
+ *
+ * To keep core CI fast, this suite is opt-in via the
+ * RINGRIFT_ENABLE_SEED17_PARITY env var. When unset/false it is skipped;
+ * when set to '1' or 'true' it runs as a normal describe().
  */
-describe.skip('Trace parity first-divergence helper: square8 / 2p / seed=17', () => {
+const SEED17_PARITY_ENABLED =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_ENABLE_SEED17_PARITY ?? '');
+
+const maybeDescribe = SEED17_PARITY_ENABLED ? describe : describe.skip;
+
+maybeDescribe('Trace parity first-divergence helper: square8 / 2p / seed=17', () => {
   const boardType: BoardType = 'square8';
   const numPlayers = 2;
   const seed = 17;

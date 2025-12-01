@@ -290,7 +290,7 @@ describe('Shared engine mutators – basic invariants and S-invariant', () => {
     expect(after.board.eliminatedRings[1]).toBe(2);
   });
 
-  it('mutateProcessTerritory does not decrease S-invariant when marking a region as connected', () => {
+  it('mutateProcessTerritory does not decrease S-invariant when collapsing a region into territory', () => {
     const state: GameState = createInitialGameState(
       'mutator-territory',
       boardType,
@@ -298,15 +298,13 @@ describe('Shared engine mutators – basic invariants and S-invariant', () => {
       timeControl
     );
 
+    // Add a disconnected territory region at (1, 1) - not already collapsed
     (state.board.territories as any).set('region-1', {
       id: 'region-1',
       controllingPlayer: 1,
       isDisconnected: true,
-      spaces: [{ x: 0, y: 0 }],
+      spaces: [{ x: 1, y: 1 }],
     });
-
-    // Seed a collapsed space to make S-invariant meaningful.
-    (state.board.collapsedSpaces as any).set('0,0', 1);
 
     const beforeS = snapshotS(state);
 
@@ -319,11 +317,16 @@ describe('Shared engine mutators – basic invariants and S-invariant', () => {
     const after = mutateProcessTerritory(state, action);
     const afterS = snapshotS(after);
 
+    // S-invariant should increase (new collapsed space added)
     expect(afterS).toBeGreaterThanOrEqual(beforeS);
 
-    const kept = (after.board.territories as any).get('region-1');
-    expect(kept).toBeDefined();
-    expect(kept.isDisconnected).toBe(false);
+    // Territory should be removed from territories map after collapsing
+    const removed = (after.board.territories as any).get('region-1');
+    expect(removed).toBeUndefined();
+
+    // Space should now be collapsed to player 1
+    const collapsed = (after.board.collapsedSpaces as any).get('1,1');
+    expect(collapsed).toBe(1);
   });
 
   it('mutateTurnChange keeps S-invariant constant and advances currentPlayer', () => {

@@ -17,9 +17,11 @@ This document describes all alerting rules configured for RingRift, their thresh
   - [AI Service Alerts](#ai-service-alerts)
   - [Degradation Alerts](#degradation-alerts)
   - [Rate Limiting Alerts](#rate-limiting-alerts)
+  - [Orchestrator Rollout Alerts](#orchestrator-rollout-alerts)
   - [Rules Parity Alerts](#rules-parity-alerts)
   - [Service Response Time Alerts](#service-response-time-alerts)
 - [Threshold Rationale Summary](#threshold-rationale-summary)
+- [Dashboards & Observability Checklist](#dashboards--observability-checklist)
 - [Escalation Procedures](#escalation-procedures)
 - [Tuning Guidelines](#tuning-guidelines)
 
@@ -556,18 +558,165 @@ These alerts track rate limiting activity.
 
 ---
 
+### Orchestrator Rollout Alerts
+
+These alerts track orchestrator-specific health, rollout posture, and invariants. They are the on-call surface for the orchestrator SLOs defined in
+[`ORCHESTRATOR_ROLLOUT_PLAN.md`](./ORCHESTRATOR_ROLLOUT_PLAN.md#6-orchestrator-specific-slos).
+
+#### OrchestratorCircuitBreakerOpen
+
+| Property      | Value                                      |
+| ------------- | ------------------------------------------ |
+| **Severity**  | critical                                   |
+| **Threshold** | `ringrift_orchestrator_circuit_breaker_state == 1` |
+| **Duration**  | 30 seconds                                 |
+| **Impact**    | Orchestrator path disabled; all traffic on legacy engine |
+
+**Rationale**: A tripped circuit breaker means orchestrator error rate exceeded the configured threshold (default 5% over a 5‑minute window). This is a direct breach of `SLO-STAGE-ORCH-ERROR` / `SLO-PROD-ORCH-ERROR`.
+
+**Response**:
+
+1. Check orchestrator error logs and recent deploys (backend `GameEngine` / turn adapter changes).
+2. Verify Python rules and AI services are healthy to rule out dependency cascades.
+3. Follow `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`:
+   - Freeze rollout (do not increase `ORCHESTRATOR_ROLLOUT_PERCENTAGE`).
+   - Investigate and fix the underlying error pattern.
+   - Manually reset the circuit breaker via the admin APIs or config once resolved.
+
+---
+
+#### OrchestratorErrorRateWarning
+
+| Property      | Value                                   |
+| ------------- | --------------------------------------- |
+| **Severity**  | warning                                 |
+| **Threshold** | `ringrift_orchestrator_error_rate > 0.02` (2%) |
+| **Duration**  | 2 minutes                               |
+| **Impact**    | Elevated orchestrator-specific failure rate |
+
+**Rationale**: At 2% orchestrator error rate, the system is approaching the 5% circuit‑breaker threshold. This is an early warning aligned with the orchestrator error‑rate SLOs.
+
+**Response**:
+
+1. Check `/metrics` and logs for specific orchestrator failure types (validation errors, timeouts, invariant violations).
+2. Correlate with recent code changes or rollout percentage changes.
+3. If errors are increasing, pre‑emptively pause rollout and reduce `ORCHESTRATOR_ROLLOUT_PERCENTAGE` in staging/production as per the rollout runbook.
+
+---
+
+#### OrchestratorShadowMismatches
+
+| Property      | Value                                          |
+| ------------- | ---------------------------------------------- |
+| **Severity**  | warning                                        |
+| **Threshold** | `ringrift_orchestrator_shadow_mismatch_rate > 0.01` (1%) |
+| **Duration**  | 5 minutes                                      |
+| **Impact**    | Possible semantic divergence in shadow mode    |
+
+**Rationale**: When running with `ORCHESTRATOR_SHADOW_MODE_ENABLED=true`, more than 1% mismatches between orchestrator and legacy paths indicates a likely rules or host‑integration bug. This maps to `SLO-STAGE-ORCH-PARITY` / `SLO-PROD-ORCH-PARITY`.
+
+**Response**:
+
+1. Use the shadow comparison dashboards (backed by `ringrift_orchestrator_shadow_mismatch_rate` and related gauges) to inspect mismatch patterns by board type and phase.
+2. Correlate with rules parity alerts (`RulesParity*`) to distinguish orchestrator vs Python divergence.
+3. Hold rollout at current percentage or revert to a safer phase until mismatches are understood and fixed.
+
+---
+
+#### OrchestratorInvariantViolationsStaging
+
+| Property      | Value                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------- |
+| **Severity**  | warning                                                                               |
+| **Threshold** | `increase(ringrift_orchestrator_invariant_violations_total[1h]) > 0`                  |
+| **Duration**  | 5 minutes                                                                             |
+| **Impact**    | Invariant violations under CI or staging traffic                                      |
+| **Labels**    | `environment`, `type`, `invariant_id` (see `docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`) |
+
+**Rationale**: Any new orchestrator invariant violation (ACTIVE-no-move, S‑invariant decrease, elimination accounting regression) in staging or CI is treated as a staging SLO breach (`SLO-STAGE-ORCH-INVARIANTS`).
+
+**Response**:
+
+1. Inspect invariant violation logs and orchestrator soak summaries (see `docs/STRICT_INVARIANT_SOAKS.md` and `results/orchestrator_soak_summary.json` artifacts).
+2. Promote the failing seed/geometry into a dedicated Jest regression under `tests/unit/OrchestratorSInvariant.regression.test.ts` where applicable.
+3. Block promotion to production until the violation is fixed or explicitly waived with documented rationale.
+
+---
+
+#### OrchestratorInvariantViolationsProduction
+
+| Property      | Value                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------- |
+| **Severity**  | critical                                                                              |
+| **Threshold** | `increase(ringrift_orchestrator_invariant_violations_total[1h]) > 0`                  |
+| **Duration**  | 5 minutes                                                                             |
+| **Impact**    | Invariants violated under real player traffic                                         |
+| **Labels**    | `environment`, `type`, `invariant_id` (see `docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`) |
+
+**Rationale**: Any orchestrator invariant violation in production is a direct breach of `SLO-PROD-ORCH-INVARIANTS` and must halt rollout.
+
+**Response**:
+
+1. Immediately freeze orchestrator rollout and consider reducing `ORCHESTRATOR_ROLLOUT_PERCENTAGE` or disabling the adapter per the rollout runbook.
+2. Triage the violation using logs and, if available, invariant soak results against the production image.
+3. Add or update regression tests and only resume rollout once the issue is fully understood and fixed.
+
+---
+
+### Python Invariant Alerts (Self‑Play / AI Service)
+
+These alerts track strict‑invariant violations observed by Python self‑play soaks and the AI service, using the same invariant IDs (`INV-*`) as the TS/orchestrator metrics.
+
+#### PythonInvariantViolations
+
+| Property      | Value                                                                 |
+| ------------- | --------------------------------------------------------------------- |
+| **Severity**  | warning                                                               |
+| **Threshold** | `increase(ringrift_python_invariant_violations_total[1h]) > 0`        |
+| **Duration**  | 5 minutes                                                             |
+| **Impact**    | Python self‑play invariants violated (training / AI rules regressions) |
+
+**Rationale**: Any strict‑invariant violation in Python self‑play soaks (for example `INV-S-MONOTONIC` or `INV-ACTIVE-NO-MOVES`) indicates potential divergence between Python rules/AI training behaviour and the TS orchestrator invariants. This maps to the Python invariant surfaces described in `INVARIANTS_AND_PARITY_FRAMEWORK.md` and `STRICT_INVARIANT_SOAKS.md`.
+
+**Response**:
+
+1. Inspect the most recent Python soak summaries produced by `run_self_play_soak.py` (including `invariant_violations_by_id` and sample entries).
+2. Identify whether the violation corresponds to a known triaged edge case or a new invariant break.
+3. Promote representative seeds/snapshots into dedicated TS or Python regression tests, and align invariant semantics if TS vs Python differ.
+4. For production‑adjacent training pipelines, pause or roll back to a last‑known‑good rules/AI configuration until the invariant is restored.
+
+---
+
 ### Rules Parity Alerts
 
 These alerts track consistency between TypeScript and Python rules engines.
+
+Underlying metrics:
+
+- **Unified counter:** `ringrift_rules_parity_mismatches_total{mismatch_type, suite}`
+  - `mismatch_type` ∈ {`validation`, `hash`, `s_invariant`, `game_status`}
+  - `suite` identifies the parity context (for example `runtime_shadow`, `runtime_python_mode`, or future contract-vector suites such as `contract_vectors_v2` corresponding to `PARITY-TS-PY-*` IDs in
+    [`INVARIANTS_AND_PARITY_FRAMEWORK.md`](./INVARIANTS_AND_PARITY_FRAMEWORK.md).
+- **Legacy counters (still exported for dashboards):**
+  - `ringrift_rules_parity_valid_mismatch_total`
+  - `ringrift_rules_parity_hash_mismatch_total`
+  - `ringrift_rules_parity_s_mismatch_total`
+  - `ringrift_rules_parity_game_status_mismatch_total`
 
 #### RulesParityValidationMismatch
 
 | Property      | Value                              |
 | ------------- | ---------------------------------- |
 | **Severity**  | warning                            |
-| **Threshold** | > 5 mismatches/hour                |
+| **Threshold** | > 5 validation mismatches/hour     |
 | **Duration**  | 5 minutes                          |
 | **Impact**    | Rule engine inconsistency detected |
+
+Backed by:
+
+```promql
+increase(ringrift_rules_parity_mismatches_total{mismatch_type="validation"}[1h]) > 5
+```
 
 ---
 
@@ -576,9 +725,15 @@ These alerts track consistency between TypeScript and Python rules engines.
 | Property      | Value                                  |
 | ------------- | -------------------------------------- |
 | **Severity**  | warning                                |
-| **Threshold** | > 5 mismatches/hour                    |
+| **Threshold** | > 5 hash mismatches/hour               |
 | **Duration**  | 5 minutes                              |
 | **Impact**    | Game state may diverge between engines |
+
+Backed by:
+
+```promql
+increase(ringrift_rules_parity_mismatches_total{mismatch_type="hash"}[1h]) > 5
+```
 
 ---
 
@@ -587,9 +742,15 @@ These alerts track consistency between TypeScript and Python rules engines.
 | Property      | Value                                    |
 | ------------- | ---------------------------------------- |
 | **Severity**  | critical                                 |
-| **Threshold** | > 0 mismatches/hour                      |
+| **Threshold** | > 0 game-status mismatches/hour          |
 | **Duration**  | 5 minutes                                |
 | **Impact**    | Win/loss outcomes differ between engines |
+
+Backed by:
+
+```promql
+increase(ringrift_rules_parity_mismatches_total{mismatch_type="game_status"}[1h]) > 0
+```
 
 **Response**:
 
@@ -665,6 +826,72 @@ These alerts track database and cache response times.
 | Active Handles    | 10K     | -        | Resource leak indicator             |
 | Database Response | 500ms   | -        | Query performance threshold         |
 | Redis Response    | 100ms   | -        | Cache latency threshold             |
+
+---
+
+## Dashboards & Observability Checklist
+
+This section describes the **minimum recommended dashboards** to keep rules/orchestrator, AI, and infra health observable in staging and production. It complements the alert rules in this document and the orchestrator rollout SLOs in [`ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md:1).
+
+### Rules / Orchestrator Dashboard
+
+Every environment that is on, or preparing for, orchestrator‑first rollout should have a dedicated dashboard that shows at least:
+
+- **Error and invariants**
+  - `ringrift_orchestrator_error_rate{environment=...}`
+  - `ringrift_orchestrator_invariant_violations_total{environment=...}` (where present, sliced by `type` and `invariant_id` matching `INV-*` IDs from
+    [`INVARIANTS_AND_PARITY_FRAMEWORK.md`](./INVARIANTS_AND_PARITY_FRAMEWORK.md)).
+  - (For AI/self‑play environments) `ringrift_python_invariant_violations_total{invariant_id=...,type=...}` for Python strict‑invariant soaks (`INV-*` IDs).
+  - `OrchestratorErrorRateWarning`, `OrchestratorInvariantViolations*`, and `PythonInvariantViolations` alert state.
+- **Rollout posture**
+  - `ringrift_orchestrator_rollout_percentage{environment=...}`
+  - `ringrift_orchestrator_circuit_breaker_state{environment=...}`
+  - Shadow mismatch metrics:
+    - `ringrift_orchestrator_shadow_mismatch_rate{environment=...}`
+    - Comparison counters used by `OrchestratorShadowMismatches`.
+- **Game health**
+  - Game move latency histograms (P50/P95/P99) broken down by board type or route.
+  - HTTP 5xx share on game endpoints (as used in `HighErrorRate` alerts).
+  - Rules parity metrics and `RulesParity*` alert state, backed by `ringrift_rules_parity_mismatches_total{mismatch_type, suite}` where suites map onto
+    parity contexts (for example `runtime_shadow`, `runtime_python_mode`, or future `PARITY-*` contract suites).
+
+For Phase‑based expectations and thresholds, see §§6.2–6.4 and §8 of `ORCHESTRATOR_ROLLOUT_PLAN.md`.
+
+### AI Service Dashboard
+
+To distinguish AI incidents from rules/orchestrator issues (see `AI_ARCHITECTURE.md` and the AI runbooks), maintain a separate AI‑focused dashboard with:
+
+- AI service availability and error rate:
+  - `ringrift_service_status{service="ai_service"}`
+  - HTTP 5xx/timeout fraction for AI endpoints.
+- Latency:
+  - AI request latency histograms (P50/P95/P99).
+  - Any model‑specific latency or queue‑depth metrics.
+- Fallback behaviour:
+  - AI fallback rate (as used in AI degradation alerts).
+  - Counts of degraded moves vs fully‑powered AI moves.
+
+This dashboard should be the primary reference during `AIServiceDown`, `AI*Degraded`, and AI‑performance incidents.
+
+### Infrastructure / Platform Dashboard
+
+Finally, maintain a core infra dashboard that surfaces:
+
+- Container and node health:
+  - CPU, memory, and disk utilisation for app, database, and Redis.
+  - `HighMemoryUsage*`, `HighEventLoopLag*`, and `HighActiveHandles` alert state.
+- Dependency health:
+  - `ringrift_service_status{service="database"}` and `{service="redis"}`.
+  - Database and Redis response‑time summaries corresponding to their alerts.
+- Traffic and saturation:
+  - HTTP traffic volume (`http_requests_total`) per route.
+  - Connection counts (WebSockets, DB connections, Redis clients).
+
+During incident reviews, verify that these three dashboards together make it easy to answer:
+
+1. Is the problem **rules/orchestrator**, **AI**, or **infra**?
+2. Are current alert thresholds still appropriate for observed load and variability?
+3. Does the current orchestrator rollout phase (from `ORCHESTRATOR_ROLLOUT_PLAN.md`) match the live flag and metric posture?
 
 ---
 

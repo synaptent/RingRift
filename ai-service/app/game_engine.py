@@ -65,7 +65,7 @@ class GameEngine:
         GameEngine._cache_misses += 1
 
         phase = game_state.current_phase
-        moves = []
+        moves: List[Move] = []
 
         if phase == GamePhase.RING_PLACEMENT:
             # TS-aligned ring placement phase:
@@ -102,6 +102,24 @@ class GameEngine:
             moves = GameEngine._get_territory_processing_moves(
                 game_state, player_number
             )
+
+        # Layer in the swap_sides meta-move (pie rule) for Player 2 when
+        # enabled. This mirrors the backend TS GameEngine.shouldOfferSwapSidesMetaMove
+        # gate so that Python-based rules/AI see the same one-time choice.
+        if GameEngine._should_offer_swap_sides(game_state):
+            already_has_swap = any(m.type == MoveType.SWAP_SIDES for m in moves)
+            if not already_has_swap:
+                move_number = len(game_state.move_history) + 1
+                swap_move = Move(  # type: ignore[call-arg]
+                    id=f"swap_sides-{move_number}",
+                    type=MoveType.SWAP_SIDES,
+                    player=2,
+                    to=Position(x=0, y=0),
+                    timestamp=game_state.last_move_at,
+                    thinkTime=0,
+                    moveNumber=move_number,
+                )
+                moves.append(swap_move)
 
         # Cache result
         GameEngine._move_cache[cache_key] = moves
@@ -168,7 +186,9 @@ class GameEngine:
                 new_state.current_phase
             )
 
-        if move.type == MoveType.PLACE_RING:
+        if move.type == MoveType.SWAP_SIDES:
+            GameEngine._apply_swap_sides(new_state, move)
+        elif move.type == MoveType.PLACE_RING:
             GameEngine._apply_place_ring(new_state, move)
         elif move.type == MoveType.SKIP_PLACEMENT:
             # No board change; phase update will advance the turn.
@@ -266,6 +286,114 @@ class GameEngine:
             GameEngine._assert_active_player_has_legal_action(new_state, move)
 
         return new_state
+
+    @staticmethod
+    def _apply_swap_sides(game_state: GameState, move: Move) -> None:
+        """
+        Apply a swap_sides meta-move for 2-player games.
+
+        Semantics mirror the TS backend GameEngine.applySwapSidesMove:
+        - Only players in seats 1 and 2 swap their *identities*:
+          id / username / type / aiDifficulty.
+        - Per-seat statistics remain attached to the seat:
+          rings_in_hand, eliminated_rings, territory_spaces,
+          time_remaining, etc. are preserved.
+        - Board geometry and controlling_player indices are unchanged.
+        - current_player and current_phase are preserved.
+        """
+        if len(game_state.players) != 2:
+            return
+
+        p1 = None
+        p2 = None
+        for p in game_state.players:
+            if p.player_number == 1:
+                p1 = p
+            elif p.player_number == 2:
+                p2 = p
+
+        if p1 is None or p2 is None:
+            return
+
+        # Swap identity/meta fields while preserving per-seat stats.
+        new_players = []
+        for p in game_state.players:
+            if p.player_number == 1:
+                new_players.append(
+                    p.model_copy(
+                        update={
+                            "id": p2.id,
+                            "username": p2.username,
+                            "type": p2.type,
+                            "ai_difficulty": p2.ai_difficulty,
+                        }
+                    )
+                )
+            elif p.player_number == 2:
+                new_players.append(
+                    p.model_copy(
+                        update={
+                            "id": p1.id,
+                            "username": p1.username,
+                            "type": p1.type,
+                            "ai_difficulty": p1.ai_difficulty,
+                        }
+                    )
+                )
+            else:
+                new_players.append(p)
+
+        game_state.players = new_players
+
+    @staticmethod
+    def _should_offer_swap_sides(game_state: GameState) -> bool:
+        """
+        Determine whether the current state should expose a SWAP_SIDES
+        meta-move (pie rule) for Player 2.
+
+        This mirrors the gate in the TS backend GameEngine:
+        - rulesOptions.swapRuleEnabled must be truthy.
+        - Game must be ACTIVE with exactly two players.
+        - It must be Player 2's turn in an interactive phase.
+        - There must be at least one move from Player 1.
+        - Player 2 must not have taken any non-swap_sides move yet.
+        - No prior swap_sides move may exist in moveHistory.
+        """
+        rules = game_state.rules_options or {}
+        if not bool(rules.get("swapRuleEnabled", False)):
+            return False
+
+        if game_state.game_status != GameStatus.ACTIVE:
+            return False
+
+        if len(game_state.players) != 2:
+            return False
+
+        if game_state.current_player != 2:
+            return False
+
+        if game_state.current_phase not in {
+            GamePhase.RING_PLACEMENT,
+            GamePhase.MOVEMENT,
+            GamePhase.CAPTURE,
+            GamePhase.CHAIN_CAPTURE,
+        }:
+            return False
+
+        if not game_state.move_history:
+            return False
+
+        has_swap = any(m.type == MoveType.SWAP_SIDES for m in game_state.move_history)
+        if has_swap:
+            return False
+
+        has_p1_move = any(m.player == 1 for m in game_state.move_history)
+        has_p2_move = any(
+            m.player == 2 and m.type != MoveType.SWAP_SIDES
+            for m in game_state.move_history
+        )
+
+        return has_p1_move and not has_p2_move
 
     @staticmethod
     def _check_victory(game_state: GameState):
@@ -726,52 +854,37 @@ class GameEngine:
     ) -> None:
         """Enforce the strict no-move invariant for ACTIVE states.
 
-        When STRICT_NO_MOVE_INVARIANT is enabled, any ACTIVE state for the
-        current_player must admit at least one legal global action:
+        When STRICT_NO_MOVE_INVARIANT is enabled, any ACTIVE state must satisfy
+        the RR-CANON R2xx / INV-ACTIVE-NO-MOVES contract for
+        ``current_player``:
 
-        - a placement, movement, or capture (via _has_valid_actions), or
-        - a forced-elimination move when the player still controls stacks.
+        - the player has turn-material (RR-CANON-R201), and
+        - the global action surface G(state, P) is non-empty (RR-CANON-R200):
+          * at least one global placement; or
+          * at least one phase-local interactive move; or
+          * a host-level forced-elimination action while they still control
+            stacks.
 
         For fully eliminated players (no stacks and no rings in hand) we first
-        attempt a defensive _end_turn rotation before declaring an invariant
-        failure, mirroring TS TurnEngine semantics.
+        attempt a defensive ``_end_turn`` rotation before declaring an
+        invariant failure, mirroring the TS turn orchestrator and
+        INV-ANM-TURN-MATERIAL-SKIP.
         """
         if game_state.game_status != GameStatus.ACTIVE:
             return
 
+        # Local import to avoid a circular import at module load time. The
+        # global_actions module in turn imports GameEngine for shared helpers.
+        from app.rules import global_actions as ga  # type: ignore
+
         current_player = game_state.current_player
 
-        def _player_has_material(pnum: int) -> bool:
-            player_obj = next(
-                (p for p in game_state.players if p.player_number == pnum),
-                None,
-            )
-            has_stacks = any(
-                s.controlling_player == pnum
-                for s in game_state.board.stacks.values()
-            )
-            rings_in_hand = player_obj.rings_in_hand if player_obj else 0
-            return has_stacks or rings_in_hand > 0
-
-        def _has_any_action(pnum: int) -> bool:
-            # Global action availability in the TS TurnEngine.hasValidActions
-            # sense: any placement, movement, or capture, plus forced
-            # elimination when applicable.
-            if GameEngine._has_valid_actions(game_state, pnum):
-                return True
-            forced = GameEngine._get_forced_elimination_moves(game_state, pnum)
-            return bool(forced)
-
-        # Fast path: if the current player has any global action, the invariant
-        # holds (even if the current phase only exposes a subset of those
-        # actions, e.g. MOVEMENT with only placements remaining).
-        if _has_any_action(current_player):
-            return
-
-        # If the current player has no material at all, attempt to rotate the
-        # turn once before declaring failure. This mirrors the TS behaviour of
-        # skipping fully eliminated players.
-        if not _player_has_material(current_player):
+        # First, ensure that fully eliminated players are not left as the
+        # active player in ACTIVE states. If the current player has no
+        # turn-material at all (no stacks and no rings in hand), attempt a
+        # single defensive rotation via _end_turn before treating the shape as
+        # an invariant violation.
+        if not ga.has_turn_material(game_state, current_player):
             previous_player = current_player
             GameEngine._end_turn(game_state)
 
@@ -779,14 +892,29 @@ class GameEngine:
             if game_state.game_status != GameStatus.ACTIVE:
                 return
 
-            # Avoid infinite loops: if _end_turn did not advance to a new
-            # player, fall through to snapshot + raise.
+            # If we advanced to a different player who now has turn-material and
+            # is not in an ANM state, the invariant holds.
             if game_state.current_player != previous_player:
-                if _has_any_action(game_state.current_player):
+                new_player = game_state.current_player
+                if ga.has_turn_material(game_state, new_player) and not ga.is_anm_state(
+                    game_state
+                ):
                     return
+            # Fall through to snapshot + raise handling below; at this point we
+            # are in an ACTIVE state whose current_player either still has no
+            # material or remains in an ANM shape.
 
-        # At this point we have an ACTIVE state whose current_player has no
-        # placements, movements, captures, or forced eliminations available.
+        # At this point, either:
+        # - current_player has turn-material, or
+        # - a defensive rotation failed to find any non-ANM player.
+        #
+        # If ANM(state, current_player) is false, the invariant holds.
+        if not ga.is_anm_state(game_state):
+            return
+
+        # We now have an ACTIVE state whose current_player satisfies
+        # ANM(state, P): they have turn-material but no placements, movements,
+        # captures, territory/line decisions, or forced eliminations available.
         # Capture a diagnostic snapshot and raise.
         try:
             failure_dir = os.path.abspath(
@@ -1826,20 +1954,19 @@ class GameEngine:
         This is invoked from _end_turn after territory processing when the next
         player controls at least one stack but has no legal placements,
         movements, or captures available.
+
+        The actual elimination semantics are centralised in the
+        app.rules.global_actions.apply_forced_elimination_for_player helper so
+        that host-level forced elimination remains consistent with the TS
+        shared engine and RR-CANON-R205.
         """
-        moves = GameEngine._get_forced_elimination_moves(
-            game_state,
-            player_number,
-        )
-        if not moves:
+        # Local import to avoid circular import at module import time.
+        from app.rules import global_actions as ga  # type: ignore
+
+        outcome = ga.apply_forced_elimination_for_player(game_state, player_number)
+        if outcome is None:
             return
 
-        # Eliminate from the first available stack. TS delegates to
-        # eliminatePlayerRingOrCap with a future choice hook; tests focus on
-        # the existence of a forced elimination rather than which stack is
-        # chosen.
-        fe_move = moves[0]
-        GameEngine._apply_forced_elimination(game_state, fe_move)
         # After elimination, re-check victory conditions in case thresholds
         # were crossed.
         GameEngine._check_victory(game_state)

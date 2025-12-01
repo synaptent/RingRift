@@ -25,7 +25,7 @@ import {
   SECRET_MIN_LENGTHS,
   validateSecretsOrThrow,
 } from '../utils/secretsValidation';
-import { NodeEnvSchema, AppTopologySchema, parseEnv, getEffectiveNodeEnv } from './env';
+import { NodeEnvSchema, AppTopologySchema, RulesModeSchema, parseEnv, getEffectiveNodeEnv } from './env';
 
 // Load .env into process.env before we read anything from it.
 dotenv.config();
@@ -213,7 +213,7 @@ const ConfigSchema = z.object({
     level: z.string().min(1),
   }),
   rules: z.object({
-    mode: z.union([z.literal('ts'), z.literal('python'), z.literal('shadow')]),
+    mode: RulesModeSchema,
   }),
   decisionPhaseTimeouts: z.object({
     defaultTimeoutMs: z.number().int().positive(),
@@ -234,6 +234,21 @@ const ConfigSchema = z.object({
       }),
       latencyThresholdMs: z.number().int().positive(),
     }),
+  }),
+  orchestrator: z.object({
+    /**
+     * High-level rules mode selector taken from RINGRIFT_RULES_MODE.
+     * Note: current values are 'ts' | 'python' | 'shadow'; see RulesModeSchema.
+     */
+    rulesMode: RulesModeSchema,
+    /** Master switch for using the orchestrator adapter on backend hosts. */
+    adapterEnabled: z.boolean(),
+    /** Percentage of eligible sessions routed through the orchestrator (0–100). */
+    rolloutPercentage: z.number().int().min(0).max(100),
+    /** Whether orchestrator shadow mode is enabled. */
+    shadowModeEnabled: z.boolean(),
+    /** Whether the orchestrator circuit breaker is enabled. */
+    circuitBreakerEnabled: z.boolean(),
   }),
 });
 
@@ -285,10 +300,20 @@ const preliminaryConfig = {
   rules: {
     mode: getRulesMode(),
   },
+  orchestrator: {
+    rulesMode: getRulesMode(),
+    adapterEnabled: env.ORCHESTRATOR_ADAPTER_ENABLED,
+    rolloutPercentage: env.ORCHESTRATOR_ROLLOUT_PERCENTAGE,
+    shadowModeEnabled: env.ORCHESTRATOR_SHADOW_MODE_ENABLED,
+    circuitBreakerEnabled: env.ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED,
+  },
   decisionPhaseTimeouts: {
-    defaultTimeoutMs: 30_000, // 30 seconds for decision phases
-    warningBeforeTimeoutMs: 5_000, // Warning 5 seconds before timeout
-    extensionMs: 15_000, // Optional extension time
+    // Allow optional overrides via DECISION_PHASE_TIMEOUT_* env vars so
+    // non-production harnesses (for example Playwright E2E) can shorten
+    // decision-phase timers without affecting production defaults.
+    defaultTimeoutMs: env.DECISION_PHASE_TIMEOUT_MS ?? 30_000, // 30 seconds
+    warningBeforeTimeoutMs: env.DECISION_PHASE_TIMEOUT_WARNING_MS ?? 5_000, // warn 5s before
+    extensionMs: env.DECISION_PHASE_TIMEOUT_EXTENSION_MS ?? 15_000, // optional extension
   },
   featureFlags: {
     orchestrator: {

@@ -1,5 +1,10 @@
 # Pass 11 Comprehensive Assessment Report
 
+> **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
+> For current project status, see:
+> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
+
 **Date**: 2025-11-27
 **Assessor**: Kilo Code (Architect Mode)
 **Build Status**: Assessment Pass 11

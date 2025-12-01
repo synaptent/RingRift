@@ -1,5 +1,10 @@
-> **Doc Status (2025-11-28): Active (derived)**  
+> **Doc Status (2025-11-30): Active (derived)**
 > **Role:** Orchestrator-first rollout and legacy rules shutdown plan for Track A.
+>
+> **Rollout Status (2025-11-30):** **Phase 4 – Orchestrator Authoritative (100% rollout)**.
+> All environments (dev, staging, CI) are configured with `ORCHESTRATOR_ADAPTER_ENABLED=true`
+> and `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`. Soak tests show zero invariant violations
+> across all board types. Production deployment follows same configuration.
 >
 > **SSoT alignment:** This document is a derived architectural and rollout plan over:
 >
@@ -35,7 +40,7 @@ environment flags:
 - `ORCHESTRATOR_ADAPTER_ENABLED` – master switch to enable/disable orchestrator adapters for new sessions.
 - `ORCHESTRATOR_ROLLOUT_PERCENTAGE` – percentage of eligible sessions that should use orchestrator; used for gradual rollout where supported.
 - `ORCHESTRATOR_SHADOW_MODE_ENABLED` – toggles shadow runs where the orchestrator computes moves in parallel with legacy paths for comparison.
-- `RINGRIFT_RULES_MODE` – high‑level rules mode selector (for example `ts`, `shadow`, `legacy`), used by hosts and diagnostics jobs.
+- `RINGRIFT_RULES_MODE` – high‑level rules mode selector (allowed values: `ts`, `python`, `shadow` as per `src/server/config/env.ts`), used by hosts and diagnostics jobs to determine which rules engine implementation is authoritative.
 
 **During incidents:**
 
@@ -455,11 +460,18 @@ and a rough error budget.
 **SLO-CI-ORCH-SHORT-SOAK – Short orchestrator soak**
 
 - **Metric:** Exit status and invariant summary from the short orchestrator soak:
-  - Command (example):
-    `npm run soak:orchestrator -- --boardTypes=square8 --gamesPerBoard=5 --failOnViolation=true`
-  - Summary file: [`results/orchestrator_soak_summary.json`](../results/orchestrator_soak_summary.json:1).
+  - Canonical CI command:
+    `npm run soak:orchestrator:short`
+    (as used by the `orchestrator-short-soak` job in
+    [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:1)).
+  - Smoke variant (single-game fast check):
+    `npm run soak:orchestrator:smoke` producing
+    [`results/orchestrator_soak_smoke.json`](../results/orchestrator_soak_smoke.json:1).
+  - For deeper offline or scheduled runs (not required for this SLO) see
+    `npm run soak:orchestrator:nightly`, which produces
+    [`results/orchestrator_soak_nightly.json`](../results/orchestrator_soak_nightly.json:1).
 - **Target:**
-  - `totalInvariantViolations == 0` and no S‑invariant or host‑consistency
+  - `totalInvariantViolations == 0` and no S-invariant or host-consistency
     violations recorded in the summary.
   - Process exit code `0` (no `--failOnViolation` failure).
 - **Window:** Must be run on the exact commit being promoted:
@@ -471,6 +483,20 @@ and a rough error budget.
 
 These CI SLOs correspond to **Phase 0 – Pre‑requisites** in the environment
 rollout plan (see §8).
+
+**Auxiliary CI signal – Python AI self‑play invariants**
+
+Although not a hard gate for orchestrator rollout, Python strict‑invariant healthchecks provide an important **P1/P2‑level early warning** for rules/AI regressions:
+
+- **Metric / alerts:**
+  - `ringrift_python_invariant_violations_total{invariant_id, type}` exported by the AI self‑play soak harness (`run_self_play_soak.py` under `RINGRIFT_STRICT_NO_MOVE_INVARIANT=1`).
+  - `PythonInvariantViolations` alert in [`monitoring/prometheus/alerts.yml`](../monitoring/prometheus/alerts.yml:580) and described in [`docs/ALERTING_THRESHOLDS.md`](docs/ALERTING_THRESHOLDS.md:640).
+- **CI / workflows:**
+  - `python-ai-healthcheck` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:1) – runs `python scripts/run_self_play_soak.py --profile ai-healthcheck --max-moves 200 --fail-on-anomaly` across `square8`, `square19`, and `hexagonal`, emitting invariant violations keyed by `INV-*` IDs (see [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:1)).
+  - `AI Self-Play Healthcheck (Nightly)` workflow in [`.github/workflows/ai-healthcheck-nightly.yml`](../.github/workflows/ai-healthcheck-nightly.yml:1) – deeper variant with increased `RINGRIFT_AI_HEALTHCHECK_GAMES` and a higher `--max-moves` cap.
+- **Rollout posture:**
+  - For any release candidate going to staging or production, Python AI healthchecks **should be green** and `PythonInvariantViolations` should be quiet over the recent window, or any violations must be understood and explicitly triaged as AI‑only or training‑only issues.
+  - When Python invariant alerts indicate potential cross‑stack rules regressions (for example `INV-ACTIVE-NO-MOVES` or `INV-S-MONOTONIC` anomalies), treat them as inputs to the same investigation loop as orchestrator invariant and rules‑parity signals before advancing phases in §8.
 
 ### 6.3 Staging SLOs (orchestrator‑only staging)
 
@@ -528,7 +554,7 @@ production.
 **SLO-STAGE-ORCH-INVARIANTS – Staging invariant violations**
 
 - **Metrics:**
-  - (Planned) `ringrift_orchestrator_invariant_violations_total{environment="staging"}`.
+  - `ringrift_orchestrator_invariant_violations_total{environment="staging",type,invariant_id}`.
   - In‑cluster logs derived from orchestrator invariant guards and from
     `npm run soak:orchestrator` runs against staging images.
 - **Target:**
@@ -572,7 +598,7 @@ under the broader availability and latency SLOs documented in
 **SLO-PROD-ORCH-INVARIANTS – Production invariant violations**
 
 - **Metrics:**
-  - (Planned) `ringrift_orchestrator_invariant_violations_total{environment="production"}`.
+  - `ringrift_orchestrator_invariant_violations_total{environment="production",type,invariant_id}`.
   - Logs and soak summaries derived from the orchestrator soak harness
     running periodically against production images
     (see [`STRICT_INVARIANT_SOAKS.md`](STRICT_INVARIANT_SOAKS.md:1)).
@@ -818,6 +844,55 @@ This section summarises the plan for use by Track A implementation tasks:
   - `SandboxContext` continues to construct `ClientSandboxEngine` via
     `initLocalSandboxEngine`; no code paths re-instantiate the legacy harness
     for production `/sandbox` usage.
+
+### 7.5 Wave 4 – Orchestrator Rollout & Invariant Hardening (summary)
+
+For planning and status-tracking purposes, the Track A work above can be viewed as
+**Wave 4 – Orchestrator Rollout & Invariant Hardening**, composed of four focused
+sub‑waves:
+
+- **4‑A – Parity & contract expansion**
+  - TS orchestrator parity suites (backend + sandbox multi‑phase scenarios, lines/
+    territory helpers) as described in §6.8–6.9 and §7.1–7.2.
+  - Python contract‑vector tests (`scripts/run-python-contract-tests.sh`,
+    `ai-service/tests/contracts/test_contract_vectors.py`) anchored on the v2 contract
+    vectors under `tests/fixtures/contract-vectors/v2/**`.
+- **4‑B – Invariant soaks & CI gates**
+  - Short orchestrator invariant soak (`npm run soak:orchestrator:short` and the
+    `orchestrator-short-soak` CI job) backing `SLO-CI-ORCH-SHORT-SOAK` (§6.2 and
+    `docs/STRICT_INVARIANT_SOAKS.md`), with `soak:orchestrator:smoke` available
+    as a fast single-game smoke profile.
+  - Longer/staged soaks against `main` and staging images using
+    `scripts/run-orchestrator-soak.ts` with `--failOnViolation` (for example
+    `npm run soak:orchestrator:nightly`), producing
+    `results/orchestrator_soak_summary.json` / `results/orchestrator_soak_nightly.json`
+    for regression mining.
+- **4‑C – Rollout flags, topology & fallbacks**
+  - Environment/flag wiring via `OrchestratorRolloutService` and
+    `src/server/config/env.ts`, with CI/staging/production profiles matching the
+    environment phases referenced throughout §6 and §7.
+  - Clear rollback levers using `ORCHESTRATOR_ADAPTER_ENABLED`,
+    `ORCHESTRATOR_ROLLOUT_PERCENTAGE`, `ORCHESTRATOR_SHADOW_MODE_ENABLED`, and the
+    circuit‑breaker flags, as summarised in §6.7 and the rollout runbook.
+- **4‑D – Observability & incident readiness**
+  - Orchestrator and rules‑parity metrics (`ringrift_orchestrator_*`,
+    `rulesParityMetrics`) exported by `MetricsService` and wired into Prometheus
+    alerts (see §6.6 and `monitoring/prometheus/alerts.yml`).
+  - Runbooks (`docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`,
+    `docs/runbooks/RULES_PARITY.md`, `docs/runbooks/GAME_HEALTH.md`) that map alerts
+    to concrete levers (rollout percentage, shadow mode, adapter kill‑switch, or
+    AI/infra runbooks).
+
+Wave 4 is considered complete when:
+
+- The `orchestrator-parity` CI job is stable and treated as a hard gate for merges to
+  `main`.
+- Orchestrator invariant soaks (short CI soak plus longer scheduled soaks) reliably
+  block promotion on new invariant violations.
+- Environment phases (0–4) have a direct mapping to env flags and have been verified in
+  staging.
+- Orchestrator metrics and alerts match the SLOs defined in §6 and are backed by
+  up‑to‑date runbooks.
 - The `localSandboxController.ts` module remains in place as a
   **DIAGNOSTICS-ONLY (legacy)** harness for tests and CLI tooling, and is
   fenced by `scripts/ssot/rules-ssot-check.ts` so it cannot be imported from
@@ -898,6 +973,53 @@ flowchart LR
   P1 -->|Severe incident| P0
 ```
 
+#### 8.1.1 Environment and flag presets by phase
+
+The tables below give **concrete env/flag presets** for the most common
+orchestrator rollout postures. They are not an exhaustive matrix, but are
+intended as **canonical examples** that should be reflected in:
+
+- `.env` / deployment configuration for each environment
+- CI job `env:` blocks in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml:1)
+- Operator expectations in the rollout runbook
+
+> On any conflict between these tables and live CI configs or env validation
+> code, **code + CI configs win** and this section must be updated.
+> These presets are exercised by automated tests in
+> `tests/unit/env.config.test.ts` (env parsing) and
+> `tests/unit/OrchestratorRolloutService.test.ts` (rollout decisions), which
+> act as executable examples for this table.
+
+**Table 4 – Canonical env/flag presets (by environment & phase)**
+
+| Profile                                   | Typical environment / usage                             | `NODE_ENV`   | `RINGRIFT_APP_TOPOLOGY` | `RINGRIFT_RULES_MODE` | `ORCHESTRATOR_ADAPTER_ENABLED` | `ORCHESTRATOR_ROLLOUT_PERCENTAGE` | `ORCHESTRATOR_SHADOW_MODE_ENABLED` | Notes |
+| ----------------------------------------- | ------------------------------------------------------- | ------------ | ------------------------ | ---------------------- | ------------------------------ | --------------------------------- | ----------------------------------- | ----- |
+| **Local dev – orchestrator‑ON**          | Developer machines (`npm run dev`, `npm test`)          | `development` (default) | `single` (default)      | `ts` (or unset → resolved by `getRulesMode`) | `true` (default)                   | `100` (default)                     | `false` (default)                   | Shared TS engine + adapters are canonical; legacy/sandbox legacy paths are diagnostics‑only. |
+| **CI – orchestrator‑ON profile**         | Jest/unit/integration/parity soaks, except legacy lanes | `test` (effective via Jest) | `single` (default) | `ts`                              | `true`                            | `100`                               | `false`                            | Matches the `env:` blocks in `test`, `ts-rules-engine`, `ts-orchestrator-parity`, `ts-parity`, `ts-integration`, `orchestrator-soak-smoke`, `orchestrator-short-soak`, `orchestrator-parity`, and `e2e-tests` jobs. |
+| **Staging Phase 0 – pre‑requisites**     | Early staging when orchestrator is available but not yet authoritative | `staging`    | `multi-sticky` (recommended) | `ts` or `shadow` (for diagnostics) | `true`                            | `0–100` (deployment‑specific)      | `false` or `true` (for experiments) | Used while SLO‑CI gates and dashboards are being wired. Legacy paths may still handle some traffic; orchestrator is exercised mostly via CI and targeted staging tests. |
+| **Staging Phase 1 – orchestrator‑only**  | Staging steady‑state for gating promotion to prod       | `staging`    | `multi-sticky`           | `ts`                              | `true`                            | `100`                               | `false`                            | Canonical **staging orchestrator‑only** posture from §8.3. Legacy pipelines must not handle staging traffic. |
+| **Prod Phase 2 – legacy authoritative + shadow** | Production shadow/mirroring                          | `production` | `multi-sticky`           | `shadow`                          | `true`                            | `0` (or very low)                   | `true`                             | Legacy engine remains authoritative, orchestrator runs in shadow. Rollout percentage typically `0` while shadow is evaluated; may be raised carefully for experiments. |
+| **Prod Phase 3 – incremental rollout**   | Production orchestrator‑authoritative slice            | `production` | `multi-sticky`           | `ts`                              | `true`                            | `1–99`                              | `false` (preferred)                | Orchestrator is authoritative for the configured fraction of traffic. Shadow is usually disabled to avoid double‑compute overhead during ramp‑up. |
+| **Prod Phase 4 – orchestrator‑only**     | Production steady‑state after legacy shutdown          | `production` | `multi-sticky`           | `ts`                              | `true`                            | `100`                               | `false`                            | Legacy backend/sandbox pipelines are removed or quarantined as diagnostics‑only per §§5.4–5.5. |
+
+These presets are intentionally **minimal**:
+
+- They do **not** encode all environment variables required for deployment
+  (database URLs, Redis, JWT secrets, etc. are validated elsewhere via
+  `EnvSchema` and `unified.ts`).
+- They instead focus on the **orchestrator‑relevant knobs** and their
+  recommended combinations, so that:
+  - CI jobs use a consistent orchestrator‑ON profile.
+  - Staging and production phases can be mapped directly to concrete flag
+    values when following the rollout runbook.
+
+For implementation details of how `NODE_ENV`, topology, and rules mode are
+parsed and enforced, see:
+
+- `src/server/config/env.ts` (Zod `EnvSchema`, `NodeEnvSchema`, `AppTopologySchema`, `RulesModeSchema`)
+- `src/server/config/unified.ts` (assembled `config.app.topology`, `config.orchestrator`, and `config.featureFlags.orchestrator`)
+- `src/shared/utils/envFlags.ts` (`getRulesMode` and helpers)
+
 ### 8.2 Phase 0 – Pre‑requisites
 
 **Preconditions**
@@ -972,6 +1094,19 @@ In Phase 1, the **staging environment** runs orchestrator‑first exclusively:
 - **Entry to Phase 1 (staging orchestrator‑only):**
   - `SLO-CI-ORCH-PARITY` and `SLO-CI-ORCH-SHORT-SOAK` satisfied on the
     candidate build.
+  - At least one **orchestrator HTTP/load smoke** run (`npm run load:orchestrator:smoke`)
+    against the staging stack succeeds, and a **metrics/observability smoke**
+    confirms that `/metrics` is exposed with orchestrator gauges
+    (`tests/e2e/metrics.e2e.spec.ts` or an equivalent manual scrape).
+  - A focused **host‑UX smoke** pass over the orchestrator‑ON backend and sandbox
+    hosts is green (for example the `@host-ux` Playwright suites
+    `tests/e2e/backendHost.host-ux.e2e.spec.ts` and
+    `tests/e2e/sandboxHost.host-ux.e2e.spec.ts`), verifying that core gameplay
+    flows, keyboard navigation, spectator views, and connection‑loss UX behave
+    correctly with `RINGRIFT_RULES_MODE=ts`,
+    `ORCHESTRATOR_ADAPTER_ENABLED=true`,
+    `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, and
+    `ORCHESTRATOR_SHADOW_MODE_ENABLED=false`.
   - No active critical rules‑parity or invariant incidents.
 - **Exit from Phase 1 (promotion towards production shadow or rollout):**
   - `SLO-STAGE-ORCH-ERROR`, `SLO-STAGE-ORCH-PARITY`, and
@@ -986,8 +1121,11 @@ In Phase 1, the **staging environment** runs orchestrator‑first exclusively:
   - **Soft rollback:** keep orchestrator enabled but stop promoting new builds
     until the issue is fixed.
   - **Hard rollback to Phase 0:** set
-    `ORCHESTRATOR_ADAPTER_ENABLED=false` or
-    `RINGRIFT_RULES_MODE=legacy` in staging and redeploy a known‑good image.
+    `ORCHESTRATOR_ADAPTER_ENABLED=false` in staging and redeploy a known‑good
+    image that is already validated under the legacy turn pipeline. The
+    `RINGRIFT_RULES_MODE` flag should remain within its supported values
+    (`ts`, `python`, `shadow`) and is not used to select the legacy TS turn
+    loop directly.
 
 ### 8.4 Phase 2 – Production shadow / mirroring
 
@@ -1036,8 +1174,11 @@ Typical configuration:
 - If shadow SLOs are breached:
   - Disable shadow mode in production
     (`ORCHESTRATOR_SHADOW_MODE_ENABLED=false`,
-    `RINGRIFT_RULES_MODE=ts` or `legacy` as appropriate) and return to Phase 1
-    posture (orchestrator used only in staging).
+    `RINGRIFT_RULES_MODE=ts`) and return to Phase 1 posture (orchestrator used
+    only in staging). The `RINGRIFT_RULES_MODE` flag should remain within its
+    supported values (`ts`, `python`, `shadow`) and is not used to select the
+    legacy TS turn loop directly; use `ORCHESTRATOR_ADAPTER_ENABLED` and
+    `ORCHESTRATOR_ROLLOUT_PERCENTAGE` for legacy vs orchestrator routing.
   - Investigate under the rules‑parity runbook before re‑enabling shadow.
 
 ### 8.5 Phase 3 – Incremental production rollout
@@ -1134,3 +1275,94 @@ as described in implementation Phase C.
 
 At the end of Phase 4, orchestrator‑first is the long‑term steady state, and
 legacy rules paths are treated as historical artefacts only.
+
+### 8.7 Phase completion checklist (operator cheat sheet)
+
+This section provides a compact, operator‑focused checklist for advancing
+between environment phases. It is a summary of §§6.2–6.4 and §§8.2–8.6; on any
+conflict, the detailed SLO definitions and CI configs remain authoritative.
+
+**Before leaving Phase 0 – Pre‑requisites**
+
+- CI gates:
+  - `orchestrator-parity` job in `.github/workflows/ci.yml` is green on the
+    release candidate (`SLO-CI-ORCH-PARITY`).
+  - Short orchestrator soak CI lane is green (`SLO-CI-ORCH-SHORT-SOAK`).
+- Observability:
+  - Dashboards exist for orchestrator, rules parity, AI, and infra as described
+    in `ALERTING_THRESHOLDS.md` and §6.2.
+  - Orchestrator alerts (`OrchestratorErrorRateWarning`,
+    `OrchestratorCircuitBreakerOpen`, `OrchestratorShadowMismatches`,
+    `RulesParity*`) are deployed and routed.
+- Incidents:
+  - No open P0/P1 incidents involving rules parity or orchestrator invariants.
+
+**Before leaving Phase 1 – Staging‑only orchestrator**
+
+- Environment posture:
+  - Staging uses the canonical preset from Table 4:
+    - `ORCHESTRATOR_ADAPTER_ENABLED=true`
+    - `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`
+    - `RINGRIFT_RULES_MODE=ts`
+  - Legacy rules paths are not used for staging traffic.
+- SLOs (staging):
+  - `SLO-STAGE-ORCH-ERROR`, `SLO-STAGE-ORCH-PARITY`, and
+    `SLO-STAGE-ORCH-INVARIANTS` are met for at least 24–72 hours.
+  - No `OrchestratorCircuitBreakerOpen` alerts in staging.
+  - No new invariant or rules‑parity incidents in staging.
+- Runbook:
+  - On‑call has exercised the basic staging rollback lever at least once
+    (dropping back to Phase 0 via `ORCHESTRATOR_ADAPTER_ENABLED=false`).
+
+**Before leaving Phase 2 – Production shadow**
+
+- Environment posture:
+  - Production uses the shadow preset from Table 4:
+    - `ORCHESTRATOR_ADAPTER_ENABLED=true`
+    - `ORCHESTRATOR_SHADOW_MODE_ENABLED=true`
+    - `RINGRIFT_RULES_MODE=shadow`
+    - `ORCHESTRATOR_ROLLOUT_PERCENTAGE=0` (or effectively zero).
+- SLOs (production shadow):
+  - Over ≥24h of shadow traffic:
+    - `ringrift_orchestrator_shadow_mismatch_rate` is near zero and no
+      `OrchestratorShadowMismatches` alerts fire.
+    - No `RulesParityGameStatusMismatch` alerts in production.
+    - Any validation/hash mismatches are triaged and either fixed or explicitly
+      documented as expected legacy behaviour.
+- Runbook:
+  - Operators are comfortable disabling shadow mode and returning to Phase 1
+    posture if needed.
+
+**Before leaving Phase 3 – Incremental production rollout**
+
+- Environment posture:
+  - Production uses a non‑zero rollout preset from Table 4:
+    - `ORCHESTRATOR_ADAPTER_ENABLED=true`
+    - `RINGRIFT_RULES_MODE=ts`
+    - `ORCHESTRATOR_ROLLOUT_PERCENTAGE` in the 1–99 range.
+- SLOs (production rollout):
+  - `SLO-PROD-ORCH-ERROR`, `SLO-PROD-ORCH-INVARIANTS`, and
+    `SLO-PROD-RULES-PARITY` are met at the current percentage.
+  - In each step 0→10→25→50→100%, the pre/post checks in §8.5 have been
+    followed (no sustained `OrchestratorErrorRateWarning` or invariant alerts).
+- Runbook:
+  - On‑call has rehearsed reducing `ORCHESTRATOR_ROLLOUT_PERCENTAGE` and/or
+    setting `ORCHESTRATOR_ADAPTER_ENABLED=false` in production to return to
+    Phase 2/Phase 1 postures.
+
+**Before declaring Phase 4 – Legacy path shutdown**
+
+- Environment posture:
+  - `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100` in production for several weeks.
+  - Any remaining legacy rules pipelines are either removed or explicitly
+    fenced as diagnostics‑only per Phase C in §5.1.
+- SLOs (steady state):
+  - `SLO-PROD-ORCH-ERROR`, `SLO-PROD-ORCH-INVARIANTS`, and
+    `SLO-PROD-RULES-PARITY` are consistently met over their 28‑day windows.
+  - No orchestrator‑specific P0/P1 incidents in the same period.
+- Runbooks and drills:
+  - `ORCHESTRATOR_ROLLOUT_RUNBOOK.md`, `RULES_PARITY.md`, and `GAME_HEALTH.md`
+    have each been exercised at least once with orchestrator authoritative.
+  - Operators understand that rollback primarily consists of deploying a
+    previous release that still contained the legacy path (returning the
+    environment to Phase 3 posture).

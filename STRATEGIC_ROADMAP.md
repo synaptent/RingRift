@@ -4,6 +4,7 @@
 >
 > - Canonical phased roadmap and performance/scale SLO reference.
 > - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+> - Relationship to goals: For the canonical statement of RingRift’s product/technical goals, v1.0 success criteria, and scope boundaries, see [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1). This roadmap operationalises those goals into phases, milestones, and SLOs and should be read as the **“how we plan to get there”** companion to [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1).
 
 **Version:** 3.2
 **Last Updated:** November 26, 2025
@@ -19,7 +20,7 @@
 - ✅ Canonical turn orchestrator in `src/shared/engine/orchestration/`
 - ✅ Backend and sandbox adapters for gradual rollout
 - ✅ Contract testing framework with 100% Python parity on 12 test vectors
-- ✅ TypeScript: 1195+ tests passing, Python: 245 tests passing
+- ✅ Extensive TypeScript and Python test suites validating rules, hosts, AI integration, and E2E flows (for up-to-date test counts and coverage metrics, see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1))
 
 **Goal:** Production-Ready Multiplayer Game
 **Timeline:** 4-8 weeks to v1.0 (assuming P0 production hardening items are completed)
@@ -161,11 +162,11 @@ list of tasks that roll up into these phases.
 
 - [x] **Complete architecture remediation (Phases 1-4)** – Canonical turn orchestrator, adapters, and contract tests are complete. See [`docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md`](docs/drafts/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md:1) for final status.
 
-- [ ] **Enable orchestrator adapters in staging** – Enable `useOrchestratorAdapter` feature flag in staging environment and run comprehensive parity tests.
+- [ ] **Enable orchestrator adapters in staging** – Enable orchestrator‑ON posture in staging (`ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, `RINGRIFT_RULES_MODE=ts`) and run comprehensive parity tests plus the orchestrator CI SLOs from `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §6–§8 (`orchestrator-parity`, short/long soaks, HTTP load smoke, metrics/observability smoke).
 
-- [ ] **Enable orchestrator adapters in production** – After staging validation, enable orchestrator adapters in production with monitoring for any behavioral changes.
+- [ ] **Enable orchestrator adapters in production** – After staging validation and completion of Phase 1/2 from `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`, enable orchestrator adapters in production with error‑rate, invariant, and rules‑parity SLOs tied to the orchestrator dashboards and alerts in `docs/ALERTING_THRESHOLDS.md`.
 
-- [ ] **Remove legacy turn processing code** – Once orchestrator is stable in production, remove deprecated turn processing paths to reduce maintenance burden.
+- [ ] **Remove legacy turn processing code** – Once orchestrator is stable in production and all rollout phases (including legacy shutdown) have been completed per `docs/ORCHESTRATOR_ROLLOUT_PLAN.md`, remove deprecated turn processing paths (legacy `GameEngine`/`RuleEngine` loops) to reduce maintenance burden. Guard this with the existing SSoT checks in `scripts/ssot/rules-ssot-check.ts` so that hosts/adapters remain wired through the shared TS orchestrator.
 
 **P0: Rules Fidelity & Parity (Critical)**
 
@@ -177,9 +178,9 @@ list of tasks that roll up into these phases.
 
 - [ ] **Parity for territory decision enumeration and forced-elimination sequences** – Ensure that all territory-related `PlayerChoice` surfaces and generated territory-processing moves (claims, region order, explicit self-elimination, host-level forced elimination) stay in lockstep between TS and Python. Leverage `RINGRIFT_RULES_MODE=shadow` traces and extend parity diagnostics in [`src/server/utils/rulesParityMetrics.ts`](src/server/utils/rulesParityMetrics.ts:1). **Owner modes:** Debug + Code.
 
-- [ ] **Property-based tests for territory invariants and forced elimination** – Introduce property-based tests (for example, with Hypothesis in Python and fast-check in TypeScript) that randomly generate mid/late-game `GameState` snapshots and assert invariants around territory connectivity, collapsed-space ownership, and forced elimination ordering. Ground properties in [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1) and the territory helpers listed in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1). **Owner modes:** Debug (property design) + Code (harnesses).
+- [ ] **Property-based tests for territory invariants and forced elimination** – Introduce property-based tests (for example, with Hypothesis in Python and fast-check in TypeScript) that randomly generate mid/late-game `GameState` snapshots and assert invariants around territory connectivity, collapsed-space ownership, and forced elimination ordering. Ground properties in [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1) and the territory helpers listed in [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md:1). An initial TS harness exists under `tests/unit/territoryProcessing.property.test.ts` exercising 2×2 disconnected-region invariants on `square8`; Python/Hypothesis coverage and forced-elimination–specific properties remain future work. **Owner modes:** Debug (property design) + Code (harnesses).
 
-- [ ] **Dataset-level validation for territory / combined-margin training data** – Add validation passes for datasets produced by [`ai-service/app/training/generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py:1), checking target ranges, per-player combined margins consistency, and metadata completeness (`engine_mode`, `num_players`, `ai_type_pN`, `ai_difficulty_pN`). Wire these checks into CI and document them in [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1). **Owner modes:** Debug + Code.
+- [x] **Dataset-level validation for territory / combined-margin training data** – Add validation passes for datasets produced by [`ai-service/app/training/generate_territory_dataset.py`](ai-service/app/training/generate_territory_dataset.py:1), checking target ranges, per-player combined margins consistency, and metadata completeness (`engine_mode`, `num_players`, `ai_type_pN`, `ai_difficulty_pN`). Initial validation helpers and tests live in [`ai-service/app/training/territory_dataset_validation.py`](ai-service/app/training/territory_dataset_validation.py:1) and [`ai-service/tests/test_territory_dataset_validation.py`](ai-service/tests/test_territory_dataset_validation.py:1), and are documented in [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1). CI wiring for full training pipelines remains future work. **Owner modes:** Debug + Code (validation helpers implemented).
 
 - [ ] **Rules observability and divergence diagnostics** – Expand logging and metrics around territory phases and forced elimination, including structured events for explicit vs host-level eliminations and a clear taxonomy of divergence causes. Build on existing parity counters in [`src/server/utils/rulesParityMetrics.ts`](src/server/utils/rulesParityMetrics.ts:1) and Python-side logging in [`ai-service/app/rules/default_engine.py`](ai-service/app/rules/default_engine.py:1). **Owner modes:** Debug + Code + Architect.
 
@@ -187,7 +188,7 @@ list of tasks that roll up into these phases.
 
 - [ ] **Wire up Minimax/MCTS in the production ladder** – Audit and stabilise advanced AI implementations in [`ai-service/app/ai/minimax_ai.py`](ai-service/app/ai/minimax_ai.py:1) and [`ai-service/app/ai/mcts_ai.py`](ai-service/app/ai/mcts_ai.py:1), and the difficulty ladder in [`ai-service/app/main.py`](ai-service/app/main.py:1), then expose them through the canonical presets in [`src/server/game/ai/AIEngine.ts`](src/server/game/ai/AIEngine.ts:1). Ensure new types are covered by `/ai/move` tests and smoke AI-vs-AI runs. **Owner modes:** Code.
 
-- [ ] **Fix and document RNG determinism across TS and Python** – Implement and validate per-game seeding for AI decisions and rules randomness, aligned between Node and Python, so that mixed-mode runs and dataset generation are reproducible from a single seed. Capture the contract in [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1) and relevant test utilities. **Owner modes:** Debug + Code + Architect.
+- [x] **Fix and document RNG determinism across TS and Python** – Implement and validate per-game seeding for AI decisions and rules randomness, aligned between Node and Python, so that mixed-mode runs and dataset generation are reproducible from a single seed. Contract captured in [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1) (§5) and exercised by seeded determinism tests in the TS and Python suites. **Owner modes:** Debug + Code + Architect (complete).
 
 - [ ] **AI move rejection and fallback hardening** – Implement a tiered fallback system for invalid or timed-out AI moves in [`src/server/game/ai/AIEngine.ts`](src/server/game/ai/AIEngine.ts:1) and [`src/server/services/AIServiceClient.ts`](src/server/services/AIServiceClient.ts:1), with clear metrics and logging for each fallback path. Coordinate with the AI service’s `/ai/move` error taxonomy in [`ai-service/app/main.py`](ai-service/app/main.py:1). **Owner modes:** Code + Debug.
 
@@ -248,6 +249,7 @@ Any eventual load tooling (for example, k6, artillery, or a custom Node script u
 - Allow scenario scripting (login → create/join game → play moves → resign/finish).
 - Allow configurable virtual users, ramp-up, and steady-state durations.
 - Export per-endpoint and per-operation latency distributions (including p95/p99) and error counts.
+  - Integrate with the existing orchestrator HTTP load smoke (`scripts/orchestrator-load-smoke.ts`, exposed via `npm run load:orchestrator:smoke`) and metrics/observability smoke (`tests/e2e/metrics.e2e.spec.ts`) as lightweight entry points, so that SLO validation can reuse the same `/api` and `/metrics` surfaces used in day‑to‑day smokes and runbooks.
 
 ### 2. Environment-aware SLOs
 

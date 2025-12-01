@@ -258,6 +258,76 @@ These tools confirm that, in the current 8×8 self-play setting, profiles near `
 | Metric             | Value                                                                                  |
 | ------------------ | -------------------------------------------------------------------------------------- |
 | Epochs             | 5                                                                                      |
+
+---
+
+## 6. AI Service Choice Endpoints (Line & Capture)
+
+Recent work extended the Python AI service and TypeScript boundary so that **all major PlayerChoice types** can be answered by the AI service, not just line rewards, ring elimination, and region order.
+
+### 6.1 New Python choice endpoints
+
+- **`POST /ai/choice/line_order`**
+  - Models: `LineOrderChoiceRequest`, `LineOrderChoiceResponse` in `ai-service/app/models/core.py`.
+  - Behaviour (initial heuristic, mirroring TS):
+    - Accepts an optional `gameState`, `playerNumber`, `difficulty`, `aiType`, and `options: LineOrderChoiceLine[]`.
+    - Prefers the line with the greatest `markerPositions` length (longest line).
+    - Returns a single `selectedOption` plus `aiType`/`difficulty`.
+  - FastAPI handler: `choose_line_order_option` in `ai-service/app/main.py`.
+
+- **`POST /ai/choice/capture_direction`**
+  - Models: `CaptureDirectionChoiceRequest`, `CaptureDirectionChoiceResponse` in `ai-service/app/models/core.py`.
+  - Behaviour (initial heuristic, mirroring TS):
+    - Accepts optional `gameState`, `playerNumber`, `difficulty`, `aiType`, and `options: CaptureDirectionChoiceOption[]`.
+    - Prefers the option with highest `capturedCapHeight`.
+    - Breaks ties by choosing the `landingPosition` closest to a simple board-centre estimate via Manhattan distance.
+    - Returns `selectedOption` plus `aiType`/`difficulty`.
+  - FastAPI handler: `choose_capture_direction_option` in `ai-service/app/main.py`.
+
+Both endpoints treat an empty `options` list as a **400 error** (protocol violation), matching the TS side’s expectation that the rules engine never asks for a choice with no options.
+
+### 6.2 TypeScript client and engine mapping
+
+- **Service client (`src/server/services/AIServiceClient.ts`)**
+  - New payload/response types:
+    - `LineOrderChoiceRequestPayload`, `LineOrderChoiceResponsePayload`.
+    - `CaptureDirectionChoiceRequestPayload`, `CaptureDirectionChoiceResponsePayload`.
+  - New methods:
+    - `getLineOrderChoice(gameState, playerNumber, difficulty, aiType, options, requestOptions?)`  
+      → `POST /ai/choice/line_order`, returns `selectedOption`.
+    - `getCaptureDirectionChoice(gameState, playerNumber, difficulty, aiType, options, requestOptions?)`  
+      → `POST /ai/choice/capture_direction`, returns `selectedOption`.
+
+- **Backend AI engine façade (`src/server/game/ai/AIEngine.ts`)**
+  - New helpers mirroring existing `getLineRewardChoice` / `getRingEliminationChoice` / `getRegionOrderChoice`:
+    - `getLineOrderChoice(playerNumber, gameState, options)`  
+      → calls `AIServiceClient.getLineOrderChoice`, logs, returns `LineOrderChoice['options'][number]`.
+    - `getCaptureDirectionChoice(playerNumber, gameState, options)`  
+      → calls `AIServiceClient.getCaptureDirectionChoice`, logs, returns `CaptureDirectionChoice['options'][number]`.
+
+These functions keep all Python‑backed choice logic behind `AIEngine`, so upstream callers never talk to the HTTP client directly.
+
+### 6.3 AIInteractionHandler fallback semantics
+
+On the backend, **`AIInteractionHandler`** is the bridge from `PlayerChoice` to concrete options for AI‑controlled seats. It now treats `line_order` and `capture_direction` the same way as other service‑backed choices:
+
+- For AI players with `mode: 'service'`:
+  - `line_order`:
+    - Calls `globalAIEngine.getLineOrderChoice(playerNumber, null, choice.options)`.
+    - If the returned option is exactly one of `choice.options`, uses it.
+    - Otherwise logs a `warn` and falls back to the local heuristic (longest line by `markerPositions.length`).
+  - `capture_direction`:
+    - Calls `globalAIEngine.getCaptureDirectionChoice(playerNumber, null, choice.options)`.
+    - If the returned option is in `choice.options`, uses it.
+    - Otherwise logs a `warn` and falls back to the local heuristic (max `capturedCapHeight`, then central landing).
+
+- For non‑service modes (or when errors occur):
+  - The existing **local heuristics remain authoritative**, so behaviour is stable even if the Python service is unavailable.
+
+This keeps the AI boundary consistent:
+
+- Moves, `line_reward_option`, `ring_elimination`, `region_order`, `line_order`, and `capture_direction` are all **optionally service‑backed**, with robust local fallbacks.
+- Training iterations can observe and tune Python‑side heuristics without changing TypeScript call sites, and tests (`AIEngine.serviceClient`, `AIInteractionHandler`) already exercise these endpoints.
 | Initial loss       | 1.5467                                                                                 |
 | Final loss         | 0.7188                                                                                 |
 | **Loss reduction** | **53.5%**                                                                              |
@@ -603,3 +673,143 @@ This section enumerates the canonical modules and scripts for heuristic-weight t
 - [`diagnose_policy_equivalence.py`](../ai-service/scripts/diagnose_policy_equivalence.py)
   - Compares the policies induced by candidate weight sets against a baseline over a fixed pool of game states, computing metrics such as `difference_rate` and `weight_l2`.
   - Use this script to quantify how far GA/CMA-ES or axis-aligned candidates deviate from [`BASE_V1_BALANCED_WEIGHTS`](../ai-service/app/ai/heuristic_weights.py) at the decision level, ideally reusing the same multi-start state pools loaded via [`eval_pools.py`](../ai-service/app/training/eval_pools.py) that are used for fitness evaluation, so that strength and policy-difference measurements are aligned.
+
+
+## 12. Recommended CMA-ES Training Presets & Diagnostics
+
+This section captures the current “happy path” for heuristic CMA-ES training and diagnostics so future runs do not silently regress to weaker single-board / initial-only configurations.
+
+### 12.1 2-player multi-board training preset
+
+The canonical 2-player CMA-ES / GA training configuration is encoded in the training environment module:
+
+- [`DEFAULT_TRAINING_EVAL_CONFIG`](../ai-service/app/training/env.py)  
+  - Boards: `Square8`, `Square19`, `Hexagonal`.  
+  - `eval_mode="multi-start"` from fixed state pools.  
+  - `state_pool_id="v1"`.  
+  - `games_per_eval=16`, `max_moves=200`.  
+  - `eval_randomness=0.0` (purely deterministic baseline).
+
+- `TWO_PLAYER_TRAINING_PRESET` (same file)  
+  - Starts from `DEFAULT_TRAINING_EVAL_CONFIG`.  
+  - Overrides `eval_randomness` to a small, non-zero value (currently `0.02`) to break perfect symmetry and avoid degenerate 0.5 plateaus while remaining reproducible when a seed is supplied.
+
+- `get_two_player_training_kwargs(games_per_eval, seed)`  
+  - Returns a kwargs dict suitable for `evaluate_fitness_over_boards(...)`, wiring:
+    - The canonical multi-board set (Square8/19/Hex).  
+    - `eval_mode="multi-start"` with `state_pool_id="v1"`.  
+    - `eval_randomness` from `TWO_PLAYER_TRAINING_PRESET`.  
+    - Per-run `games_per_eval` and `seed`.
+
+**Operational guidance (2p CMA-ES runs):**
+
+- For CLI-driven runs via the heuristic experiment harness:  
+  - Use [`run_heuristic_experiment.py`](../ai-service/scripts/run_heuristic_experiment.py) in `--mode cmaes-train`.  
+  - The helper `run_cmaes_train(...)` constructs a [`CMAESConfig`](../ai-service/scripts/run_cmaes_optimization.py) that:
+    - Seeds CMA-ES with a baseline profile (`heuristic_v1_balanced` by default).  
+    - Sets `eval_boards`, `eval_mode`, `state_pool_id`, and `eval_randomness` from `get_two_player_training_kwargs(...)`.  
+    - Ensures evaluation uses multi-board, multi-start, light-randomness defaults for serious 2-player training.
+
+- For direct CLI use of the core CMA-ES driver:  
+  - [`run_cmaes_optimization.py`](../ai-service/scripts/run_cmaes_optimization.py) exposes:
+    - `--eval-boards` (defaults to `square8`).  
+    - `--eval-mode` (`initial-only` vs `multi-start`, default `multi-start`).  
+    - `--state-pool-id` (`v1` by default).  
+    - `--eval-randomness` (default `0.02`, matching the 2p preset).  
+  - When run with:
+    - `--eval-boards square8,square19,hex`  
+    - `--eval-mode multi-start`  
+    - `--state-pool-id v1`  
+    - `--eval-randomness 0.02`  
+    the configuration matches the 2p training preset used by `run_heuristic_experiment.py`.
+
+At startup, the CMA-ES driver logs the effective evaluation preset (boards, eval mode, randomness, games_per_eval) so the training configuration is visible in run logs.
+
+### 12.2 State pools and multi-start evaluation
+
+The fixed evaluation pools used by the preset live under `data/eval_pools/**` and are loaded exclusively via:
+
+- [`eval_pools.py`](../ai-service/app/training/eval_pools.py)  
+  - `POOL_PATHS` maps `(BoardType, pool_id)` to JSONL paths:
+    - `(Square8, "v1") -> data/eval_pools/square8/pool_v1.jsonl`  
+    - `(Square19, "v1") -> data/eval_pools/square19/pool_v1.jsonl`  
+    - `(Hexagonal, "v1") -> data/eval_pools/hex/pool_v1.jsonl`
+  - The `"v1"` pools are explicitly documented as **mid/late-game heavy** for 2-player evaluation.
+  - Multi-player pools use explicit ids (e.g. `"square19_3p_pool_v1"`, `"hex_4p_pool_v1"`) so 2-player optimisation never accidentally mixes 3p/4p states.
+
+Pools are generated or refreshed via the long self-play soak harness:
+
+- [`run_self_play_soak.py`](../ai-service/scripts/run_self_play_soak.py)
+  - Provides per-board `*_state_pool_output`, `*_state_pool_max_states`, and `*_state_pool_sampling_interval` knobs.
+  - The state-pool write logic includes inline guidance:
+    - Use sufficiently long `--max-moves` (e.g. 200+) so games reach rich mid/late-game positions.
+    - Use the sampling interval as the primary lever for biasing toward mid/late-game (larger intervals naturally skip early plies).
+    - Use `*_state_pool_max_states` to cap the total number of snapshots.
+
+**Rule of thumb:** treat the `"v1"` pools as read-only evaluation inputs for CMA-ES / GA and diagnostics. Regenerate them only via soaks when you deliberately want to change the evaluation distribution.
+
+### 12.3 Diagnostics and pre-flight checks
+
+Before launching a long CMA-ES run with the preset, the recommended workflow is:
+
+1. **Plateau / spread check over candidate weight vectors**
+
+   - Script: [`probe_plateau_diagnostics.py`](../ai-service/scripts/probe_plateau_diagnostics.py)  
+   - CLI (matches the 2p preset by default):
+
+     ```bash
+     cd ai-service
+     python scripts/probe_plateau_diagnostics.py \
+       --boards square8,square19,hex \
+       --games-per-eval 16 \
+       --eval-mode multi-start \
+       --state-pool-id v1 \
+       --eval-randomness 0.02
+     ```
+
+   - Behaviour:
+     - Constructs baseline, zero, 5×-scaled, and several near-baseline candidates.
+     - Evaluates each candidate on all requested boards via
+       [`evaluate_fitness_over_boards`](../ai-service/scripts/run_cmaes_optimization.py).
+     - Always passes a `debug_callback` into the evaluation harness so that, per board, W/D/L counts and `weight_l2_to_baseline` are available.
+     - Prints compact per-board summaries:
+
+       ```text
+       candidate=zero board=square19 l2=33.800 fitness=0.812 W=13 D=0 L=3
+       ```
+
+     - Exports all probed weight profiles under `logs/plateau_probe/` for downstream policy diagnostics.
+
+   - Goal: confirm that the intended training configuration actually produces a spread of fitness values across diverse candidates (i.e., avoids a trivial 0.5 plateau) before committing to a long CMA-ES run.
+
+2. **Policy-equivalence diagnostics after training**
+
+   - Script: [`diagnose_policy_equivalence.py`](../ai-service/scripts/diagnose_policy_equivalence.py)  
+   - Usage:
+
+     ```bash
+     cd ai-service
+     python scripts/diagnose_policy_equivalence.py \
+       --state-pool data/eval_pools/square8/pool_v1.jsonl \
+       --max-states 300 \
+       --weights-dir logs/cmaes/runs/<run_id> \
+       --output logs/diagnostics/policy_equivalence_<run_id>.json
+     ```
+
+   - Behaviour:
+     - Loads baseline weights (default: `BASE_V1_BALANCED_WEIGHTS`) and any candidate JSONs from:
+       - `--weights-dir` (alias for `--candidates-dir`), and/or
+       - explicit `--candidate-weights` paths.
+     - Runs both baseline and candidate `HeuristicAI` over the same pooled states and computes:
+       - `difference_rate` (fraction of states where selected moves differ).
+       - `weight_l2` (L2 distance in `HEURISTIC_WEIGHT_KEYS` order).
+     - Writes a JSON summary under `logs/diagnostics/`.
+
+   - Goal: quantify how different the final CMA-ES / GA candidates are from the baseline at the decision level on the same mid/late-game state pools used for training/evaluation.
+
+Together, these tools and presets provide a stable, documented path for:
+
+- Configuring 2-player CMA-ES runs with multi-board, multi-start, light-randomness evaluation.
+- Ensuring evaluation is driven from mid/late-game pools where heuristic quality matters.
+- Verifying, ahead of time, that a given configuration yields non-trivial fitness spread.
+- Inspecting post-run policy differences between baseline and trained weights.

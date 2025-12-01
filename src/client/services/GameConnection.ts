@@ -10,6 +10,8 @@ import type {
   PlayerChoiceResponsePayload,
   ChatMessagePayload,
   WebSocketErrorPayload,
+  DecisionPhaseTimeoutWarningPayload,
+  DecisionPhaseTimedOutPayload,
 } from '../../shared/types/websocket';
 import type { Move, PlayerChoice } from '../../shared/types/game';
 import type { GameConnection, GameEventHandlers, ConnectionStatus } from '../domain/GameAPI';
@@ -109,6 +111,18 @@ export class SocketGameConnection implements GameConnection {
 
     socket.on('chat_message', (payload: ChatMessageServerPayload) => {
       this.handlers.onChatMessage(payload);
+    });
+
+    socket.on('decision_phase_timeout_warning', (payload: DecisionPhaseTimeoutWarningPayload) => {
+      if (this.handlers.onDecisionPhaseTimeoutWarning) {
+        this.handlers.onDecisionPhaseTimeoutWarning(payload);
+      }
+    });
+
+    socket.on('decision_phase_timed_out', (payload: DecisionPhaseTimedOutPayload) => {
+      if (this.handlers.onDecisionPhaseTimedOut) {
+        this.handlers.onDecisionPhaseTimedOut(payload);
+      }
     });
 
     socket.on('error', (payload: WebSocketErrorPayload | any) => {

@@ -12,6 +12,11 @@ import type { GameState, GamePhase, Move, Territory, Position } from '../../type
 import { positionToString } from '../../types/game';
 
 import { hashGameState, computeProgressSnapshot } from '../core';
+import {
+  isANMState,
+  applyForcedEliminationForPlayer,
+  computeGlobalLegalActionsSummary,
+} from '../globalActions';
 
 import type {
   ProcessTurnResult,
@@ -76,9 +81,85 @@ function computeSInvariant(state: GameState): number {
   return computeProgressSnapshot(state).S;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Victory State Conversion
-// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * Resolve an ANM(state, currentPlayer) situation by applying forced elimination
+ * and/or re-running victory evaluation until either:
+ *
+ * - The game becomes terminal, or
+ * - The active player has at least one global legal action and ANM no longer holds.
+ *
+ * This encodes the RR-CANON R202/R203 semantics used by
+ * INV-ACTIVE-NO-MOVES / INV-ANM-TURN-MATERIAL-SKIP: no externally visible
+ * ACTIVE state may satisfy isANMState(state).
+ */
+function resolveANMForCurrentPlayer(state: GameState): {
+  nextState: GameState;
+  victoryResult?: VictoryState;
+} {
+  let workingState = state;
+
+  // Conservative safety bound: one step per ring currently recorded in play
+  // plus a small constant. Forced elimination is monotone in E (and S), so
+  // ANM-resolution chains are finite (INV-ELIMINATION-MONOTONIC / INV-TERMINATION).
+  const totalRingsInPlay =
+    (workingState as GameState & { totalRingsInPlay?: number }).totalRingsInPlay ??
+    workingState.players.reduce((sum, p) => sum + p.ringsInHand, 0) +
+      Array.from(workingState.board.stacks.values()).reduce(
+        (sum, stack) => sum + stack.stackHeight,
+        0
+      );
+  const maxSteps = Math.max(4, totalRingsInPlay + 4);
+
+  for (let i = 0; i < maxSteps; i++) {
+    if (workingState.gameStatus !== 'active') {
+      return { nextState: workingState };
+    }
+
+    if (!isANMState(workingState)) {
+      return { nextState: workingState };
+    }
+
+    const player = workingState.currentPlayer;
+    const forced = applyForcedEliminationForPlayer(workingState, player);
+
+    if (!forced) {
+      // No forced-elimination action available; fall back to a victory /
+      // stalemate evaluation (R170–R173, R203).
+      const victory = toVictoryState(workingState);
+      if (victory.isGameOver) {
+        const terminalState: GameState = {
+          ...workingState,
+          gameStatus: 'completed',
+          winner: victory.winner,
+        };
+        return { nextState: terminalState, victoryResult: victory };
+      }
+      // If victory logic cannot classify the position as terminal we stop
+      // resolving here and return the ANM state to the caller; this should
+      // not happen for canonical states and will be surfaced by invariants.
+      return { nextState: workingState };
+    }
+
+    workingState = forced.nextState;
+
+    const victoryAfter = toVictoryState(workingState);
+    if (victoryAfter.isGameOver) {
+      const terminalState: GameState = {
+        ...workingState,
+        gameStatus: 'completed',
+        winner: victoryAfter.winner,
+      };
+      return { nextState: terminalState, victoryResult: victoryAfter };
+    }
+  }
+
+  // Safety fallback: after exhausting the bound, return the latest state.
+  return { nextState: workingState };
+}
+
+ // ═══════════════════════════════════════════════════════════════════════════
+ // Victory State Conversion
+ // ═══════════════════════════════════════════════════════════════════════════
 
 /**
  * Convert evaluateVictory result to VictoryState for the orchestrator.
@@ -152,6 +233,69 @@ function createRegionOrderDecision(state: GameState, regions: Territory[]): Pend
     context: {
       description: `Choose which region to process (${regions.length} regions available)`,
       relevantPositions: regions.flatMap((r) => r.spaces),
+    },
+  };
+}
+
+/**
+ * Create a pending decision for forced elimination when the current
+ * player is blocked with stacks but has no legal placement, movement,
+ * or capture actions (RR-CANON-R072/R100/R206).
+ *
+ * The options are `eliminate_rings_from_stack` Moves, one per eligible
+ * stack/standalone ring controlled by the current player.
+ */
+function createForcedEliminationDecision(state: GameState): PendingDecision | undefined {
+  const player = state.currentPlayer;
+
+  const options: Move[] = [];
+
+  for (const stack of state.board.stacks.values() as any) {
+    if (stack.controllingPlayer !== player || stack.stackHeight <= 0) {
+      continue;
+    }
+
+    const capHeight: number =
+      typeof stack.capHeight === 'number' && stack.capHeight > 0 ? stack.capHeight : 0;
+    const count = Math.max(1, capHeight || 0);
+
+    const move: Move = {
+      id: `forced-elim-${positionToString(stack.position)}`,
+      type: 'eliminate_rings_from_stack',
+      player,
+      to: stack.position,
+      eliminatedRings: [{ player, count }],
+      eliminationFromStack: {
+        position: stack.position,
+        capHeight,
+        totalHeight: stack.stackHeight,
+      },
+      // Deterministic placeholders for orchestrator-driven decisions; hosts
+      // are free to override timestamp/thinkTime/moveNumber as needed.
+      timestamp: new Date(0),
+      thinkTime: 0,
+      moveNumber: state.moveHistory.length + 1,
+    } as Move;
+
+    options.push(move);
+  }
+
+  if (options.length === 0) {
+    return undefined;
+  }
+
+  return {
+    type: 'elimination_target',
+    player,
+    options,
+    context: {
+      description: 'Choose which stack to eliminate from (forced elimination)',
+      relevantPositions: options
+        .map((m) => m.to)
+        .filter((p): p is Position => !!p),
+      extra: {
+        reason: 'forced_elimination',
+      },
     },
   };
 }
@@ -284,11 +428,53 @@ export function processTurn(state: GameState, move: Move): ProcessTurnResult {
     });
   }
 
+  let finalState = stateMachine.gameState;
+  let finalPendingDecision = result.pendingDecision;
+  let finalVictory = result.victoryResult;
+  let finalStatus: ProcessTurnResult['status'] =
+    finalPendingDecision ? 'awaiting_decision' : 'complete';
+
+  // If the turn is otherwise complete but the current player is blocked
+  // with stacks and only a forced-elimination action is available, surface
+  // that action as an explicit decision rather than applying a hidden
+  // host-level tie-breaker. This implements RR-CANON-R206 for hosts that
+  // drive decisions via PendingDecision/Move.
+  if (finalStatus === 'complete' && finalState.gameStatus === 'active') {
+    const player = finalState.currentPlayer;
+    const summary = computeGlobalLegalActionsSummary(finalState, player);
+
+    if (
+      summary.hasTurnMaterial &&
+      summary.hasForcedEliminationAction &&
+      !summary.hasGlobalPlacementAction &&
+      !summary.hasPhaseLocalInteractiveMove
+    ) {
+      const forcedDecision = createForcedEliminationDecision(finalState);
+      if (forcedDecision && forcedDecision.options.length > 0) {
+        finalPendingDecision = forcedDecision;
+        finalStatus = 'awaiting_decision';
+      }
+    }
+  }
+
+  // Enforce INV-ACTIVE-NO-MOVES / INV-ANM-TURN-MATERIAL-SKIP at the orchestrator
+  // boundary: no externally visible ACTIVE state may satisfy ANM(state) for the
+  // current player. When such a state is detected and there is no pending
+  // decision, resolve it immediately via forced elimination and/or victory
+  // evaluation (RR-CANON R200–R205).
+  if (finalStatus === 'complete' && finalState.gameStatus === 'active' && isANMState(finalState)) {
+    const resolved = resolveANMForCurrentPlayer(finalState);
+    finalState = resolved.nextState;
+    if (resolved.victoryResult) {
+      finalVictory = resolved.victoryResult;
+    }
+  }
+
   return {
-    nextState: stateMachine.gameState,
-    status: result.pendingDecision ? 'awaiting_decision' : 'complete',
-    pendingDecision: result.pendingDecision,
-    victoryResult: result.victoryResult,
+    nextState: finalState,
+    status: finalPendingDecision ? 'awaiting_decision' : 'complete',
+    pendingDecision: finalPendingDecision,
+    victoryResult: finalVictory,
     metadata,
   };
 }
@@ -412,13 +598,27 @@ function processPostMovePhases(stateMachine: PhaseStateMachine): {
     if (pos) {
       const info = getChainCaptureContinuationInfo(state, state.currentPlayer, pos);
       if (info.mustContinue) {
+        // Transition phase to chain_capture and set chainCapturePosition in state
+        // so that RuleEngine/AIEngine can enumerate valid continuations.
+        stateMachine.transitionTo('chain_capture');
+        stateMachine.updateGameState({
+          ...stateMachine.gameState,
+          chainCapturePosition: pos,
+        });
         return {
-          pendingDecision: createChainCaptureDecision(state, info.availableContinuations),
+          pendingDecision: createChainCaptureDecision(
+            stateMachine.gameState,
+            info.availableContinuations
+          ),
         };
       }
     }
-    // Chain capture complete, continue to line processing
+    // Chain capture complete, clear chainCapturePosition and continue to line processing
     stateMachine.setChainCapture(false, undefined);
+    stateMachine.updateGameState({
+      ...stateMachine.gameState,
+      chainCapturePosition: undefined,
+    });
   }
 
   // Transition to line processing phase

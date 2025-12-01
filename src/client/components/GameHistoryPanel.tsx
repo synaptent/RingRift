@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { gameApi, GameHistoryResponse, GameHistoryMove } from '../services/api';
+import { Badge } from './ui/Badge';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -89,6 +90,21 @@ function MoveItem({ move }: MoveItemProps) {
     Object.keys(move.moveData).length > 0 &&
     Object.keys(move.moveData).some((k) => !['id', 'type', 'player', 'from', 'to'].includes(k));
 
+  const isAutoResolved = !!move.autoResolved;
+  let autoResolvedLabel: string | null = null;
+
+  if (isAutoResolved && move.autoResolved) {
+    const reason = move.autoResolved.reason;
+
+    let reasonDisplay: string;
+    if (reason === 'timeout') reasonDisplay = 'timeout';
+    else if (reason === 'disconnected') reasonDisplay = 'disconnect';
+    else if (reason === 'fallback') reasonDisplay = 'fallback move';
+    else reasonDisplay = reason;
+
+    autoResolvedLabel = `Auto-resolved (${reasonDisplay})`;
+  }
+
   return (
     <div className="border-b border-slate-700/50 last:border-b-0">
       <div
@@ -111,8 +127,20 @@ function MoveItem({ move }: MoveItemProps) {
           {move.playerName}
         </span>
 
-        {/* Move Type */}
-        <span className="text-xs text-slate-300 flex-1">{formatMoveType(move.moveType)}</span>
+        {/* Move Type + Auto-resolve badge (if present) */}
+        <div className="text-xs text-slate-300 flex-1 flex items-center gap-2 min-w-0">
+          <span className="truncate">{formatMoveType(move.moveType)}</span>
+          {autoResolvedLabel && (
+            <Badge
+              variant="warning"
+              className="shrink-0"
+              data-testid="auto-resolved-badge"
+              aria-label={autoResolvedLabel}
+            >
+              {autoResolvedLabel}
+            </Badge>
+          )}
+        </div>
 
         {/* Position (if available) */}
         {positionDesc && (

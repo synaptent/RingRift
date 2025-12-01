@@ -38,9 +38,19 @@ import { pos } from '../utils/fixtures';
  * exact pre-step states for seed-17 move 16 and 33 divergences between
  * backend and sandbox. The tests require deep trace infrastructure and
  * compare capture/chain-capture behavior at specific move numbers.
- * Skipped pending investigation of capture enumeration parity.
+ *
+ * To keep core CI fast, this suite is opt-in via the
+ * RINGRIFT_ENABLE_SEED17_PARITY env var. When unset/false it is skipped;
+ * when set to '1' or 'true' it runs as a normal describe().
  */
-describe.skip('Seed17 early capture parity: GameEngine vs ClientSandboxEngine', () => {
+const SEED17_PARITY_ENABLED =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_ENABLE_SEED17_PARITY ?? '');
+
+const maybeDescribe = SEED17_PARITY_ENABLED ? describe : describe.skip;
+
+maybeDescribe('Seed17 early capture parity: GameEngine vs ClientSandboxEngine', () => {
   const boardType: BoardType = 'square8';
   const numPlayers = 2;
   const seed = 17;
@@ -357,5 +367,32 @@ describe.skip('Seed17 early capture parity: GameEngine vs ClientSandboxEngine', 
     });
 
     expect(matchingContinuation).toBeDefined();
+
+    // 4) After applying the canonical continuation on both engines, they
+    //    should agree on the exit from chain_capture: same player, same
+    //    next phase, and no engine left stuck in chain_capture.
+    if (!matchingContinuation) {
+      return;
+    }
+
+    const { id, timestamp, moveNumber, ...payload } = matchingContinuation as Move;
+
+    const backendResult = await backendEngine.makeMove(
+      payload as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>
+    );
+    expect(backendResult.success).toBe(true);
+
+    await sandboxEngine.applyCanonicalMove(targetMove);
+
+    const backendAfter = backendEngine.getGameState();
+    const sandboxAfter = sandboxEngine.getGameState();
+
+    expect(backendAfter.currentPlayer).toBe(sandboxAfter.currentPlayer);
+    expect(backendAfter.currentPhase).toBe(sandboxAfter.currentPhase);
+
+    // Neither engine should remain in chain_capture after this
+    // continuation; exit semantics must match.
+    expect(backendAfter.currentPhase).not.toBe('chain_capture');
+    expect(sandboxAfter.currentPhase).not.toBe('chain_capture');
   });
 });

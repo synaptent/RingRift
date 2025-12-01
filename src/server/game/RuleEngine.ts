@@ -38,6 +38,8 @@ import {
   applyCapture as applyCaptureAggregate,
   // Canonical placement mutation (TS SSOT)
   applyPlacementMoveAggregate,
+  // Chain capture continuation enumeration
+  getChainCaptureContinuationInfo,
 } from '../../shared/engine';
 import { getMovementDirectionsForBoardType } from '../../shared/engine/core';
 import { BoardManager } from './BoardManager';
@@ -691,12 +693,23 @@ export class RuleEngine {
         }
         break;
       }
-      case 'chain_capture':
-        // Advanced-phase enumeration for chain_capture is handled by
-        // GameEngine.getValidMoves, which has access to the internal
-        // chainCaptureState. RuleEngine remains focused on segment-level
-        // validation for overtaking_capture / continue_capture_segment.
+      case 'chain_capture': {
+        // Enumerate chain capture continuations using chainCapturePosition from GameState.
+        // This allows AIEngine and other callers to get valid moves without needing
+        // access to GameEngine's internal chainCaptureState.
+        const chainPos = gameState.chainCapturePosition;
+        if (chainPos) {
+          const info = getChainCaptureContinuationInfo(
+            gameState,
+            gameState.currentPlayer,
+            chainPos
+          );
+          if (info.mustContinue) {
+            moves.push(...info.availableContinuations);
+          }
+        }
         break;
+      }
     }
 
     return moves;

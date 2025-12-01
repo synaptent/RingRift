@@ -14,7 +14,7 @@ import os
 import copy
 import argparse
 import glob
-from typing import Optional, Tuple, Dict, Any, List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 import logging
 from app.ai.neural_net import (
@@ -48,6 +48,7 @@ from app.training.model_versioning import (  # noqa: E402
     VersionMismatchError,
     LegacyCheckpointError,
 )
+from app.training.seed_utils import seed_all
 
 # Configure logging
 logging.basicConfig(
@@ -57,16 +58,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def seed_all(seed=42):
-    """Set seeds for reproducibility"""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+# Backwards-compatible alias that forwards to the shared training
+# seeding utility so that existing callers importing seed_all from this
+# module continue to work.
+def seed_all_legacy(seed: int = 42) -> None:
+    seed_all(seed)
 
 
 class EarlyStopping:
@@ -171,14 +167,20 @@ def save_checkpoint(
         )
 
         # Also save early stopping best_state if needed for resume
-        if early_stopping is not None and early_stopping.best_state is not None:
+        if (
+            early_stopping is not None
+            and early_stopping.best_state is not None
+        ):
             # Save early stopping state separately so it survives reloading
             es_path = path.replace('.pth', '_early_stopping.pth')
-            torch.save({
-                'best_loss': early_stopping.best_loss,
-                'counter': early_stopping.counter,
-                'best_state': early_stopping.best_state,
-            }, es_path)
+            torch.save(
+                {
+                    'best_loss': early_stopping.best_loss,
+                    'counter': early_stopping.counter,
+                    'best_state': early_stopping.best_state,
+                },
+                es_path,
+            )
 
         logger.info(
             f"Saved versioned checkpoint to {path} "
@@ -204,7 +206,10 @@ def save_checkpoint(
 
         torch.save(checkpoint, path)
         logger.info(
-            f"Saved legacy checkpoint to {path} (epoch {epoch}, loss {loss:.4f})"
+            "Saved legacy checkpoint to %s (epoch %d, loss %.4f)",
+            path,
+            epoch,
+            loss,
         )
 
 
@@ -313,8 +318,9 @@ def get_warmup_scheduler(
     """
     Create a learning rate scheduler with optional warmup.
     
-    This is the legacy warmup scheduler that uses LambdaLR for simple scheduling.
-    For advanced cosine annealing, use create_lr_scheduler() instead.
+    This is the legacy warmup scheduler that uses LambdaLR for simple
+    scheduling. For advanced cosine annealing, use create_lr_scheduler()
+    instead.
     
     Args:
         optimizer: The optimizer to schedule
@@ -373,12 +379,15 @@ def create_lr_scheduler(
             - 'none': No scheduling (returns None)
             - 'step': Step decay (legacy, uses LambdaLR)
             - 'cosine': CosineAnnealingLR to lr_min over total_epochs
-            - 'cosine-warm-restarts': CosineAnnealingWarmRestarts with T_0, T_mult
+            - 'cosine-warm-restarts': CosineAnnealingWarmRestarts with
+              T_0, T_mult
         total_epochs: Total number of training epochs
         warmup_epochs: Number of epochs for linear warmup (0 to disable)
         lr_min: Minimum learning rate for cosine annealing (eta_min)
-        lr_t0: T_0 parameter for CosineAnnealingWarmRestarts (initial restart period)
-        lr_t_mult: T_mult parameter for CosineAnnealingWarmRestarts (period multiplier)
+        lr_t0: T_0 parameter for CosineAnnealingWarmRestarts
+            (initial restart period)
+        lr_t_mult: T_mult parameter for CosineAnnealingWarmRestarts
+            (period multiplier)
         
     Returns:
         LR scheduler or None if scheduler_type is 'none' and warmup_epochs is 0
@@ -866,7 +875,10 @@ def train_model(
     # Resume from checkpoint if specified
     if resume_path is not None and os.path.exists(resume_path):
         # For DDP, load into the underlying model
-        model_to_load: torch.nn.Module = model.module if distributed else model
+        model_to_load = cast(
+            nn.Module,
+            model.module if distributed else model,
+        )
         start_epoch, _ = load_checkpoint(
             resume_path,
             model_to_load,
@@ -887,6 +899,13 @@ def train_model(
     # For MPS, mixed precision support is evolving.
     # We'll enable it only for CUDA for now to be safe.
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == 'cuda'))
+
+    train_streaming_loader: Optional[StreamingDataLoader] = None
+    val_streaming_loader: Optional[StreamingDataLoader] = None
+    train_loader: Optional[DataLoader] = None
+    val_loader: Optional[DataLoader] = None
+    train_sampler = None
+    val_sampler = None
 
     # Collect data paths for streaming mode
     data_paths: List[str] = []
@@ -1013,8 +1032,14 @@ def train_model(
 
         # Create data loaders with distributed samplers if needed
         if distributed:
-            train_sampler = get_distributed_sampler(train_dataset, shuffle=True)
-            val_sampler = get_distributed_sampler(val_dataset, shuffle=False)
+            train_sampler = get_distributed_sampler(
+                train_dataset,
+                shuffle=True,
+            )
+            val_sampler = get_distributed_sampler(
+                val_dataset,
+                shuffle=False,
+            )
             train_loader = DataLoader(
                 train_dataset,
                 batch_size=config.batch_size,
@@ -1034,10 +1059,14 @@ def train_model(
         else:
             train_sampler = None
             train_loader = DataLoader(
-                train_dataset, batch_size=config.batch_size, shuffle=True
+                train_dataset,
+                batch_size=config.batch_size,
+                shuffle=True,
             )
             val_loader = DataLoader(
-                val_dataset, batch_size=config.batch_size, shuffle=False
+                val_dataset,
+                batch_size=config.batch_size,
+                shuffle=False,
             )
 
     if not distributed or is_main_process():
@@ -1083,6 +1112,8 @@ def train_model(
             if distributed and train_sampler is not None:
                 train_sampler.set_epoch(epoch)
             if use_streaming:
+                assert train_streaming_loader is not None
+                assert val_streaming_loader is not None
                 train_streaming_loader.set_epoch(epoch)
                 val_streaming_loader.set_epoch(epoch)
 
@@ -1095,20 +1126,26 @@ def train_model(
 
             # Select appropriate data source
             if use_streaming:
+                assert train_streaming_loader is not None
                 train_data_iter = iter(train_streaming_loader)
             else:
+                assert train_loader is not None
                 train_data_iter = iter(train_loader)
 
             for i, batch_data in enumerate(train_data_iter):
                 # Handle both streaming and legacy batch formats
                 if use_streaming:
-                    (features, globals_vec), (value_targets, policy_targets) = (
-                        batch_data
-                    )
+                    (
+                        (features, globals_vec),
+                        (value_targets, policy_targets),
+                    ) = batch_data
                 else:
-                    features, globals_vec, value_targets, policy_targets = (
-                        batch_data
-                    )
+                    (
+                        features,
+                        globals_vec,
+                        value_targets,
+                        policy_targets,
+                    ) = batch_data
 
                 features = features.to(device)
                 globals_vec = globals_vec.to(device)
@@ -1117,10 +1154,11 @@ def train_model(
 
                 optimizer.zero_grad()
 
-                # Autocast for mixed precision (CUDA only usually)
-                # For MPS, we might need to check torch.autocast(device_type='mps')
-                # but it's safer to stick to float32 on MPS if unsure.
-                use_amp = (device.type == 'cuda')
+                # Autocast for mixed precision (CUDA only usually).
+                # For MPS, we might need to check torch.autocast with
+                # device_type="mps", but it is safer to stick to float32
+                # on MPS if unsure.
+                use_amp = device.type == 'cuda'
 
                 with torch.cuda.amp.autocast(enabled=use_amp):
                     value_pred, policy_pred = model(features, globals_vec)
@@ -1130,7 +1168,8 @@ def train_model(
 
                     value_loss = value_criterion(value_pred, value_targets)
                     policy_loss = policy_criterion(
-                        policy_log_probs, policy_targets
+                        policy_log_probs,
+                        policy_targets,
                     )
                     loss = value_loss + (config.policy_weight * policy_loss)
 
@@ -1138,7 +1177,10 @@ def train_model(
 
                 # Gradient clipping
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    max_norm=1.0,
+                )
 
                 scaler.step(optimizer)
                 scaler.update()
@@ -1149,7 +1191,9 @@ def train_model(
                 # Track metrics for distributed reduction
                 if dist_metrics is not None:
                     dist_metrics.add(
-                        'train_loss', loss.item(), features.size(0)
+                        'train_loss',
+                        loss.item(),
+                        features.size(0),
                     )
 
                 if i % 10 == 0 and (not distributed or is_main_process()):
@@ -1179,10 +1223,15 @@ def train_model(
 
             # Select appropriate validation data source
             if use_streaming:
+                assert val_streaming_loader is not None
                 val_data_iter = iter(val_streaming_loader)
                 # Limit validation to ~20% of batches for streaming
-                max_val_batches = max(1, len(val_streaming_loader) // 5)
+                max_val_batches = max(
+                    1,
+                    len(val_streaming_loader) // 5,
+                )
             else:
+                assert val_loader is not None
                 val_data_iter = iter(val_loader)
                 max_val_batches = float('inf')
 
@@ -1193,13 +1242,17 @@ def train_model(
 
                     # Handle both streaming and legacy batch formats
                     if use_streaming:
-                        (features, globals_vec), (value_targets, policy_targets) = (
-                            val_batch
-                        )
+                        (
+                            (features, globals_vec),
+                            (value_targets, policy_targets),
+                        ) = val_batch
                     else:
-                        features, globals_vec, value_targets, policy_targets = (
-                            val_batch
-                        )
+                        (
+                            features,
+                            globals_vec,
+                            value_targets,
+                            policy_targets,
+                        ) = val_batch
 
                     features = features.to(device)
                     globals_vec = globals_vec.to(device)
@@ -1254,7 +1307,10 @@ def train_model(
 
             # Check early stopping (only on main process for DDP)
             # Get model for checkpointing (unwrap DDP if needed)
-            model_to_save = model.module if distributed else model
+            model_to_save = cast(
+                nn.Module,
+                model.module if distributed else model,
+            )
 
             if early_stopper is not None:
                 should_stop = early_stopper(avg_val_loss, model_to_save)
@@ -1269,10 +1325,12 @@ def train_model(
                         # Save final checkpoint with best weights
                         final_checkpoint_path = os.path.join(
                             checkpoint_dir,
-                            f"checkpoint_early_stop_epoch_{epoch+1}.pth"
+                            f"checkpoint_early_stop_epoch_{epoch+1}.pth",
                         )
                         save_checkpoint(
-                            model_to_save, optimizer, epoch,
+                            model_to_save,
+                            optimizer,
+                            epoch,
                             early_stopper.best_loss,
                             final_checkpoint_path,
                             scheduler=epoch_scheduler,
@@ -1288,18 +1346,24 @@ def train_model(
                                 'early_stopped': True,
                             },
                         )
-                        logger.info(f"Best model saved to {save_path}")
+                        logger.info("Best model saved to %s", save_path)
                     break
 
             # Checkpoint at intervals (only on main process)
-            if checkpoint_interval > 0 and (epoch + 1) % checkpoint_interval == 0:
+            if (
+                checkpoint_interval > 0
+                and (epoch + 1) % checkpoint_interval == 0
+            ):
                 if not distributed or is_main_process():
                     checkpoint_path = os.path.join(
                         checkpoint_dir,
-                        f"checkpoint_epoch_{epoch+1}.pth"
+                        f"checkpoint_epoch_{epoch+1}.pth",
                     )
                     save_checkpoint(
-                        model_to_save, optimizer, epoch, avg_val_loss,
+                        model_to_save,
+                        optimizer,
+                        epoch,
+                        avg_val_loss,
                         checkpoint_path,
                         scheduler=epoch_scheduler,
                         early_stopping=early_stopper,
@@ -1321,14 +1385,16 @@ def train_model(
                         },
                     )
                     logger.info(
-                        f"  New best model saved (Val Loss: {avg_val_loss:.4f})"
+                        "  New best model saved (Val Loss: %.4f)",
+                        avg_val_loss,
                     )
 
                     # Save timestamped checkpoint for history tracking
                     from datetime import datetime
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     version_path = save_path.replace(
-                        ".pth", f"_{timestamp}.pth"
+                        ".pth",
+                        f"_{timestamp}.pth",
                     )
                     save_model_checkpoint(
                         model_to_save,
@@ -1341,18 +1407,27 @@ def train_model(
                             'timestamp': timestamp,
                         },
                     )
-                    logger.info(f"  Versioned checkpoint saved: {version_path}")
+                    logger.info(
+                        "  Versioned checkpoint saved: %s",
+                        version_path,
+                    )
         else:
-            # Final checkpoint at end of training (if not early stopped)
-            # This else clause is for the for-loop, executes if no break occurred
+            # Final checkpoint at end of training (if not early stopped).
+            # This else clause is for the for-loop and executes if no break
+            # occurred.
             if not distributed or is_main_process():
-                model_to_save_final = model.module if distributed else model
+                model_to_save_final = cast(
+                    nn.Module,
+                    model.module if distributed else model,
+                )
                 final_checkpoint_path = os.path.join(
                     checkpoint_dir,
-                    f"checkpoint_final_epoch_{config.epochs_per_iter}.pth"
+                    f"checkpoint_final_epoch_{config.epochs_per_iter}.pth",
                 )
                 save_checkpoint(
-                    model_to_save_final, optimizer, config.epochs_per_iter - 1,
+                    model_to_save_final,
+                    optimizer,
+                    config.epochs_per_iter - 1,
                     avg_val_loss,
                     final_checkpoint_path,
                     scheduler=epoch_scheduler,
@@ -1516,9 +1591,9 @@ def main():
     # Determine paths
     data_path = args.data_path or os.path.join(config.data_dir, "dataset.npz")
     save_path = args.save_path or os.path.join(
-        config.model_dir, f"{config.model_id}.pth"
+        config.model_dir,
+        f"{config.model_id}.pth",
     )
-    # Run training
     # Run training
     train_model(
         config=config,
@@ -1540,6 +1615,7 @@ def main():
         lr_scale_mode=args.lr_scale_mode,
         find_unused_parameters=args.find_unused_parameters,
     )
+
 
 if __name__ == "__main__":
     main()

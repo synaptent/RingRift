@@ -162,6 +162,7 @@ module.exports = {
     '/dist/',
     '/build/',
     '<rootDir>/tests/e2e/',
+    '<rootDir>/tests/unit/archive/',
   ],
   
   // ===========================================================================

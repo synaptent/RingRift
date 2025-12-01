@@ -219,6 +219,65 @@ Each line of the output file is a single JSON object with at least the following
 
 A typical consumer expects to iterate over the JSONL file line-by-line, parse each object, and then feed `(game_state, player_number, target, time_weight, engine_mode, num_players, ai_*_pN)` into a training pipeline such as [`train_heuristic_weights.py`](../ai-service/app/training/train_heuristic_weights.py).
 
+### 4.4 Dataset validation helpers
+
+To avoid silently training on malformed or partially populated datasets, there is a small validation module under:
+
+- [`territory_dataset_validation.py`](../ai-service/app/training/territory_dataset_validation.py)
+
+Key entrypoints:
+
+- `validate_territory_example(example: dict) -> List[str]`
+  - Validates a single JSON object against the expected schema above.
+  - Checks:
+    - presence and types of `game_state`, `player_number`, `target`, `time_weight`, `engine_mode`, `num_players`;
+    - `engine_mode ∈ {"descent-only", "mixed"}`;
+    - `num_players` is an integer in `[2, 4]`;
+    - `player_number` ∈ `[1, num_players]`;
+    - `target` and `time_weight` are finite numbers, with `time_weight ∈ [0.0, 1.0]`;
+    - completeness and basic typing of `ai_type_pN` / `ai_difficulty_pN` for each active player;
+    - that `game_state` can be parsed via `GameState.model_validate(...)` and that its `players` list length and `boardType` are structurally consistent with the metadata.
+- `iter_territory_dataset_errors(jsonl_lines, max_errors=50) -> List[Tuple[int, str]]`
+  - Streams over a JSONL file (or any iterable of lines) and returns line-numbered error messages up to `max_errors`.
+- `validate_territory_dataset_file(path: str, max_errors=50) -> List[Tuple[int, str]]`
+  - Convenience wrapper for on-disk JSONL files.
+
+There is a focused test suite at:
+
+- [`ai-service/tests/test_territory_dataset_validation.py`](../ai-service/tests/test_territory_dataset_validation.py)
+
+which exercises both single-example validation and multi-line error reporting.
+
+Example manual usage from `ai-service/`:
+
+```bash
+python -m app.training.territory_dataset_validation logs/debug.square8.mixed2p.10.jsonl
+```
+
+For CI integration, the recommended pattern is:
+
+- generate a small representative dataset (for example a handful of games per board/engine configuration) as part of an infrequent, training-oriented pipeline; and
+- run the validation helper over that file, treating any reported errors as a failure.
+
+For downstream training jobs that consume these datasets directly (for example
+[`train_heuristic_weights.py`](../ai-service/app/training/train_heuristic_weights.py)),
+you can also ask the training script itself to enforce the same schema before
+optimisation:
+
+```bash
+cd ai-service
+python -m app.training.train_heuristic_weights \
+  --dataset logs/debug.square8.mixed2p.10.jsonl \
+  --output logs/heuristic/heuristic_profiles.v1.trained.json \
+  --lambda 0.001 \
+  --validate-territory-schema
+```
+
+When `--validate-territory-schema` is set, the script will run the
+`territory_dataset_validation` checks against `--dataset` and abort with a
+clear error if any structural or metadata issues are found, rather than
+silently training on malformed data.
+
 ---
 
 ## 5. Seeds, determinism, and mixed-engine selection
@@ -247,6 +306,42 @@ As a result:
 
 - For fixed arguments `(--board-type, --engine-mode, --num-players, --max-moves, --seed)` and fixed code, the JSONL output of [`generate_territory_dataset.py`](../ai-service/app/training/generate_territory_dataset.py) is **reproducible**.
 - Changing `--seed` changes both **which AI profiles** are chosen in mixed mode and the internal RNG streams inside those AIs.
+
+### 5.3 Cross-language RNG contract (Node ↔ Python)
+
+Runtime stacks (Node backend ↔ Python AI service) use the same seeding model as the offline generators:
+
+- The Node backend attaches a per-game `rngSeed` to `GameState` (see `GameEngine` and `GamePersistenceService`) and, when calling the AI service, passes an explicit `seed` to `/ai/move` via [`AIServiceClient`](../src/server/services/AIServiceClient.ts) using:
+  - the request’s explicit seed when provided, or
+  - `gameState.rngSeed` as a fallback.
+- The Python AI service exposes this as the `seed` field on [`MoveRequest`](../ai-service/app/main.py) and threads it into [`AIConfig.rng_seed`](../ai-service/app/models/core.py) when constructing AIs in `get_ai_move`.
+- All AI implementations derive their per-instance RNG from `AIConfig.rng_seed` (see [`BaseAI`](../ai-service/app/ai/base.py)), so a fixed `(rngSeed, difficulty, playerNumber)` tuple yields a stable RNG stream across languages.
+
+Combined with the training seeding rules above, this means:
+
+- Mixed Node↔Python runs (shadow/parity jobs, orchestrator-on profiles) and offline dataset generation can be reproduced from a single top-level seed.
+- Determinism of per-game AI decisions under a fixed seed is exercised by tests such as:
+  - [`tests/integration/GameSession.aiDeterminism.test.ts`](../tests/integration/GameSession.aiDeterminism.test.ts),
+  - [`ai-service/tests/test_engine_determinism.py`](../ai-service/tests/test_engine_determinism.py),
+  - and the seeded AI tests under `ai-service/tests/test_mcts_dynamic_batching.py` and `ai-service/tests/test_ai_creation.py`.
+
+### 5.4 Board-dependent heuristic evaluation modes
+
+To keep heuristic‑weight training and evaluation both performant and faithful to gameplay, training harnesses use a **board-dependent heuristic evaluation mode**:
+
+- The canonical mapping lives in [`TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD`](../ai-service/app/training/env.py), which currently selects:
+  - `"full"` heuristic evaluation for `square8` (all Tier‑2 structural features enabled).
+  - `"light"` heuristic evaluation for `square19` and `hexagonal` (Tier‑2 structural/global features skipped for throughput).
+- This mapping is applied consistently by:
+  - The CMA‑ES/GA fitness harness in [`run_cmaes_optimization.py`](../ai-service/scripts/run_cmaes_optimization.py#L460) when constructing `HeuristicAI` instances via `create_heuristic_ai_with_weights`.
+  - Any other training or soak entrypoint that calls `RingRiftEnv` or `HeuristicAI` with `heuristic_eval_mode` derived from board type.
+
+Behaviour is verified by:
+
+- `ai-service/tests/test_heuristic_eval_modes.py` – ensures that:
+  - `AIConfig.heuristic_eval_mode` is normalised by `HeuristicAI` (`"light"` vs `"full"`),
+  - Tier‑2 features are evaluated only in `"full"` mode and reported as `0.0` in `"light"` mode, and
+  - the fitness harness always passes the board‑appropriate `heuristic_eval_mode` from `TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD`.
 
 ---
 

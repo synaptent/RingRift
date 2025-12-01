@@ -71,6 +71,10 @@ describe('ClientSandboxEngine sandbox AI stall diagnostics', () => {
       applyCanonicalMove: async () => {
         // no-op: our hooks are constructed so canonical moves are never emitted
       },
+      hasPendingTerritorySelfElimination: () => false,
+      hasPendingLineRewardElimination: () => false,
+      canCurrentPlayerSwapSides: () => false,
+      applySwapSidesForCurrentPlayer: () => false,
     };
 
     // Invoke the sandbox AI for several consecutive no-op turns. Because there

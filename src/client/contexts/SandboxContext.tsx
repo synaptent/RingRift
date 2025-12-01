@@ -163,10 +163,10 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isConfigured, sandboxLastProgressAt, sandboxEngine]);
 
-  // Structural AI stall diagnostics watcher: when enabled via
-  // RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS, poll the sandbox AI trace
-  // buffer and surface any "stall" entries as a UI banner so that AI-vs-AI
-  // stalls are visible and debuggable from the /sandbox route.
+  // Structural AI stall diagnostics watcher: when enabled via the
+  // RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS flag, poll the sandbox AI
+  // trace buffer and surface any "stall" entries as a UI banner so that
+  // AI-vs-AI stalls are visible and debuggable from the /sandbox route.
   useEffect(() => {
     if (!sandboxDiagnosticsEnabled) {
       return;
@@ -209,6 +209,34 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
       window.clearInterval(id);
     };
   }, [sandboxDiagnosticsEnabled]);
+
+  // Test-only hook: in non-production builds, expose a minimal E2E helper on
+  // window so that Playwright tests can seed a sandbox stall warning and AI
+  // trace without relying on timing-sensitive AI behaviour. This helper is
+  // not attached in production bundles.
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') {
+      return;
+    }
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const anyWindow = window as any;
+    const setter = (message: string, trace: unknown) => {
+      setSandboxStallWarning(message);
+      anyWindow.__RINGRIFT_SANDBOX_TRACE__ = trace;
+    };
+
+    anyWindow.__RINGRIFT_E2E_SET_SANDBOX_STALL__ = setter;
+
+    return () => {
+      if (anyWindow.__RINGRIFT_E2E_SET_SANDBOX_STALL__ === setter) {
+        delete anyWindow.__RINGRIFT_E2E_SET_SANDBOX_STALL__;
+      }
+    };
+  }, []);
 
   const value: SandboxContextValue = {
     config,

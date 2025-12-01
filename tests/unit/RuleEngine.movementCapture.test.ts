@@ -118,10 +118,26 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
   };
 }
 
-// TODO-RULEENGINE-MOVEMENT-CAPTURE: Skipping - these tests exercise RuleEngine
-// movement and capture validation with a FakeBoardManager. Timeouts occur in
-// certain validation paths that involve position enumeration and path checking.
-// Investigation needed to identify which specific validation path is slow.
+/**
+ * SKIP REASON: RuleEngine validation path causes infinite loop or severe performance issue
+ *
+ * VERIFIED: Enabling this describe block causes Jest to hang indefinitely (tested 2024-11-30).
+ *
+ * Root cause investigation needed:
+ * - The FakeBoardManager stub may not properly implement some method that RuleEngine
+ *   relies on for position enumeration or path checking, causing an infinite loop.
+ * - RuleEngine.validateMove likely has a code path that iterates over all board
+ *   positions or recursively checks paths without proper termination conditions
+ *   when used with a minimal stub.
+ *
+ * This test file is preserved for reference. The same validation semantics are
+ * tested in:
+ * - tests/scenarios/FAQ_Q*.test.ts (rule validation via GameEngine)
+ * - tests/unit/GameEngine.*.test.ts (validates moves through full stack)
+ *
+ * If you need to debug RuleEngine validation, add proper termination logic to
+ * FakeBoardManager.getAllPositions() and FakeBoardManager.isValidPosition().
+ */
 describe.skip('RuleEngine movement and capture validation (square8)', () => {
   const boardType: BoardType = 'square8';
 

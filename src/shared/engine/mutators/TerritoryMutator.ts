@@ -24,58 +24,59 @@ export function mutateProcessTerritory(
     totalRingsInPlay: number;
   };
 
-  // We assume action.regionId is the region the player chose to KEEP.
-  // We need to remove all other disconnected regions belonging to this player.
-  // Since we don't have the "conflict group" explicitly, we can iterate through all territories
-  // and remove any that are:
-  // 1. Owned by the current player
-  // 2. Marked as isDisconnected = true
-  // 3. NOT the chosen regionId
+  // Processing a territory region means collapsing all spaces in that region
+  // into territory (collapsed spaces) controlled by the acting player.
+  // Any stacks inside the region are eliminated and credited to the processing player.
 
-  // This assumes that ALL disconnected regions for a player are part of the current conflict.
-  // This is generally true because disconnection checks happen globally.
+  const region = newState.board.territories.get(action.regionId);
+  if (!region) throw new Error('TerritoryMutator: Region not found');
 
-  const keptRegion = newState.board.territories.get(action.regionId);
-  if (!keptRegion) throw new Error('TerritoryMutator: Kept region not found');
+  const player = action.playerId;
+  let internalEliminations = 0;
+  let territoryGain = 0;
 
-  // Mark kept region as connected
-  keptRegion.isDisconnected = false;
+  // 1. Process each space in the region
+  for (const pos of region.spaces) {
+    const key = positionToString(pos);
 
-  // Remove other disconnected regions
-  for (const [id, region] of newState.board.territories) {
-    if (
-      region.controllingPlayer === action.playerId &&
-      region.isDisconnected &&
-      id !== action.regionId
-    ) {
-      // Remove this region
-      // "The other region(s) are lost. Any rings on the lost region are returned to their owners."
+    // Eliminate any stack inside the region
+    const stack = newState.board.stacks.get(key);
+    if (stack) {
+      internalEliminations += stack.stackHeight;
+      newState.board.stacks.delete(key);
+    }
 
-      for (const pos of region.spaces) {
-        const key = positionToString(pos);
+    // Remove any marker at this position
+    newState.board.markers.delete(key);
 
-        // Un-collapse the space (remove from collapsedSpaces)
-        newState.board.collapsedSpaces.delete(key);
+    // Collapse the space to the processing player's territory
+    newState.board.collapsedSpaces.set(key, player);
+    territoryGain++;
+  }
 
-        // If there were rings on it (unlikely for collapsed space, but maybe markers?), handle them.
-        // Collapsed spaces don't have stacks.
-        // But wait, "Any rings on the lost region..."
-        // Collapsed spaces are empty of rings by definition.
-        // Maybe it means "Any rings that were TRAPPED inside?" No.
-        // It probably refers to the fact that they are no longer territory.
+  // 2. Remove the territory entry since it's now collapsed
+  newState.board.territories.delete(action.regionId);
 
-        // However, if we un-collapse them, they become empty spaces.
-        // Markers? Collapsed spaces don't have markers.
-
-        // So we just remove the collapsed status.
-      }
-
-      newState.board.territories.delete(id);
+  // 3. Update player's territorySpaces
+  if (territoryGain > 0) {
+    const playerObj = newState.players.find((p) => p.playerNumber === player);
+    if (playerObj) {
+      playerObj.territorySpaces += territoryGain;
     }
   }
 
-  // Also, we should probably re-check connectivity or merge regions?
-  // The engine loop will likely handle re-scanning territories.
+  // 4. Credit internal eliminations to the processing player
+  if (internalEliminations > 0) {
+    newState.board.eliminatedRings[player] =
+      (newState.board.eliminatedRings[player] || 0) + internalEliminations;
+    newState.totalRingsEliminated =
+      (newState.totalRingsEliminated || 0) + internalEliminations;
+
+    const playerObj = newState.players.find((p) => p.playerNumber === player);
+    if (playerObj) {
+      playerObj.eliminatedRings += internalEliminations;
+    }
+  }
 
   newState.lastMoveAt = new Date();
   return newState;

@@ -538,14 +538,17 @@ groups:
       # Rules Validation Mismatch
       # -------------------------------------------------------------------------
       - alert: RulesParityValidationMismatch
-        expr: increase(ringrift_rules_parity_valid_mismatch_total[1h]) > 5
+        expr: increase(ringrift_rules_parity_mismatches_total{mismatch_type="validation"}[1h]) > 5
         for: 5m
         labels:
           severity: warning
           team: backend
         annotations:
           summary: 'TS/Python rules validation mismatch detected'
-          description: 'More than 5 validation verdict mismatches between TypeScript and Python rules engines in the last hour.'
+          description: >
+            More than 5 validation verdict mismatches (mismatch_type="validation")
+            between TypeScript and Python rules engines in the last hour.
+            Current suite={{ $labels.suite }}.
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/RULES_PARITY.md'
           impact: 'Rules parity issue may affect game integrity when switching engines.'
 
@@ -553,14 +556,17 @@ groups:
       # Rules State Hash Mismatch
       # -------------------------------------------------------------------------
       - alert: RulesParityHashMismatch
-        expr: increase(ringrift_rules_parity_hash_mismatch_total[1h]) > 5
+        expr: increase(ringrift_rules_parity_mismatches_total{mismatch_type="hash"}[1h]) > 5
         for: 5m
         labels:
           severity: warning
           team: backend
         annotations:
           summary: 'TS/Python rules state hash mismatch detected'
-          description: 'More than 5 post-move state hash mismatches between TypeScript and Python rules engines in the last hour.'
+          description: >
+            More than 5 post-move state hash mismatches (mismatch_type="hash")
+            between TypeScript and Python rules engines in the last hour.
+            Current suite={{ $labels.suite }}.
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/RULES_PARITY.md'
           impact: 'Game state divergence possible between engines.'
 
@@ -568,17 +574,44 @@ groups:
       # Rules Game Status Mismatch
       # -------------------------------------------------------------------------
       - alert: RulesParityGameStatusMismatch
-        expr: increase(ringrift_rules_parity_game_status_mismatch_total[1h]) > 0
+        expr: increase(ringrift_rules_parity_mismatches_total{mismatch_type="game_status"}[1h]) > 0
         for: 5m
         labels:
           severity: critical
           team: backend
         annotations:
           summary: 'TS/Python rules game status mismatch'
-          description: 'Game status (win/loss/draw) mismatch between TypeScript and Python rules engines.'
+          description: >
+            One or more game status (win/loss/draw) mismatches (mismatch_type="game_status")
+            between TypeScript and Python rules engines in the last hour.
+            Current suite={{ $labels.suite }}.
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/RULES_PARITY.md'
           impact: 'Critical: Different game outcomes from different engines.'
 
+  # ===========================================================================
+  # PYTHON INVARIANT ALERTS (self-play / strict invariant soaks)
+  # ===========================================================================
+  - name: python-invariants
+    interval: 60s
+    rules:
+      # -------------------------------------------------------------------------
+      # Python Strict Invariant Violations (self-play soaks / AI service)
+      # -------------------------------------------------------------------------
+      - alert: PythonInvariantViolations
+        expr: increase(ringrift_python_invariant_violations_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: 'Python strict-invariant violation detected'
+          description: >
+            One or more Python self-play invariant violations were observed in the last hour
+            (invariant_id={{ $labels.invariant_id }}, type={{ $labels.type }}).
+            See docs/INVARIANTS_AND_PARITY_FRAMEWORK.md and docs/STRICT_INVARIANT_SOAKS.md
+            for invariant ID semantics and operational guidance.
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STRICT_INVARIANT_SOAKS.md'
+          impact: 'Potential divergence between Python self-play invariants and the TS orchestrator; may signal rules regressions affecting training.'
   # ===========================================================================
   # ORCHESTRATOR ROLLOUT ALERTS
   # ===========================================================================
@@ -599,7 +632,7 @@ groups:
           description: 'The orchestrator has been automatically disabled due to high error rate.'
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md'
           impact: 'All traffic using legacy engine. Requires manual investigation before increasing rollout again.'
-
+ 
       # -----------------------------------------------------------------------
       # High Orchestrator Error Rate (Warning)
       # -----------------------------------------------------------------------
@@ -614,7 +647,7 @@ groups:
           description: 'Orchestrator error rate is above 2%. Circuit may trip at 5% depending on configuration.'
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md'
           impact: 'Increased risk of moves failing on the orchestrator path; consider pausing rollout increases.'
-
+ 
       # -----------------------------------------------------------------------
       # Shadow Mode Mismatches (Warning)
       # -----------------------------------------------------------------------
@@ -629,6 +662,43 @@ groups:
           description: 'More than 1% of shadow comparisons show differences between engines. Investigate before increasing rollout.'
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md'
           impact: 'Potential semantic divergence between legacy and orchestrator engines.'
+ 
+      # -----------------------------------------------------------------------
+      # Orchestrator Invariant Violations – Staging
+      # -----------------------------------------------------------------------
+      - alert: OrchestratorInvariantViolationsStaging
+        expr: increase(ringrift_orchestrator_invariant_violations_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: 'Orchestrator invariant violation detected in staging'
+          description: >
+            One or more orchestrator-related invariant violations were observed in the last hour
+            for invariant_id={{ $labels.invariant_id }} (type={{ $labels.type }}).
+            Treat this as a staging SLO breach and block promotion until triaged.
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md'
+          impact: 'Potential orchestrator rules or host integration defect discovered during staging or CI soaks.'
+
+      # -----------------------------------------------------------------------
+      # Orchestrator Invariant Violations – Production
+      # -----------------------------------------------------------------------
+      - alert: OrchestratorInvariantViolationsProduction
+        expr: increase(ringrift_orchestrator_invariant_violations_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: 'Orchestrator invariant violation detected in production'
+          description: >
+            One or more orchestrator-related invariant violations were observed in the last hour
+            for invariant_id={{ $labels.invariant_id }} (type={{ $labels.type }}).
+            This indicates a violation of SLO-PROD-ORCH-INVARIANTS and should trigger an immediate
+            rollout freeze and investigation.
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md'
+          impact: 'Invariants violated under real player traffic; rules or host wiring may be producing illegal states.'
 
   # ===========================================================================
   # SERVICE RESPONSE TIME ALERTS

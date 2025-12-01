@@ -1,6 +1,7 @@
 import type { GameState, Move, Position, LineInfo, BoardType } from '../types/game';
-import { BOARD_CONFIGS, positionToString } from '../types/game';
+import { positionToString } from '../types/game';
 import { findAllLines } from './lineDetection';
+import { getEffectiveLineLengthThreshold } from './rulesConfig';
 
 /**
  * Shared helpers for line-processing decision enumeration and application.
@@ -350,7 +351,11 @@ export function enumerateChooseLineRewardMoves(
 
   const line = playerLines[lineIndex];
   const boardType = getEffectiveBoardType(state);
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  const requiredLength = getEffectiveLineLengthThreshold(
+    boardType,
+    state.players.length,
+    state.rulesOptions
+  );
 
   if (!line.positions || line.positions.length === 0) {
     return [];
@@ -488,9 +493,13 @@ export function applyProcessLineDecision(
       pendingLineRewardElimination: false,
     };
   }
-
+ 
   const boardType = state.board.type as BoardType;
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  const requiredLength = getEffectiveLineLengthThreshold(
+    boardType,
+    state.players.length,
+    state.rulesOptions
+  );
 
   if (line.length < requiredLength) {
     // Not actually a complete line; treat defensively as a no-op.
@@ -557,9 +566,13 @@ export function applyChooseLineRewardDecision(
       pendingLineRewardElimination: false,
     };
   }
-
+ 
   const boardType = state.board.type as BoardType;
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  const requiredLength = getEffectiveLineLengthThreshold(
+    boardType,
+    state.players.length,
+    state.rulesOptions
+  );
   const length = line.length;
 
   if (length < requiredLength) {

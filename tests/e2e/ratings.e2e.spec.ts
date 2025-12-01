@@ -218,9 +218,33 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
       await expect(newRatingElement).toBeVisible();
     });
 
-    test.skip('rated games affect rating while unrated games do not', async ({ page }) => {
-      // Skip: Requires both rated and unrated game completion to verify
-      // Marking as skip until full game completion flow is testable
+    test.skip('rated resignations affect rating while unrated resignations do not', async ({
+      page,
+    }) => {
+      // SKIP: Requires completing both rated and unrated games specifically
+      // via the HTTP resignation path (POST /api/games/:gameId/leave) and
+      // having rating updates fully wired behind that endpoint.
+      //
+      // Intended scenario:
+      // 1. Register and log in as a rated user, record initial rating from
+      //    the profile page.
+      // 2. Create and start a *rated* backend game (e.g. vs AI), make at
+      //    least one move so the game is clearly active, then resign via:
+      //        POST /api/games/:gameId/leave
+      //    or the corresponding UI control that calls that route.
+      // 3. After the game completes, return to the profile page and assert
+      //    that the rating has changed according to the configured rating
+      //    policy for resignation (e.g. loss for the resigning player).
+      // 4. Next, create an *unrated* game (isRated=false), again resign via
+      //    /api/games/:gameId/leave once the game is active.
+      // 5. Return to the profile page and assert that the rating is unchanged
+      //    compared to the post-rated-resignation value, confirming that
+      //    unrated resignations do not affect rating.
+      //
+      // This test should be enabled once:
+      //  - Rating updates are implemented for /games/:gameId/leave, and
+      //  - There is a stable way in E2E to create both rated and unrated
+      //    games and to drive them to an active state before resigning.
 
       await registerAndLogin(page);
 
@@ -230,16 +254,11 @@ test.describe('Rating and Leaderboard E2E Tests', () => {
 
       const initialRating = await page.locator('.text-emerald-400').first().textContent();
 
-      // Create an unrated game and complete it
-      // ... unrated game completion ...
-
-      await homePage.goto();
-      await homePage.goToProfile();
-
-      const ratingAfterUnrated = await page.locator('.text-emerald-400').first().textContent();
-
-      // Rating should not change for unrated games
-      expect(ratingAfterUnrated).toBe(initialRating);
+      // Placeholder steps for future implementation:
+      // - Create and resign a rated game, then read updated rating.
+      // - Create and resign an unrated game, then re-check rating.
+      // For now we only assert that we successfully read the starting rating.
+      expect(initialRating).toBeTruthy();
     });
   });
 });

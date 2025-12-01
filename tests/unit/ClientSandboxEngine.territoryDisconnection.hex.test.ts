@@ -14,8 +14,10 @@ import {
   RingStack,
   positionToString,
 } from '../../src/shared/types/game';
+import { getEffectiveLineLengthThreshold } from '../../src/shared/engine';
 import * as sandboxTerritory from '../../src/client/sandbox/sandboxTerritory';
-import * as sandboxLines from '../../src/client/sandbox/sandboxLines';
+import * as territoryBorders from '../../src/shared/engine/territoryBorders';
+import * as sharedLineDetection from '../../src/shared/engine/lineDetection';
 
 /**
  * Hex-board variant of the combined line + territory post-processing test
@@ -33,7 +35,12 @@ import * as sandboxLines from '../../src/client/sandbox/sandboxLines';
 
 // Classification: legacy hex combined line+territory sandbox integration; semantics now
 // primarily covered by shared helpers and square-board territory/line parity tests.
-describe.skip('ClientSandboxEngine territory + line processing (hexagonal)', () => {
+// Skip when orchestrator adapter is enabled - this test stubs sandboxLines/sandboxTerritory
+// helpers which are bypassed by the orchestrator adapter's unified processing via
+// shared engine helpers (lineDecisionHelpers, TerritoryAggregate).
+const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
+
+(skipWithOrchestrator ? describe.skip : describe)('ClientSandboxEngine territory + line processing (hexagonal)', () => {
   const boardType: BoardType = 'hexagonal';
 
   function createEngine(): ClientSandboxEngine {
@@ -100,9 +107,17 @@ describe.skip('ClientSandboxEngine territory + line processing (hexagonal)', () 
       { x: -1, y: 1, z: 0 },
     ];
 
+    // Stub border-marker computation at the canonical shared helper used by the
+    // territory-processing pipeline so that our synthetic borderPositions are
+    // treated as the marker border for this region. The sandboxTerritory
+    // adapter's getBorderMarkerPositionsForRegion wrapper is no longer in the
+    // active path for ClientSandboxEngine, so we target the shared territory
+    // border helper directly.
     jest
-      .spyOn(sandboxTerritory, 'getBorderMarkerPositionsForRegion')
-      .mockImplementation((_board: any, _regionSpaces: Position[]) => borderPositions);
+      .spyOn(territoryBorders, 'getBorderMarkerPositionsForRegion')
+      .mockImplementation(
+        (_board: any, _regionSpaces: Position[], _opts?: any): Position[] => borderPositions
+      );
 
     const territoryRegion: Territory = {
       spaces: regionSpaces,
@@ -130,11 +145,12 @@ describe.skip('ClientSandboxEngine territory + line processing (hexagonal)', () 
       length: linePositions.length,
       direction: { x: 1, y: -1, z: 0 },
     };
-
+ 
+    // Stub canonical line detection so that the shared lineDecisionHelpers
+    // see our synthetic hex line for Player 1 regardless of marker layout.
     jest
-      .spyOn(sandboxLines, 'findAllLinesOnBoard')
-      .mockImplementationOnce(() => [lineInfo])
-      .mockImplementation(() => []);
+      .spyOn(sharedLineDetection, 'findAllLines')
+      .mockImplementation(() => [lineInfo]);
 
     // --- 3. Provide P1 stacks: one for line elimination and one for territory self-elim ---
     const lineStackPos: Position = { x: 3, y: -3, z: 0 };
@@ -170,7 +186,6 @@ describe.skip('ClientSandboxEngine territory + line processing (hexagonal)', () 
 
     const interiorKeys = keysFrom(regionSpaces);
     const borderKeys = keysFrom(borderPositions);
-    const lineKeys = keysFrom(linePositions);
 
     // 1. All interior region spaces collapsed for P1 and empty of stacks.
     const finalState = engine.getGameState();
@@ -189,11 +204,22 @@ describe.skip('ClientSandboxEngine territory + line processing (hexagonal)', () 
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
     }
 
-    // 3. All line positions collapsed for P1 (line processing).
-    for (const p of linePositions) {
+    // 3. Line processing: at least the minimum-length subset of the line
+    //    positions collapsed for P1. On hex boards the canonical threshold
+    //    is given by getEffectiveLineLengthThreshold; the sandbox automatic
+    //    pipeline defaults to the minimum-collapse reward (Option 2) for
+    //    overlength lines, so we assert that at least that many cells from
+    //    our synthetic line are collapsed for Player 1.
+    const collapsedLinePositions = linePositions.filter((p) => {
       const key = positionToString(p);
-      expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
-    }
+      return finalBoard.collapsedSpaces.get(key) === 1;
+    });
+    const requiredLineLength = getEffectiveLineLengthThreshold(
+      boardType,
+      finalState.players.length,
+      finalState.rulesOptions
+    );
+    expect(collapsedLinePositions.length).toBeGreaterThanOrEqual(requiredLineLength);
 
     // 4. All stacks inside the region should be eliminated.
     const stacksInRegion = Array.from(finalBoard.stacks.keys()).filter((k) => interiorKeys.has(k));
@@ -201,11 +227,13 @@ describe.skip('ClientSandboxEngine territory + line processing (hexagonal)', () 
 
     // 5. Territory accounting: P1's territorySpaces should match the
     //    number of collapsed spaces they own in this constructed
-    //    scenario (union of region, border, and line positions).
+    //    scenario (union of region, border, and the actually-collapsed
+    //    subset of line positions).
+    const collapsedLineKeys = keysFrom(collapsedLinePositions);
     const allKeys = new Set<string>([
       ...Array.from(interiorKeys),
       ...Array.from(borderKeys),
-      ...Array.from(lineKeys),
+      ...Array.from(collapsedLineKeys),
     ]);
     const collapsedForP1 = Array.from(finalBoard.collapsedSpaces.values()).filter(
       (v) => v === 1

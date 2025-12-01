@@ -204,6 +204,7 @@ export const MoveSchema = z.object({
     'overtaking_capture',
     'continue_capture_segment',
     'skip_placement',
+    'swap_sides',
     'line_formation',
     'territory_claim',
   ]),
@@ -244,6 +245,19 @@ export const CreateGameSchema = z.object({
     })
     .optional(),
   seed: z.number().int().min(0).max(0x7fffffff).optional(), // Optional RNG seed for deterministic games
+  // Optional per-game rules configuration. When omitted, hosts should apply
+  // their own defaults (e.g., enabling the pie rule for 2-player games).
+  rulesOptions: z
+    .object({
+      swapRuleEnabled: z.boolean().optional(),
+      // (future) p2DoubleTurnMode?: 'off' | 'sequential' | 'mega';
+      // (future) p1NoFirstTurnCaptures?: boolean;
+      // (future) p1NoFirstTurnLines?: boolean;
+      // (future) openingMode?: 'standard' | 'randomized_openings' | 'opening_book';
+      // (future) ringHandicapByPlayer?: Record<number, number>;
+      // (future) territoryTemplateId?: string;
+    })
+    .optional(),
 });
 
 // Convenience alias so server code can use a single source of truth

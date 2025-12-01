@@ -10,11 +10,18 @@ import {
   GameIdParamSchema,
   GameListingQuerySchema,
 } from '../../shared/validation/schemas';
-import { AiOpponentsConfig, BoardType, GameStatus } from '../../shared/types/game';
+import {
+  AiOpponentsConfig,
+  BoardType,
+  GameStatus,
+  GameState,
+} from '../../shared/types/game';
+import { generateGameSeed } from '../../shared/utils/rng';
 import { GameEngine } from '../game/GameEngine';
 import { GamePersistenceService } from '../services/GamePersistenceService';
 import { getDisplayUsername } from './user';
-
+import { config } from '../config';
+import { createDecisionPhaseFixtureGame } from '../game/testFixtures/decisionPhaseFixtures';
 const router = Router();
 
 // WebSocket server instance will be injected
@@ -82,6 +89,50 @@ const assertUserIsGameParticipant = (userId: string, game: GameParticipantSnapsh
     throw createError('Access denied', 403, 'ACCESS_DENIED');
   }
 };
+
+/**
+ * Test/dev-only fixture endpoint for creating games that start in a
+ * known decision phase (currently line_processing). This is primarily
+ * used by Playwright E2E scenarios that need to exercise decision-phase
+ * timeout and reconnect behaviour without driving a full game to that
+ * state through the UI.
+ *
+ * The route is deliberately guarded so it is not exposed in production.
+ */
+router.post(
+  '/fixtures/decision-phase',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    if (!config.isTest && !config.isDevelopment) {
+      throw createError('Not found', 404, 'NOT_FOUND');
+    }
+
+    const body = (req.body || {}) as {
+      scenario?: 'line_processing';
+      isRated?: boolean;
+    };
+
+    const scenario = body.scenario ?? 'line_processing';
+    if (scenario !== 'line_processing') {
+      throw createError('Unsupported decision-phase fixture scenario', 400, 'INVALID_FIXTURE');
+    }
+
+    const isRated = body.isRated ?? true;
+
+    const gameId = await createDecisionPhaseFixtureGame({
+      creatorUserId: req.user!.id,
+      scenario,
+      isRated,
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        gameId,
+        scenario,
+      },
+    });
+  })
+);
 
 /**
  * @openapi
@@ -484,16 +535,41 @@ router.post(
       }
     }
 
-    // Derive initial engine-side state including AI opponent configuration
-    const initialGameState: { aiOpponents?: AiOpponentsConfig } = {};
+    // Derive initial engine-side state including AI opponent configuration and
+    // per-game rules options (e.g., swap rule configuration).
+    const initialGameState: {
+      aiOpponents?: AiOpponentsConfig;
+      rulesOptions?: GameState['rulesOptions'];
+    } = {};
     if (gameData.aiOpponents && gameData.aiOpponents.count > 0) {
       initialGameState.aiOpponents = gameData.aiOpponents;
+    }
+ 
+    // Compute effective rulesOptions for this game. For now we only support the
+    // pie rule (swap_sides) toggle:
+    // - If the client explicitly specifies rulesOptions.swapRuleEnabled, honour it.
+    // - Otherwise, default to enabling the swap rule for 2-player games only.
+    let effectiveRulesOptions: GameState['rulesOptions'] | undefined;
+    if (typeof gameData.rulesOptions?.swapRuleEnabled === 'boolean') {
+      effectiveRulesOptions = { swapRuleEnabled: gameData.rulesOptions.swapRuleEnabled };
+    } else if (gameData.maxPlayers === 2) {
+      effectiveRulesOptions = { swapRuleEnabled: true };
+    }
+ 
+    if (effectiveRulesOptions) {
+      initialGameState.rulesOptions = effectiveRulesOptions;
     }
 
     // Determine initial game status: AI games start immediately, human-only games wait
     const hasAIOpponents = gameData.aiOpponents && gameData.aiOpponents.count > 0;
     const initialStatus = hasAIOpponents ? ('active' as any) : ('waiting' as any);
     const startedAt = hasAIOpponents ? new Date() : undefined;
+
+    // Compute the canonical per-game RNG seed. When the client supplies an
+    // explicit seed (used by parity tooling and diagnostics), honour it;
+    // otherwise generate a fresh seed and persist it so backend hosts and
+    // the Python AI service share a stable per-game RNG root.
+    const rngSeed = typeof gameData.seed === 'number' ? gameData.seed : generateGameSeed();
 
     // Create game in database
     const game = await prisma.game.create({
@@ -506,9 +582,9 @@ router.post(
         player1Id: userId,
         status: initialStatus,
         gameState: initialGameState as any,
-        // Store seed in database when provided; coerce missing seeds to null
-        // to satisfy Prisma's `number | null` type and avoid `undefined`.
-        rngSeed: gameData.seed ?? null,
+        // Store the per-game RNG seed explicitly; avoid undefined to satisfy
+        // Prisma's `number | null` type.
+        rngSeed,
         createdAt: new Date(),
         updatedAt: new Date(),
         ...(startedAt && { startedAt }),
@@ -904,7 +980,7 @@ router.post(
         // Cancel the game
         await prisma.game.update({
           where: { id: gameId },
-          data: { status: 'abandoned' as any, endedAt: new Date() },
+          data: { status: 'abandoned' as any, endedAt: new Date(), updatedAt: new Date() },
         });
 
         // Broadcast game cancelled to lobby
@@ -1168,6 +1244,20 @@ router.get(
     // Player names are transformed to show "Deleted Player" for anonymized users
     const formattedMoves = moves.map((move) => {
       const moveData = (move as any).moveData as Record<string, unknown> | null;
+      const rawAutoResolved = moveData && (moveData as any).decisionAutoResolved;
+
+      // Project any persisted decisionAutoResolved metadata into a compact
+      // autoResolved badge payload for the history API. This intentionally
+      // mirrors a subset of DecisionAutoResolvedMeta so that the client can
+      // render lightweight badges without depending on WebSocket types.
+      const autoResolved = rawAutoResolved
+        ? {
+            reason: rawAutoResolved.reason as 'timeout' | 'disconnected' | 'fallback',
+            choiceKind: rawAutoResolved.choiceKind as string | undefined,
+            choiceType: rawAutoResolved.choiceType as string | undefined,
+          }
+        : undefined;
+
       return {
         moveNumber: move.moveNumber,
         playerId: move.playerId,
@@ -1175,6 +1265,7 @@ router.get(
         moveType: move.moveType,
         moveData: moveData || {},
         timestamp: move.timestamp.toISOString(),
+        ...(autoResolved && { autoResolved }),
       };
     });
 

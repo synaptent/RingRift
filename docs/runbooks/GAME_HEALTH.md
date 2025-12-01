@@ -36,6 +36,15 @@
     - `ringrift_ai_request_duration_seconds_bucket`
     - `ringrift_ai_requests_total` / `ringrift_ai_fallback_total` (see `AI_PERFORMANCE.md`, `AI_ERRORS.md`, `AI_FALLBACK.md`, `AI_SERVICE_DOWN.md`)
 
+When triaging a `LongRunningGames` incident:
+
+- If games are **legally progressing but semantically wrong** (e.g. illegal moves accepted, victory/territory/LPS behaviour clearly incorrect, or invariant violations surfaced), treat this as a **rules/orchestrator incident** and:
+  - Switch to `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md` for rollout/flag levers and environment phases.
+  - Use `docs/runbooks/RULES_PARITY.md`, contract vectors, and `docs/STRICT_INVARIANT_SOAKS.md` to investigate parity/invariant issues.
+- If games are simply **slow due to move latency or AI slowness**, keep orchestrator flags unchanged and:
+  - Follow `GAME_PERFORMANCE.md` and `HIGH_LATENCY.md` for backend/HTTP latency.
+  - Follow `AI_PERFORMANCE.md` / `AI_ERRORS.md` when AI latency or errors dominate the signal.
+
 ---
 
 ## 1. When This Alert Fires

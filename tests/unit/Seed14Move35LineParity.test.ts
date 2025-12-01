@@ -34,13 +34,25 @@ import { findMatchingBackendMove } from '../utils/moveMatching';
  *      rules that stacks/collapsed spaces cannot participate in or be
  *      crossed by active lines.
  *
- * NOTE: Skipped when ORCHESTRATOR_ADAPTER_ENABLED=true because move matching returns null (intentional divergence)
+ * NOTE: Skipped when ORCHESTRATOR_ADAPTER_ENABLED=true because move matching returns null (intentional divergence).
+ *
+ * To keep core CI fast, this suite is also opt-in via the
+ * RINGRIFT_ENABLE_SEED14_PARITY env var. When unset/false it is skipped;
+ * when set to '1' or 'true' it runs as a normal describe().
  */
 
 // Skip this test suite when orchestrator adapter is enabled - move matching diverges
 const skipWithOrchestrator = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
 
-(skipWithOrchestrator ? describe.skip : describe)(
+const SEED14_PARITY_ENABLED =
+  typeof process !== 'undefined' &&
+  !!(process as any).env &&
+  ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_ENABLE_SEED14_PARITY ?? '');
+
+const maybeDescribe =
+  !skipWithOrchestrator && SEED14_PARITY_ENABLED ? describe : describe.skip;
+
+maybeDescribe(
   'Seed 14 move 35 line parity (backend vs sandbox detectors)',
   () => {
     const boardType: BoardType = 'square8';

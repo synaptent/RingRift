@@ -63,10 +63,12 @@ def _build_board_from_snapshot(snapshot: Dict[str, Any]) -> BoardState:
         size = 8
     elif board_type == BoardType.SQUARE19:
         size = 19
+    elif board_type == BoardType.HEXAGONAL:
+        # Mirror TS BOARD_CONFIGS for hexagonal boards (size = 11).
+        # The underlying axial coordinates use a radius of 10; BoardState.size
+        # reflects the backing array dimensions rather than radius.
+        size = 11
     else:
-        # For now, we do not export plateau snapshots for hexagonal boards.
-        # If we do in future, we can extend this mapping to use the
-        # appropriate radius-derived size.
         raise AssertionError(f"Unsupported boardType for plateau snapshot: {board_type}")
 
     stacks: Dict[str, RingStack] = {}

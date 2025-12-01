@@ -155,6 +155,140 @@ describe('GameSession Decision Phase Timeout Guards', () => {
   });
 });
 
+describe('GameSession decision phase runtime behaviour', () => {
+  let mockIo: jest.Mocked<SocketIOServer>;
+
+  beforeEach(() => {
+    mockIo = {
+      to: jest.fn().mockReturnThis(),
+      emit: jest.fn(),
+      sockets: {
+        adapter: {
+          rooms: new Map(),
+        },
+        sockets: new Map(),
+      },
+    } as any;
+
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it('emits a decision_phase_timeout_warning event with remaining time', () => {
+    const session = new GameSession('test-game-id', mockIo, {} as any, new Map());
+
+    // Prime the internal timeout state to simulate a pending line-processing decision.
+    const now = Date.now();
+    (session as any).decisionTimeoutDeadlineMs = now + 10_000;
+    (session as any).decisionTimeoutPhase = 'line_processing';
+    (session as any).decisionTimeoutPlayer = 1;
+
+    // Invoke the private helper directly.
+    (session as any).emitDecisionPhaseTimeoutWarning();
+
+    expect(mockIo.to).toHaveBeenCalledWith('test-game-id');
+    expect(mockIo.emit).toHaveBeenCalledTimes(1);
+    const [eventName, payload] = mockIo.emit.mock.calls[0];
+
+    expect(eventName).toBe('decision_phase_timeout_warning');
+    expect(payload.type).toBe('decision_phase_timeout_warning');
+    expect(payload.data.gameId).toBe('test-game-id');
+    expect(payload.data.playerNumber).toBe(1);
+    expect(payload.data.phase).toBe('line_processing');
+    // RemainingMs should be non-negative and at most the configured timeout.
+    expect(typeof payload.data.remainingMs).toBe('number');
+    expect(payload.data.remainingMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('auto-resolves a decision and emits decision_phase_timed_out with decisionAutoResolved meta', async () => {
+    const session = new GameSession('test-game-id', mockIo, {} as any, new Map());
+
+    // Prepare a minimal active GameState in line_processing for a human player.
+    const state: any = {
+      gameStatus: 'active',
+      currentPlayer: 1,
+      currentPhase: 'line_processing',
+      players: [
+        {
+          playerNumber: 1,
+          type: 'human',
+          id: 'p1',
+        },
+      ],
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+        formedLines: [],
+      },
+      moveHistory: [],
+    };
+
+    const decisionMove = {
+      id: 'move-1',
+      type: 'process_line' as const,
+      player: 1,
+    };
+
+    // Stub out GameSession internals that handle rules and persistence.
+    (session as any).gameEngine = {
+      getGameState: jest.fn(() => state),
+      getValidMoves: jest.fn(() => [decisionMove]),
+    };
+
+    (session as any).rulesFacade = {
+      applyMoveById: jest.fn().mockResolvedValue({ success: true, gameState: state }),
+    };
+
+    jest.spyOn(session as any, 'persistMove').mockResolvedValue(undefined);
+    jest.spyOn(session as any, 'broadcastUpdate').mockResolvedValue(undefined);
+    jest.spyOn(session as any, 'maybePerformAITurn').mockResolvedValue(undefined);
+
+    // Seed decision-timeout snapshot fields as if scheduleDecisionPhaseTimeout had run.
+    (session as any).decisionTimeoutDeadlineMs = Date.now() + 10_000;
+    (session as any).decisionTimeoutPhase = 'line_processing';
+    (session as any).decisionTimeoutPlayer = 1;
+    (session as any).decisionTimeoutChoiceType = 'line_order';
+    (session as any).decisionTimeoutChoiceKind = 'line_order';
+
+    await (session as any).handleDecisionPhaseTimedOut();
+
+    // Rules engine should be invoked with the selected move.
+    expect((session as any).rulesFacade.applyMoveById).toHaveBeenCalledWith(1, 'move-1');
+
+    // A decision_phase_timed_out event must be emitted with the selected move id.
+    expect(mockIo.emit).toHaveBeenCalledWith(
+      'decision_phase_timed_out',
+      expect.objectContaining({
+        type: 'decision_phase_timed_out',
+        data: expect.objectContaining({
+          gameId: 'test-game-id',
+          playerNumber: 1,
+          phase: 'line_processing',
+          autoSelectedMoveId: 'move-1',
+        }),
+      })
+    );
+
+    // broadcastUpdate should be called with a decisionAutoResolved meta payload.
+    expect((session as any).broadcastUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+      expect.objectContaining({
+        choiceType: 'line_order',
+        choiceKind: 'line_order',
+        actingPlayerNumber: 1,
+        resolvedMoveId: 'move-1',
+        reason: 'timeout',
+      })
+    );
+  });
+});
+
 describe('Decision Phase Timeout Integration', () => {
   /**
    * These tests verify the timeout behavior at a higher level.

@@ -1,7 +1,12 @@
 # Pass 13 Assessment Report
 
-**Assessment Date:** November 27, 2025  
-**Assessor:** Automated Code Assessment  
+> **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
+> For current project status, see:
+> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
+
+**Assessment Date:** November 27, 2025
+**Assessor:** Automated Code Assessment
 **Focus Areas:** Shared Helpers, React Tests, Documentation Accuracy, Frontend UX
 
 ---

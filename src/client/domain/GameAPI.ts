@@ -4,6 +4,8 @@ import type {
   GameStateUpdateMessage,
   GameOverMessage,
   WebSocketErrorPayload,
+  DecisionPhaseTimeoutWarningPayload,
+  DecisionPhaseTimedOutPayload,
 } from '../../shared/types/websocket';
 
 /**
@@ -34,6 +36,10 @@ export interface GameEventHandlers {
   onError: (payload: WebSocketErrorPayload | unknown) => void;
   onDisconnect: (reason: string) => void;
   onConnectionStatusChange?: (status: ConnectionStatus) => void;
+  /** Optional handler for decision-phase timeout warnings (countdown UX). */
+  onDecisionPhaseTimeoutWarning?: (payload: DecisionPhaseTimeoutWarningPayload) => void;
+  /** Optional handler for final decision-phase timeout + auto-resolve events. */
+  onDecisionPhaseTimedOut?: (payload: DecisionPhaseTimedOutPayload) => void;
 }
 
 export interface GameConnection {

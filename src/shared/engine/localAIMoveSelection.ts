@@ -25,7 +25,7 @@ export function chooseLocalMoveFromCandidates(
   playerNumber: number,
   gameState: GameState,
   candidates: Move[],
-  rng: LocalAIRng = Math.random
+  rng: LocalAIRng
 ): Move | null {
   // The current selection policy depends only on phase and move types,
   // but we keep playerNumber in the signature for future per-player

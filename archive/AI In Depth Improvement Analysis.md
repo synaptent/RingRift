@@ -5493,7 +5493,9 @@ Territory processing:
 Collapses the region cell to Player 1.
 Eliminates exactly three rings (one opponent in-region + two self-elimination).
 Updates territory_spaces by +1.
-A TS snapshot-based counterpart is planned but not yet wired (test_line_and_territory_ts_snapshot_parity_placeholder).
+A TS snapshot-based counterpart is now wired via ExportLineAndTerritorySnapshot (TS) and the
+test_line_and_territory_ts_snapshot_parity parity test, which consume TS-exported
+ComparableSnapshot fixtures for all board types.
 
 4.4 Coverage assessment and possible holes
 Covered:

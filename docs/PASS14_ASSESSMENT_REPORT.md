@@ -1,6 +1,11 @@
 # Pass 14 Assessment Report
 
-> **Doc Status (2025-11-27): Active Assessment**
+> **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
+> For current project status, see:
+> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
+
+> **Doc Status (2025-11-27): Historical**
 >
 > **Purpose:** Pass 14 comprehensive assessment focusing on documentation accuracy verification, stale information detection, and frontend UX polish evaluation.
 >

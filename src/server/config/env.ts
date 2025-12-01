@@ -368,6 +368,20 @@ export const EnvSchema = z.object({
   /** AI thinking time (milliseconds) */
   AI_THINK_TIME_MS: z.coerce.number().int().positive().default(2000),
 
+  /**
+   * Optional override for decision-phase timeouts (milliseconds).
+   *
+   * These are primarily intended for non-production environments and
+   * specialised test harnesses (for example Playwright E2E) that need
+   * shorter timeouts to exercise decision timeout behaviour end-to-end.
+   *
+   * When unset, the server falls back to the hard-coded defaults in
+   * unified.ts (30s total timeout, 5s warning, 15s extension).
+   */
+  DECISION_PHASE_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+  DECISION_PHASE_TIMEOUT_WARNING_MS: z.coerce.number().int().positive().optional(),
+  DECISION_PHASE_TIMEOUT_EXTENSION_MS: z.coerce.number().int().positive().optional(),
+
   /** Maximum spectators per game */
   MAX_SPECTATORS_PER_GAME: z.coerce.number().int().positive().default(50),
 

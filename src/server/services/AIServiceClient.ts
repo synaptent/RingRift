@@ -14,6 +14,8 @@ import {
   LineRewardChoice,
   RingEliminationChoice,
   RegionOrderChoice,
+  LineOrderChoice,
+  CaptureDirectionChoice,
 } from '../../shared/types/game';
 import { logger } from '../utils/logger';
 import { aiMoveLatencyHistogram } from '../utils/rulesParityMetrics';
@@ -190,6 +192,36 @@ export interface RegionOrderChoiceRequestPayload {
 
 export interface RegionOrderChoiceResponsePayload {
   selectedOption: RegionOrderChoice['options'][number];
+  aiType: string;
+  difficulty: number;
+}
+
+export interface LineOrderChoiceRequestPayload {
+  // Optional GameState for future context-aware heuristics.
+  game_state?: GameState;
+  player_number: number;
+  difficulty: number;
+  ai_type?: AIType;
+  options: LineOrderChoice['options'];
+}
+
+export interface LineOrderChoiceResponsePayload {
+  selectedOption: LineOrderChoice['options'][number];
+  aiType: string;
+  difficulty: number;
+}
+
+export interface CaptureDirectionChoiceRequestPayload {
+  // Optional GameState for future context-aware heuristics.
+  game_state?: GameState;
+  player_number: number;
+  difficulty: number;
+  ai_type?: AIType;
+  options: CaptureDirectionChoice['options'];
+}
+
+export interface CaptureDirectionChoiceResponsePayload {
+  selectedOption: CaptureDirectionChoice['options'][number];
   aiType: string;
   difficulty: number;
 }
@@ -665,6 +697,124 @@ export class AIServiceClient {
       });
       throw new Error(
         `AI Service failed to choose region_order: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    }
+  }
+
+  /**
+   * Get AI-selected line order option for a LineOrderChoice.
+   */
+  async getLineOrderChoice(
+    gameState: GameState | null,
+    playerNumber: number,
+    difficulty: number = 5,
+    aiType: AIType | undefined,
+    options: LineOrderChoice['options'],
+    requestOptions?: AIServiceRequestOptions
+  ): Promise<LineOrderChoiceResponsePayload> {
+    // Cooperative pre-flight cancellation; choice selection is a pure
+    // dependency call and should not proceed when canceled.
+    requestOptions?.token?.throwIfCanceled(
+      'before dispatching AIServiceClient.getLineOrderChoice'
+    );
+
+    try {
+      const request: LineOrderChoiceRequestPayload = {
+        ...(gameState && { game_state: gameState }),
+        player_number: playerNumber,
+        difficulty,
+        ...(aiType && { ai_type: aiType }),
+        options,
+      };
+
+      logger.info('Requesting AI line_order choice', {
+        playerNumber,
+        difficulty,
+        aiType,
+        options,
+      });
+
+      const response = await this.client.post<LineOrderChoiceResponsePayload>(
+        '/ai/choice/line_order',
+        request
+      );
+
+      logger.info('AI line_order choice received', {
+        playerNumber,
+        difficulty: response.data.difficulty,
+        aiType: response.data.aiType,
+        selectedOption: response.data.selectedOption,
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error('Failed to get line_order choice from AI service', {
+        playerNumber,
+        error,
+      });
+      throw new Error(
+        `AI Service failed to choose line_order: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    }
+  }
+
+  /**
+   * Get AI-selected capture direction option for a CaptureDirectionChoice.
+   */
+  async getCaptureDirectionChoice(
+    gameState: GameState | null,
+    playerNumber: number,
+    difficulty: number = 5,
+    aiType: AIType | undefined,
+    options: CaptureDirectionChoice['options'],
+    requestOptions?: AIServiceRequestOptions
+  ): Promise<CaptureDirectionChoiceResponsePayload> {
+    // Cooperative pre-flight cancellation; choice selection is a pure
+    // dependency call and should not proceed when canceled.
+    requestOptions?.token?.throwIfCanceled(
+      'before dispatching AIServiceClient.getCaptureDirectionChoice'
+    );
+
+    try {
+      const request: CaptureDirectionChoiceRequestPayload = {
+        ...(gameState && { game_state: gameState }),
+        player_number: playerNumber,
+        difficulty,
+        ...(aiType && { ai_type: aiType }),
+        options,
+      };
+
+      logger.info('Requesting AI capture_direction choice', {
+        playerNumber,
+        difficulty,
+        aiType,
+        options,
+      });
+
+      const response = await this.client.post<CaptureDirectionChoiceResponsePayload>(
+        '/ai/choice/capture_direction',
+        request
+      );
+
+      logger.info('AI capture_direction choice received', {
+        playerNumber,
+        difficulty: response.data.difficulty,
+        aiType: response.data.aiType,
+        selectedOption: response.data.selectedOption,
+      });
+
+      return response.data;
+    } catch (error) {
+      logger.error('Failed to get capture_direction choice from AI service', {
+        playerNumber,
+        error,
+      });
+      throw new Error(
+        `AI Service failed to choose capture_direction: ${
           error instanceof Error ? error.message : 'Unknown error'
         }`
       );

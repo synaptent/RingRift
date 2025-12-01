@@ -12,13 +12,11 @@ import { swaggerSpec } from '../openapi/config';
 export const setupRoutes = (wsServer?: any): Router => {
   const router = Router();
 
-  // Inject WebSocket server into routes that need it
-  if (wsServer) {
-    // Game routes need wsServer for lobby broadcasting
-    setGameWebSocketServer(wsServer);
-    // User routes need wsServer for session termination on account deletion
-    setUserWebSocketServer(wsServer);
-  }
+  // Inject WebSocket server into routes that need it.
+  // Explicitly set to null when not provided to ensure proper test isolation
+  // and predictable behavior when routes are set up without a WebSocket server.
+  setGameWebSocketServer(wsServer ?? null);
+  setUserWebSocketServer(wsServer ?? null);
 
   // OpenAPI Documentation
   // Swagger UI at /api/docs

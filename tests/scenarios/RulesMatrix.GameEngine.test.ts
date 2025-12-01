@@ -19,9 +19,19 @@ import { lineRewardRuleScenarios, LineRewardRuleScenario } from './rulesMatrix';
  * The goal is to provide a canonical, data-driven pattern that can be reused
  * for additional rules clusters (movement, chain captures, territory, victory,
  * etc.) without duplicating scenario wiring logic in every test file.
+ *
+ * NOTE: These tests call internal methods (processLineFormations) directly and
+ * require orchestrator adapter to be disabled. With orchestrator enabled, line
+ * processing flows through the orchestrator/aggregates instead. Line processing
+ * semantics are covered by GameEngine.lines.scenarios.test.ts for the orchestrator
+ * path.
  */
 
-describe('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
+// Skip these legacy tests when orchestrator adapter is enabled
+const ORCHESTRATOR_ENABLED = process.env.ORCHESTRATOR_ADAPTER_ENABLED === 'true';
+const describeOrSkip = ORCHESTRATOR_ENABLED ? describe.skip : describe;
+
+describeOrSkip('RulesMatrix → GameEngine line-reward scenarios (backend)', () => {
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
   const basePlayers: Player[] = [

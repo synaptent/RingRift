@@ -1,0 +1,1 @@
+{"index": 0, "num_players": 2, "board_type": "square8", "engine_mode": "mixed", "seed": 1764142864, "length": 45, "status": "active", "winner": null, "termination_reason": "no_legal_moves_for_current_player", "invariant_violations_by_type": {"ACTIVE_NO_MOVES": 1}}

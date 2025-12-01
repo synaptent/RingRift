@@ -1,5 +1,8 @@
-import type { GameState } from '../types/game';
+import type { GameState, BoardType, Position } from '../types/game';
+import { BOARD_CONFIGS } from '../types/game';
 import type { PerTurnState, TurnLogicDelegates } from './turnLogic';
+import { countRingsOnBoardForPlayer } from './core';
+import { validatePlacementOnBoard } from './validators/PlacementValidator';
 
 /**
  * Shared helpers and factory for {@link TurnLogicDelegates} used by the
@@ -52,10 +55,75 @@ import type { PerTurnState, TurnLogicDelegates } from './turnLogic';
  * This helper is pure and must not mutate `state`.
  */
 export function hasAnyPlacementForPlayer(state: GameState, player: number): boolean {
-  throw new Error(
-    'TODO(P0-HELPERS): hasAnyPlacementForPlayer is a design-time stub. ' +
-      'See P0_TASK_21_SHARED_HELPER_MODULES_DESIGN.md for intended semantics.'
-  );
+  const playerObj = state.players.find((p) => p.playerNumber === player);
+  if (!playerObj || playerObj.ringsInHand <= 0) {
+    return false;
+  }
+
+  const board = state.board;
+  const boardConfig = BOARD_CONFIGS[board.type as BoardType];
+
+  if (!boardConfig) {
+    return false;
+  }
+
+  // Global own-colour supply cap: if the player has no remaining capacity
+  // under ringsPerPlayer, no placements are possible regardless of board
+  // geometry.
+  const ringsOnBoard = countRingsOnBoardForPlayer(board as any, player);
+  const remainingByCap = boardConfig.ringsPerPlayer - ringsOnBoard;
+  const remainingBySupply = playerObj.ringsInHand;
+  const maxAvailableGlobal = Math.min(remainingByCap, remainingBySupply);
+
+  if (maxAvailableGlobal <= 0) {
+    return false;
+  }
+
+  const baseContext = {
+    boardType: board.type as BoardType,
+    player,
+    ringsInHand: playerObj.ringsInHand,
+    ringsPerPlayerCap: boardConfig.ringsPerPlayer,
+    ringsOnBoard,
+    maxAvailableGlobal,
+  };
+
+  const hasPlacementAt = (pos: Position): boolean => {
+    const result = validatePlacementOnBoard(board as any, pos, 1, baseContext);
+    return result.valid;
+  };
+
+  if (board.type === 'square8' || board.type === 'square19') {
+    const size = board.size;
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const pos: Position = { x, y };
+        if (hasPlacementAt(pos)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  if (board.type === 'hexagonal') {
+    // For hex boards, iterate over all cube coordinates within the board
+    // radius. validatePlacementOnBoard will discard off-board positions.
+    const radius = board.size - 1;
+    for (let q = -radius; q <= radius; q += 1) {
+      for (let r = -radius; r <= radius; r += 1) {
+        const s = -q - r;
+        const pos: Position = { x: q, y: r, z: s };
+        if (hasPlacementAt(pos)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Unknown board type: conservatively report no placements.
+  return false;
 }
 
 /**

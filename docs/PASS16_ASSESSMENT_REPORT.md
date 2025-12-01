@@ -1,10 +1,15 @@
 # Pass 16 – Comprehensive Assessment Report
 
+> **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
+> For current project status, see:
+> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
+
 > **Assessment Date:** 2025-11-28
 > **Assessment Pass:** 16 (Comprehensive Reassessment After Consolidation)
 > **Assessor:** Architect mode – documentation, rules, AI, frontend, and SSOT review
 
-> **Doc Status (2025-11-28): Active**  
+> **Doc Status (2025-11-28): Historical**
 > This report updates prior passes (PASS8–PASS15) using the consolidated shared engine and current coverage metrics from [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1). It identifies the current weakest area, the hardest outstanding problem, and defines remediation tasks for subsequent passes.
 
 ---

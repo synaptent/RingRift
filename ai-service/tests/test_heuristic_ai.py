@@ -511,6 +511,271 @@ class TestHeuristicAIConfig(unittest.TestCase):
         ai = HeuristicAI(player_number=1, config=config)
         self.assertTrue(ai.use_incremental_search)
 
+    def test_heuristic_eval_mode_gates_tier2_features(self):
+        """`heuristic_eval_mode=\"light\"` should zero Tier-2 features."""
+        # Shared minimal game state (reuse the structure from TestHeuristicAI)
+        game_state = GameState(
+            id="config-test-game",
+            boardType=BoardType.SQUARE8,
+            rngSeed=None,
+            board=BoardState(
+                type=BoardType.SQUARE8,
+                size=8,
+                stacks={},
+                markers={},
+                collapsed_spaces={},
+                eliminatedRings={},
+            ),
+            players=[
+                Player(
+                    id="p1",
+                    username="P1",
+                    type="human",
+                    playerNumber=1,
+                    isReady=True,
+                    timeRemaining=600,
+                    ringsInHand=10,
+                    eliminatedRings=0,
+                    territorySpaces=0,
+                    aiDifficulty=None,
+                ),
+                Player(
+                    id="p2",
+                    username="P2",
+                    type="human",
+                    playerNumber=2,
+                    isReady=True,
+                    timeRemaining=600,
+                    ringsInHand=10,
+                    eliminatedRings=0,
+                    territorySpaces=0,
+                    aiDifficulty=None,
+                ),
+            ],
+            currentPhase=GamePhase.MOVEMENT,
+            currentPlayer=1,
+            moveHistory=[],
+            timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
+            spectators=[],
+            gameStatus=GameStatus.ACTIVE,
+            createdAt=datetime.now(),
+            lastMoveAt=datetime.now(),
+            isRated=False,
+            maxPlayers=2,
+            totalRingsInPlay=36,
+            totalRingsEliminated=0,
+            victoryThreshold=19,
+            territoryVictoryThreshold=33,
+            chainCaptureState=None,
+            mustMoveFromStackKey=None,
+            zobristHash=None,
+            lpsRoundIndex=0,
+            lpsCurrentRoundActorMask={},
+            lpsExclusivePlayerForCompletedRound=None,
+        )
+
+        # Full-mode AI: Tier-2 evaluators are called and their values surface.
+        full_config = AIConfig(
+            difficulty=5,
+            randomness=None,
+            rng_seed=None,
+            heuristic_eval_mode="full",
+        )
+        full_ai = HeuristicAI(player_number=1, config=full_config)
+
+        # Light-mode AI: Tier-2 evaluators must not be called and scores are 0.0.
+        light_config = AIConfig(
+            difficulty=5,
+            randomness=None,
+            rng_seed=None,
+            heuristic_eval_mode="light",
+        )
+        light_ai = HeuristicAI(player_number=1, config=light_config)
+
+        tier2_names = [
+            "_evaluate_vulnerability",
+            "_evaluate_overtake_potential",
+            "_evaluate_territory_closure",
+            "_evaluate_line_connectivity",
+            "_evaluate_territory_safety",
+            "_evaluate_forced_elimination_risk",
+            "_evaluate_lps_action_advantage",
+        ]
+
+        # Patch Tier-2 evaluators on the full-mode AI to return a sentinel value.
+        def _tier2_stub(self, _game_state):
+            return 1.0
+
+        for name in tier2_names:
+            setattr(full_ai, name, _tier2_stub.__get__(full_ai, HeuristicAI))
+
+        # Patch Tier-2 evaluators on the light-mode AI to raise if ever called.
+        def _tier2_should_not_be_called(self, _game_state):
+            raise AssertionError(f"{self.__class__.__name__}.{_game_state} Tier-2 evaluator should not be called in light mode")
+
+        for name in tier2_names:
+            setattr(
+                light_ai,
+                name,
+                _tier2_should_not_be_called.__get__(light_ai, HeuristicAI),
+            )
+
+        full_scores = full_ai._compute_component_scores(game_state)
+        light_scores = light_ai._compute_component_scores(game_state)
+
+        # In full mode, Tier-2 scores reflect the stubbed value.
+        for name in tier2_names:
+            key = name.replace("_evaluate_", "")
+            self.assertIn(key, full_scores)
+            self.assertEqual(full_scores[key], 1.0)
+
+        # In light mode, Tier-2 scores are forced to 0.0 and evaluators are never called.
+        for name in tier2_names:
+            key = name.replace("_evaluate_", "")
+            self.assertIn(key, light_scores)
+            self.assertEqual(light_scores[key], 0.0)
+
+
+class TestHeuristicAIMoveSampling(unittest.TestCase):
+    """Test HeuristicAI move sampling for training."""
+
+    def test_sample_moves_returns_all_when_no_limit(self):
+        """When training_move_sample_limit is None, all moves are returned."""
+        config = AIConfig(
+            difficulty=5,
+            randomness=None,
+            rng_seed=None,
+            training_move_sample_limit=None,
+        )
+        ai = HeuristicAI(player_number=1, config=config)
+        
+        # Create mock moves
+        from app.models import Move, MoveType
+        moves = [
+            Move(type=MoveType.PLACE_RING, player=1, to=Position(x=i, y=0))
+            for i in range(20)
+        ]
+        
+        result = ai._sample_moves_for_training(moves)
+        self.assertEqual(len(result), 20)
+        self.assertEqual(result, moves)
+
+    def test_sample_moves_returns_all_when_under_limit(self):
+        """When moves are under the limit, all are returned."""
+        config = AIConfig(
+            difficulty=5,
+            randomness=None,
+            rng_seed=None,
+            training_move_sample_limit=100,
+        )
+        ai = HeuristicAI(player_number=1, config=config)
+        
+        from app.models import Move, MoveType
+        moves = [
+            Move(type=MoveType.PLACE_RING, player=1, to=Position(x=i, y=0))
+            for i in range(50)
+        ]
+        
+        result = ai._sample_moves_for_training(moves)
+        self.assertEqual(len(result), 50)
+        self.assertEqual(result, moves)
+
+    def test_sample_moves_limits_when_over(self):
+        """When moves exceed the limit, sample is taken."""
+        config = AIConfig(
+            difficulty=5,
+            randomness=None,
+            rng_seed=42,  # Seeded for determinism
+            training_move_sample_limit=10,
+        )
+        ai = HeuristicAI(player_number=1, config=config)
+        
+        from app.models import Move, MoveType
+        moves = [
+            Move(type=MoveType.PLACE_RING, player=1, to=Position(x=i, y=0))
+            for i in range(100)
+        ]
+        
+        result = ai._sample_moves_for_training(moves)
+        self.assertEqual(len(result), 10)
+        # All sampled moves should be from the original list
+        for move in result:
+            self.assertIn(move, moves)
+
+    def test_sample_moves_is_deterministic_with_seed(self):
+        """With same seed and move_count, sampling is deterministic."""
+        config = AIConfig(
+            difficulty=5,
+            randomness=None,
+            rng_seed=12345,
+            training_move_sample_limit=5,
+        )
+        
+        from app.models import Move, MoveType
+        moves = [
+            Move(type=MoveType.PLACE_RING, player=1, to=Position(x=i, y=0))
+            for i in range(50)
+        ]
+        
+        # Create two AIs with same config
+        ai1 = HeuristicAI(player_number=1, config=config)
+        ai2 = HeuristicAI(player_number=1, config=config)
+        
+        result1 = ai1._sample_moves_for_training(moves)
+        result2 = ai2._sample_moves_for_training(moves)
+        
+        # Should get identical samples
+        self.assertEqual(result1, result2)
+
+    def test_sample_moves_determinism_changes_with_move_count(self):
+        """Sampling should vary based on move_count for diversity."""
+        config = AIConfig(
+            difficulty=5,
+            randomness=None,
+            rng_seed=42,
+            training_move_sample_limit=5,
+        )
+        ai = HeuristicAI(player_number=1, config=config)
+        
+        from app.models import Move, MoveType
+        moves = [
+            Move(type=MoveType.PLACE_RING, player=1, to=Position(x=i, y=0))
+            for i in range(50)
+        ]
+        
+        # Sample at move_count=0
+        ai.move_count = 0
+        result_a = ai._sample_moves_for_training(moves)
+        
+        # Sample at move_count=1 (should differ due to seeding)
+        ai.move_count = 1
+        result_b = ai._sample_moves_for_training(moves)
+        
+        # Results should be different (high probability with 50 moves, 5 sample)
+        # Note: There's a tiny chance they could be equal by coincidence,
+        # but with these numbers it's extremely unlikely
+        self.assertNotEqual(result_a, result_b)
+
+    def test_sample_moves_returns_all_when_limit_is_zero_or_negative(self):
+        """When limit is 0 or negative, all moves are returned (disabled)."""
+        for limit in [0, -1, -100]:
+            config = AIConfig(
+                difficulty=5,
+                randomness=None,
+                rng_seed=None,
+                training_move_sample_limit=limit,
+            )
+            ai = HeuristicAI(player_number=1, config=config)
+            
+            from app.models import Move, MoveType
+            moves = [
+                Move(type=MoveType.PLACE_RING, player=1, to=Position(x=i, y=0))
+                for i in range(20)
+            ]
+            
+            result = ai._sample_moves_for_training(moves)
+            self.assertEqual(len(result), 20, f"Failed for limit={limit}")
+
 
 if __name__ == "__main__":
     unittest.main()

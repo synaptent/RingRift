@@ -1,8 +1,13 @@
 # Orchestrator Rollout Feature Flags Design
 
-**Created**: 2025-11-27  
-**Status**: Draft  
-**Author**: Engineering Team  
+> **⚠️ HISTORICAL / IMPLEMENTED** – This design was implemented in November 2025. The orchestrator is now at 100% rollout.
+> For current feature flag documentation, see:
+> - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – Production rollout status (Phase 4 complete)
+> - `docs/ENVIRONMENT_VARIABLES.md` – Current environment variable reference
+
+**Created**: 2025-11-27
+**Status**: ✅ Implemented (Phase 4 complete as of 2025-11-30)
+**Author**: Engineering Team
 **Related**: P1.1 (Basic Feature Flag), Pass 7 (Hardest Problems Report)
 
 ## Executive Summary

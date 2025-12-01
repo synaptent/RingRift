@@ -1,4 +1,4 @@
-import type { Game, GameResult, GameState, Move, PlayerChoice } from './game';
+import type { Game, GameResult, GameState, Move, PlayerChoice, PlayerChoiceType } from './game';
 import type {
   JoinGamePayload,
   LeaveGamePayload,
@@ -49,6 +49,53 @@ export interface ChatMessageServerPayload {
 }
 
 /**
+ * Reason why a pending decision was auto-resolved by the system.
+ *
+ * This is intentionally coarse-grained so that clients and logs can
+ * distinguish user-driven decisions from system fallbacks.
+ */
+export type DecisionAutoResolveReason = 'timeout' | 'disconnected' | 'fallback';
+
+/**
+ * High-level semantic grouping of a decision, aligned with ChoiceViewModels.
+ *
+ * This mirrors the ChoiceKind union in src/client/adapters/choiceViewModels.ts
+ * without introducing a dependency on client code.
+ */
+export type DecisionChoiceKind =
+  | 'line_order'
+  | 'line_reward'
+  | 'ring_elimination'
+  | 'territory_region_order'
+  | 'capture_direction'
+  | 'other';
+
+/**
+ * Summary of a decision that was auto-resolved by the server (e.g. due to
+ * timeout). Attached to GameStateUpdateMessage.data.meta.diffSummary so
+ * clients and logs can render user-vs-system decision UX.
+ */
+export interface DecisionAutoResolvedMeta {
+  /** Underlying low-level discriminant from the originating PlayerChoice. */
+  choiceType: PlayerChoiceType;
+  /** High-level semantic grouping derived from ChoiceViewModels. */
+  choiceKind: DecisionChoiceKind;
+  /** Numeric player index whose decision was auto-resolved. */
+  actingPlayerNumber: number;
+  /**
+   * When the decision corresponds directly to a canonical Move, this is the
+   * stable Move.id that was applied.
+   */
+  resolvedMoveId?: string;
+  /** Optional index into the original PlayerChoice.options array. */
+  resolvedOptionIndex?: number;
+  /** Optional key for stringly-typed options (e.g. line reward variants). */
+  resolvedOptionKey?: string;
+  /** Coarse-grained reason why this decision was auto-resolved. */
+  reason: DecisionAutoResolveReason;
+}
+
+/**
  * Canonical payload for `game_state` events.
  *
  * Emitted:
@@ -68,6 +115,20 @@ export interface GameStateUpdateMessage {
      * array here.
      */
     validMoves: Move[];
+    /**
+     * Optional metadata about the transition from the previous state to
+     * this one. This is intentionally lightweight and focused on UX-facing
+     * summaries rather than full diffs.
+     */
+    meta?: {
+      diffSummary?: {
+        /**
+         * Present when a pending PlayerChoice was auto-resolved by the
+         * server as part of producing this update.
+         */
+        decisionAutoResolved?: DecisionAutoResolvedMeta;
+      };
+    };
   };
   /** ISO-8601 timestamp produced on the server. */
   timestamp: string;

@@ -258,7 +258,7 @@ describe('Sandbox vs Backend AI RNG hooks', () => {
     }
   });
 
-  test.skip('backend getAIMove local fallback threads injected RNG through to local heuristic selection', async () => {
+  test('backend getAIMove local fallback threads injected RNG through to local heuristic selection', async () => {
     const engine = new AIEngine();
     // Configure a simple AI profile so getAIMove has a config entry.
     engine.createAI(1, 5);
@@ -302,7 +302,12 @@ describe('Sandbox vs Backend AI RNG hooks', () => {
 
     const result = await engine.getAIMove(1, state, rng);
 
-    expect(result).toBeNull();
+    // When selectLocalHeuristicMove returns null, the Level 3 random fallback
+    // kicks in and picks a move from validMoves. We don't assert the specific
+    // move, only that:
+    // 1. selectLocalHeuristicMove was called with the correct RNG
+    // 2. A move was returned (random fallback worked)
+    expect(result).not.toBeNull();
     expect(localSpy).toHaveBeenCalledTimes(1);
 
     const [, , passedRng] = localSpy.mock.calls[0];

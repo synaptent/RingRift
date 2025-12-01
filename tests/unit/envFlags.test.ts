@@ -222,4 +222,52 @@ describe('envFlags helpers', () => {
 
     expect(config.app.topology).toBe('multi-sticky');
   });
+
+  describe('orchestrator config presets', () => {
+    it('config.orchestrator matches CI orchestrator-ON profile', async () => {
+      process.env = {
+        ...process.env,
+        NODE_ENV: 'test',
+        RINGRIFT_RULES_MODE: 'ts',
+        ORCHESTRATOR_ADAPTER_ENABLED: 'true',
+        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '100',
+        ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false',
+      } as any;
+
+      jest.resetModules();
+      const { config } = await import('../../src/server/config');
+
+      expect(config.orchestrator.rulesMode).toBe('ts');
+      expect(config.orchestrator.adapterEnabled).toBe(true);
+      expect(config.orchestrator.rolloutPercentage).toBe(100);
+      expect(config.orchestrator.shadowModeEnabled).toBe(false);
+
+      expect(config.featureFlags.orchestrator.adapterEnabled).toBe(true);
+      expect(config.featureFlags.orchestrator.rolloutPercentage).toBe(100);
+      expect(config.featureFlags.orchestrator.shadowModeEnabled).toBe(false);
+    });
+
+    it('config.orchestrator supports a Phase 2 shadow profile', async () => {
+      process.env = {
+        ...process.env,
+        NODE_ENV: 'production',
+        RINGRIFT_RULES_MODE: 'shadow',
+        ORCHESTRATOR_ADAPTER_ENABLED: 'true',
+        ORCHESTRATOR_ROLLOUT_PERCENTAGE: '0',
+        ORCHESTRATOR_SHADOW_MODE_ENABLED: 'true',
+      } as any;
+
+      jest.resetModules();
+      const { config } = await import('../../src/server/config');
+
+      expect(config.orchestrator.rulesMode).toBe('shadow');
+      expect(config.orchestrator.adapterEnabled).toBe(true);
+      expect(config.orchestrator.rolloutPercentage).toBe(0);
+      expect(config.orchestrator.shadowModeEnabled).toBe(true);
+
+      expect(config.featureFlags.orchestrator.adapterEnabled).toBe(true);
+      expect(config.featureFlags.orchestrator.rolloutPercentage).toBe(0);
+      expect(config.featureFlags.orchestrator.shadowModeEnabled).toBe(true);
+    });
+  });
 });

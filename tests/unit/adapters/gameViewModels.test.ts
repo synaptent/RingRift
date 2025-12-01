@@ -35,6 +35,7 @@ import type {
   Position,
   GamePhase,
   LineInfo,
+  PlayerChoice,
 } from '../../../src/shared/types/game';
 import {
   createTestBoard,
@@ -507,6 +508,282 @@ describe('toHUDViewModel', () => {
   });
 });
 
+// Board decision highlights adapter — basic wiring check
+
+describe('toBoardViewModel decision highlights', () => {
+  it('attaches decisionHighlights to the BoardViewModel when provided', () => {
+    const board = createTestBoard('square8');
+    const selectedPosition: Position = { x: 3, y: 4 };
+    const validTargets: Position[] = [{ x: 4, y: 4 }];
+
+    const decisionHighlights = {
+      choiceKind: 'line_reward' as any,
+      highlights: [
+        {
+          positionKey: posStr(selectedPosition.x, selectedPosition.y),
+          intensity: 'primary' as const,
+        },
+        {
+          positionKey: posStr(validTargets[0].x, validTargets[0].y),
+          intensity: 'secondary' as const,
+        },
+      ],
+    };
+
+    const vm = toBoardViewModel(board, {
+      selectedPosition,
+      validTargets,
+      decisionHighlights,
+    });
+
+    expect(vm.decisionHighlights).toBeDefined();
+    expect(vm.decisionHighlights).toEqual(decisionHighlights);
+  });
+});
+
+// Additional decision-phase specific tests for the HUD adapter
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('toHUDViewModel - decisionPhase mapping', () => {
+  it('maps acting player decision for local user with countdown semantics', () => {
+    const player1 = createTestPlayer(1, { id: 'user-1', username: 'Alice' });
+    const player2 = createTestPlayer(2, { id: 'user-2', username: 'Bob' });
+
+    const gameState = createTestGameState({
+      players: [player1, player2],
+      currentPlayer: 1,
+      currentPhase: 'line_processing',
+      gameStatus: 'active',
+    });
+
+    const choice: PlayerChoice = {
+      id: 'choice-1',
+      type: 'line_reward_option',
+      playerNumber: 1,
+      // Concrete options are not inspected by the HUD adapter
+      options: ['add_ring', 'add_stack'] as any,
+      timeoutMs: 30000,
+    } as any;
+
+    const options = createDefaultHUDOptions({
+      currentUserId: 'user-1',
+      pendingChoice: choice,
+      choiceDeadline: Date.now() + 30000,
+      choiceTimeRemainingMs: 12345,
+    } as Partial<ToHUDViewModelOptions>);
+
+    const hud = toHUDViewModel(gameState, options);
+
+    expect(hud.decisionPhase).toBeDefined();
+    expect(hud.decisionPhase?.isActive).toBe(true);
+    expect(hud.decisionPhase?.actingPlayerNumber).toBe(1);
+    expect(hud.decisionPhase?.actingPlayerName).toBe('Alice');
+    expect(hud.decisionPhase?.isLocalActor).toBe(true);
+    expect(hud.decisionPhase?.label).toContain('Your decision');
+    expect(hud.decisionPhase?.label).toContain('Choose Line Reward');
+    expect(hud.decisionPhase?.shortLabel).toBe('Line reward');
+    expect(hud.decisionPhase?.description).toContain('collapse them into territory');
+    expect(hud.decisionPhase?.showCountdown).toBe(true);
+    // When showCountdown is true and a remaining time is provided, it should
+    // be surfaced verbatim via the HUD view model.
+    expect(hud.decisionPhase?.timeRemainingMs).toBe(12345);
+    // The warning threshold should be surfaced from choiceViewModels.
+    expect(hud.decisionPhase?.warningThresholdMs).toBe(5000);
+    // Spectator label is always the spectator-oriented copy, even for actors.
+    expect(hud.decisionPhase?.spectatorLabel).toBe(
+      'Waiting for Alice to choose a line reward option'
+    );
+  });
+
+  it('maps decision for non-acting local user using spectator copy', () => {
+    const player1 = createTestPlayer(1, { id: 'user-1', username: 'Alice' });
+    const player2 = createTestPlayer(2, { id: 'user-2', username: 'Bob' });
+
+    const gameState = createTestGameState({
+      players: [player1, player2],
+      currentPlayer: 1,
+      currentPhase: 'line_processing',
+      gameStatus: 'active',
+    });
+
+    const choice: PlayerChoice = {
+      id: 'choice-2',
+      type: 'line_reward_option',
+      playerNumber: 1,
+      options: ['add_ring', 'add_stack'] as any,
+    } as any;
+
+    const options = createDefaultHUDOptions({
+      currentUserId: 'user-2',
+      pendingChoice: choice,
+      choiceDeadline: null,
+      choiceTimeRemainingMs: null,
+    } as Partial<ToHUDViewModelOptions>);
+
+    const hud = toHUDViewModel(gameState, options);
+
+    expect(hud.decisionPhase).toBeDefined();
+    expect(hud.decisionPhase?.isLocalActor).toBe(false);
+    expect(hud.decisionPhase?.actingPlayerName).toBe('Alice');
+    // Spectator-oriented label should mention the acting player
+    expect(hud.decisionPhase?.label).toContain('Waiting for Alice');
+    expect(hud.decisionPhase?.label).toContain('choose a line reward option');
+    expect(hud.decisionPhase?.spectatorLabel).toBe(
+      'Waiting for Alice to choose a line reward option'
+    );
+    // No explicit countdown when no remaining time is provided
+    expect(hud.decisionPhase?.timeRemainingMs).toBeNull();
+  });
+
+  it('uses spectator-oriented label for pure spectators', () => {
+    const player1 = createTestPlayer(1, { id: 'user-1', username: 'Alice' });
+    const player2 = createTestPlayer(2, { id: 'user-2', username: 'Bob' });
+
+    const gameState = createTestGameState({
+      players: [player1, player2],
+      currentPlayer: 1,
+      currentPhase: 'line_processing',
+      gameStatus: 'active',
+    });
+
+    const choice: PlayerChoice = {
+      id: 'choice-4',
+      type: 'line_reward_option',
+      playerNumber: 1,
+      options: ['add_ring', 'add_stack'] as any,
+    } as any;
+
+    const hud = toHUDViewModel(
+      gameState,
+      createDefaultHUDOptions({
+        isSpectator: true,
+        currentUserId: undefined,
+        pendingChoice: choice,
+      } as Partial<ToHUDViewModelOptions>)
+    );
+
+    expect(hud.isSpectator).toBe(true);
+    expect(hud.decisionPhase).toBeDefined();
+    expect(hud.decisionPhase?.isLocalActor).toBe(false);
+    expect(hud.decisionPhase?.actingPlayerName).toBe('Alice');
+    expect(hud.decisionPhase?.label).toBe(
+      'Waiting for Alice to choose a line reward option'
+    );
+  });
+
+  it('omits decisionPhase when no pending choice is provided', () => {
+    const gameState = createTestGameState({
+      currentPhase: 'movement',
+      gameStatus: 'active',
+    });
+
+    const hud = toHUDViewModel(gameState, createDefaultHUDOptions());
+
+    expect(hud.decisionPhase).toBeUndefined();
+  });
+
+  it('does not surface decisionPhase when game is not active', () => {
+    const player1 = createTestPlayer(1, { id: 'user-1', username: 'Alice' });
+    const player2 = createTestPlayer(2, { id: 'user-2', username: 'Bob' });
+
+    const gameState = createTestGameState({
+      players: [player1, player2],
+      currentPlayer: 1,
+      currentPhase: 'line_processing',
+      gameStatus: 'finished',
+    });
+
+    const choice: PlayerChoice = {
+      id: 'choice-3',
+      type: 'line_reward_option',
+      playerNumber: 1,
+      options: ['add_ring', 'add_stack'] as any,
+    } as any;
+
+    const hud = toHUDViewModel(
+      gameState,
+      createDefaultHUDOptions({
+        currentUserId: 'user-2',
+        pendingChoice: choice,
+      } as Partial<ToHUDViewModelOptions>)
+    );
+
+    expect(hud.decisionPhase).toBeUndefined();
+  });
+
+  it('derives remaining time from choiceDeadline when explicit countdown is not provided', () => {
+    const player1 = createTestPlayer(1, { id: 'user-1', username: 'Alice' });
+    const player2 = createTestPlayer(2, { id: 'user-2', username: 'Bob' });
+
+    const gameState = createTestGameState({
+      players: [player1, player2],
+      currentPlayer: 1,
+      currentPhase: 'line_processing',
+      gameStatus: 'active',
+    });
+
+    const choice: PlayerChoice = {
+      id: 'choice-5',
+      type: 'line_reward_option',
+      playerNumber: 1,
+      options: ['add_ring', 'add_stack'] as any,
+      timeoutMs: 10000,
+    } as any;
+
+    const fixedNow = Date.now();
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(fixedNow);
+
+    const hud = toHUDViewModel(
+      gameState,
+      createDefaultHUDOptions({
+        currentUserId: 'user-1',
+        pendingChoice: choice,
+        choiceDeadline: fixedNow + 10000,
+      } as Partial<ToHUDViewModelOptions>)
+    );
+
+    expect(hud.decisionPhase).toBeDefined();
+    expect(hud.decisionPhase?.showCountdown).toBe(true);
+    expect(hud.decisionPhase?.timeRemainingMs).toBe(10000);
+
+    spy.mockRestore();
+  });
+
+  it('threads decisionIsServerCapped into HUDDecisionPhaseViewModel when countdown is shown', () => {
+    const player1 = createTestPlayer(1, { id: 'user-1', username: 'Alice' });
+    const player2 = createTestPlayer(2, { id: 'user-2', username: 'Bob' });
+
+    const gameState = createTestGameState({
+      players: [player1, player2],
+      currentPlayer: 1,
+      currentPhase: 'line_processing',
+      gameStatus: 'active',
+    });
+
+    const choice: PlayerChoice = {
+      id: 'choice-6',
+      type: 'line_reward_option',
+      playerNumber: 1,
+      options: ['add_ring', 'add_stack'] as any,
+      timeoutMs: 10000,
+    } as any;
+
+    const hud = toHUDViewModel(
+      gameState,
+      createDefaultHUDOptions({
+        currentUserId: 'user-1',
+        pendingChoice: choice,
+        choiceTimeRemainingMs: 2500,
+        decisionIsServerCapped: true,
+      } as Partial<ToHUDViewModelOptions>)
+    );
+
+    expect(hud.decisionPhase).toBeDefined();
+    expect(hud.decisionPhase?.showCountdown).toBe(true);
+    expect(hud.decisionPhase?.isServerCapped).toBe(true);
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════
 // toEventLogViewModel Function Tests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -620,6 +897,24 @@ describe('toEventLogViewModel', () => {
       const result = toEventLogViewModel(history, [], null);
 
       expect(result.entries[0].text).toContain('skipped placement');
+    });
+
+    it('should format swap_sides action with a pie rule description', () => {
+      const history: GameHistoryEntry[] = [
+        {
+          ...createTestHistoryEntry(3, 2, 'swap_sides'),
+          action: {
+            ...createTestHistoryEntry(3, 2, 'swap_sides').action,
+            type: 'swap_sides',
+          },
+        },
+      ];
+
+      const result = toEventLogViewModel(history, [], null);
+
+      expect(result.entries[0].text).toBe(
+        '#3 — P2 invoked the pie rule and swapped colours with P1',
+      );
     });
   });
 
@@ -735,6 +1030,54 @@ describe('toEventLogViewModel', () => {
       const result = toEventLogViewModel([], [], victoryState);
 
       expect(result.entries[0].type).toBe('victory');
+    });
+  });
+
+  describe('pie rule HUD summary', () => {
+    it('should include a short pie rule summary when swap_sides was used recently', () => {
+      const baseState = createTestGameState();
+      const history: GameHistoryEntry[] = [
+        createTestHistoryEntry(1, 1, 'place_ring'),
+        createTestHistoryEntry(2, 2, 'place_ring'),
+        createTestHistoryEntry(3, 2, 'swap_sides'),
+      ];
+
+      const gameState: GameState = {
+        ...baseState,
+        history,
+      };
+
+      const hud = toHUDViewModel(
+        gameState,
+        createDefaultHUDOptions({ currentUserId: baseState.players[0].id }),
+      );
+
+      expect(hud.pieRuleSummary).toBe('P2 swapped colours with P1');
+    });
+
+    it('should omit pie rule summary when swap_sides was used long ago', () => {
+      const baseState = createTestGameState();
+      const history: GameHistoryEntry[] = [
+        createTestHistoryEntry(1, 1, 'place_ring'),
+        createTestHistoryEntry(2, 2, 'place_ring'),
+        createTestHistoryEntry(3, 2, 'swap_sides'),
+        createTestHistoryEntry(4, 1, 'place_ring'),
+        createTestHistoryEntry(5, 2, 'place_ring'),
+        createTestHistoryEntry(6, 1, 'place_ring'),
+        createTestHistoryEntry(7, 2, 'place_ring'),
+      ];
+
+      const gameState: GameState = {
+        ...baseState,
+        history,
+      };
+
+      const hud = toHUDViewModel(
+        gameState,
+        createDefaultHUDOptions({ currentUserId: baseState.players[0].id }),
+      );
+
+      expect(hud.pieRuleSummary).toBeUndefined();
     });
   });
 });

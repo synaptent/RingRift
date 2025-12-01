@@ -1,6 +1,6 @@
 # AI Service Dependency Updates
 
-> **Doc Status (2025-11-27): Active (AI service dependency audit, non-semantics)**
+> **Doc Status (2025-11-29): Active (AI service dependency audit, non-semantics)**
 >
 > - Role: records the dependency stack and compatibility decisions for the Python AI microservice (NumPy/PyTorch/ Gymnasium, etc.) and outlines an aspirational RL roadmap. It guides environment setup and ML stack evolution, not game semantics.
 > - Not a semantics or lifecycle SSoT: for rules semantics and lifecycle / API contracts, defer to the shared TypeScript rules engine under `src/shared/engine/**`, the engine contracts under `src/shared/engine/contracts/**`, the v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`, [`RULES_CANONICAL_SPEC.md`](../RULES_CANONICAL_SPEC.md), [`ringrift_complete_rules.md`](../ringrift_complete_rules.md), [`RULES_ENGINE_ARCHITECTURE.md`](../RULES_ENGINE_ARCHITECTURE.md), [`RULES_IMPLEMENTATION_MAPPING.md`](../RULES_IMPLEMENTATION_MAPPING.md), and [`docs/CANONICAL_ENGINE_API.md`](../docs/CANONICAL_ENGINE_API.md).
@@ -26,8 +26,10 @@ Updated all dependencies to be compatible with **NumPy 2.2.1** and **Python 3.13
   `torch==2.6.0` / `torchvision==0.21.0` pair, backed by AI behaviour and training
   guardrail subsets.
 - **Wave 3‑E – Docs & audits:** Partially completed. Requirements/docs reconciliation and
-  core CI job re‑runs are documented; local `pip-audit` CLI behaviour diverges from CI
-  and is tracked as follow‑up work (see §3‑E.3) rather than as a dependency rollback.
+  core CI job re‑runs are documented; the `python-dependency-audit` job in CI now pins
+  `pip-audit` (`pip-audit>=2.7.0,<3.0.0`), and local runs have a documented invocation
+  that mirrors this. Any remaining local CLI drift is tracked as follow‑up work
+  (see §3‑E.3) rather than as a dependency rollback.
 
 ## Installation Status
 
@@ -164,7 +166,37 @@ python -m pytest -q tests/test_generate_territory_dataset_smoke.py
 cd ..
 ```
 
-See the Wave 3 guardrail subsets below for broader upgrade passes.
+See the Wave 3 guardrail subsets below for broader upgrade passes. For deeper,
+invariant-focused behavioural checks after larger dependency waves, also consider:
+
+- **Python strict-invariant self-play soak** (see `docs/STRICT_INVARIANT_SOAKS.md` §2):
+
+  ```bash
+  cd ai-service
+  RINGRIFT_STRICT_NO_MOVE_INVARIANT=1 \
+  python scripts/run_self_play_soak.py \
+    --num-games 20 \
+    --board-type square8 \
+    --engine-mode mixed \
+    --difficulty-band light \
+    --num-players 2 \
+    --max-moves 150 \
+    --gc-interval 20 \
+    --log-jsonl logs/selfplay/soak.square8_2p.mixed.strict_light.jsonl \
+    --summary-json logs/selfplay/soak.square8_2p.mixed.strict_light.summary.json \
+    --fail-on-anomaly
+  ```
+
+- **TS orchestrator invariant soak** (see `docs/STRICT_INVARIANT_SOAKS.md` §2.3–2.4):
+
+  ```bash
+  npm run soak:orchestrator:smoke
+  # or
+  npm run soak:orchestrator -- --boardTypes=square8 --gamesPerBoard=5 --failOnViolation
+  ```
+
+These longer-running soaks are not required for every small dependency tweak but are
+recommended before major ML/infra waves or pre-release hardening.
 
 ### Wave P1 – Server Stack (FastAPI / Starlette / Uvicorn / HTTPX / Redis / Prometheus)
 
@@ -866,10 +898,16 @@ python -m pytest -q tests/parity/test_rules_parity_fixtures.py \
 python-dependency-audit:
   ...
   steps:
-    - name: Install pip-audit
-      run: python -m pip install pip-audit
+    - name: Install Python dependencies
+      working-directory: ai-service
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
-    - name: Run pip-audit against ai-service requirements (high/critical only)
+    - name: Install pip-audit (pinned CLI supporting --severity)
+      run: python -m pip install 'pip-audit>=2.7.0,<3.0.0'
+
+    - name: Run pip-audit against ai-service requirements (HIGH/CRITICAL only)
       working-directory: ai-service
       run: |
         # Fail the job only on known HIGH or CRITICAL vulnerabilities.
@@ -908,10 +946,13 @@ python-dependency-audit:
 - Locally, we have confirmed that **`requirements.txt` remains installable** under the
   current `pip` stack and that CycloneDX SBOM generation still works with the updated
   pins, but we did **not** obtain a reliable HIGH‑severity vulnerability report from
-  `pip-audit` due to CLI incompatibilities.
-- CI continues to invoke `pip-audit -r requirements.txt --severity HIGH` as defined in
-  `.github/workflows/ci.yml`; that job should be treated as the authoritative signal
-  for Python vulnerability gating until the local CLI is realigned.
+  `pip-audit` due to CLI incompatibilities. CI has since been updated to pin the
+  `pip-audit` CLI to `pip-audit>=2.7.0,<3.0.0` (see `.github/workflows/ci.yml` and
+  `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`), which restores support for `--severity HIGH`
+  and the `-r requirements.txt` usage pattern.
+- CI continues to invoke `pip-audit -r requirements.txt --severity HIGH` via this pinned
+  CLI; that job should be treated as the authoritative signal for Python vulnerability
+  gating, and local runs should mirror the same installation pattern.
 
 **Follow‑up TODOs (recorded for future waves):**
 
@@ -1010,6 +1051,46 @@ At this point, Waves 3‑A–3‑D are fully executed and documented, and Wave 3
 established that the new deep‑learning pins are compatible with core CI parity checks
 and local `python-core` behaviour, with explicit TODOs for completing the
 pip‑audit/Docker portions once the corresponding tooling constraints are resolved.
+
+Subsequent Wave 3‑E hygiene updates (2025‑11‑29) include:
+- Tuning the heavy CMA‑ES fitness guardrail test
+  (`tests/test_heuristic_training_evaluation.py::test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline`)
+  by keeping an explicit `@pytest.mark.timeout(180)` and reducing its `games_per_eval`
+  budget from 8 to 4 so that `python-core` runs are less likely to hit the global
+  timeout purely due to evaluation cost.
+- Pinning the `python-dependency-audit` job in CI to a `pip-audit` CLI range that
+  supports `--severity`, and treating `pip-audit -r requirements.txt --severity HIGH`
+  (from `ai-service/`) as the canonical local invocation.
+- Adding an `ai-service-docker-smoke` CI job that builds `ai-service/Dockerfile` and
+  runs an in‑container `python -c "import torch, torchvision; ..."` smoke test to
+  assert that the runtime Torch/TorchVision versions match the pins in
+  `ai-service/requirements.txt` (currently `torch==2.6.0`, `torchvision==0.21.0`).
+
+## Next Strategic Wave – Orchestrator Rollout & Invariant Hardening (Wave 4)
+
+With the AI-service dependency waves (3‑A–3‑E) complete and aligned with CI, the next
+high‑leverage strategic track is **Wave 4 – Orchestrator Rollout & Invariant
+Hardening**, which focuses on the shared TS orchestrator and its integration with the
+Python rules/AI stack. The detailed plan and SLOs for this wave live in
+`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` (§7.5), and are summarised as:
+
+- **4‑A – Parity & contract expansion:** expand TS orchestrator multi‑phase scenarios
+  and Python contract‑vector coverage so `processTurnAsync` + adapters are at least as
+  well covered as legacy pipelines, anchored by the `orchestrator-parity` CI job.
+- **4‑B – Invariant soaks & CI gates:** treat orchestrator invariant soaks (short CI
+  soak plus longer scheduled soaks, see `docs/STRICT_INVARIANT_SOAKS.md`) as
+  first‑class gates for S‑invariant and structural invariants.
+- **4‑C – Rollout flags, topology & fallbacks:** ensure environment phases (0–4) map
+  cleanly to env flags and `OrchestratorRolloutService` behaviour, with clear fallback
+  levers and runbook steps for on‑call.
+- **4‑D – Observability & incident readiness:** complete orchestrator metrics/alerts
+  wiring and refine runbooks so orchestrator/rules incidents are easy to distinguish
+  from AI‑only or infra‑only issues.
+
+This dependency‑focused document remains TS‑downstream and AI‑service‑local; treat
+`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` (plus the orchestrator CI/runbooks) as the primary
+SSoT for Wave 4 while using this file to keep Python/AI dependencies and CI tooling in
+sync with those orchestrator‑level goals.
 
 ---
 

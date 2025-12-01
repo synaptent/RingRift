@@ -19,7 +19,16 @@ import {
   TurnEngineDeps,
   TurnEngineHooks,
 } from '../../src/server/game/turn/TurnEngine';
-import { GameState, BoardState, BoardType, TimeControl, Player } from '../../src/shared/types/game';
+import {
+  GameState,
+  BoardState,
+  BoardType,
+  TimeControl,
+  Player,
+  RingStack,
+  positionToString,
+  Position,
+} from '../../src/shared/types/game';
 import { createTestBoard, createTestPlayer } from '../utils/fixtures';
 
 describe('GameEngine turn sequence & forced elimination scenarios (backend)', () => {
@@ -65,16 +74,16 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
 
     const board = createTestBoard(boardType);
 
-    const stacksByPlayer: Record<number, any[]> = {
+    const stacksByPlayer: Record<number, RingStack[]> = {
       1: [],
       2: [
-        {
+        ({
           position: { x: 0, y: 0 },
           rings: [2],
           stackHeight: 1,
           capHeight: 1,
           controllingPlayer: 2,
-        },
+        } as RingStack),
       ],
     };
 
@@ -92,6 +101,21 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
       getValidMoves: jest.fn(() => []),
       checkGameEnd: jest.fn(() => ({ isGameOver: false })),
     };
+
+    // Seed the canonical BoardState with the same stack so that
+    // applyForcedEliminationForPlayer can observe it and block all
+    // outward rays so no legal movement/capture exists from (0,0).
+    const p2Stack = stacksByPlayer[2][0];
+    board.stacks.set(positionToString(p2Stack.position), p2Stack);
+
+    const blockers: Position[] = [
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ];
+    for (const pos of blockers) {
+      board.collapsedSpaces.set(positionToString(pos), 0);
+    }
 
     const deps: TurnEngineDeps = { boardManager, ruleEngine };
 
@@ -120,10 +144,14 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
 
     const afterTurnState = advanceGameForCurrentPlayer(gameState, initialTurnState, deps, hooks);
 
-    // Forced elimination must have been applied to player 2 (FAQ Q24).
-    expect(eliminatePlayerRingOrCap).toHaveBeenCalledTimes(1);
-    // The second argument is the stack position, which is { x: 0, y: 0 } in this scenario
-    expect(eliminatePlayerRingOrCap).toHaveBeenCalledWith(2, { x: 0, y: 0 });
+    // Forced elimination must have been applied to player 2 (FAQ Q24):
+    // the only stack at (0,0) should have been removed and at least
+    // one ring credited as eliminated.
+    const finalBoard = gameState.board;
+    const finalP2 = gameState.players.find((p) => p.playerNumber === 2)!;
+
+    expect(finalBoard.stacks.get(positionToString({ x: 0, y: 0 }))).toBeUndefined();
+    expect(finalP2.eliminatedRings).toBeGreaterThan(0);
 
     // After elimination and turn handoff, the next interactive turn belongs
     // to player 2 again (the only player with material) in the movement phase.
@@ -224,16 +252,16 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
 
     const board = createTestBoard(boardType);
 
-    const stacksByPlayer: Record<number, any[]> = {
+    const stacksByPlayer: Record<number, RingStack[]> = {
       1: [],
       2: [
-        {
+        ({
           position: { x: 0, y: 0 },
           rings: [2],
           stackHeight: 1,
           capHeight: 1,
           controllingPlayer: 2,
-        },
+        } as RingStack),
       ], // Player 2 controls a single stack but has no legal moves.
       3: [],
     };
@@ -253,6 +281,21 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
       getValidMoves: jest.fn(() => []),
       checkGameEnd: jest.fn(() => ({ isGameOver: false })),
     };
+
+    // Seed the canonical BoardState with the same stack for Player 2
+    // and block all immediate outward rays so player 2 has no legal
+    // movements or captures from (0,0).
+    const p2Stack = stacksByPlayer[2][0];
+    board.stacks.set(positionToString(p2Stack.position), p2Stack);
+
+    const blockers: Position[] = [
+      { x: 1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+    ];
+    for (const pos of blockers) {
+      board.collapsedSpaces.set(positionToString(pos), 0);
+    }
 
     const deps: TurnEngineDeps = { boardManager, ruleEngine };
 
@@ -283,10 +326,14 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
 
     // Players 1 and 3 have no stacks and no rings, so they cannot act.
     // Player 2 controls a stack but has no legal actions and must be
-    // forced to eliminate a ring/cap as per FAQ Q24.
-    expect(eliminatePlayerRingOrCap).toHaveBeenCalledTimes(1);
-    // The second argument is the stack position, which is { x: 0, y: 0 } in this scenario
-    expect(eliminatePlayerRingOrCap).toHaveBeenCalledWith(2, { x: 0, y: 0 });
+    // forced to eliminate a ring/cap as per FAQ Q24. The stack at
+    // (0,0) should have been reduced or removed for player 2, and at
+    // least one ring should be credited as eliminated.
+    const finalBoard = gameState.board;
+    const finalP2 = gameState.players.find((p) => p.playerNumber === 2)!;
+
+    expect(finalBoard.stacks.get(positionToString({ x: 0, y: 0 }))).toBeUndefined();
+    expect(finalP2.eliminatedRings).toBeGreaterThan(0);
 
     // After forced elimination, the interactive turn remains with
     // player 2 in the movement phase, as in the two-player scenario.

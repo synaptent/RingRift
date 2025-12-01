@@ -30,8 +30,6 @@ import {
   FileUploadSchema,
   PaginationQuerySchema,
   SocketEventSchema,
-  LoginSchema,
-  UpdateProfileSchema,
   ChangePasswordSchema,
   RefreshTokenSchema,
   VerifyEmailSchema,
@@ -42,6 +40,11 @@ import {
   type MoveInput,
 } from '../../src/shared/validation/schemas';
 import type { MoveType } from '../../src/shared/types/game';
+import {
+  DecisionAutoResolvedMetaSchema,
+  GameStateUpdateMetaSchema,
+  type DecisionAutoResolvedMetaPayload,
+} from '../../src/shared/validation/websocketSchemas';
 
 function assertMoveSchemaMoveTypeIsSubsetOfMoveType<T extends MoveType>(): void {}
 
@@ -695,6 +698,92 @@ describe('Validation Schemas', () => {
           gameStatus: 'invalid_status',
         }).success
       ).toBe(false);
+    });
+  });
+
+  describe('DecisionAutoResolvedMetaSchema', () => {
+    const base: DecisionAutoResolvedMetaPayload = {
+      choiceType: 'line_order',
+      choiceKind: 'line_order',
+      actingPlayerNumber: 1,
+      resolvedMoveId: 'move-123',
+      resolvedOptionIndex: 0,
+      resolvedOptionKey: 'option_1_collapse_all_and_eliminate',
+      reason: 'timeout',
+    };
+
+    it('accepts a structurally valid auto-resolve meta payload', () => {
+      const result = DecisionAutoResolvedMetaSchema.safeParse(base);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.choiceType).toBe('line_order');
+        expect(result.data.choiceKind).toBe('line_order');
+        expect(result.data.actingPlayerNumber).toBe(1);
+        expect(result.data.reason).toBe('timeout');
+      }
+    });
+
+    it('rejects invalid reason discriminator', () => {
+      const result = DecisionAutoResolvedMetaSchema.safeParse({
+        ...base,
+        reason: 'not_a_reason',
+      } as any);
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid choiceType', () => {
+      const result = DecisionAutoResolvedMetaSchema.safeParse({
+        ...base,
+        choiceType: 'invalid_type',
+      } as any);
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('GameStateUpdateMetaSchema', () => {
+    it('accepts meta with a valid decisionAutoResolved diff summary', () => {
+      const meta = {
+        diffSummary: {
+          decisionAutoResolved: {
+            choiceType: 'ring_elimination',
+            choiceKind: 'ring_elimination',
+            actingPlayerNumber: 2,
+            resolvedMoveId: 'move-456',
+            reason: 'timeout',
+          },
+        },
+      };
+
+      const result = GameStateUpdateMetaSchema.safeParse(meta);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.diffSummary?.decisionAutoResolved?.actingPlayerNumber).toBe(2);
+        expect(result.data.diffSummary?.decisionAutoResolved?.choiceType).toBe('ring_elimination');
+      }
+    });
+
+    it('accepts meta without diffSummary or decisionAutoResolved', () => {
+      expect(GameStateUpdateMetaSchema.safeParse({}).success).toBe(true);
+      expect(
+        GameStateUpdateMetaSchema.safeParse({
+          diffSummary: {},
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects meta with invalid decisionAutoResolved shape', () => {
+      const result = GameStateUpdateMetaSchema.safeParse({
+        diffSummary: {
+          decisionAutoResolved: {
+            choiceType: 'line_order',
+            choiceKind: 'line_order',
+            actingPlayerNumber: 0, // must be >= 1
+            reason: 'timeout',
+          },
+        },
+      });
+
+      expect(result.success).toBe(false);
     });
   });
 });

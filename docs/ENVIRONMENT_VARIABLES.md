@@ -593,6 +593,11 @@ canonical TS orchestrator in production. They are evaluated by
 `OrchestratorRolloutService` and should typically be adjusted only in staging
 or by on-call operators following a runbook.
 
+For recommended combinations of `NODE_ENV`, `RINGRIFT_APP_TOPOLOGY`,
+`RINGRIFT_RULES_MODE`, and the orchestrator flags across CI, staging, and
+production phases, see the env/phase presets table in
+[`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1](./ORCHESTRATOR_ROLLOUT_PLAN.md#811-environment-and-flag-presets-by-phase).
+
 #### `ORCHESTRATOR_ROLLOUT_PERCENTAGE`
 
 | Property | Value    |

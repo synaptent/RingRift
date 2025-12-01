@@ -1,7 +1,12 @@
 # Pass 9 - Fresh Comprehensive Project Assessment Report
 
-**Assessment Date:** 2025-11-27  
-**Assessor:** Architect Mode  
+> **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
+> For current project status, see:
+> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
+
+**Assessment Date:** 2025-11-27
+**Assessor:** Architect Mode
 **Focus:** Fresh areas NOT examined in Passes 1-8
 
 ---

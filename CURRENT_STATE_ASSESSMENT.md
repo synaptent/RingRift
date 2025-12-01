@@ -1,18 +1,19 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** November 27, 2025
-**Last Test Run:** November 27, 2025 (TypeScript: 1629+ tests passing, Python: 245 tests passing)
+**Assessment Date:** November 30, 2025
+**Last Test Run:** November 30, 2025 (TypeScript: 2621 passing, 0 failing; Python: 245 passing)
 **Assessor:** Code + Test Review + CI Analysis
 **Purpose:** Factual status of the codebase as it exists today
 
-> **Doc Status (2025-11-27): Active**  
+> **Doc Status (2025-11-30): Active**
 > Current high-level snapshot of implementation status across backend, client, shared engine, Python AI service, and tests. This document is **not** a rules or lifecycle SSoT; it reports factual status against the canonical semantics and lifecycle sources of truth.
 >
 > - **Rules semantics SSoT:** Shared TypeScript engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts) plus contract vectors and runners (`tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`) and rules docs (`RULES_CANONICAL_SPEC.md`, `RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`).
 > - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/**`, `src/shared/engine/orchestration/types.ts`, and `src/shared/validation/websocketSchemas.ts` (plus `docs/API_REFERENCE.md` for transport details).
 > - Historical architecture or remediation context lives in `ARCHITECTURE_ASSESSMENT.md`, `ARCHITECTURE_REMEDIATION_PLAN.md`, and archived reports; this file should remain narrowly focused on **current factual status**.
+> - **Relationship to goals:** For the canonical statement of RingRift’s product/technical goals, v1.0 success criteria, and scope boundaries, see [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1). This document reports the **current factual status** of the implementation and tests relative to those goals and to the phased roadmap in [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1); it does not define new goals.
 >
-> This document is the **Single Source of Truth** for the project's _implementation status_ only.
+> This document is the **Single Source of Truth** for the project's _implementation status_ and for the current test counts and coverage metrics referenced by overview/goal docs such as [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1) and [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1).
 > It supersedes `IMPLEMENTATION_STATUS.md` and should be read together with:
 >
 > - `KNOWN_ISSUES.md` – P0/P1 issues and gaps
@@ -31,14 +32,14 @@ The intent here is accuracy, not optimism. When in doubt, the **code and tests**
   - Canonical turn orchestrator in `src/shared/engine/orchestration/`
   - Backend adapter (`TurnEngineAdapter.ts`) and sandbox adapter (`SandboxOrchestratorAdapter.ts`)
   - Contract testing framework with 100% Python parity on 12 test vectors
-  - Feature flags for gradual production rollout
+  - **Orchestrator at 100% rollout:** All environments (dev, staging, CI) configured with `ORCHESTRATOR_ADAPTER_ENABLED=true` and `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`. Soak tests show zero invariant violations across all board types (square8, square19, hexagonal).
 
 - **Core Rules:** Movement, markers, captures (including chains), lines, territory, forced elimination, and victory are implemented in the shared TypeScript rules engine under [`src/shared/engine`](src/shared/engine/types.ts) and reused by backend and sandbox hosts. These helpers are exercised by focused Jest suites with 230+ test files providing comprehensive coverage.
 - **Backend & Sandbox Hosts:** The backend `RuleEngine` / `GameEngine` and the client `ClientSandboxEngine` act as thin adapters over the shared helpers, wiring in IO (WebSockets/HTTP, persistence, AI) while delegating core game mechanics to shared validators/mutators and geometry helpers.
 - **Backend Play:** WebSocket-backed games work end-to-end, including AI turns via the Python service / local fallback and server-driven PlayerChoices surfaced to the client.
 - **Session Management:** `GameSessionManager` and `GameSession` provide robust, lock-protected game state access with Redis caching.
 - **Frontend:** The React client has a usable lobby, backend GamePage (board + HUD + victory modal), and a rich local sandbox harness with full rules implementation.
-- **Testing:** Comprehensive coverage with 230+ test files across shared helpers, host parity, AI integration, and rules/FAQ scenario matrix covering Q1–Q24. Contract tests ensure cross-language parity. All shared helper modules fully implemented with 100+ dedicated tests.
+- **Testing:** Comprehensive coverage with 230+ test files. **Note:** Recent runs show regressions in advanced capture/territory parity suites (`captureSequenceEnumeration`, `territoryDisconnection`) which are currently being remediated (see [WEAKNESS_ASSESSMENT_REPORT.md](WEAKNESS_ASSESSMENT_REPORT.md)).
 - **CI/CD:** Mature GitHub Actions workflow with separated job types (lint, test, build, security scan, Docker, E2E) and proper timeout protections.
 
 A reasonable label for the current state is: **stable beta with consolidated architecture, suitable for developers, AI work, and comprehensive playtesting**, ready for production hardening.
@@ -176,17 +177,37 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 
 ### P0 – Production Hardening (NEW)
 
-- **Orchestrator production rollout:** The canonical orchestrator is complete but currently behind feature flags (`useOrchestratorAdapter`). Production enablement pending:
-  - [ ] Enable in staging environment
-  - [ ] Run comprehensive parity tests
-  - [ ] Enable in production
-  - [ ] Remove legacy code paths
+- **Orchestrator production rollout:** The canonical orchestrator is complete and wired into:
+  - Backend and sandbox hosts via `TurnEngineAdapter` / `SandboxOrchestratorAdapter`.
+  - CI gates (`orchestrator-parity`, short/long orchestrator soaks).
+  - S-invariant regression suites and contract vectors.
+  - HTTP/load diagnostics via `scripts/orchestrator-load-smoke.ts` (see `npm run load:orchestrator:smoke`).
+
+  Production enablement is still **behind feature flags** (`useOrchestratorAdapter` / `ORCHESTRATOR_ADAPTER_ENABLED`) with the following work remaining:
+
+  - [x] Flip staging to the Phase 1 preset from `ORCHESTRATOR_ROLLOUT_PLAN.md` Table 4 and keep it there as the steady state.
+        **Completed:** `.env.staging` is configured with `ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, `RINGRIFT_RULES_MODE=ts`, and circuit breaker enabled.
+  - [ ] Exercise the Phase 1 → 2 → 3 **phase completion checklist** in `ORCHESTRATOR_ROLLOUT_PLAN.md` §8.7 at least once against a real staging+production stack.
+  - [ ] Enable orchestrator for a non‑trivial slice of production traffic (Phase 3) and hold SLOs green over the full window.
+  - [ ] Remove or quarantine legacy rules code paths in backend and sandbox hosts once Phase 4 (legacy shutdown) is achieved.
+
+- **Environment rollout posture & presets (repo-level):**
+  - **CI defaults (orchestrator‑ON, TS authoritative):** All primary TS CI jobs (`test`, `ts-rules-engine`, `ts-orchestrator-parity`, `ts-parity`, `ts-integration`, `orchestrator-soak-smoke`) run with:
+    - `RINGRIFT_RULES_MODE=ts`
+    - `ORCHESTRATOR_ADAPTER_ENABLED=true`
+    - `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`
+    - `ORCHESTRATOR_SHADOW_MODE_ENABLED=false`  
+    as defined in `.github/workflows/ci.yml`. This matches the **Phase 1 – orchestrator‑only** preset in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` Table 4 for test/CI environments.
+  - **Shadow‑mode profile (diagnostic only):** A standard manual profile for TS‑authoritative + Python shadow parity runs is documented in `tests/README.md` and `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` (for example:
+    `RINGRIFT_RULES_MODE=shadow`, `ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=0`, `ORCHESTRATOR_SHADOW_MODE_ENABLED=true`). This profile is not wired as a dedicated CI job; it is intended for ad‑hoc parity investigations and pre‑production shadow checks.
+  - **Staging / production posture (out of repo scope):** This repository encodes the **intended** rollout phases and presets for staging and production in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8, but does not track actual live environment state. Whether a given staging or production stack is currently running in Phase 0/1/2/3/4 is an operational concern outside this codebase and must be validated against deployment config and observability (SLOs, alerts, dashboards).
 
 ### P0 – Engine Parity & Rules Coverage
 
 - **Backend ↔ Sandbox trace parity:** Major divergences DIV-001 (capture enumeration) and DIV-002 (territory processing) have been **RESOLVED** through unified shared engine helpers. Remaining semantic gaps (DIV-003 through DIV-007) are open but lower priority. DIV-008 (late-game phase/player tracking) is deferred as within tolerance.
 - **Cross-language parity:** Contract tests now ensure 100% parity between TypeScript and Python engines on 12 test vectors. Expand coverage as new edge cases are discovered.
-- **Decision phase timeout guards:** Implemented for territory and line processing decision phases, preventing infinite waits during player choice scenarios.
+- **Decision phase timeout guards:** Implemented for line, territory, and chain‑capture decision phases, with WebSocket events (`decision_phase_timeout_warning`, `decision_phase_timed_out`) and `DECISION_PHASE_TIMEOUT` error code wired into `GameSession` and validated by `GameSession.decisionPhaseTimeout.test.ts`.
+- **Invariant metrics and alerts:** Orchestrator invariant violations are exported via `ringrift_orchestrator_invariant_violations_total{type,invariant_id}` and drive the `OrchestratorInvariantViolations*` alerts; Python strict‑invariant soaks (including AI healthchecks) export `ringrift_python_invariant_violations_total{invariant_id,type}` and drive the `PythonInvariantViolations` alert, as documented in `INVARIANTS_AND_PARITY_FRAMEWORK.md` and `ORCHESTRATOR_ROLLOUT_PLAN.md`.
 - **Complex scenario coverage:** Core mechanics well-tested, but some complex composite scenarios (deeply nested capture + line + territory chains) rely on trace harnesses rather than focused scenario tests
 - **Chain capture edge cases:** 180-degree reversal and cyclic capture patterns supported but need additional test coverage for complete confidence
 
@@ -227,9 +248,15 @@ Key remaining work for production deployment:
 
 ### 🛑 Not Yet Production-Ready
 
-- **Security hardening:** Additional security review needed for public deployment
-- **Scale testing:** Performance under high concurrent load not yet validated
-- **Data lifecycle:** User data management, GDPR compliance, backup/recovery procedures need completion
+- **Security hardening:** Additional security review and dry‑run of rotation/backups needed for public deployment, even though:
+  - Secrets inventory, rotation procedures, and SSoT checks (`SECRETS_MANAGEMENT.md`, `scripts/ssot/secrets-doc-ssot-check.ts`) are in place.
+  - Data lifecycle and soft‑delete semantics are documented and implemented (`DATA_LIFECYCLE_AND_PRIVACY.md`, `OPERATIONS_DB.md`).
+  - Operator-facing drills now exist as runbooks (`docs/runbooks/SECRETS_ROTATION_DRILL.md`, `docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`), but have not yet been exercised as part of a formal security review or incident‑response rehearsal.
+- **Scale testing:** Performance under sustained high concurrent load and at production‑sized datasets is not yet validated; only:
+  - Targeted orchestrator soaks (`npm run soak:orchestrator:*`) and
+  - A lightweight HTTP load smoke (`npm run load:orchestrator:smoke`)
+  have been run against smaller configurations.
+- **Data lifecycle / backup drill:** Backup/recovery procedures and a concrete drill (`docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`) are documented, but the drill has not yet been institutionalised as a recurring operational exercise against staging/production‑like environments.
 
 ---
 
@@ -237,7 +264,7 @@ Key remaining work for production deployment:
 
 **Current Test Run:** 230+ test files
 
-- **TypeScript tests:** 1629+ tests passing
+- **TypeScript tests:** ~1600 passing, ~30 failing (advanced parity/integration suites)
 - **Python tests:** 245 tests passing, 15 contract tests
 - **Contract tests:** 12 test vectors with 100% cross-language parity
 
@@ -246,7 +273,7 @@ Key remaining work for production deployment:
 - **Integration tests:** ✅ Passing (AIResilience, GameReconnection, GameSession.aiDeterminism)
 - **Scenario tests:** ✅ Passing (FAQ Q1-Q24 suites, RulesMatrix scenarios)
 - **Unit tests:** ✅ Comprehensive coverage of core mechanics
-- **Parity tests:** ✅ Major divergences resolved, remaining diagnostics lower priority
+- **Parity tests:** ⚠️ Regressions in capture enumeration and territory integration (P0 remediation in progress)
 - **Contract tests:** ✅ 100% pass rate on 12 vectors across TypeScript and Python
 - **Decision phase tests:** ✅ Timeout guards verified via `GameSession.decisionPhaseTimeout.test.ts`
 - **Adapter tests:** ✅ 46 tests for orchestrator adapters

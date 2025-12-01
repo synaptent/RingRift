@@ -1,7 +1,12 @@
-# Phase 3 Adapter Migration Report (Draft)
+# Phase 3 Adapter Migration Report (Historical)
 
-> **Doc Status (2025-11-27): Draft (operational migration report)**  
-> **Role:** Working report and checklist for the Phase 3 migration to the shared TS orchestrator adapter. This document captures intent, milestones, and operational constraints around the rollout of the canonical shared engine in both backend and sandbox hosts.
+> **⚠️ HISTORICAL / COMPLETED** – This migration was completed in November 2025. The orchestrator is now at 100% rollout.
+> For current status, see:
+> - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – Production rollout status (Phase 4 complete)
+> - `CURRENT_STATE_ASSESSMENT.md` – Implementation status
+
+> **Doc Status (2025-11-30): Historical (completed migration report)**
+> **Role:** Historical report for the Phase 3 migration to the shared TS orchestrator adapter. This document captures intent, milestones, and operational constraints around the rollout of the canonical shared engine in both backend and sandbox hosts.
 >
 > **SSoT alignment:** This report is a **derived operational doc** over the existing SSoTs:
 >

@@ -32,6 +32,7 @@ if ROOT not in sys.path:
 
 from app.models import GameState, Move, GameStatus  # noqa: E402
 from app.game_engine import GameEngine  # noqa: E402
+from app.rules import global_actions as ga  # noqa: E402
 
 
 SNAPSHOT_PATH = os.path.join(
@@ -91,10 +92,21 @@ def test_line_processing_invariant_regression(monkeypatch: pytest.MonkeyPatch) -
     # is still being violated for this scenario.
     next_state = GameEngine.apply_move(state, move)
 
-    # As an extra guard, ensure that any ACTIVE state we reach obeys the
-    # no-move invariant from the snapshot's perspective as well.
+    # As an extra guard, ensure that any ACTIVE state we reach obeys both the
+    # phase-local and global ANM invariants.
     if next_state.game_status == GameStatus.ACTIVE:
-        legal = GameEngine.get_valid_moves(next_state, next_state.current_player)
+        curr_player = next_state.current_player
+        legal = GameEngine.get_valid_moves(next_state, curr_player)
         assert (
             legal
-        ), "Regression: ACTIVE state with no legal moves after re-applying snapshot move"
+        ), (
+            "Regression: ACTIVE state with no legal moves after "
+            "re-applying snapshot move"
+        )
+
+        # INV-ACTIVE-NO-MOVES / INV-PHASE-CONSISTENCY (ANM-SCEN-05):
+        # current player in LINE_PROCESSING must have turn-material and at
+        # least one global action; ANM(state) must be false.
+        summary = ga.global_legal_actions_summary(next_state, curr_player)
+        assert summary.has_turn_material is True
+        assert ga.is_anm_state(next_state) is False

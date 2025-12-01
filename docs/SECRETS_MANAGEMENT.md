@@ -125,6 +125,11 @@ services:
 
 ## Secret Rotation Procedures
 
+For an operator-focused, step-by-step practice drill (staging/non-production),
+see also the runbook [`docs/runbooks/SECRETS_ROTATION_DRILL.md`](./runbooks/SECRETS_ROTATION_DRILL.md),
+which applies the patterns below to JWT and database credentials in a safe,
+rehearsable way.
+
 ### JWT Secret Rotation
 
 **Impact:** All existing sessions will be invalidated. Users must re-login.

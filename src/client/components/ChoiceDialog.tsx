@@ -7,13 +7,27 @@ import {
   RegionOrderChoice,
   CaptureDirectionChoice,
 } from '../../shared/types/game';
+import { getChoiceViewModel, type ChoiceViewModel } from '../adapters/choiceViewModels';
+import { getCountdownSeverity } from '../utils/countdown';
 
 export interface ChoiceDialogProps {
   choice: PlayerChoice | null;
+  /**
+   * Optional precomputed view model. When omitted, the dialog derives its own
+   * view model from the PlayerChoice type via getChoiceViewModel.
+   */
+  choiceViewModel?: ChoiceViewModel;
   /** Optional absolute deadline (ms since epoch) when this choice expires. */
   deadline?: number | null;
   /** Live countdown supplied by the parent (ms). */
   timeRemainingMs?: number | null;
+  /**
+   * When true, indicates that the effective countdown has been shortened by a
+   * server-emitted timeout warning relative to the client-local baseline. This
+   * is a presentation-only hint used to adjust copy and styling; reconciliation
+   * semantics remain in useDecisionCountdown.
+   */
+  isServerCapped?: boolean;
   onSelectOption: <TChoice extends PlayerChoice>(
     choice: TChoice,
     option: TChoice['options'][number]
@@ -23,14 +37,18 @@ export interface ChoiceDialogProps {
 
 export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
   choice,
+  choiceViewModel,
   deadline,
   timeRemainingMs,
+  isServerCapped,
   onSelectOption,
   onCancel,
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!choice) return null;
+
+  const resolvedChoiceViewModel: ChoiceViewModel = choiceViewModel ?? getChoiceViewModel(choice);
 
   const totalTimeoutMs = typeof choice.timeoutMs === 'number' ? choice.timeoutMs : null;
   const countdownMs = typeof timeRemainingMs === 'number' ? Math.max(0, timeRemainingMs) : null;
@@ -39,6 +57,29 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
     totalTimeoutMs && countdownMs !== null
       ? Math.min(100, Math.max(0, (countdownMs / totalTimeoutMs) * 100))
       : null;
+
+  const severity = countdownMs !== null ? getCountdownSeverity(countdownMs) : null;
+  const countdownLabelCopy = isServerCapped
+    ? 'Server deadline – respond within'
+    : 'Respond within';
+
+  const countdownTextClass =
+    severity === 'critical'
+      ? 'text-[11px] font-mono text-red-200 font-semibold'
+      : severity === 'warning'
+        ? 'text-[11px] font-mono text-amber-200 font-semibold'
+        : severity === 'normal'
+          ? 'text-[11px] font-mono text-emerald-200'
+          : 'text-[11px] font-mono text-gray-200';
+
+  const progressBarClass =
+    severity === 'critical'
+      ? 'h-full bg-red-400 rounded transition-all duration-200 animate-pulse'
+      : severity === 'warning'
+        ? 'h-full bg-amber-400 rounded transition-all duration-200'
+        : severity === 'normal'
+          ? 'h-full bg-emerald-400 rounded transition-all duration-200'
+          : 'h-full bg-amber-400 rounded transition-all duration-200';
 
   const renderLineOrder = (c: LineOrderChoice) => (
     <div className="space-y-2">
@@ -56,7 +97,7 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             }}
             className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Line {index + 1} – {opt.markerPositions.length} markers
+            Line {index + 1}  {opt.markerPositions.length} markers
           </button>
         ))}
       </div>
@@ -77,8 +118,10 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           }}
           className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <div className="font-semibold">Option 1</div>
-          <div>Collapse entire line and eliminate one of your rings/caps.</div>
+          <div className="font-semibold text-emerald-300">Full Collapse + Elimination Bonus</div>
+          <div className="text-gray-300">
+            Convert entire line to territory and eliminate 1 of your rings (progress toward victory!)
+          </div>
         </button>
         <button
           type="button"
@@ -90,8 +133,10 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           }}
           className="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          <div className="font-semibold">Option 2</div>
-          <div>Collapse only the minimum required markers with no elimination.</div>
+          <div className="font-semibold text-sky-300">Minimum Collapse</div>
+          <div className="text-gray-300">
+            Convert minimum markers to territory, keep extra markers on board
+          </div>
         </button>
       </div>
     </div>
@@ -114,7 +159,7 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Stack at ({opt.stackPosition.x}, {opt.stackPosition.y}
-            {opt.stackPosition.z !== undefined ? `, ${opt.stackPosition.z}` : ''}) – cap{' '}
+            {opt.stackPosition.z !== undefined ? `, ${opt.stackPosition.z}` : ''})  cap{' '}
             {opt.capHeight}, total {opt.totalHeight}
           </button>
         ))}
@@ -138,9 +183,11 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             }}
             className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Region {opt.regionId} – {opt.size} spaces, sample ({opt.representativePosition.x},{' '}
+            Region {opt.regionId}  {opt.size} spaces, sample ({opt.representativePosition.x},{' '}
             {opt.representativePosition.y}
-            {opt.representativePosition.z !== undefined ? `, ${opt.representativePosition.z}` : ''})
+            {opt.representativePosition.z !== undefined
+              ? `, ${opt.representativePosition.z}`
+              : ''})
           </button>
         ))}
       </div>
@@ -164,9 +211,9 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             Direction {index + 1}: target ({opt.targetPosition.x}, {opt.targetPosition.y}
-            {opt.targetPosition.z !== undefined ? `, ${opt.targetPosition.z}` : ''}) → landing (
+            {opt.targetPosition.z !== undefined ? `, ${opt.targetPosition.z}` : ''})  landing (
             {opt.landingPosition.x}, {opt.landingPosition.y}
-            {opt.landingPosition.z !== undefined ? `, ${opt.landingPosition.z}` : ''}) – cap{' '}
+            {opt.landingPosition.z !== undefined ? `, ${opt.landingPosition.z}` : ''})  cap{' '}
             {opt.capturedCapHeight}
           </button>
         ))}
@@ -193,7 +240,40 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
       content = renderCaptureDirection(choice as CaptureDirectionChoice);
       break;
     default:
-      content = null;
+      // Generic fallback for unknown/experimental choice types. This ensures
+      // that new PlayerChoice variants remain at least minimally operable
+      // (options can still be selected) even before specialised UI is added.
+      // Options are rendered as "Option N" without inspecting their shape.
+      content = (
+        <div className="space-y-2">
+          <p className="text-sm text-gray-200 mb-1">{(choice as any).prompt}</p>
+          {Array.isArray((choice as any).options) && (choice as any).options.length > 0 ? (
+            <div className="space-y-1 max-h-48 overflow-auto text-xs">
+              {(choice as any).options.map((opt: unknown, index: number) => (
+                <button
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={index}
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => {
+                    if (isSubmitting) return;
+                    setIsSubmitting(true);
+                    onSelectOption(choice as PlayerChoice, opt as any);
+                  }}
+                  className="w-full text-left px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Option {index + 1}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400">
+              No options are available for this decision. Please contact support if this persists.
+            </p>
+          )}
+        </div>
+      );
+      break;
   }
 
   if (!content) return null;
@@ -201,20 +281,41 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60">
       <div className="w-full max-w-md mx-4 p-4 rounded-md bg-slate-900 border border-slate-700 shadow-lg">
+        {resolvedChoiceViewModel && (
+          <div className="mb-3">
+            <div className="text-[11px] uppercase tracking-wide text-emerald-300/80">
+              {resolvedChoiceViewModel.copy.shortLabel}
+            </div>
+            <h2 className="text-sm font-semibold text-gray-100">
+              {resolvedChoiceViewModel.copy.title}
+            </h2>
+            {resolvedChoiceViewModel.copy.description && (
+              <p className="mt-0.5 text-xs text-gray-400">
+                {resolvedChoiceViewModel.copy.description}
+              </p>
+            )}
+          </div>
+        )}
+
         {content}
 
         <div className="mt-4 flex flex-col space-y-2 text-xs">
           {deadline && (
-            <div>
+            <div
+              data-testid="choice-countdown"
+              data-severity={severity ?? undefined}
+              data-server-capped={isServerCapped ? 'true' : undefined}
+            >
               {countdownSeconds !== null ? (
                 <>
                   <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
-                    <span>Respond within</span>
-                    <span>{countdownSeconds}s</span>
+                    <span>{countdownLabelCopy}</span>
+                    <span className={countdownTextClass}>{countdownSeconds}s</span>
                   </div>
                   <div className="h-1 bg-slate-800 rounded">
                     <div
-                      className="h-full bg-amber-400 rounded transition-all duration-200"
+                      className={progressBarClass}
+                      data-testid="choice-countdown-bar"
                       style={{ width: `${progressPercent ?? 100}%` }}
                     />
                   </div>

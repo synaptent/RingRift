@@ -82,6 +82,15 @@ const mockMoves = [
       player: 1,
       to: { x: 3, y: 3 },
       placementCount: 1,
+      // When the server auto-resolves a decision phase for this move, the
+      // GamePersistenceService persists a compact decisionAutoResolved
+      // payload inside moveData. The /games/:gameId/history route then
+      // projects this into a top-level autoResolved badge payload.
+      decisionAutoResolved: {
+        reason: 'timeout',
+        choiceKind: 'line',
+        choiceType: 'reward',
+      },
     },
     timestamp: new Date('2024-01-15T10:05:30Z'),
     player: { id: mockUserId, username: 'TestPlayer' },
@@ -140,6 +149,16 @@ describe('Game History API Routes', () => {
             moveType: move.moveType,
             moveData: move.moveData,
             timestamp: move.timestamp.toISOString(),
+            // When moveData.decisionAutoResolved is present, the HTTP
+            // history payload surfaces a compact autoResolved badge
+            // projection for the client history UI.
+            ...(move.moveData?.decisionAutoResolved && {
+              autoResolved: {
+                reason: move.moveData.decisionAutoResolved.reason,
+                choiceKind: move.moveData.decisionAutoResolved.choiceKind,
+                choiceType: move.moveData.decisionAutoResolved.choiceType,
+              },
+            }),
           })),
           totalMoves: 2,
         },
@@ -150,6 +169,30 @@ describe('Game History API Routes', () => {
       expect(expectedResponse.data.moves[0].moveNumber).toBe(1);
       expect(expectedResponse.data.moves[0].moveType).toBe('place_ring');
       expect(expectedResponse.data.moves[1].moveNumber).toBe(2);
+    });
+
+    it('should project decisionAutoResolved metadata into autoResolved badge payload', () => {
+      const [autoResolvedSource] = mockMoves;
+      const decisionAutoResolved = (autoResolvedSource.moveData as any).decisionAutoResolved;
+
+      const expectedMove = {
+        moveNumber: autoResolvedSource.moveNumber,
+        playerId: autoResolvedSource.playerId,
+        playerName: autoResolvedSource.player.username,
+        moveType: autoResolvedSource.moveType,
+        moveData: autoResolvedSource.moveData,
+        timestamp: autoResolvedSource.timestamp.toISOString(),
+        autoResolved: {
+          reason: decisionAutoResolved.reason,
+          choiceKind: decisionAutoResolved.choiceKind,
+          choiceType: decisionAutoResolved.choiceType,
+        },
+      };
+
+      expect(expectedMove.autoResolved).toBeDefined();
+      expect(expectedMove.autoResolved?.reason).toBe('timeout');
+      expect(expectedMove.autoResolved?.choiceKind).toBe('line');
+      expect(expectedMove.autoResolved?.choiceType).toBe('reward');
     });
 
     it('should return 404 when game not found', async () => {

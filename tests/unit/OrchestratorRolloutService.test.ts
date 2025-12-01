@@ -271,6 +271,100 @@ describe('OrchestratorRolloutService', () => {
     });
   });
 
+  describe('Phase-like configuration presets', () => {
+    it('Phase 0 / legacy-only posture forces LEGACY via kill switch', () => {
+      mockOrchestratorConfig.adapterEnabled = false;
+      mockOrchestratorConfig.rolloutPercentage = 100;
+      mockOrchestratorConfig.shadowModeEnabled = false;
+
+      const decision = service.selectEngine('any-session', 'any-user');
+
+      expect(decision.engine).toBe(EngineSelection.LEGACY);
+      expect(decision.reason).toBe('kill_switch');
+    });
+
+    it('Phase 1 / staging orchestrator-only routes typical sessions to ORCHESTRATOR', () => {
+      mockOrchestratorConfig.adapterEnabled = true;
+      mockOrchestratorConfig.rolloutPercentage = 100;
+      mockOrchestratorConfig.shadowModeEnabled = false;
+      mockOrchestratorConfig.allowlistUsers = [];
+      mockOrchestratorConfig.denylistUsers = [];
+      mockOrchestratorConfig.circuitBreaker = {
+        enabled: true,
+        errorThresholdPercent: 5,
+        errorWindowSeconds: 300,
+      };
+
+      // Keep circuit breaker closed
+      service.recordSuccess();
+
+      const decision = service.selectEngine('staging-session', 'staging-user');
+      expect(decision.engine).toBe(EngineSelection.ORCHESTRATOR);
+      expect(decision.reason).toBe('percentage_rollout');
+    });
+
+    it('Phase 2 / production shadow uses SHADOW for allowlisted users and LEGACY otherwise', () => {
+      mockOrchestratorConfig.adapterEnabled = true;
+      mockOrchestratorConfig.rolloutPercentage = 0;
+      mockOrchestratorConfig.shadowModeEnabled = true;
+      mockOrchestratorConfig.allowlistUsers = ['vip-user'];
+      mockOrchestratorConfig.denylistUsers = [];
+      mockOrchestratorConfig.circuitBreaker = {
+        enabled: true,
+        errorThresholdPercent: 5,
+        errorWindowSeconds: 300,
+      };
+
+      // Allowlisted user sees SHADOW due to shadow-orchestrator path
+      const allowlisted = service.selectEngine('prod-session-1', 'vip-user');
+      expect(allowlisted.engine).toBe(EngineSelection.SHADOW);
+      expect(allowlisted.reason).toBe('allowlist_shadow');
+
+      // Non-allowlisted user, no percentage rollout → LEGACY
+      const regular = service.selectEngine('prod-session-2', 'regular-user');
+      expect(regular.engine).toBe(EngineSelection.LEGACY);
+      expect(regular.reason).toBe('percentage_excluded');
+    });
+
+    it('Phase 3 / incremental rollout honors circuit breaker and percentage', () => {
+      mockOrchestratorConfig.adapterEnabled = true;
+      mockOrchestratorConfig.rolloutPercentage = 25;
+      mockOrchestratorConfig.shadowModeEnabled = false;
+      mockOrchestratorConfig.allowlistUsers = [];
+      mockOrchestratorConfig.denylistUsers = [];
+      mockOrchestratorConfig.circuitBreaker = {
+        enabled: true,
+        errorThresholdPercent: 10,
+        errorWindowSeconds: 300,
+      };
+
+      // First, with circuit breaker closed, some sessions should be routed to ORCHESTRATOR
+      let sawOrchestrator = false;
+      let sawLegacy = false;
+      for (let i = 0; i < 200; i++) {
+        const decision = service.selectEngine(`rollout-session-${i}`);
+        if (decision.engine === EngineSelection.ORCHESTRATOR) {
+          sawOrchestrator = true;
+        } else {
+          sawLegacy = true;
+        }
+        if (sawOrchestrator && sawLegacy) break;
+      }
+      expect(sawOrchestrator).toBe(true);
+      expect(sawLegacy).toBe(true);
+
+      // Now trip the circuit breaker and confirm it forces LEGACY regardless of percentage
+      for (let i = 0; i < 20; i++) {
+        service.recordError();
+      }
+      expect(service.isCircuitBreakerOpen()).toBe(true);
+
+      const afterTrip = service.selectEngine('post-trip-session');
+      expect(afterTrip.engine).toBe(EngineSelection.LEGACY);
+      expect(afterTrip.reason).toBe('circuit_breaker');
+    });
+  });
+
   describe('Consistent Hashing', () => {
     it('should return consistent results for the same session ID', () => {
       mockOrchestratorConfig.rolloutPercentage = 50;

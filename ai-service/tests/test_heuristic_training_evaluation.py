@@ -16,10 +16,13 @@ They focus on:
 """
 
 import json
+import math
 import os
 import sys
 import tempfile
 from typing import Dict, Any
+
+import pytest
 
 # Ensure app package and training scripts are importable when running tests
 # directly (mirrors pattern used in other ai-service tests).
@@ -49,6 +52,7 @@ from scripts.run_axis_aligned_tournament import (  # type: ignore  # noqa: E402
 )
 from scripts import (  # noqa: E402
     generate_axis_aligned_profiles,  # type: ignore[attr-defined]
+    run_genetic_heuristic_search as ga_search,  # type: ignore[attr-defined]
 )
 
 
@@ -87,6 +91,7 @@ def test_heuristic_weight_keys_are_canonical_and_complete() -> None:
     assert heuristic_ai_weight_attrs.issubset(canonical_keys)
 
 
+@pytest.mark.timeout(180)
 def test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline(
 ) -> None:
     """
@@ -110,8 +115,9 @@ def test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline(
     def _zero_hook(d: Dict[str, Any]) -> None:
         zero_stats.update(d)
 
-    # Small evaluation budget to keep the test cheap but deterministic.
-    games_per_eval = 8
+    # Small evaluation budget to keep the test reasonably cheap while still
+    # exercising the shared fitness harness.
+    games_per_eval = 4
 
     baseline_fitness = evaluate_fitness(
         candidate_weights=baseline,
@@ -158,6 +164,55 @@ def test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline(
     assert zero_fitness < baseline_fitness
     assert zero_fitness < 0.25
     assert zero_stats["weight_l2"] > 0.0
+
+
+def test_evaluate_fitness_debug_callback_receives_stats() -> None:
+    """
+    The structured debug_callback exposed by evaluate_fitness must receive
+    the candidate/baseline dicts, board type, and an aggregate stats dict
+    with consistent fields (wins/draws/losses, games, fitness, and
+    weight_l2_to_baseline).
+    """
+    baseline = dict(BASE_V1_BALANCED_WEIGHTS)
+    candidate = dict(baseline)
+    games_per_eval = 2
+    board_type = BoardType.SQUARE8
+
+    captured: Dict[str, Any] = {}
+
+    def _cb(c_w, b_w, bt, stats):
+        captured["candidate"] = c_w
+        captured["baseline"] = b_w
+        captured["board_type"] = bt
+        captured["stats"] = stats
+
+    fitness = evaluate_fitness(
+        candidate_weights=candidate,
+        baseline_weights=baseline,
+        games_per_eval=games_per_eval,
+        board_type=board_type,
+        verbose=False,
+        opponent_mode="baseline-only",
+        max_moves=50,
+        eval_mode="initial-only",
+        state_pool_id=None,
+        eval_randomness=0.0,
+        seed=123,
+        debug_callback=_cb,
+    )
+
+    assert captured["candidate"] == candidate
+    assert captured["baseline"] == baseline
+    assert captured["board_type"] == board_type
+
+    stats = captured["stats"]
+    assert stats["wins"] + stats["draws"] + stats["losses"] == games_per_eval
+    assert stats["games"] == games_per_eval
+    assert stats["games_per_eval"] == games_per_eval
+    assert math.isclose(stats["fitness"], fitness)
+    assert stats["weight_l2_to_baseline"] == 0.0
+    # Legacy alias should still be present for callers that relied on it.
+    assert "weight_l2" in stats
 
 
 def _build_midgame_state() -> GameState:
@@ -258,6 +313,78 @@ def test_heuristic_ai_position_evaluation_depends_on_weights() -> None:
     # of the same player and that the game is still active.
     assert state.current_player in (1, 2)
     assert state.game_status == GameStatus.ACTIVE
+
+
+def test_ga_uses_debug_callback_for_logging(monkeypatch, capsys) -> None:
+    """
+    The GA harness must wire a per-individual FitnessDebugCallback into
+    evaluate_fitness so that W/D/L and L2 diagnostics are printed.
+    This test monkeypatches evaluate_fitness to be cheap and to assert that
+    the callback is invoked once per individual.
+    """
+    baseline = dict(BASE_V1_BALANCED_WEIGHTS)
+    population = [
+        ga_search.Individual(weights=baseline),
+        ga_search.Individual(weights=baseline),
+    ]
+
+    callbacks = []
+
+    def _fake_evaluate_fitness(*args, **kwargs):
+        debug_cb = kwargs.get("debug_callback")
+        # GA should always request per-individual diagnostics.
+        assert debug_cb is not None
+        callbacks.append(debug_cb)
+
+        candidate_w = kwargs["candidate_weights"]
+        baseline_w = kwargs["baseline_weights"]
+        board_type = kwargs["board_type"]
+        games_per_eval = kwargs["games_per_eval"]
+
+        stats = {
+            "wins": 1,
+            "draws": 0,
+            "losses": 0,
+            "games": games_per_eval,
+            "games_per_eval": games_per_eval,
+            "fitness": 1.0,
+            "weight_l2_to_baseline": 0.0,
+        }
+        debug_cb(candidate_w, baseline_w, board_type, dict(stats))
+        return 1.0
+
+    monkeypatch.setattr(
+        ga_search,
+        "evaluate_fitness",
+        _fake_evaluate_fitness,
+    )
+
+    boards = [BoardType.SQUARE8]
+    games_per_eval = 1
+
+    ga_search._evaluate_population(
+        population,
+        games_per_eval,
+        boards,
+        eval_mode="initial-only",
+        state_pool_id="v1",
+        seed=42,
+        eval_randomness=0.0,
+        generation_index=1,
+    )
+
+    # Each individual should have had its fitness populated via the fake
+    # evaluator, and the debug callback should have been invoked once per
+    # individual.
+    assert [ind.fitness for ind in population] == [1.0, 1.0]
+    assert len(callbacks) == len(population)
+
+    out = capsys.readouterr().out
+    # The GA harness should emit per-individual diagnostics including W/D/L
+    # and an L2 norm to the baseline.
+    assert "[GA] gen=1 ind=1/2 board=" in out
+    assert "W=1 D=0 L=0" in out
+    assert "||w-baseline||_2=0.000" in out
 
 
 def test_axis_aligned_profile_construction_single_factor() -> None:

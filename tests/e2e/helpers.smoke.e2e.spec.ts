@@ -184,15 +184,18 @@ test.describe('E2E Helpers Smoke Tests', () => {
       await expect(page.getByRole('heading', { name: /Game Lobby/i })).toBeVisible();
     });
 
-    test('goToHome navigates to home page', async ({ page }) => {
-      // Navigate to login first
+    test('goToHome navigates to auth-aware root shell', async ({ page }) => {
+      // Navigate to login first to exercise guest routing behaviour.
       await page.goto('/login');
 
-      // Then to home (guest mode or after setup)
+      // Then to home (guest or authenticated, depending on prior helpers).
       await goToHome(page);
 
-      // Home should show welcome message
-      await expect(page.getByRole('heading', { name: /Welcome to RingRift/i })).toBeVisible();
+      // Root should resolve to either the authenticated home shell or the login page.
+      const homeHeading = page.getByRole('heading', { name: /Welcome to RingRift/i });
+      const loginHeading = page.getByRole('heading', { name: /login/i });
+
+      await expect(homeHeading.or(loginHeading)).toBeVisible();
     });
 
     test('goToSandbox navigates to sandbox pre-game page', async ({ page }) => {

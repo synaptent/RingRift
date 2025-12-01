@@ -6,7 +6,7 @@
 > - **Rules semantics & lifecycle SSoTs:** Shared TS rules engine under `src/shared/engine/**` plus v2 contract vectors, and lifecycle/API contracts described in `docs/CANONICAL_ENGINE_API.md` and implemented in `src/shared/types/**`, `src/shared/engine/orchestration/types.ts`, and `src/shared/validation/websocketSchemas.ts`. This doc is **downstream** of those semantics; it does not define rules or Move semantics.
 > - **Precedence:** If this document ever conflicts with CI configs, Dockerfiles, monitoring/alerting configs, or validated env/config code, **code + tests + live configs win**, and this document must be updated to match them.
 >
-> **Doc Status (2025-11-27): Active (with historical/aspirational content)** \
+> **Doc Status (2025-11-29): Active (with historical/aspirational content)** \
 > Design and plan for supply-chain and CI/CD hardening (S-05.F.x). Describes intended safeguards and tracks; some controls are already implemented in `ci.yml` and Dockerfiles, others remain backlog. This is not a rules or lifecycle SSoT; it complements `SECURITY_THREAT_MODEL.md`, `DATA_LIFECYCLE_AND_PRIVACY.md`, and `DOCUMENTATION_INDEX.md` for overall security posture, and it is downstream of the rules semantics SSoT (shared TS engine + contracts + vectors) and lifecycle/API SSoT (`CANONICAL_ENGINE_API.md` + shared types/schemas).
 
 **Related docs:** [`docs/SECURITY_THREAT_MODEL.md`](./SECURITY_THREAT_MODEL.md:1), [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:155), [`docs/DATA_LIFECYCLE_AND_PRIVACY.md`](./DATA_LIFECYCLE_AND_PRIVACY.md:1), [`docs/OPERATIONS_DB.md`](./OPERATIONS_DB.md:1), [`archive/FINAL_ARCHITECT_REPORT.md`](../archive/FINAL_ARCHITE_REPORT.md:1), [`tests/README.md`](../tests/README.md:1), [`tests/TEST_LAYERS.md`](../tests/TEST_LAYERS.md:1), [`tests/TEST_SUITE_PARITY_PLAN.md`](../tests/TEST_SUITE_PARITY_PLAN.md:1)
@@ -95,8 +95,14 @@ The CI workflow currently defines the following human‑readable job display nam
 - Orchestrator Parity (TS orchestrator + Python contracts)
 - Python Rules Parity (fixture-based)
 - Python Core Tests (non-parity)
+- Python AI Self-Play Healthcheck
 - Python Dependency Audit
 - Playwright E2E Tests
+
+In addition, two separate scheduled workflows define nightly jobs:
+
+- [`orchestrator-soak-nightly.yml`](../.github/workflows/orchestrator-soak-nightly.yml:1) – **Orchestrator Invariant Soak (nightly)**
+- [`ai-healthcheck-nightly.yml`](../.github/workflows/ai-healthcheck-nightly.yml:1) – **AI Self-Play Healthcheck (Nightly)**
 
 - **Lint & type safety**
   - `lint-and-typecheck` (**"Lint and Type Check" job**) – ESLint plus TypeScript compilation for root, server, and client (`npx tsc`, `npx tsc -p tsconfig.server.json`, `npx tsc -p tsconfig.client.json`).
@@ -109,20 +115,37 @@ The CI workflow currently defines the following human‑readable job display nam
   - `ts-parity` (**"TS Parity (trace-level & host parity)" job**) – `npm run test:ts-parity`, covering trace/host parity and RNG‑oriented suites.
   - `ts-integration` (**"TS Integration (routes, WebSocket, AI integration)" job**) – `npm run test:ts-integration`, exercising WebSocket, route, and full game‑flow integration.
   - `orchestrator-soak-smoke` (**"Orchestrator Invariant Soak (smoke)" job**) – `npm run soak:orchestrator:smoke`, a single short backend game via the shared TS orchestrator that fails on invariant violations and feeds S‑invariant regression mining (see `docs/STRICT_INVARIANT_SOAKS.md`).
+  - `orchestrator-short-soak` (**"Orchestrator Invariant Soak (short)" job**) – `npm run soak:orchestrator:short`, a deterministic short backend soak (multiple games on `square8` with `--failOnViolation=true`) that acts as the concrete CI implementation of `SLO-CI-ORCH-SHORT-SOAK` for pre‑merge gating.
+  - `orchestrator-soak-nightly` (**"Orchestrator Invariant Soak (nightly)" job**, scheduled in [`orchestrator-soak-nightly.yml`](../.github/workflows/orchestrator-soak-nightly.yml:1)) – `npm run soak:orchestrator:nightly`, a longer multi‑board nightly soak (currently 20 games per board type across `square8`, `square19`, and `hexagonal`) that uploads `results/orchestrator_soak_nightly.json` as an artefact for invariant regression monitoring.
   - `ssot-check` (**"SSoT Drift Guards" job**) – `npm run ssot-check`, enforcing docs/env/CI/rules SSoT alignment and guarding against legacy path regressions.
+  - `python-ai-healthcheck` (**"Python AI Self-Play Healthcheck" job**) – runs the AI self‑play healthcheck profile via `python scripts/run_self_play_soak.py --profile ai-healthcheck --log-jsonl … --summary-json … --max-moves 200 --fail-on-anomaly` under `ai-service/`. This is a bounded mixed‑engine invariant/healthcheck run across `square8`, `square19`, and `hexagonal` (see `docs/STRICT_INVARIANT_SOAKS.md` §2.5).
+
+  A separate nightly workflow, `ai-healthcheck-nightly.yml`, runs a deeper variant of the same profile (**"AI Self-Play Healthcheck (Nightly)" job**) with increased `RINGRIFT_AI_HEALTHCHECK_GAMES` and a higher `--max-moves` cap. Its summary JSON (`ai_healthcheck_nightly_summary.json`) is uploaded as a long‑retention artefact for trend analysis and regression mining.
+
+  In addition to the CI jobs above, there is a **manual HTTP load/scale smoke harness** for orchestrator‑ON environments:
+
+  - `npm run load:orchestrator:smoke` (see `scripts/orchestrator-load-smoke.ts` and `tests/README.md`) issues a small number of concurrent `/api/auth/register` and `/api/games` requests against a running backend under the orchestrator‑ON profile (`RINGRIFT_RULES_MODE=ts`, `ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, `ORCHESTRATOR_SHADOW_MODE_ENABLED=false`) and samples `/metrics` for orchestrator rollout gauges. It is **not** a hard CI gate, but is recommended as a pre‑rollout / pre‑phase‑change smoke in staging, as referenced in `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md` and `CURRENT_STATE_ASSESSMENT.md`.
+  - For a complementary **metrics & observability smoke**, the Playwright spec `tests/e2e/metrics.e2e.spec.ts` can be run via `npm run test:e2e -- tests/e2e/metrics.e2e.spec.ts` to assert that `/metrics` is reachable and that core orchestrator gauges (for example `ringrift_orchestrator_error_rate`, `ringrift_orchestrator_rollout_percentage`, `ringrift_orchestrator_circuit_breaker_state`) are present. This is intended as a fast, non‑gating verification of observability wiring before/after orchestrator‑related changes.
 - **Build & artefact packaging**
   - `build` (**"Build Application" job**) – `npm run build` for server and client, then archives `dist/` as an artefact.
 - **Node dependency & supply‑chain scans**
   - `security-scan` (**"Security Scan" job**) – `npm audit --production --audit-level=high` plus a Snyk scan (`snyk/actions/node`) with `--severity-threshold=high` against the Node/TypeScript dependency graph.
 - **Docker build sanity check**
   - `docker-build` (**"Docker Build Test" job**) – Docker Buildx build of the main `Dockerfile` (tagged `ringrift:test`, push disabled) to ensure the multi‑stage image still builds inside CI.
+  - `ai-service-docker-smoke` (**"AI Service Docker Build & Torch Import Smoke" job**) – builds `ai-service/Dockerfile` and runs an in‑container `python -c "import torch, torchvision; ..."` smoke test to confirm Torch/TorchVision versions match the pins in `ai-service/requirements.txt`.
 - **Python rules parity (TS→Python fixtures)**
-  - `orchestrator-parity` (**"Orchestrator Parity (TS orchestrator + Python contracts)" job**) – runs TS orchestrator parity suites and then Python contract‑vector tests, using shared TS‑generated contract vectors as the SSoT for cross‑language orchestrator behaviour.
+  - `orchestrator-parity` (**"Orchestrator Parity (TS orchestrator + Python contracts)" job**) – runs TS orchestrator parity TS suites via `npm run test:orchestrator-parity:ts` and then Python contract‑vector tests via `./scripts/run-python-contract-tests.sh --verbose`, using shared TS‑generated contract vectors as the SSoT for cross‑language orchestrator behaviour.
   - `python-rules-parity` (**"Python Rules Parity (fixture-based)" job**) – generates TS→Python rules‑parity fixtures via `tests/scripts/generate_rules_parity_fixtures.ts`, then runs `python -m pytest ai-service/tests/parity/test_rules_parity_fixtures.py` under Python 3.11. This is the primary SSoT‑backed TS↔Python rules parity signal beyond the orchestrator‑specific job above.
 - **Python core tests**
   - `python-core` (**"Python Core Tests (non-parity)" job**) – runs the non‑parity pytest suite (engine correctness, env interface, AI unit tests) under Python 3.11.
 - **Python dependency audit**
-  - `python-dependency-audit` (**"Python Dependency Audit" job**) – installs `ai-service/requirements.txt`, then runs `pip-audit -r requirements.txt --severity HIGH` to fail on known HIGH/CRITICAL dependency vulnerabilities.
+  - `python-dependency-audit` (**"Python Dependency Audit" job**) – installs `ai-service/requirements.txt`, then runs `pip-audit -r requirements.txt --severity HIGH` using a **pinned** `pip-audit` CLI (`pip-audit>=2.7.0,<3.0.0`) to fail on known HIGH/CRITICAL dependency vulnerabilities. For local runs, first install the same CLI range:
+
+    ```bash
+    cd ai-service
+    python -m pip install 'pip-audit>=2.7.0,<3.0.0'
+    pip-audit -r requirements.txt --severity HIGH
+    ```
 - **E2E/browser‐level tests (currently non‑gating)**
   - `e2e-tests` (**"Playwright E2E Tests" job**) – stand‑up of Postgres+Redis via CI services, then Playwright E2E tests (`npm run test:e2e`) against a locally built app. Marked `continue-on-error: true` while the full infra stack is still being hardened; artefacts (Playwright reports) are uploaded for inspection.
 

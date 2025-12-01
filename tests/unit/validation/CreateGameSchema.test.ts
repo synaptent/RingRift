@@ -6,6 +6,7 @@ describe('CreateGameSchema', () => {
     const input = {
       boardType: 'square8',
       timeControl: {
+        type: 'blitz',
         initialTime: 600,
         increment: 5,
       },
@@ -17,7 +18,7 @@ describe('CreateGameSchema', () => {
     const parsed = CreateGameSchema.parse(input);
 
     expect(parsed.boardType).toBe('square8');
-    expect(parsed.timeControl).toEqual({ initialTime: 600, increment: 5 });
+    expect(parsed.timeControl).toEqual({ type: 'blitz', initialTime: 600, increment: 5 });
     expect(parsed.isRated).toBe(true);
     expect(parsed.isPrivate).toBe(false);
     expect(parsed.maxPlayers).toBe(2);
@@ -28,6 +29,7 @@ describe('CreateGameSchema', () => {
     const input = {
       boardType: 'square19',
       timeControl: {
+        type: 'rapid',
         initialTime: 300,
         increment: 0,
       },
@@ -45,6 +47,7 @@ describe('CreateGameSchema', () => {
     const input = {
       boardType: 'hexagonal',
       timeControl: {
+        type: 'classical',
         initialTime: 900,
         increment: 10,
       },
@@ -73,6 +76,7 @@ describe('CreateGameSchema', () => {
     const badInput = {
       boardType: 'invalid-board',
       timeControl: {
+        type: 'invalid-type',
         initialTime: 10,
         increment: -1,
       },
@@ -87,7 +91,8 @@ describe('CreateGameSchema', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       const issueCodes = result.error.issues.map((i) => i.code);
-      expect(issueCodes).toContain('invalid_enum_value');
+      // Zod uses 'invalid_value' for enum validation failures (not 'invalid_enum_value')
+      expect(issueCodes).toContain('invalid_value');
       expect(issueCodes).toContain('too_small');
       expect(issueCodes).toContain('too_big');
     }

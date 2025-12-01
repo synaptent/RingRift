@@ -226,6 +226,28 @@ Then monitor:
 - `ringrift_orchestrator_shadow_mismatch_rate`
 - HTTP/E2E SLOs (latency, error rates).
 
+To **drop orchestrator rollout to 0%** while keeping the adapter available for diagnostics:
+
+```bash
+kubectl set env deployment/ringrift-api ORCHESTRATOR_ROLLOUT_PERCENTAGE=0
+```
+
+This forces all new sessions onto the legacy rules path without changing other flags; use this when you want to pause orchestrator usage but retain the ability to re-enable it quickly.
+
+To switch into a **shadow-only diagnostic posture** (legacy authoritative, orchestrator in shadow for comparison):
+
+```bash
+kubectl set env deployment/ringrift-api \
+  ORCHESTRATOR_ADAPTER_ENABLED=true \
+  ORCHESTRATOR_ROLLOUT_PERCENTAGE=0 \
+  ORCHESTRATOR_SHADOW_MODE_ENABLED=true \
+  RINGRIFT_RULES_MODE=shadow
+```
+
+In this mode, all sessions run legacy rules for gameplay while the orchestrator processes the same turns in parallel for mismatch detection.
+
+For an equivalent **developer-focused shadow-mode parity harness** using the same flag posture, see the “Shadow-mode TS↔Python parity profile (`RINGRIFT_RULES_MODE=shadow`)" example in `tests/README.md`.
+
 ---
 
 ## 6. Verification After Changes
@@ -245,10 +267,31 @@ After any rollout or rollback action:
    - Create a few games with AI/human players.
    - Exercise capture, lines, territory, and victory conditions.
    - Verify no spike in 5xx or orchestrator errors.
-   - Optionally run a short orchestrator soak to re-check core invariants under the TS engine:
-     - `npm run soak:orchestrator:smoke` (single short backend game on square8, fails on invariant violation), or
-     - `npm run soak:orchestrator -- --boardTypes=square8 --gamesPerBoard=5 --failOnViolation`
-     - See [`docs/STRICT_INVARIANT_SOAKS.md`](../STRICT_INVARIANT_SOAKS.md) §2.3–2.4 for details on orchestrator soaks and related SLOs.
+   - Optionally run an orchestrator soak to re-check core invariants under the TS engine:
+     - `npm run soak:orchestrator:smoke` (single short backend game on square8, fails on invariant violation).
+     - `npm run soak:orchestrator:short` (deterministic short backend soak on square8 with multiple games, `--failOnViolation=true`; this is the concrete CI implementation of `SLO-CI-ORCH-SHORT-SOAK`).
+     - For deeper offline runs, see `npm run soak:orchestrator:nightly` and [`docs/STRICT_INVARIANT_SOAKS.md`](../STRICT_INVARIANT_SOAKS.md) §2.3–2.4 for details on orchestrator soak profiles and related SLOs.
+   - Optionally run a **backend HTTP load smoke** to exercise `/api` and WebSocket paths under orchestrator‑ON:
+     ```bash
+     TS_NODE_PROJECT=tsconfig.server.json npm run load:orchestrator:smoke
+     ```
+     This script:
+     - Registers a small number of throwaway users via `/api/auth/register`.
+     - Creates short games via `/api/games` and fetches game lists/details.
+     - Samples `/metrics` for orchestrator rollout metrics.
+     Use it as a quick check that backend HTTP + orchestrator wiring behave sensibly at low concurrency before increasing rollout or enabling shadow mode.
+   - Optionally run a **metrics & observability smoke** to confirm `/metrics` is exposed and key orchestrator gauges are present:
+     ```bash
+     npm run test:e2e -- tests/e2e/metrics.e2e.spec.ts
+     ```
+     This Playwright spec:
+     - Waits for `/ready` via `E2E_API_BASE_URL` (or `http://localhost:3000`).
+     - Scrapes `/metrics` and asserts Prometheus output.
+     - Verifies the presence of orchestrator metrics such as:
+       - `ringrift_orchestrator_error_rate`
+       - `ringrift_orchestrator_rollout_percentage`
+       - `ringrift_orchestrator_circuit_breaker_state`
+     Use it as a fast guardrail that observability wiring is intact before and after major orchestrator rollouts.
 
 ---
 
@@ -287,23 +330,34 @@ Run this checklist **before** promoting a new build to staging or production.
      CI (see `ORCHESTRATOR_ROLLOUT_PLAN.md` §6.2):
      - `npm run test:orchestrator-parity:ts`
      - `./scripts/run-python-contract-tests.sh --verbose`
+   - The `orchestrator-parity` job is documented alongside other
+     orchestrator-related lanes in `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`
+     under **Orchestrator Parity (TS orchestrator + Python contracts)**; treat
+     that section as the CI SLO SSoT when adjusting or debugging the job.
    - If this job is red or flaky:
      - Do **not** promote the build.
      - Triage and fix tests or underlying rules changes first.
 
 2. **Short orchestrator soak (SLO-CI-ORCH-SHORT-SOAK)**
-   - On the exact commit to be deployed, run a short soak locally or in CI:
-     ```bash
-     npm run soak:orchestrator -- --boardTypes=square8 --gamesPerBoard=5 --failOnViolation=true
-     ```
-   - Verify:
+   - On the exact commit to be deployed, ensure the canonical short soak profile has run and passed either:
+     - via CI (the `orchestrator-short-soak` job in `.github/workflows/ci.yml`), or
+     - locally, using:
+       ```bash
+       npm run soak:orchestrator:short
+       ```
+   - Verify (for the run corresponding to the candidate commit):
      - Exit code is `0`.
-     - `results/orchestrator_soak_summary.json` reports
-       `totalInvariantViolations == 0`.
+     - The short-soak summary reports `totalInvariantViolations == 0` (see
+       [`docs/STRICT_INVARIANT_SOAKS.md`](../STRICT_INVARIANT_SOAKS.md) §2.3 for output details).
    - If any violation is reported:
      - Treat this as an SLO breach.
      - Do not promote the build until the invariant bug is understood and
        addressed (often via a regression test).
+   - For deeper offline or scheduled runs (not required for this SLO), use:
+     ```bash
+     npm run soak:orchestrator:nightly
+     ```
+     and inspect `results/orchestrator_soak_nightly.json` for invariant summaries.
 
 3. **Staging readiness**
    - Confirm staging configuration supports orchestrator-only posture:
@@ -332,6 +386,10 @@ Run this checklist **before** promoting a new build to staging or production.
      - Desired `ORCHESTRATOR_SHADOW_MODE_ENABLED` value.
      - Any allow/deny list changes in `OrchestratorRolloutService`.
    - Ensure you have a **rollback plan** (see §8.5) before making any change.
+   - When in doubt about which combination of `NODE_ENV`, `RINGRIFT_APP_TOPOLOGY`,
+     `RINGRIFT_RULES_MODE`, and orchestrator flags to use for a given phase,
+     refer to the canonical presets in
+     [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1](../ORCHESTRATOR_ROLLOUT_PLAN.md#811-environment-and-flag-presets-by-phase).
 
 ### 8.2 Phase 1 – Staging-only orchestrator
 
@@ -517,7 +575,7 @@ problem:
      - `adapterEnabled`
      - `rolloutPercentage`
      - `shadowModeEnabled`
-   - Map the environment to Phase 1/2/3 from `ORCHESTRATOR_ROLLOUT_PLAN.md`.
+   - Map the environment to Phase 1/2/3 using the environment → phase table in `ORCHESTRATOR_ROLLOUT_PLAN.md` (§8.7).
 
 3. **Run targeted diagnostics (when safe)**
    - For suspected invariant or rules issues:

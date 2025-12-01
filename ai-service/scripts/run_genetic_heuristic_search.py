@@ -16,7 +16,8 @@ Key characteristics:
   `evaluate_fitness(candidate, baseline, ...)` from
   `scripts/run_cmaes_optimization.py`, so CMA-ES and GA share a single
   fitness definition and instrumentation (including per-individual
-  wins/draws/losses and L2-distance diagnostics via `debug_hook`).
+  wins/draws/losses and L2-distance diagnostics via an optional debug
+  callback).
 - Selection keeps the top-K individuals each generation (elitism).
 - Mutation applies per-weight Gaussian noise with configurable sigma.
 - Evaluation can use either:
@@ -67,6 +68,7 @@ from scripts.run_cmaes_optimization import (  # type: ignore  # noqa: E402
     BOARD_NAME_TO_TYPE,
     evaluate_fitness,
     evaluate_fitness_over_boards,
+    FitnessDebugCallback,
 )
 
 
@@ -127,38 +129,57 @@ def _evaluate_population(
     """Evaluate a population on one or more boards and update fitness.
 
     Fitness values are written back to the provided population in-place.
+    Per-individual diagnostics (wins/draws/losses and L2 distance to the
+    baseline) are emitted via the shared :class:`FitnessDebugCallback`
+    mechanism exposed by ``evaluate_fitness``.
     """
     baseline = dict(BASE_V1_BALANCED_WEIGHTS)
     total_individuals = len(population)
     total_games = total_individuals * games_per_eval * max(1, len(boards))
     completed_games = 0
 
-    for idx, ind in enumerate(population, start=1):
-
-        def _hook(
+    def _make_debug_callback(ind_index: int) -> FitnessDebugCallback:
+        def _callback(
+            candidate_w: HeuristicWeights,
+            baseline_w: HeuristicWeights,
+            board_type: BoardType,
             stats: Dict[str, Any],
-            idx: int = idx,
-            gen: int | None = generation_index,
+            *,
+            _total_individuals: int = total_individuals,
+            _generation_index: int | None = generation_index,
         ) -> None:
-            g = gen if gen is not None else -1
-            prefix = f"[GA] gen={g} idx={idx}"
-            board = stats.get("board_type")
-            if board is not None:
-                try:
-                    board_label = board.value  # type: ignore[assignment]
-                except AttributeError:
-                    board_label = str(board)
-                prefix += f" board={board_label}"
-                if "board_index" in stats:
-                    prefix += f" bidx={stats['board_index']}"
-            msg = (
-                f"{prefix} fitness={stats['fitness']:.4f} "
-                f"W={stats['wins']} D={stats['draws']} "
-                f"L={stats['losses']} "
-                f"l2={stats['weight_l2']:.3f} "
-                f"games={stats['games_per_eval']}"
+            g = _generation_index if _generation_index is not None else -1
+            wins = int(stats.get("wins", 0))
+            draws = int(stats.get("draws", 0))
+            losses = int(stats.get("losses", 0))
+            fitness = float(stats.get("fitness", 0.0))
+            games = int(stats.get("games", stats.get("games_per_eval", 0)))
+            l2 = float(
+                stats.get(
+                    "weight_l2_to_baseline",
+                    stats.get("weight_l2", 0.0),
+                )
             )
-            print(msg)
+
+            try:
+                board_label = board_type.value
+            except AttributeError:
+                board_label = str(board_type)
+
+            print(
+                "[GA] "
+                f"gen={g} ind={ind_index}/{_total_individuals} "
+                f"board={board_label} "
+                f"fitness={fitness:.4f} "
+                f"W={wins} D={draws} L={losses} "
+                f"games={games} "
+                f"||w-baseline||_2={l2:.3f}"
+            )
+
+        return _callback
+
+    for idx, ind in enumerate(population, start=1):
+        debug_cb = _make_debug_callback(idx)
 
         if len(boards) == 1:
             board_type = boards[0]
@@ -169,11 +190,11 @@ def _evaluate_population(
                 board_type=board_type,
                 verbose=False,
                 opponent_mode="baseline-only",
-                debug_hook=_hook,
                 eval_mode=eval_mode,
                 state_pool_id=state_pool_id,
                 eval_randomness=eval_randomness,
                 seed=seed,
+                debug_callback=debug_cb,
             )
             games_this_individual = games_per_eval
         else:
@@ -185,11 +206,11 @@ def _evaluate_population(
                 opponent_mode="baseline-only",
                 max_moves=200,
                 verbose=False,
-                debug_hook=_hook,
                 eval_mode=eval_mode,
                 state_pool_id=state_pool_id,
                 seed=seed,
                 eval_randomness=eval_randomness,
+                debug_callback=debug_cb,
             )
             ind.fitness = agg
             games_this_individual = games_per_eval * len(boards)
@@ -328,10 +349,11 @@ def _parse_args() -> argparse.Namespace:
         "--eval-mode",
         type=str,
         choices=["initial-only", "multi-start"],
-        default="initial-only",
+        default="multi-start",
         help=(
             "Evaluation mode for GA fitness: same options as CMA-ES "
-            "('initial-only' or 'multi-start')."
+            "('initial-only' or 'multi-start'); default is 'multi-start', "
+            "which evaluates from a pooled set of mid-game states."
         ),
     )
     parser.add_argument(

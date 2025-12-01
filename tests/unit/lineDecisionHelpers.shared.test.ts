@@ -14,6 +14,7 @@ import {
   applyProcessLineDecision,
   applyChooseLineRewardDecision,
 } from '../../src/shared/engine/lineDecisionHelpers';
+import { getEffectiveLineLengthThreshold } from '../../src/shared/engine';
 
 // Classification: canonical shared line decision helper tests. Backend and sandbox
 // line scenario suites rely on these helpers for semantics; older engine-specific
@@ -46,8 +47,7 @@ describe('lineDecisionHelpers – shared line decision enumeration and applicati
       territorySpaces: 0,
     },
   ];
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
-
+  const requiredLength = getEffectiveLineLengthThreshold(boardType, players.length);
   function createEmptyState(): GameState {
     const state = createInitialGameState(
       'line-helpers',

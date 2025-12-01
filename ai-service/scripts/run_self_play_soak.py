@@ -55,8 +55,8 @@ import os
 import random
 import sys
 import gc
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Optional, cast
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 # Ensure `app.*` imports resolve when run from ai-service/
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -74,11 +74,29 @@ from app.models import (  # type: ignore  # noqa: E402
     GameState,
     GameStatus,
 )
-from app.training.env import RingRiftEnv  # type: ignore  # noqa: E402
+from app.training.env import (  # type: ignore  # noqa: E402
+    RingRiftEnv,
+    TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD,
+)
 from app.game_engine import (  # type: ignore  # noqa: E402
     GameEngine,
     STRICT_NO_MOVE_INVARIANT,
 )
+from app.metrics import (  # type: ignore  # noqa: E402
+    PYTHON_INVARIANT_VIOLATIONS,
+)
+from app.rules.core import compute_progress_snapshot  # noqa: E402
+from app.rules import global_actions as ga  # type: ignore  # noqa: E402
+
+
+VIOLATION_TYPE_TO_INVARIANT_ID: Dict[str, str] = {
+    "S_INVARIANT_DECREASED": "INV-S-MONOTONIC",
+    "TOTAL_RINGS_ELIMINATED_DECREASED": "INV-ELIMINATION-MONOTONIC",
+    "ACTIVE_NO_MOVES": "INV-ACTIVE-NO-MOVES",
+    "ACTIVE_NO_CANDIDATE_MOVES": "INV-ACTIVE-NO-MOVES",
+}
+
+MAX_INVARIANT_VIOLATION_SAMPLES = 50
 
 
 @dataclass
@@ -92,6 +110,77 @@ class GameRecord:
     status: str
     winner: Optional[int]
     termination_reason: str
+    invariant_violations_by_type: Dict[str, int] = field(default_factory=dict)
+    # Pie-rule diagnostics: how many SWAP_SIDES moves occurred in this game,
+    # and whether the pie rule was exercised at least once.
+    swap_sides_moves: int = 0
+    used_pie_rule: bool = False
+
+
+def _record_invariant_violation(
+    violation_type: str,
+    state: GameState,
+    game_index: int,
+    move_index: int,
+    per_game_counts: Dict[str, int],
+    samples: List[Dict[str, Any]],
+    *,
+    prev_snapshot: Optional[Dict[str, int]] = None,
+    curr_snapshot: Optional[Dict[str, int]] = None,
+) -> None:
+    """Record a single invariant violation occurrence for soaks.
+
+    This is a non-throwing mirror of the TS soak harness' violation
+    accounting: it increments per-game counts keyed by violation type and,
+    while under a bounded limit, appends a small diagnostic sample that can
+    be serialised in the final soak summary.
+    """
+    per_game_counts[violation_type] = per_game_counts.get(
+        violation_type,
+        0,
+    ) + 1
+
+    if len(samples) >= MAX_INVARIANT_VIOLATION_SAMPLES:
+        return
+
+    board_type_value = (
+        state.board_type.value
+        if hasattr(state.board_type, "value")
+        else state.board_type
+    )
+
+    entry: Dict[str, Any] = {
+        "type": violation_type,
+        "invariant_id": VIOLATION_TYPE_TO_INVARIANT_ID.get(violation_type),
+        "game_index": game_index,
+        "move_index": move_index,
+        "board_type": board_type_value,
+        "game_status": state.game_status.value,
+        "current_player": state.current_player,
+        "current_phase": state.current_phase.value,
+    }
+
+    if prev_snapshot is not None:
+        entry["before"] = prev_snapshot
+    if curr_snapshot is not None:
+        entry["after"] = curr_snapshot
+
+    samples.append(entry)
+
+    # Emit a lightweight Prometheus metric for Python-side invariant
+    # violations. This mirrors the TS orchestrator invariant metrics and
+    # allows dashboards/alerts to slice by invariant_id. Metrics must never
+    # break soak runs, so failures are swallowed.
+    invariant_id = VIOLATION_TYPE_TO_INVARIANT_ID.get(violation_type)
+    if invariant_id:
+        try:
+            PYTHON_INVARIANT_VIOLATIONS.labels(
+                invariant_id=invariant_id,
+                type=violation_type,
+            ).inc()
+        except Exception:
+            # Metrics emission is best-effort only.
+            pass
 
 
 def _append_state_to_jsonl(path: str, state: GameState) -> None:
@@ -130,6 +219,7 @@ def _build_mixed_ai_pool(
     player_numbers: List[int],
     engine_mode: str,
     base_seed: Optional[int],
+    board_type: BoardType,
     difficulty_band: str = "canonical",
 ) -> Dict[int, Any]:
     """Construct per-player AI instances for a single game.
@@ -141,6 +231,11 @@ def _build_mixed_ai_pool(
     ``difficulty_band == 'light'``, we restrict the ladder to a lighter
     subset (Random/Heuristic/low-depth Minimax) to reduce memory and
     runtime for long strict-invariant soaks.
+
+    The ``board_type`` argument is used together with
+    ``TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD`` to select the appropriate
+    heuristic evaluation mode (``"full"`` vs ``"light"``) for any
+    HeuristicAI instances in the pool.
     """
 
     ai_by_player: Dict[int, Any] = {}
@@ -201,8 +296,13 @@ def _build_mixed_ai_pool(
 
         heuristic_profile_id = None
         nn_model_id = None
+        heuristic_eval_mode = None
         if ai_type == AIType.HEURISTIC:
             heuristic_profile_id = profile.get("profile_id")
+            heuristic_eval_mode = TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.get(
+                board_type,
+                "full",
+            )
 
         cfg = AIConfig(
             difficulty=difficulty,
@@ -211,6 +311,7 @@ def _build_mixed_ai_pool(
             rngSeed=game_rng.randrange(0, 2**31),
             heuristic_profile_id=heuristic_profile_id,
             nn_model_id=nn_model_id,
+            heuristic_eval_mode=heuristic_eval_mode,
         )
         ai = _create_ai_instance(ai_type, pnum, cfg)
         ai_by_player[pnum] = ai
@@ -218,7 +319,9 @@ def _build_mixed_ai_pool(
     return ai_by_player
 
 
-def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
+def run_self_play_soak(
+    args: argparse.Namespace,
+) -> Tuple[List[GameRecord], List[Dict[str, Any]]]:
     board_type = _parse_board_type(args.board_type)
     num_games = args.num_games
     num_players = args.num_players
@@ -317,6 +420,7 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
     )
 
     records: List[GameRecord] = []
+    invariant_violation_samples: List[Dict[str, Any]] = []
 
     with open(args.log_jsonl, "w", encoding="utf-8") as log_f:
         for game_idx in range(num_games):
@@ -345,12 +449,20 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
                 player_numbers,
                 engine_mode,
                 base_seed,
+                board_type,
                 difficulty_band=difficulty_band,
             )
 
             move_count = 0
             termination_reason = "unknown"
             last_move = None
+            per_game_violations: Dict[str, int] = {}
+            swap_sides_moves_for_game = 0
+
+            # Initialise S-invariant / elimination snapshot for this game.
+            prev_snapshot = compute_progress_snapshot(state)
+            prev_S = prev_snapshot["S"]
+            prev_eliminated = prev_snapshot["eliminated"]
 
             while True:
                 if state.game_status != GameStatus.ACTIVE:
@@ -361,7 +473,15 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
                 if not legal_moves:
                     # With strict invariant enabled, this should be impossible
                     # for ACTIVE states; if it happens anyway we record it
-                    # explicitly.
+                    # explicitly as an ACTIVE-no-moves violation.
+                    _record_invariant_violation(
+                        "ACTIVE_NO_MOVES",
+                        state,
+                        game_idx,
+                        move_count,
+                        per_game_violations,
+                        invariant_violation_samples,
+                    )
                     termination_reason = "no_legal_moves_for_current_player"
                     break
 
@@ -376,6 +496,9 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
                     termination_reason = "ai_returned_no_move"
                     break
 
+                if move.type == MoveType.SWAP_SIDES:
+                    swap_sides_moves_for_game += 1
+
                 try:
                     state, _reward, done, _info = env.step(move)
                     last_move = move
@@ -386,7 +509,71 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
 
                 move_count += 1
 
-                # Optional state-pool sampling for mid-game snapshots.
+                # Progress invariants:
+                # INV-S-MONOTONIC / INV-ELIMINATION-MONOTONIC
+                curr_snapshot = compute_progress_snapshot(state)
+                curr_S = curr_snapshot["S"]
+                curr_eliminated = curr_snapshot["eliminated"]
+
+                if curr_S < prev_S:
+                    _record_invariant_violation(
+                        "S_INVARIANT_DECREASED",
+                        state,
+                        game_idx,
+                        move_count,
+                        per_game_violations,
+                        invariant_violation_samples,
+                        prev_snapshot=prev_snapshot,
+                        curr_snapshot=curr_snapshot,
+                    )
+
+                if curr_eliminated < prev_eliminated:
+                    _record_invariant_violation(
+                        "TOTAL_RINGS_ELIMINATED_DECREASED",
+                        state,
+                        game_idx,
+                        move_count,
+                        per_game_violations,
+                        invariant_violation_samples,
+                        prev_snapshot=prev_snapshot,
+                        curr_snapshot=curr_snapshot,
+                    )
+
+                prev_snapshot = curr_snapshot
+                prev_S = curr_S
+                prev_eliminated = curr_eliminated
+
+                # ACTIVE-no-moves invariant:
+                # INV-ACTIVE-NO-MOVES (global actions, R2xx cluster)
+                if state.game_status == GameStatus.ACTIVE:
+                    if ga.is_anm_state(state):
+                        _record_invariant_violation(
+                            "ACTIVE_NO_CANDIDATE_MOVES",
+                            state,
+                            game_idx,
+                            move_count,
+                            per_game_violations,
+                            invariant_violation_samples,
+                        )
+
+                # Optional state-pool sampling for mid-/late-game snapshots.
+                #
+                # Recommended soak configuration for generating evaluation
+                # pools:
+                #
+                # - Use a reasonably long `max_moves` (e.g. 200+) so that games
+                #   reliably reach rich mid- and late-game positions.
+                # - Treat `*_state_pool_sampling_interval` as the primary knob
+                #   for biasing toward mid/late-game: larger values sample less
+                #   frequently and naturally skip over the earliest plies.
+                # - Use `*_state_pool_max_states` to cap the total number of
+                #   snapshots per board; once this cap is reached, no further
+                #   states are written even if the soak continues.
+                #
+                # The "v1" evaluation pools used by heuristic CMA-ES training
+                # are expected to be generated by long mixed-engine soaks with
+                # these knobs tuned so that most sampled states come from
+                # mid- and late-game rather than symmetric openings.
                 if (
                     square8_pool_enabled
                     and state.board_type == BoardType.SQUARE8
@@ -551,6 +738,9 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
                 status=state.game_status.value,
                 winner=getattr(state, "winner", None),
                 termination_reason=termination_reason,
+                invariant_violations_by_type=per_game_violations,
+                swap_sides_moves=swap_sides_moves_for_game,
+                used_pie_rule=swap_sides_moves_for_game > 0,
             )
             log_f.write(json.dumps(asdict(rec)) + "\n")
             records.append(rec)
@@ -570,14 +760,23 @@ def run_self_play_soak(args: argparse.Namespace) -> List[GameRecord]:
                 GameEngine.clear_cache()
                 gc.collect()
 
-    return records
+    return records, invariant_violation_samples
 
 
-def _summarise(records: List[GameRecord]) -> Dict[str, Any]:
+def _summarise(
+    records: List[GameRecord],
+    invariant_samples: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     total = len(records)
     by_status: Dict[str, int] = {}
     by_reason: Dict[str, int] = {}
     lengths: List[int] = []
+    completed_games = 0
+    max_moves_games = 0
+    violation_counts_by_type: Dict[str, int] = {}
+    invariant_violations_by_id: Dict[str, int] = {}
+    total_swap_sides_moves = 0
+    games_with_swap_sides = 0
 
     for r in records:
         by_status[r.status] = by_status.get(r.status, 0) + 1
@@ -587,16 +786,218 @@ def _summarise(records: List[GameRecord]) -> Dict[str, Any]:
         ) + 1
         lengths.append(r.length)
 
+        if r.termination_reason.startswith("status:"):
+            completed_games += 1
+        if r.termination_reason == "max_moves_reached":
+            max_moves_games += 1
+
+        # Pie-rule diagnostics: aggregate SWAP_SIDES usage.
+        swap_moves = getattr(r, "swap_sides_moves", 0)
+        if swap_moves > 0:
+            total_swap_sides_moves += swap_moves
+            games_with_swap_sides += 1
+
+        for v_type, count in getattr(
+            r,
+            "invariant_violations_by_type",
+            {},
+        ).items():
+            violation_counts_by_type[v_type] = (
+                violation_counts_by_type.get(v_type, 0) + count
+            )
+            invariant_id = VIOLATION_TYPE_TO_INVARIANT_ID.get(v_type)
+            if invariant_id:
+                invariant_violations_by_id[invariant_id] = (
+                    invariant_violations_by_id.get(invariant_id, 0) + count
+                )
+
     lengths_sorted = sorted(lengths) if lengths else [0]
 
-    return {
+    summary: Dict[str, Any] = {
         "total_games": total,
         "by_status": by_status,
         "by_termination_reason": by_reason,
         "min_length": lengths_sorted[0],
         "max_length": lengths_sorted[-1],
         "avg_length": (sum(lengths) / total) if total else 0.0,
+        "completed_games": completed_games,
+        "max_moves_games": max_moves_games,
+        "invariant_violations_total": sum(
+            invariant_violations_by_id.values(),
+        ),
+        "invariant_violations_by_id": invariant_violations_by_id,
+        "violation_counts_by_type": violation_counts_by_type,
+        "swap_sides_total_moves": total_swap_sides_moves,
+        "swap_sides_games": games_with_swap_sides,
     }
+
+    if invariant_samples is not None:
+        summary["invariant_violation_samples"] = invariant_samples
+
+    return summary
+
+
+def _build_healthcheck_summary(
+    profile: str,
+    board_types: List[str],
+    engine_pairs: List[str],
+    records: List[GameRecord],
+    invariant_samples: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Construct a compact, machine-readable AI health-check summary.
+
+    This helper layers profile/engine metadata and a parity placeholder over
+    the generic soak summary produced by :func:`_summarise`. It is intended
+    for CI/nightly "AI self-play healthcheck" jobs that need a stable JSON
+    shape keyed by invariant IDs (INV-*) rather than low-level violation
+    types.
+    """
+    base_summary = _summarise(records, invariant_samples)
+
+    # Ensure invariant keys are always present, even for zero-violation runs.
+    base_summary.setdefault("invariant_violations_by_id", {})
+    base_summary.setdefault(
+        "invariant_violations_total",
+        sum(
+            base_summary["invariant_violations_by_id"].values(),
+        ),
+    )
+
+    health_summary: Dict[str, Any] = {
+        "profile": profile,
+        "board_types": sorted(set(board_types)),
+        "engine_pairs": engine_pairs,
+    }
+    health_summary.update(base_summary)
+
+    # Parity integration (PARITY-*) for this profile is intentionally left as
+    # a future extension; for now we expose a zeroed, structured placeholder
+    # and a descriptive note so downstream tooling can distinguish "not
+    # implemented" from "no mismatches observed".
+    health_summary.setdefault(
+        "parity_mismatches",
+        {
+            "hash": 0,
+            "status": 0,
+        },
+    )
+    health_summary.setdefault(
+        "parity_notes",
+        (
+            "PARITY-* checks are not yet wired into the ai-healthcheck "
+            "profile. See docs/INVARIANTS_AND_PARITY_FRAMEWORK.md for "
+            "future PARITY-* integration points."
+        ),
+    )
+
+    # Convenience alias: expose invariant samples under a shorter key while
+    # retaining the original field name used by existing callers/tests.
+    if "invariant_violation_samples" in base_summary:
+        health_summary.setdefault(
+            "samples",
+            base_summary["invariant_violation_samples"],
+        )
+
+    return health_summary
+
+
+def run_ai_healthcheck_profile(
+    args: argparse.Namespace,
+) -> Tuple[List[GameRecord], Dict[str, Any]]:
+    """Run a lightweight multi-board AI self-play health check.
+
+    This profile reuses :func:`run_self_play_soak` to execute a small,
+    deterministic batch of mixed-engine self-play games across the canonical
+    board set and aggregates invariant statistics into a single summary.
+
+    Invariants enforced via the soak loop:
+
+    - INV-S-MONOTONIC / INV-ELIMINATION-MONOTONIC via S/total elimination
+      monotonicity checks.
+    - INV-ACTIVE-NO-MOVES via ACTIVE_NO_MOVES / ACTIVE_NO_CANDIDATE_MOVES.
+    - INV-TERMINATION (soft) via max_moves_games and termination reasons.
+    """
+    # Canonical board set for health checks: small/medium/hex.
+    board_names = ["square8", "square19", "hexagonal"]
+
+    # Single mixed-engine 2p pairing using the "light" difficulty band
+    # (Random/Heuristic/low-depth Minimax) to keep runtime bounded while still
+    # exercising realistic AI move generation.
+    engine_mode = "mixed"
+    difficulty_band = "light"
+    num_players = 2
+
+    games_per_config_env = os.getenv("RINGRIFT_AI_HEALTHCHECK_GAMES")
+    try:
+        games_per_config = (
+            int(games_per_config_env)
+            if games_per_config_env
+            else 2
+        )
+    except ValueError:
+        games_per_config = 2
+    if games_per_config <= 0:
+        games_per_config = 1
+
+    base_seed = (
+        args.seed
+        if getattr(args, "seed", None) is not None
+        else 1764142864
+    )
+
+    all_records: List[GameRecord] = []
+    all_samples: List[Dict[str, Any]] = []
+
+    # Derive a base directory for per-board JSONL logs from the user-supplied
+    # --log-jsonl path.
+    base_log_path = args.log_jsonl
+    base_dir = os.path.dirname(base_log_path) or "."
+    base_stem, _ext = os.path.splitext(os.path.basename(base_log_path))
+
+    for index, board_name in enumerate(board_names):
+        per_board_args = argparse.Namespace(**vars(args))
+        per_board_args.board_type = board_name
+        per_board_args.engine_mode = engine_mode
+        per_board_args.difficulty_band = difficulty_band
+        per_board_args.num_players = num_players
+        per_board_args.num_games = games_per_config
+        per_board_args.seed = base_seed + index * 100000
+        # Keep caller-specified max_moves / gc_interval untouched.
+        per_board_args.summary_json = None
+        per_board_args.log_jsonl = os.path.join(
+            base_dir,
+            f"{base_stem}.{board_name}.jsonl",
+        )
+
+        records, samples = run_self_play_soak(per_board_args)
+        all_records.extend(records)
+        all_samples.extend(samples)
+
+    health_summary = _build_healthcheck_summary(
+        profile="ai-healthcheck",
+        board_types=board_names,
+        engine_pairs=[f"{engine_mode}_({difficulty_band})_{num_players}p"],
+        records=all_records,
+        invariant_samples=all_samples,
+    )
+
+    # Attach resolved health-check configuration for downstream inspection.
+    health_summary.setdefault(
+        "config",
+        {
+            "profile": "ai-healthcheck",
+            "board_types": board_names,
+            "engine_mode": engine_mode,
+            "difficulty_band": difficulty_band,
+            "num_players": num_players,
+            "games_per_config": games_per_config,
+            "max_moves": args.max_moves,
+            "base_seed": base_seed,
+            "strict_no_move_invariant": bool(STRICT_NO_MOVE_INVARIANT),
+        },
+    )
+
+    return all_records, health_summary
 
 
 def _has_anomalies(records: List[GameRecord]) -> bool:
@@ -633,6 +1034,17 @@ def _parse_args() -> argparse.Namespace:
         choices=["square8", "square19", "hexagonal"],
         default="square8",
         help="Board type for self-play games (default: square8).",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=["python-strict", "ai-healthcheck"],
+        default=None,
+        help=(
+            "Optional named soak profile. 'python-strict' configures a small, "
+            "deterministic strict-invariant run suitable for CI-like checks. "
+            "'ai-healthcheck' runs a lightweight multi-board AI self-play "
+            "health check and emits an invariant-focused JSON summary."
+        ),
     )
     parser.add_argument(
         "--engine-mode",
@@ -718,8 +1130,9 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "If set, exit with non-zero status if any game terminates with "
-            "an invariant/engine anomaly such as 'no_legal_moves_for_current_player' "
-            "or 'step_exception:...'. Intended for automated gates or scheduled jobs."
+            "an invariant/engine anomaly such as "
+            "'no_legal_moves_for_current_player' or 'step_exception:...'. "
+            "Intended for automated gates or scheduled jobs."
         ),
     )
     parser.add_argument(
@@ -809,27 +1222,93 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:  # pragma: no cover - CLI entrypoint
     args = _parse_args()
 
-    config_summary = {
-        "num_games": args.num_games,
-        "board_type": args.board_type,
-        "engine_mode": args.engine_mode,
-        "difficulty_band": getattr(args, "difficulty_band", "canonical"),
-        "num_players": args.num_players,
-        "max_moves": args.max_moves,
-        "seed": args.seed,
-        "log_jsonl": args.log_jsonl,
-        "summary_json": args.summary_json,
-        "gc_interval": args.gc_interval,
-        "strict_no_move_invariant": bool(STRICT_NO_MOVE_INVARIANT),
-    }
+    profile = getattr(args, "profile", None)
+    if profile == "python-strict":
+        # Light, deterministic strict-invariant profile mirroring the TS
+        # short-soak spirit on square8.
+        args.num_games = 6
+        args.board_type = "square8"
+        args.engine_mode = "mixed"
+        args.difficulty_band = getattr(args, "difficulty_band", "light")
+        args.num_players = 2
+        args.max_moves = 150
+        if args.seed is None:
+            args.seed = 1764142864
+        if getattr(args, "gc_interval", 0) == 0:
+            args.gc_interval = 10
 
-    print("Self-play soak harness starting with config:")
-    print(json.dumps(config_summary, indent=2, sort_keys=True))
+        config_summary = {
+            "num_games": args.num_games,
+            "board_type": args.board_type,
+            "engine_mode": args.engine_mode,
+            "difficulty_band": getattr(args, "difficulty_band", "canonical"),
+            "num_players": args.num_players,
+            "max_moves": args.max_moves,
+            "seed": args.seed,
+            "log_jsonl": args.log_jsonl,
+            "summary_json": args.summary_json,
+            "gc_interval": args.gc_interval,
+            "strict_no_move_invariant": bool(STRICT_NO_MOVE_INVARIANT),
+            "profile": profile,
+        }
 
-    records = run_self_play_soak(args)
-    summary = _summarise(records)
+        print("Self-play soak harness starting with config:")
+        print(json.dumps(config_summary, indent=2, sort_keys=True))
 
-    print("\n=== Self-play soak summary ===")
+        records, invariant_samples = run_self_play_soak(args)
+        summary = _summarise(records, invariant_samples)
+        summary["config"] = config_summary
+
+    elif profile == "ai-healthcheck":
+        # Dedicated multi-board AI self-play health-check profile. This variant
+        # ignores most CLI tuning flags and instead runs a small, deterministic
+        # mixed-engine job across square8, square19, and hexagonal boards.
+        if args.seed is None:
+            args.seed = 1764142864
+        if getattr(args, "gc_interval", 0) == 0:
+            # Health-check runs are short-lived; explicit GC is usually
+            # unnecessary.
+            args.gc_interval = 0
+
+        print(
+            "AI self-play healthcheck starting with profile 'ai-healthcheck'. "
+            "This profile runs a bounded mixed-engine self-play job across "
+            "square8, square19, and hexagonal boards and aggregates invariant "
+            "violations by INV-* id.",
+        )
+
+        records, summary = run_ai_healthcheck_profile(args)
+
+    else:
+        config_summary = {
+            "num_games": args.num_games,
+            "board_type": args.board_type,
+            "engine_mode": args.engine_mode,
+            "difficulty_band": getattr(args, "difficulty_band", "canonical"),
+            "num_players": args.num_players,
+            "max_moves": args.max_moves,
+            "seed": args.seed,
+            "log_jsonl": args.log_jsonl,
+            "summary_json": args.summary_json,
+            "gc_interval": args.gc_interval,
+            "strict_no_move_invariant": bool(STRICT_NO_MOVE_INVARIANT),
+            "profile": profile,
+        }
+
+        print("Self-play soak harness starting with config:")
+        print(json.dumps(config_summary, indent=2, sort_keys=True))
+
+        records, invariant_samples = run_self_play_soak(args)
+        summary = _summarise(records, invariant_samples)
+        summary["config"] = config_summary
+
+    heading = (
+        "AI self-play healthcheck summary"
+        if profile == "ai-healthcheck"
+        else "Self-play soak summary"
+    )
+
+    print(f"\n=== {heading} ===")
     print(json.dumps(summary, indent=2, sort_keys=True))
 
     if args.summary_json:

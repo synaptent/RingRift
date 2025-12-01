@@ -18,8 +18,8 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 | Aspect         | Status                         | Notes                                      |
 | -------------- | ------------------------------ | ------------------------------------------ |
-| Rules Engine   | ✅ Fully implemented           | TS/Python parity verified                  |
-| Known Issues   | None critical                  | See [KNOWN_ISSUES.md](KNOWN_ISSUES.md)     |
+| Rules Engine   | ✅ Fully implemented           | TS/Python parity verified (core flows)     |
+| Known Issues   | ⚠️ Host integration regressions | See [WEAKNESS_ASSESSMENT_REPORT.md](WEAKNESS_ASSESSMENT_REPORT.md) |
 | Recent Changes | LPS, ring caps, clarifications | Territory processing, line rewards aligned |
 
 ---
@@ -64,6 +64,12 @@ A central navigation guide for developers to quickly locate all rules-related do
 | Document                                                             | Description                | When to Use                                     |
 | -------------------------------------------------------------------- | -------------------------- | ----------------------------------------------- |
 | [docs/AI_TRAINING_AND_DATASETS.md](docs/AI_TRAINING_AND_DATASETS.md) | AI alignment documentation | Training AI or ensuring rules consistency in AI |
+
+#### Pie rule / `swap_sides` status
+
+- **Backend TS & Python:** Both engines now treat `swap_sides` as a first‑class meta‑move for 2‑player games, with identical gating (P2’s interactive turn, `rulesOptions.swapRuleEnabled === true`, exactly after P1’s first non‑swap move, and at most once per game). Production remains TS‑authoritative; Python is used for validation, AI, and training.
+- **Client sandbox:** `ClientSandboxEngine` mirrors the backend pie‑rule gate and applies `swap_sides` locally for 2‑player sandbox games, with `/sandbox` exposing a “Swap colours (pie rule)” control once for P2 after P1’s opening move.
+- **AI training/eval:** Python training and soak harnesses can opt into production‑style pie‑rule availability by setting `rulesOptions.swapRuleEnabled: true` on initial states (for example via `RINGRIFT_TRAINING_ENABLE_SWAP_RULE=1` in self‑play generators). CMA‑ES/GA evaluation pipelines now emit lightweight diagnostics on how often AIs select `swap_sides` during runs.
 
 ---
 

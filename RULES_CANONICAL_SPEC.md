@@ -37,6 +37,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - "Eliminated ring" = ring permanently removed from the board and credited to a player.
   - "Collapsed space" = permanently claimed territory cell, impassable to movement and capture.
 - **Version parameters.** Unless otherwise stated, all numeric length thresholds (line length, victory thresholds, etc.) come from the board-type configuration in RR-CANON-R001.
+- **2-player balancing (pie rule).** In 2‑player games only, after Player 1’s first completed turn from the canonical empty starting position, Player 2 has a one-time option to **swap sides** (RR‑CANON‑R180): seats and colours for players 1 and 2 are exchanged with no change to board geometry, and it remains Player 2’s turn.
 
 ---
 
@@ -213,7 +214,108 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.2–2.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.2–4.4, 13.4, 13.5, 15.4 Q24.
 
 ---
+ 
+## 4.5 Active-No-Moves & Forced Elimination Semantics (R2xx)
 
+- **[RR-CANON-R200] Global legal actions for the current player.**
+  - Let `state` be a valid `GameState` with `gameStatus == ACTIVE` and `currentPlayer = P`.
+  - A **global legal action** for P in `state` is any of:
+    - A legal **ring placement** move for P, as defined by RR-CANON-R080–R082, on the current board type. This is evaluated using the hypothetical effect of `place_ring` on `state` (respecting `ringsInHand[P]`, `ringsPerPlayer`, and the no-dead-placement rule), and does **not** depend on `currentPhase`; placements are considered globally available whenever they would be legal when P next enters `ring_placement`.
+    - A legal **interactive move** for P in the current phase:
+      - In `ring_placement`: any legal `place_ring` or explicit `skip_placement` move.
+      - In `movement`, `capture`, or `chain_capture`: any legal non-capture movement or overtaking capture segment/chain under RR-CANON-R090–R103.
+      - In `line_processing`: any legal `process_line` or `choose_line_reward` decision for P under RR-CANON-R120–R122.
+      - In `territory_processing`: any legal `process_territory_region`, `choose_territory_option`, or `eliminate_rings_from_stack` decision for P under RR-CANON-R140–R145.
+    - A legal **forced-elimination** action for P under RR-CANON-R100 (see RR-CANON-R205).
+  - Global legal actions are defined uniformly for all supported board types (`square8`, `square19`, `hexagonal`) and for all supported player counts (2–4 players).
+
+- **[RR-CANON-R201] Turn-material and fully eliminated players.**
+  - A player P has **turn-material** in a state if and only if either:
+    - P controls at least one stack (there exists a stack whose top ring has P's colour); or
+    - `ringsInHand[P] > 0`.
+  - A player P is **fully eliminated for turn rotation** in a state if P has no turn-material (no controlled stacks and `ringsInHand[P] == 0`), regardless of whether P still owns buried rings of their colour inside other players' stacks.
+  - In any state with `gameStatus == ACTIVE`, `currentPlayer` must always be chosen from players who have turn-material. Fully eliminated players must be skipped when rotating the turn order, except transiently inside the evaluation of victory or stalemate conditions that immediately terminate the game (RR-CANON-R170–R173).
+
+- **[RR-CANON-R202] Active-no-moves (ANM) state.**
+  - Given a valid `GameState` with `gameStatus == ACTIVE` and `currentPlayer = P`, define the predicate `ANM(state, P)` ("active-no-moves for P") as:
+    - P has turn-material in `state` (RR-CANON-R201); and
+    - P has **no** global legal action in `state` (RR-CANON-R200).
+  - Intuitively, an ANM state is one in which the current player still has material but the rules would offer them no way to act, even allowing for placements and forced elimination.
+
+- **[RR-CANON-R203] ANM avoidance and immediate resolution.**
+  - From the standard initial setup and under the legal moves defined by RR-CANON-R080–R103, RR-CANON-R120–R122, and RR-CANON-R140–R145, the game may **never remain** in an ANM state for any player:
+    - For every reachable state with `gameStatus == ACTIVE` and `currentPlayer = P`, either:
+      - `ANM(state, P)` is false (P has at least one global legal action); or
+      - The rules-mandated transition sequence from `state` (consisting of automatic phase exits, forced elimination under RR-CANON-R072/RR-CANON-R100, and victory/stalemate checks under RR-CANON-R170–R173) must immediately:
+        - either terminate the game, or
+        - rotate to a new ACTIVE state whose `currentPlayer` Q satisfies `ANM(nextState, Q) == false`.
+  - In particular:
+    - No non-terminal **movement**, **capture**, or **chain_capture** phase may leave the game in `gameStatus == ACTIVE` with `ANM(state, P) == true`; if P is blocked with stacks, RR-CANON-R072 and RR-CANON-R100 must apply forced elimination.
+    - No non-terminal **line_processing** or **territory_processing** phase may leave the game in `gameStatus == ACTIVE` with `ANM(state, P) == true`; see RR-CANON-R204 for phase-exit requirements.
+    - The only legal way for all players simultaneously to have no global legal actions is the global-stalemate shape of RR-CANON-R173, which is resolved immediately into a terminal state.
+
+- **[RR-CANON-R204] Phase-local behaviour and decision-phase exits.**
+  - In addition to RR-CANON-R070–R072, the following phase-specific rules must hold for the current player P in any `GameState` with `gameStatus == ACTIVE`:
+    - **Line-processing exit.**
+      - If `currentPhase == line_processing` and P has no legal line decisions (no `process_line` or `choose_line_reward` moves), the engine must immediately advance out of `line_processing`:
+        - to `territory_processing` if any Territory decisions exist for P; otherwise
+        - to victory evaluation and turn rotation per RR-CANON-R170–R173.
+      - It is illegal to leave the game in `gameStatus == ACTIVE` and `currentPhase == line_processing` with `ANM(state, P) == true`.
+    - **Territory-processing exit.**
+      - If `currentPhase == territory_processing` and P has no legal Territory decisions (no `process_territory_region`, `choose_territory_option`, or `eliminate_rings_from_stack` moves), the engine must:
+        - either apply forced elimination for P if they still control stacks but have no other legal actions (RR-CANON-R072/RR-CANON-R100); or
+        - call end-of-turn, rotate `currentPlayer` to the next player with turn-material (RR-CANON-R201), and evaluate victory per RR-CANON-R170–R173.
+      - It is illegal to leave the game in `gameStatus == ACTIVE` and `currentPhase == territory_processing` with `ANM(state, P) == true`.
+    - **Other phases.**
+      - For `ring_placement`, `movement`, `capture`, and `chain_capture`, ANM avoidance is already enforced by RR-CANON-R070–R072, RR-CANON-R080–R082, and RR-CANON-R090–R103:
+        - If P has rings in hand but no legal placements, P must effectively skip placement and proceed to movement.
+        - If P controls stacks but has no legal placement, movement, or capture, forced elimination must be applied (RR-CANON-R072/RR-CANON-R100).
+        - If P has no turn-material at all, they must not remain `currentPlayer` in an ACTIVE state (RR-CANON-R201).
+
+- **[RR-CANON-R205] Forced-elimination action taxonomy.**
+  - Forced elimination appears in two distinct but related forms:
+    - **Host-level forced elimination.**
+      - Triggered when a player P is **blocked** at the start of their action (RR-CANON-R072): P controls at least one stack but has no legal placement, movement, or capture.
+      - The engine must apply a `forced_elimination` action that eliminates the entire cap of some P-controlled stack per RR-CANON-R100.
+      - Host-level forced elimination is treated as a **global legal action** for ANM purposes (RR-CANON-R200–R203) but is **not** a "real action" for Last-Player-Standing under RR-CANON-R172.
+    - **Explicit elimination decisions.**
+      - During line processing (RR-CANON-R120–R122), elimination of a ring or cap as a line reward is represented as an explicit decision (`eliminate_rings_from_stack`) tied to the processed line.
+      - During Territory processing (RR-CANON-R140–R145), mandatory self-elimination from a stack outside the processed region is likewise represented as an explicit `eliminate_rings_from_stack` decision.
+      - These explicit elimination moves are phase-local **interactive actions** for P and therefore count as global legal actions under RR-CANON-R200.
+  - In all cases, any forced elimination or explicit elimination must remove at least one ring belonging to the acting player and must increase the global eliminated-ring count in RR-CANON-R060–R061 and RR-CANON-R191.
+
+- **[RR-CANON-R206] Forced-elimination target choice (interactive choice + deterministic policies).**
+  - When RR-CANON-R100 requires P to perform a forced elimination, the **rules-level requirement** is that P may choose **any** eligible elimination target they control, where an eligible target is either:
+    - a standalone ring (a height‑1 stack whose top ring has colour P); or
+    - the entire cap (all consecutive top rings of colour P) of a stack they control.
+  - RR-CANON-R100 deliberately does **not** constrain which eligible target must be chosen; any such choice yields a rule-legal successor state. This applies uniformly to:
+    - Analogue play, in which P explicitly chooses a stack or standalone ring; and
+    - Digital implementations, in which the acting agent (human or AI) must be able to choose which eligible stack/ring to eliminate.
+  - Canonical constraint for digital hosts:
+    - Hosts must expose forced elimination as an **interactive decision** for the acting agent (for example, via an explicit "choose stack to eliminate from" choice surface) whenever more than one eligible target exists.
+    - Hosts **must not** unilaterally apply a hidden deterministic tie-breaker (such as "smallest cap first" or "first in scan order") to select the target on behalf of a human player.
+    - Deterministic policies are permitted only as part of an **agent’s own** decision-making (for example, an AI, bot, or invariant harness that always chooses the smallest cap), not as an invisible host-level rule that bypasses player choice.
+    - When deterministic behaviour is desired for reproducibility (e.g., strict-invariant soaks or AI self-play), agents and harnesses should use **seeded RNG or stable policies** to select among eligible targets; the host’s role is to expose the full choice set and apply the selected `eliminate_rings_from_stack` move, not to override that selection.
+  - Current TS and Python engines still auto-select an eligible stack to eliminate in some forced-elimination situations (see [`KNOWN_ISSUES.md` P0.1](KNOWN_ISSUES.md:39)). This behaviour is treated as a **known deviation** from RR-CANON-R206 and must be corrected over time; until then, engines must at least remain aligned with each other and clearly document the heuristic in use.
+
+- **[RR-CANON-R207] Real actions, ANM, and progress.**
+  - For Last-Player-Standing victory (RR-CANON-R172), a player's **real actions** are exactly those listed in RR-CANON-R172:
+    - Ring placements (RR-CANON-R080–R082).
+    - Non-capture movements (RR-CANON-R090–R092).
+    - Overtaking capture segments and chains (RR-CANON-R100–R103).
+    - Pure forced-elimination actions from RR-CANON-R100 do **not** count as real actions for the purposes of RR-CANON-R172.
+  - For ANM invariants and termination analysis:
+    - Forced-elimination actions **do** count as global legal actions (RR-CANON-R200–R203); sequences in which forced elimination is the only available action are legal but must strictly increase the eliminated-ring component `E` of the progress metric `S = M + C + E` in RR-CANON-R191.
+    - Because each forced elimination removes at least one ring from the acting player's cap and total rings are finite, any segment of play in which some player is repeatedly forced to eliminate caps must terminate in finitely many steps.
+  - The ANM semantics in RR-CANON-R200–R203, together with the progress invariant in RR-CANON-R191, therefore justify the `INV-ACTIVE-NO-MOVES`, `INV-PHASE-CONSISTENCY`, and `INV-TERMINATION` invariants described in [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:119).
+
+> **Cross-references (non-normative but recommended):**
+>
+> - Scenario-level ANM and forced-elimination behaviour, including concrete examples for RR-CANON-R200–R207, is catalogued in [`docs/ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/ACTIVE_NO_MOVES_BEHAVIOUR.md:1).
+> - Invariant and parity expectations for these rules are described in [`docs/INVARIANTS_AND_PARITY_FRAMEWORK.md`](docs/INVARIANTS_AND_PARITY_FRAMEWORK.md:119) under `INV-ACTIVE-NO-MOVES`, `INV-PHASE-CONSISTENCY`, `INV-TERMINATION`, and `PARITY-TS-PY-ACTIVE-NO-MOVES`.
+
+---
+ 
 ## 5. Action Types and Legality
 
 ### 5.1 Ring placement
@@ -533,7 +635,7 @@ Below are the most important differences, categorized by type, with canonical in
 
 2. **Line-length wording ("4 or 5" vs required length).**
    - Complete Rules: §4.5 and some examples sometimes speak of "lines of exactly the required length (4 or 5)" in a way that conflates 8×8 and 19×19 requirements.
-   - Compact Spec: §5 consistently uses `lineLength` per board type (3 for square8, 4 for others), and treats any len > lineLength as "overlength".
+   - Compact Spec: §5 uses `lineLength` per board type (3 for square8, 4 for square19/hexagonal), and treats any len > lineLength as "overlength".
    - Category: **Simplification / correction**.
    - Canonical: Use parameterized `lineLength` only; RR-CANON-R120–R122 control.
 

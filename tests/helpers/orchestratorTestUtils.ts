@@ -8,6 +8,7 @@ import type {
   Position,
 } from '../../src/shared/types/game';
 import { BOARD_CONFIGS, positionToString } from '../../src/shared/types/game';
+import { getEffectiveLineLengthThreshold } from '../../src/shared/engine/rulesConfig';
 import type { TurnEngineAdapter } from '../../src/server/game/turn/TurnEngineAdapter';
 import {
   createSimpleAdapter,
@@ -176,7 +177,13 @@ export function seedOverlengthLineForPlayer(
   const engineAny = engine as any;
   const state: GameState = engineAny.gameState as GameState;
   const board = state.board;
-  const requiredLength = BOARD_CONFIGS[state.boardType].lineLength;
+  // Use the effective line length threshold which accounts for 2-player elevation
+  // on square8 (3 → 4). This ensures the seeded line is actually overlength
+  // relative to the threshold used by enumerateChooseLineRewardMoves.
+  const requiredLength = getEffectiveLineLengthThreshold(
+    state.boardType,
+    state.players.length
+  );
   const length = requiredLength + overlengthBy;
 
   // Clear any pre-existing markers on the target row to avoid interference.

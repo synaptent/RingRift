@@ -24,6 +24,7 @@ const mockPrisma = {
     findMany: jest.fn(),
     count: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
   },
   move: {
     findMany: jest.fn(),
@@ -294,6 +295,7 @@ describe('Server health and API info routes', () => {
 describe('Protected game route authorization', () => {
   beforeEach(() => {
     mockPrisma.game.findUnique.mockReset();
+    mockPrisma.game.update.mockReset();
     mockPrisma.move.findMany.mockReset();
   });
 
@@ -384,6 +386,126 @@ describe('Protected game route authorization', () => {
 
     expect(res.body.success).toBe(false);
     expect(res.body.error.code).toBe('RESOURCE_ACCESS_DENIED');
+  });
+
+  it('POST /api/games/:gameId/leave marks an active game as completed and broadcasts lobby cancellation', async () => {
+    const validGameId = '550e8400-e29b-41d4-a716-446655440020';
+
+    mockPrisma.game.findUnique.mockResolvedValueOnce({
+      id: validGameId,
+      player1Id: 'user-1',
+      player2Id: null,
+      player3Id: null,
+      player4Id: null,
+      status: 'active',
+    } as any);
+
+    mockPrisma.game.update.mockResolvedValueOnce({
+      id: validGameId,
+      status: 'completed',
+      endedAt: new Date(),
+      updatedAt: new Date(),
+    } as any);
+
+    const wsServerMock = {
+      getGameDiagnosticsForGame: jest.fn(),
+      broadcastLobbyEvent: jest.fn(),
+    };
+
+    const app = createTestApp(wsServerMock);
+
+    const res = await request(app)
+      .post(`/api/games/${validGameId}/leave`)
+      .set('Authorization', 'Bearer user-1')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toBe('Resigned from game');
+
+    expect(mockPrisma.game.update).toHaveBeenCalledWith({
+      where: { id: validGameId },
+      data: expect.objectContaining({
+        status: 'completed',
+        endedAt: expect.any(Date),
+        updatedAt: expect.any(Date),
+      }),
+    });
+
+    expect(wsServerMock.broadcastLobbyEvent).toHaveBeenCalledWith('lobby:game_cancelled', {
+      gameId: validGameId,
+    });
+  });
+
+  it('POST /api/games/:gameId/leave cancels a waiting game with no remaining players and broadcasts lobby cancellation', async () => {
+    const validGameId = '550e8400-e29b-41d4-a716-446655440021';
+
+    mockPrisma.game.findUnique.mockResolvedValueOnce({
+      id: validGameId,
+      player1Id: 'user-1',
+      player2Id: null,
+      player3Id: null,
+      player4Id: null,
+      status: 'waiting',
+    } as any);
+
+    // First update removes the leaving player and returns a game with no remaining players.
+    mockPrisma.game.update
+      .mockResolvedValueOnce({
+        id: validGameId,
+        player1Id: null,
+        player2Id: null,
+        player3Id: null,
+        player4Id: null,
+        status: 'waiting',
+      } as any)
+      // Second update marks the game as abandoned.
+      .mockResolvedValueOnce({
+        id: validGameId,
+        status: 'abandoned',
+        endedAt: new Date(),
+        updatedAt: new Date(),
+      } as any);
+
+    const wsServerMock = {
+      getGameDiagnosticsForGame: jest.fn(),
+      broadcastLobbyEvent: jest.fn(),
+    };
+
+    const app = createTestApp(wsServerMock);
+
+    const res = await request(app)
+      .post(`/api/games/${validGameId}/leave`)
+      .set('Authorization', 'Bearer user-1')
+      .expect(200);
+
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toBe('Left game successfully');
+
+    expect(mockPrisma.game.update).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: { id: validGameId },
+        data: expect.objectContaining({
+          updatedAt: expect.any(Date),
+        }),
+      })
+    );
+
+    expect(mockPrisma.game.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: { id: validGameId },
+        data: expect.objectContaining({
+          status: 'abandoned',
+          endedAt: expect.any(Date),
+          updatedAt: expect.any(Date),
+        }),
+      })
+    );
+
+    expect(wsServerMock.broadcastLobbyEvent).toHaveBeenCalledWith('lobby:game_cancelled', {
+      gameId: validGameId,
+    });
   });
 });
 
@@ -537,7 +659,7 @@ describe('Game creation quotas', () => {
       id: 'game-1',
       boardType: 'square8',
       maxPlayers: 2,
-      timeControl: { initialTime: 300, increment: 0 },
+      timeControl: { type: 'rapid', initialTime: 300, increment: 0 },
       isRated: true,
       allowSpectators: true,
       player1Id: 'user-1',
@@ -557,7 +679,7 @@ describe('Game creation quotas', () => {
       .set('X-Forwarded-For', '203.0.113.1')
       .send({
         boardType: 'square8',
-        timeControl: { initialTime: 300, increment: 0 },
+        timeControl: { type: 'rapid', initialTime: 300, increment: 0 },
       })
       .expect(201);
 
@@ -585,7 +707,7 @@ describe('Game creation quotas', () => {
       .set('X-Forwarded-For', '203.0.113.1')
       .send({
         boardType: 'square8',
-        timeControl: { initialTime: 300, increment: 0 },
+        timeControl: { type: 'rapid', initialTime: 300, increment: 0 },
       })
       .expect(429);
 

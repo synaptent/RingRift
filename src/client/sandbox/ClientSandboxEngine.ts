@@ -17,19 +17,20 @@ import type {
   LocalAIRng,
 } from '../../shared/engine';
 import {
-  BOARD_CONFIGS,
-  positionToString,
-  calculateCapHeight,
-  calculateDistance,
-  getPathPositions,
-  computeProgressSnapshot,
-  summarizeBoard,
-  hashGameState,
-  countRingsInPlayForPlayer,
-  canProcessTerritoryRegion,
-  enumerateProcessTerritoryRegionMoves,
-  enumerateProcessLineMoves,
-  enumerateChooseLineRewardMoves,
+ BOARD_CONFIGS,
+ positionToString,
+ calculateCapHeight,
+ calculateDistance,
+ getPathPositions,
+ computeProgressSnapshot,
+ summarizeBoard,
+ hashGameState,
+ countRingsInPlayForPlayer,
+ canProcessTerritoryRegion,
+ enumerateProcessTerritoryRegionMoves,
+ enumerateProcessLineMoves,
+ enumerateChooseLineRewardMoves,
+ getEffectiveLineLengthThreshold,
   findLinesForPlayer,
   applyProcessLineDecision,
   applyChooseLineRewardDecision,
@@ -38,6 +39,7 @@ import {
   enumerateTerritoryEliminationMoves,
   applyCaptureSegment as applyCaptureSegmentAggregate,
   applyCapture as applyCaptureAggregate,
+  enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
   applySimpleMovement,
   getChainCaptureContinuationInfo as getChainCaptureContinuationInfoAggregate,
   // Canonical placement aggregate API (TS SSOT)
@@ -376,6 +378,11 @@ export class ClientSandboxEngine {
       currentPlayer: 1,
       moveHistory: [],
       history: [],
+      // Mirror backend defaults: enable the pie rule (swap_sides meta-move)
+      // for 2-player sandbox games so local play can exercise the same
+      // balancing option as backend games. For 3p/4p games the flag is
+      // omitted and swap_sides is never surfaced.
+      rulesOptions: config.numPlayers === 2 ? { swapRuleEnabled: true } : undefined,
       timeControl: {
         type: 'rapid',
         initialTime: 600,
@@ -508,6 +515,39 @@ export class ClientSandboxEngine {
     const options = decision.options as Move[];
 
     switch (decisionType) {
+      case 'elimination_target': {
+        const eliminationMoves = options.filter(
+          (opt: Move) => opt.type === 'eliminate_rings_from_stack' && opt.to
+        );
+
+        return {
+          id: `sandbox-ring-elimination-${Date.now()}`,
+          gameId: this.gameState.id,
+          playerNumber: decision.player,
+          type: 'ring_elimination',
+          prompt: 'Choose which stack to eliminate from',
+          options: eliminationMoves.map((opt: Move, idx: number) => {
+            const pos = opt.to as Position;
+            const key = positionToString(pos);
+            const stack = this.gameState.board.stacks.get(key);
+
+            const capHeight =
+              (opt.eliminationFromStack && opt.eliminationFromStack.capHeight) ||
+              (stack ? stack.capHeight : 1);
+            const totalHeight =
+              (opt.eliminationFromStack && opt.eliminationFromStack.totalHeight) ||
+              (stack ? stack.stackHeight : capHeight || 1);
+
+            return {
+              stackPosition: pos,
+              capHeight,
+              totalHeight,
+              moveId: opt.id || `move-${idx}`,
+            };
+          }),
+        };
+      }
+
       case 'line_order':
         return {
           id: `sandbox-line-order-${Date.now()}`,
@@ -613,6 +653,30 @@ export class ClientSandboxEngine {
     }
 
     if (response.selectedOption) {
+      // Ring elimination: prefer explicit moveId mapping when available,
+      // falling back to matching by stack position.
+      if (
+        response.choiceType === 'ring_elimination' &&
+        response.selectedOption.moveId
+      ) {
+        const byId = options.find((opt: Move) => opt.id === response.selectedOption.moveId);
+        if (byId) {
+          return byId;
+        }
+
+        const selectedPos = response.selectedOption.stackPosition as Position | undefined;
+        if (selectedPos) {
+          const selectedKey = positionToString(selectedPos);
+          const byPos = options.find((opt: Move) => {
+            if (!opt.to) return false;
+            return positionToString(opt.to as Position) === selectedKey;
+          });
+          if (byPos) {
+            return byPos;
+          }
+        }
+      }
+
       // Match by position for capture direction
       const selected = options.find((opt: Move) => {
         if (opt.captureTarget && response.selectedOption.targetPosition) {
@@ -1059,6 +1123,8 @@ export class ClientSandboxEngine {
       applyCanonicalMove: (move: Move) => this.applyCanonicalMove(move),
       hasPendingTerritorySelfElimination: () => this._pendingTerritorySelfElimination,
       hasPendingLineRewardElimination: () => this._pendingLineRewardElimination,
+      canCurrentPlayerSwapSides: () => this.canCurrentPlayerSwapSides(),
+      applySwapSidesForCurrentPlayer: () => this.applySwapSidesForCurrentPlayer(),
     };
 
     await maybeRunAITurnSandbox(hooks, effectiveRng);
@@ -1160,6 +1226,48 @@ export class ClientSandboxEngine {
   }
 
   /**
+   * Determine whether the current sandbox state should expose a swap_sides
+   * meta-move (pie rule) for Player 2. This mirrors the backend
+   * GameEngine.shouldOfferSwapSidesMetaMove gate so that local sandbox games
+   * follow the same one-time swap semantics as backend games.
+   */
+  private shouldOfferSwapSidesMetaMove(): boolean {
+    const state = this.gameState;
+
+    if (!state.rulesOptions?.swapRuleEnabled) return false;
+    if (state.gameStatus !== 'active') return false;
+    if (state.players.length !== 2) return false;
+    if (state.currentPlayer !== 2) return false;
+
+    if (
+      state.currentPhase !== 'ring_placement' &&
+      state.currentPhase !== 'movement' &&
+      state.currentPhase !== 'capture' &&
+      state.currentPhase !== 'chain_capture'
+    ) {
+      return false;
+    }
+
+    if (state.moveHistory.length === 0) return false;
+
+    const hasSwapMove = state.moveHistory.some((m) => m.type === 'swap_sides');
+    if (hasSwapMove) return false;
+
+    const hasP1Move = state.moveHistory.some((m) => m.player === 1);
+    const hasP2Move = state.moveHistory.some((m) => m.player === 2 && m.type !== 'swap_sides');
+
+    return hasP1Move && !hasP2Move;
+  }
+
+  /**
+   * Public helper used by SandboxGameHost/tests to determine whether the
+   * current player may invoke the pie rule.
+   */
+  public canCurrentPlayerSwapSides(): boolean {
+    return this.shouldOfferSwapSidesMetaMove();
+  }
+
+  /**
    * True if the player has any material left: at least one controlled
    * stack or at least one ring in hand.
    */
@@ -1171,6 +1279,76 @@ export class ClientSandboxEngine {
     );
     const ringsInHand = player?.ringsInHand ?? 0;
     return hasStacks || ringsInHand > 0;
+  }
+
+  /**
+   * Apply the pie-rule style colour/seat swap for the current sandbox game.
+   * See shouldOfferSwapSidesMetaMove for gate conditions.
+   *
+   * Returns true when the swap was applied; false when the gate conditions
+   * are not satisfied.
+   */
+  public applySwapSidesForCurrentPlayer(): boolean {
+    if (!this.shouldOfferSwapSidesMetaMove()) {
+      return false;
+    }
+
+    const state = this.gameState;
+    const before = this.getGameState();
+
+    const p1 = state.players.find((p) => p.playerNumber === 1);
+    const p2 = state.players.find((p) => p.playerNumber === 2);
+
+    if (!p1 || !p2) {
+      return false;
+    }
+
+    const swappedPlayers = state.players.map((p) => {
+      if (p.playerNumber === 1) {
+        return {
+          ...p,
+          id: p2.id,
+          username: p2.username,
+          type: p2.type,
+          rating: (p2 as any).rating,
+          aiDifficulty: p2.aiDifficulty,
+          aiProfile: (p2 as any).aiProfile,
+        };
+      }
+      if (p.playerNumber === 2) {
+        return {
+          ...p,
+          id: p1.id,
+          username: p1.username,
+          type: p1.type,
+          rating: (p1 as any).rating,
+          aiDifficulty: p1.aiDifficulty,
+          aiProfile: (p1 as any).aiProfile,
+        };
+      }
+      return p;
+    }) as Player[];
+
+    const moveNumber = state.moveHistory.length + 1;
+    const move: Move = {
+      id: `swap_sides-${moveNumber}`,
+      type: 'swap_sides',
+      player: state.currentPlayer,
+      to: { x: 0, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber,
+    } as Move;
+
+    this.gameState = {
+      ...state,
+      players: swappedPlayers,
+      moveHistory: [...state.moveHistory, move],
+      lastMoveAt: move.timestamp,
+    };
+
+    this.appendHistoryEntry(before, move);
+    return true;
   }
 
   /**
@@ -1483,19 +1661,27 @@ export class ClientSandboxEngine {
     playerNumber: number
   ): Array<{ from: Position; target: Position; landing: Position }> {
     const board = this.gameState.board;
-    const adapters: CaptureBoardAdapters = {
-      isValidPosition: (pos: Position) => this.isValidPosition(pos),
-      isCollapsedSpace: (pos: Position, b: BoardState) => this.isCollapsedSpace(pos, b),
-      getMarkerOwner: (pos: Position, b: BoardState) => this.getMarkerOwner(pos, b),
+    // Use the shared enumerateAllCaptureMovesAggregate helper but scoped to a single position.
+    // This ensures we use the exact same logic as the backend and shared engine.
+    // We construct a temporary GameState that wraps the current board so the aggregate
+    // can inspect it.
+    const tempState: GameState = {
+      ...this.gameState,
+      board,
+      currentPlayer: playerNumber,
     };
 
-    return enumerateCaptureSegmentsFromBoard(
-      this.gameState.boardType,
-      board,
-      from,
-      playerNumber,
-      adapters
-    );
+    // The aggregate enumerates ALL captures for the player. We filter for the specific 'from' position.
+    const allCaptures = enumerateAllCaptureMovesAggregate(tempState, playerNumber);
+    const fromKey = positionToString(from);
+
+    return allCaptures
+      .filter((m) => m.from && positionToString(m.from) === fromKey)
+      .map((m) => ({
+        from: m.from as Position,
+        target: m.captureTarget as Position,
+        landing: m.to as Position,
+      }));
   }
 
   private applyCaptureSegment(
@@ -2851,7 +3037,11 @@ export class ClientSandboxEngine {
       }
 
       const boardType = this.gameState.boardType;
-      const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+      const requiredLength = getEffectiveLineLengthThreshold(
+        boardType,
+        this.gameState.players.length,
+        this.gameState.rulesOptions
+      );
 
       // Default behaviour: pick the first line for the current player.
       let moveToApply: Move = processLineMoves[0];

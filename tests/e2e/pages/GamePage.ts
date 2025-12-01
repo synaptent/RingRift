@@ -32,7 +32,9 @@ export class GamePage {
     // Playwright strict mode does not match event-log entries like
     // "Connection restored".
     this.connectionStatus = page.getByTestId('game-hud').getByText('Connection:', { exact: false });
-    this.turnIndicator = page.locator('text=/Turn/i');
+    // Scope the "Turn" label to the HUD container and require an exact text
+    // match so that strict mode does not conflict with "Current Turn".
+    this.turnIndicator = page.getByTestId('game-hud').getByText('Turn', { exact: true });
     this.gameLogSection = page.locator('text=/Game log/i');
     this.recentMovesSection = page.locator('text=/Recent moves/i');
     this.phaseIndicator = page.locator('text=/Phase/i');
@@ -92,9 +94,14 @@ export class GamePage {
 
   /**
    * Click a cell at the specified position.
+   *
+   * Uses a Locator-based click with an explicit attachment wait to make the
+   * interaction resilient to React dev-mode re-renders that briefly detach
+   * board cells from the DOM.
    */
   async clickCell(x: number, y: number): Promise<void> {
     const cell = this.getCell(x, y);
+    await cell.waitFor({ state: 'attached', timeout: 10_000 });
     await cell.click();
   }
 

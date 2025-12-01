@@ -39,7 +39,7 @@ export function enumerateCaptureSegmentsFromBoard(
   playerNumber: number,
   adapters: CaptureBoardAdapters
 ): CaptureSegment[] {
-  // First, delegate to the shared capture-move helper so that sandbox
+  // Delegate to the shared capture-move helper so that sandbox
   // enumeration stays aligned with the unified rules geometry.
   const sharedAdapters: SharedCaptureBoardAdapters = {
     isValidPosition: (pos: Position) => adapters.isValidPosition(pos),
@@ -66,8 +66,6 @@ export function enumerateCaptureSegmentsFromBoard(
     landing: m.to as Position,
   }));
 
-  // The shared helper now correctly enumerates all valid landings (distance >= stackHeight),
-  // so we no longer need the manual extension logic here.
   return segments;
 }
 

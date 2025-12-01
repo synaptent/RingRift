@@ -206,7 +206,7 @@ describeOrSkip('FAQ Q1-Q6: Basic Mechanics', () => {
         // FAQ Q2: Both empty spaces AND markers count toward distance
         // Per Section 3.2 of rules: opponent markers are FLIPPED when crossed
         // Use single intermediate marker to avoid triggering line collapse
-        // (3 consecutive markers would form a line on square8 where lineLength=3)
+        // (4 consecutive markers would form a line on square8 where lineLength=4)
 
         const engine = new GameEngine(
           'faq-q2-markers-backend',
@@ -228,7 +228,7 @@ describeOrSkip('FAQ Q1-Q6: Basic Mechanics', () => {
 
         // Place ONE marker in path - it counts toward distance calculation
         // Using only one marker so we don't trigger line collapse after movement
-        // (departure marker + 1 flipped marker = 2 markers, less than lineLength=3)
+        // (departure marker + 1 flipped marker = 2 markers, less than lineLength=4)
         gameState.board.markers.set('3,3', {
           position: { x: 3, y: 3 },
           player: 2,

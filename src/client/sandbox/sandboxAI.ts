@@ -130,6 +130,53 @@ export interface SandboxAIHooks {
    * GameEngine.pendingLineRewardElimination flag.
    */
   hasPendingLineRewardElimination(): boolean;
+  /**
+   * Pie-rule hooks: mirror the backend GameEngine.shouldOfferSwapSidesMetaMove
+   * gate and applySwapSidesMove behaviour so sandbox AI can optionally
+   * invoke swap_sides under the same one-time conditions as humans.
+   */
+  canCurrentPlayerSwapSides(): boolean;
+  applySwapSidesForCurrentPlayer(): boolean;
+}
+
+/**
+ * Simple heuristic used by the sandbox AI to decide whether to invoke the
+ * pie rule (swap_sides) when it is available to Player 2.
+ *
+ * Current policy:
+ * - Only ever considers swap_sides on square8 boards.
+ * - Treats a "strong" opening as Player 1 placing their first ring on one of
+ *   the four central squares (3,3), (3,4), (4,3), (4,4).
+ * - For other openings/boards, the AI declines the pie rule even if it is
+ *   technically available.
+ *
+ * This keeps behaviour deterministic under a fixed RNG seed and makes the
+ * sandbox AI's use of the pie rule understandable to humans watching the
+ * opening.
+ */
+function shouldSandboxAIPickSwapSides(gameState: GameState): boolean {
+  if (gameState.boardType !== 'square8') {
+    return false;
+  }
+
+  const firstP1Placement = gameState.moveHistory.find(
+    (m) => m.player === 1 && m.type === 'place_ring'
+  );
+
+  if (!firstP1Placement || !firstP1Placement.to) {
+    return false;
+  }
+
+  const { x, y } = firstP1Placement.to;
+  const size = gameState.board.size;
+  const midLow = Math.floor((size - 1) / 2); // 3 on square8
+  const midHigh = Math.ceil((size - 1) / 2); // 4 on square8
+
+  const isCentral =
+    (x === midLow || x === midHigh) &&
+    (y === midLow || y === midHigh);
+
+  return isCentral;
 }
 
 function getLineDecisionMovesForSandboxAI(gameState: GameState): Move[] {
@@ -344,6 +391,11 @@ export function selectSandboxMovementMove(
 /**
  * Run a single AI turn in sandbox mode.
  *
+ * All stochastic choices are driven by the injected `rng` parameter,
+ * which must be a seeded RNG derived from GameState.rngSeed (typically
+ * provided by ClientSandboxEngine). This keeps sandbox AI behaviour
+ * deterministic for a fixed seed and aligned with backend fallback AI.
+ *
  * Behaviour:
  * - In ring_placement: probabilistically decides between placing and
  *   skipping based on the ratio of placement vs non-placement
@@ -358,7 +410,7 @@ export function selectSandboxMovementMove(
  */
 export async function maybeRunAITurnSandbox(
   hooks: SandboxAIHooks,
-  rng: LocalAIRng = Math.random
+  rng: LocalAIRng
 ): Promise<void> {
   // If we've exceeded the maximum consecutive no-op threshold, stop
   // executing AI turns to prevent infinite stalls and log spam.
@@ -409,6 +461,28 @@ export async function maybeRunAITurnSandbox(
     }
 
     const parityMode = isSandboxAiParityModeEnabled();
+
+    // === Pie rule (swap_sides) meta-move for 2-player sandbox AI ===
+    // When the gate conditions match the backend pie rule and the opening
+    // looks "strong" for Player 1, allow the sandbox AI playing as P2 to
+    // invoke swap_sides once instead of continuing as normal.
+    if (
+      !parityMode &&
+      gameState.currentPlayer === 2 &&
+      hooks.canCurrentPlayerSwapSides() &&
+      shouldSandboxAIPickSwapSides(gameState)
+    ) {
+      const applied = hooks.applySwapSidesForCurrentPlayer();
+      if (applied) {
+        const afterSwap = hooks.getGameState();
+        const last = afterSwap.moveHistory[afterSwap.moveHistory.length - 1] ?? null;
+        if (last) {
+          lastAIMove = last;
+          hooks.setLastAIMove(lastAIMove);
+        }
+        return;
+      }
+    }
 
     // === Ring placement phase: canonical candidates + shared selector ===
     if (gameState.currentPhase === 'ring_placement') {

@@ -15,6 +15,7 @@ import {
   positionToString,
   BOARD_CONFIGS,
 } from '../../src/shared/types/game';
+import { getEffectiveLineLengthThreshold } from '../../src/shared/engine';
 
 /**
  * Sandbox line detection + reward tests.
@@ -28,7 +29,9 @@ import {
 
 describe('ClientSandboxEngine line processing', () => {
   const boardType: BoardType = 'square8';
-  const requiredLength = BOARD_CONFIGS[boardType].lineLength;
+  // For 2-player sandbox games, use the effective line threshold (4-in-a-row
+  // on square8) rather than the base BOARD_CONFIGS.square8.lineLength (3).
+  const requiredLength = getEffectiveLineLengthThreshold(boardType, 2);
 
   function createEngine(): ClientSandboxEngine {
     const config: SandboxConfig = {

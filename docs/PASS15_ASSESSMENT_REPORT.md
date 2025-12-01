@@ -1,5 +1,10 @@
 # Pass 15 Assessment Report
 
+> **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
+> For current project status, see:
+> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
+
 > **Assessment Date:** 2025-11-28
 > **Focus Areas:** Areas <4/5, Documentation Verification, UX Polish, Unexplored Codebase
 

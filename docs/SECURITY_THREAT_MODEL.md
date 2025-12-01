@@ -187,6 +187,9 @@ This section focuses on concrete threat surfaces and maps each to existing contr
 - Separation of configuration and secrets into env files validated by [`config`](../src/server/config.ts:1) and documented in [`.env.example`](../.env.example:1).
 - Database migration and backup/restore workflows are described in [`docs/OPERATIONS_DB.md`](./OPERATIONS_DB.md:1).
 - Structured logging via [`logger`](../src/server/utils/logger.ts:1) and strongly typed client-error reporting via [`errorReporting`](../src/client/utils/errorReporting.ts:1) reduce the need for ad-hoc `console.log` of sensitive values.
+- Operator-facing drills for critical secrets and backups now exist as:
+  - [`docs/runbooks/SECRETS_ROTATION_DRILL.md`](./runbooks/SECRETS_ROTATION_DRILL.md) – JWT and database credential rotation drill for staging/non-production.
+  - [`docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`](./runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md) – non-destructive Postgres backup/restore drill using a separate restore database.
 
 **Gaps / risks**
 

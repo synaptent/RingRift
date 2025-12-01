@@ -1,28 +1,45 @@
-import sys
+import json
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
 # Ensure app package is importable when running tests directly
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
 
-from app.models import (
-    GameState,
-    BoardType,
+from app.models import (  # noqa: E402
     BoardState,
+    BoardType,
     GamePhase,
+    GameState,
     GameStatus,
-    TimeControl,
+    LineInfo,
+    MoveType,
     Player,
     Position,
     RingStack,
-    LineInfo,
     Territory,
-    MoveType,
+    TimeControl,
 )
-from app.game_engine import GameEngine
-from app.board_manager import BoardManager
+from app.game_engine import GameEngine  # noqa: E402
+from app.board_manager import BoardManager  # noqa: E402
+from tests.parity.test_ts_seed_plateau_snapshot_parity import (  # noqa: E402
+    _build_game_state_from_snapshot,
+    _normalise_for_comparison,
+    _python_comparable_snapshot,
+)
+
+
+BASE_DIR = Path(__file__).resolve().parent
+PARITY_DIR = BASE_DIR
+
+LINE_TERRITORY_SNAPSHOT_BY_BOARD = {
+    BoardType.SQUARE8: PARITY_DIR / "line_territory_scenario_square8.snapshot.json",
+    BoardType.SQUARE19: PARITY_DIR / "line_territory_scenario_square19.snapshot.json",
+    BoardType.HEXAGONAL: PARITY_DIR / "line_territory_scenario_hexagonal.snapshot.json",
+}
 
 
 REQUIRED_LENGTH_BY_BOARD = {
@@ -250,16 +267,34 @@ def test_line_and_territory_scenario_parity(board_type: BoardType) -> None:
         BoardManager.get_border_marker_positions = orig_get_border_markers
 
 
-@pytest.mark.skip(reason="TS snapshot-based parity for line+territory not wired yet")
-def test_line_and_territory_ts_snapshot_parity_placeholder() -> None:
+@pytest.mark.parametrize(
+    "board_type",
+    [BoardType.SQUARE8, BoardType.SQUARE19, BoardType.HEXAGONAL],
+)
+def test_line_and_territory_ts_snapshot_parity(board_type: BoardType) -> None:
     """
-    Placeholder for a future TS snapshot-based parity test of the combined
-    line+territory scenario. Once a JSON snapshot is generated from the TS
-    backend, this test should:
-    - Load the TS initial GameState and final board snapshot.
-    - Reconstruct the same initial GameState in Python.
-    - Run Python line+territory processing steps.
-    - Assert that stacks, markers, collapsed_spaces, eliminated_rings, and
-      territory_spaces match the TS snapshot.
+    TS snapshot-based parity for the combined line+territory scenario.
+
+    For each board type, this test:
+    - Loads the TS-generated ComparableSnapshot JSON fixture for the
+      line+territory scenario.
+    - Hydrates an equivalent Python GameState from the snapshot.
+    - Reconstructs a Python ComparableSnapshot shape.
+    - Asserts deep equality with the TS snapshot (modulo the `label`
+      field), mirroring plateau snapshot parity tests.
     """
-    pass
+    fixture_path = LINE_TERRITORY_SNAPSHOT_BY_BOARD[board_type]
+
+    if not fixture_path.exists():
+        pytest.skip(
+            "TS line+territory snapshot fixture not found. "
+            "Run the TS exporter (ExportLineAndTerritorySnapshot Jest test) first."
+        )
+
+    with fixture_path.open("r", encoding="utf-8") as f:
+        ts_snapshot = json.load(f)
+
+    state = _build_game_state_from_snapshot(ts_snapshot)
+    py_snapshot = _python_comparable_snapshot(ts_snapshot.get("label", "py"), state)
+
+    assert _normalise_for_comparison(py_snapshot) == _normalise_for_comparison(ts_snapshot)

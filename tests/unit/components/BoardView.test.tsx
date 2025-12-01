@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { BoardView } from '../../../src/client/components/BoardView';
 import { BoardState, Position, RingStack } from '../../../src/shared/types/game';
+import type { BoardViewModel } from '../../../src/client/adapters/gameViewModels';
 
 // Helper to create empty board state
 function createEmptyBoardState(type: 'square8' | 'square19' | 'hexagonal' = 'square8'): BoardState {
@@ -72,10 +73,16 @@ describe('BoardView', () => {
       expect(buttons.length).toBeGreaterThan(0);
     });
 
-    it('returns null for unknown board type', () => {
+    it('renders an empty container for unknown board type', () => {
       const board = createEmptyBoardState('square8');
       const { container } = render(<BoardView boardType={'unknown' as any} board={board} />);
-      expect(container.firstChild).toBeNull();
+
+      // The accessibility wrapper remains, but no interactive board cells
+      // should be rendered when the board type is unknown.
+      const wrapper = screen.getByTestId('board-view');
+      expect(wrapper).toBeInTheDocument();
+      const buttons = container.querySelectorAll('button');
+      expect(buttons.length).toBe(0);
     });
   });
 
@@ -167,6 +174,66 @@ describe('BoardView', () => {
       // Check that valid targets have outline styling
       const highlightedCells = container.querySelectorAll('.outline-emerald-300\\/90');
       expect(highlightedCells.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('decision highlights', () => {
+    it('applies primary and secondary decision highlight classes on square boards', () => {
+      const board = createEmptyBoardState('square8');
+      const baseVM: BoardViewModel = {
+        boardType: 'square8',
+        size: 8,
+        cells: [],
+        rows: [],
+        decisionHighlights: {
+          choiceKind: 'line_reward',
+          highlights: [
+            { positionKey: '1,1', intensity: 'primary' },
+            { positionKey: '2,2', intensity: 'secondary' },
+          ],
+        },
+      };
+
+      const { container } = render(
+        <BoardView boardType="square8" board={board} viewModel={baseVM} />
+      );
+
+      const primaryCell = container.querySelector('button[data-x="1"][data-y="1"]');
+      const secondaryCell = container.querySelector('button[data-x="2"][data-y="2"]');
+
+      expect(primaryCell).toHaveClass('decision-highlight-primary');
+      expect(primaryCell).toHaveAttribute('data-decision-highlight', 'primary');
+
+      expect(secondaryCell).toHaveClass('decision-highlight-secondary');
+      expect(secondaryCell).toHaveAttribute('data-decision-highlight', 'secondary');
+    });
+
+    it('applies decision highlight classes on hex boards using cube coordinates', () => {
+      const board = createEmptyBoardState('hexagonal');
+      board.type = 'hexagonal';
+      board.size = 3; // small radius to keep button count manageable
+
+      const baseVM: BoardViewModel = {
+        boardType: 'hexagonal',
+        size: 3,
+        cells: [],
+        decisionHighlights: {
+          choiceKind: 'capture_direction',
+          highlights: [
+            { positionKey: '0,0,0', intensity: 'primary' },
+          ],
+        },
+      };
+
+      const { container } = render(
+        <BoardView boardType="hexagonal" board={board} viewModel={baseVM} />
+      );
+
+      const highlightedCell = container.querySelector(
+        'button[data-x="0"][data-y="0"][data-z="0"]'
+      );
+      expect(highlightedCell).toHaveClass('decision-highlight-primary');
+      expect(highlightedCell).toHaveAttribute('data-decision-highlight', 'primary');
     });
   });
 
@@ -275,6 +342,72 @@ describe('BoardView', () => {
       board.type = 'hexagonal';
       render(<BoardView boardType="hexagonal" board={board} />);
       expect(screen.getByTestId('board-view')).toBeInTheDocument();
+    });
+  });
+
+  describe('cell coordinate attributes', () => {
+    it('renders square8 cells with data-x and data-y attributes matching their coordinates', () => {
+      const board = createEmptyBoardState('square8');
+
+      const { container } = render(<BoardView boardType="square8" board={board} />);
+
+      const cells = Array.from(container.querySelectorAll('button'));
+      expect(cells).toHaveLength(64);
+
+      // Ensure that each cell exposes its coordinate via data-x/data-y so that
+      // E2E helpers and movement tests can target cells deterministically.
+      cells.forEach((cell) => {
+        const xAttr = cell.getAttribute('data-x');
+        const yAttr = cell.getAttribute('data-y');
+        expect(xAttr).not.toBeNull();
+        expect(yAttr).not.toBeNull();
+
+        const x = Number(xAttr);
+        const y = Number(yAttr);
+        expect(Number.isInteger(x)).toBe(true);
+        expect(Number.isInteger(y)).toBe(true);
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(x).toBeLessThan(8);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(y).toBeLessThan(8);
+      });
+    });
+
+    it('renders hexagonal cells with cube-coordinate data-x/data-y/data-z attributes', () => {
+      const board = createEmptyBoardState('hexagonal');
+      board.type = 'hexagonal';
+      board.size = 11; // canonical side length for the hex board in core rules
+
+      const { container } = render(<BoardView boardType="hexagonal" board={board} />);
+
+      const cells = Array.from(container.querySelectorAll('button'));
+      expect(cells.length).toBeGreaterThan(0);
+
+      const radius = board.size - 1;
+
+      cells.forEach((cell) => {
+        const xAttr = cell.getAttribute('data-x');
+        const yAttr = cell.getAttribute('data-y');
+        const zAttr = cell.getAttribute('data-z');
+
+        expect(xAttr).not.toBeNull();
+        expect(yAttr).not.toBeNull();
+        expect(zAttr).not.toBeNull();
+
+        const q = Number(xAttr);
+        const r = Number(yAttr);
+        const s = Number(zAttr);
+
+        expect(Number.isInteger(q)).toBe(true);
+        expect(Number.isInteger(r)).toBe(true);
+        expect(Number.isInteger(s)).toBe(true);
+
+        // Cube coordinate invariant for hex boards: q + r + s === 0 within radius.
+        expect(q + r + s).toBe(0);
+        expect(Math.abs(q)).toBeLessThanOrEqual(radius);
+        expect(Math.abs(r)).toBeLessThanOrEqual(radius);
+        expect(Math.abs(s)).toBeLessThanOrEqual(radius);
+      });
     });
   });
 });

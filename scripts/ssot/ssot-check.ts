@@ -18,6 +18,7 @@ import { runPythonParitySsotCheck } from './python-parity-ssot-check';
 import { runCiAndConfigSsotCheck } from './ci-config-ssot-check';
 import { runDocsBannerSsotCheck } from './docs-banner-ssot-check';
 import { runEnvDocSsotCheck } from './env-doc-ssot-check';
+import { runSecretsDocSsotCheck } from './secrets-doc-ssot-check';
 import { runApiDocSsotCheck } from './api-doc-ssot-check';
 import { runDocsLinkSsotCheck } from './docs-link-ssot-check';
 import { runApiEndpointsSsotCheck } from './api-endpoints-ssot-check';
@@ -36,6 +37,7 @@ async function main() {
     runCiAndConfigSsotCheck,
     runDocsBannerSsotCheck,
     runEnvDocSsotCheck,
+    runSecretsDocSsotCheck,
     runApiDocSsotCheck,
     runApiEndpointsSsotCheck,
     runDocsLinkSsotCheck,

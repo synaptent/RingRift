@@ -26,6 +26,8 @@ jest.mock('../../src/server/game/ai/AIEngine', () => {
     getLineRewardChoice: jest.fn(),
     getRingEliminationChoice: jest.fn(),
     getRegionOrderChoice: jest.fn(),
+    getLineOrderChoice: jest.fn(),
+    getCaptureDirectionChoice: jest.fn(),
     // By default, behave as if the AI is in `service` mode so that
     // service-backed paths remain exercised unless a test overrides
     // this mock.
@@ -247,6 +249,161 @@ describe('AIInteractionHandler', () => {
 
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('AI service returned invalid option for line_reward_option'),
+      expect.objectContaining({
+        gameId: choice.gameId,
+        playerNumber: choice.playerNumber,
+        choiceId: choice.id,
+        choiceType: choice.type,
+      })
+    );
+  });
+
+  it('uses AI service line_order when it returns a valid option', async () => {
+    const positionsA: Position[] = [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+    ];
+    const positionsB: Position[] = [
+      { x: 3, y: 3 },
+      { x: 4, y: 4 },
+    ];
+
+    const choice: LineOrderChoice = {
+      ...baseChoice,
+      type: 'line_order',
+      options: [
+        { moveId: 'm-short', lineId: 'short', markerPositions: positionsB },
+        { moveId: 'm-long', lineId: 'long', markerPositions: positionsA },
+      ],
+    };
+
+    const mockEngine = globalAIEngine as unknown as {
+      getLineOrderChoice: jest.Mock;
+    };
+
+    mockEngine.getLineOrderChoice.mockResolvedValue(choice.options[0]);
+
+    const response = await handler.requestChoice(choice as PlayerChoice);
+    const selected = response.selectedOption as LineOrderChoice['options'][number];
+
+    expect(mockEngine.getLineOrderChoice).toHaveBeenCalledWith(
+      choice.playerNumber,
+      null,
+      choice.options
+    );
+    expect(selected.lineId).toBe('short');
+  });
+
+  it('falls back to local line_order heuristic and logs when AI service returns invalid option', async () => {
+    const positionsA: Position[] = [
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+    ];
+    const positionsB: Position[] = [
+      { x: 3, y: 3 },
+      { x: 4, y: 4 },
+    ];
+
+    const choice: LineOrderChoice = {
+      ...baseChoice,
+      type: 'line_order',
+      options: [
+        { moveId: 'm-short', lineId: 'short', markerPositions: positionsB },
+        { moveId: 'm-long', lineId: 'long', markerPositions: positionsA },
+      ],
+    };
+
+    const mockEngine = globalAIEngine as unknown as {
+      getLineOrderChoice: jest.Mock;
+    };
+
+    mockEngine.getLineOrderChoice.mockResolvedValue({} as any);
+
+    const response = await handler.requestChoice(choice as PlayerChoice);
+    const selected = response.selectedOption as LineOrderChoice['options'][number];
+
+    // Fallback heuristic should still pick the longer line ("long").
+    expect(selected.lineId).toBe('long');
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('AI service returned invalid option for line_order'),
+      expect.objectContaining({
+        gameId: choice.gameId,
+        playerNumber: choice.playerNumber,
+        choiceId: choice.id,
+        choiceType: choice.type,
+      })
+    );
+  });
+
+  it('uses AI service capture_direction when it returns a valid option', async () => {
+    const choice: CaptureDirectionChoice = {
+      ...baseChoice,
+      type: 'capture_direction',
+      options: [
+        {
+          targetPosition: { x: 3, y: 3 },
+          landingPosition: { x: 5, y: 5 },
+          capturedCapHeight: 2,
+        },
+        {
+          targetPosition: { x: 4, y: 4 },
+          landingPosition: { x: 6, y: 6 },
+          capturedCapHeight: 3,
+        },
+      ],
+    };
+
+    const mockEngine = globalAIEngine as unknown as {
+      getCaptureDirectionChoice: jest.Mock;
+    };
+
+    mockEngine.getCaptureDirectionChoice.mockResolvedValue(choice.options[0]);
+
+    const response = await handler.requestChoice(choice as PlayerChoice);
+    const selected = response.selectedOption as CaptureDirectionChoice['options'][number];
+
+    expect(mockEngine.getCaptureDirectionChoice).toHaveBeenCalledWith(
+      choice.playerNumber,
+      null,
+      choice.options
+    );
+    expect(selected).toBe(choice.options[0]);
+  });
+
+  it('falls back to local capture_direction heuristic and logs when AI service returns invalid option', async () => {
+    const choice: CaptureDirectionChoice = {
+      ...baseChoice,
+      type: 'capture_direction',
+      options: [
+        {
+          targetPosition: { x: 3, y: 3 },
+          landingPosition: { x: 5, y: 5 },
+          capturedCapHeight: 2,
+        },
+        {
+          targetPosition: { x: 4, y: 4 },
+          landingPosition: { x: 6, y: 6 },
+          capturedCapHeight: 3,
+        },
+      ],
+    };
+
+    const mockEngine = globalAIEngine as unknown as {
+      getCaptureDirectionChoice: jest.Mock;
+    };
+
+    mockEngine.getCaptureDirectionChoice.mockResolvedValue({} as any);
+
+    const response = await handler.requestChoice(choice as PlayerChoice);
+    const selected = response.selectedOption as CaptureDirectionChoice['options'][number];
+
+    // Fallback heuristic should still prefer the higher capturedCapHeight (3).
+    expect(selected.capturedCapHeight).toBe(3);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('AI service returned invalid option for capture_direction'),
       expect.objectContaining({
         gameId: choice.gameId,
         playerNumber: choice.playerNumber,

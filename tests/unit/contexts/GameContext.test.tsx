@@ -86,6 +86,28 @@ jest.mock('../../../src/client/utils/errorReporting', () => ({
 // This mirrors the real implementation but without import.meta dependencies
 // ============================================================================
 
+// Decision auto-resolved metadata type (mirrors websocket.ts)
+interface DecisionAutoResolvedMeta {
+  choiceType: string;
+  choiceKind: string;
+  actingPlayerNumber: number;
+  resolvedMoveId?: string;
+  reason: string;
+}
+
+// Decision phase timeout warning payload type (mirrors websocket.ts)
+interface DecisionPhaseTimeoutWarningPayload {
+  type: 'decision_phase_timeout_warning';
+  data: {
+    gameId: string;
+    playerNumber: number;
+    phase: 'line_processing' | 'territory_processing' | 'chain_capture';
+    remainingMs: number;
+    choiceId?: string;
+  };
+  timestamp: string;
+}
+
 interface GameContextType {
   gameId: string | null;
   gameState: GameState | null;
@@ -103,6 +125,8 @@ interface GameContextType {
   chatMessages: { sender: string; text: string }[];
   connectionStatus: ConnectionStatus;
   lastHeartbeatAt: number | null;
+  decisionAutoResolved: DecisionAutoResolvedMeta | null;
+  decisionPhaseTimeoutWarning: DecisionPhaseTimeoutWarningPayload | null;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -154,6 +178,11 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null);
+  const [decisionAutoResolved, setDecisionAutoResolved] = useState<DecisionAutoResolvedMeta | null>(
+    null
+  );
+  const [decisionPhaseTimeoutWarning, setDecisionPhaseTimeoutWarning] =
+    useState<DecisionPhaseTimeoutWarningPayload | null>(null);
   const socketRef = useRef<MockSocketShape | null>(null);
   const targetGameIdRef = useRef<string | null>(null);
 
@@ -173,6 +202,8 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
     setChatMessages([]);
     setConnectionStatus('disconnected');
     setLastHeartbeatAt(null);
+    setDecisionAutoResolved(null);
+    setDecisionPhaseTimeoutWarning(null);
   }, []);
 
   const connectToGame = useCallback(
@@ -243,6 +274,7 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
             setError(null);
             setConnectionStatus('connected');
             setLastHeartbeatAt(Date.now());
+            setDecisionAutoResolved(data.meta?.diffSummary?.decisionAutoResolved ?? null);
           }
         });
 
@@ -262,6 +294,8 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
           setError(null);
           setPendingChoice(null);
           setChoiceDeadline(null);
+          setDecisionAutoResolved(null);
+          setDecisionPhaseTimeoutWarning(null);
         });
 
         socket.on('player_choice_required', (choice: PlayerChoice) => {
@@ -273,6 +307,14 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
         socket.on('player_choice_canceled', (choiceId: string) => {
           setPendingChoice((current) => (current && current.id === choiceId ? null : current));
           setChoiceDeadline((current) => (current ? null : current));
+        });
+
+        socket.on('decision_phase_timeout_warning', (payload: DecisionPhaseTimeoutWarningPayload) => {
+          setDecisionPhaseTimeoutWarning(payload);
+        });
+
+        socket.on('decision_phase_timed_out', () => {
+          setDecisionPhaseTimeoutWarning(null);
         });
 
         socket.on('chat_message', (payload: { sender: string; text: string }) => {
@@ -414,6 +456,8 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
     chatMessages,
     connectionStatus,
     lastHeartbeatAt,
+    decisionAutoResolved,
+    decisionPhaseTimeoutWarning,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
@@ -526,6 +570,14 @@ function TestConsumer({ gameId = 'game-123' }: { gameId?: string }) {
       <span data-testid="chat-count">{ctx.chatMessages.length}</span>
       <span data-testid="valid-moves-count">{ctx.validMoves?.length ?? 'null'}</span>
       <span data-testid="last-heartbeat">{ctx.lastHeartbeatAt ?? 'null'}</span>
+      <span data-testid="decision-auto-resolved">
+        {ctx.decisionAutoResolved ? ctx.decisionAutoResolved.reason : 'none'}
+      </span>
+      <span data-testid="decision-timeout-warning">
+        {ctx.decisionPhaseTimeoutWarning
+          ? ctx.decisionPhaseTimeoutWarning.data.remainingMs
+          : 'none'}
+      </span>
 
       <button data-testid="connect-btn" onClick={() => ctx.connectToGame(gameId)}>
         Connect
@@ -1027,6 +1079,86 @@ describe('GameContext', () => {
 
       expect(screen.getByTestId('pending-choice')).toHaveTextContent('none');
     });
+
+    it('clears decisionAutoResolved and timeout warning on game_over', async () => {
+      render(
+        <TestGameProvider>
+          <TestConsumer />
+        </TestGameProvider>
+      );
+
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('connect-btn'));
+
+      act(() => {
+        socketEventHandlers['connect']?.();
+      });
+
+      // Simulate a prior game_state carrying decisionAutoResolved + a timeout warning
+      act(() => {
+        socketEventHandlers['game_state']?.({
+          data: {
+            gameId: 'game-123',
+            gameState: {
+              ...createMockGameState(),
+              board: {
+                stacks: {},
+                markers: {},
+                collapsedSpaces: {},
+                territories: {},
+                formedLines: [],
+                eliminatedRings: {},
+                size: 8,
+                type: 'square8',
+              },
+            },
+            validMoves: [],
+            meta: {
+              diffSummary: {
+                decisionAutoResolved: {
+                  choiceType: 'line_reward_option',
+                  choiceKind: 'line_reward',
+                  actingPlayerNumber: 1,
+                  resolvedMoveId: 'auto-move-1',
+                  reason: 'timeout',
+                },
+              },
+            },
+          },
+        });
+      });
+
+      // Manually invoke the timeout warning handler as the socket would
+      act(() => {
+        socketEventHandlers['decision_phase_timeout_warning']?.({
+          type: 'decision_phase_timeout_warning',
+          data: {
+            gameId: 'game-123',
+            playerNumber: 1,
+            phase: 'line_processing',
+            remainingMs: 5000,
+            choiceId: 'choice-1',
+          },
+          timestamp: new Date().toISOString(),
+        } as any);
+      });
+
+      expect(screen.getByTestId('decision-auto-resolved')).toHaveTextContent('timeout');
+      expect(screen.getByTestId('decision-timeout-warning')).not.toHaveTextContent('none');
+
+      // game_over should clear both decisionAutoResolved and timeout warnings
+      act(() => {
+        socketEventHandlers['game_over']?.({
+          data: {
+            gameId: 'game-123',
+            gameResult: { winner: 1, reason: 'timeout', finalScore: {} },
+          },
+        });
+      });
+
+      expect(screen.getByTestId('decision-auto-resolved')).toHaveTextContent('none');
+      expect(screen.getByTestId('decision-timeout-warning')).toHaveTextContent('none');
+    });
   });
 
   describe('Player Choices', () => {
@@ -1103,6 +1235,55 @@ describe('GameContext', () => {
       });
 
       expect(screen.getByTestId('pending-choice')).toHaveTextContent('none');
+    });
+
+    it('tracks decision-phase timeout warnings and clears them on final timeout event', async () => {
+      render(
+        <TestGameProvider>
+          <TestConsumer />
+        </TestGameProvider>
+      );
+
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('connect-btn'));
+
+      act(() => {
+        socketEventHandlers['connect']?.();
+      });
+
+      // Simulate a timeout warning from the server.
+      act(() => {
+        socketEventHandlers['decision_phase_timeout_warning']?.({
+          type: 'decision_phase_timeout_warning',
+          data: {
+            gameId: 'game-123',
+            playerNumber: 1,
+            phase: 'line_processing',
+            remainingMs: 5000,
+            choiceId: 'choice-1',
+          },
+          timestamp: new Date().toISOString(),
+        } as any);
+      });
+
+      expect(screen.getByTestId('decision-timeout-warning')).not.toHaveTextContent('none');
+
+      // The final timeout event should clear the warning.
+      act(() => {
+        socketEventHandlers['decision_phase_timed_out']?.({
+          type: 'decision_phase_timed_out',
+          data: {
+            gameId: 'game-123',
+            playerNumber: 1,
+            phase: 'line_processing',
+            autoSelectedMoveId: 'auto-move-1',
+            reason: 'timeout',
+          },
+          timestamp: new Date().toISOString(),
+        } as any);
+      });
+
+      expect(screen.getByTestId('decision-timeout-warning')).toHaveTextContent('none');
     });
 
     it('responds to choice by emitting player_choice_response', async () => {

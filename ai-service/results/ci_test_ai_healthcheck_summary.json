@@ -1,0 +1,75 @@
+{
+  "avg_length": 48.333333333333336,
+  "board_types": [
+    "hexagonal",
+    "square19",
+    "square8"
+  ],
+  "by_status": {
+    "active": 3
+  },
+  "by_termination_reason": {
+    "max_moves_reached": 2,
+    "no_legal_moves_for_current_player": 1
+  },
+  "completed_games": 0,
+  "config": {
+    "base_seed": 1764142864,
+    "board_types": [
+      "square8",
+      "square19",
+      "hexagonal"
+    ],
+    "difficulty_band": "light",
+    "engine_mode": "mixed",
+    "games_per_config": 1,
+    "max_moves": 50,
+    "num_players": 2,
+    "profile": "ai-healthcheck",
+    "strict_no_move_invariant": false
+  },
+  "engine_pairs": [
+    "mixed_(light)_2p"
+  ],
+  "invariant_violation_samples": [
+    {
+      "board_type": "square8",
+      "current_phase": "movement",
+      "current_player": 2,
+      "game_index": 0,
+      "game_status": "active",
+      "invariant_id": "INV-ACTIVE-NO-MOVES",
+      "move_index": 45,
+      "type": "ACTIVE_NO_MOVES"
+    }
+  ],
+  "invariant_violations_by_id": {
+    "INV-ACTIVE-NO-MOVES": 1
+  },
+  "invariant_violations_total": 1,
+  "max_length": 50,
+  "max_moves_games": 2,
+  "min_length": 45,
+  "parity_mismatches": {
+    "hash": 0,
+    "status": 0
+  },
+  "parity_notes": "PARITY-* checks are not yet wired into the ai-healthcheck profile. See docs/INVARIANTS_AND_PARITY_FRAMEWORK.md for future PARITY-* integration points.",
+  "profile": "ai-healthcheck",
+  "samples": [
+    {
+      "board_type": "square8",
+      "current_phase": "movement",
+      "current_player": 2,
+      "game_index": 0,
+      "game_status": "active",
+      "invariant_id": "INV-ACTIVE-NO-MOVES",
+      "move_index": 45,
+      "type": "ACTIVE_NO_MOVES"
+    }
+  ],
+  "total_games": 3,
+  "violation_counts_by_type": {
+    "ACTIVE_NO_MOVES": 1
+  }
+}

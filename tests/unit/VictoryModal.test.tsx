@@ -140,7 +140,7 @@ describe('VictoryModal', () => {
     );
 
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
-    expect(screen.getByText(/Victory by eliminating all opponent rings/)).toBeInTheDocument();
+    expect(screen.getByText(/Victory by eliminating over half of opponent rings/)).toBeInTheDocument();
   });
 
   it('should display territory control victory message', () => {
@@ -553,7 +553,7 @@ describe('VictoryModal', () => {
 
     // Title and description come from the view model path
     expect(screen.getByText(/Alice Wins!/)).toBeInTheDocument();
-    expect(screen.getByText(/Victory by eliminating all opponent rings/)).toBeInTheDocument();
+    expect(screen.getByText(/Victory by eliminating over half of opponent rings/)).toBeInTheDocument();
 
     // Stats table is rendered via the view model finalStats
     const table = screen.getByRole('table');

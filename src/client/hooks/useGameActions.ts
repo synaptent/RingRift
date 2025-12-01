@@ -13,7 +13,7 @@
  * - Easy to mock for testing interaction scenarios
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useGame } from '../contexts/GameContext';
 import type {
   Move,
@@ -22,6 +22,8 @@ import type {
   PlayerChoice,
   PlayerChoiceResponse,
 } from '../../shared/types/game';
+import { getChoiceViewModel } from '../adapters/choiceViewModels';
+import type { ChoiceViewModel } from '../adapters/choiceViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -52,7 +54,7 @@ export interface MovementAction {
 }
 
 /**
- * Pending choice state
+ * Pending choice state (lightweight)
  */
 export interface PendingChoiceState {
   /** Current choice awaiting response (null if none) */
@@ -61,6 +63,32 @@ export interface PendingChoiceState {
   deadline: number | null;
   /** Whether a choice is currently pending */
   hasPendingChoice: boolean;
+}
+
+/**
+ * Rich decision-phase view used by decision UIs (ChoiceDialog, HUD, etc.).
+ * This is intentionally derived from PlayerChoice via choiceViewModels so
+ * that all decision semantics (labels, timeouts, future highlights) share a
+ * single source of truth.
+ */
+export interface PendingChoiceView {
+  /** Underlying domain choice currently awaiting a response. */
+  choice: PlayerChoice;
+  /**
+   * Mapped UX metadata for this choice, including titles, labels, and
+   * timeout semantics.
+   */
+  viewModel: ChoiceViewModel;
+  /**
+   * Client-side estimate of remaining time (ms) if a deadline was provided
+   * by the server, or null when no explicit timeout exists.
+   */
+  timeRemainingMs: number | null;
+  /**
+   * Convenience flag indicating that, according to the local clock, the
+   * decision deadline has elapsed (timeRemainingMs has reached 0).
+   */
+  isExpiredClientSide: boolean;
 }
 
 /**
@@ -241,6 +269,31 @@ export function useGameActions() {
 export function usePendingChoice() {
   const { pendingChoice, choiceDeadline, respondToChoice } = useGame();
 
+  // Centralised client-side countdown for the active decision phase. This
+  // is the single timer used by both ChoiceDialog and HUD/diagnostics via
+  // hooks like useBackendDecisionUI.
+  const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!pendingChoice || !choiceDeadline) {
+      setTimeRemainingMs(null);
+      return;
+    }
+
+    const update = () => {
+      const remaining = choiceDeadline - Date.now();
+      setTimeRemainingMs(remaining > 0 ? remaining : 0);
+    };
+
+    // Initial tick then regular updates.
+    update();
+    const intervalId = setInterval(update, 250);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [pendingChoice, choiceDeadline]);
+
   const respond = useCallback(
     <T>(selectedOption: T) => {
       if (pendingChoice) {
@@ -250,19 +303,39 @@ export function usePendingChoice() {
     [pendingChoice, respondToChoice]
   );
 
-  const timeRemaining = useMemo(() => {
-    if (!choiceDeadline) return null;
-    const remaining = choiceDeadline - Date.now();
-    return remaining > 0 ? remaining : 0;
-  }, [choiceDeadline]);
+  const viewModel = useMemo(() => {
+    if (!pendingChoice) return null;
+    return getChoiceViewModel(pendingChoice);
+  }, [pendingChoice]);
+
+  const isExpiredClientSide = useMemo(() => {
+    if (!choiceDeadline) return false;
+    if (timeRemainingMs === null) return false;
+    return timeRemainingMs === 0;
+  }, [choiceDeadline, timeRemainingMs]);
+
+  const activeView: PendingChoiceView | null =
+    pendingChoice && viewModel
+      ? {
+          choice: pendingChoice,
+          viewModel,
+          timeRemainingMs,
+          isExpiredClientSide,
+        }
+      : null;
 
   return {
+    // Legacy-style fields (kept for backward compatibility)
     choice: pendingChoice,
     deadline: choiceDeadline,
     hasChoice: !!pendingChoice,
     respond,
-    timeRemaining,
+    timeRemaining: timeRemainingMs,
     choiceType: pendingChoice?.type ?? null,
+    // New SSOT-derived view for decision UIs
+    viewModel,
+    isExpiredClientSide,
+    view: activeView,
   };
 }
 

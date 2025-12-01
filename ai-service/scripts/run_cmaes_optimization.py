@@ -73,6 +73,7 @@ from app.models import (  # type: ignore  # noqa: E402
     GamePhase,
     GameState,
     GameStatus,
+    MoveType,
     Player,
     TimeControl,
 )
@@ -88,6 +89,15 @@ from app.rules.default_engine import (  # type: ignore  # noqa: E402
 from app.training.eval_pools import (  # type: ignore  # noqa: E402
     load_state_pool,
 )
+from app.training.env import (  # type: ignore  # noqa: E402
+    TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD,
+)
+
+
+FitnessDebugCallback = Callable[
+    [HeuristicWeights, HeuristicWeights, BoardType, Dict[str, Any]],
+    None,
+]
 
 
 # Canonical order of weight keys for flattening/unflattening.
@@ -102,6 +112,11 @@ BOARD_NAME_TO_TYPE: Dict[str, BoardType] = {
     "square19": BoardType.SQUARE19,
     "hex": BoardType.HEXAGONAL,
 }
+
+# Lightweight diagnostic counter for pie-rule usage during a single
+# evaluate_fitness() run. This is reset at the start of each evaluation
+# and incremented whenever either AI selects a SWAP_SIDES move.
+SWAP_SIDES_MOVE_COUNTER: int = 0
 
 
 def weights_to_array(weights: HeuristicWeights) -> np.ndarray:
@@ -143,6 +158,7 @@ def create_heuristic_ai_with_weights(
     difficulty: int = 5,
     randomness: float = 0.0,
     rng_seed: Optional[int] = None,
+    heuristic_eval_mode: Optional[str] = None,
 ) -> HeuristicAI:
     """Create a HeuristicAI instance with custom weights applied.
 
@@ -158,6 +174,11 @@ def create_heuristic_ai_with_weights(
         Randomness parameter used for move selection (e.g. tie-breaking).
     rng_seed:
         Optional deterministic RNG seed for this AI instance.
+    heuristic_eval_mode:
+        Optional evaluation mode forwarded to HeuristicAI via
+        ``AIConfig.heuristic_eval_mode``. Training harnesses use this to
+        select between ``"full"`` and ``"light"`` heuristic evaluation
+        based on board type.
 
     Returns
     -------
@@ -172,6 +193,7 @@ def create_heuristic_ai_with_weights(
             randomness=randomness,
             rngSeed=rng_seed,
             heuristic_profile_id=None,
+            heuristic_eval_mode=heuristic_eval_mode,
         ),
     )
     # Override weights on the instance
@@ -271,6 +293,7 @@ def play_single_game_from_state(
     *,
     randomness: float = 0.0,
     rng_seed_base: Optional[int] = None,
+    heuristic_eval_mode: Optional[str] = None,
 ) -> Tuple[int, int]:
     """Play a single game from a provided initial :class:`GameState`.
 
@@ -279,6 +302,7 @@ def play_single_game_from_state(
     opponent-scheduling or state-pool concerns so that callers remain in
     control of those policies.
     """
+    global SWAP_SIDES_MOVE_COUNTER
     # Derive per-player RNG seeds in a deterministic but side-independent way.
     use_randomness = randomness > 0.0
     if use_randomness and rng_seed_base is not None:
@@ -300,12 +324,14 @@ def play_single_game_from_state(
         candidate_weights,
         randomness=randomness if use_randomness else 0.0,
         rng_seed=candidate_seed,
+        heuristic_eval_mode=heuristic_eval_mode,
     )
     opponent_ai = create_heuristic_ai_with_weights(
         opponent_player,
         opponent_weights,
         randomness=randomness if use_randomness else 0.0,
         rng_seed=opponent_seed,
+        heuristic_eval_mode=heuristic_eval_mode,
     )
 
     game_state = initial_state
@@ -327,6 +353,9 @@ def play_single_game_from_state(
             game_state.game_status = GameStatus.FINISHED
             game_state.winner = 2 if current_player == 1 else 1
             break
+
+        if move.type == MoveType.SWAP_SIDES:
+            SWAP_SIDES_MOVE_COUNTER += 1
 
         game_state = rules_engine.apply_move(game_state, move)
         move_count += 1
@@ -352,6 +381,7 @@ def play_single_game(
     *,
     randomness: float = 0.0,
     rng_seed_base: Optional[int] = None,
+    heuristic_eval_mode: Optional[str] = None,
 ) -> Tuple[int, int]:
     """Play a single game between candidate and baseline weights.
 
@@ -368,6 +398,7 @@ def play_single_game(
         max_moves=max_moves,
         randomness=randomness,
         rng_seed_base=rng_seed_base,
+        heuristic_eval_mode=heuristic_eval_mode,
     )
 
 
@@ -386,6 +417,7 @@ def evaluate_fitness(
     state_pool_id: Optional[str] = None,
     eval_randomness: float = 0.0,
     seed: Optional[int] = None,
+    debug_callback: Optional[FitnessDebugCallback] = None,
 ) -> float:
     """Evaluate fitness of candidate weights against one or more opponents.
 
@@ -430,22 +462,48 @@ def evaluate_fitness(
         Optional base seed used to derive per-game RNG seeds when
         ``eval_randomness > 0.0``. When ``None``, a default base seed of 0
         is used.
+    debug_hook:
+        Optional legacy callback that receives a flat stats dict for this
+        evaluation. It is called once per candidate after all games have
+        been played. Kept for backward compatibility with existing
+        diagnostics.
+    debug_callback:
+        Optional structured callback invoked once per candidate after
+        evaluation. The callback receives:
+
+        - ``candidate_weights``: the candidate weight dict passed in.
+        - ``baseline_weights``: the baseline weight dict used for this run.
+        - ``board_type``: the board used for evaluation.
+        - ``stats``: a dict containing keys such as ``wins``, ``draws``,
+          ``losses``, ``games``, ``games_per_eval``, ``fitness``,
+          ``avg_moves``, and ``weight_l2_to_baseline``.
 
     Returns
     -------
     float
         Fitness score in [0, 1].
     """
+    global SWAP_SIDES_MOVE_COUNTER
+
     if games_per_eval <= 0:
         return 0.0
 
     if eval_mode not in ("initial-only", "multi-start"):
         raise ValueError(f"Unknown eval_mode: {eval_mode!r}")
 
+    # Board-dependent heuristic evaluation mode: Square8 uses the full
+    # structural evaluator, while large boards default to the lightweight
+    # heuristic mode for faster evaluation.
+    heuristic_eval_mode = TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.get(
+        board_type,
+        "full",
+    )
+
     wins = 0
     draws = 0
     losses = 0
     total_moves = 0
+    SWAP_SIDES_MOVE_COUNTER = 0
 
     # L2 distance between candidate and baseline weights in the canonical
     # HEURISTIC_WEIGHT_KEYS order. This is used purely for diagnostics and
@@ -525,6 +583,7 @@ def evaluate_fitness(
                 max_moves,
                 randomness=eval_randomness if use_randomness else 0.0,
                 rng_seed_base=game_seed if use_randomness else None,
+                heuristic_eval_mode=heuristic_eval_mode,
             )
         else:
             assert pool_states is not None  # for type-checkers
@@ -538,6 +597,7 @@ def evaluate_fitness(
                 max_moves=max_moves,
                 randomness=eval_randomness if use_randomness else 0.0,
                 rng_seed_base=game_seed if use_randomness else None,
+                heuristic_eval_mode=heuristic_eval_mode,
             )
 
         total_moves += move_count
@@ -549,32 +609,50 @@ def evaluate_fitness(
             losses += 1
 
     avg_moves = total_moves / games_per_eval if games_per_eval > 0 else 0
+    swap_sides_moves = SWAP_SIDES_MOVE_COUNTER
 
     if verbose:
         print(
             f"    Games: W={wins}, D={draws}, L={losses}, "
             f"avg_moves={avg_moves:.0f}, "
-            f"weight_l2={weight_l2:.3f}"
+            f"weight_l2={weight_l2:.3f}, "
+            f"swap_sides_moves={swap_sides_moves}"
         )
 
     fitness = (wins + 0.5 * draws) / games_per_eval
 
+    # Aggregate per-candidate evaluation statistics for optional diagnostics.
+    stats: Dict[str, Any] = {
+        "wins": wins,
+        "draws": draws,
+        "losses": losses,
+        # Preserve the historical key while also exposing a shorter alias
+        # for new instrumentation.
+        "games_per_eval": games_per_eval,
+        "games": games_per_eval,
+        "fitness": fitness,
+        "avg_moves": avg_moves,
+        # Historical name plus an explicit "to_baseline" alias for clarity.
+        "weight_l2": weight_l2,
+        "weight_l2_to_baseline": weight_l2,
+        "eval_mode": eval_mode,
+        "state_pool_id": pool_id,
+        "eval_randomness": eval_randomness,
+        "seed": seed,
+        "opponent_mode": opponent_mode,
+        # Pie-rule diagnostics: total SWAP_SIDES selections during this
+        # evaluation, plus a per-game average for quick sanity checks.
+        "swap_sides_moves": swap_sides_moves,
+        "swap_sides_moves_per_game": (
+            swap_sides_moves / games_per_eval if games_per_eval > 0 else 0.0
+        ),
+    }
+
     if debug_hook is not None:
-        debug_hook(
-            {
-                "wins": wins,
-                "draws": draws,
-                "losses": losses,
-                "games_per_eval": games_per_eval,
-                "fitness": fitness,
-                "avg_moves": avg_moves,
-                "weight_l2": weight_l2,
-                "eval_mode": eval_mode,
-                "state_pool_id": pool_id,
-                "eval_randomness": eval_randomness,
-                "seed": seed,
-            }
-        )
+        debug_hook(stats)
+
+    if debug_callback is not None:
+        debug_callback(candidate_weights, baseline_weights, board_type, stats)
 
     return fitness
 
@@ -593,6 +671,7 @@ def evaluate_fitness_over_boards(
     state_pool_id: Optional[str] = None,
     seed: Optional[int] = None,
     eval_randomness: float = 0.0,
+    debug_callback: Optional[FitnessDebugCallback] = None,
 ) -> Tuple[float, Dict[BoardType, float]]:
     """Evaluate candidate fitness averaged over multiple board types.
 
@@ -613,21 +692,41 @@ def evaluate_fitness_over_boards(
     for idx, board_type in enumerate(boards):
         board_seed = None if seed is None else seed + idx * 10_000
 
+        def _tag_stats(
+            stats: Dict[str, Any],
+            *,
+            _board_type: BoardType = board_type,
+            _board_index: int = idx,
+            _board_seed: Optional[int] = board_seed,
+        ) -> Dict[str, Any]:
+            tagged = dict(stats)
+            tagged["board_type"] = _board_type
+            tagged["board_index"] = _board_index
+            tagged["board_seed"] = _board_seed
+            return tagged
+
         if debug_hook is not None:
             def board_debug_hook(
                 stats: Dict[str, Any],
                 *,
-                _board_type: BoardType = board_type,
-                _board_index: int = idx,
-                _board_seed: Optional[int] = board_seed,
+                _tag=_tag_stats,
             ) -> None:
-                tagged = dict(stats)
-                tagged["board_type"] = _board_type
-                tagged["board_index"] = _board_index
-                tagged["board_seed"] = _board_seed
-                debug_hook(tagged)
+                debug_hook(_tag(stats))
         else:
             board_debug_hook = None  # type: ignore[assignment]
+
+        if debug_callback is not None:
+            def board_debug_callback(
+                candidate_w: HeuristicWeights,
+                baseline_w: HeuristicWeights,
+                bt: BoardType,
+                stats: Dict[str, Any],
+                *,
+                _tag=_tag_stats,
+            ) -> None:
+                debug_callback(candidate_w, baseline_w, bt, _tag(stats))
+        else:
+            board_debug_callback = None  # type: ignore[assignment]
 
         fitness = evaluate_fitness(
             candidate_weights=candidate_weights,
@@ -642,6 +741,7 @@ def evaluate_fitness_over_boards(
             state_pool_id=state_pool_id,
             eval_randomness=eval_randomness,
             seed=board_seed,
+            debug_callback=board_debug_callback,
         )
         per_board_fitness[board_type] = fitness
 
@@ -649,6 +749,165 @@ def evaluate_fitness_over_boards(
         sum(per_board_fitness.values()) / float(len(per_board_fitness))
     )
     return aggregate, per_board_fitness
+
+
+def evaluate_fitness_multiplayer(
+    candidate_weights: HeuristicWeights,
+    baseline_weights: HeuristicWeights,
+    num_players: int,
+    games_per_eval: int,
+    boards: List[BoardType],
+    state_pool_id: str = "v1",
+    seed: Optional[int] = None,
+) -> float:
+    """Minimal rank-based fitness for 3p/4p heuristic evaluation.
+
+    This helper is intentionally lightweight and is **not** wired into any
+    CLI entrypoints yet. It exists so that future CMA-ES / GA experiments
+    can evaluate candidate weights in genuine multi-player settings without
+    redesigning the optimisation loop.
+
+    Behaviour (stub, subject to refinement):
+
+    - For each requested game, choose a board from ``boards`` in round-robin
+      order and load the corresponding multi-player state pool via
+      :func:`app.training.eval_pools.load_state_pool`, filtering by
+      ``num_players``.
+    - Sample an initial state from the pool and deep-copy it.
+    - Randomly assign the candidate to one of the ``num_players`` seats;
+      all other seats use ``baseline_weights``.
+    - Play a single game from that state using :class:`DefaultRulesEngine`,
+      with all players controlled by :class:`HeuristicAI` instances created
+      via :func:`create_heuristic_ai_with_weights`.
+    - At the end of the game, assign a score from the candidate's
+      perspective:
+
+        * +1 if the candidate is the sole winner.
+        *  0 if there is no winner (draw or unresolved).
+        * -1 otherwise.
+
+    The function returns the arithmetic mean of these per-game scores in
+    the range [-1, 1].
+
+    Notes
+    -----
+    - This stub deliberately uses a simple win/lose/draw scoring scheme
+      rather than a full ordinal ranking over all players. It is sufficient
+      to wire multi-player evaluation into future optimisation harnesses
+      without committing to a final scoring design.
+    - Callers are responsible for selecting appropriate multi-player pools
+      (for example, ``square19_3p_pool_v1`` or ``hex_4p_pool_v1``) via the
+      ``state_pool_id`` parameter.
+    """
+    # Uses load_state_pool imported at module level for evaluation pools.
+
+    if num_players <= 2:
+        raise ValueError(
+            "evaluate_fitness_multiplayer is intended for 3p/4p games; "
+            f"got num_players={num_players!r}"
+        )
+    if games_per_eval <= 0:
+        return 0.0
+    if not boards:
+        raise ValueError("boards must contain at least one BoardType")
+
+    # Seed numpy RNG for deterministic but reproducible seat assignments.
+    rng = np.random.default_rng(seed)
+
+    # Preload pools for each board so that we can reuse them across games.
+    pools: Dict[BoardType, List[GameState]] = {}
+    for board in boards:
+        states = load_state_pool(
+            board_type=board,
+            pool_id=state_pool_id,
+            max_states=None,
+            num_players=num_players,
+        )
+        if not states:
+            raise ValueError(
+                "Multi-player state pool is empty for "
+                f"board_type={board}, pool_id={state_pool_id!r}, "
+                f"num_players={num_players}"
+            )
+        pools[board] = states
+
+    rules_engine = DefaultRulesEngine()
+
+    total_score = 0.0
+    games_played = 0
+
+    for game_index in range(games_per_eval):
+        board = boards[game_index % len(boards)]
+        pool_states = pools[board]
+        base_state = pool_states[game_index % len(pool_states)]
+        game_state = base_state.model_copy(deep=True)
+
+        # Choose candidate seat uniformly at random.
+        candidate_seat_index = int(rng.integers(0, num_players))
+        seat_player = game_state.players[candidate_seat_index]
+        candidate_player_number = seat_player.player_number
+
+        # Build per-player AIs.
+        # For now we use the canonical evaluation mode mapping from the
+        # training environment module so that per-board heuristic feature
+        # tiers stay consistent with 2-player evaluation runs.
+        heuristic_eval_mode = TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.get(
+            board,
+            "full",
+        )
+
+        ai_by_player: Dict[int, HeuristicAI] = {}
+        for p in game_state.players:
+            weights = (
+                candidate_weights
+                if p.player_number == candidate_player_number
+                else baseline_weights
+            )
+            ai_by_player[p.player_number] = create_heuristic_ai_with_weights(
+                p.player_number,
+                weights,
+                randomness=0.0,
+                rng_seed=None,
+                heuristic_eval_mode=heuristic_eval_mode,
+            )
+
+        moves_played = 0
+        while (
+            game_state.game_status == GameStatus.ACTIVE
+            and moves_played < 500
+        ):
+            current_player = game_state.current_player
+            ai = ai_by_player.get(current_player)
+            if ai is None:
+                # If we somehow lack an AI for the current player, treat this
+                # as a terminal anomaly from the candidate's perspective.
+                break
+
+            ai.player_number = current_player
+            move = ai.select_move(game_state)
+            if not move:
+                # No move found; treat as loss for the acting player and
+                # end the game.
+                game_state.game_status = GameStatus.FINISHED
+                game_state.winner = None
+                break
+
+            game_state = rules_engine.apply_move(game_state, move)
+            moves_played += 1
+
+        # Score from the candidate's perspective.
+        winner = getattr(game_state, "winner", None)
+        if winner is None:
+            score = 0.0
+        elif winner == candidate_player_number:
+            score = 1.0
+        else:
+            score = -1.0
+
+        total_score += score
+        games_played += 1
+
+    return total_score / games_played if games_played > 0 else 0.0
 
 
 def load_weights_from_file(path: str) -> HeuristicWeights:
@@ -890,6 +1149,15 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     print(f"  Eval randomness: {config.eval_randomness}")
     if config.eval_mode == "multi-start":
         print(f"  State pool id: {config.state_pool_id or 'v1'}")
+        if (
+            len(eval_boards) == 3
+            and config.state_pool_id in (None, "v1")
+        ):
+            print(
+                "  Evaluation preset: 2p-multi-board-multi-start "
+                f"(games_per_eval={config.games_per_eval}, "
+                f"eval_randomness={config.eval_randomness})"
+            )
     if config.seed is not None:
         print(f"  Random seed: {config.seed}")
     if resume_generation_offset:
@@ -1215,11 +1483,11 @@ def main():
         "--eval-mode",
         type=str,
         choices=["initial-only", "multi-start"],
-        default="initial-only",
+        default="multi-start",
         help=(
-            "Evaluation mode for candidate fitness: 'initial-only' "
-            "uses the empty starting position only; 'multi-start' "
-            "samples starting states from a precomputed pool."
+            "Evaluation mode for candidate fitness: 'initial-only' uses the "
+            "empty starting position only; 'multi-start' samples starting "
+            "states from a precomputed pool (default: 'multi-start')."
         ),
     )
     parser.add_argument(
@@ -1234,12 +1502,12 @@ def main():
     parser.add_argument(
         "--eval-randomness",
         type=float,
-        default=0.0,
+        default=0.02,
         help=(
             "Optional randomness parameter for heuristic evaluation. "
-            "0.0 (default) keeps evaluation fully deterministic. "
-            "Small positive values (e.g. 0.02) enable controlled stochastic "
-            "tie-breaking."
+            "By default this is 0.02, which introduces light stochastic "
+            "tie-breaking while remaining reproducible when a seed is set. "
+            "Use 0.0 to keep evaluation fully deterministic."
         ),
     )
     parser.add_argument(

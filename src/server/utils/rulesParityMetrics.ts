@@ -1,5 +1,6 @@
 import client from 'prom-client';
 import { logger } from './logger';
+import { getMetricsService } from '../services/MetricsService';
 
 /**
  * Prometheus counters for TS <-> Python rules-engine parity.
@@ -8,24 +9,20 @@ import { logger } from './logger';
  * a discrepancy between the authoritative backend engine and the Python
  * rules service running in shadow mode (or vice versa when Python is
  * authoritative).
+ *
+ * The concrete counters are now provided by MetricsService so that:
+ * - Metric names are RingRift-prefixed (`ringrift_rules_parity_*`) and
+ *   aligned with alert rules in monitoring/prometheus/alerts.yml.
+ * - All rules-parity metrics share the same default prom-client registry
+ *   and /metrics surface as the rest of the application.
  */
+const metricsService = getMetricsService();
+
 export const rulesParityMetrics = {
-  validMismatch: new client.Counter({
-    name: 'rules_parity_valid_mismatch_total',
-    help: 'TS vs Python rules: validation verdict mismatch count',
-  }),
-  hashMismatch: new client.Counter({
-    name: 'rules_parity_hash_mismatch_total',
-    help: 'TS vs Python rules: post-move state hash mismatch count',
-  }),
-  sMismatch: new client.Counter({
-    name: 'rules_parity_S_mismatch_total',
-    help: 'TS vs Python rules: S-invariant mismatch count',
-  }),
-  gameStatusMismatch: new client.Counter({
-    name: 'rules_parity_gameStatus_mismatch_total',
-    help: 'TS vs Python rules: gameStatus mismatch count',
-  }),
+  validMismatch: metricsService.rulesParityValidMismatch,
+  hashMismatch: metricsService.rulesParityHashMismatch,
+  sMismatch: metricsService.rulesParitySMismatch,
+  gameStatusMismatch: metricsService.rulesParityGameStatusMismatch,
 };
 
 /**
@@ -72,4 +69,29 @@ export function logRulesMismatch(
     kind,
     ...details,
   });
+}
+
+/**
+ * Unified helper for recording TS <-> Python rules mismatches on the
+ * ringrift_rules_parity_mismatches_total counter. This provides a single
+ * metric surface keyed by mismatch_type and suite/parity bucket while
+ * preserving the existing per-dimension counters for backwards-compatibility.
+ *
+ * Typical mismatchType values:
+ * - 'validation'  – verdict mismatch (valid vs invalid)
+ * - 'hash'        – post-move state hash mismatch
+ * - 's_invariant' – S-invariant mismatch
+ * - 'game_status' – gameStatus / victory mismatch
+ *
+ * Typical suite values:
+ * - 'runtime_shadow'        – backend TS-authoritative with Python in shadow
+ * - 'runtime_python_mode'   – python-authoritative runtime evaluation
+ * - 'runtime_ts'            – TS-authoritative sanity checks
+ * - 'contract_vectors_v2'   – contract-vector based parity jobs (future use)
+ */
+export function recordRulesParityMismatch(params: {
+  mismatchType: 'validation' | 'hash' | 's_invariant' | 'game_status';
+  suite: string;
+}): void {
+  metricsService.recordRulesParityMismatch(params.mismatchType, params.suite);
 }

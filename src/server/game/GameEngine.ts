@@ -12,6 +12,7 @@ import type {
 } from '../../shared/engine';
 import {
   BOARD_CONFIGS,
+  getEffectiveLineLengthThreshold,
   positionToString,
   calculateCapHeight,
   getPathPositions,
@@ -23,6 +24,7 @@ import {
   applyTerritoryRegion,
   canProcessTerritoryRegion,
   enumerateProcessTerritoryRegionMoves,
+  applyForcedEliminationForPlayer,
   applyProcessTerritoryRegionDecision,
   applyEliminateRingsFromStackDecision,
   enumerateProcessLineMoves,
@@ -181,6 +183,14 @@ export class GameEngine {
   private lpsCurrentRoundFirstPlayer: number | null = null;
   private lpsExclusivePlayerForCompletedRound: number | null = null;
 
+  /**
+   * Internal helper flag for the 2-player pie rule (swap_sides).
+   * We rely primarily on moveHistory shape for gating, but this flag
+   * can be used for additional future diagnostics if needed.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private swapSidesApplied: boolean = false;
+
   constructor(
     gameId: string,
     boardType: BoardType,
@@ -188,14 +198,15 @@ export class GameEngine {
     timeControl: TimeControl,
     isRated: boolean = true,
     interactionManager?: PlayerInteractionManager,
-    rngSeed?: number
+    rngSeed?: number,
+    rulesOptions?: GameState['rulesOptions']
   ) {
     this.boardManager = new BoardManager(boardType);
     this.ruleEngine = new RuleEngine(this.boardManager, boardType);
     this.interactionManager = interactionManager;
-
+ 
     const config = BOARD_CONFIGS[boardType];
-
+ 
     this.gameState = {
       id: gameId,
       boardType,
@@ -217,13 +228,16 @@ export class GameEngine {
       createdAt: new Date(),
       lastMoveAt: new Date(),
       isRated,
+      // Optional per-game rules configuration (e.g., swap rule / pie rule).
+      // When omitted, hosts should treat this as "use defaults".
+      ...(rulesOptions ? { rulesOptions } : {}),
       maxPlayers: players.length,
       totalRingsInPlay: config.ringsPerPlayer * players.length,
       totalRingsEliminated: 0,
       victoryThreshold: Math.floor((config.ringsPerPlayer * players.length) / 2) + 1,
       territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,
     };
-
+ 
     // Internal no-op hook to keep selected helpers referenced so that
     // ts-node/TypeScript with noUnusedLocals can compile the server in
     // dev without stripping them. This has no behavioural effect.
@@ -240,6 +254,180 @@ export class GameEngine {
     hook: ((label: string, state: GameState) => void) | undefined
   ): void {
     this.debugCheckpointHook = hook;
+  }
+
+  /**
+   * Apply the pie-rule style colour/seat swap for a 2-player game.
+   *
+   * Semantics:
+   * - Only legal once, for Player 2, at the start of their first
+   *   interactive turn after Player 1 has completed a full turn.
+   * - Board geometry is unchanged; we simply swap which user occupies
+   *   playerNumber 1 vs 2 (rings, territory, clocks, etc.).
+   * - Turn order and currentPhase are preserved; after swap, it is still
+   *   Player 2's turn in the same phase.
+   */
+  private async applySwapSidesMove(
+    playerNumber: number
+  ): Promise<{ success: boolean; error?: string; gameState?: GameState; gameResult?: GameResult }> {
+    const state = this.gameState;
+ 
+    // Config gating: swap_sides must be explicitly enabled for this game.
+    // When rulesOptions is absent or swapRuleEnabled === false, treat the
+    // pie rule as disabled and reject the meta-move.
+    if (!state.rulesOptions?.swapRuleEnabled) {
+      return {
+        success: false,
+        error: 'swap_sides is disabled for this game',
+        gameState: this.getGameState(),
+      };
+    }
+ 
+    // Basic gating: only active 2-player games, Player 2, their turn.
+    if (state.gameStatus !== 'active') {
+      return {
+        success: false,
+        error: 'swap_sides is only available in active games',
+        gameState: this.getGameState(),
+      };
+    }
+ 
+    if (state.players.length !== 2) {
+      return {
+        success: false,
+        error: 'swap_sides is only defined for 2-player games',
+        gameState: this.getGameState(),
+      };
+    }
+
+    if (state.currentPlayer !== playerNumber) {
+      return {
+        success: false,
+        error: 'Only the active player may request swap_sides',
+        gameState: this.getGameState(),
+      };
+    }
+
+    if (playerNumber !== 2) {
+      return {
+        success: false,
+        error: 'Only Player 2 may request swap_sides',
+        gameState: this.getGameState(),
+      };
+    }
+
+    // Must occur at the start of Player 2's first interactive turn:
+    // - At least one move from Player 1 exists.
+    // - No prior moves from Player 2.
+    // - No prior swap_sides move.
+    const hasP1Move = state.moveHistory.some((m) => m.player === 1);
+    const hasP2Move = state.moveHistory.some((m) => m.player === 2 && m.type !== 'swap_sides');
+    const hasSwapMove = state.moveHistory.some((m) => m.type === 'swap_sides');
+
+    if (!hasP1Move || hasP2Move || hasSwapMove) {
+      return {
+        success: false,
+        error: 'swap_sides is only available immediately after Player 1’s first turn',
+        gameState: this.getGameState(),
+      };
+    }
+
+    // Restrict to interactive phases (no swapping mid-line/territory processing).
+    if (
+      state.currentPhase === 'line_processing' ||
+      state.currentPhase === 'territory_processing'
+    ) {
+      return {
+        success: false,
+        error: 'swap_sides is only available at the start of an interactive turn',
+        gameState: this.getGameState(),
+      };
+    }
+
+    // Capture a full snapshot for history before we mutate players.
+    const beforeStateForHistory = this.getGameState();
+
+    // Swap the identities of players in seats 1 and 2 while keeping the
+    // numeric playerNumber identifiers stable for board geometry. This
+    // effectively reassigns which user controls each colour/seat; board
+    // RingStack.controllingPlayer values and other colour indices remain
+    // unchanged. Time budgets and on-seat statistics (ringsInHand,
+    // eliminatedRings, territorySpaces, etc.) move with the seat so that
+    // the player who takes over the opening also inherits its remaining
+    // clock, matching pie-rule fairness semantics.
+    const currentPlayers = this.gameState.players;
+    const p1 = currentPlayers.find((p) => p.playerNumber === 1);
+    const p2 = currentPlayers.find((p) => p.playerNumber === 2);
+
+    if (!p1 || !p2) {
+      return {
+        success: false,
+        error: 'swap_sides failed: missing players for seats 1 or 2',
+        gameState: this.getGameState(),
+      };
+    }
+
+    // NOTE: We assert Player[] here because we are only reassigning identity
+    // fields on existing Player objects. All required engine fields remain
+    // intact, but exactOptionalPropertyTypes makes it difficult for the
+    // compiler to infer that when swapping optional metadata like rating
+    // and AI configuration between seats.
+    const playersCopy = currentPlayers.map((p) => {
+      if (p.playerNumber === 1) {
+        return {
+          ...p,
+          id: p2.id,
+          username: p2.username,
+          type: p2.type,
+          rating: p2.rating,
+          aiDifficulty: p2.aiDifficulty,
+          aiProfile: p2.aiProfile,
+        };
+      }
+      if (p.playerNumber === 2) {
+        return {
+          ...p,
+          id: p1.id,
+          username: p1.username,
+          type: p1.type,
+          rating: p1.rating,
+          aiDifficulty: p1.aiDifficulty,
+          aiProfile: p1.aiProfile,
+        };
+      }
+      return p;
+    }) as Player[];
+
+    this.gameState = {
+      ...this.gameState,
+      players: playersCopy,
+    };
+
+    this.swapSidesApplied = true;
+
+    // Record a canonical Move for history/traces. Board geometry and
+    // phase/player are unchanged; we use a sentinel coordinate for `to`.
+    const fullMove: Move = {
+      id: generateUUID('swap_sides', this.gameState.id, this.gameState.moveHistory.length + 1),
+      type: 'swap_sides',
+      player: playerNumber,
+      to: { x: 0, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: this.gameState.moveHistory.length + 1,
+    } as Move;
+
+    this.gameState.moveHistory.push(fullMove);
+    this.gameState.lastMoveAt = fullMove.timestamp;
+
+    // Swap has no geometric effect, but we still append a history entry so
+    // that traces record the seat/colour transition.
+    this.appendHistoryEntry(beforeStateForHistory, fullMove);
+
+    return {
+      success: true,
+      gameState: this.getGameState(),
+    };
   }
 
   private debugCheckpoint(label: string): void {
@@ -428,6 +616,77 @@ export class GameEngine {
           typeof process !== 'undefined' &&
           !!(process as any).env &&
           ['1', 'true', 'TRUE'].includes((process as any).env.RINGRIFT_TRACE_DEBUG ?? '');
+
+        // When a PlayerInteractionManager is wired and the decision is an
+        // elimination_target, route it through the existing ring_elimination
+        // PlayerChoice path so humans (and AI via the handler) can choose the
+        // target stack explicitly. This covers both territory self-elimination
+        // and forced-elimination cases emitted by the orchestrator.
+        if (decision.type === 'elimination_target' && this.interactionManager) {
+          const interaction = this.requireInteractionManager();
+
+          // Build a RingEliminationChoice whose options map 1:1 onto the
+          // orchestrator's eliminate_rings_from_stack Moves via moveId.
+          const eliminationMoves = decision.options.filter(
+            (m) => m.type === 'eliminate_rings_from_stack' && m.to
+          );
+
+          if (eliminationMoves.length === 0) {
+            // Fall back to the defensive auto-resolve path below.
+          } else {
+            const choice: RingEliminationChoice = {
+              id: generateUUID(),
+              gameId: this.gameState.id,
+              playerNumber: decision.player,
+              type: 'ring_elimination',
+              prompt: 'Choose which stack to eliminate from',
+              options: eliminationMoves.map((move) => {
+                const pos = move.to as Position;
+                const stack = this.boardManager.getStack(pos, this.gameState.board);
+                const capHeight =
+                  (move.eliminationFromStack && move.eliminationFromStack.capHeight) ||
+                  (stack ? stack.capHeight : 1);
+                const totalHeight =
+                  (move.eliminationFromStack && move.eliminationFromStack.totalHeight) ||
+                  (stack ? stack.stackHeight : capHeight || 1);
+
+                return {
+                  stackPosition: pos,
+                  capHeight,
+                  totalHeight,
+                  moveId: move.id,
+                };
+              }),
+            };
+
+            const response: PlayerChoiceResponseFor<RingEliminationChoice> =
+              await interaction.requestChoice(choice);
+            const selectedMoveId = response.selectedOption.moveId;
+
+            const chosen =
+              eliminationMoves.find((m) => m.id === selectedMoveId) ??
+              eliminationMoves.find((m) => {
+                const to = m.to as Position | undefined;
+                return (
+                  to &&
+                  to.x === response.selectedOption.stackPosition.x &&
+                  to.y === response.selectedOption.stackPosition.y
+                );
+              }) ??
+              eliminationMoves[0];
+
+            if (TRACE_DEBUG_ENABLED) {
+              // eslint-disable-next-line no-console
+              console.log('[GameEngine.DecisionHandler] resolved elimination_target via choice', {
+                player: decision.player,
+                optionCount: eliminationMoves.length,
+                selectedMoveId,
+              });
+            }
+
+            return chosen;
+          }
+        }
 
         // For core move-driven decision types where the backend should behave
         // like an AI host in the absence of a real PlayerInteractionManager,
@@ -889,6 +1148,40 @@ export class GameEngine {
           stateHashBefore: hashGameState(before),
           stateHashAfter: hashGameState(after),
         });
+        // Record an orchestrator-related invariant violation for S decreasing.
+        // This is emitted only when TRACE_DEBUG is enabled and is intended as a
+        // rare production/staging signal for invariant SLOs.
+        getMetricsService().recordOrchestratorInvariantViolation('S_INVARIANT_DECREASED');
+      }
+
+      // Detect non-monotone totalRingsEliminated accounting even when S itself
+      // does not decrease. This surfaces cases where elimination bookkeeping
+      // drifts but markers/collapsed compensate, which is still a strict
+      // invariant violation for the orchestrator rollout.
+      if (
+        before.gameStatus === 'active' &&
+        after.gameStatus === 'active' &&
+        eliminatedFromBoardAfter < eliminatedFromBoardBefore
+      ) {
+        // eslint-disable-next-line no-console
+        console.log(
+          '[GameEngine.appendHistoryEntry] TOTAL_RINGS_ELIMINATED_DECREASED',
+          {
+            moveNumber: action.moveNumber,
+            actor: action.player,
+            phaseBefore: before.currentPhase,
+            phaseAfter: after.currentPhase,
+            statusBefore: before.gameStatus,
+            statusAfter: after.gameStatus,
+            eliminatedFromBoardBefore,
+            eliminatedFromBoardAfter,
+            stateHashBefore: hashGameState(before),
+            stateHashAfter: hashGameState(after),
+          }
+        );
+        getMetricsService().recordOrchestratorInvariantViolation(
+          'TOTAL_RINGS_ELIMINATED_DECREASED'
+        );
       }
 
       // Log when board-level and player-level elimination accounting diverge
@@ -965,6 +1258,13 @@ export class GameEngine {
     gameState?: GameState;
     gameResult?: GameResult;
   }> {
+    // Special meta-move: swap_sides (pie rule) for 2-player games.
+    // This is handled entirely in the backend engine and never routed
+    // through the shared orchestrator or Python rules engine.
+    if (move.type === 'swap_sides') {
+      return this.applySwapSidesMove(move.player);
+    }
+
     // When a chain capture is in progress, only follow-up capture segments
     // chosen as explicit continue_capture_segment moves from the current
     // chain position are legal until no options remain.
@@ -1486,6 +1786,8 @@ export class GameEngine {
       this.advanceGame();
       this.debugCheckpoint('after-advanceGame');
     } else {
+      // Legacy path: advance from current phase, then drain automatic phases.
+      // This is the path used by tests that do not enable move-driven decisions.
       this.advanceGame();
       this.debugCheckpoint('after-advanceGame');
 
@@ -1493,12 +1795,6 @@ export class GameEngine {
       // territory_processing) so the post-move snapshot and history
       // entry reflect the same next-player interactive phase that the
       // sandbox engine records in its traces.
-      //
-      // NOTE: In move-driven decision phases, we still need to check if
-      // we're in a decision phase with NO actual decisions available
-      // (e.g., no lines to process, no regions to collapse) and advance
-      // past it. But we must NOT auto-apply decision moves that should
-      // be explicit.
       await this.stepAutomaticPhasesForTesting();
       this.debugCheckpoint('after-stepAutomaticPhasesForTesting');
     }
@@ -2054,14 +2350,16 @@ export class GameEngine {
    */
   private async applyDecisionMove(move: Move): Promise<void> {
     if (move.type === 'process_line' || move.type === 'choose_line_reward') {
-      const config = BOARD_CONFIGS[this.gameState.boardType];
-      const requiredLength = config.lineLength;
-      // Mark requiredLength as intentionally referenced to keep parity/debug
-      // helpers available under strict noUnusedLocals/ts-node settings.
-      void requiredLength;
+      const requiredLength = getEffectiveLineLengthThreshold(
+        this.gameState.boardType,
+        this.gameState.players.length,
+        this.gameState.rulesOptions
+      );
 
       const allLines = this.boardManager.findAllLines(this.gameState.board);
-      const playerLines = allLines.filter((line) => line.player === move.player);
+      const playerLines = allLines.filter(
+        (line) => line.player === move.player && line.positions.length >= requiredLength
+      );
 
       if (playerLines.length === 0) {
         return;
@@ -2081,8 +2379,9 @@ export class GameEngine {
 
       if (!targetLine) {
         // Fallback: when no formedLines metadata is present or matching
-        // fails, default to the first line for this player, preserving
-        // previous "first line wins" behaviour.
+        // fails, default to the first eligible line for this player,
+        // preserving previous "first line wins" behaviour while also
+        // respecting the effective threshold (e.g. 4-in-a-row for 2p 8x8).
         targetLine = playerLines[0];
       }
 
@@ -2125,16 +2424,18 @@ export class GameEngine {
 
       // Legacy / non-move-driven mode: delegate to processOneLine which
       // handles PlayerChoice flows internally for backward compatibility.
-      await this.processOneLine(targetLine, config.lineLength);
+      await this.processOneLine(targetLine, requiredLength);
 
-      // After processing one line, re-check whether any further lines
-      // exist for the same player. If so, stay in line_processing so the
-      // client/AI can submit another decision Move. Otherwise, advance to
-      // territory_processing to handle any disconnections created by the
+      // After processing one line, re-check whether any further eligible
+      // lines exist for the same player. If so, stay in line_processing so
+      // the client/AI can submit another decision Move. Otherwise, advance
+      // to territory_processing to handle any disconnections created by the
       // collapse.
       const remainingLines = this.boardManager
         .findAllLines(this.gameState.board)
-        .filter((line) => line.player === move.player);
+        .filter(
+          (line) => line.player === move.player && line.positions.length >= requiredLength
+        );
 
       if (remainingLines.length > 0) {
         this.gameState.currentPhase = 'line_processing';
@@ -2348,15 +2649,24 @@ export class GameEngine {
   }
 
   private async processLineFormations(): Promise<void> {
-    const config = BOARD_CONFIGS[this.gameState.boardType];
+    const requiredLength = getEffectiveLineLengthThreshold(
+      this.gameState.boardType,
+      this.gameState.players.length,
+      this.gameState.rulesOptions
+    );
 
-    // Keep processing until no more lines exist
+    // Keep processing until no more (eligible) lines exist
     while (true) {
       const allLines = this.boardManager.findAllLines(this.gameState.board);
       if (allLines.length === 0) break;
 
-      // Only consider lines for the moving player
-      const playerLines = allLines.filter((line) => line.player === this.gameState.currentPlayer);
+      // Only consider lines for the moving player that meet the effective
+      // threshold (e.g. 4-in-a-row for 2p 8x8, base length otherwise).
+      const playerLines = allLines.filter(
+        (line) =>
+          line.player === this.gameState.currentPlayer &&
+          line.positions.length >= requiredLength
+      );
       if (playerLines.length === 0) break;
 
       let lineToProcess: LineInfo;
@@ -2396,7 +2706,7 @@ export class GameEngine {
         lineToProcess = playerLines[index] ?? playerLines[0];
       }
 
-      await this.processOneLine(lineToProcess, config.lineLength);
+      await this.processOneLine(lineToProcess, requiredLength);
       // After processing one line, loop will re-evaluate remaining lines
     }
   }
@@ -2770,6 +3080,51 @@ export class GameEngine {
       await this.eliminatePlayerRingOrCapWithChoice(movingPlayer);
     }
   }
+  /**
+   * Test-only helper: process all eligible disconnected regions for the
+   * current player using the legacy territory-processing pipeline
+   * (processOneDisconnectedRegion).
+   *
+   * This mirrors the behaviour exercised by
+   * GameEngine.territoryDisconnection.test.ts, but is implemented purely
+   * in terms of {@link processDisconnectedRegionCore} and the shared
+   * territory helpers so it stays aligned with RR‑CANON‑R140–R145 and
+   * the TS/Python engines.
+   *
+   * Production hosts do not call this method; it exists solely for
+   * parity/scenario suites and diagnostic harnesses.
+   */
+  public async processDisconnectedRegions(): Promise<void> {
+    const movingPlayer = this.gameState.currentPlayer;
+
+    // Drive the legacy pipeline until no further eligible regions remain
+    // for the moving player. After each collapse we recompute the
+    // candidate set so that the self-elimination prerequisite (Q23 /
+    // RR‑CANON‑R143) is evaluated against the updated board.
+    while (this.gameState.gameStatus === 'active') {
+      const disconnected: Territory[] =
+        this.boardManager.findDisconnectedRegions(this.gameState.board, movingPlayer) ?? [];
+
+      if (disconnected.length === 0) {
+        break;
+      }
+
+      const eligible = disconnected.filter((region) =>
+        this.canProcessDisconnectedRegion(region, movingPlayer)
+      );
+
+      if (eligible.length === 0) {
+        break;
+      }
+
+      // For these legacy tests we process regions in the order returned
+      // by BoardManager. Region-order choice semantics (Q20 / RR‑CANON‑R144)
+      // are covered by the dedicated move-driven region-order suites.
+      const regionToProcess = eligible[0];
+      await this.processOneDisconnectedRegion(regionToProcess, movingPlayer);
+    }
+  }
+
 
   /**
    * Process markers along the movement path
@@ -3244,6 +3599,12 @@ export class GameEngine {
         this.gameState.currentPhase === 'capture') &&
       moves.length === 0
     ) {
+      // Record an orchestrator invariant-violation signal before we attempt
+      // to resolve the blocked state. This should be extremely rare in
+      // orchestrator-backed hosts and is used to back SLOs for
+      // "ACTIVE_NO_MOVES" incidents in staging/production.
+      getMetricsService().recordOrchestratorInvariantViolation('ACTIVE_NO_MOVES');
+
       const TRACE_DEBUG_ENABLED =
         typeof process !== 'undefined' &&
         !!(process as any).env &&
@@ -3291,6 +3652,31 @@ export class GameEngine {
       return this.getValidMoves(this.gameState.currentPlayer);
     }
 
+    // Layer in the swap_sides meta-move (pie rule) for Player 2 when enabled.
+    // This is treated as an additional choice alongside the underlying
+    // placement/movement/capture actions, never as a replacement. We only
+    // add it after the ACTIVE_NO_MOVES safeguard above so that parity and
+    // termination invariants remain anchored on the core rules-level moves.
+    if (this.shouldOfferSwapSidesMetaMove()) {
+      const alreadyHasSwap = moves.some((m) => m.type === 'swap_sides');
+
+      if (!alreadyHasSwap) {
+        const moveNumber = this.gameState.moveHistory.length + 1;
+
+        moves = [
+          ...moves,
+          {
+            id: `swap_sides-${moveNumber}`,
+            type: 'swap_sides',
+            player: 2,
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move,
+        ];
+      }
+    }
+
     // When a placement has occurred this turn, restrict movement/capture
     // options so that only the placed/updated stack may move.
     if (
@@ -3321,6 +3707,44 @@ export class GameEngine {
     }
 
     return moves;
+  }
+
+  /**
+   * Determine whether the current state should expose a swap_sides
+   * meta-move (pie rule) for Player 2.
+   */
+  private shouldOfferSwapSidesMetaMove(): boolean {
+    const state = this.gameState;
+ 
+    // Config gating: swap_sides is only offered when explicitly enabled
+    // for this game via state.rulesOptions.swapRuleEnabled. When the
+    // flag is absent or false, the pie rule is considered disabled.
+    if (!state.rulesOptions?.swapRuleEnabled) return false;
+ 
+    if (state.gameStatus !== 'active') return false;
+    if (state.players.length !== 2) return false;
+    if (state.currentPlayer !== 2) return false;
+
+    // Only in interactive phases.
+    if (
+      state.currentPhase !== 'ring_placement' &&
+      state.currentPhase !== 'movement' &&
+      state.currentPhase !== 'capture' &&
+      state.currentPhase !== 'chain_capture'
+    ) {
+      return false;
+    }
+
+    if (state.moveHistory.length === 0) return false;
+
+    const hasSwapMove = state.moveHistory.some((m) => m.type === 'swap_sides');
+    if (hasSwapMove) return false;
+
+    const hasP1Move = state.moveHistory.some((m) => m.player === 1);
+    const hasP2Move = state.moveHistory.some((m) => m.player === 2 && m.type !== 'swap_sides');
+
+    // Exactly: at least one move from P1, none from P2 yet.
+    return hasP1Move && !hasP2Move;
   }
 
   /**
@@ -3818,7 +4242,10 @@ export class GameEngine {
       // first player who still controls stacks. This mirrors the rules
       // text: when everyone is globally blocked but stacks remain,
       // successive forced eliminations must eventually resolve the
-      // stalemate until no stacks are left.
+      // stalemate until no stacks are left. We delegate the actual
+      // elimination target selection and bookkeeping to the shared
+      // applyForcedEliminationForPlayer helper so this resolver stays
+      // aligned with canonical forced-elimination semantics.
       const currentIndex = players.findIndex(
         (p) => p.playerNumber === this.gameState.currentPlayer
       );
@@ -3836,7 +4263,15 @@ export class GameEngine {
           continue;
         }
 
-        this.eliminatePlayerRingOrCap(playerNumber);
+        const outcome = applyForcedEliminationForPlayer(this.gameState, playerNumber);
+        if (!outcome) {
+          // No forced-elimination action available for this player under
+          // the formal RR-CANON preconditions; continue scanning other
+          // players rather than attempting an ad-hoc elimination.
+          continue;
+        }
+
+        this.gameState = outcome.nextState;
         eliminatedThisIteration = true;
 
         const endCheck = this.ruleEngine.checkGameEnd(this.gameState);
@@ -4006,10 +4441,13 @@ export class GameEngine {
         return;
       }
 
-      // Player has no real actions. Check if they have material for forced elimination.
-      if (hasStacks || hasRingsInHand) {
-        // Apply forced elimination (Section 4.4 / compact rules 2.3)
-        this.eliminatePlayerRingOrCap(currentPlayer);
+      // Player has no real actions. Attempt canonical forced elimination
+      // when the RR-CANON preconditions hold (blocked with stacks and no
+      // legal placements/movements/captures). We rely on the shared
+      // helper so test-only flows stay aligned with the core engine.
+      const outcome = applyForcedEliminationForPlayer(this.gameState, currentPlayer);
+      if (outcome) {
+        this.gameState = outcome.nextState;
 
         // Check victory conditions after the forced elimination
         const gameEndCheck = this.ruleEngine.checkGameEnd(this.gameState);

@@ -82,7 +82,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
    * markers (longest line). A line_order choice with no options is a
    * protocol violation and is treated as a hard error.
    */
-  private selectLineOrderOption(choice: LineOrderChoice): LineOrderChoice['options'][number] {
+  private async selectLineOrderOption(
+    choice: LineOrderChoice
+  ): Promise<LineOrderChoice['options'][number]> {
     if (!choice.options.length) {
       logger.error('AIInteractionHandler received line_order choice with no options', {
         choiceId: choice.id,
@@ -90,6 +92,48 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         playerNumber: choice.playerNumber,
       });
       throw new Error('PlayerChoice[line_order] must have at least one option');
+    }
+
+    // First, attempt to delegate to the Python AI service via the
+    // global AI engine when an AI configuration exists for this
+    // player and the AI is running in `service` mode. Any errors
+    // (including missing config or service failures) are swallowed
+    // and we fall back to the local heuristic below.
+    const config = globalAIEngine.getAIConfig(choice.playerNumber);
+    const mode = config?.mode ?? 'service';
+
+    if (mode === 'service') {
+      try {
+        const selected = await globalAIEngine.getLineOrderChoice(
+          choice.playerNumber,
+          null,
+          choice.options
+        );
+
+        if (choice.options.includes(selected)) {
+          return selected;
+        }
+
+        logger.warn(
+          'AI service returned invalid option for line_order; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            optionsCount: choice.options.length,
+            invalidOption: selected,
+          }
+        );
+      } catch (error) {
+        logger.warn('AI service unavailable for line_order; falling back to local heuristic', {
+          gameId: choice.gameId,
+          playerNumber: choice.playerNumber,
+          choiceId: choice.id,
+          choiceType: choice.type,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     let best = choice.options[0];
@@ -346,9 +390,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
    *   centre of the board (using a simple Manhattan distance in
    *   coordinate space) as a proxy for central control.
    */
-  private selectCaptureDirectionOption(
+  private async selectCaptureDirectionOption(
     choice: CaptureDirectionChoice
-  ): CaptureDirectionChoice['options'][number] {
+  ): Promise<CaptureDirectionChoice['options'][number]> {
     if (!choice.options.length) {
       logger.error('AIInteractionHandler received capture_direction choice with no options', {
         choiceId: choice.id,
@@ -356,6 +400,51 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         playerNumber: choice.playerNumber,
       });
       throw new Error('PlayerChoice[capture_direction] must have at least one option');
+    }
+
+    // First, attempt to delegate to the Python AI service via the
+    // global AI engine when an AI configuration exists for this
+    // player and the AI is running in `service` mode. Any errors
+    // (including missing config or service failures) are swallowed
+    // and we fall back to the local heuristic below.
+    const config = globalAIEngine.getAIConfig(choice.playerNumber);
+    const mode = config?.mode ?? 'service';
+
+    if (mode === 'service') {
+      try {
+        const selected = await globalAIEngine.getCaptureDirectionChoice(
+          choice.playerNumber,
+          null,
+          choice.options
+        );
+
+        if (choice.options.includes(selected)) {
+          return selected;
+        }
+
+        logger.warn(
+          'AI service returned invalid option for capture_direction; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            optionsCount: choice.options.length,
+            invalidOption: selected,
+          }
+        );
+      } catch (error) {
+        logger.warn(
+          'AI service unavailable for capture_direction; falling back to local heuristic',
+          {
+            gameId: choice.gameId,
+            playerNumber: choice.playerNumber,
+            choiceId: choice.id,
+            choiceType: choice.type,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
     }
 
     // If only one option, no need to compute distances.

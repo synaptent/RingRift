@@ -1,0 +1,45 @@
+name: Python Parity Healthcheck (Nightly)
+
+on:
+  schedule:
+    # Run once per day at 06:15 UTC
+    - cron: '15 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  parity-healthcheck-nightly:
+    name: Python Parity Healthcheck (nightly)
+    runs-on: ubuntu-latest
+    # Nightly parity runs can afford more runtime for deeper coverage
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Python parity healthcheck (nightly)
+        working-directory: ai-service
+        run: |
+          python scripts/run_parity_healthcheck.py \
+            --profile parity-healthcheck \
+            --summary-json results/parity_healthcheck_nightly_summary.json \
+            --fail-on-mismatch
+
+      - name: Upload nightly parity healthcheck summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-healthcheck-nightly-summary
+          path: ai-service/results/parity_healthcheck_nightly_summary.json
+          retention-days: 30

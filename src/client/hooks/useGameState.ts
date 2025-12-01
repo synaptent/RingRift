@@ -16,6 +16,10 @@
 import { useMemo } from 'react';
 import { useGame } from '../contexts/GameContext';
 import type { GameState, GameResult, Player, Move } from '../../shared/types/game';
+import type {
+  DecisionAutoResolvedMeta,
+  DecisionPhaseTimeoutWarningPayload,
+} from '../../shared/types/websocket';
 import {
   toHUDViewModel,
   toEventLogViewModel,
@@ -46,6 +50,13 @@ export interface RawGameState {
   validMoves: Move[] | null;
   /** Terminal game result (null if game ongoing) */
   victoryState: GameResult | null;
+  /** Summary of the most recently auto-resolved decision, if any, on the latest update */
+  decisionAutoResolved: DecisionAutoResolvedMeta | null;
+  /**
+   * Optional payload for an in-progress decision-phase timeout warning, if the
+   * server has indicated that a pending decision is approaching auto-resolution.
+   */
+  decisionPhaseTimeoutWarning: DecisionPhaseTimeoutWarningPayload | null;
   /** Players array (convenience accessor) */
   players: Player[];
   /** Current player object (convenience accessor) */
@@ -92,7 +103,14 @@ export interface UseEventLogViewModelOptions {
  * ```
  */
 export function useGameState(): RawGameState {
-  const { gameId, gameState, validMoves, victoryState } = useGame();
+  const {
+    gameId,
+    gameState,
+    validMoves,
+    victoryState,
+    decisionAutoResolved,
+    decisionPhaseTimeoutWarning,
+  } = useGame();
 
   return useMemo(() => {
     const players = gameState?.players ?? [];
@@ -105,8 +123,17 @@ export function useGameState(): RawGameState {
       victoryState,
       players,
       currentPlayer,
+      decisionAutoResolved,
+      decisionPhaseTimeoutWarning,
     };
-  }, [gameId, gameState, validMoves, victoryState]);
+  }, [
+    gameId,
+    gameState,
+    validMoves,
+    victoryState,
+    decisionAutoResolved,
+    decisionPhaseTimeoutWarning,
+  ]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

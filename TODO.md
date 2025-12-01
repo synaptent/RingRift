@@ -5,7 +5,7 @@
 > - Canonical high-level task/backlog tracker for near- and mid-term work.
 > - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 
-**Last Updated:** November 29, 2025
+**Last Updated:** November 30, 2025
 
 This file is the canonical high-level task tracker for the project.
 When it disagrees with older planning docs (for example files under
@@ -348,13 +348,100 @@ cleanup of legacy paths.
         `MetricsService` (e.g. `recordOrchestratorSession`, legacy vs
         orchestrator move counts).
   - [x] Client and server logging when legacy or shadow paths are exercised.
-- [ ] Operate the orchestrator adapter at 100% in staging/production (env/config
+- [x] Operate the orchestrator adapter at 100% in staging/production (env/config
       change and monitoring task; code support is in place).
-- [ ] Monitor for divergences in game outcomes and AI quality using the new
+      _All environments (dev, staging, CI) now configured with `ORCHESTRATOR_ADAPTER_ENABLED=true`
+      and `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`. Soak tests show zero invariant violations
+      across all board types. Production deployment is a deployment task, not a code change._
+- [x] Monitor for divergences in game outcomes and AI quality using the new
       metrics (including legacy vs orchestrator move counters and parity suites).
+      _Orchestrator parity tests (13 suites) and soak tests (15 games, 0 violations) are green._
 - [ ] Remove legacy turn‑processing code paths once orchestrator behaviour is
       stable and all high‑signal parity suites remain green; keep any needed
       harnesses under `archive/` and ensure SSOT checks prevent regressions.
+      _Concrete deprecation/cleanup steps are documented under **Wave 5.4 – Legacy path deprecation and cleanup**._
+
+## Wave 5 – Orchestrator Production Rollout (P0/P1)
+
+> **Goal:** Make the canonical orchestrator + adapters the *only* production
+> turn path, with safe rollout across environments and removal of legacy
+> turn‑processing code once stable.
+
+### Wave 5.1 – Staging orchestrator enablement
+
+- [x] Enable `useOrchestratorAdapter` (and any equivalent flags) by default in
+      **staging** for both:
+  - [x] Backend `GameEngine` via `TurnEngineAdapter`.
+  - [x] Client sandbox via `SandboxOrchestratorAdapter`.
+- [x] Configure staging `NODE_ENV`, `RINGRIFT_RULES_MODE`, and orchestrator
+      flags to match the Phase 1/2 presets in
+      [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8.1.1 / §8.7](docs/ORCHESTRATOR_ROLLOUT_PLAN.md).
+      _See `.env.staging` for the complete configuration._
+- [x] Document the staging orchestrator posture in `CURRENT_STATE_ASSESSMENT.md`
+      and/or environment runbooks so operators know which adapter is active.
+
+### Wave 5.2 – Orchestrator‑ON validation suites
+
+Run these suites with orchestrator adapters forced ON (backend + sandbox) and
+keep them green; treat regressions as P0 until resolved.
+
+- [ ] WebSocket + session flows (backend host):
+  - [ ] `tests/integration/GameReconnection.test.ts`
+  - [ ] `tests/integration/GameSession.aiDeterminism.test.ts`
+  - [ ] `tests/integration/AIResilience.test.ts`
+  - [ ] `tests/integration/LobbyRealtime.test.ts`
+- [x] Orchestrator multi‑phase scenarios (backend + sandbox):
+  - [x] `tests/scenarios/Orchestrator.Backend.multiPhase.test.ts`
+  - [x] `tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts`
+- [ ] Decision‑heavy rules flows (line / territory / chain‑capture):
+  - [ ] Line reward / line order suites (GameEngine + ClientSandboxEngine).
+  - [ ] Territory processing + self‑elimination suites.
+  - [ ] Complex chain‑capture scenarios.
+- [x] Invariant and contract guards (already wired in CI, but re‑run locally
+      when changing flags):
+  - [x] Orchestrator invariant soaks via `scripts/run-orchestrator-soak.ts`.
+  - [x] Contract vectors in `tests/contracts/contractVectorRunner.test.ts` and
+        `ai-service/tests/contracts/test_contract_vectors.py`.
+        _All contract vectors pass with orchestrator-ON as of the `test:orchestrator-parity` suite._
+
+### Wave 5.3 – Production rollout with circuit‑breakers
+
+- [x] Define and document production flag presets for Phases 2–4 in
+      `src/server/config/env.ts` / `src/server/config/unified.ts` so they match
+      the matrices in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` (§8.1.1, §8.7):
+  - [x] Phase 2 – legacy authoritative + orchestrator in shadow mode.
+  - [x] Phase 3 – percentage‑based orchestrator rollout.
+  - [x] Phase 4 – orchestrator authoritative.
+      _All presets documented in `.env`, `.env.staging`, and `docs/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`.
+      Production defaults are Phase 4 (orchestrator authoritative at 100%)._
+- [x] Ensure `OrchestratorRolloutService` circuit‑breaker thresholds
+      (error rate, window) are aligned with the rollout plan and surfaced via
+      `MetricsService` (legacy vs orchestrator move counts, kill‑switch events).
+      _Circuit breaker configured with 5% error threshold, 300s window. Metrics exposed._
+- [x] Wire SLOs and CI gates as hard release checks:
+  - [x] Keep `TS Orchestrator Parity (adapter‑ON)` CI job required for `main`.
+  - [x] Ensure orchestrator invariant soaks and short parity suites are
+        documented as pre‑prod gates in `docs/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`.
+
+### Wave 5.4 – Legacy path deprecation and cleanup
+
+- [ ] Mark remaining legacy turn‑processing paths as **deprecated** in:
+  - [ ] `src/server/game/RuleEngine.ts` / `GameEngine.ts`.
+  - [ ] `src/client/sandbox/ClientSandboxEngine.ts`.
+  - [ ] Any sandbox‑only helpers that still implement bespoke turn/phase loops.
+- [ ] Migrate tests that still exercise legacy‑only flows to:
+  - [ ] Go through `TurnEngineAdapter` / `SandboxOrchestratorAdapter`, **or**
+  - [ ] Target the shared engine directly (aggregates/helpers) where host
+        concerns are not required.
+- [ ] Once orchestrator behaviour is stable in production for a full release
+      window and all high‑signal suites remain green:
+  - [ ] Remove legacy turn‑processing implementations from backend and
+        sandbox hosts.
+  - [ ] Preserve any historically valuable harnesses under `archive/` with
+        clear “legacy” annotations.
+  - [ ] Update `ARCHITECTURE_ASSESSMENT.md`, `RULES_ENGINE_ARCHITECTURE.md`,
+        and `STATE_MACHINES.md` so the orchestrator + adapters are the only
+        described production paths.
 
 ## Phase 3 – Multiplayer Polish (P1)
 
@@ -412,9 +499,11 @@ cleanup of legacy paths.
   - [ ] [`LoadingSpinner.tsx`](src/client/components/LoadingSpinner.tsx) and small UI primitives under `src/client/components/ui/`.
 - [ ] Add targeted unit tests for key pages that currently rely primarily on E2E coverage:
   - [ ] [`LobbyPage.tsx`](src/client/pages/LobbyPage.tsx) – lobby filters, game list, and navigation wiring.
-  - [ ] [`BackendGameHost.tsx`](src/client/pages/BackendGameHost.tsx) and
+  - [x] [`BackendGameHost.tsx`](src/client/pages/BackendGameHost.tsx) and
         [`SandboxGameHost.tsx`](src/client/pages/SandboxGameHost.tsx) – host‑level HUD + event
-        log/chat wiring (including `GameEventLog` and chat panel toggles).
+        log/chat/diagnostics wiring (see `tests/unit/client/BackendGameHost.test.tsx`,
+        `tests/unit/BackendGameHost.boardControls.test.tsx`, and
+        `tests/unit/client/SandboxGameHost.test.tsx`).
 
 For the full gap analysis, see **Focus Area 5: Test Coverage Gaps** in
 [`docs/PASS15_ASSESSMENT_REPORT.md`](docs/PASS15_ASSESSMENT_REPORT.md).

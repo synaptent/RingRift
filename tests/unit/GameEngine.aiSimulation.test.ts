@@ -35,13 +35,17 @@ import { logAiDiagnostic } from '../utils/aiTestLogger';
 // Set generous timeout for the entire test file - these are simulation tests
 jest.setTimeout(60000);
 
+const BACKEND_AI_SIM_ENABLED = process.env.RINGRIFT_ENABLE_BACKEND_AI_SIM === '1';
+const maybeDescribe = BACKEND_AI_SIM_ENABLED ? describe : describe.skip;
+
 /**
- * TODO-AI-SIMULATION-TIMEOUT: These AI-style simulation tests run extensive
- * random games (10 runs x 500 moves each) across multiple board types and
- * player counts. They frequently timeout even with reduced parameters.
- * Skipped pending optimization or separate long-running test infrastructure.
+ * These AI-style simulation tests run extensive random games (10 runs x 500
+ * moves each) across multiple board types and player counts. They are treated
+ * as a **diagnostic harness**, not a default CI gate, and are enabled only
+ * when `RINGRIFT_ENABLE_BACKEND_AI_SIM=1` is set in the environment (see
+ * `tests/README.md` and the `test:ai-backend:quiet` npm script).
  */
-describe.skip('GameEngine AI-style simulations (backend termination / stall checks)', () => {
+maybeDescribe('GameEngine AI-style simulations (backend termination / stall checks)', () => {
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };
 
   const boardTypes: BoardType[] = ['square8', 'square19', 'hexagonal'];

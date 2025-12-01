@@ -34,6 +34,9 @@ export {
   type UseEventLogViewModelOptions,
 } from './useGameState';
 
+// Decision countdown helper
+export { useDecisionCountdown, type UseDecisionCountdownArgs, type DecisionCountdownState } from './useDecisionCountdown';
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Connection Hooks
 // ═══════════════════════════════════════════════════════════════════════════

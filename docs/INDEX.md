@@ -6,7 +6,10 @@
 
 - **Setup & Run:** [QUICKSTART.md](../QUICKSTART.md:1) - How to install and run the project.
 - **Current Status:** [CURRENT_STATE_ASSESSMENT.md](../CURRENT_STATE_ASSESSMENT.md:1) - What works, what doesn't, and verified code status.
-- **Roadmap:** [STRATEGIC_ROADMAP.md](../STRATEGIC_ROADMAP.md:1) - Future plans and milestones.
+- **Goals & Scope:** [PROJECT_GOALS.md](../PROJECT_GOALS.md:1) – Canonical project goals, success criteria, and scope boundaries, including the **ruleset design goals & rationale** (emergent complexity from simple mechanics, tensionful and non-trivially unpredictable scoring/lead dynamics, and explicit human–computer competitive balance).
+- **Ruleset Invariants:** [docs/INVARIANTS_AND_PARITY_FRAMEWORK.md](./INVARIANTS_AND_PARITY_FRAMEWORK.md:1) – Catalogue of rules-level invariants and TS↔Python↔host parity expectations, including P0 semantics for active-no-moves and forced elimination (`INV-ACTIVE-NO-MOVES`, `INV-PHASE-CONSISTENCY`, `INV-TERMINATION`).
+- **Weakest Aspects & Hardest Problems:** [WEAKNESS_ASSESSMENT_REPORT.md](../WEAKNESS_ASSESSMENT_REPORT.md) – Latest comprehensive weakness assessment (Pass 18A: host integration & orchestrator rollout); see also [docs/PASS18A_ASSESSMENT_REPORT.md](./PASS18A_ASSESSMENT_REPORT.md) for the full assessment report.
+- **Roadmap:** [STRATEGIC_ROADMAP.md](../STRATEGIC_ROADMAP.md:1) - Future plans and milestones derived from the goals in [PROJECT_GOALS.md](../PROJECT_GOALS.md:1).
 - **Rules Engine:** [RULES_ENGINE_ARCHITECTURE.md](../RULES_ENGINE_ARCHITECTURE.md:1) – Complete rules engine architecture including orchestration layer.
 - **Lifecycle & State Machines:** [docs/CANONICAL_ENGINE_API.md](./CANONICAL_ENGINE_API.md:1) – canonical engine API; [docs/STATE_MACHINES.md](./STATE_MACHINES.md:1) – shared session/AI/choice/connection state machines over the canonical API.
 - **AI, Rules & Training:** [AI_ARCHITECTURE.md](../AI_ARCHITECTURE.md:1) – High-level AI/rules/training architecture; [docs/AI_TRAINING_AND_DATASETS.md](./AI_TRAINING_AND_DATASETS.md:1) – AI service training & dataset pipelines; [docs/INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md](./INCIDENT_TERRITORY_MUTATOR_DIVERGENCE.md:1) – incident report and fix for the TerritoryMutator divergence.
@@ -23,7 +26,7 @@
 - [docs/supplementary/RULES_RULESET_CLARIFICATIONS.md](./supplementary/RULES_RULESET_CLARIFICATIONS.md) - Clarifications for ambiguous rules.
 - [docs/supplementary/AI_IMPROVEMENT_BACKLOG.md](./supplementary/AI_IMPROVEMENT_BACKLOG.md) - Backlog for AI improvements.
 
-### Architecture Remediation Reports (NEW)
+### Architecture Remediation & Assessment Reports (NEW)
 
 The following documents record the 4-phase architecture remediation completed November 2025:
 
@@ -31,6 +34,10 @@ The following documents record the 4-phase architecture remediation completed No
 - [archive/PHASE1_REMEDIATION_PLAN.md](../archive/PHASE1_REMEDIATION_PLAN.md) - Historical Phase 1 production-hardening plan (superseded by `ARCHITECTURE_REMEDIATION_PLAN.md` and `CURRENT_STATE_ASSESSMENT.md`).
 - [archive/PHASE3_ADAPTER_MIGRATION_REPORT.md](../archive/PHASE3_ADAPTER_MIGRATION_REPORT.md) - Historical backend and sandbox adapter migration report (superseded by `ARCHITECTURE_ASSESSMENT.md` and `ARCHITECTURE_REMEDIATION_PLAN.md`).
 - [archive/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md](../archive/PHASE4_PYTHON_CONTRACT_TEST_REPORT.md) - Historical Python contract test runner report (superseded by `docs/PYTHON_PARITY_REQUIREMENTS.md`, `AI_ARCHITECTURE.md`, and `ai-service/README.md`).
+- **Current holistic assessment passes:**
+  - [docs/PASS18A_ASSESSMENT_REPORT.md](./PASS18A_ASSESSMENT_REPORT.md:1) – **Latest (2025-11-30):** Full-project reassessment post-ANM/termination remediation and test stabilization. All tests green.
+  - [docs/PASS17_ASSESSMENT_REPORT.md](./PASS17_ASSESSMENT_REPORT.md:1) – Focused assessment on orchestrator rollout, invariants/parity, AI healthchecks, and remaining P0/P1 gaps.
+  - [docs/PASS16_ASSESSMENT_REPORT.md](./PASS16_ASSESSMENT_REPORT.md:1) – Comprehensive assessment after shared-engine consolidation and frontend UX improvements.
 
 ### Canonical Orchestrator (NEW)
 
@@ -38,6 +45,9 @@ The following documents record the 4-phase architecture remediation completed No
 - [docs/CANONICAL_ENGINE_API.md](./CANONICAL_ENGINE_API.md) - Canonical engine public API specification.
 - [docs/MODULE_RESPONSIBILITIES.md](./MODULE_RESPONSIBILITIES.md) - Module catalog for shared engine.
 - [docs/ORCHESTRATOR_ROLLOUT_PLAN.md](./ORCHESTRATOR_ROLLOUT_PLAN.md:1) - Orchestrator-first rollout and legacy rules shutdown plan (Track A).
+- [docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md](./runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md:1) - Operator runbook for orchestrator rollout, rollback, and incident response.
+- [docs/STRICT_INVARIANT_SOAKS.md](./STRICT_INVARIANT_SOAKS.md:1) - Invariant and orchestrator soak strategy, including CI short/long soak profiles.
+- [docs/SUPPLY_CHAIN_AND_CI_SECURITY.md](./SUPPLY_CHAIN_AND_CI_SECURITY.md:1) - CI job map including orchestrator parity and soak gates.
 
 ### Contract Testing (NEW)
 
@@ -91,6 +101,8 @@ Step-by-step operational procedures for deploying and managing RingRift. See [do
 - **Rollback Procedures:** [docs/runbooks/DEPLOYMENT_ROLLBACK.md](./runbooks/DEPLOYMENT_ROLLBACK.md) – how to revert to previous versions.
 - **Scaling Procedures:** [docs/runbooks/DEPLOYMENT_SCALING.md](./runbooks/DEPLOYMENT_SCALING.md) – how to scale services up/down.
 - **Database Migrations:** [docs/runbooks/DATABASE_MIGRATION.md](./runbooks/DATABASE_MIGRATION.md) – Prisma migration procedures.
+- **Database Backup & Restore Drill:** [docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md](./runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md) – non-destructive Postgres backup/restore drill using a separate restore database.
+- **Secrets Rotation Drill:** [docs/runbooks/SECRETS_ROTATION_DRILL.md](./runbooks/SECRETS_ROTATION_DRILL.md) – JWT and database credential rotation drill for staging/non-production.
 
 ## 🚨 Incident Response
 

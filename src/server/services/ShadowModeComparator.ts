@@ -14,7 +14,7 @@
  */
 
 import { logger } from '../utils/logger';
-import type { GameState, RingStack } from '../../shared/types/game';
+import type { GameState, GameResult, RingStack } from '../../shared/types/game';
 
 /**
  * Result of applying a move through an engine.
@@ -22,17 +22,9 @@ import type { GameState, RingStack } from '../../shared/types/game';
  */
 export interface MoveResult {
   success: boolean;
-  error?: string;
-  gameState?: GameState;
-  gameResult?: {
-    winner?: number;
-    reason: string;
-    finalScore: {
-      ringsEliminated: { [playerNumber: number]: number };
-      territorySpaces: { [playerNumber: number]: number };
-      ringsRemaining: { [playerNumber: number]: number };
-    };
-  };
+  error?: string | undefined;
+  gameState?: GameState | undefined;
+  gameResult?: GameResult | undefined;
 }
 
 /**

@@ -13,6 +13,28 @@ from ..rules.factory import get_rules_engine
 from ..rules.interfaces import RulesEngine
 
 
+def derive_training_seed(config: AIConfig, player_number: int) -> int:
+    """
+    Derive a deterministic but non-SSOT RNG seed for training/experiments.
+
+    This helper is used only when no explicit ``rng_seed`` is supplied on
+    ``AIConfig``. It intentionally does not depend on any game- or
+    session-level identifiers so that:
+      - online gameplay paths (backed by the FastAPI /ai/move endpoint)
+        always use the seed chosen by the TypeScript hosts, and
+      - offline training/evaluation jobs can still get reproducible but
+        experiment-local randomness by threading a seed through their own
+        configuration objects.
+
+    The current implementation mirrors the legacy behaviour by mixing the
+    difficulty and player number into a 32‑bit value. Callers that care about
+    experiment-level control should pass ``rng_seed`` explicitly instead of
+    relying on this fallback.
+    """
+    base = (config.difficulty * 1_000_003) ^ (player_number * 97_911)
+    return int(base & 0xFFFFFFFF)
+
+
 class BaseAI(ABC):
     """Abstract base class for all AI implementations"""
     
@@ -31,18 +53,16 @@ class BaseAI(ABC):
 
         # Per-instance RNG used for all stochastic behaviour (thinking delays,
         # random move selection, rollout policies, etc.). Prefer an explicit
-        # rng_seed from AIConfig when provided; otherwise derive a stable,
-        # difficulty- and player-dependent default. A future phase will plumb
-        # a cross-language seed from the HTTP API into AIConfig.rng_seed so
-        # TS and Python can share the same stream.
+        # rng_seed from AIConfig when provided; otherwise fall back to a
+        # deterministic but non-SSOT training seed derived from the config.
+        # In production, the FastAPI /ai/move endpoint is responsible for
+        # supplying a concrete seed based on the TypeScript engine's
+        # GameState.rngSeed so that cross-host parity tools can treat that
+        # value as the single source of truth.
         if self.config.rng_seed is not None:
-            seed = self.config.rng_seed
+            self.rng_seed: int = int(self.config.rng_seed)
         else:
-            # Simple, deterministic derivation that stays within 32-bit range.
-            seed = (self.config.difficulty * 1_000_003) ^ (
-                self.player_number * 97_911
-            )
-        self.rng_seed: int = int(seed & 0xFFFFFFFF)
+            self.rng_seed = derive_training_seed(self.config, self.player_number)
         self.rng: random.Random = random.Random(self.rng_seed)
         
     @abstractmethod

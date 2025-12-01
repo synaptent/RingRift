@@ -208,12 +208,13 @@ describe('GameEngine + AIInteractionHandler + AIServiceClient line_reward_option
 
     // Fallback path should behave like the local heuristic: choose
     // Option 2 (minimum collapse, no elimination). On an 8x8 board
-    // this collapses only the first requiredLength=3 markers to
-    // territory and leaves the overlong tail markers uncollapsed.
+    // with 2 players, getEffectiveLineLengthThreshold returns 4, so
+    // Option 2 collapses the first requiredLength=4 markers to
+    // territory and leaves only the 5th marker uncollapsed.
     expect(boardManager.isCollapsedSpace(markerPositions[0], gameState.board)).toBe(true);
     expect(boardManager.isCollapsedSpace(markerPositions[1], gameState.board)).toBe(true);
     expect(boardManager.isCollapsedSpace(markerPositions[2], gameState.board)).toBe(true);
-    expect(boardManager.isCollapsedSpace(markerPositions[3], gameState.board)).toBe(false);
+    expect(boardManager.isCollapsedSpace(markerPositions[3], gameState.board)).toBe(true);
     expect(boardManager.isCollapsedSpace(markerPositions[4], gameState.board)).toBe(false);
 
     const finalEliminated = gameState.players.find(p => p.playerNumber === 1)!

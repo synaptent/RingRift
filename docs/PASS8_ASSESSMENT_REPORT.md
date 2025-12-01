@@ -1,5 +1,10 @@
 # Pass 8 - Comprehensive Project Assessment Report
 
+> **⚠️ HISTORICAL DOCUMENT** – This is a point-in-time assessment from November 2025.
+> For current project status, see:
+> - `CURRENT_STATE_ASSESSMENT.md` – Latest implementation status
+> - `docs/PASS18A_ASSESSMENT_REPORT.md` – Most recent assessment pass
+
 > **Assessment Date:** 2025-11-27
 > **Assessment Pass:** Eighth (Post-DevOps/CI Remediation)
 > **Previous Pass:** Pass 7 - DevOps/CI Enforcement identified as weakest (3.4/5.0)

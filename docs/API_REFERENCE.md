@@ -521,8 +521,8 @@ const socket = io('http://localhost:3000', {
 | `time_update`                    | Time control update for a player                                                                                                                                                                    |
 | `player_choice_required`         | Server requests a decision from a player                                                                                                                                                            |
 | `player_choice_canceled`         | A pending choice was canceled                                                                                                                                                                       |
-| `decision_phase_timeout_warning` | Warning before auto-resolution of a decision                                                                                                                                                        |
-| `decision_phase_timed_out`       | Decision phase timed out; auto-resolved                                                                                                                                                             |
+| `decision_phase_timeout_warning` | Warning before auto-resolution of a decision. Emitted a short time (for example, ~5 seconds) before the server will auto-resolve a pending decision due to timeout; carries phase, player, and remaining time metadata so clients can surface a countdown. |
+| `decision_phase_timed_out`       | Decision phase timed out; auto-resolved. Emitted when a pending decision has exceeded its timeout and the engine has applied a default Move (for example, a line reward or region order) on behalf of the player; the auto-selected move id is included in the payload. |
 | `error`                          | Structured error payload                                                                                                                                                                            |
 
 #### Worked example: `player_choice_required` → `player_choice_response`

@@ -110,7 +110,23 @@ class DefaultRulesEngine(RulesEngine):
         Dispatches to the appropriate validator based on move type.
         """
 
-        # Dispatch based on move type
+        # Special-case validation for the pie-rule meta-move. We treat
+        # SWAP_SIDES as legal exactly when GameEngine.get_valid_moves would
+        # surface it for the current state/player, mirroring the TS backend
+        # GameEngine.shouldOfferSwapSidesMetaMove gate.
+        if move.type == MoveType.SWAP_SIDES:
+            from app.game_engine import GameEngine
+
+            if move.player != 2:
+                return False
+
+            legal = GameEngine.get_valid_moves(state, move.player)
+            return any(
+                m.type == MoveType.SWAP_SIDES and m.player == move.player
+                for m in legal
+            )
+
+        # Dispatch based on move type for all other moves
         if move.type in (MoveType.PLACE_RING, MoveType.SKIP_PLACEMENT):
             # PlacementValidator
             return self.validators[0].validate(state, move)
@@ -200,7 +216,13 @@ class DefaultRulesEngine(RulesEngine):
             )
 
         # --- 5. Dispatch to mutators / helpers by move type ---
-        if move.type == MoveType.PLACE_RING:
+        # SWAP_SIDES is a pure meta-move handled by the canonical
+        # GameEngine.apply_move; mutators do not currently model seat/colour
+        # swapping explicitly, so we skip mutator application for this move
+        # type and rely solely on the canonical path.
+        if move.type == MoveType.SWAP_SIDES:
+            pass
+        elif move.type == MoveType.PLACE_RING:
             PlacementMutator().apply(new_state, move)
         elif move.type == MoveType.SKIP_PLACEMENT:
             # No board change; phase update will advance the turn.

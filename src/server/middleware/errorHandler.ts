@@ -27,6 +27,16 @@ export interface AppError extends Error {
 }
 
 /**
+ * Extended error type that may have additional properties from various
+ * error sources (MongoDB, JWT, etc.).
+ */
+interface ExtendedError extends Error {
+  code?: string | number;
+  statusCode?: number;
+  isOperational?: boolean;
+}
+
+/**
  * Express Request with requestId attached by middleware.
  */
 interface RequestWithId extends Request {
@@ -48,11 +58,11 @@ function mapZodErrorToDetails(error: ZodError): ValidationErrorDetail[] {
  * Determine error code from legacy error types.
  */
 function getErrorCodeFromLegacy(error: Error): ErrorCode {
-  const anyError = error as any;
+  const extError = error as ExtendedError;
 
   // Check for explicit code property
-  if (anyError.code) {
-    return normalizeErrorCode(anyError.code);
+  if (extError.code !== undefined) {
+    return normalizeErrorCode(String(extError.code));
   }
 
   // Handle JWT errors
@@ -67,7 +77,7 @@ function getErrorCodeFromLegacy(error: Error): ErrorCode {
   if (error.name === 'CastError') {
     return ErrorCodes.VALIDATION_INVALID_ID;
   }
-  if (error.name === 'MongoError' && anyError.code === 11000) {
+  if (error.name === 'MongoError' && extError.code === 11000) {
     return ErrorCodes.RESOURCE_ALREADY_EXISTS;
   }
 
@@ -132,14 +142,14 @@ export const errorHandler = (
   } else {
     // Convert legacy error to ApiError
     const errorCode = getErrorCodeFromLegacy(error);
-    const anyError = error as AppError;
+    const extError = error as ExtendedError;
 
     apiError = new ApiError({
       code: errorCode,
       message: error.message || ErrorCodeMessages[errorCode],
-      statusCode: anyError.statusCode || ErrorCodeToStatus[errorCode],
+      statusCode: extError.statusCode || ErrorCodeToStatus[errorCode],
       cause: error,
-      isOperational: anyError.isOperational ?? true,
+      isOperational: extError.isOperational ?? true,
     });
   }
 

@@ -31,10 +31,14 @@ import type {
   GameHistoryEntry,
   Move,
   BoardType,
+  PlayerChoice,
+  PlayerChoiceType,
   BOARD_CONFIGS,
 } from '../../shared/types/game';
 import { positionToString } from '../../shared/types/game';
 import type { ConnectionStatus } from '../domain/GameAPI';
+import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModels';
+import type { ChoiceKind } from './choiceViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HUD View Model
@@ -97,11 +101,48 @@ export interface PlayerViewModel {
 /**
  * Complete HUD view model
  */
+export interface HUDDecisionPhaseViewModel {
+  /** Whether a decision is currently active for any player. */
+  isActive: boolean;
+  /** Acting player number and display name. */
+  actingPlayerNumber: number;
+  actingPlayerName: string;
+  /** True when the local user is the acting player. */
+  isLocalActor: boolean;
+  /**
+   * Primary status line for the HUD, e.g. "Your decision: Choose Line Reward" or
+   * "Waiting for Alice to choose a line reward option".
+   */
+  label: string;
+  /** Optional longer description derived from the underlying ChoiceViewModel. */
+  description?: string;
+  /** Short label suitable for compact chips/badges. */
+  shortLabel: string;
+  /**
+   * Remaining time in milliseconds according to the client-side clock, or null
+   * when no explicit timeout exists or countdown UI should be suppressed.
+   */
+  timeRemainingMs: number | null;
+  /** Whether the countdown should be rendered in the HUD. */
+  showCountdown: boolean;
+  /** Optional soft warning threshold for low-time styling. */
+  warningThresholdMs?: number;
+  /**
+   * True when the underlying decision countdown has been shortened/capped by
+   * authoritative server timeout metadata. Used purely for UI emphasis.
+   */
+  isServerCapped?: boolean;
+  /** Spectator-oriented status text derived from ChoiceViewModel.copy.spectatorLabel. */
+  spectatorLabel: string;
+}
+
 export interface HUDViewModel {
   phase: PhaseViewModel;
   players: PlayerViewModel[];
   turnNumber: number;
   moveNumber: number;
+  /** Optional short summary when the pie rule has been used recently. */
+  pieRuleSummary?: string;
   instruction?: string;
   connectionStatus: ConnectionStatus;
   isConnectionStale: boolean;
@@ -111,6 +152,13 @@ export interface HUDViewModel {
    * Sub-phase details (e.g., "Processing 3 lines")
    */
   subPhaseDetail?: string;
+  /**
+   * When present, describes the currently-active decision phase (line reward,
+   * territory region order, ring elimination, capture direction, etc.). This is
+   * derived from PlayerChoice + choiceViewModels and is intended to be the
+   * single source of truth for HUD decision copy.
+   */
+  decisionPhase?: HUDDecisionPhaseViewModel;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -178,6 +226,28 @@ export interface MarkerViewModel {
 }
 
 /**
+ * Decision-phase highlight semantics for the board. This is intentionally
+ * lightweight and board-centric: it describes which cells should be
+ * emphasised while a PlayerChoice is pending, without embedding any
+ * transport- or engine-specific types.
+ */
+export type DecisionHighlightIntensity = 'primary' | 'secondary';
+
+export interface DecisionHighlight {
+  /** Position key as produced by positionToString. */
+  positionKey: string;
+  /** Visual intensity category for UI styling. */
+  intensity: DecisionHighlightIntensity;
+}
+
+export interface BoardDecisionHighlightsViewModel {
+  /** High-level semantic grouping of the underlying choice. */
+  choiceKind: ChoiceKind;
+  /** Flat collection of highlighted board cells. */
+  highlights: DecisionHighlight[];
+}
+
+/**
  * Collapsed space (territory) display model
  */
 export interface CollapsedSpaceViewModel {
@@ -213,6 +283,13 @@ export interface BoardViewModel {
    * For square boards: cells organized by row for grid rendering
    */
   rows?: CellViewModel[][];
+  /**
+   * Optional decision-phase highlights derived from a pending PlayerChoice.
+   * When present, BoardView may render lightweight overlays to guide the
+   * acting player, non-acting players, and spectators toward the relevant
+   * geometry (lines, regions, stacks, capture directions, etc.).
+   */
+  decisionHighlights?: BoardDecisionHighlightsViewModel;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -333,7 +410,7 @@ const PHASE_INFO: Record<GamePhase, Omit<PhaseViewModel, 'phaseKey'>> = {
   },
   chain_capture: {
     label: 'Chain Capture',
-    description: 'Continue capturing or end your turn',
+    description: 'You must continue capturing if able',
     colorClass: 'bg-orange-500',
     icon: '🔗',
   },
@@ -482,13 +559,40 @@ export interface ToHUDViewModelOptions {
   lastHeartbeatAt: number | null;
   isSpectator: boolean;
   currentUserId?: string;
+  /** Optional pending choice used to derive decision-phase HUD messaging. */
+  pendingChoice?: PlayerChoice | null;
+  /** Optional absolute deadline timestamp in ms for the pending choice. */
+  choiceDeadline?: number | null;
+  /**
+   * Optional precomputed client-side countdown for the pending choice. When
+   * provided (e.g. from a dedicated timer hook), this will be preferred over
+   * deriving the remaining time from choiceDeadline.
+   */
+  choiceTimeRemainingMs?: number | null;
+  /**
+   * Optional flag indicating that the effective decision countdown has been
+   * capped/shortened by authoritative server timeout metadata. This allows the
+   * HUD to surface a subtle "server deadline" indicator without needing to
+   * understand reconciliation semantics itself.
+   */
+  decisionIsServerCapped?: boolean;
 }
 
 /**
  * Transform GameState into HUDViewModel
  */
 export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOptions): HUDViewModel {
-  const { instruction, connectionStatus, lastHeartbeatAt, isSpectator, currentUserId } = options;
+  const {
+    instruction,
+    connectionStatus,
+    lastHeartbeatAt,
+    isSpectator,
+    currentUserId,
+    pendingChoice,
+    choiceDeadline,
+    choiceTimeRemainingMs,
+    decisionIsServerCapped,
+  } = options;
 
   const HEARTBEAT_STALE_THRESHOLD_MS = 8000;
   const heartbeatAge = lastHeartbeatAt ? Date.now() - lastHeartbeatAt : null;
@@ -504,6 +608,24 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
   const moveNumber =
     gameState.history.length > 0 ? gameState.history[gameState.history.length - 1]?.moveNumber : 0;
 
+  // Surface a short "pie rule used" summary for a few moves after a
+  // swap_sides action so spectators understand any seat/colour changes.
+  let pieRuleSummary: string | undefined;
+  if (gameState.history && gameState.history.length > 0) {
+    const lastSwapEntry = [...gameState.history]
+      .slice()
+      .reverse()
+      .find((entry) => entry.action.type === 'swap_sides');
+    if (lastSwapEntry) {
+      const movesSinceSwap = gameState.history.length - lastSwapEntry.moveNumber;
+      if (movesSinceSwap <= 3) {
+        const actor = lastSwapEntry.action.player;
+        const otherSeat = actor === 1 ? 2 : 1;
+        pieRuleSummary = `P${actor} swapped colours with P${otherSeat}`;
+      }
+    }
+  }
+
   // Sub-phase detail
   let subPhaseDetail: string | undefined;
   if (gameState.currentPhase === 'line_processing') {
@@ -515,17 +637,151 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
     subPhaseDetail = 'Processing disconnected regions';
   }
 
+  // Decision-phase detail derived from pending PlayerChoice + choiceViewModels.
+  let decisionPhase: HUDDecisionPhaseViewModel | undefined;
+  if (pendingChoice && gameState.gameStatus === 'active') {
+    const actingPlayer = gameState.players.find((p) => p.playerNumber === pendingChoice.playerNumber);
+    const actingPlayerName =
+      actingPlayer?.username || `Player ${pendingChoice.playerNumber}`;
+    const isLocalActor = !!(currentUserId && actingPlayer && actingPlayer.id === currentUserId);
+
+    const vm = getChoiceViewModel(pendingChoice);
+
+    // Prefer a precomputed countdown when provided (e.g. from a dedicated
+    // DecisionUI hook); otherwise derive remaining time from the deadline.
+    let timeRemainingMs: number | null = null;
+    if (typeof choiceTimeRemainingMs === 'number') {
+      timeRemainingMs = choiceTimeRemainingMs >= 0 ? choiceTimeRemainingMs : 0;
+    } else if (choiceDeadline) {
+      const remaining = choiceDeadline - Date.now();
+      timeRemainingMs = remaining > 0 ? remaining : 0;
+    }
+
+    // Compose a primary status label. For the acting player we emphasise their
+    // own decision; for everyone else we use the spectator-oriented copy.
+    const label = isLocalActor
+      ? `Your decision: ${vm.copy.title}`
+      : vm.copy.spectatorLabel({ actingPlayerName });
+
+    const spectatorLabel = vm.copy.spectatorLabel({ actingPlayerName });
+
+    decisionPhase = {
+      isActive: true,
+      actingPlayerNumber: pendingChoice.playerNumber,
+      actingPlayerName,
+      isLocalActor,
+      label,
+      description: vm.copy.description,
+      shortLabel: vm.copy.shortLabel,
+      timeRemainingMs: vm.timeout.showCountdown ? timeRemainingMs : null,
+      showCountdown: vm.timeout.showCountdown,
+      warningThresholdMs: vm.timeout.warningThresholdMs,
+      isServerCapped: vm.timeout.showCountdown ? decisionIsServerCapped : undefined,
+      spectatorLabel,
+    };
+  }
+
   return {
     phase,
     players,
     turnNumber,
     moveNumber: moveNumber ?? 0,
+    pieRuleSummary,
     instruction,
     connectionStatus,
     isConnectionStale,
     isSpectator,
     spectatorCount: gameState.spectators.length,
     subPhaseDetail,
+    decisionPhase,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Board Decision Highlights Adapter
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Derive a lightweight board-centric highlight model for a pending
+ * PlayerChoice. This keeps all semantics in terms of GameState +
+ * PlayerChoice while remaining UI-framework agnostic.
+ */
+export function deriveBoardDecisionHighlights(
+  gameState: GameState,
+  pendingChoice: PlayerChoice | null | undefined
+): BoardDecisionHighlightsViewModel | undefined {
+  if (!pendingChoice) return undefined;
+
+  const vm = getChoiceViewModel(pendingChoice);
+  const highlights: DecisionHighlight[] = [];
+
+  const pushPosition = (position: Position | undefined, intensity: DecisionHighlightIntensity) => {
+    if (!position) return;
+    const positionKey = positionToString(position);
+    highlights.push({ positionKey, intensity });
+  };
+
+  switch (pendingChoice.type) {
+    case 'line_order': {
+      // Highlight markers for all candidate lines. This makes the decision
+      // surface visible to both the acting player and spectators.
+      for (const option of pendingChoice.options) {
+        for (const pos of option.markerPositions) {
+          pushPosition(pos, 'primary');
+        }
+      }
+      break;
+    }
+    case 'line_reward_option': {
+      // Reward choices operate over the currently-detected lines for the
+      // acting player. We highlight all formedLines owned by that player so
+      // the geometry remains visible while the reward UI is active.
+      const linesForPlayer = (gameState.board.formedLines || []).filter(
+        (line) => line.player === pendingChoice.playerNumber
+      );
+      for (const line of linesForPlayer) {
+        for (const pos of line.positions) {
+          pushPosition(pos, 'primary');
+        }
+      }
+      break;
+    }
+    case 'ring_elimination': {
+      // Each option exposes a concrete stackPosition; highlight all such
+      // stacks as primary candidates.
+      for (const option of pendingChoice.options) {
+        pushPosition(option.stackPosition, 'primary');
+      }
+      break;
+    }
+    case 'region_order': {
+      // Territory decisions expose a representativePosition for each region.
+      // We highlight those representatives; future extensions may expand this
+      // to the full region geometry via territoryDecisionHelpers.
+      for (const option of pendingChoice.options) {
+        pushPosition(option.representativePosition, 'primary');
+      }
+      break;
+    }
+    case 'capture_direction': {
+      // For capture-direction decisions, we highlight both the capture target
+      // and the prospective landing positions, using a slightly lower
+      // intensity for the targets.
+      for (const option of pendingChoice.options) {
+        pushPosition(option.landingPosition, 'primary');
+        pushPosition(option.targetPosition, 'secondary');
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  if (highlights.length === 0) return undefined;
+
+  return {
+    choiceKind: vm.kind,
+    highlights,
   };
 }
 
@@ -541,12 +797,39 @@ function formatPosition(pos?: Position): string {
   return `(${pos.x}, ${pos.y})`;
 }
 
+function mapMoveTypeToChoiceType(actionType: Move['type']): PlayerChoiceType | undefined {
+  switch (actionType) {
+    case 'process_line':
+      return 'line_order';
+    case 'choose_line_reward':
+      return 'line_reward_option';
+    case 'process_territory_region':
+      return 'region_order';
+    case 'eliminate_rings_from_stack':
+      return 'ring_elimination';
+    default:
+      return undefined;
+  }
+}
+
+function getDecisionTagForMove(action: Move): string | null {
+  const choiceType = mapMoveTypeToChoiceType(action.type);
+  if (!choiceType) return null;
+
+  const vm = getChoiceViewModelForType(choiceType);
+  return `[${vm.copy.shortLabel}] `;
+}
+
 function describeHistoryEntry(entry: GameHistoryEntry): string {
   const { action } = entry;
   const moveLabel = `#${entry.moveNumber}`;
   const playerLabel = `P${action.player}`;
 
   switch (action.type) {
+    case 'swap_sides': {
+      const otherSeat = action.player === 1 ? 2 : 1;
+      return `${moveLabel} — ${playerLabel} invoked the pie rule and swapped colours with P${otherSeat}`;
+    }
     case 'place_ring': {
       const count = action.placementCount ?? 1;
       return `${moveLabel} — ${playerLabel} placed ${count} ring${count === 1 ? '' : 's'} at ${formatPosition(action.to)}`;
@@ -570,14 +853,16 @@ function describeHistoryEntry(entry: GameHistoryEntry): string {
     }
     case 'process_line':
     case 'choose_line_reward': {
+      const decisionTag = getDecisionTagForMove(action) ?? '';
       const lineCount = action.formedLines?.length ?? 0;
       if (lineCount > 0) {
-        return `${moveLabel} — ${playerLabel} processed ${lineCount} line${lineCount === 1 ? '' : 's'}`;
+        return `${moveLabel} — ${playerLabel} ${decisionTag}processed ${lineCount} line${lineCount === 1 ? '' : 's'}`;
       }
-      return `${moveLabel} — Line processing by ${playerLabel}`;
+      return `${moveLabel} — ${decisionTag}Line processing by ${playerLabel}`;
     }
     case 'process_territory_region':
     case 'eliminate_rings_from_stack': {
+      const decisionTag = getDecisionTagForMove(action) ?? '';
       const regionCount =
         action.claimedTerritory?.length ?? action.disconnectedRegions?.length ?? 0;
       const eliminatedTotal = (action.eliminatedRings ?? []).reduce(
@@ -592,7 +877,7 @@ function describeHistoryEntry(entry: GameHistoryEntry): string {
         parts.push(`${eliminatedTotal} ring${eliminatedTotal === 1 ? '' : 's'} eliminated`);
       }
       const detail = parts.length > 0 ? ` (${parts.join(', ')})` : '';
-      return `${moveLabel} — Territory / elimination processing by ${playerLabel}${detail}`;
+      return `${moveLabel} — ${decisionTag}Territory / elimination processing by ${playerLabel}${detail}`;
     }
     case 'skip_placement': {
       return `${moveLabel} — ${playerLabel} skipped placement`;
@@ -700,6 +985,8 @@ export function toEventLogViewModel(
 export interface ToBoardViewModelOptions {
   selectedPosition?: Position;
   validTargets?: Position[];
+  /** Optional decision-phase highlights derived from a pending PlayerChoice. */
+  decisionHighlights?: BoardDecisionHighlightsViewModel;
 }
 
 /**
@@ -761,6 +1048,7 @@ export function toBoardViewModel(
     size: board.size,
     cells,
     rows,
+    decisionHighlights: options.decisionHighlights,
   };
 }
 
@@ -1005,7 +1293,7 @@ function getVictoryMessage(
     case 'ring_elimination':
       return {
         title: `🏆 ${winnerName} Wins!`,
-        description: 'Victory by eliminating all opponent rings',
+        description: 'Victory by eliminating over half of opponent rings',
         titleColorClass,
       };
     case 'territory_control':

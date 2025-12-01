@@ -85,8 +85,8 @@ describe('GamePersistenceService', () => {
       await GamePersistenceService.createGame(configWithPlayers);
 
       const createCall = mockPrisma.game.create.mock.calls[0][0];
-      expect(createCall.data.player1Id).toBe('player1-id');
-      expect(createCall.data.player2Id).toBe('player2-id');
+      expect(createCall.data.player1).toEqual({ connect: { id: 'player1-id' } });
+      expect(createCall.data.player2).toEqual({ connect: { id: 'player2-id' } });
     });
 
     it('should include RNG seed when provided', async () => {
@@ -151,8 +151,8 @@ describe('GamePersistenceService', () => {
       expect(mockPrisma.move.create).toHaveBeenCalledTimes(1);
       expect(mockPrisma.move.create).toHaveBeenCalledWith({
         data: expect.objectContaining({
-          gameId: 'game-123',
-          playerId: 'player-123',
+          game: { connect: { id: 'game-123' } },
+          player: { connect: { id: 'player-123' } },
           moveNumber: 1,
           moveType: 'place_ring',
         }),
@@ -368,7 +368,7 @@ describe('GamePersistenceService', () => {
         where: { id: 'game-123' },
         data: expect.objectContaining({
           status: 'completed',
-          winnerId: 'winner-id',
+          winner: { connect: { id: 'winner-id' } },
           endedAt: expect.any(Date),
         }),
       });

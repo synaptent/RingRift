@@ -13,6 +13,8 @@ import type {
   GameStateUpdateMessage,
   GameOverMessage,
   ChatMessageServerPayload,
+  DecisionAutoResolvedMeta,
+  DecisionPhaseTimeoutWarningPayload,
 } from '../../shared/types/websocket';
 
 export type ConnectionStatus = DomainConnectionStatus;
@@ -54,6 +56,13 @@ interface GameContextType {
   connectionStatus: ConnectionStatus;
   /** Timestamp of the most recent game_state heartbeat (ms since epoch). */
   lastHeartbeatAt: number | null;
+  /** Summary of the most recently auto-resolved decision, if any, for the latest update. */
+  decisionAutoResolved: DecisionAutoResolvedMeta | null;
+  /**
+   * Optional payload for an in-progress decision-phase timeout warning, if the
+   * server has indicated that a pending decision is approaching auto-resolution.
+   */
+  decisionPhaseTimeoutWarning: DecisionPhaseTimeoutWarningPayload | null;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -113,6 +122,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [chatMessages, setChatMessages] = useState<{ sender: string; text: string }[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [lastHeartbeatAt, setLastHeartbeatAt] = useState<number | null>(null);
+  const [decisionAutoResolved, setDecisionAutoResolved] = useState<DecisionAutoResolvedMeta | null>(
+    null
+  );
+  const [decisionPhaseTimeoutWarning, setDecisionPhaseTimeoutWarning] =
+    useState<DecisionPhaseTimeoutWarningPayload | null>(null);
   const connectionRef = useRef<GameConnection | null>(null);
   const lastStatusRef = useRef<ConnectionStatus | null>(null);
   const hasEverConnectedRef = useRef(false);
@@ -134,6 +148,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setError(null);
         setConnectionStatus('connected');
         setLastHeartbeatAt(Date.now());
+        // Each fresh game_state diff summary replaces any prior auto-resolve
+        // metadata and clears outstanding timeout warnings.
+        setDecisionAutoResolved(data.meta?.diffSummary?.decisionAutoResolved ?? null);
+        setDecisionPhaseTimeoutWarning(null);
       },
       onGameOver: (payload: GameOverMessage) => {
         const { data } = payload || ({} as GameOverMessage);
@@ -151,6 +169,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setError(null);
         setPendingChoice(null);
         setChoiceDeadline(null);
+        setDecisionAutoResolved(null);
+        setDecisionPhaseTimeoutWarning(null);
       },
       onChoiceRequired: (choice: PlayerChoice) => {
         setPendingChoice(choice);
@@ -224,6 +244,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           hasEverConnectedRef.current = true;
         }
       },
+      onDecisionPhaseTimeoutWarning: (payload) => {
+        // Surface the latest timeout warning; BackendGameHost and other
+        // consumers can use this for HUD banners and diagnostics logs.
+        setDecisionPhaseTimeoutWarning(payload);
+      },
+      onDecisionPhaseTimedOut: () => {
+        // Once a decision has timed out and been auto-resolved, clear any
+        // outstanding warning; the resulting game_state update carries the
+        // decisionAutoResolved metadata instead.
+        setDecisionPhaseTimeoutWarning(null);
+      },
     };
 
     const connection = new SocketGameConnection(handlers);
@@ -246,6 +277,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setChatMessages([]);
     setConnectionStatus('disconnected');
     setLastHeartbeatAt(null);
+    setDecisionAutoResolved(null);
+    setDecisionPhaseTimeoutWarning(null);
   }, []);
 
   const connectToGame = useCallback(
@@ -359,6 +392,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     chatMessages,
     connectionStatus,
     lastHeartbeatAt,
+    decisionAutoResolved,
+    decisionPhaseTimeoutWarning,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

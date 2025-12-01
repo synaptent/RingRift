@@ -109,6 +109,19 @@ To understand the project and know which documents are authoritative for each ar
 - **Contributing:** [CONTRIBUTING.md](./CONTRIBUTING.md)
 - **Testing Guide:** [tests/README.md](./tests/README.md)
 
+## 🎯 Project Goals & Scope
+
+For a concise statement of why RingRift exists, what the current v1.0 phase is trying to achieve, and what is in or out of scope, see [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1).
+
+[`PROJECT_GOALS.md`](PROJECT_GOALS.md:1) is the authoritative source for:
+
+- Purpose & vision of RingRift.
+- Current phase objectives.
+- v1.0 success criteria and readiness metrics.
+- MVP scope, future scope, and explicit non-goals.
+
+This README focuses on project overview, architecture, and day-to-day development workflows. When in doubt about **what success looks like** for the project, prefer [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1); use this README and the roadmap/state docs to understand **how we plan to get there** and **where we are now**.
+
 ## 🎯 Overview
 
 RingRift is a sophisticated turn-based strategy game featuring:

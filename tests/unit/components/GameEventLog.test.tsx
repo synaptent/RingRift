@@ -184,6 +184,26 @@ describe('GameEventLog', () => {
   });
 
   describe('move type formatting', () => {
+    it('formats swap_sides moves with a pie rule description', () => {
+      const history = [
+        createHistoryEntry({
+          moveNumber: 3,
+          action: createMove({
+            type: 'swap_sides',
+            player: 2,
+            moveNumber: 3,
+          }),
+        }),
+      ];
+
+      render(<GameEventLog history={history} />);
+      expect(
+        screen.getByText(
+          '#3 — P2 invoked the pie rule and swapped colours with P1',
+        ),
+      ).toBeInTheDocument();
+    });
+
     it('formats place_ring moves correctly', () => {
       const history = [
         createHistoryEntry({

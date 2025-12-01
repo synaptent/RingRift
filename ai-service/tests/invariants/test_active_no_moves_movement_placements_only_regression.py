@@ -47,6 +47,7 @@ if ROOT not in sys.path:
 
 from app.models import GameState, Move, GameStatus  # noqa: E402
 from app.game_engine import GameEngine  # noqa: E402
+from app.rules import global_actions as ga  # noqa: E402
 
 
 SNAPSHOT_PATH = os.path.join(
@@ -116,11 +117,10 @@ def test_movement_placements_only_invariant_regression(
     # From the snapshot diagnostics we expect no interactive MOVEMENT moves
     # or forced eliminations for player 1, but at least one legal placement.
     phase_moves = GameEngine.get_valid_moves(state, 1)
-    placements = GameEngine._get_ring_placement_moves(state, 1)  # type: ignore[attr-defined]
-    forced = GameEngine._get_forced_elimination_moves(  # type: ignore[attr-defined]
-        state,
-        1,
-    )
+    get_ring_placements = GameEngine._get_ring_placement_moves
+    get_forced_elim = GameEngine._get_forced_elimination_moves
+    placements = get_ring_placements(state, 1)
+    forced = get_forced_elim(state, 1)
 
     assert not phase_moves
     assert not forced
@@ -141,17 +141,27 @@ def test_movement_placements_only_invariant_regression(
             next_state,
             next_state.current_player,
         )
-        placements_next = GameEngine._get_ring_placement_moves(  # type: ignore[attr-defined]
+        placements_next = get_ring_placements(
             next_state,
             next_state.current_player,
         )
-        forced_next = GameEngine._get_forced_elimination_moves(  # type: ignore[attr-defined]
+        forced_next = get_forced_elim(
             next_state,
             next_state.current_player,
         )
+        summary = ga.global_legal_actions_summary(
+            next_state,
+            next_state.current_player,
+        )
+
         assert (
             legal_phase or placements_next or forced_next
         ), (
             "Regression: ACTIVE state with no global legal actions "
             "for current_player"
         )
+
+        # INV-ACTIVE-NO-MOVES (R200–R203, ANM-SCEN-02):
+        # placements-only states must not be treated as ANM.
+        assert summary.has_turn_material is True
+        assert ga.is_anm_state(next_state) is False

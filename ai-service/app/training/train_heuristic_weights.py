@@ -111,6 +111,9 @@ from app.ai.heuristic_weights import (
     HEURISTIC_WEIGHT_PROFILES,
 )
 from app.models import GameState
+from app.training.territory_dataset_validation import (
+    validate_territory_dataset_file,
+)
 from app.training.heuristic_features import (
     HEURISTIC_WEIGHT_KEYS,
     batch_extract_linear_features,
@@ -326,8 +329,24 @@ def train_from_jsonl(
     output_path: str,
     base_profile_id: str = "heuristic_v1_balanced",
     lambda_reg: float = 1e-3,
+    validate_territory_schema: bool = False,
+    max_validation_errors: int = 50,
 ) -> None:
     """Convenience entrypoint for training from a JSONL dataset."""
+
+    if validate_territory_schema:
+        errors = validate_territory_dataset_file(
+            dataset_path, max_errors=max_validation_errors
+        )
+        if errors:
+            preview = "\n".join(
+                f"  line {line_no}: {msg}" for line_no, msg in errors[:10]
+            )
+            raise ValueError(
+                f"Territory dataset validation failed for {dataset_path!r} "
+                f"with {len(errors)} error(s); first 10:\n{preview}"
+            )
+        print(f"{dataset_path}: territory schema validation OK")
 
     examples = _load_jsonl_dataset(dataset_path)
     X, b, y, sample_weights = _prepare_design_matrix(examples)
@@ -408,6 +427,23 @@ def _parse_args() -> argparse.Namespace:
             "(default: 1e-3)."
         ),
     )
+    parser.add_argument(
+        "--validate-territory-schema",
+        action="store_true",
+        help=(
+            "Validate --dataset using the territory/combined-margin JSONL "
+            "schema before training (uses territory_dataset_validation)."
+        ),
+    )
+    parser.add_argument(
+        "--max-validation-errors",
+        type=int,
+        default=50,
+        help=(
+            "Maximum number of territory-schema validation errors to "
+            "collect before failing (default: 50)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -418,6 +454,8 @@ def main() -> None:
         output_path=args.output,
         base_profile_id=args.base_profile_id,
         lambda_reg=args.lambda_reg,
+        validate_territory_schema=args.validate_territory_schema,
+        max_validation_errors=args.max_validation_errors,
     )
 
 

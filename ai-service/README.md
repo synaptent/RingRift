@@ -120,6 +120,28 @@ Both CMA-ES and GA harnesses are covered by the heuristic-training sanity suite
 pipelines (`scripts/generate_statistical_report.py`), as described in
 [`AI_ARCHITECTURE.md`](../AI_ARCHITECTURE.md#56-heuristic-training-sanity--plateau-diagnostics).
 
+### Multi-board heuristic evaluation sanity check
+
+For a quick end-to-end sanity check of the heuristic evaluation stack across all supported
+board types, use:
+
+```bash
+cd ai-service
+python scripts/sanity_check_multiboard_eval.py
+```
+
+This script runs a canonical multi-board, multi-start evaluation using
+`build_training_eval_kwargs` and compares:
+
+- baseline vs baseline (`BASE_V1_BALANCED_WEIGHTS` vs itself), and
+- zero vs baseline (all heuristic weights set to 0.0 vs the baseline).
+
+It should confirm that:
+
+- baseline vs baseline fitness is not structurally pinned at `0.5`, and
+- clearly bad weights (all zeros) score significantly worse than the baseline,
+  with per-board fitness summaries printed for `square8`, `square19`, and `hexagonal`.
+
 ## API Endpoints
 
 ### `GET /`

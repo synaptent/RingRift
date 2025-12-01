@@ -8,7 +8,7 @@ import {
 } from '../types/game';
 
 /**
- * Detect all marker lines on the board (3+ for 8x8, 4+ for 19x19/hex)
+ * Detect all marker lines on the board (4+ for 8x8, 4+ for 19x19/hex)
  * according to the canonical RingRift line rules (Section 11.1).
  *
  * This helper is the single source of truth for line geometry used by:

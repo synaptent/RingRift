@@ -83,7 +83,13 @@ important groups are:
   - Engine selection modes (backend):
     - `EngineSelection.ORCHESTRATOR` – canonical production path: `GameSession.configureEngineSelection()` enables the `TurnEngineAdapter` (`useOrchestratorAdapter=true`), and all turn processing goes through `processTurnAsync` with Movement/Capture/Placement/Line/Territory/Victory aggregates as the single source of rules.
     - `EngineSelection.SHADOW` – legacy remains authoritative, but the orchestrator runs in parallel on a cloned state via `ShadowModeComparator` and reports mismatch/error/latency metrics to Prometheus. Used for safe rollout and regression detection.
-    - `EngineSelection.LEGACY` – test/tools‑only path: bypasses the adapter and uses the legacy `GameEngine`/`RuleEngine` turn pipeline. In production this mode is reachable only via the orchestrator kill switch or an open circuit breaker (see `OrchestratorRolloutService` and `docs/drafts/ORCHESTRATOR_ROLLOUT_FEATURE_FLAGS.md`; a dedicated `ORCHESTRATOR_ROLLOUT` runbook remains planned but is not yet present under `docs/runbooks/`). Normal gameplay is expected to use `ORCHESTRATOR` or `SHADOW`.
+    - `EngineSelection.LEGACY` – test/tools‑only path: bypasses the adapter and uses the legacy `GameEngine`/`RuleEngine` turn pipeline. In production this mode is reachable only via the orchestrator kill switch or an open circuit breaker (see `OrchestratorRolloutService` and the rollout docs listed below). Normal gameplay is expected to use `ORCHESTRATOR` or `SHADOW`.
+
+> **Rollout & runbooks:** The canonical description of environment phases, feature flags, SLOs, and rollback levers for orchestrator rollout now lives in:
+>
+> - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – environment phases 0–4, CI/SLO gates, and flag matrices.
+> - `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md` – operator runbook for enabling/disabling orchestrator in staging/production.
+> - `docs/STRICT_INVARIANT_SOAKS.md` – invariant soak posture (TS orchestrator + Python strict no‑move) used as rollout SLO inputs.
 
 - **Contract Testing (NEW)**
   - Contract schemas: [`src/shared/engine/contracts/schemas.ts`](src/shared/engine/contracts/schemas.ts:1)

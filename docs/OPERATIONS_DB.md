@@ -90,6 +90,12 @@ docker compose exec -T postgres psql -U ringrift -d ringrift < backups/dev_YYYYM
 
 ### 1.2 Staging
 
+For a non-destructive, operator-focused backup/restore **drill** in staging
+or another non-production environment, see the runbook
+[`docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`](./runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md),
+which applies the patterns in this section to a separate restore database
+to verify that backups are usable.
+
 **Topology**
 
 Staging is intended to look like a small production deployment while still living on a developer or CI host:

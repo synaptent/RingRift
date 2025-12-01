@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { GameState, Player, GamePhase, BOARD_CONFIGS, TimeControl } from '../../shared/types/game';
 import { ConnectionStatus } from '../contexts/GameContext';
+import { Button } from './ui/Button';
+import { getCountdownSeverity } from '../utils/countdown';
 import type {
   HUDViewModel,
   PhaseViewModel,
   PlayerViewModel,
   PlayerRingStatsViewModel,
+  HUDDecisionPhaseViewModel,
 } from '../adapters/gameViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -13,9 +16,82 @@ import type {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Legacy props interface for backward compatibility.
- * Components can pass raw domain data which will be transformed internally.
+ * View model-based Sub-components
+ * ═══════════════════════════════════════════════════════════════════════════
  */
+
+function DecisionPhaseBanner({ vm }: { vm: HUDDecisionPhaseViewModel }) {
+  const { label, description, timeRemainingMs, showCountdown, isServerCapped } = vm;
+
+  let countdownLabel: string | null = null;
+  if (showCountdown && timeRemainingMs !== null) {
+    const totalSeconds = Math.max(0, Math.floor(timeRemainingMs / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    countdownLabel = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  const severity =
+    showCountdown && timeRemainingMs !== null ? getCountdownSeverity(timeRemainingMs) : null;
+
+  const pillBgClass =
+    severity === 'critical'
+      ? 'bg-red-900/70 border-red-400/80'
+      : severity === 'warning'
+        ? 'bg-amber-900/70 border-amber-400/80'
+        : severity === 'normal'
+          ? 'bg-emerald-900/70 border-emerald-400/80'
+          : 'bg-slate-900/60 border-slate-500/70';
+
+  const pillTextClass =
+    severity === 'critical'
+      ? 'text-red-50'
+      : severity === 'warning'
+        ? 'text-amber-50'
+        : severity === 'normal'
+          ? 'text-emerald-50'
+          : 'text-slate-50';
+
+  const pillTimerClass =
+    severity === 'critical'
+      ? 'font-mono text-xs font-semibold text-red-100'
+      : severity === 'warning'
+        ? 'font-mono text-xs font-semibold text-amber-100'
+        : severity === 'normal'
+          ? 'font-mono text-xs text-emerald-100'
+          : 'font-mono text-xs text-slate-100';
+
+  const pillRingClass = isServerCapped ? 'ring-1 ring-amber-300/80' : '';
+  const pillLabel = isServerCapped ? 'Server deadline' : 'Time';
+
+  return (
+    <div
+      className="mt-3 px-4 py-2 bg-indigo-900/60 border border-indigo-400/70 rounded-lg text-[11px] sm:text-xs flex items-center justify-between gap-3"
+      data-testid="decision-phase-banner"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold text-slate-50 truncate">{label}</div>
+        {description && (
+          <div className="text-[11px] text-slate-200/85 mt-0.5 line-clamp-2">{description}</div>
+        )}
+      </div>
+      {countdownLabel && (
+        <div
+          className={`shrink-0 inline-flex items-center gap-2 px-2 py-1 rounded-full border ${pillBgClass} ${pillRingClass} ${
+            severity === 'critical' ? 'animate-pulse' : ''
+          }`}
+          aria-label="Decision timer"
+          data-testid="decision-phase-countdown"
+          data-severity={severity ?? undefined}
+          data-server-capped={isServerCapped ? 'true' : undefined}
+        >
+          <span className={`text-[10px] uppercase tracking-wide ${pillTextClass}`}>{pillLabel}</span>
+          <span className={pillTimerClass}>{countdownLabel}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 export interface GameHUDLegacyProps {
   gameState: GameState;
   currentPlayer: Player | undefined;
@@ -24,6 +100,11 @@ export interface GameHUDLegacyProps {
   isSpectator?: boolean;
   lastHeartbeatAt?: number | null;
   currentUserId?: string;
+  /**
+   * Optional callback used by hosts to surface a contextual
+   * "Board controls & shortcuts" overlay entry point.
+   */
+  onShowBoardControls?: () => void;
 }
 
 /**
@@ -35,6 +116,11 @@ export interface GameHUDViewModelProps {
   viewModel: HUDViewModel;
   /** Additional GameState needed for time control display */
   timeControl?: TimeControl;
+  /**
+   * Optional callback used by hosts to surface a contextual
+   * "Board controls & shortcuts" overlay entry point.
+   */
+  onShowBoardControls?: () => void;
 }
 
 /**
@@ -628,7 +714,13 @@ function LegacyPlayerCard({
 export function GameHUD(props: GameHUDProps) {
   // Use view model props if available
   if (isViewModelProps(props)) {
-    return <GameHUDFromViewModel viewModel={props.viewModel} timeControl={props.timeControl} />;
+    return (
+      <GameHUDFromViewModel
+        viewModel={props.viewModel}
+        timeControl={props.timeControl}
+        onShowBoardControls={props.onShowBoardControls}
+      />
+    );
   }
 
   // Legacy rendering path
@@ -641,21 +733,25 @@ export function GameHUD(props: GameHUDProps) {
 function GameHUDFromViewModel({
   viewModel,
   timeControl,
+  onShowBoardControls,
 }: {
   viewModel: HUDViewModel;
   timeControl?: TimeControl;
+  onShowBoardControls?: () => void;
 }) {
   const {
     phase,
     players,
     turnNumber,
     moveNumber,
+    pieRuleSummary,
     instruction,
     connectionStatus,
     isConnectionStale,
     isSpectator,
     spectatorCount,
     subPhaseDetail,
+    decisionPhase,
   } = viewModel;
 
   const connectionLabel = (() => {
@@ -713,12 +809,31 @@ function GameHUDFromViewModel({
               Spectator
             </span>
           )}
+          {onShowBoardControls && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Show board controls"
+              onClick={onShowBoardControls}
+              data-testid="board-controls-button"
+              className="h-7 w-7 rounded-full border border-slate-600 text-[11px] leading-none px-0"
+            >
+              ?
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Phase Indicator */}
       <PhaseIndicator phase={phase} />
       <SubPhaseDetails detail={subPhaseDetail} />
+
+      {pieRuleSummary && (
+        <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-900/60 border border-amber-500/60 text-[11px] text-amber-100">
+          <span className="font-semibold uppercase tracking-wide">Pie rule</span>
+          <span className="text-amber-100/90">{pieRuleSummary}</span>
+        </div>
+      )}
 
       {/* Game Progress */}
       <div className="mt-3">
@@ -735,6 +850,9 @@ function GameHUDFromViewModel({
           <span className="text-slate-200 font-medium">{instruction}</span>
         </div>
       )}
+
+      {/* Decision Phase Banner */}
+      {decisionPhase && decisionPhase.isActive && <DecisionPhaseBanner vm={decisionPhase} />}
 
       {/* Victory Conditions Helper */}
       <div
@@ -771,6 +889,7 @@ function GameHUDLegacy({
   isSpectator = false,
   lastHeartbeatAt,
   currentUserId,
+  onShowBoardControls,
 }: GameHUDLegacyProps) {
   if (!currentPlayer) return null;
 
@@ -837,6 +956,18 @@ function GameHUDLegacy({
             <span className="px-2 py-0.5 rounded-full bg-purple-900/40 border border-purple-500/40 text-purple-100 uppercase tracking-wide font-semibold">
               Spectator
             </span>
+          )}
+          {onShowBoardControls && (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Show board controls"
+              onClick={onShowBoardControls}
+              data-testid="board-controls-button"
+              className="h-7 w-7 rounded-full border border-slate-600 text-[11px] leading-none px-0"
+            >
+              ?
+            </Button>
           )}
         </div>
       </div>

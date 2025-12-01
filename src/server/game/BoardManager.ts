@@ -357,7 +357,7 @@ export class BoardManager {
   // Marker manipulation methods - Section 8.3 of rules
 
   /**
-   * Find all marker lines on the board (3+ for 8x8, 4+ for 19x19/hex)
+   * Find all marker lines on the board (4+ for 8x8, 4+ for 19x19/hex)
    * Rule Reference: Section 11.1 - Line Formation Rules
    */
   setMarker(position: Position, player: number, board: BoardState): void {

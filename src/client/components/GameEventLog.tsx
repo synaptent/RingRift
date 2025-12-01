@@ -64,6 +64,10 @@ function describeHistoryEntry(entry: GameHistoryEntry): string {
   const playerLabel = `P${action.player}`;
 
   switch (action.type) {
+    case 'swap_sides': {
+      const otherSeat = action.player === 1 ? 2 : 1;
+      return `${moveLabel} — ${playerLabel} invoked the pie rule and swapped colours with P${otherSeat}`;
+    }
     case 'place_ring': {
       const count = action.placementCount ?? 1;
       return `${moveLabel} — ${playerLabel} placed ${count} ring${count === 1 ? '' : 's'} at ${formatPosition(action.to)}`;

@@ -6,6 +6,7 @@ import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal } from '../components/VictoryModal';
 import { GameHUD } from '../components/GameHUD';
 import { GameEventLog } from '../components/GameEventLog';
+import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import {
   BoardState,
   GameState,
@@ -18,11 +19,20 @@ import {
   toEventLogViewModel,
   toHUDViewModel,
   toVictoryViewModel,
+  deriveBoardDecisionHighlights,
 } from '../adapters/gameViewModels';
-import { useGame, ConnectionStatus } from '../contexts/GameContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getGameOverBannerText } from '../utils/gameCopy';
-
+import { useGameState } from '../hooks/useGameState';
+import { useGameConnection } from '../hooks/useGameConnection';
+import { useGameActions, usePendingChoice, useChatMessages, type PendingChoiceView } from '../hooks/useGameActions';
+import { useDecisionCountdown } from '../hooks/useDecisionCountdown';
+import type { PlayerChoice } from '../../shared/types/game';
+import type {
+  DecisionAutoResolvedMeta,
+  DecisionPhaseTimeoutWarningPayload,
+} from '../../shared/types/websocket';
+import type { ConnectionStatus } from '../contexts/GameContext';
 /**
  * Get friendly display name for AI difficulty level with description.
  * Kept aligned with the ladder used elsewhere in the client.
@@ -32,6 +42,35 @@ function getAIDifficultyLabel(difficulty: number): { label: string; color: strin
   if (difficulty <= 5) return { label: 'Intermediate', color: 'text-blue-400' };
   if (difficulty <= 8) return { label: 'Advanced', color: 'text-purple-400' };
   return { label: 'Expert', color: 'text-red-400' };
+}
+
+function describeDecisionAutoResolved(meta: DecisionAutoResolvedMeta): string {
+  const playerLabel = `P${meta.actingPlayerNumber}`;
+  const reasonLabel =
+    meta.reason === 'timeout'
+      ? 'timeout'
+      : meta.reason.replace(/_/g, ' ');
+
+  const choiceKindLabel = (() => {
+    switch (meta.choiceKind) {
+      case 'line_order':
+        return 'line order';
+      case 'line_reward':
+        return 'line reward';
+      case 'ring_elimination':
+        return 'ring elimination';
+      case 'territory_region_order':
+        return 'territory region order';
+      case 'capture_direction':
+        return 'capture direction';
+      default:
+        return meta.choiceKind.replace(/_/g, ' ');
+    }
+  })();
+
+  const movePart = meta.resolvedMoveId ? ` (moveId: ${meta.resolvedMoveId})` : '';
+
+  return `Decision auto-resolved for ${playerLabel}: ${choiceKindLabel} (reason: ${reasonLabel})${movePart}`;
 }
 
 function renderGameHeader(gameState: GameState) {
@@ -57,11 +96,229 @@ function renderGameHeader(gameState: GameState) {
   );
 }
 
+/**
+ * Backend ConnectionShell: wraps useGameConnection and owns connect/disconnect
+ * lifecycle for a specific :gameId route.
+ */
+interface BackendConnectionShellState {
+  routeGameId: string;
+  gameId: string | null;
+  connectionStatus: ConnectionStatus;
+  isConnecting: boolean;
+  error: string | null;
+  lastHeartbeatAt: number | null;
+}
+
+function useBackendConnectionShell(routeGameId: string): BackendConnectionShellState {
+  const {
+    gameId,
+    status,
+    isConnecting,
+    error,
+    lastHeartbeatAt,
+    connectToGame,
+    disconnect,
+  } = useGameConnection();
+
+  useEffect(() => {
+    if (!routeGameId) {
+      disconnect();
+      return;
+    }
+
+    void connectToGame(routeGameId);
+
+    return () => {
+      disconnect();
+    };
+  }, [routeGameId, connectToGame, disconnect]);
+
+  return {
+    routeGameId,
+    gameId,
+    connectionStatus: status,
+    isConnecting,
+    error,
+    lastHeartbeatAt,
+  };
+}
+
+/**
+ * Backend DiagnosticsPanel hook: produces a rolling log of phase/player/choice
+ * and connection-status events suitable for GameEventLog.
+ */
+interface BackendDiagnosticsState {
+  eventLog: string[];
+  showSystemEventsInLog: boolean;
+  setShowSystemEventsInLog: React.Dispatch<React.SetStateAction<boolean>>;
+}
+
+function useBackendDiagnosticsLog(
+  gameState: GameState | null,
+  pendingChoice: PlayerChoice | null,
+  connectionStatus: ConnectionStatus,
+  decisionAutoResolved: DecisionAutoResolvedMeta | null,
+  decisionPhaseTimeoutWarning: DecisionPhaseTimeoutWarningPayload | null
+): BackendDiagnosticsState {
+  const [eventLog, setEventLog] = useState<string[]>([]);
+  const [showSystemEventsInLog, setShowSystemEventsInLog] = useState(true);
+
+  const lastPhaseRef = useRef<string | null>(null);
+  const lastCurrentPlayerRef = useRef<number | null>(null);
+  const lastChoiceIdRef = useRef<string | null>(null);
+  const lastAutoResolvedKeyRef = useRef<string | null>(null);
+  const lastConnectionStatusRef = useRef<ConnectionStatus | null>(null);
+  const lastTimeoutWarningKeyRef = useRef<string | null>(null);
+
+  // Phase / current player / choice transitions
+  useEffect(() => {
+    if (!gameState) {
+      lastPhaseRef.current = null;
+      lastCurrentPlayerRef.current = null;
+      return;
+    }
+
+    const events: string[] = [];
+
+    if (gameState.currentPhase !== lastPhaseRef.current) {
+      if (lastPhaseRef.current !== null) {
+        events.push(`Phase changed: ${lastPhaseRef.current} → ${gameState.currentPhase}`);
+      } else {
+        events.push(`Phase: ${gameState.currentPhase}`);
+      }
+      lastPhaseRef.current = gameState.currentPhase;
+    }
+
+    if (gameState.currentPlayer !== lastCurrentPlayerRef.current) {
+      events.push(`Current player: P${gameState.currentPlayer}`);
+      lastCurrentPlayerRef.current = gameState.currentPlayer;
+    }
+
+    if (pendingChoice && pendingChoice.id !== lastChoiceIdRef.current) {
+      events.push(`Choice requested: ${pendingChoice.type} for P${pendingChoice.playerNumber}`);
+      lastChoiceIdRef.current = pendingChoice.id;
+    } else if (!pendingChoice && lastChoiceIdRef.current) {
+      events.push('Choice resolved');
+      lastChoiceIdRef.current = null;
+    }
+
+    if (events.length > 0) {
+      setEventLog((prev) => {
+        const next = [...events, ...prev];
+        return next.slice(0, 50);
+      });
+    }
+  }, [gameState, pendingChoice]);
+
+  // Auto-resolved decision events
+  useEffect(() => {
+    if (!decisionAutoResolved) {
+      return;
+    }
+
+    const { actingPlayerNumber, choiceKind, reason, resolvedMoveId } = decisionAutoResolved;
+    const key = resolvedMoveId ?? `${actingPlayerNumber}:${choiceKind}:${reason}`;
+
+    if (lastAutoResolvedKeyRef.current === key) {
+      return;
+    }
+
+    lastAutoResolvedKeyRef.current = key;
+
+    const label = describeDecisionAutoResolved(decisionAutoResolved);
+
+    setEventLog((prev) => [label, ...prev].slice(0, 50));
+  }, [decisionAutoResolved]);
+
+  // Decision-phase timeout warning events
+  useEffect(() => {
+    if (!decisionPhaseTimeoutWarning) {
+      return;
+    }
+
+    const {
+      gameId,
+      playerNumber,
+      phase,
+      remainingMs,
+      choiceId,
+    } = decisionPhaseTimeoutWarning.data;
+
+    const key = `${gameId}:${playerNumber}:${phase}:${choiceId ?? ''}:${remainingMs}`;
+    if (lastTimeoutWarningKeyRef.current === key) {
+      return;
+    }
+    lastTimeoutWarningKeyRef.current = key;
+
+    const seconds = Math.max(1, Math.round(remainingMs / 1000));
+    const label = `Decision timeout warning: P${playerNumber} in ${phase} (~${seconds}s remaining)`;
+
+    setEventLog((prev) => [label, ...prev].slice(0, 50));
+  }, [decisionPhaseTimeoutWarning]);
+
+  // Connection status changes
+  useEffect(() => {
+    if (!connectionStatus || lastConnectionStatusRef.current === connectionStatus) {
+      lastConnectionStatusRef.current = connectionStatus;
+      return;
+    }
+
+    const label =
+      connectionStatus === 'connected'
+        ? 'Connection restored'
+        : connectionStatus === 'reconnecting'
+          ? 'Connection interrupted – reconnecting'
+          : connectionStatus === 'connecting'
+            ? 'Connecting to server…'
+            : 'Disconnected from server';
+
+    setEventLog((prev) => [label, ...prev].slice(0, 50));
+    lastConnectionStatusRef.current = connectionStatus;
+  }, [connectionStatus]);
+
+  return {
+    eventLog,
+    showSystemEventsInLog,
+    setShowSystemEventsInLog,
+  };
+}
+
+/**
+ * Backend DecisionUI hook: encapsulates pending choice state and countdown
+ * timer wiring for the ChoiceDialog component.
+ */
+interface BackendDecisionUIState {
+  pendingChoice: PlayerChoice | null;
+  choiceDeadline: number | null;
+  choiceTimeRemainingMs: number | null;
+  respondToChoice: <T>(choice: PlayerChoice, selectedOption: T) => void;
+  /**
+   * Rich decision-phase view derived from choiceViewModels, used to provide
+   * consistent copy/timeout semantics to both HUD and ChoiceDialog.
+   */
+  pendingChoiceView: PendingChoiceView | null;
+}
+
+function useBackendDecisionUI(): BackendDecisionUIState {
+  const { choice, deadline, respond, timeRemaining, view } = usePendingChoice();
+
+  return {
+    pendingChoice: choice,
+    choiceDeadline: deadline,
+    choiceTimeRemainingMs: timeRemaining,
+    // The underlying hook already knows which choice is pending; we ignore the
+    // explicit choice argument and delegate to respond() for safety.
+    respondToChoice: (_choice, selectedOption) => {
+      respond(selectedOption as any);
+    },
+    pendingChoiceView: view,
+  };
+}
+
 export interface BackendGameHostProps {
   /** Game id from the route (e.g. /game/:gameId or /spectate/:gameId) */
   gameId: string;
 }
-
 /**
  * BackendGameHost
  *
@@ -77,32 +334,66 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   const navigate = useNavigate();
   const { user } = useAuth();
 
+  // ConnectionShell: own connection lifecycle & status for the backend game
+  const connection = useBackendConnectionShell(routeGameId);
+
+  // GameStateController: subscribe to backend GameState and actions
   const {
     gameId,
     gameState,
     validMoves,
-    isConnecting,
-    error,
     victoryState,
-    connectToGame,
-    disconnect,
+    decisionAutoResolved,
+    decisionPhaseTimeoutWarning,
+  } = useGameState();
+  const { submitMove } = useGameActions();
+  const { messages: backendChatMessages, sendMessage: sendChatMessage } = useChatMessages();
+
+  // DecisionUI: pending choice state + countdown timer
+  const {
     pendingChoice,
     choiceDeadline,
+    choiceTimeRemainingMs,
     respondToChoice,
-    submitMove,
-    sendChatMessage,
-    chatMessages: backendChatMessages,
-    connectionStatus,
-    lastHeartbeatAt,
-  } = useGame();
+    pendingChoiceView,
+  } = useBackendDecisionUI();
+
+  // Decision countdown: reconcile client-side timer with server timeout warnings.
+  // The hook owns all reconciliation semantics between the client-local
+  // baseline (from usePendingChoice) and any authoritative server warning.
+  const decisionCountdown = useDecisionCountdown({
+    pendingChoice,
+    baseTimeRemainingMs: choiceTimeRemainingMs,
+    timeoutWarning: decisionPhaseTimeoutWarning,
+  });
+
+  // Prefer the reconciled effective time when available, but retain a
+  // conservative fallback to the local baseline for the ChoiceDialog so
+  // that existing behaviour is preserved if the hook returns null.
+  const reconciledDecisionTimeRemainingMs =
+    decisionCountdown.effectiveTimeRemainingMs ?? choiceTimeRemainingMs ?? null;
+
+  // DiagnosticsPanel: phase/player/choice + connection status logs
+  const {
+    eventLog,
+    showSystemEventsInLog,
+    setShowSystemEventsInLog,
+  } = useBackendDiagnosticsLog(
+    gameState,
+    pendingChoice,
+    connection.connectionStatus,
+    decisionAutoResolved,
+    decisionPhaseTimeoutWarning
+  );
+
+  const connectionStatus = connection.connectionStatus;
+  const { isConnecting, error, lastHeartbeatAt } = connection;
 
   // Selection + valid target highlighting
   const [selected, setSelected] = useState<Position | undefined>();
   const [validTargets, setValidTargets] = useState<Position[]>([]);
 
-  // Diagnostics / event log
-  const [eventLog, setEventLog] = useState<string[]>([]);
-  const [showSystemEventsInLog, setShowSystemEventsInLog] = useState(true);
+  // Diagnostics / host-level error banner
   const [fatalGameError, setFatalGameError] = useState<{
     message: string;
     technical?: string;
@@ -111,29 +402,18 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   // Victory modal dismissal (backend only)
   const [isVictoryModalDismissed, setIsVictoryModalDismissed] = useState(false);
 
-  // Chat: prefer backend chat when available, otherwise use local buffer
-  const [localChatMessages, setLocalChatMessages] = useState<{ sender: string; text: string }[]>(
-    []
-  );
-  const chatMessages = backendChatMessages || localChatMessages;
+  // Help / controls overlay
+  const [showBoardControls, setShowBoardControls] = useState(false);
+
+  // Chat UI state (backend chat only; GameContext always provides sendChatMessage)
+  const chatMessages = backendChatMessages;
   const [chatInput, setChatInput] = useState('');
-
-  // Choice countdown
-  const [choiceTimeRemainingMs, setChoiceTimeRemainingMs] = useState<number | null>(null);
-  const choiceTimerRef = useRef<number | null>(null);
-
-  // Diagnostics refs
-  const lastPhaseRef = useRef<string | null>(null);
-  const lastCurrentPlayerRef = useRef<number | null>(null);
-  const lastChoiceIdRef = useRef<string | null>(null);
-  const lastConnectionStatusRef = useRef<ConnectionStatus | null>(null);
 
   // Derived HUD state
   const currentPlayer = gameState?.players.find((p) => p.playerNumber === gameState.currentPlayer);
   const isPlayer = !!gameState?.players.some((p) => p.id === user?.id);
   const isMyTurn = currentPlayer?.id === user?.id;
   const isConnectionActive = connectionStatus === 'connected';
-
   const boardInteractionMessage = (() => {
     if (!isPlayer) {
       return 'Moves disabled while spectating.';
@@ -158,6 +438,18 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
       return `Waiting for ${currentPlayer.username || `Player ${currentPlayer.playerNumber}`}...`;
     }
 
+    // Surface an explicit warning when the server has indicated that the
+    // current player's decision is approaching auto-resolution.
+    if (
+      decisionPhaseTimeoutWarning &&
+      decisionPhaseTimeoutWarning.data.playerNumber === currentPlayer.playerNumber
+    ) {
+      const seconds = Math.max(1, Math.round(decisionPhaseTimeoutWarning.data.remainingMs / 1000));
+      return `This decision will be auto-resolved in about ${seconds} second${
+        seconds === 1 ? '' : 's'
+      } if you do not respond.`;
+    }
+
     switch (gameState.currentPhase) {
       case 'ring_placement':
         return 'Place a ring on an empty edge space.';
@@ -165,6 +457,8 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
         return 'Select a stack to move.';
       case 'capture':
         return 'Select a stack to capture with.';
+      case 'chain_capture':
+        return 'Continue the capture chain.';
       case 'line_processing':
         return 'Choose a line to collapse.';
       case 'territory_processing':
@@ -173,21 +467,6 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
         return 'Make your move.';
     }
   };
-
-  // When a :gameId is present in the route, connect to that backend game
-  useEffect(() => {
-    if (!routeGameId) {
-      disconnect();
-      setFatalGameError(null);
-      return;
-    }
-
-    void connectToGame(routeGameId);
-
-    return () => {
-      disconnect();
-    };
-  }, [routeGameId, connectToGame, disconnect]);
 
   // Placeholder hook for future game_error events (kept for parity with previous GamePage logic)
   useEffect(() => {
@@ -237,93 +516,43 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     }
   }, [gameState?.currentPhase, validMoves]);
 
-  // Track phase / player / choice changes for diagnostics
+  // Diagnostics for phase / choice / connection are handled by useBackendDiagnosticsLog.
+  // Choice countdown is owned by useBackendDecisionUI.
+  // Global keyboard shortcuts (desktop): "?" toggles the board controls
+  // overlay; Escape closes it when open. Kept at the host layer so that
+  // presentation components remain rules-agnostic.
   useEffect(() => {
-    if (!gameState) {
-      lastPhaseRef.current = null;
-      lastCurrentPlayerRef.current = null;
-      return;
-    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
 
-    const events: string[] = [];
-
-    if (gameState.currentPhase !== lastPhaseRef.current) {
-      if (lastPhaseRef.current !== null) {
-        events.push(`Phase changed: ${lastPhaseRef.current} → ${gameState.currentPhase}`);
-      } else {
-        events.push(`Phase: ${gameState.currentPhase}`);
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName;
+        const isEditableTag =
+          tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT';
+        const isContentEditable = (target as HTMLElement).isContentEditable;
+        if (isEditableTag || isContentEditable) {
+          return;
+        }
       }
-      lastPhaseRef.current = gameState.currentPhase;
-    }
 
-    if (gameState.currentPlayer !== lastCurrentPlayerRef.current) {
-      events.push(`Current player: P${gameState.currentPlayer}`);
-      lastCurrentPlayerRef.current = gameState.currentPlayer;
-    }
-
-    if (pendingChoice && pendingChoice.id !== lastChoiceIdRef.current) {
-      events.push(`Choice requested: ${pendingChoice.type} for P${pendingChoice.playerNumber}`);
-      lastChoiceIdRef.current = pendingChoice.id;
-    } else if (!pendingChoice && lastChoiceIdRef.current) {
-      events.push('Choice resolved');
-      lastChoiceIdRef.current = null;
-    }
-
-    if (events.length > 0) {
-      setEventLog((prev) => {
-        const next = [...events, ...prev];
-        return next.slice(0, 50);
-      });
-    }
-  }, [gameState, pendingChoice]);
-
-  // Connection status changes in event log
-  useEffect(() => {
-    if (!connectionStatus || lastConnectionStatusRef.current === connectionStatus) {
-      lastConnectionStatusRef.current = connectionStatus;
-      return;
-    }
-
-    const label =
-      connectionStatus === 'connected'
-        ? 'Connection restored'
-        : connectionStatus === 'reconnecting'
-          ? 'Connection interrupted – reconnecting'
-          : connectionStatus === 'connecting'
-            ? 'Connecting to server…'
-            : 'Disconnected from server';
-
-    setEventLog((prev) => [label, ...prev].slice(0, 50));
-    lastConnectionStatusRef.current = connectionStatus;
-  }, [connectionStatus]);
-
-  // Maintain a live countdown for the current choice (if any)
-  useEffect(() => {
-    if (!pendingChoice || !choiceDeadline) {
-      setChoiceTimeRemainingMs(null);
-      if (choiceTimerRef.current !== null) {
-        window.clearInterval(choiceTimerRef.current);
-        choiceTimerRef.current = null;
+      if (event.key === '?' || (event.key === '/' && event.shiftKey)) {
+        event.preventDefault();
+        setShowBoardControls((prev) => !prev);
+        return;
       }
-      return;
-    }
 
-    const update = () => {
-      const remaining = choiceDeadline - Date.now();
-      setChoiceTimeRemainingMs(remaining > 0 ? remaining : 0);
+      if (event.key === 'Escape' && showBoardControls) {
+        event.preventDefault();
+        setShowBoardControls(false);
+      }
     };
 
-    update();
-    const id = window.setInterval(update, 250);
-    choiceTimerRef.current = id as unknown as number;
-
+    window.addEventListener('keydown', handleKeyDown);
     return () => {
-      if (choiceTimerRef.current !== null) {
-        window.clearInterval(choiceTimerRef.current);
-        choiceTimerRef.current = null;
-      }
+      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [pendingChoice, choiceDeadline]);
+  }, [showBoardControls]);
 
   // Approximate must-move stack highlighting: if all movement/capture moves
   // originate from the same stack, treat that as the forced origin.
@@ -613,9 +842,15 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   const board = gameState.board;
   const boardType = gameState.boardType;
 
+  // Derive decision-phase board highlights (if any) from the current GameState
+  // and pending PlayerChoice, then feed them into the BoardViewModel so the
+  // BoardView can render consistent geometry overlays for all roles.
+  const decisionHighlights = deriveBoardDecisionHighlights(gameState, pendingChoice);
+
   const backendBoardViewModel = toBoardViewModel(board, {
     selectedPosition: selected || backendMustMoveFrom,
     validTargets,
+    decisionHighlights,
   });
 
   const hudViewModel = toHUDViewModel(gameState, {
@@ -624,6 +859,10 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     lastHeartbeatAt,
     isSpectator: !isPlayer,
     currentUserId: user?.id,
+    pendingChoice,
+    choiceDeadline,
+    choiceTimeRemainingMs: reconciledDecisionTimeRemainingMs,
+    decisionIsServerCapped: decisionCountdown.isServerCapped,
   });
 
   const victoryViewModel = toVictoryViewModel(victoryState, gameState.players, gameState, {
@@ -737,8 +976,10 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
           {isPlayer && (
             <ChoiceDialog
               choice={pendingChoice}
+              choiceViewModel={pendingChoiceView?.viewModel}
               deadline={choiceDeadline}
-              timeRemainingMs={choiceTimeRemainingMs}
+              timeRemainingMs={reconciledDecisionTimeRemainingMs}
+              isServerCapped={decisionCountdown.isServerCapped}
               onSelectOption={(choice, option) => respondToChoice(choice, option)}
             />
           )}
@@ -772,7 +1013,53 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             )}
           </div>
 
-          <GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />
+          <GameHUD
+            viewModel={hudViewModel}
+            timeControl={gameState.timeControl}
+            onShowBoardControls={() => setShowBoardControls(true)}
+          />
+
+          {isPlayer &&
+            isConnectionActive &&
+            gameState.gameStatus === 'active' &&
+            gameState.players.length === 2 &&
+            gameState.rulesOptions?.swapRuleEnabled === true &&
+            hudCurrentPlayer &&
+            hudCurrentPlayer.playerNumber === gameState.currentPlayer &&
+            hudCurrentPlayer.playerNumber === 2 &&
+            // One-time, immediately after Player 1's first turn:
+            !gameState.moveHistory.some((m) => m.type === 'swap_sides') &&
+            gameState.moveHistory.some((m) => m.player === 1) &&
+            !gameState.moveHistory.some((m) => m.player === 2 && m.type !== 'swap_sides') && (
+              <div className="mt-2 p-2 border border-amber-500/60 rounded bg-amber-900/40 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-amber-100">
+                    Pie rule available: swap colours with Player 1.
+                  </span>
+                  <button
+                    type="button"
+                    className="px-2 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold"
+                    onClick={() => {
+                      submitMove({
+                        type: 'swap_sides',
+                        to: { x: 0, y: 0 },
+                      } as any);
+                    }}
+                  >
+                    Swap colours
+                  </button>
+                </div>
+                <p className="mt-1 text-amber-100/80">
+                  As Player 2, you may use this once, immediately after Player 1’s first turn.
+                </p>
+              </div>
+            )}
+
+          {decisionAutoResolved && (
+            <div className="mt-1 text-[11px] text-amber-300">
+              {describeDecisionAutoResolved(decisionAutoResolved)}
+            </div>
+          )}
 
           <div className="flex items-center justify-between text-[11px] text-slate-400 mt-1">
             <span>Log view</span>
@@ -813,11 +1100,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
                 e.preventDefault();
                 if (!chatInput.trim()) return;
 
-                if (sendChatMessage) {
-                  sendChatMessage(chatInput);
-                } else {
-                  setLocalChatMessages((prev) => [...prev, { sender: 'You', text: chatInput }]);
-                }
+                sendChatMessage(chatInput);
                 setChatInput('');
               }}
               className="flex gap-2"
@@ -839,6 +1122,13 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
           </div>
         </aside>
       </main>
+
+      {showBoardControls && (
+        <BoardControlsOverlay
+          mode={isPlayer ? 'backend' : 'spectator'}
+          onClose={() => setShowBoardControls(false)}
+        />
+      )}
     </div>
   );
 };

@@ -3,13 +3,13 @@ import { computeProgressSnapshot, hashGameState } from '../../shared/engine';
 import { getRulesMode, isRulesShadowMode } from '../../shared/utils/envFlags';
 import { GameEngine } from './GameEngine';
 import { PythonRulesClient, RulesEvalResponse } from '../services/PythonRulesClient';
-import { rulesParityMetrics, logRulesMismatch } from '../utils/rulesParityMetrics';
+import { rulesParityMetrics, logRulesMismatch, recordRulesParityMismatch } from '../utils/rulesParityMetrics';
 
 export interface RulesResult {
   success: boolean;
-  error?: string;
-  gameState?: GameState;
-  gameResult?: GameResult;
+  error?: string | undefined;
+  gameState?: GameState | undefined;
+  gameResult?: GameResult | undefined;
 }
 
 /**
@@ -68,6 +68,18 @@ export class RulesBackendFacade {
    * configured rules backend mode.
    */
   async applyMove(move: Omit<Move, 'id' | 'timestamp' | 'moveNumber'>): Promise<RulesResult> {
+    // swap_sides is a backend-only meta-move; do not route it through
+    // the Python rules service even in python/shadow modes.
+    if (move.type === 'swap_sides') {
+      const tsResult = await this.engine.makeMove(move);
+      return {
+        success: tsResult.success,
+        error: tsResult.error,
+        gameState: tsResult.gameState,
+        gameResult: tsResult.gameResult,
+      };
+    }
+
     const mode = getRulesMode();
     const beforeState = this.engine.getGameState();
 
@@ -209,19 +221,30 @@ export class RulesBackendFacade {
     const mode = getRulesMode();
     const beforeState = this.engine.getGameState();
 
+    // Resolve the canonical Move for this id up front so we can
+    // short-circuit swap_sides without involving Python.
+    const candidates = this.engine.getValidMoves(playerNumber);
+    const selected = candidates.find((m) => m.id === moveId);
+
+    if (!selected) {
+      return {
+        success: false,
+        error: `No valid move with id ${moveId} for player ${playerNumber}`,
+        gameState: beforeState,
+      };
+    }
+
+    if (selected.type === 'swap_sides') {
+      const tsResult = await this.engine.makeMoveById(playerNumber, moveId);
+      return {
+        success: tsResult.success,
+        error: tsResult.error,
+        gameState: tsResult.gameState,
+        gameResult: tsResult.gameResult,
+      };
+    }
+
     if (mode === 'python') {
-      // Resolve the canonical Move for this id so we can send it to Python.
-      const candidates = this.engine.getValidMoves(playerNumber);
-      const selected = candidates.find((m) => m.id === moveId);
-
-      if (!selected) {
-        return {
-          success: false,
-          error: `No valid move with id ${moveId} for player ${playerNumber}`,
-          gameState: beforeState,
-        };
-      }
-
       try {
         const py = await this.pythonClient.evaluateMove(beforeState, selected as Move);
 
@@ -310,13 +333,22 @@ export class RulesBackendFacade {
     const tsValid = tsResult.success;
     const pyValid = py.valid;
 
+    const mode = getRulesMode();
+    const suite =
+      mode === 'python'
+        ? 'runtime_python_mode'
+        : isRulesShadowMode()
+        ? 'runtime_shadow'
+        : 'runtime_ts';
+
     if (tsValid !== pyValid) {
       rulesParityMetrics.validMismatch.inc();
       logRulesMismatch('valid', {
         tsValid,
         pyValid,
-        mode: getRulesMode(),
+        mode,
       });
+      recordRulesParityMismatch({ mismatchType: 'validation', suite });
     }
 
     if (!tsResult.gameState || !py.nextState) {
@@ -339,8 +371,9 @@ export class RulesBackendFacade {
       logRulesMismatch('hash', {
         tsHash,
         pyHash,
-        mode: getRulesMode(),
+        mode,
       });
+      recordRulesParityMismatch({ mismatchType: 'hash', suite });
     }
 
     if (typeof pyS === 'number' && tsS !== pyS) {
@@ -348,8 +381,9 @@ export class RulesBackendFacade {
       logRulesMismatch('S', {
         tsS,
         pyS,
-        mode: getRulesMode(),
+        mode,
       });
+      recordRulesParityMismatch({ mismatchType: 's_invariant', suite });
     }
 
     if (pyStatus && tsStatus !== pyStatus) {
@@ -357,8 +391,9 @@ export class RulesBackendFacade {
       logRulesMismatch('gameStatus', {
         tsStatus,
         pyStatus,
-        mode: getRulesMode(),
+        mode,
       });
+      recordRulesParityMismatch({ mismatchType: 'game_status', suite });
     }
   }
 }

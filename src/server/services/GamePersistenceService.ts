@@ -1,4 +1,5 @@
 import {
+  Prisma,
   PrismaClient,
   Game as PrismaGame,
   Move as PrismaMove,
@@ -121,23 +122,22 @@ export class GamePersistenceService {
     }
 
     try {
-      // Build data object, only including defined optional fields
-      const data: any = {
+      // Build data object with proper Prisma types
+      // TimeControl is serialized to JSON for storage
+      const data: Prisma.GameCreateInput = {
         boardType: config.boardType as PrismaBoardType,
         maxPlayers: config.maxPlayers,
-        timeControl: config.timeControl as any,
+        timeControl: JSON.parse(JSON.stringify(config.timeControl)) as Prisma.InputJsonValue,
         isRated: config.isRated,
         allowSpectators: config.allowSpectators ?? true,
         status: 'waiting' as PrismaGameStatus,
         gameState: config.initialGameState ? JSON.stringify(config.initialGameState) : '{}',
+        ...(config.rngSeed !== undefined && { rngSeed: config.rngSeed }),
+        ...(config.player1Id && { player1: { connect: { id: config.player1Id } } }),
+        ...(config.player2Id && { player2: { connect: { id: config.player2Id } } }),
+        ...(config.player3Id && { player3: { connect: { id: config.player3Id } } }),
+        ...(config.player4Id && { player4: { connect: { id: config.player4Id } } }),
       };
-
-      // Only add optional fields if they are defined
-      if (config.rngSeed !== undefined) data.rngSeed = config.rngSeed;
-      if (config.player1Id) data.player1Id = config.player1Id;
-      if (config.player2Id) data.player2Id = config.player2Id;
-      if (config.player3Id) data.player3Id = config.player3Id;
-      if (config.player4Id) data.player4Id = config.player4Id;
 
       const game = await prisma.game.create({ data });
 
@@ -171,27 +171,26 @@ export class GamePersistenceService {
     }
 
     try {
-      // Convert Move to position and moveData
-      const position = {
+      // Convert Move to position and moveData as JSON-serializable objects
+      const position = JSON.parse(JSON.stringify({
         from: data.move.from,
         to: data.move.to,
-      };
+      }));
 
       // Rich move data for replay and analysis
-      const moveData = this.serializeMoveData(data.move);
+      const moveData = JSON.parse(JSON.stringify(this.serializeMoveData(data.move)));
 
-      // Use any cast to allow new schema fields before migration
-      await (prisma.move.create as any)({
-        data: {
-          gameId: data.gameId,
-          playerId: data.playerId,
-          moveNumber: data.moveNumber,
-          position: position,
-          moveType: this.mapMoveType(data.move.type),
-          moveData: moveData,
-          timestamp: data.move.timestamp,
-        },
-      });
+      const createData: Prisma.MoveCreateInput = {
+        game: { connect: { id: data.gameId } },
+        player: { connect: { id: data.playerId } },
+        moveNumber: data.moveNumber,
+        position: position,
+        moveType: this.mapMoveType(data.move.type),
+        moveData: moveData,
+        timestamp: data.move.timestamp,
+      };
+
+      await prisma.move.create({ data: createData });
 
       logger.debug('Move saved to database', {
         gameId: data.gameId,
@@ -219,25 +218,25 @@ export class GamePersistenceService {
     }
 
     try {
-      const position = {
+      // Convert Move to position and moveData as JSON-serializable objects
+      const position = JSON.parse(JSON.stringify({
         from: data.move.from,
         to: data.move.to,
+      }));
+
+      const moveData = JSON.parse(JSON.stringify(this.serializeMoveData(data.move)));
+
+      const createData: Prisma.MoveCreateInput = {
+        game: { connect: { id: data.gameId } },
+        player: { connect: { id: data.playerId } },
+        moveNumber: data.moveNumber,
+        position: position,
+        moveType: this.mapMoveType(data.move.type),
+        moveData: moveData,
+        timestamp: data.move.timestamp,
       };
 
-      const moveData = this.serializeMoveData(data.move);
-
-      // Use any cast to allow new schema fields before migration
-      await (prisma.move.create as any)({
-        data: {
-          gameId: data.gameId,
-          playerId: data.playerId,
-          moveNumber: data.moveNumber,
-          position: position,
-          moveType: this.mapMoveType(data.move.type),
-          moveData: moveData,
-          timestamp: data.move.timestamp,
-        },
-      });
+      await prisma.move.create({ data: createData });
 
       return true;
     } catch (error) {
@@ -376,9 +375,9 @@ export class GamePersistenceService {
         throw new Error(`Game not found: ${gameId}`);
       }
 
-      const updateData: any = {
+      const updateData: Prisma.GameUpdateInput = {
         status: 'completed' as PrismaGameStatus,
-        winnerId,
+        ...(winnerId && { winner: { connect: { id: winnerId } } }),
         endedAt: new Date(),
         updatedAt: new Date(),
       };
@@ -455,14 +454,11 @@ export class GamePersistenceService {
     }
 
     try {
-      const updateData: any = {
+      const updateData: Prisma.GameUpdateInput = {
         status: status as PrismaGameStatus,
         updatedAt: new Date(),
+        ...(status === 'active' && { startedAt: new Date() }),
       };
-
-      if (status === 'active') {
-        updateData.startedAt = new Date();
-      }
 
       await prisma.game.update({
         where: { id: gameId },
@@ -644,7 +640,7 @@ export class GamePersistenceService {
    */
   private static serializeMoveData(move: Move): Record<string, unknown> {
     // Include all relevant move properties for replay
-    return {
+    const base: Record<string, unknown> = {
       id: move.id,
       type: move.type,
       player: move.player,
@@ -672,6 +668,17 @@ export class GamePersistenceService {
       ...(move.eliminatedRings && { eliminatedRings: move.eliminatedRings }),
       ...(move.eliminationFromStack && { eliminationFromStack: move.eliminationFromStack }),
     };
+
+    // Persist any attached decision auto-resolve metadata when present.
+    // This is used by the /games/:gameId/history HTTP route to surface
+    // autoResolved badges in the history UI without requiring a schema
+    // migration (the data lives entirely inside moveData JSON).
+    const decisionAutoResolved = (move as any).decisionAutoResolved;
+    if (decisionAutoResolved) {
+      base.decisionAutoResolved = decisionAutoResolved;
+    }
+
+    return base;
   }
 
   /**

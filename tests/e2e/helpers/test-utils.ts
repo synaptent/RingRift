@@ -447,11 +447,21 @@ export async function goToGame(page: Page, gameId: string): Promise<void> {
 }
 
 /**
- * Navigates to the home page.
+ * Navigates to the root route ("/") and waits for whichever shell is appropriate
+ * for the current authentication state:
+ *
+ * - Authenticated users: the Home page with "Welcome to RingRift".
+ * - Guests: the Login page.
+ *
+ * This keeps navigation helpers resilient to auth routing changes while still
+ * asserting that the app renders a valid entry shell.
  */
 export async function goToHome(page: Page): Promise<void> {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Welcome to RingRift/i })).toBeVisible({
+  const homeHeading = page.getByRole('heading', { name: /Welcome to RingRift/i });
+  const loginHeading = page.getByRole('heading', { name: /login/i });
+
+  await expect(homeHeading.or(loginHeading)).toBeVisible({
     timeout: 10_000,
   });
 }

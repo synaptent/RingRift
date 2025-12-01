@@ -152,6 +152,90 @@ test.describe('Error Recovery - WebSocket Disconnection', () => {
     // Would need to intercept and break WebSocket, then verify reconnect UI
     // await expect(page.locator('text=/reconnecting/i')).toBeVisible();
   });
+
+  test('reconnects after decision timeout and shows auto-resolved outcome in HUD', async ({
+    page,
+  }) => {
+    // This scenario uses the backend decision-phase fixture route and the
+    // DECISION_PHASE_TIMEOUT_* env overrides to exercise end-to-end
+    // decision timeout + reconnect behaviour.
+
+    // 1) Register and obtain an authenticated session.
+    await registerAndLogin(page);
+
+    // 2) Create a backend game that starts in a line_processing decision phase
+    //    via the test-only /api/games/fixtures/decision-phase endpoint.
+    const apiBaseUrl = process.env.E2E_API_BASE_URL || 'http://localhost:3000';
+    const fixtureResponse = await page.request.post(
+      `${apiBaseUrl.replace(/\/$/, '')}/api/games/fixtures/decision-phase`,
+      {
+        data: {
+          scenario: 'line_processing',
+          isRated: true,
+        },
+      }
+    );
+
+    expect(fixtureResponse.ok()).toBeTruthy();
+    const fixtureJson = await fixtureResponse.json();
+    const gameId: string | undefined = fixtureJson?.data?.gameId;
+    expect(gameId).toBeTruthy();
+
+    // 3) Navigate to the game and wait for WebSocket connection.
+    const gamePage = new GamePage(page);
+    await gamePage.goto(gameId!);
+    await gamePage.waitForReady(30_000);
+
+    // The HUD should indicate we're in a decision-centric phase. The
+    // decision-phase banner is our primary signal here.
+    const decisionBanner = page.getByTestId('decision-phase-banner');
+    await expect(decisionBanner).toBeVisible({ timeout: 15_000 });
+
+    // 4) Simulate a client-side disconnect while the decision is pending by
+    //    explicitly closing any tracked WebSocket connections.
+    await page.evaluate(() => {
+      const wsList = (window as any).__webSockets || [];
+      wsList.forEach((ws: WebSocket) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close(4000, 'Decision-timeout E2E forced disconnect');
+        }
+      });
+    });
+
+    // 5) Wait for the backend decision-phase timeout to elapse. The server
+    //    exposes configurable DECISION_PHASE_TIMEOUT_* values; we derive a
+    //    bound from those env vars so the test adapts to CI configuration.
+    const defaultTimeoutMs =
+      Number(process.env.DECISION_PHASE_TIMEOUT_MS || '') || 30_000;
+    const warningBeforeMs =
+      Number(process.env.DECISION_PHASE_TIMEOUT_WARNING_MS || '') || 5_000;
+
+    // Allow a bit of slack past the nominal timeout; cap to keep the test
+    // bounded even if env overrides are not set.
+    const waitMs = Math.min(defaultTimeoutMs + warningBeforeMs + 2_000, 45_000);
+    await page.waitForTimeout(waitMs);
+
+    // 6) Reconnect to the same game and wait for the board + HUD to resync.
+    await gamePage.reloadAndWait();
+
+    // 7) Assert that the HUD reflects post-decision state and that the
+    //    recent-moves log includes an auto-resolved decision move.
+    //
+    // We expect a process_line / choose_line_reward move to appear after
+    // the timeout; assert that at least one of these appears in the log.
+    await expect(page.locator('text=/Recent moves/i')).toBeVisible({ timeout: 15_000 });
+    const decisionMoveEntry = page
+      .locator('li')
+      .filter({ hasText: /process_line|choose_line_reward/i });
+    await expect(decisionMoveEntry).toBeVisible({ timeout: 15_000 });
+
+    // Additionally, assert that the game has progressed out of the original
+    // decision snapshot: either a new phase or a different current player.
+    // We look for a generic phase label that is not the initial
+    // line_processing copy any more.
+    const phaseText = page.locator('text=/Phase/i');
+    await expect(phaseText).toBeVisible({ timeout: 10_000 });
+  });
 });
 
 test.describe('Error Recovery - API Error Responses', () => {

@@ -16,37 +16,67 @@ Thank you for your interest in contributing to RingRift! This document provides 
 
 ## 🚦 Development Status
 
-**Current State:** Strong architecture and core engine (~75%) implemented; integration (UI/AI/multiplayer) and tests are the main gaps  
-**Priority Focus:** Phase 1 / Phase 0 – Core Game Logic finishing + Testing Foundation
+**Current State:** Stable beta with consolidated rules engine – **orchestrator at 100% rollout**
+**Test Status:** 2621 tests passing, comprehensive coverage across all rule domains
+**Priority Focus:** Production hardening, UX polish, and AI improvements
 
 Before contributing, please review:
 
-1. The comprehensive game rules in `ringrift_complete_rules.md`
-2. Current factual status in `CURRENT_STATE_ASSESSMENT.md`
-3. Tasks and priorities in `TODO.md`
-4. Known issues in `KNOWN_ISSUES.md`
+1. **[TODO.md](./TODO.md)** – Active task tracker (canonical priorities)
+2. **[CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md)** – Verified implementation status
+3. **[ringrift_complete_rules.md](./ringrift_complete_rules.md)** – Comprehensive game rules
+4. **[docs/ORCHESTRATOR_ROLLOUT_PLAN.md](./docs/ORCHESTRATOR_ROLLOUT_PLAN.md)** – Production rollout status
 
 ---
 
 ## 🎯 Development Priorities
 
-### **PHASE 1: Core Game Logic** (Historical Plan)
+**Current priorities are tracked in [TODO.md](./TODO.md).** Key areas include:
 
-> **⚠️ DEPRECATED / HISTORICAL CONTEXT ONLY**
->
-> The detailed Phase 1-4 task lists below reflect an earlier snapshot of the project. Many of these items are now complete or have evolved.
->
-> **For the canonical, up-to-date task list and statuses, ALWAYS consult:**
->
-> - `TODO.md` (Active task tracker)
-> - `CURRENT_STATE_ASSESSMENT.md` (Verified status)
-> - `STRATEGIC_ROADMAP.md` (Future direction)
->
-> Use the sections below only for historical context on the original implementation plan.
+### Active Work (see TODO.md for details)
+
+| Area | Status | Priority |
+|------|--------|----------|
+| **Orchestrator Rollout** | ✅ Complete (100% in all environments) | P0 |
+| **Rules Parity** | ✅ All tests passing | P0 |
+| **Backend/Sandbox Hosts** | ✅ Using TurnEngineAdapter/SandboxOrchestratorAdapter | P0 |
+| **Legacy Cleanup** | In progress (Wave 5.4) | P1 |
+| **UX Polish** | Ongoing | P1 |
+| **AI Improvements** | Backlog | P2 |
+
+### Architecture Overview
+
+The rules engine is consolidated under a single canonical stack:
+
+```
+src/shared/engine/
+├── orchestration/          # Turn orchestrator (processTurn, processTurnAsync)
+├── aggregates/             # Domain aggregates (Movement, Capture, Line, Territory, Victory)
+├── contracts/              # Contract schemas and serialization
+└── [helpers]               # Shared logic (captureLogic, lineDetection, etc.)
+
+Hosts:
+├── src/server/game/turn/TurnEngineAdapter.ts      # Backend adapter
+└── src/client/sandbox/SandboxOrchestratorAdapter.ts  # Sandbox adapter
+```
+
+For architectural details, see:
+- `RULES_ENGINE_ARCHITECTURE.md` – Architecture overview
+- `docs/RULES_SSOT_MAP.md` – SSOT boundaries and host integration
+- `docs/CANONICAL_ENGINE_API.md` – Lifecycle and API reference
+
+---
+
+<details>
+<summary>📜 Historical Development Phases (November 2025 - Completed)</summary>
+
+### **PHASE 1: Core Game Logic** (COMPLETED)
 
 **Goal:** Make the game engine correctly implement RingRift rules
 
-**Priority Tasks:**
+**Status:** ✅ All core rules implemented in shared TypeScript engine
+
+**Key completed tasks:**
 
 #### 1.1 Fix BoardState Data Structure (CRITICAL)
 
@@ -263,6 +293,8 @@ Before contributing, please review:
 - Replay system
 
 **Phase 4 Total Estimated Time:** 4-6 weeks
+
+</details>
 
 ---
 
@@ -564,7 +596,7 @@ Description of how to fix
 
 1. `ARCHITECTURE_ASSESSMENT.md` - Current architecture, refactoring axes, and deep improvement plan
 2. `STRATEGIC_ROADMAP.md` - Phased roadmap from core logic to UI, AI, and multiplayer
-3. `PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Practical plan for a fully playable experience (lobby → game → AI → victory)
+3. `archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Historical practical plan for a fully playable experience (lobby → game → AI → victory); for current, code-verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `ARCHITECTURE_ASSESSMENT.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
 4. `src/shared/types/game.ts` - Shared game type definitions
 5. `archive/ringrift_architecture_plan.md` and `archive/TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Historical design docs (preserved for context, but superseded by the files above)
 

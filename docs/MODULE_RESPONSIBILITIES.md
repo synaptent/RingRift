@@ -8,7 +8,7 @@ This document catalogs the responsibilities of each module in the **canonical sh
 > - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/**`, `src/shared/engine/orchestration/types.ts`, and `src/shared/validation/websocketSchemas.ts` for the executable Move/orchestrator/WebSocket lifecycle these modules support.
 > - **Precedence:** If this document ever conflicts with those specs, engines, types, or contract vectors, **code + tests win**, and this document must be updated to match them.
 >
-> **Doc Status (2025-11-26): Active (with historical appendix)**
+> **Doc Status (2025-11-30): Active (with historical appendix)**
 >
 > - Names like `PlacementMutator`, `MovementMutator`, `CaptureMutator`, `LineMutator`, `TerritoryMutator`, `TurnMutator`, and their validator counterparts should be read as **semantic boundary labels** for the corresponding helper+aggregate clusters in the canonical shared TS engine, not as always-implying one TS file per name. Some still exist as TS modules (e.g. `mutators/PlacementMutator.ts`, `mutators/MovementMutator.ts`, `mutators/CaptureMutator.ts`), others (including historical `TerritoryMutator` / `TurnMutator`) are now fully absorbed into aggregates and helpers.
 > - Python modules with the same names (e.g. `ai-service/app/rules/mutators/territory.py`) are **adapters** that mirror these semantics for the AI service; they are validated via contract vectors and parity tests rather than being independent rules SSoTs.
@@ -134,6 +134,26 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 - **Primary Responsibility:** Factory for pristine `GameState` instances with correct zobrist seeds, per-player ring counts, and board configuration.
 - **Dependents:** Host engines and tests that need fresh game states.
 - **Concern Type:** `MUTATION` (state initialization only).
+
+#### [`rulesConfig.ts`](../src/shared/engine/rulesConfig.ts)
+
+- **Primary Responsibility:** Board-type and player-count specific rules configuration helpers.
+- **Key Concerns:**
+  - `getEffectiveLineLengthThreshold` – computes the effective line length for collapse/rewards based on board type and player count (e.g., 4-in-a-row for square8 2-player games, 3 for 3p/4p).
+- **Dependents:** Line detection, line processing, tests.
+- **Concern Type:** `HELPER` (configuration).
+
+#### [`globalActions.ts`](../src/shared/engine/globalActions.ts)
+
+- **Primary Responsibility:** Global legal action surface enumeration for invariants and termination checking.
+- **Key Concerns:**
+  - `GlobalLegalActionsSummary` – summary of legal actions for a player (placement, movement, forced elimination).
+  - `hasTurnMaterial` – checks if player has controlled stacks or rings in hand (RR-CANON-R201).
+  - `hasGlobalPlacementAction` – checks if any legal ring placement exists.
+  - `hasPhaseLocalInteractiveMove` – checks if any interactive move is legal in the current phase.
+  - `hasForcedEliminationAction` – checks if forced elimination preconditions hold.
+- **Dependents:** Invariant tests, termination detection, ANM (active-no-moves) handling.
+- **Concern Type:** `QUERY` (action enumeration).
 
 ---
 
@@ -388,16 +408,46 @@ This section focuses on **helpers + aggregates + orchestrator + contracts**. Leg
 
 ---
 
+### 2.10 Host Adapters (Backend & Sandbox)
+
+These adapters connect the shared orchestrator to the backend and sandbox host environments. They are at **100% rollout** as of November 2025.
+
+#### [`src/server/game/turn/TurnEngineAdapter.ts`](../src/server/game/turn/TurnEngineAdapter.ts)
+
+- **Primary Responsibility:** Backend adapter that wraps the canonical turn orchestrator for the `GameEngine` / `GameSession` environment.
+- **Key Concerns:**
+  - Converts `PendingDecision` from the orchestrator into `PlayerChoice` structures for WebSocket delivery.
+  - Manages session-level state and WebSocket interaction concerns.
+  - Calls `processTurn` / `processTurnAsync` from the orchestrator.
+  - Integrates with `MetricsService` for orchestrator session tracking.
+- **Dependents:** `GameEngine.ts`, `GameSession.ts`, `TurnEngine.ts`.
+- **Concern Type:** `ORCHESTRATION` (host adapter).
+
+#### [`src/client/sandbox/SandboxOrchestratorAdapter.ts`](../src/client/sandbox/SandboxOrchestratorAdapter.ts)
+
+- **Primary Responsibility:** Client sandbox adapter that wraps the canonical turn orchestrator for local `ClientSandboxEngine` simulation.
+- **Key Concerns:**
+  - Converts `PendingDecision` from the orchestrator into sandbox-compatible decision structures.
+  - Manages local sandbox state and AI interaction concerns.
+  - Calls `processTurn` / `processTurnAsync` from the orchestrator.
+  - Integrates with sandbox AI for automated move selection.
+- **Dependents:** `ClientSandboxEngine.ts`, sandbox helpers.
+- **Concern Type:** `ORCHESTRATION` (host adapter).
+
+> **Rollout Status:** Both adapters are at 100% rollout across all environments (dev, staging, CI, production). The orchestrator is the canonical turn-processing path.
+
+---
+
 ## 3. Concern Type Summary (Canonical View)
 
 | Concern Type      | Representative Modules                                                                                                                                                                       |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **HELPER**        | `core.ts`, `types.ts`, `notation.ts`, `moveActionAdapter.ts`, `territoryBorders.ts`, `territoryProcessing.ts` (query side), `contracts/*`, `orchestration/types.ts`                          |
+| **HELPER**        | `core.ts`, `types.ts`, `notation.ts`, `moveActionAdapter.ts`, `rulesConfig.ts`, `territoryBorders.ts`, `territoryProcessing.ts` (query side), `contracts/*`, `orchestration/types.ts`        |
 | **DETECTION**     | `lineDetection.ts`, `territoryDetection.ts`                                                                                                                                                  |
-| **QUERY**         | `movementLogic.ts`, `captureLogic.ts`, `territoryDecisionHelpers.ts` (enumeration side), `lineDecisionHelpers.ts` (enumeration side), `heuristicEvaluation.ts`, `localAIMoveSelection.ts`    |
+| **QUERY**         | `movementLogic.ts`, `captureLogic.ts`, `globalActions.ts`, `territoryDecisionHelpers.ts` (enumeration side), `lineDecisionHelpers.ts` (enumeration side), `heuristicEvaluation.ts`, `localAIMoveSelection.ts` |
 | **MUTATION**      | `movementApplication.ts`, `territoryProcessing.ts` (apply side), `territoryDecisionHelpers.ts` (apply side), `lineDecisionHelpers.ts` (apply side), `placementHelpers.ts`, `initialState.ts` |
 | **AGGREGATE**     | `PlacementAggregate.ts`, `MovementAggregate.ts`, `CaptureAggregate.ts`, `LineAggregate.ts`, `TerritoryAggregate.ts`, `VictoryAggregate.ts`                                                   |
-| **ORCHESTRATION** | `turnLogic.ts`, `turnDelegateHelpers.ts`, `turnLifecycle.ts`, `orchestration/phaseStateMachine.ts`, `orchestration/turnOrchestrator.ts`, `index.ts` (API surface)                            |
+| **ORCHESTRATION** | `turnLogic.ts`, `turnDelegateHelpers.ts`, `turnLifecycle.ts`, `orchestration/phaseStateMachine.ts`, `orchestration/turnOrchestrator.ts`, `TurnEngineAdapter.ts`, `SandboxOrchestratorAdapter.ts`, `index.ts` (API surface) |
 
 Legacy validators/mutators (`validators/*`, `mutators/*`, `mutators/TurnMutator.ts`) and the shared `GameEngine.ts` sit beneath this layer and are treated as **implementation plumbing** or compatibility shims.
 

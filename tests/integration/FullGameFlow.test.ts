@@ -23,12 +23,22 @@ jest.mock('../../src/server/services/AIServiceClient', () => ({
 }));
 
 /**
- * TODO-FULL-GAME-FLOW: This integration test runs a complete AI vs AI game
- * with 4000 max moves and 30 second timeout. It exercises the entire game
- * engine including ring placement, movement, capture, chain capture,
- * line processing, and territory processing phases. It previously timed out
- * or stalled due to S-invariant plateau detection. Skipped pending
- * dedicated investigation of AI game termination conditions.
+ * SKIP REASON: Heavy AI vs AI soak test - not suitable for regular CI
+ *
+ * This test runs a complete AI vs AI game with:
+ * - 4000 max moves limit
+ * - 30 second timeout
+ * - All game phases (placement, movement, capture, chain capture, line, territory)
+ *
+ * Why skipped:
+ * 1. Too slow for CI (can take 30+ seconds)
+ * 2. Previously timed out or stalled due to S-invariant plateau detection
+ * 3. Functionally equivalent to scripts/run-orchestrator-soak.ts which is run
+ *    nightly via .github/workflows/orchestrator-soak-nightly.yml
+ *
+ * To run manually for debugging:
+ *   npm test -- --testPathPattern="FullGameFlow" --no-coverage
+ *   (Remember to remove describe.skip first)
  */
 describe.skip('Full Game Flow Integration (AI Fallback)', () => {
   const timeControl: TimeControl = { initialTime: 600, increment: 0, type: 'blitz' };

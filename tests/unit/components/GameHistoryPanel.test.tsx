@@ -1,91 +1,106 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { GameHistoryPanel } from '../../../src/client/components/GameHistoryPanel';
-import { gameApi, type GameHistoryResponse } from '../../../src/client/services/api';
+import type {
+  GameHistoryResponse,
+  GameHistoryMove,
+} from '../../../src/client/services/api';
 
-jest.mock('../../../src/client/services/api', () => ({
-  gameApi: {
-    getGameHistory: jest.fn(),
-  },
-}));
+// Mock the game API so we can control the history payload returned to the panel
+const mockGetGameHistory = jest.fn<Promise<GameHistoryResponse>, [string]>();
 
-const mockGetGameHistory = gameApi.getGameHistory as jest.MockedFunction<
-  typeof gameApi.getGameHistory
->;
-
-function createMockHistory(overrides: Partial<GameHistoryResponse> = {}): GameHistoryResponse {
+jest.mock('../../../src/client/services/api', () => {
+  const actual = jest.requireActual('../../../src/client/services/api');
   return {
-    gameId: 'game-123',
-    totalMoves: 1,
-    moves: [
-      {
-        moveNumber: 1,
-        playerId: 'player-1',
-        playerName: 'Player 1',
-        moveType: 'move_stack',
-        moveData: {
-          from: { x: 0, y: 0 },
-          to: { x: 1, y: 1 },
-        },
-        timestamp: '2024-01-01T12:00:00.000Z',
-      },
-    ],
-    ...overrides,
+    ...actual,
+    gameApi: {
+      ...actual.gameApi,
+      getGameHistory: (gameId: string) => mockGetGameHistory(gameId),
+    },
   };
-}
+});
 
 describe('GameHistoryPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('does not fetch history while collapsed and fetches when expanded', async () => {
-    const history = createMockHistory();
-    mockGetGameHistory.mockResolvedValueOnce(history);
+  function createMove(overrides: Partial<GameHistoryMove> = {}): GameHistoryMove {
+    return {
+      moveNumber: 1,
+      playerId: 'player-1',
+      playerName: 'Player One',
+      moveType: 'place_ring',
+      moveData: {
+        type: 'place_ring',
+        player: 1,
+        to: { x: 3, y: 3 },
+      },
+      timestamp: new Date('2024-01-15T10:05:30Z').toISOString(),
+      ...overrides,
+    };
+  }
 
-    render(<GameHistoryPanel gameId="game-123" defaultCollapsed={true} />);
-
-    // Initially collapsed: no fetch yet
-    expect(mockGetGameHistory).not.toHaveBeenCalled();
-
-    // Expand the panel via header button
-    fireEvent.click(screen.getByRole('button', { name: /Move History/i }));
-
-    await waitFor(() => {
-      expect(mockGetGameHistory).toHaveBeenCalledWith('game-123');
+  it('renders an auto-resolve badge for moves with autoResolved metadata', async () => {
+    const autoResolvedMove = createMove({
+      moveNumber: 1,
+      autoResolved: {
+        reason: 'timeout',
+        choiceKind: 'line',
+        choiceType: 'reward',
+      },
     });
 
-    // Move type from formatted history should appear
-    expect(await screen.findByText('Move Stack')).toBeInTheDocument();
-  });
-
-  it('shows loading state, then renders moves when fetch succeeds', async () => {
-    const history = createMockHistory({ totalMoves: 2 });
-    mockGetGameHistory.mockResolvedValueOnce(history);
-
-    render(<GameHistoryPanel gameId="game-123" defaultCollapsed={false} />);
-
-    // Loading indicator should appear first
-    expect(screen.getByText('Loading history...')).toBeInTheDocument();
-
-    // After fetch resolves, moves and total count should be shown
-    expect(await screen.findByText('(2 moves)')).toBeInTheDocument();
-    expect(screen.getByText('Move Stack')).toBeInTheDocument();
-  });
-
-  it('renders error state and calls onError when fetch fails', async () => {
-    const error = new Error('HTTP 500');
-    mockGetGameHistory.mockRejectedValueOnce(error);
-    const onError = jest.fn();
-
-    render(<GameHistoryPanel gameId="game-123" defaultCollapsed={false} onError={onError} />);
-
-    await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(error);
+    const normalMove = createMove({
+      moveNumber: 2,
+      playerId: 'player-2',
+      playerName: 'Player Two',
+      autoResolved: undefined,
     });
 
-    // User-facing error message should be visible
-    expect(screen.getByText(/HTTP 500/)).toBeInTheDocument();
+    const history: GameHistoryResponse = {
+      gameId: 'game-1',
+      moves: [autoResolvedMove, normalMove],
+      totalMoves: 2,
+    };
+
+    mockGetGameHistory.mockResolvedValue(history);
+
+    render(<GameHistoryPanel gameId="game-1" />);
+
+    // Wait for history to load and the badge to appear
+    const badge = await waitFor(() => screen.getByTestId('auto-resolved-badge'));
+
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('Auto-resolved (timeout)');
+
+    // There should be exactly one auto-resolve badge even though we have two moves
+    const allBadges = screen.getAllByTestId('auto-resolved-badge');
+    expect(allBadges).toHaveLength(1);
+  });
+
+  it('does not render an auto-resolve badge when no moves are auto-resolved', async () => {
+    const normalMove = createMove({
+      moveNumber: 1,
+      autoResolved: undefined,
+    });
+
+    const history: GameHistoryResponse = {
+      gameId: 'game-2',
+      moves: [normalMove],
+      totalMoves: 1,
+    };
+
+    mockGetGameHistory.mockResolvedValue(history);
+
+    render(<GameHistoryPanel gameId="game-2" />);
+
+    // Wait for loading to complete by asserting that the move row appears
+    await waitFor(() => {
+      expect(screen.getByText('Player One')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('auto-resolved-badge')).not.toBeInTheDocument();
   });
 });

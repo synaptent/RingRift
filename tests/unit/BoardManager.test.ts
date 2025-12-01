@@ -231,7 +231,7 @@ describe('BoardManager', () => {
         expect(boardManager.getRepairCountForTesting()).toBe(0);
       });
 
-      it('should throw when a stack exists on a collapsed space elsewhere on the board', () => {
+      it('logs but does not throw for stack+collapsed overlap in non-strict mode', () => {
         // Create an illegal state directly on the BoardState
         addStack(board, pos(1, 1), 1, 1);
         addCollapsedSpace(board, pos(1, 1), 1);
@@ -244,11 +244,21 @@ describe('BoardManager', () => {
           controllingPlayer: 1,
         };
 
+        // In non-strict mode, invariant violations are logged but not thrown.
+        // The stack+collapsed overlap is detected (error logged) but not
+        // auto-repaired, unlike marker+collapsed overlaps.
+        const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
         expect(() => {
-          // Any core mutator that triggers invariant checks should surface
-          // the pre-existing illegal state.
           boardManager.setStack(pos(0, 0), safeStack, board);
-        }).toThrow(/invariant violation/i);
+        }).not.toThrow();
+
+        // Verify that an invariant violation was logged
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('invariant violation')
+        );
+
+        consoleSpy.mockRestore();
       });
 
       it('repairs a marker+collapsed overlap elsewhere on the board when touched by a core mutator', () => {

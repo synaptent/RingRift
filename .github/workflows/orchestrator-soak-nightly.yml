@@ -1,0 +1,44 @@
+name: Nightly Orchestrator Invariant Soak
+
+on:
+  schedule:
+    # Run once per night at 03:00 UTC
+    - cron: '0 3 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  orchestrator-soak-nightly:
+    name: Orchestrator Invariant Soak (nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Orchestrator‑ON profile for nightly invariant soaks
+      RINGRIFT_RULES_MODE: ts
+      ORCHESTRATOR_ADAPTER_ENABLED: 'true'
+      ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
+      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run nightly orchestrator invariant soak
+        run: npm run soak:orchestrator:nightly
+
+      - name: Upload nightly soak summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator_soak_nightly_summary
+          path: results/orchestrator_soak_nightly.json
+          retention-days: 14
+

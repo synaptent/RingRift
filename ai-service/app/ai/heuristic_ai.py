@@ -7,8 +7,15 @@ is available for API consistency with other AIs (MinimaxAI, MCTSAI, DescentAI).
 However, HeuristicAI is a single-depth evaluator, so the benefit of the
 make/unmake pattern is limited compared to tree-search AIs. The option is
 stored but not actively used to modify behavior.
+
+When `config.training_move_sample_limit` is set to a positive integer,
+HeuristicAI will randomly sample at most that many moves for evaluation
+instead of evaluating all valid moves. This is intended for training
+performance optimization on large boards where move counts can exceed
+thousands. The sampling uses the AI's RNG for deterministic reproducibility.
 """
 
+import random
 from typing import Optional, List, Dict
 
 from .base import BaseAI
@@ -94,6 +101,14 @@ class HeuristicAI(BaseAI):
         The ``use_incremental_search`` config option is read for API
         consistency with tree-search AIs but has minimal impact on
         HeuristicAI since it only performs single-depth evaluation.
+
+        The optional ``heuristic_eval_mode`` config field controls whether
+        this instance runs the full structural heuristic suite (``"full"``)
+        or a lighter subset (``"light"``, which skips Tier-2 structural/
+        global features entirely). Any value other than the literal string
+        ``"light"`` (including ``None``) is normalised to ``"full"`` to
+        preserve existing behaviour for callers that do not opt in
+        explicitly.
         """
         super().__init__(player_number, config)
         
@@ -103,6 +118,13 @@ class HeuristicAI(BaseAI):
         self.use_incremental_search: bool = getattr(
             config, 'use_incremental_search', True
         )
+
+        # Normalise heuristic evaluation mode. Only the literal string
+        # "light" opts into the lightweight evaluator; everything else
+        # (None, "full", unknown) is treated as "full" for backward
+        # compatibility.
+        mode = getattr(config, "heuristic_eval_mode", None)
+        self.eval_mode: str = "light" if mode == "light" else "full"
         
         self._apply_weight_profile()
 
@@ -161,11 +183,14 @@ class HeuristicAI(BaseAI):
         if self.should_pick_random_move():
             selected = self.get_random_element(valid_moves)
         else:
+            # Apply training move sample limit if configured
+            moves_to_evaluate = self._sample_moves_for_training(valid_moves)
+            
             # Evaluate each move and pick the best one
             best_move = None
             best_score = float('-inf')
             
-            for move in valid_moves:
+            for move in moves_to_evaluate:
                 # Simulate the move to get the resulting state
                 next_state = self.rules_engine.apply_move(game_state, move)
                 score = self.evaluate_position(next_state)
@@ -182,6 +207,38 @@ class HeuristicAI(BaseAI):
         
         self.move_count += 1
         return selected
+
+    def _sample_moves_for_training(self, moves: List[Move]) -> List[Move]:
+        """
+        Sample moves for evaluation if training_move_sample_limit is set.
+        
+        This is a training/evaluation performance optimization that randomly
+        samples a subset of moves when there are too many to evaluate
+        efficiently. The sampling is deterministic when the AI's RNG seed
+        is set, ensuring reproducibility.
+        
+        Args:
+            moves: Full list of valid moves
+            
+        Returns:
+            Either the original list (if no limit or under limit) or a
+            random sample up to the configured limit.
+        """
+        limit = getattr(self.config, "training_move_sample_limit", None)
+        
+        # No sampling if limit is not configured or moves are under limit
+        if limit is None or limit <= 0 or len(moves) <= limit:
+            return moves
+        
+        # Use the AI's RNG for deterministic sampling when seeded
+        rng_seed = getattr(self.config, "rng_seed", None)
+        if rng_seed is not None:
+            # Use a seeded local RNG for deterministic sampling
+            local_rng = random.Random(rng_seed + self.move_count)
+            return local_rng.sample(moves, limit)
+        else:
+            # Fallback to standard random sampling (non-deterministic)
+            return random.sample(moves, limit)
     
     def evaluate_position(self, game_state: GameState) -> float:
         """
@@ -202,71 +259,101 @@ class HeuristicAI(BaseAI):
             else:
                 return 0.0
 
-        score = 0.0
-         
-        # Stack control evaluation
-        score += self._evaluate_stack_control(game_state)
-         
-        # Territory evaluation
-        score += self._evaluate_territory(game_state)
-         
-        # Rings in hand evaluation
-        score += self._evaluate_rings_in_hand(game_state)
-         
-        # Center control evaluation
-        score += self._evaluate_center_control(game_state)
-         
-        # Opponent threat evaluation
-        score += self._evaluate_opponent_threats(game_state)
-         
-        # Mobility evaluation
-        score += self._evaluate_mobility(game_state)
-         
-        # Eliminated rings evaluation
-        score += self._evaluate_eliminated_rings(game_state)
-         
-        # Line potential evaluation
-        score += self._evaluate_line_potential(game_state)
-         
-        # Victory proximity evaluation
-        score += self._evaluate_victory_proximity(game_state)
+        # Delegate to the shared component computation so that the scalar
+        # evaluation and the per-feature breakdown remain strictly aligned.
+        components = self._compute_component_scores(game_state)
+        return sum(components.values())
 
-        # Opponent victory proximity / threat evaluation
-        score += self._evaluate_opponent_victory_threat(game_state)
-         
-        # Marker count evaluation
-        score += self._evaluate_marker_count(game_state)
- 
-        # Vulnerability evaluation
-        score += self._evaluate_vulnerability(game_state)
- 
-        # Overtake potential evaluation
-        score += self._evaluate_overtake_potential(game_state)
- 
-        # Territory closure evaluation
-        score += self._evaluate_territory_closure(game_state)
-         
-        # Influence evaluation is currently disabled for TS/Python parity.
-        # The adjacency/influence term remains in the weight schema but is
-        # not applied in the evaluator.
-        # score += self._evaluate_influence(game_state)
-         
-        # Line connectivity evaluation
-        score += self._evaluate_line_connectivity(game_state)
-         
-        # Territory safety evaluation
-        score += self._evaluate_territory_safety(game_state)
- 
-        # Stack mobility evaluation
-        score += self._evaluate_stack_mobility(game_state)
+    def _compute_component_scores(
+        self,
+        game_state: GameState,
+    ) -> Dict[str, float]:
+        """
+        Compute per-feature component scores for the current position.
 
-        # Forced-elimination / LPS / multi-leader high-signal heuristics
-        score += self._evaluate_forced_elimination_risk(game_state)
-        score += self._evaluate_lps_action_advantage(game_state)
-        score += self._evaluate_multi_leader_threat(game_state)
-         
-        return score
-    
+        This helper centralises mode-aware gating for Tier 0/1/2 features so
+        that :meth:`evaluate_position` and :meth:`get_evaluation_breakdown`
+        remain consistent. In ``"light"`` mode, Tier-2 structural features are
+        not evaluated at all and are reported as ``0.0``.
+        """
+        scores: Dict[str, float] = {}
+
+        # Tier 0 (core) features – always computed.
+        scores["stack_control"] = self._evaluate_stack_control(game_state)
+        scores["territory"] = self._evaluate_territory(game_state)
+        scores["rings_in_hand"] = self._evaluate_rings_in_hand(game_state)
+        scores["center_control"] = self._evaluate_center_control(game_state)
+
+        # Tier 1 (local adjacency/mobility) features – always computed.
+        scores["opponent_threats"] = self._evaluate_opponent_threats(
+            game_state
+        )
+        scores["mobility"] = self._evaluate_mobility(game_state)
+
+        # Remaining Tier 0 core features.
+        scores["eliminated_rings"] = self._evaluate_eliminated_rings(
+            game_state
+        )
+
+        # Tier 2 (structural/global) – gated by eval_mode.
+        if self.eval_mode == "full":
+            scores["line_potential"] = self._evaluate_line_potential(
+                game_state
+            )
+        else:
+            scores["line_potential"] = 0.0
+
+        scores["victory_proximity"] = self._evaluate_victory_proximity(
+            game_state
+        )
+        scores["opponent_victory_threat"] = (
+            self._evaluate_opponent_victory_threat(game_state)
+        )
+        scores["marker_count"] = self._evaluate_marker_count(game_state)
+
+        if self.eval_mode == "full":
+            scores["vulnerability"] = self._evaluate_vulnerability(game_state)
+            scores["overtake_potential"] = self._evaluate_overtake_potential(
+                game_state
+            )
+            scores["territory_closure"] = self._evaluate_territory_closure(
+                game_state
+            )
+            scores["line_connectivity"] = self._evaluate_line_connectivity(
+                game_state
+            )
+            scores["territory_safety"] = self._evaluate_territory_safety(
+                game_state
+            )
+        else:
+            scores["vulnerability"] = 0.0
+            scores["overtake_potential"] = 0.0
+            scores["territory_closure"] = 0.0
+            scores["line_connectivity"] = 0.0
+            scores["territory_safety"] = 0.0
+
+        # Tier 1 stack-level mobility – always computed.
+        scores["stack_mobility"] = self._evaluate_stack_mobility(game_state)
+
+        # High-signal structural features – gated by eval_mode.
+        if self.eval_mode == "full":
+            scores["forced_elimination_risk"] = (
+                self._evaluate_forced_elimination_risk(game_state)
+            )
+            scores["lps_action_advantage"] = (
+                self._evaluate_lps_action_advantage(game_state)
+            )
+        else:
+            scores["forced_elimination_risk"] = 0.0
+            scores["lps_action_advantage"] = 0.0
+
+        # Multi-leader threat is considered core and always computed.
+        scores["multi_leader_threat"] = self._evaluate_multi_leader_threat(
+            game_state
+        )
+
+        return scores
+     
     def get_evaluation_breakdown(
         self,
         game_state: GameState
@@ -280,39 +367,11 @@ class HeuristicAI(BaseAI):
         Returns:
             Dictionary with evaluation components
         """
-        return {
-            "total": self.evaluate_position(game_state),
-            "stack_control": self._evaluate_stack_control(game_state),
-            "territory": self._evaluate_territory(game_state),
-            "rings_in_hand": self._evaluate_rings_in_hand(game_state),
-            "center_control": self._evaluate_center_control(game_state),
-            "opponent_threats": self._evaluate_opponent_threats(game_state),
-            "mobility": self._evaluate_mobility(game_state),
-            "eliminated_rings": self._evaluate_eliminated_rings(game_state),
-            "line_potential": self._evaluate_line_potential(game_state),
-            "victory_proximity": self._evaluate_victory_proximity(game_state),
-            "opponent_victory_threat": self._evaluate_opponent_victory_threat(
-                game_state
-            ),
-            "marker_count": self._evaluate_marker_count(game_state),
-            "vulnerability": self._evaluate_vulnerability(game_state),
-            "overtake_potential": self._evaluate_overtake_potential(
-                game_state
-            ),
-            "territory_closure": self._evaluate_territory_closure(game_state),
-            "line_connectivity": self._evaluate_line_connectivity(game_state),
-            "territory_safety": self._evaluate_territory_safety(game_state),
-            "stack_mobility": self._evaluate_stack_mobility(game_state),
-            "forced_elimination_risk": self._evaluate_forced_elimination_risk(
-                game_state
-            ),
-            "lps_action_advantage": self._evaluate_lps_action_advantage(
-                game_state
-            ),
-            "multi_leader_threat": self._evaluate_multi_leader_threat(
-                game_state
-            ),
-        }
+        components = self._compute_component_scores(game_state)
+        total = sum(components.values())
+        breakdown: Dict[str, float] = {"total": total}
+        breakdown.update(components)
+        return breakdown
     
     def _evaluate_stack_control(self, game_state: GameState) -> float:
         """Evaluate stack control"""

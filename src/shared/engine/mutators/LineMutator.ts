@@ -1,5 +1,6 @@
 import { GameState, ProcessLineAction, ChooseLineRewardAction } from '../types';
-import { positionToString, BOARD_CONFIGS, Position } from '../../types/game';
+import { positionToString, BoardType, Position } from '../../types/game';
+import { getEffectiveLineLengthThreshold } from '../rulesConfig';
 
 export function mutateProcessLine(state: GameState, action: ProcessLineAction): GameState {
   // If the line is exact length, we can process it immediately as Option 1 (Collapse All).
@@ -13,9 +14,12 @@ export function mutateProcessLine(state: GameState, action: ProcessLineAction): 
   // This enforces that ProcessLineAction is only for the "no choice needed" case.
 
   const line = state.board.formedLines[action.lineIndex];
-  const config = BOARD_CONFIGS[state.board.type];
+  const requiredLength = getEffectiveLineLengthThreshold(
+    state.board.type as BoardType,
+    state.players.length
+  );
 
-  if (line.length > config.lineLength) {
+  if (line.length > requiredLength) {
     throw new Error('LineMutator: Line length > minimum requires ChooseLineRewardAction');
   }
 

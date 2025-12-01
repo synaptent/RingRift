@@ -42,6 +42,7 @@ if ROOT not in sys.path:
 
 from app.models import GameState, Move, GameStatus  # noqa: E402
 from app.game_engine import GameEngine  # noqa: E402
+from app.rules import global_actions as ga  # noqa: E402
 
 
 SNAPSHOT_PATH = os.path.join(
@@ -57,7 +58,10 @@ SNAPSHOT_PATH = os.path.join(
 @pytest.mark.slow
 @pytest.mark.skipif(
     not os.path.exists(SNAPSHOT_PATH),
-    reason="Invariant-failure snapshot not found; run strict soak to regenerate",
+    reason=(
+        "Invariant-failure snapshot not found; "
+        "run strict soak to regenerate"
+    ),
 )
 def test_movement_forced_elimination_invariant_regression(
     monkeypatch: pytest.MonkeyPatch,
@@ -104,13 +108,33 @@ def test_movement_forced_elimination_invariant_regression(
     next_state = GameEngine.apply_move(state, move)
 
     # As an extra guard, ensure that any ACTIVE state we reach obeys the
-    # invariant from the snapshot's perspective as well.
+    # invariant from both the legacy "legal moves" view and the R200
+    # global-actions view.
     if next_state.game_status == GameStatus.ACTIVE:
-        legal = GameEngine.get_valid_moves(next_state, next_state.current_player)
-        forced = GameEngine._get_forced_elimination_moves(  # type: ignore[attr-defined]
+        legal = GameEngine.get_valid_moves(
             next_state,
             next_state.current_player,
         )
+        get_forced_elim = GameEngine._get_forced_elimination_moves
+        forced = get_forced_elim(
+            next_state,
+            next_state.current_player,
+        )
+        summary = ga.global_legal_actions_summary(
+            next_state,
+            next_state.current_player,
+        )
+
+        # INV-ACTIVE-NO-MOVES (R200–R203, ANM-SCEN-01):
+        # ACTIVE state must expose at least one global action.
         assert (
-            legal or forced
-        ), "Regression: ACTIVE state with neither legal moves nor forced eliminations"
+            legal or forced or summary.has_global_placement_action
+        ), (
+            "Regression: ACTIVE state with no interactive moves, no forced "
+            "elimination, and no global placements for current_player"
+        )
+
+        assert summary.has_turn_material is True
+
+        # Explicit ANM predicate should be false after the regression fix.
+        assert not ga.is_anm_state(next_state)

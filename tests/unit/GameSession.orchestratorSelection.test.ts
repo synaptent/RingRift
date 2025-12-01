@@ -69,7 +69,7 @@ describe('GameSession orchestrator engine selection', () => {
     return { session, fakeEngine, players };
   }
 
-  it('disables orchestrator adapter for LEGACY engine selection', () => {
+  it('selects LEGACY engine without mutating adapter enablement', () => {
     (orchestratorRollout.selectEngine as jest.Mock).mockReturnValue({
       engine: EngineSelection.LEGACY,
       reason: 'test-legacy',
@@ -79,13 +79,14 @@ describe('GameSession orchestrator engine selection', () => {
 
     (session as any).configureEngineSelection(players);
 
-    expect(fakeEngine.disableOrchestratorAdapter).toHaveBeenCalledTimes(1);
+    // Phase A: adapter enablement is controlled globally, not per session.
+    expect(fakeEngine.disableOrchestratorAdapter).not.toHaveBeenCalled();
     expect(fakeEngine.enableOrchestratorAdapter).not.toHaveBeenCalled();
     expect(fakeEngine.isOrchestratorAdapterEnabled()).toBe(false);
     expect((session as any).engineSelection).toBe(EngineSelection.LEGACY);
   });
 
-  it('enables orchestrator adapter for ORCHESTRATOR engine selection', () => {
+  it('selects ORCHESTRATOR engine without mutating adapter enablement', () => {
     (orchestratorRollout.selectEngine as jest.Mock).mockReturnValue({
       engine: EngineSelection.ORCHESTRATOR,
       reason: 'test-orchestrator',
@@ -95,9 +96,10 @@ describe('GameSession orchestrator engine selection', () => {
 
     (session as any).configureEngineSelection(players);
 
-    expect(fakeEngine.enableOrchestratorAdapter).toHaveBeenCalledTimes(1);
+    // Phase A: adapter enablement is controlled globally, not per session.
+    expect(fakeEngine.enableOrchestratorAdapter).not.toHaveBeenCalled();
     expect(fakeEngine.disableOrchestratorAdapter).not.toHaveBeenCalled();
-    expect(fakeEngine.isOrchestratorAdapterEnabled()).toBe(true);
+    expect(fakeEngine.isOrchestratorAdapterEnabled()).toBe(false);
     expect((session as any).engineSelection).toBe(EngineSelection.ORCHESTRATOR);
   });
 });

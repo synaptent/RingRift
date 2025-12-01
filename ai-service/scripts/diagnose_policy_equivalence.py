@@ -3,13 +3,24 @@
 
 This script compares the move choices of a baseline HeuristicAI against one
 or more candidate weight profiles on a fixed pool of mid-game GameState
-records (typically produced by scripts/run_self_play_soak.py). For each
-candidate we compute the fraction of states where the selected move differs
-from the baseline plus a simple L2 distance between weight vectors.
+records (typically produced by ``scripts/run_self_play_soak.py``). For each
+candidate we compute:
+
+- the fraction of states where the selected move differs from the baseline,
+- a simple L2 distance between weight vectors (in HEURISTIC_WEIGHT_KEYS
+  order).
 
 The script is intentionally self-contained and does not modify any training
 or evaluation logic; it only reads existing state pools and weight JSON
-files and writes a JSON summary under logs/diagnostics/.
+files and writes a JSON summary under ``logs/diagnostics/``.
+
+Typical usage includes:
+
+- Pointing ``--weights-dir`` at a directory of CMA-ES / GA outputs
+  (for example, ``logs/cmaes/runs/<run_id>/``) to compare several final
+  candidates against the baseline.
+- Reusing the same state pools that power multi-start evaluation so that
+  strength and policy-difference measurements are aligned.
 """
 
 from __future__ import annotations
@@ -329,6 +340,15 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--weights-dir",
+        type=str,
+        default="",
+        help=(
+            "Alias for --candidates-dir; if provided, all *.json files in "
+            "this directory are treated as candidate weight profiles."
+        ),
+    )
+    parser.add_argument(
         "--candidate-glob",
         type=str,
         default="*.json",
@@ -395,6 +415,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     if args.candidates_dir:
         dir_candidates = load_candidate_profiles_from_dir(
             args.candidates_dir,
+            args.candidate_glob,
+            baseline_keys,
+        )
+        candidates.extend(dir_candidates)
+    if args.weights_dir:
+        dir_candidates = load_candidate_profiles_from_dir(
+            args.weights_dir,
             args.candidate_glob,
             baseline_keys,
         )

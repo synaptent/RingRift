@@ -1,19 +1,23 @@
 #!/usr/bin/env python
-"""Focused diagnostics for the CMA-ES / GA 0.5 plateau on Square8.
+"""Multi-board plateau diagnostics for heuristic CMA-ES / GA.
 
-This script reuses the existing evaluate_fitness(...) harness to run a small
-set of controlled probes:
+This script reuses the shared training evaluation harness to probe a small
+set of heuristic weight profiles against the balanced baseline under a
+configuration that matches the canonical 2-player training preset:
 
-- baseline vs baseline
-- zero weights vs baseline
-- scaled baseline (5x) vs baseline
-- several near-baseline random perturbations vs baseline
+- multi-board evaluation on Square8, Square19, and Hexagonal boards;
+- eval_mode="multi-start" from the "v1" mid/late-game state pools; and
+- a small, non-zero eval_randomness to break ties without drowning signal.
 
-It prints a compact table of fitness and W/D/L patterns for each profile
-under the classic initial-only evaluation regime, and optionally under a
-multi-start regime using a Square8 state pool. It also writes the probed
-weight profiles to logs/plateau_probe/ so that
-scripts/diagnose_policy_equivalence.py can compare action-level policies.
+For each candidate profile (baseline, zero, 5x scaled baseline, and a
+handful of near-baseline perturbations) the script prints a compact
+per-board summary:
+
+    candidate=zero board=square19 l2=33.8 fitness=0.812 W=13 D=0 L=3
+
+It also writes the probed weight profiles to ``logs/plateau_probe/`` so
+that :mod:`scripts.diagnose_policy_equivalence` can compare action-level
+policies over the same state pools.
 """
 
 from __future__ import annotations
@@ -38,7 +42,8 @@ from app.ai.heuristic_weights import (  # type: ignore  # noqa: E402
     HeuristicWeights,
 )
 from scripts.run_cmaes_optimization import (  # type: ignore  # noqa: E402
-    evaluate_fitness,
+    BOARD_NAME_TO_TYPE,
+    evaluate_fitness_over_boards,
 )
 
 
@@ -65,74 +70,124 @@ def _compute_l2(
     return float(np.linalg.norm(cand_vec - base_vec))
 
 
-def _run_single_probe(
+def _parse_board_list(raw: str) -> List[BoardType]:
+    """Parse a comma-separated list of board names into BoardType values."""
+    names = [name.strip().lower() for name in raw.split(",") if name.strip()]
+    if not names:
+        raise SystemExit("At least one board must be specified via --boards")
+
+    boards: List[BoardType] = []
+    for name in names:
+        try:
+            boards.append(BOARD_NAME_TO_TYPE[name])
+        except KeyError:
+            raise SystemExit(
+                f"Unknown board name in --boards: {name!r} "
+                "(expected one of: square8,square19,hex)",
+            )
+    return boards
+
+
+def _run_probes_for_candidate(
     label: str,
     candidate: HeuristicWeights,
     baseline: HeuristicWeights,
     *,
+    boards: List[BoardType],
     games_per_eval: int,
     eval_mode: str,
-    state_pool_id: str | None,
+    state_pool_id: str,
+    eval_randomness: float,
     seed: int,
     max_moves: int = 200,
-) -> ProbeResult:
-    """Evaluate one candidate profile against the baseline on Square8."""
+) -> List[ProbeResult]:
+    """Evaluate one candidate profile against the baseline on all boards.
 
-    stats: Dict[str, Any] = {}
+    This function routes all evaluation through
+    :func:`evaluate_fitness_over_boards` so that it stays aligned with the
+    multi-board, multi-start configuration used by the CMA-ES training
+    harness.
+    """
 
-    def _hook(h: Dict[str, Any]) -> None:
-        stats.update(h)
+    per_board_stats: Dict[BoardType, Dict[str, Any]] = {}
 
-    fitness = evaluate_fitness(
+    def _debug_callback(
+        _candidate_w: HeuristicWeights,
+        _baseline_w: HeuristicWeights,
+        board_type: BoardType,
+        stats: Dict[str, Any],
+    ) -> None:
+        # One callback invocation per candidate/board; record the latest
+        # stats for this board.
+        per_board_stats[board_type] = dict(stats)
+
+    # Run the shared evaluation helper. We primarily rely on the per-board
+    # debug callback payloads for W/D/L and weight_l2 diagnostics.
+    _, per_board_fitness = evaluate_fitness_over_boards(
         candidate_weights=candidate,
         baseline_weights=baseline,
         games_per_eval=games_per_eval,
-        board_type=BoardType.SQUARE8,
-        verbose=True,
+        boards=boards,
         opponent_mode="baseline-only",
         max_moves=max_moves,
-        debug_hook=_hook,
+        verbose=False,
+        debug_hook=None,
         eval_mode=eval_mode,
         state_pool_id=state_pool_id,
-        eval_randomness=0.0,
         seed=seed,
+        eval_randomness=eval_randomness,
+        debug_callback=_debug_callback,
     )
 
-    if not stats:
-        # Fallback in case the debug hook is not invoked for some reason.
-        stats = {
-            "wins": 0,
-            "draws": 0,
-            "losses": 0,
+    weight_l2_default = _compute_l2(candidate, baseline)
+    rows: List[ProbeResult] = []
+
+    for board in boards:
+        stats = per_board_stats.get(board, {})
+        fitness = float(
+            stats.get("fitness", per_board_fitness.get(board, 0.0)),
+        )
+        wins = int(stats.get("wins", 0))
+        draws = int(stats.get("draws", 0))
+        losses = int(stats.get("losses", 0))
+        weight_l2 = float(
+            stats.get(
+                "weight_l2_to_baseline",
+                stats.get("weight_l2", weight_l2_default),
+            ),
+        )
+
+        row: ProbeResult = {
+            "profile": label,
+            "board": board,
+            "board_name": str(getattr(board, "value", board)),
+            "eval_mode": eval_mode,
             "games_per_eval": games_per_eval,
-            "weight_l2": _compute_l2(candidate, baseline),
+            "state_pool_id": state_pool_id,
+            "eval_randomness": eval_randomness,
+            "fitness": fitness,
+            "wins": wins,
+            "draws": draws,
+            "losses": losses,
+            "weight_l2": weight_l2,
         }
+        rows.append(row)
 
-    result: ProbeResult = {
-        "profile": label,
-        "eval_mode": eval_mode,
-        "games_per_eval": games_per_eval,
-        "fitness": float(fitness),
-        "wins": int(stats["wins"]),
-        "draws": int(stats["draws"]),
-        "losses": int(stats["losses"]),
-        "weight_l2": float(stats["weight_l2"]),
-    }
-    return result
+    return rows
 
 
-def _format_row(row: ProbeResult, comment: str) -> str:
-    """Return a formatted table row string."""
+def _format_row(row: ProbeResult) -> str:
+    """Return a formatted, per-board table row string."""
 
     w = row["wins"]
     d = row["draws"]
     losses = row["losses"]
     return (
-        f"{row['profile']:<10} "
-        f"{row['weight_l2']:7.3f} "
-        f"{row['fitness']:7.3f} "
-        f"{w:02d}-{d:02d}-{losses:02d} "
-        f"{comment}"
+        f"candidate={row['profile']} "
+        f"board={row['board_name']} "
+        f"l2={row['weight_l2']:5.3f} "
+        f"fitness={row['fitness']:5.3f} "
+        f"W={w} D={d} L={losses}"
     )
 
 
@@ -162,30 +217,66 @@ def _export_weights(
 def main(argv: List[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Probe CMA-ES/GA 0.5 plateau behaviour on Square8 "
-            "using evaluate_fitness."
+            "Probe heuristic CMA-ES/GA plateau behaviour using the shared "
+            "multi-board evaluation harness."
         ),
     )
     parser.add_argument(
-        "--games-initial",
-        type=int,
-        default=8,
-        help="Games per evaluation for initial-only probes (default: 8).",
+        "--boards",
+        type=str,
+        default="square8,square19,hex",
+        help=(
+            "Comma-separated list of boards to probe "
+            "(default: 'square8,square19,hex')."
+        ),
     )
     parser.add_argument(
-        "--games-multistart",
+        "--games-per-eval",
         type=int,
         default=16,
         help=(
-            "Games per evaluation for multi-start probes when enabled "
-            "(default: 16)."
+            "Games per candidate evaluation on each board "
+            "(default: 16, matching DEFAULT_TRAINING_EVAL_CONFIG)."
+        ),
+    )
+    parser.add_argument(
+        "--eval-mode",
+        type=str,
+        choices=["initial-only", "multi-start"],
+        default="multi-start",
+        help=(
+            "Evaluation mode: 'initial-only' uses the empty starting "
+            "position; 'multi-start' samples positions from a state pool. "
+            "Default: 'multi-start'."
+        ),
+    )
+    parser.add_argument(
+        "--state-pool-id",
+        type=str,
+        default="v1",
+        help=(
+            "Identifier for the evaluation state pool when using "
+            "eval-mode=multi-start (default: 'v1')."
+        ),
+    )
+    parser.add_argument(
+        "--eval-randomness",
+        type=float,
+        default=0.02,
+        help=(
+            "Randomness parameter forwarded to HeuristicAI during "
+            "evaluation. Default 0.02 matches the 2p training preset; "
+            "use 0.0 for fully deterministic evaluation."
         ),
     )
     parser.add_argument(
         "--seed",
         type=int,
         default=12345,
-        help="Base RNG seed forwarded to evaluate_fitness (default: 12345).",
+        help=(
+            "Base RNG seed forwarded to the evaluation harness "
+            "(default: 12345)."
+        ),
     )
     parser.add_argument(
         "--near-count",
@@ -197,11 +288,12 @@ def main(argv: List[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
-        "--run-multistart",
-        action="store_true",
+        "--max-moves",
+        type=int,
+        default=200,
         help=(
-            "Also run probes under eval_mode=multi-start using the Square8 "
-            "state pool (state_pool_id='v1')."
+            "Maximum moves per self-play game before declaring a draw "
+            "(default: 200)."
         ),
     )
     parser.add_argument(
@@ -215,6 +307,7 @@ def main(argv: List[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
+    boards = _parse_board_list(args.boards)
     baseline: HeuristicWeights = dict(BASE_V1_BALANCED_WEIGHTS)
 
     zero: HeuristicWeights = {k: 0.0 for k in HEURISTIC_WEIGHT_KEYS}
@@ -248,110 +341,40 @@ def main(argv: List[str] | None = None) -> None:
         print(f"  {path}")
 
     print()
-    print("=== Initial-only evaluation (Square8, baseline-only) ===")
-    print("Profile     l2       fitness  W-D-L  comment")
+    print("=== Multi-board heuristic plateau probes ===")
+    boards_label = ",".join(getattr(b, "value", str(b)) for b in boards)
+    print(
+        "candidate board       l2    fitness  W  D  L  "
+        f"(boards={boards_label}, "
+        f"mode={args.eval_mode}, "
+        f"games={args.games_per_eval}, "
+        f"state_pool_id={args.state_pool_id}, "
+        f"eval_randomness={args.eval_randomness})",
+    )
 
-    initial_results: List[ProbeResult] = []
-    # Baseline vs baseline
-    initial_results.append(
-        _run_single_probe(
-            "baseline",
-            baseline,
-            baseline,
-            games_per_eval=args.games_initial,
-            eval_mode="initial-only",
-            state_pool_id=None,
+    # Order of candidates: baseline, zero, scaled5, then near-baseline set.
+    candidates: List[Tuple[str, HeuristicWeights]] = [
+        ("baseline", baseline),
+        ("zero", zero),
+        ("scaled5", scaled5),
+        *near_profiles,
+    ]
+
+    for name, weights in candidates:
+        rows = _run_probes_for_candidate(
+            label=name,
+            candidate=weights,
+            baseline=baseline,
+            boards=boards,
+            games_per_eval=args.games_per_eval,
+            eval_mode=args.eval_mode,
+            state_pool_id=args.state_pool_id,
+            eval_randomness=args.eval_randomness,
             seed=args.seed,
-        ),
-    )
-    # Zero weights vs baseline
-    initial_results.append(
-        _run_single_probe(
-            "zero",
-            zero,
-            baseline,
-            games_per_eval=args.games_initial,
-            eval_mode="initial-only",
-            state_pool_id=None,
-            seed=args.seed,
-        ),
-    )
-    # Scaled baseline vs baseline
-    initial_results.append(
-        _run_single_probe(
-            "scaled5",
-            scaled5,
-            baseline,
-            games_per_eval=args.games_initial,
-            eval_mode="initial-only",
-            state_pool_id=None,
-            seed=args.seed,
-        ),
-    )
-    # Near-baseline random candidates vs baseline
-    for name, weights in near_profiles:
-        initial_results.append(
-            _run_single_probe(
-                name,
-                weights,
-                baseline,
-                games_per_eval=args.games_initial,
-                eval_mode="initial-only",
-                state_pool_id=None,
-                seed=args.seed,
-            ),
+            max_moves=args.max_moves,
         )
-
-    comments: Dict[str, str] = {
-        "baseline": "baseline vs baseline",
-        "zero": "zero vs baseline",
-        "scaled5": "5x baseline vs baseline",
-    }
-    for i in range(args.near_count):
-        comments[f"near_{i}"] = f"near-baseline #{i} vs baseline"
-
-    for row in initial_results:
-        comment = comments.get(row["profile"], "")
-        print(_format_row(row, comment))
-
-    if args.run_multistart:
-        print()
-        print(
-            "=== Multi-start evaluation (Square8, state_pool_id='v1') ===",
-        )
-        print("Profile     l2       fitness  W-D-L  comment")
-        multi_results: List[ProbeResult] = []
-        for name, weights in [
-            ("baseline", baseline),
-            ("zero", zero),
-            ("scaled5", scaled5),
-        ]:
-            multi_results.append(
-                _run_single_probe(
-                    name,
-                    weights,
-                    baseline,
-                    games_per_eval=args.games_multistart,
-                    eval_mode="multi-start",
-                    state_pool_id="v1",
-                    seed=args.seed,
-                ),
-            )
-        for name, weights in near_profiles:
-            multi_results.append(
-                _run_single_probe(
-                    name,
-                    weights,
-                    baseline,
-                    games_per_eval=args.games_multistart,
-                    eval_mode="multi-start",
-                    state_pool_id="v1",
-                    seed=args.seed,
-                ),
-            )
-        for row in multi_results:
-            comment = comments.get(row["profile"], "") + " (multi-start)"
-            print(_format_row(row, comment))
+        for row in rows:
+            print(_format_row(row))
 
 
 if __name__ == "__main__":  # pragma: no cover

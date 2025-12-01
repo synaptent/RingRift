@@ -153,18 +153,31 @@ export class MetricsService {
   // ===================
   // Rules Parity Metrics (already exist, re-exported for convenience)
   // ===================
-
+ 
   /** Counter: TS vs Python rules validation verdict mismatch */
   public readonly rulesParityValidMismatch: Counter<string>;
-
+ 
   /** Counter: TS vs Python rules post-move state hash mismatch */
   public readonly rulesParityHashMismatch: Counter<string>;
-
+ 
   /** Counter: TS vs Python rules S-invariant mismatch */
   public readonly rulesParitySMismatch: Counter<string>;
-
+ 
   /** Counter: TS vs Python rules gameStatus mismatch */
   public readonly rulesParityGameStatusMismatch: Counter<string>;
+ 
+  /**
+   * Unified counter: TS vs Python rules mismatches by mismatch type and
+   * suite/parity bucket. This provides a single surface for alerts and
+   * dashboards while keeping the legacy per-dimension counters for
+   * backwards-compatibility.
+   *
+   * Labels:
+   * - mismatch_type: 'validation' | 'hash' | 's_invariant' | 'game_status' | ...
+   * - suite: high-level parity bucket / PARITY-* ID (e.g. 'runtime_shadow',
+   *   'runtime_python_mode', 'contract_vectors_v2').
+   */
+  public readonly rulesParityMismatchesTotal: Counter<'mismatch_type' | 'suite'>;
 
   // ===================
   // Orchestrator Shadow Mode Metrics
@@ -194,21 +207,24 @@ export class MetricsService {
   // ===================
   // Orchestrator Rollout Metrics
   // ===================
-
+ 
   /** Counter: Total game sessions by engine selection and reason */
   public readonly orchestratorSessionsTotal: Counter<'engine' | 'selection_reason'>;
-
+ 
   /** Counter: Total moves processed by engine and outcome */
   public readonly orchestratorMovesTotal: Counter<'engine' | 'outcome'>;
-
+ 
   /** Gauge: Orchestrator circuit breaker state (0=closed, 1=open) */
   public readonly orchestratorCircuitBreakerState: Gauge<string>;
-
+ 
   /** Gauge: Current orchestrator error rate (0.0–1.0) */
   public readonly orchestratorErrorRate: Gauge<string>;
-
+ 
   /** Gauge: Configured orchestrator rollout percentage (0–100) */
   public readonly orchestratorRolloutPercentage: Gauge<string>;
+ 
+  /** Counter: Total orchestrator-related invariant violations by type */
+  public readonly orchestratorInvariantViolationsTotal: Counter<'type' | 'invariant_id'>;
 
   /**
    * Private constructor - use getInstance() instead.
@@ -422,6 +438,12 @@ export class MetricsService {
       help: 'TS vs Python rules: gameStatus mismatch count',
     });
 
+    this.rulesParityMismatchesTotal = new Counter({
+      name: 'ringrift_rules_parity_mismatches_total',
+      help: 'Unified TS vs Python rules mismatches by mismatch type and suite',
+      labelNames: ['mismatch_type', 'suite'] as const,
+    });
+
     // ===================
     // Orchestrator Shadow Mode Metrics
     // ===================
@@ -490,6 +512,15 @@ export class MetricsService {
     this.orchestratorRolloutPercentage = new Gauge({
       name: 'ringrift_orchestrator_rollout_percentage',
       help: 'Configured orchestrator rollout percentage (0–100)',
+    });
+
+    this.orchestratorInvariantViolationsTotal = new Counter({
+      name: 'ringrift_orchestrator_invariant_violations_total',
+      help: 'Total number of orchestrator-related invariant violations observed by backend hosts',
+      // NOTE: `type` is a low-level violation identifier (e.g. S_INVARIANT_DECREASED),
+      // while `invariant_id` is a high-level invariant from
+      // docs/INVARIANTS_AND_PARITY_FRAMEWORK.md (e.g. INV-S-MONOTONIC).
+      labelNames: ['type', 'invariant_id'] as const,
     });
 
     this.initialized = true;
@@ -888,6 +919,77 @@ export class MetricsService {
    */
   public setOrchestratorRolloutPercentage(percent: number): void {
     this.orchestratorRolloutPercentage.set(percent);
+  }
+
+  /**
+   * Record a rules parity mismatch using the unified counter. This is the
+   * preferred surface for alerts and dashboards; the legacy
+   * ringrift_rules_parity_*_mismatch_total counters remain available for
+   * backwards-compatibility and coarse-grained dashboards.
+   *
+   * @param mismatchType - High-level mismatch category (e.g. 'validation',
+   *   'hash', 's_invariant', 'game_status').
+   * @param suite - Parity bucket / PARITY-* ID or runtime context
+   *   (e.g. 'runtime_shadow', 'runtime_python_mode', 'contract_vectors_v2').
+   */
+  public recordRulesParityMismatch(mismatchType: string, suite: string): void {
+    this.rulesParityMismatchesTotal.labels(mismatchType, suite).inc();
+  }
+
+  /**
+   * Map a low-level violation type string to a high-level invariant ID from
+   * docs/INVARIANTS_AND_PARITY_FRAMEWORK.md. This keeps metric labels stable
+   * even if internal violation IDs evolve.
+   */
+  private mapInvariantTypeToId(type: string): string {
+    switch (type) {
+      // S-invariant and elimination monotonicity
+      case 'S_INVARIANT_DECREASED':
+        return 'INV-S-MONOTONIC';
+      case 'TOTAL_RINGS_ELIMINATED_DECREASED':
+        return 'INV-ELIMINATION-MONOTONIC';
+
+      // Active player has at least one legal action
+      case 'ACTIVE_NO_MOVES':
+      case 'ACTIVE_NO_CANDIDATE_MOVES':
+        return 'INV-ACTIVE-NO-MOVES';
+
+      // Structural board/state invariants
+      case 'NEGATIVE_STACK_HEIGHT':
+      case 'STACK_HEIGHT_MISMATCH':
+      case 'INVALID_CAP_HEIGHT':
+      case 'NEGATIVE_ELIMINATED_RINGS':
+        return 'INV-STATE-STRUCTURAL';
+
+      // Orchestrator vs host move validation
+      case 'ORCHESTRATOR_VALIDATE_MOVE_FAILED':
+      case 'HOST_REJECTED_MOVE':
+        return 'INV-ORCH-VALIDATION';
+
+      // GameStatus / termination anomalies
+      case 'UNEXPECTED_GAME_STATUS':
+      case 'UNHANDLED_EXCEPTION':
+        return 'INV-TERMINATION';
+
+      default:
+        // Fallback: treat unknown types as termination-related until they are
+        // explicitly mapped. This preserves metric emission while keeping the
+        // label space small and stable.
+        return 'INV-TERMINATION';
+    }
+  }
+
+  /**
+   * Record an orchestrator-related invariant violation of a given type.
+   * The environment dimension is provided via Prometheus external_labels.
+   *
+   * `type` is a low-level violation identifier (e.g. S_INVARIANT_DECREASED).
+   * `invariantId` is an optional high-level invariant ID (e.g. INV-S-MONOTONIC);
+   * when omitted, it is derived from `type` using mapInvariantTypeToId.
+   */
+  public recordOrchestratorInvariantViolation(type: string, invariantId?: string): void {
+    const resolvedInvariantId = invariantId ?? this.mapInvariantTypeToId(type);
+    this.orchestratorInvariantViolationsTotal.labels(type, resolvedInvariantId).inc();
   }
 }
 

@@ -31,6 +31,12 @@ from .models import (
     RegionOrderChoiceRequest,
     RegionOrderChoiceResponse,
     RegionOrderChoiceOption,
+    LineOrderChoiceRequest,
+    LineOrderChoiceResponse,
+    LineOrderChoiceLine,
+    CaptureDirectionChoiceRequest,
+    CaptureDirectionChoiceResponse,
+    CaptureDirectionChoiceOption,
     Position,
     GameStatus,
 )
@@ -116,6 +122,43 @@ class RulesEvalResponse(BaseModel):
     game_status: Optional[GameStatus] = None
 
 
+def _derive_non_ssot_seed(request: MoveRequest) -> int:
+    """
+    Derive a deterministic but non-SSOT RNG seed for /ai/move when neither
+    the explicit ``seed`` nor ``game_state.rng_seed`` is provided.
+
+    This is used only for ad-hoc or training/diagnostic callers that invoke
+    the AI service without threading through the canonical game seed from
+    the TypeScript hosts. Production gameplay traffic should always supply
+    either ``seed`` or ``game_state.rng_seed``.
+    """
+    base = (request.difficulty * 1_000_003) ^ (request.player_number * 97_911)
+    return int(base & 0x7FFFFFFF)
+
+
+def _select_effective_seed(request: MoveRequest) -> tuple[int, str]:
+    """
+    Compute the effective RNG seed and its provenance for an /ai/move call.
+
+    Priority:
+      1. request.seed (explicit override from caller)
+      2. request.game_state.rng_seed (engine-provided game seed)
+      3. Derived non-SSOT fallback (_derive_non_ssot_seed).
+
+    Returns:
+        A tuple of (seed, source), where source is one of:
+        "explicit", "game_state", or "derived".
+    """
+    if request.seed is not None:
+        return int(request.seed), "explicit"
+
+    rng_seed = getattr(request.game_state, "rng_seed", None)
+    if rng_seed is not None:
+        return int(rng_seed), "game_state"
+
+    return _derive_non_ssot_seed(request), "derived"
+
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -148,13 +191,13 @@ async def metrics():
 @app.post("/ai/move", response_model=MoveResponse)
 async def get_ai_move(request: MoveRequest):
     """
-    Get AI-selected move for current game state
-    
+    Get AI-selected move for current game state.
+
     Args:
-        request: MoveRequest containing game state and AI configuration
-        
+        request: MoveRequest containing game state and AI configuration.
+
     Returns:
-        MoveResponse with selected move and evaluation
+        MoveResponse with selected move and evaluation.
     """
     start_time = time.time()
 
@@ -169,195 +212,93 @@ async def get_ai_move(request: MoveRequest):
         request.difficulty,
     )
 
+    # Compute effective_seed according to the TS-aligned contract:
+    #   1. request.seed (explicit override)
+    #   2. game_state.rng_seed (engine-provided)
+    #   3. derived non-SSOT fallback for ad-hoc callers.
+    effective_seed, seed_source = _select_effective_seed(request)
+
     try:
-        
-        
-        # Select AI type and canonical difficulty profile based on difficulty
-        # if not explicitly specified on the request. This keeps the Python
-        # service, TypeScript backend, and client-facing difficulty ladder
-        # aligned.
-        
-        
-        # Derive seed from request or game state. When both are provided,
-        # prefer the explicit seed parameter for debugging/testing.
-        effective_seed: Optional[int] = request.seed
-        if effective_seed is None and hasattr(request.game_state, 'rng_seed'):
-            effective_seed = request.game_state.rng_seed
-        
-        # Get or create AI instance. When a seed is provided, we create a
-        # per-request instance instead of caching to ensure determinism.
-        # For unseeded requests, continue using the cached instances.
-        if effective_seed is not None:
-            # Per-request seeded AI instance (not cached)
-            heuristic_profile_id: Optional[str] = None
-            nn_model_id: Optional[str] = None
+        heuristic_profile_id: Optional[str] = None
+        nn_model_id: Optional[str] = None
 
-            if ai_type == AIType.HEURISTIC:
-                heuristic_profile_id = profile.get("profile_id")
+        if ai_type == AIType.HEURISTIC:
+            heuristic_profile_id = profile.get("profile_id")
 
-            config = AIConfig(
-                difficulty=request.difficulty,
-                randomness=profile["randomness"],
-                think_time=profile["think_time_ms"],
-                rngSeed=effective_seed,
-                heuristic_profile_id=heuristic_profile_id,
-                nn_model_id=nn_model_id,
+        if seed_source == "derived":
+            # Mark non-SSOT / non-parity-critical paths explicitly so they
+            # are not confused with fully seed-threaded production traffic.
+            logger.debug(
+                "Using derived non-SSOT RNG seed for /ai/move",
+                extra={
+                    "player_number": request.player_number,
+                    "difficulty": request.difficulty,
+                },
             )
-            ai = _create_ai_instance(
-                ai_type,
-                request.player_number,
-                config,
-            )
-        else:
-            # Unseeded: use cached instance keyed by (type, difficulty, player)
-            ai_key = (
-                f"{ai_type.value}-{request.difficulty}-"
-                f"{request.player_number}"
-            )
-            
-            if ai_key not in ai_instances:
-                heuristic_profile_id = None
-                nn_model_id = None
 
-                if ai_type == AIType.HEURISTIC:
-                    heuristic_profile_id = profile.get("profile_id")
+        config = AIConfig(
+            difficulty=request.difficulty,
+            randomness=profile["randomness"],
+            think_time=profile["think_time_ms"],
+            rngSeed=effective_seed,
+            heuristic_profile_id=heuristic_profile_id,
+            nn_model_id=nn_model_id,
+        )
+        ai = _create_ai_instance(
+            ai_type,
+            request.player_number,
+            config,
+        )
 
-                config = AIConfig(
-                    difficulty=request.difficulty,
-                    randomness=profile["randomness"],
-                    think_time=profile["think_time_ms"],
-                    rngSeed=None,
-                    heuristic_profile_id=heuristic_profile_id,
-                    nn_model_id=nn_model_id,
-                )
-                ai_instances[ai_key] = _create_ai_instance(
-                    ai_type,
-                    request.player_number,
-                    config,
-                )
-            
-            ai = ai_instances[ai_key]
-        
         # Get move from AI
         move = ai.select_move(request.game_state)
-        
+
         # Evaluate position
         evaluation = ai.evaluate_position(request.game_state)
-        
+
         thinking_time = int((time.time() - start_time) * 1000)
 
         # Record success metrics
         duration_seconds = time.time() - start_time
-        AI_MOVE_REQUESTS.labels(labels_ai_type, labels_difficulty, "success").inc()
-        AI_MOVE_LATENCY.labels(labels_ai_type, labels_difficulty).observe(
-            duration_seconds
-        )
-        
+        AI_MOVE_REQUESTS.labels(
+            labels_ai_type,
+            labels_difficulty,
+            "success",
+        ).inc()
+        AI_MOVE_LATENCY.labels(
+            labels_ai_type,
+            labels_difficulty,
+        ).observe(duration_seconds)
+
         logger.info(
-            f"AI move: type={ai_type.value}, difficulty={request.difficulty}, "
-            f"time={thinking_time}ms, eval={evaluation:.2f}"
+            "AI move: type=%s, difficulty=%d, time=%dms, eval=%.2f",
+            ai_type.value,
+            request.difficulty,
+            thinking_time,
+            evaluation,
         )
-        
+
         return MoveResponse(
             move=move,
             evaluation=evaluation,
             thinking_time_ms=thinking_time,
             ai_type=ai_type.value,
-            difficulty=request.difficulty
+            difficulty=request.difficulty,
         )
-        
+
     except Exception as e:
         # Record error metrics
         duration_seconds = time.time() - start_time
-        AI_MOVE_REQUESTS.labels(labels_ai_type, labels_difficulty, "error").inc()
-        AI_MOVE_LATENCY.labels(labels_ai_type, labels_difficulty).observe(
-            duration_seconds
-        )
-        logger.error(f"Error generating AI move: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-        # Derive seed from request or game state. When both are provided,
-        # prefer the explicit seed parameter for debugging/testing.
-        effective_seed: Optional[int] = request.seed
-        if effective_seed is None and hasattr(request.game_state, 'rng_seed'):
-            effective_seed = request.game_state.rng_seed
-        
-        # Get or create AI instance. When a seed is provided, we create a
-        # per-request instance instead of caching to ensure determinism.
-        # For unseeded requests, continue using the cached instances.
-        if effective_seed is not None:
-            # Per-request seeded AI instance (not cached)
-            heuristic_profile_id: Optional[str] = None
-            nn_model_id: Optional[str] = None
-
-            if ai_type == AIType.HEURISTIC:
-                heuristic_profile_id = profile.get("profile_id")
-
-            config = AIConfig(
-                difficulty=request.difficulty,
-                randomness=profile["randomness"],
-                think_time=profile["think_time_ms"],
-                rngSeed=effective_seed,
-                heuristic_profile_id=heuristic_profile_id,
-                nn_model_id=nn_model_id,
-            )
-            ai = _create_ai_instance(
-                ai_type,
-                request.player_number,
-                config,
-            )
-        else:
-            # Unseeded: use cached instance keyed by (type, difficulty, player)
-            ai_key = (
-                f"{ai_type.value}-{request.difficulty}-"
-                f"{request.player_number}"
-            )
-            
-            if ai_key not in ai_instances:
-                heuristic_profile_id = None
-                nn_model_id = None
-
-                if ai_type == AIType.HEURISTIC:
-                    heuristic_profile_id = profile.get("profile_id")
-
-                config = AIConfig(
-                    difficulty=request.difficulty,
-                    randomness=profile["randomness"],
-                    think_time=profile["think_time_ms"],
-                    rngSeed=None,
-                    heuristic_profile_id=heuristic_profile_id,
-                    nn_model_id=nn_model_id,
-                )
-                ai_instances[ai_key] = _create_ai_instance(
-                    ai_type,
-                    request.player_number,
-                    config,
-                )
-            
-            ai = ai_instances[ai_key]
-        
-        # Get move from AI
-        move = ai.select_move(request.game_state)
-        
-        # Evaluate position
-        evaluation = ai.evaluate_position(request.game_state)
-        
-        thinking_time = int((time.time() - start_time) * 1000)
-        
-        logger.info(
-            f"AI move: type={ai_type.value}, difficulty={request.difficulty}, "
-            f"time={thinking_time}ms, eval={evaluation:.2f}"
-        )
-        
-        return MoveResponse(
-            move=move,
-            evaluation=evaluation,
-            thinking_time_ms=thinking_time,
-            ai_type=ai_type.value,
-            difficulty=request.difficulty
-        )
-        
-    except Exception as e:
-        logger.error(f"Error generating AI move: {str(e)}", exc_info=True)
+        AI_MOVE_REQUESTS.labels(
+            labels_ai_type,
+            labels_difficulty,
+            "error",
+        ).inc()
+        AI_MOVE_LATENCY.labels(
+            labels_ai_type,
+            labels_difficulty,
+        ).observe(duration_seconds)
+        logger.error("Error generating AI move: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -644,6 +585,129 @@ async def choose_region_order_option(request: RegionOrderChoiceRequest):
     except Exception as e:
         logger.error(
             f"Error selecting region order option: {str(e)}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/ai/choice/line_order",
+    response_model=LineOrderChoiceResponse,
+)
+async def choose_line_order_option(request: LineOrderChoiceRequest):
+    """Select a line order option for an AI-controlled player.
+
+    This endpoint mirrors the TypeScript AIInteractionHandler heuristic
+    by preferring the line with the greatest number of markerPositions.
+    When marker counts tie, it falls back to the first option. The full
+    GameState is accepted for future, more context-aware heuristics but
+    is not yet consulted directly.
+    """
+    try:
+        ai_type = request.ai_type or _select_ai_type(request.difficulty)
+
+        if not request.options:
+            # No options is a protocol error: the engine should never ask
+            # for a line_order choice with an empty option list.
+            raise HTTPException(
+                status_code=400,
+                detail="line_order choice has no options",
+            )
+
+        selected: LineOrderChoiceLine = request.options[0]
+        best_len = len(selected.marker_positions)
+
+        for opt in request.options[1:]:
+            length = len(opt.marker_positions)
+            if length > best_len:
+                selected = opt
+                best_len = length
+
+        return LineOrderChoiceResponse(
+            selectedOption=selected,
+            aiType=ai_type.value,
+            difficulty=request.difficulty,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error selecting line order option: %s",
+            str(e),
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post(
+    "/ai/choice/capture_direction",
+    response_model=CaptureDirectionChoiceResponse,
+)
+async def choose_capture_direction_option(
+    request: CaptureDirectionChoiceRequest,
+):
+    """Select a capture_direction option for an AI-controlled player.
+
+    This mirrors the TypeScript AIInteractionHandler heuristic:
+
+    - Prefer options with the highest capturedCapHeight.
+    - Break ties by choosing the landingPosition closest to a rough
+      board centre estimate using Manhattan distance.
+    """
+    try:
+        ai_type = request.ai_type or _select_ai_type(request.difficulty)
+
+        if not request.options:
+            raise HTTPException(
+                status_code=400,
+                detail="capture_direction choice has no options",
+            )
+
+        def _estimate_centre(reference: Position) -> Position:
+            # Simple heuristic centre; we do not currently need full board
+            # config here.
+            return Position(
+                x=reference.x,
+                y=reference.y,
+                z=getattr(reference, "z", None),
+            )
+
+        def _manhattan(a: Position, b: Position) -> int:
+            az = getattr(a, "z", 0) or 0
+            bz = getattr(b, "z", 0) or 0
+            return abs(a.x - b.x) + abs(a.y - b.y) + abs(az - bz)
+
+        centre = _estimate_centre(request.options[0].landing_position)
+
+        selected: CaptureDirectionChoiceOption = request.options[0]
+        best_cap = selected.captured_cap_height
+        best_dist = _manhattan(selected.landing_position, centre)
+
+        for opt in request.options[1:]:
+            cap = opt.captured_cap_height
+            if cap > best_cap:
+                selected = opt
+                best_cap = cap
+                best_dist = _manhattan(opt.landing_position, centre)
+                continue
+
+            if cap == best_cap:
+                dist = _manhattan(opt.landing_position, centre)
+                if dist < best_dist:
+                    selected = opt
+                    best_dist = dist
+
+        return CaptureDirectionChoiceResponse(
+            selectedOption=selected,
+            aiType=ai_type.value,
+            difficulty=request.difficulty,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Error selecting capture direction option: %s",
+            str(e),
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail=str(e))

@@ -172,9 +172,11 @@ In addition to the Python self-play harness, the TS shared-engine orchestrator h
 > **Note:** As of this QA task the soak harness exercises the orchestrator via the backend `GameEngine` only. A symmetric sandbox-based entrypoint (`ClientSandboxEngine`) can be reintroduced in a later task once the client build surface under `ts-node` is fully clean.
 
 - Commands:
-  - `npm run soak:orchestrator`
-  - `npm run soak:orchestrator:smoke` (single short backend game on square8, fails on invariant violation)
-  - Examples:
+  - `npm run soak:orchestrator` – generic entrypoint, parameters controlled via `--boardTypes`, `--gamesPerBoard`, etc.
+  - `npm run soak:orchestrator:smoke` – **CI smoke profile** (single short backend game on `square8`, fails on invariant violation). Useful as a fast invariant check on PRs or before running heavier soaks.
+  - `npm run soak:orchestrator:short` – **CI short-soak profile** (multiple short backend games on `square8` with `--failOnViolation=true`). This is the concrete implementation of the `SLO-CI-ORCH-SHORT-SOAK` gate referenced in `ORCHESTRATOR_ROLLOUT_PLAN.md` and wired into the `orchestrator-short-soak` job in `.github/workflows/ci.yml`.
+  - `npm run soak:orchestrator:nightly` – **longer multi-board profile** used for scheduled or on-demand deeper soaks (20 games per board type across `square8`, `square19`, and `hexagonal`, with `--failOnViolation` enabled by default).
+  - Examples (variants of the generic entrypoint):
     - `npm run soak:orchestrator -- --boardTypes=square8,square19 --gamesPerBoard=25`
     - `npm run soak:orchestrator -- --boardTypes=hexagonal --gamesPerBoard=10 --maxTurns=750 --randomSeed=1234 --outputPath=results/orchestrator_soak_smoke.json`
     - `npm run soak:orchestrator -- --failOnViolation` (non-zero exit if any invariant violation is detected)
@@ -273,6 +275,66 @@ You do **not** need to re-state the full orchestrator rollout design here; treat
 [`ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md:1) as the SLO and
 gating SSoT, and this document as the operational recipe for running strict
 invariant and soak jobs.
+
+### 2.5 Named Python soak profiles (`run_self_play_soak.py --profile=…`)
+
+The Python self-play harness under `ai-service/scripts/run_self_play_soak.py` exposes two
+named profiles that bundle strict-invariant and AI-health checks into small,
+repeatable runs:
+
+- `--profile python-strict` – **strict invariant mini‑soak**:
+  - Configuration (see `_parse_args` and `main` in `run_self_play_soak.py`):
+    - `num_games=6`, `board_type=square8`, `engine_mode=mixed`,
+      `difficulty_band=light`, `num_players=2`, `max_moves=150`,
+      `gc_interval=10`, deterministic `seed` default of `1764142864`.
+  - Intended use:
+    - Local or CI‑adjacent **Python strict-invariant preflight**, mirroring
+      the spirit of the TS short orchestrator soak on `square8`.
+    - When combined with `RINGRIFT_STRICT_NO_MOVE_INVARIANT=1` it treats
+      any `no_legal_moves_for_current_player` or `step_exception:*` termination
+      as an anomaly and can exit non‑zero via `--fail-on-anomaly`.
+  - Example:
+    ```bash
+    cd ai-service
+    RINGRIFT_STRICT_NO_MOVE_INVARIANT=1 \
+    python scripts/run_self_play_soak.py \
+      --log-jsonl logs/selfplay/soak.python_strict.jsonl \
+      --summary-json logs/selfplay/soak.python_strict.summary.json \
+      --profile python-strict \
+      --fail-on-anomaly
+    ```
+
+- `--profile ai-healthcheck` – **AI self‑play healthcheck**:
+  - Configuration (see `run_ai_healthcheck_profile`):
+    - Runs a small mixed-engine job across `square8`, `square19`, and `hexagonal`
+      with a light difficulty band (`mixed_(light)_2p`), bounded `num_games` per board
+      (default `RINGRIFT_AI_HEALTHCHECK_GAMES` or `2`), and an aggregate JSON summary.
+  - Output:
+    - Per‑board JSONL logs (one file per board type) plus a summary JSON with:
+      - `invariant_violations_by_id` keyed by `INV-*`,
+      - `invariant_violations_total`,
+      - a `parity_mismatches` placeholder block reserved for future TS↔Python checks.
+  - Intended use:
+    - Scheduled or on‑demand **AI healthcheck** that exercises the Python AI + rules
+      stack under mixed engines and surfaces invariant regressions before they affect
+      orchestrator/production rollout (see the Python invariant SLO notes in
+      `INVARIANTS_AND_PARITY_FRAMEWORK.md`).
+  - Example:
+    ```bash
+    cd ai-service
+    RINGRIFT_STRICT_NO_MOVE_INVARIANT=1 \
+    python scripts/run_self_play_soak.py \
+      --log-jsonl logs/selfplay/healthcheck.log.jsonl \
+      --summary-json logs/selfplay/healthcheck.summary.json \
+      --profile ai-healthcheck
+    ```
+
+These profiles do **not** define rules semantics; they are diagnostics/health tools
+that complement the TS orchestrator soaks and SLOs described above. Treat any
+new invariant pattern discovered by these Python soaks as input to:
+
+- promote representative snapshots into `ai-service/tests/invariants/**`, and
+- correlate with TS orchestrator soaks and parity jobs before altering rollout.
 
 ---
 

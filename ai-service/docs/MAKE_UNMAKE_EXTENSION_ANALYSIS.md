@@ -20,15 +20,15 @@ The make/unmake pattern implemented in [`mutable_state.py`](../app/rules/mutable
 
 ### Key Findings
 
-| Component                   | Benefit Potential | Priority | Expected Speedup | Effort |
-| --------------------------- | ----------------- | -------- | ---------------- | ------ |
-| **MCTS AI**                 | **High**          | **1**    | 5-15x            | Medium |
-| **Descent AI**              | **High**          | **2**    | 5-15x            | Medium |
-| **Training Self-Play**      | **High**          | **3**    | 3-8x             | Medium |
-| **Tournament System**       | Medium            | 4        | 2-5x             | Easy   |
-| **RL Environment**          | Medium            | 5        | 2-4x             | Easy   |
-| **Heuristic AI**            | Low               | 6        | 1.5-3x           | Easy   |
-| **Neural Network Training** | None              | N/A      | N/A              | N/A    |
+| Component                   | Benefit Potential | Priority | Expected Speedup | Status          |
+| --------------------------- | ----------------- | -------- | ---------------- | --------------- |
+| **MCTS AI**                 | **High**          | **1**    | 5-15x            | ✅ **COMPLETE** |
+| **Descent AI**              | **High**          | **2**    | 5-15x            | ✅ **COMPLETE** |
+| **Training Self-Play**      | **High**          | **3**    | 3-8x             | Auto-benefits   |
+| **Tournament System**       | Medium            | 4        | 2-5x             | Auto-benefits   |
+| **RL Environment**          | Medium            | 5        | 2-4x             | Pending         |
+| **Heuristic AI**            | Low               | 6        | 1.5-3x           | Pending         |
+| **Neural Network Training** | None              | N/A      | N/A              | N/A             |
 
 ---
 

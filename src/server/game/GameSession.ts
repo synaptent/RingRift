@@ -16,6 +16,7 @@ import { orchestratorRollout, EngineSelection } from '../services/OrchestratorRo
 import { shadowComparator } from '../services/ShadowModeComparator';
 import { createSimpleAdapter, createAutoSelectDecisionHandler } from './turn/TurnEngineAdapter';
 import { config } from '../config';
+import { applyDecisionPhaseFixtureIfNeeded } from './testFixtures/decisionPhaseFixtures';
 import {
   Move,
   Player,
@@ -25,7 +26,17 @@ import {
   BOARD_CONFIGS,
   TimeControl,
   GameResult,
+  GamePhase,
+  MoveType,
+  PlayerChoiceType,
 } from '../../shared/types/game';
+import type {
+  DecisionAutoResolvedMeta,
+  DecisionPhaseTimeoutWarningPayload,
+  DecisionPhaseTimedOutPayload,
+} from '../../shared/types/websocket';
+import type { LocalAIRng } from '../../shared/engine';
+import { SeededRNG } from '../../shared/utils/rng';
 import { GameSessionStatus, deriveGameSessionStatus } from '../../shared/stateMachines/gameSession';
 import {
   AIRequestState,
@@ -90,6 +101,15 @@ export class GameSession {
     aiQualityMode: 'normal',
   };
 
+  // Decision phase timeout tracking (per-session, per-active decision)
+  private decisionTimeoutDeadlineMs: number | null = null;
+  private decisionTimeoutPhase: GamePhase | null = null;
+  private decisionTimeoutPlayer: number | null = null;
+  private decisionTimeoutChoiceType: PlayerChoiceType | null = null;
+  private decisionTimeoutChoiceKind: DecisionAutoResolvedMeta['choiceKind'] | null = null;
+  private decisionTimeoutWarningHandle: NodeJS.Timeout | null = null;
+  private decisionTimeoutHandle: NodeJS.Timeout | null = null;
+
   // Default AI request timeout (can be overridden via config)
   private readonly aiRequestTimeoutMs: number;
 
@@ -148,7 +168,7 @@ export class GameSession {
       players.push(this.createPlayer(game.player2, 2, boardConfig, initialTimeMs));
     }
 
-    // Optional AI opponents
+    // Optional AI opponents and per-game rules configuration (e.g., swap rule).
     const gameStateSnapshot = (game.gameState || {}) as any;
     const aiOpponents = gameStateSnapshot.aiOpponents as
       | {
@@ -158,6 +178,7 @@ export class GameSession {
           aiType?: 'random' | 'heuristic' | 'minimax' | 'mcts';
         }
       | undefined;
+    const rulesOptions = gameStateSnapshot.rulesOptions as GameState['rulesOptions'] | undefined;
 
     if (aiOpponents && aiOpponents.count > 0) {
       const startingNumber = players.length + 1;
@@ -235,6 +256,11 @@ export class GameSession {
 
     this.interactionManager = new PlayerInteractionManager(delegatingHandler);
 
+    // Derive the per-game RNG seed from the persisted Game row when available.
+    // This keeps backend GameState.rngSeed aligned with the database and the
+    // Python AI service, which both treat this seed as the canonical RNG root.
+    const rngSeed = typeof game.rngSeed === 'number' ? game.rngSeed : undefined;
+
     // Create game engine
     this.gameEngine = new GameEngine(
       this.gameId,
@@ -242,7 +268,11 @@ export class GameSession {
       players,
       timeControl,
       (game as any).isRated ?? true,
-      this.interactionManager
+      this.interactionManager,
+      // Use the persisted per-game RNG seed when available so backend
+      // GameState.rngSeed matches the database and AI service expectations.
+      rngSeed,
+      rulesOptions
     );
 
     // Decide which engine path to use for this session based on
@@ -254,6 +284,15 @@ export class GameSession {
     // Replay moves
     for (const move of game.moves) {
       this.replayMove(move);
+    }
+
+    // In non-production environments, apply any configured decision-phase
+    // fixture overlays after historical moves have been replayed. This
+    // allows specialized test fixtures to start directly in a decision
+    // phase (for example line_processing) without affecting production
+    // game lifecycles.
+    if (config.isTest || config.isDevelopment) {
+      applyDecisionPhaseFixtureIfNeeded(this.gameEngine, gameStateSnapshot);
     }
 
     this.rulesFacade = new RulesBackendFacade(this.gameEngine, this.pythonRulesClient);
@@ -282,6 +321,12 @@ export class GameSession {
 
     // Compute initial session status
     this.recomputeSessionStatus();
+
+    // Schedule initial decision-phase timeout (if applicable) based on
+    // the reconstructed game state. This ensures that games resumed in a
+    // decision phase – including test fixtures – get appropriate timeout
+    // handling even before any new moves are made.
+    this.scheduleDecisionPhaseTimeout(this.gameEngine.getGameState());
 
     logger.info('GameSession initialized', {
       gameId: this.gameId,
@@ -711,7 +756,10 @@ export class GameSession {
     }
   }
 
-  private async broadcastUpdate(result: any): Promise<void> {
+  private async broadcastUpdate(
+    result: any,
+    decisionMeta?: DecisionAutoResolvedMeta | null
+  ): Promise<void> {
     const updatedState = this.gameEngine.getGameState();
 
     if (result.gameResult) {
@@ -727,6 +775,9 @@ export class GameSession {
 
       // Update session status for game completion
       this.recomputeSessionStatus(updatedState, result.gameResult);
+
+      // Game is over – clear any pending decision-phase timeout.
+      this.resetDecisionPhaseTimeout();
     } else {
       // Broadcast state to all connected clients in the room
       // For active players, we include their valid moves
@@ -747,7 +798,7 @@ export class GameSession {
             ? this.gameEngine.getValidMoves(updatedState.currentPlayer)
             : [];
 
-          socket.emit('game_state', {
+          const payload: any = {
             type: 'game_update',
             data: {
               gameId: this.gameId,
@@ -755,13 +806,39 @@ export class GameSession {
               validMoves,
             },
             timestamp: new Date().toISOString(),
-          });
+          };
+
+          if (decisionMeta) {
+            payload.data.meta = {
+              diffSummary: {
+                decisionAutoResolved: decisionMeta,
+              },
+            };
+          }
+
+          socket.emit('game_state', payload);
         }
       }
 
       // Update session status
       this.recomputeSessionStatus(updatedState);
+
+      // (Re)schedule decision-phase timeout based on the new state.
+      this.scheduleDecisionPhaseTimeout(updatedState);
     }
+  }
+
+  /**
+   * Create a deterministic RNG for backend local AI decisions based on the
+   * canonical GameState.rngSeed. This mirrors the seeding used by AIEngine so
+   * that for a fixed rngSeed and game configuration, fallback and decision
+   * phases are reproducible across runs.
+   */
+  private createLocalAIRng(state: GameState, playerNumber: number): LocalAIRng {
+    const baseSeed = typeof state.rngSeed === 'number' ? state.rngSeed : 0;
+    const mixed = (baseSeed ^ (playerNumber * 0x9e3779b1)) >>> 0;
+    const rng = new SeededRNG(mixed);
+    return () => rng.next();
   }
 
   /**
@@ -777,6 +854,8 @@ export class GameSession {
       const currentPlayer = state.players.find((p) => p.playerNumber === currentPlayerNumber);
 
       if (!currentPlayer || currentPlayer.type !== 'ai') return;
+
+      const localRng = this.createLocalAIRng(state, currentPlayerNumber);
 
       // Cancel any in-flight request from previous turn
       this.cancelInFlightAIRequest('manual');
@@ -803,7 +882,7 @@ export class GameSession {
       // Transition to in_flight
       this.aiRequestState = markInFlight(this.aiRequestState, Date.now(), this.aiRequestTimeoutMs);
 
-      let result: { success: boolean; error?: string; gameState?: GameState; gameResult?: any };
+      let result: RulesResult;
       let appliedMoveType: Move['type'] | undefined;
 
       try {
@@ -828,7 +907,8 @@ export class GameSession {
           const selected = globalAIEngine.chooseLocalMoveFromCandidates(
             currentPlayerNumber,
             state,
-            decisionCandidates
+            decisionCandidates,
+            localRng
           );
 
           if (!selected) {
@@ -921,7 +1001,7 @@ export class GameSession {
         } else {
           // Some other error
           const errorType = (error as any)?.aiErrorType ?? 'unknown';
-          this.aiRequestState = markFailed('AI_SERVICE_ERROR', errorType, this.aiRequestState);
+          this.aiRequestState = markFailed('AI_SERVICE_ERROR', errorType, this.aiRequestState, Date.now());
 
           getMetricsService().recordAITurnRequestTerminal('failed', 'AI_SERVICE_ERROR', errorType);
 
@@ -1008,8 +1088,10 @@ export class GameSession {
     this.aiRequestState = markFallbackLocal(this.aiRequestState);
     getMetricsService().recordAIFallback('move_rejected');
 
-    // Try local fallback
-    const fallbackMove = globalAIEngine.getLocalFallbackMove(playerNumber, state);
+    // Try local fallback using a deterministic RNG derived from the
+    // canonical GameState.rngSeed so fallback behaviour is reproducible.
+    const fallbackRng = this.createLocalAIRng(state, playerNumber);
+    const fallbackMove = globalAIEngine.getLocalFallbackMove(playerNumber, state, fallbackRng);
 
     if (fallbackMove) {
       const result =
@@ -1046,8 +1128,10 @@ export class GameSession {
     this.aiRequestState = markFallbackLocal(this.aiRequestState);
     getMetricsService().recordAIFallback('no_move');
 
-    // Try local fallback
-    const fallbackMove = globalAIEngine.getLocalFallbackMove(playerNumber, state);
+    // Try local fallback using a deterministic RNG derived from the
+    // canonical GameState.rngSeed so fallback behaviour is reproducible.
+    const fallbackRng = this.createLocalAIRng(state, playerNumber);
+    const fallbackMove = globalAIEngine.getLocalFallbackMove(playerNumber, state, fallbackRng);
 
     if (fallbackMove) {
       const result =
@@ -1077,7 +1161,8 @@ export class GameSession {
     this.aiRequestState = markFailed(
       'AI_SERVICE_OVERLOADED',
       'both_service_and_fallback_failed',
-      this.aiRequestState
+      this.aiRequestState,
+      Date.now()
     );
 
     getMetricsService().recordAITurnRequestTerminal(
@@ -1193,7 +1278,7 @@ export class GameSession {
   }
 
   // ===================
-  // Decision Phase Timeout API (stub implementations for compatibility)
+  // Decision Phase Timeout API
   // ===================
 
   /**
@@ -1201,14 +1286,357 @@ export class GameSession {
    * Returns null if no timeout is active.
    */
   getDecisionPhaseRemainingMs(): number | null {
-    // TODO: Implement when decision phase timeout feature is added
-    return null;
+    if (this.decisionTimeoutDeadlineMs == null) {
+      return null;
+    }
+    const remaining = this.decisionTimeoutDeadlineMs - Date.now();
+    return remaining > 0 ? remaining : 0;
   }
 
   /**
    * Reset/clear the current decision phase timeout.
    */
   resetDecisionPhaseTimeout(): void {
-    // TODO: Implement when decision phase timeout feature is added
+    if (this.decisionTimeoutWarningHandle) {
+      clearTimeout(this.decisionTimeoutWarningHandle);
+      this.decisionTimeoutWarningHandle = null;
+    }
+    if (this.decisionTimeoutHandle) {
+      clearTimeout(this.decisionTimeoutHandle);
+      this.decisionTimeoutHandle = null;
+    }
+
+    this.decisionTimeoutDeadlineMs = null;
+    this.decisionTimeoutPhase = null;
+    this.decisionTimeoutPlayer = null;
+    this.decisionTimeoutChoiceType = null;
+    this.decisionTimeoutChoiceKind = null;
+  }
+
+  /**
+   * Internal helper to map a GamePhase to the narrower timeout phase union
+   * used by DecisionPhaseTimeoutWarningPayload / DecisionPhaseTimedOutPayload.
+   */
+  private mapPhaseToTimeoutPhase(phase: GamePhase):
+    | DecisionPhaseTimeoutWarningPayload['data']['phase']
+    | null {
+    if (
+      phase === 'line_processing' ||
+      phase === 'territory_processing' ||
+      phase === 'chain_capture'
+    ) {
+      return phase;
+    }
+    return null;
+  }
+
+  /**
+   * Inspect the latest GameState and (re)schedule decision-phase timeout
+   * timers when the active player is a human and the phase exposes
+   * canonical decision moves.
+   */
+  private scheduleDecisionPhaseTimeout(state: GameState): void {
+    // Always clear any previous timers first.
+    this.resetDecisionPhaseTimeout();
+
+    if (state.gameStatus !== 'active') {
+      return;
+    }
+
+    const phase = state.currentPhase;
+    const timeoutPhase = this.mapPhaseToTimeoutPhase(phase);
+    if (!timeoutPhase) {
+      return;
+    }
+
+    const currentPlayerNumber = state.currentPlayer;
+    const currentPlayer = state.players.find((p) => p.playerNumber === currentPlayerNumber);
+    if (!currentPlayer || currentPlayer.type !== 'human') {
+      return;
+    }
+
+    const allMoves = this.gameEngine.getValidMoves(currentPlayerNumber);
+
+    const classification = this.classifyDecisionSurface(phase, allMoves);
+    if (!classification) {
+      return;
+    }
+
+    const { choiceType, choiceKind, candidateTypes } = classification;
+    const decisionCandidates = allMoves.filter((m) => candidateTypes.includes(m.type));
+    if (decisionCandidates.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const timeoutMs = config.decisionPhaseTimeouts.defaultTimeoutMs;
+    const warningBeforeMs = config.decisionPhaseTimeouts.warningBeforeTimeoutMs;
+
+    this.decisionTimeoutDeadlineMs = now + timeoutMs;
+    this.decisionTimeoutPhase = phase;
+    this.decisionTimeoutPlayer = currentPlayerNumber;
+    this.decisionTimeoutChoiceType = choiceType;
+    this.decisionTimeoutChoiceKind = choiceKind;
+
+    const warningDelay = timeoutMs - warningBeforeMs;
+
+    if (warningDelay > 0) {
+      this.decisionTimeoutWarningHandle = setTimeout(() => {
+        this.emitDecisionPhaseTimeoutWarning();
+      }, warningDelay);
+    }
+
+    this.decisionTimeoutHandle = setTimeout(() => {
+      void this.handleDecisionPhaseTimedOut();
+    }, timeoutMs);
+
+    logger.info('Scheduled decision phase timeout', {
+      gameId: this.gameId,
+      playerNumber: currentPlayerNumber,
+      phase,
+      timeoutMs,
+      warningBeforeMs,
+    });
+  }
+
+  /**
+   * Derive the logical PlayerChoiceType / DecisionChoiceKind and candidate
+   * Move types for the current decision surface.
+   */
+  private classifyDecisionSurface(
+    phase: GamePhase,
+    moves: Move[]
+  ):
+    | {
+        choiceType: PlayerChoiceType;
+        choiceKind: DecisionAutoResolvedMeta['choiceKind'];
+        candidateTypes: MoveType[];
+      }
+    | null {
+    if (phase === 'line_processing') {
+      if (moves.some((m) => m.type === 'process_line')) {
+        return {
+          choiceType: 'line_order',
+          choiceKind: 'line_order',
+          candidateTypes: ['process_line'],
+        };
+      }
+      if (moves.some((m) => m.type === 'choose_line_reward')) {
+        return {
+          choiceType: 'line_reward_option',
+          choiceKind: 'line_reward',
+          candidateTypes: ['choose_line_reward'],
+        };
+      }
+      return null;
+    }
+
+    if (phase === 'territory_processing') {
+      if (moves.some((m) => m.type === 'process_territory_region')) {
+        return {
+          choiceType: 'region_order',
+          choiceKind: 'territory_region_order',
+          candidateTypes: ['process_territory_region'],
+        };
+      }
+      if (moves.some((m) => m.type === 'eliminate_rings_from_stack')) {
+        return {
+          choiceType: 'ring_elimination',
+          choiceKind: 'ring_elimination',
+          candidateTypes: ['eliminate_rings_from_stack'],
+        };
+      }
+      return null;
+    }
+
+    if (phase === 'chain_capture') {
+      if (moves.some((m) => m.type === 'continue_capture_segment')) {
+        return {
+          choiceType: 'capture_direction',
+          choiceKind: 'capture_direction',
+          candidateTypes: ['continue_capture_segment'],
+        };
+      }
+      return null;
+    }
+
+    return null;
+  }
+
+  /**
+   * Emit a warning event shortly before the decision timeout elapses.
+   */
+  private emitDecisionPhaseTimeoutWarning(): void {
+    if (
+      this.decisionTimeoutDeadlineMs == null ||
+      this.decisionTimeoutPlayer == null ||
+      !this.decisionTimeoutPhase
+    ) {
+      return;
+    }
+
+    const timeoutPhase = this.mapPhaseToTimeoutPhase(this.decisionTimeoutPhase);
+    if (!timeoutPhase) {
+      return;
+    }
+
+    const remainingMs = Math.max(0, this.decisionTimeoutDeadlineMs - Date.now());
+
+    const payload: DecisionPhaseTimeoutWarningPayload = {
+      type: 'decision_phase_timeout_warning',
+      data: {
+        gameId: this.gameId,
+        playerNumber: this.decisionTimeoutPlayer,
+        phase: timeoutPhase,
+        remainingMs,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    this.io.to(this.gameId).emit('decision_phase_timeout_warning', payload);
+
+    logger.info('Emitted decision phase timeout warning', {
+      gameId: this.gameId,
+      playerNumber: this.decisionTimeoutPlayer,
+      phase: timeoutPhase,
+      remainingMs,
+    });
+  }
+
+  /**
+   * Handle an expired decision-phase timeout by auto-selecting a canonical
+   * Move for the active human player, applying it, persisting it, emitting
+   * timeout events, and broadcasting an update with decisionAutoResolved
+   * metadata attached.
+   */
+  private async handleDecisionPhaseTimedOut(): Promise<void> {
+    const phaseSnapshot = this.decisionTimeoutPhase;
+    const playerSnapshot = this.decisionTimeoutPlayer;
+    const choiceTypeSnapshot = this.decisionTimeoutChoiceType;
+    const choiceKindSnapshot = this.decisionTimeoutChoiceKind;
+
+    // Clear timers up front to avoid duplicate handling; scheduling for the
+    // next decision surface is driven by broadcastUpdate.
+    this.resetDecisionPhaseTimeout();
+
+    if (
+      phaseSnapshot == null ||
+      playerSnapshot == null ||
+      !choiceTypeSnapshot ||
+      !choiceKindSnapshot
+    ) {
+      return;
+    }
+
+    const state = this.gameEngine.getGameState();
+    if (state.gameStatus !== 'active') {
+      return;
+    }
+
+    if (state.currentPlayer !== playerSnapshot) {
+      return;
+    }
+
+    if (state.currentPhase !== phaseSnapshot) {
+      return;
+    }
+
+    const timeoutPhase = this.mapPhaseToTimeoutPhase(state.currentPhase);
+    if (!timeoutPhase) {
+      return;
+    }
+
+    const currentPlayer = state.players.find((p) => p.playerNumber === playerSnapshot);
+    if (!currentPlayer || currentPlayer.type !== 'human') {
+      return;
+    }
+
+    const allMoves = this.gameEngine.getValidMoves(playerSnapshot);
+    const classification = this.classifyDecisionSurface(state.currentPhase, allMoves);
+    if (!classification) {
+      return;
+    }
+
+    const { candidateTypes } = classification;
+    const decisionCandidates = allMoves.filter((m) => candidateTypes.includes(m.type));
+    if (decisionCandidates.length === 0) {
+      return;
+    }
+
+    // Naive but deterministic auto-selection: pick the first candidate.
+    const selected = decisionCandidates[0];
+
+    let result: RulesResult;
+    try {
+      result = await this.rulesFacade.applyMoveById(playerSnapshot, selected.id);
+    } catch (err) {
+      logger.error('Failed to apply auto-resolved decision move', {
+        gameId: this.gameId,
+        playerNumber: playerSnapshot,
+        moveId: selected.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    if (!result.success) {
+      logger.warn('Engine rejected auto-resolved decision move', {
+        gameId: this.gameId,
+        playerNumber: playerSnapshot,
+        moveId: selected.id,
+        reason: result.error,
+      });
+      return;
+    }
+
+    const updatedState = this.gameEngine.getGameState();
+    const lastMove = updatedState.moveHistory[updatedState.moveHistory.length - 1];
+    const player = updatedState.players.find((p) => p.playerNumber === playerSnapshot);
+
+    const decisionMeta: DecisionAutoResolvedMeta = {
+      choiceType: choiceTypeSnapshot,
+      choiceKind: choiceKindSnapshot,
+      actingPlayerNumber: playerSnapshot,
+      resolvedMoveId: selected.id,
+      reason: 'timeout',
+    };
+
+    if (lastMove) {
+      // Attach decision auto-resolve metadata directly to the canonical Move
+      // so that GamePersistenceService.serializeMoveData can persist it into
+      // moveData.decisionAutoResolved for later history reconstruction.
+      (lastMove as any).decisionAutoResolved = decisionMeta;
+    }
+
+    if (lastMove && player) {
+      // Persist as a normal human move attributed to the player.
+      await this.persistMove(player.id, {}, result);
+    }
+
+    const timeoutPayload: DecisionPhaseTimedOutPayload = {
+      type: 'decision_phase_timed_out',
+      data: {
+        gameId: this.gameId,
+        playerNumber: playerSnapshot,
+        phase: timeoutPhase,
+        autoSelectedMoveId: selected.id,
+        reason: `Decision timeout: auto-selected ${selected.type}`,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    this.io.to(this.gameId).emit('decision_phase_timed_out', timeoutPayload);
+
+    await this.broadcastUpdate(result, decisionMeta);
+
+    logger.info('Auto-resolved decision phase after timeout', {
+      gameId: this.gameId,
+      playerNumber: playerSnapshot,
+      phase: timeoutPhase,
+      moveId: selected.id,
+    });
+
+    // After an auto-resolved human move, AI may need to act next.
+    await this.maybePerformAITurn();
   }
 }

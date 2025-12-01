@@ -164,6 +164,13 @@ export class SandboxOrchestratorAdapter {
   private readonly decisionHandler: SandboxDecisionHandler;
   private readonly callbacks?: SandboxAdapterCallbacks;
 
+  /**
+   * Chain capture continuation moves, populated when processTurnAsync returns
+   * with a chain_capture pending decision. These are returned by getValidMoves()
+   * when the phase is chain_capture.
+   */
+  private chainCaptureOptions: Move[] | undefined;
+
   constructor(deps: SandboxAdapterDeps) {
     this.stateAccessor = deps.stateAccessor;
     this.decisionHandler = deps.decisionHandler;
@@ -209,6 +216,18 @@ export class SandboxOrchestratorAdapter {
 
       // Update state
       this.stateAccessor.updateGameState(result.nextState);
+
+      // Handle chain capture pending decision: store the continuation options
+      // so getValidMoves() can return them during chain_capture phase.
+      if (
+        result.status === 'awaiting_decision' &&
+        result.pendingDecision?.type === 'chain_capture'
+      ) {
+        this.chainCaptureOptions = result.pendingDecision.options;
+      } else {
+        // Clear chain capture options when not in chain capture
+        this.chainCaptureOptions = undefined;
+      }
 
       const hashAfter = hashGameState(result.nextState);
       const durationMs = Date.now() - startTime;
@@ -363,9 +382,18 @@ export class SandboxOrchestratorAdapter {
 
   /**
    * Get all valid moves for the current player and phase.
+   *
+   * During chain_capture phase, returns the stored continuation options
+   * from the previous capture move's pending decision.
    */
   public getValidMoves(): Move[] {
     const state = this.stateAccessor.getGameState();
+
+    // During chain_capture phase, return stored continuation options
+    if (state.currentPhase === 'chain_capture' && this.chainCaptureOptions) {
+      return this.chainCaptureOptions;
+    }
+
     return getValidMoves(state);
   }
 

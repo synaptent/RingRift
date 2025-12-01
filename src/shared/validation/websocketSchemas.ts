@@ -84,6 +84,70 @@ export type PlayerChoiceResponsePayload = z.infer<
   typeof PlayerChoiceResponsePayloadSchema
 >;
 
+// --- Server → client metadata schemas (game_state diff summaries) ---
+
+/**
+ * Reason why a pending decision was auto-resolved by the system.
+ *
+ * This mirrors DecisionAutoResolveReason in src/shared/types/websocket.ts.
+ */
+export const DecisionAutoResolveReasonSchema = z.enum([
+  'timeout',
+  'disconnected',
+  'fallback',
+]);
+
+/**
+ * High-level semantic grouping of a decision, aligned with ChoiceViewModels.
+ *
+ * This mirrors DecisionChoiceKind in src/shared/types/websocket.ts.
+ */
+export const DecisionChoiceKindSchema = z.enum([
+  'line_order',
+  'line_reward',
+  'ring_elimination',
+  'territory_region_order',
+  'capture_direction',
+  'other',
+]);
+
+/**
+ * Zod schema for the DecisionAutoResolvedMeta structure attached to
+ * GameStateUpdateMessage.data.meta.diffSummary.decisionAutoResolved.
+ */
+export const DecisionAutoResolvedMetaSchema = z.object({
+  choiceType: z.enum([
+    'line_order',
+    'line_reward_option',
+    'ring_elimination',
+    'region_order',
+    'capture_direction',
+  ]),
+  choiceKind: DecisionChoiceKindSchema,
+  actingPlayerNumber: z.number().int().min(1),
+  resolvedMoveId: z.string().min(1).optional(),
+  resolvedOptionIndex: z.number().int().min(0).optional(),
+  resolvedOptionKey: z.string().min(1).optional(),
+  reason: DecisionAutoResolveReasonSchema,
+});
+
+export type DecisionAutoResolvedMetaPayload = z.infer<typeof DecisionAutoResolvedMetaSchema>;
+
+/**
+ * Schema for the optional meta block on GameStateUpdateMessage.data.
+ *
+ * This is intentionally focused on diffSummary so that tests can validate
+ * the presence and shape of decisionAutoResolved metadata without
+ * constraining the full GameState representation used on the wire.
+ */
+export const GameStateUpdateMetaSchema = z.object({
+  diffSummary: z
+    .object({
+      decisionAutoResolved: DecisionAutoResolvedMetaSchema.optional(),
+    })
+    .optional(),
+});
+
 // --- Event name &#8594; schema mapping used by WebSocketServer ---
 
 export const WebSocketPayloadSchemas = {

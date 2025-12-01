@@ -79,6 +79,9 @@ export type MoveType =
   // Capture and capture-chain moves.
   | 'overtaking_capture'
   | 'continue_capture_segment'
+  // Meta-move: pie rule / swap colours in 2-player games.
+  // This is a pure seat/colour swap with no board geometry change.
+  | 'swap_sides'
   // Line-processing decisions (see GamePhase 'line_processing').
   | 'process_line'
   | 'choose_line_reward'
@@ -124,6 +127,28 @@ export interface AiOpponentsConfig {
 }
 
 /**
+ * Per-game rules configuration options that can be threaded through
+ * GameState. These options are intentionally minimal and versioned
+ * so that hosts can enable/disable specific rule variants without
+ * changing core engine semantics.
+ */
+export interface RulesOptions {
+  /**
+   * When true, enables the 2-player pie rule (swap_sides meta-move)
+   * for this game. Hosts are expected to only expose this for
+   * maxPlayers === 2; 3p/4p games never surface swap_sides even if
+   * this flag is mis-set.
+   */
+  swapRuleEnabled?: boolean;
+  // (future) p2DoubleTurnMode?: 'off' | 'sequential' | 'mega';
+  // (future) p1NoFirstTurnCaptures?: boolean;
+  // (future) p1NoFirstTurnLines?: boolean;
+  // (future) openingMode?: 'standard' | 'randomized_openings' | 'opening_book';
+  // (future) ringHandicapByPlayer?: Record<number, number>;
+  // (future) territoryTemplateId?: string;
+}
+
+/**
  * Shared create-game request payload used by the client, server
  * route handler, and validation schema. This is the long-term
  * source of truth for the game creation API shape.
@@ -135,6 +160,12 @@ export interface CreateGameRequest {
   isPrivate: boolean;
   maxPlayers: number;
   aiOpponents?: AiOpponentsConfig;
+  /**
+   * Optional per-game rules configuration. When omitted, hosts should
+   * apply their own defaults (for example, enabling the swap rule for
+   * 2-player games).
+   */
+  rulesOptions?: RulesOptions;
   /** Optional RNG seed for deterministic games; auto-generated if not provided */
   seed?: number;
 }
@@ -439,6 +470,10 @@ export interface GameTrace {
  * Wire-level move payload used by WebSockets and HTTP APIs. This
  * intentionally stays simpler than the internal Move type and is
  * validated by MoveSchema in src/shared/validation/schemas.ts.
+ *
+ * Notes:
+ * - For non-geometric meta-moves such as 'skip_placement' and 'swap_sides',
+ *   the `to` coordinate is a sentinel with no board semantics.
  */
 export interface MovePayload {
   moveType: MoveType;
@@ -488,6 +523,12 @@ export interface GameState {
    */
   mustMoveFromStackKey?: string | undefined;
   /**
+   * When in chain_capture phase, stores the current landing position of the
+   * capturing stack. Used by RuleEngine/orchestrator to enumerate valid
+   * continue_capture_segment moves. Cleared when chain capture completes.
+   */
+  chainCapturePosition?: Position | undefined;
+  /**
    * Legacy linear move log preserved for backward compatibility with
    * existing clients/tests. New tooling should prefer the richer
    * GameHistoryEntry-based history when available.
@@ -501,6 +542,11 @@ export interface GameState {
    */
   history: GameHistoryEntry[];
   timeControl: TimeControl;
+  /**
+   * Optional per-game rules options (e.g., swap rule configuration).
+   * Engines should treat missing rulesOptions as "use host defaults".
+   */
+  rulesOptions?: RulesOptions;
   spectators: string[]; // User IDs
   gameStatus: GameStatus;
   winner?: number | undefined;
@@ -508,7 +554,7 @@ export interface GameState {
   lastMoveAt: Date;
   isRated: boolean;
   maxPlayers: number;
-
+ 
   // RingRift specific state
   totalRingsInPlay: number; // Total rings placed on board
   totalRingsEliminated: number; // Total rings eliminated from game
@@ -600,16 +646,20 @@ export const positionsEqual = (pos1: Position, pos2: Position): boolean => {
 
 // Board configuration constants for RingRift
 export const BOARD_CONFIGS = {
-  square8: {
-    size: 8,
-    totalSpaces: 64,
-    ringsPerPlayer: 18,
-    lineLength: 3, // Minimum line length for collapse (8x8 simplified)
-    movementAdjacency: 'moore' as AdjacencyType, // 8-direction movement
-    lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
-    territoryAdjacency: 'von_neumann' as AdjacencyType, // 4-direction territory
-    type: 'square' as const,
-  },
+ square8: {
+   size: 8,
+   totalSpaces: 64,
+   ringsPerPlayer: 18,
+   // Base line length for 8x8. For 2-player games, the effective
+   // threshold is elevated to 4-in-a-row via getEffectiveLineLengthThreshold
+   // so that 3-in-a-row remains available for 3p/4p but not sufficient
+   // to trigger line_processing in 2p.
+   lineLength: 3,
+   movementAdjacency: 'moore' as AdjacencyType, // 8-direction movement
+   lineAdjacency: 'moore' as AdjacencyType, // 8-direction line formation
+   territoryAdjacency: 'von_neumann' as AdjacencyType, // 4-direction territory
+   type: 'square' as const,
+ },
   square19: {
     size: 19,
     totalSpaces: 361,

@@ -2,7 +2,8 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { GameHUD } from '../../src/client/components/GameHUD';
-import { GameState, Player, BoardState } from '../../src/shared/types/game';
+import { toHUDViewModel } from '../../src/client/adapters/gameViewModels';
+import { GameState, Player, BoardState, PlayerChoice } from '../../src/shared/types/game';
 
 // Helper to create a minimal test GameState
 function createTestGameState(overrides: Partial<GameState> = {}): GameState {
@@ -258,5 +259,223 @@ describe('GameHUD', () => {
     expect(screen.getByText(/Elimination – eliminate/)).toBeInTheDocument();
     expect(screen.getByText(/Territory – control/)).toBeInTheDocument();
     expect(screen.getByText(/Last Player Standing/)).toBeInTheDocument();
+  });
+
+  describe('decision phase banner (view model path)', () => {
+    it('renders acting-player decision banner with countdown and warning styling', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-1',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+        timeoutMs: 30000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now() + 4000,
+        choiceTimeRemainingMs: 4000,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const banner = screen.getByTestId('decision-phase-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Your decision:');
+      expect(banner).toHaveTextContent('Choose Line Reward');
+
+      // Countdown label should be visible with low-time warning styling.
+      const timerLabel = screen.getByText('0:04');
+      expect(timerLabel).toBeInTheDocument();
+
+      const countdownPill = screen.getByTestId('decision-phase-countdown');
+      expect(countdownPill).toHaveAttribute('data-severity', 'warning');
+      expect(countdownPill).not.toHaveAttribute('data-server-capped');
+    });
+
+    it('applies server-capped styling and attributes when the decision countdown is capped by the server', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-server-capped',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+        timeoutMs: 30000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now() + 15_000,
+        // Server has capped the effective countdown below the baseline 15s
+        choiceTimeRemainingMs: 3_000,
+        decisionIsServerCapped: true,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const countdownPill = screen.getByTestId('decision-phase-countdown');
+      expect(countdownPill).toHaveAttribute('data-severity', 'critical');
+      expect(countdownPill).toHaveAttribute('data-server-capped', 'true');
+      expect(countdownPill).toHaveTextContent('Server deadline');
+    });
+
+    it('applies normal severity when more than 10 seconds remain', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-normal',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+        timeoutMs: 30_000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now() + 11_000,
+        choiceTimeRemainingMs: 11_000,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const countdownPill = screen.getByTestId('decision-phase-countdown');
+      expect(countdownPill).toHaveAttribute('data-severity', 'normal');
+      expect(countdownPill).not.toHaveAttribute('data-server-capped');
+    });
+
+    it('applies warning severity exactly at the 10 second threshold', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-warning-threshold',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+        timeoutMs: 30_000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now() + 10_000,
+        choiceTimeRemainingMs: 10_000,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const countdownPill = screen.getByTestId('decision-phase-countdown');
+      expect(countdownPill).toHaveAttribute('data-severity', 'warning');
+      expect(countdownPill).not.toHaveAttribute('data-server-capped');
+    });
+
+    it('applies critical severity when time has fully elapsed', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-zero',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+        timeoutMs: 30_000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now(),
+        choiceTimeRemainingMs: 0,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const countdownPill = screen.getByTestId('decision-phase-countdown');
+      expect(countdownPill).toHaveAttribute('data-severity', 'critical');
+    });
+
+    it('renders spectator-oriented decision banner when user is not acting player', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-2',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p2',
+        pendingChoice: choice,
+        choiceDeadline: null,
+        choiceTimeRemainingMs: null,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const banner = screen.getByTestId('decision-phase-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Waiting for');
+      expect(banner).toHaveTextContent('to choose a line reward option');
+      // No countdown label when timeRemainingMs is null.
+      expect(screen.queryByLabelText('Decision timer')).toBeNull();
+    });
+
+    it('does not render decision banner when decisionPhase is absent', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'movement',
+      });
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      expect(screen.queryByTestId('decision-phase-banner')).toBeNull();
+    });
   });
 });

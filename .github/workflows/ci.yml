@@ -268,6 +268,34 @@ jobs:
       - name: Run orchestrator invariant smoke soak
         run: npm run soak:orchestrator:smoke
 
+  orchestrator-short-soak:
+    name: Orchestrator Invariant Soak (short)
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, orchestrator-parity]
+    # CI Safety: Deterministic short backend soak backing SLO-CI-ORCH-SHORT-SOAK
+    timeout-minutes: 15
+    env:
+      RINGRIFT_RULES_MODE: ts
+      ORCHESTRATOR_ADAPTER_ENABLED: 'true'
+      ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
+      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run orchestrator invariant short soak
+        run: npm run soak:orchestrator:short
+
   ssot-check:
     name: SSoT Drift Guards
     runs-on: ubuntu-latest
@@ -381,6 +409,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  ai-service-docker-smoke:
+    name: AI Service Docker Build & Torch Import Smoke
+    runs-on: ubuntu-latest
+    needs: [python-core, python-dependency-audit]
+    # CI Safety: AI-service Docker build + minimal runtime smoke test
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ai-service Docker image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: ai-service
+          file: ai-service/Dockerfile
+          push: false
+          tags: ringrift-ai-service:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test Torch/TorchVision inside ai-service image
+        run: |
+          docker run --rm ringrift-ai-service:test \
+            python -c "import sys, torch, torchvision; print('PYTHON', sys.version); print('TORCH', torch.__version__); print('TORCHVISION', torchvision.__version__)"
+
   orchestrator-parity:
     name: Orchestrator Parity (TS orchestrator + Python contracts)
     runs-on: ubuntu-latest
@@ -489,6 +546,89 @@ jobs:
         run: |
           python -m pytest tests --ignore=tests/parity
 
+  python-ai-healthcheck:
+    name: Python AI Self-Play Healthcheck
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, python-core]
+    # CI Safety: Bounded AI self-play healthcheck across multiple boards
+    timeout-minutes: 30
+
+    env:
+      # Keep CI runtime bounded while still exercising mixed AI across
+      # square8/square19/hexagonal.
+      RINGRIFT_AI_HEALTHCHECK_GAMES: 2
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run AI self-play healthcheck profile
+        working-directory: ai-service
+        run: |
+          python scripts/run_self_play_soak.py \
+            --profile ai-healthcheck \
+            --log-jsonl results/ai_healthcheck.log.jsonl \
+            --summary-json results/ai_healthcheck_summary.json \
+            --max-moves 200 \
+            --fail-on-anomaly
+
+      - name: Upload AI healthcheck summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-healthcheck-summary
+          path: ai-service/results/ai_healthcheck_summary.json
+          retention-days: 14
+
+  python-parity-healthcheck:
+    name: Python Parity Healthcheck (TS↔Python rules)
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, python-core]
+    # CI Safety: Bounded Python parity healthcheck across supported suites
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Python parity healthcheck
+        working-directory: ai-service
+        run: |
+          python scripts/run_parity_healthcheck.py \
+            --profile parity-healthcheck \
+            --summary-json results/parity_healthcheck_summary.json \
+            --fail-on-mismatch
+
+      - name: Upload parity healthcheck summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-healthcheck-summary
+          path: ai-service/results/parity_healthcheck_summary.json
+          retention-days: 14
+
   python-dependency-audit:
     name: Python Dependency Audit
     runs-on: ubuntu-latest
@@ -510,13 +650,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install pip-audit
-        run: python -m pip install pip-audit
+      - name: Install pip-audit (pinned CLI supporting --severity)
+        run: python -m pip install 'pip-audit>=2.7.0,<3.0.0'
 
-      - name: Run pip-audit against ai-service requirements (high/critical only)
+      - name: Run pip-audit against ai-service requirements (HIGH/CRITICAL only)
         working-directory: ai-service
         run: |
           # Fail the job only on known HIGH or CRITICAL vulnerabilities.
+          # Canonical invocation for local runs:
+          #   cd ai-service && pip-audit -r requirements.txt --severity HIGH
           pip-audit -r requirements.txt --severity HIGH
 
       - name: Install CycloneDX SBOM generator

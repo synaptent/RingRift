@@ -12,18 +12,43 @@ import fs from 'fs';
 import path from 'path';
 
 import { GameEngine } from '../src/server/game/GameEngine';
+import { getMetricsService } from '../src/server/services/MetricsService';
 
 import type { BoardType, GameState, Move, Player, TimeControl } from '../src/shared/types/game';
 import { BOARD_CONFIGS, positionToString } from '../src/shared/types/game';
 
 import { SeededRNG } from '../src/shared/utils/rng';
-import { computeProgressSnapshot } from '../src/shared/engine';
+import { computeProgressSnapshot, isANMState } from '../src/shared/engine';
 import { validateMove as orchestratorValidateMove } from '../src/shared/engine/orchestration/turnOrchestrator';
 
 type HostMode = 'backend';
 type HarnessMode = 'backend';
 
+type SoakProfileId = 'ci-short' | 'local-deep';
+
+interface SoakProfile {
+  id: SoakProfileId;
+  description: string;
+  boardTypes: BoardType[];
+  gamesPerBoard: number;
+  maxTurns: number;
+  /**
+   * Root RNG seed used to derive per-game seeds. Given the same profile +
+   * randomSeed, the soak run is fully deterministic.
+   */
+  randomSeed: number;
+}
+
 interface SoakConfig {
+  /**
+   * Optional named profile controlling default board types, gamesPerBoard,
+   * maxTurns, and randomSeed. CLI flags can still override these values.
+   *
+   * Supported profile ids:
+   * - "ci-short"   – CI-safe multi-board short soak.
+   * - "local-deep" – deeper multi-board soak for local or scheduled runs.
+   */
+  profile?: SoakProfileId;
   boardTypes: BoardType[];
   gamesPerBoard: number;
   maxTurns: number;
@@ -45,6 +70,27 @@ interface SoakConfig {
   enableTraceDebug: boolean;
 }
 
+const SOAK_PROFILES: Record<SoakProfileId, SoakProfile> = {
+  'ci-short': {
+    id: 'ci-short',
+    description:
+      'CI short profile: multi-board (square8, square19, hexagonal) with modest gamesPerBoard and bounded maxTurns.',
+    boardTypes: ['square8', 'square19', 'hexagonal'],
+    gamesPerBoard: 5,
+    maxTurns: 300,
+    randomSeed: 123456789,
+  },
+  'local-deep': {
+    id: 'local-deep',
+    description:
+      'Local deep profile: multi-board coverage with more games per board and higher maxTurns, intended for manual or scheduled runs.',
+    boardTypes: ['square8', 'square19', 'hexagonal'],
+    gamesPerBoard: 20,
+    maxTurns: 400,
+    randomSeed: 987654321,
+  },
+};
+
 interface GameRunResult {
   boardType: BoardType;
   hostMode: HostMode;
@@ -64,6 +110,12 @@ interface BucketStats {
   maxTurnsCount: number;
   invariantViolationCount: number;
   turnCounts: number[];
+  /**
+   * Per-violation-id counts within this (boardType, hostMode) bucket. This
+   * provides invariant-level visibility without changing the existing
+   * aggregated fields.
+   */
+  invariantViolationsById: Record<string, number>;
 }
 
 interface InvariantViolation {
@@ -116,15 +168,47 @@ function parseArgs(argv: string[]): SoakConfig {
     args[key] = value;
   }
 
-  const boardTypesArg = (args.boardTypes as string | undefined) ?? 'square8,square19,hexagonal';
+  const profileArg = args.profile as string | undefined;
+  let profileId: SoakProfileId | undefined;
+  if (profileArg) {
+    if (profileArg in SOAK_PROFILES) {
+      profileId = profileArg as SoakProfileId;
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Unknown orchestrator soak profile "${profileArg}". Falling back to explicit CLI arguments.`
+      );
+    }
+  }
+  const profile = profileId ? SOAK_PROFILES[profileId] : undefined;
+
+  const boardTypesArg =
+    (args.boardTypes as string | undefined) ??
+    (profile ? profile.boardTypes.join(',') : 'square8,square19,hexagonal');
   const boardTypes = boardTypesArg
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0) as BoardType[];
 
-  const gamesPerBoard = args.gamesPerBoard ? Number(args.gamesPerBoard) : 50;
-  const maxTurns = args.maxTurns ? Number(args.maxTurns) : 500;
-  const randomSeed = args.randomSeed ? Number(args.randomSeed) : Date.now() & 0x7fffffff;
+  const gamesPerBoardRaw =
+    args.gamesPerBoard !== undefined
+      ? Number(args.gamesPerBoard)
+      : profile
+      ? profile.gamesPerBoard
+      : 50;
+  const maxTurnsRaw =
+    args.maxTurns !== undefined
+      ? Number(args.maxTurns)
+      : profile
+      ? profile.maxTurns
+      : 500;
+  const randomSeedRaw =
+    args.randomSeed !== undefined
+      ? Number(args.randomSeed)
+      : profile
+      ? profile.randomSeed
+      : Date.now() & 0x7fffffff;
+
   const mode: HarnessMode = 'backend';
   const outputPath =
     (args.outputPath as string | undefined) ?? 'results/orchestrator_soak_summary.json';
@@ -141,16 +225,30 @@ function parseArgs(argv: string[]): SoakConfig {
     args.traceDebug === true ||
     args.traceDebug === 'true';
 
-  return {
+  const gamesPerBoard =
+    Number.isFinite(gamesPerBoardRaw) && gamesPerBoardRaw > 0 ? gamesPerBoardRaw : 50;
+  const maxTurns =
+    Number.isFinite(maxTurnsRaw) && maxTurnsRaw > 0 ? maxTurnsRaw : 500;
+  const randomSeed = Number.isFinite(randomSeedRaw)
+    ? randomSeedRaw
+    : Date.now() & 0x7fffffff;
+
+  const config: SoakConfig = {
     boardTypes,
-    gamesPerBoard: Number.isFinite(gamesPerBoard) && gamesPerBoard > 0 ? gamesPerBoard : 50,
-    maxTurns: Number.isFinite(maxTurns) && maxTurns > 0 ? maxTurns : 500,
-    randomSeed: Number.isFinite(randomSeed) ? randomSeed : Date.now() & 0x7fffffff,
+    gamesPerBoard,
+    maxTurns,
+    randomSeed,
     mode,
     outputPath,
     failOnViolation,
     enableTraceDebug,
   };
+
+  if (profileId) {
+    config.profile = profileId;
+  }
+
+  return config;
 }
 
 const DEFAULT_TIME_CONTROL: TimeControl = {
@@ -253,7 +351,7 @@ function makeViolation(
   },
   totalRingsEliminated: number
 ): InvariantViolation {
-  return {
+  const violation: InvariantViolation = {
     id,
     message,
     boardType,
@@ -272,6 +370,18 @@ function makeViolation(
     totalRingsEliminated,
     movesTail: context.lastMoves.slice(-10),
   };
+
+  // Best-effort emission of orchestrator invariant metrics so that soak
+  // runs contribute to the same per-invariant counters used by runtime
+  // hosts. Metrics failures must never break the harness.
+  try {
+    const metrics = getMetricsService();
+    metrics.recordOrchestratorInvariantViolation(violation.id);
+  } catch {
+    // Ignore metrics errors in soak runs.
+  }
+
+  return violation;
 }
 
 function checkStructuralInvariants(
@@ -484,9 +594,10 @@ async function runSingleGame(
     const validationTotalEliminated = validationState.totalRingsEliminated ?? 0;
 
     // Strict active-no-move invariant, evaluated against the post-enumeration
-    // state. This ensures we never report ACTIVE_NO_MOVES for states that the
-    // host has already resolved into a terminal or non-interactive phase.
-    if (validationState.gameStatus === 'active' && moves.length === 0) {
+    // state. This uses the shared-engine ANM predicate so that global
+    // placements and forced elimination are treated as legal actions even
+    // when the current micro-phase exposes no local moves.
+    if (validationState.gameStatus === 'active' && isANMState(validationState as GameState)) {
       if (invariantViolations.length < maxViolationsPerGame) {
         invariantViolations.push(
           makeViolation(
@@ -680,6 +791,7 @@ async function run(): Promise<void> {
   const bucketMap = new Map<string, BucketStats>();
   const allViolations: InvariantViolation[] = [];
   const maxViolationTraces = 50;
+  const overallViolationsById: Record<string, number> = {};
 
   const totalGamesPlanned = config.boardTypes.length * config.gamesPerBoard * hostModes.length;
   let gameCounter = 0;
@@ -708,6 +820,7 @@ async function run(): Promise<void> {
             maxTurnsCount: 0,
             invariantViolationCount: 0,
             turnCounts: [],
+            invariantViolationsById: {},
           };
           bucketMap.set(bucketKey, bucket);
         }
@@ -722,6 +835,14 @@ async function run(): Promise<void> {
         }
         if (result.invariantViolations.length > 0) {
           bucket.invariantViolationCount += result.invariantViolations.length;
+
+          for (const violation of result.invariantViolations) {
+            bucket.invariantViolationsById[violation.id] =
+              (bucket.invariantViolationsById[violation.id] ?? 0) + 1;
+            overallViolationsById[violation.id] =
+              (overallViolationsById[violation.id] ?? 0) + 1;
+          }
+
           if (allViolations.length < maxViolationTraces) {
             const remaining = maxViolationTraces - allViolations.length;
             allViolations.push(...result.invariantViolations.slice(0, remaining));
@@ -741,6 +862,7 @@ async function run(): Promise<void> {
       completedGames: bucket.completedCount,
       maxTurnsGames: bucket.maxTurnsCount,
       invariantViolations: bucket.invariantViolationCount,
+      invariantViolationsById: bucket.invariantViolationsById,
       gameLength: stats,
     };
   });
@@ -758,8 +880,10 @@ async function run(): Promise<void> {
       completedGames: 0,
       maxTurnsGames: 0,
       invariantViolations: 0,
+      invariantViolationsById: {} as Record<string, number>,
     }
   );
+  overall.invariantViolationsById = overallViolationsById;
 
   const summary = {
     timestamp: new Date().toISOString(),

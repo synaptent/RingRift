@@ -46,6 +46,17 @@ AI_MOVE_LATENCY: Final[Histogram] = Histogram(
 )
 
 
+PYTHON_INVARIANT_VIOLATIONS: Final[Counter] = Counter(
+    "ringrift_python_invariant_violations_total",
+    (
+        "Total number of Python self-play invariant violations observed in "
+        "run_self_play_soak, labeled by high-level invariant_id and "
+        "low-level violation type."
+    ),
+    labelnames=("invariant_id", "type"),
+)
+
+
 def observe_ai_move_start(ai_type: str, difficulty: int) -> tuple[str, str]:
     """Prepare metric label values for a new /ai/move request.
 
@@ -57,4 +68,9 @@ def observe_ai_move_start(ai_type: str, difficulty: int) -> tuple[str, str]:
     return ai_type, str(difficulty)
 
 
-__all__ = ["AI_MOVE_REQUESTS", "AI_MOVE_LATENCY", "observe_ai_move_start"]
+__all__ = [
+    "AI_MOVE_REQUESTS",
+    "AI_MOVE_LATENCY",
+    "PYTHON_INVARIANT_VIOLATIONS",
+    "observe_ai_move_start",
+]

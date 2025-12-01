@@ -1,8 +1,14 @@
 # Legacy Code Elimination Plan
 
+> **⚠️ HISTORICAL / COMPLETED** – This plan was completed in November 2025. The orchestrator is now at 100% rollout.
+> For current status, see:
+> - `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` – Production rollout status
+> - `CURRENT_STATE_ASSESSMENT.md` – Implementation status
+> - `TODO.md` – Wave 5.4 (legacy cleanup) for remaining items
+
 > **Phase 5.4 Deliverable** - Architecture Remediation Plan
-> **Status:** Phase 6.1 Complete - Adapters Enabled by Default
-> **Last Updated:** 2025-11-26
+> **Status:** ✅ Phase 6.1 Complete - Adapters Enabled by Default
+> **Last Updated:** 2025-11-30
 > **Phase 6.1 Complete:** 2025-11-26
 
 ## Phase 6.1 Summary

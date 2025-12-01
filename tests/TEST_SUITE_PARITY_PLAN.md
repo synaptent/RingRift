@@ -184,7 +184,6 @@ Representative files:
 - `tests/unit/AIEngine.placementMetadata.test.ts`
 - `tests/unit/AIInteractionHandler.test.ts`
 - `tests/unit/WebSocketServer.humanDecisionById.integration.test.ts`
-- `tests/unit/WebSocketServer.aiTurn.integration.test.ts`
 - `tests/unit/PlayerInteractionManager.test.ts`
 - `tests/unit/WebSocketInteractionHandler.test.ts`
 - `tests/unit/GameHUD.snapshot.test.tsx`
