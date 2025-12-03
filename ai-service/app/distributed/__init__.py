@@ -9,8 +9,11 @@ This module provides:
 
 from .discovery import (
     WorkerDiscovery,
+    WorkerInfo,
     discover_workers,
     wait_for_workers,
+    parse_manual_workers,
+    filter_healthy_workers,
 )
 from .client import (
     WorkerClient,
@@ -19,8 +22,11 @@ from .client import (
 
 __all__ = [
     "WorkerDiscovery",
+    "WorkerInfo",
     "discover_workers",
     "wait_for_workers",
+    "parse_manual_workers",
+    "filter_healthy_workers",
     "WorkerClient",
     "DistributedEvaluator",
 ]
