@@ -232,6 +232,41 @@ export interface GameErrorMessage {
 }
 
 /**
+ * Lightweight diagnostic ping payload used for load testing and
+ * latency measurement. This event is intentionally transport-only
+ * and does not mutate game state.
+ *
+ * NOTE: The shape of this interface is kept in sync with
+ * DiagnosticPingPayloadSchema in
+ * src/shared/validation/websocketSchemas.ts so that runtime
+ * validation and TypeScript contracts remain aligned.
+ */
+export interface DiagnosticPingPayload {
+  /** Client-side timestamp in milliseconds since epoch. */
+  timestamp: number;
+  /**
+   * Optional k6 virtual user identifier or similar diagnostic tag.
+   * Accepts either a numeric VU id or an opaque string label.
+   */
+  vu?: string | number;
+  /**
+   * Optional monotonically increasing sequence number per connection,
+   * used to correlate individual ping/pong pairs.
+   */
+  sequence?: number;
+}
+
+/**
+ * Diagnostic pong payload echoed by the server. It carries the
+ * original client payload plus a server-side timestamp so that
+ * callers can compute round-trip latency.
+ */
+export interface DiagnosticPongPayload extends DiagnosticPingPayload {
+  /** ISO-8601 timestamp produced on the server when the ping was handled. */
+  serverTimestamp: string;
+}
+
+/**
  * Shared shape for per-player room notifications emitted on
  * `player_joined`, `player_left`, `player_disconnected`, and `player_reconnected`.
  */
@@ -428,6 +463,10 @@ export interface ServerToClientEvents {
   // best-effort position_evaluation events after moves for inspection UIs.
   position_evaluation?: (payload: PositionEvaluationPayload) => void;
 
+  // Diagnostic: load-testing ping/pong channel. This is transport-only and
+  // does not mutate game state.
+  'diagnostic:pong': (payload: DiagnosticPongPayload) => void;
+
   // Lobby broadcasts
   'lobby:game_created': (payload: LobbyGameCreatedPayload) => void;
   'lobby:game_joined': (payload: LobbyGameJoinedPayload) => void;
@@ -468,6 +507,9 @@ export interface ClientToServerEvents {
   // Rematch system
   rematch_request: (payload: RematchRequestClientPayload) => void;
   rematch_respond: (payload: RematchResponseClientPayload) => void;
+
+  // Diagnostic: load-testing ping channel
+  'diagnostic:ping': (payload: DiagnosticPingPayload) => void;
 
   // Lobby subscription
   'lobby:subscribe': () => void;

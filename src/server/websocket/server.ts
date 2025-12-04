@@ -7,6 +7,7 @@ import { getRedisClient } from '../cache/redis';
 import { logger } from '../utils/logger';
 import { PlayerChoiceResponse } from '../../shared/types/game';
 import { GameSessionManager } from '../game/GameSessionManager';
+import type { RulesResult } from '../game/RulesBackendFacade';
 import { config } from '../config';
 import {
   WebSocketPayloadSchemas,
@@ -18,6 +19,7 @@ import {
   WebSocketErrorPayload,
   ClientToServerEvents,
   ServerToClientEvents,
+  DiagnosticPongPayload,
 } from '../../shared/types/websocket';
 import { webSocketConnectionsGauge } from '../utils/rulesParityMetrics';
 import { getMetricsService } from '../services/MetricsService';
@@ -129,10 +131,6 @@ async function checkChatRateLimit(socket: AuthenticatedSocket, gameId: string): 
     return true;
   }
 }
-
-// Default reconnection window in milliseconds - players have this long to reconnect
-// before their choices are cleared and they're fully removed from the session
-const RECONNECTION_TIMEOUT_MS = 30_000;
 
 export class WebSocketServer {
   private io: SocketIOServer<ClientToServerEvents, ServerToClientEvents>;
@@ -521,6 +519,45 @@ export class WebSocketServer {
             });
             this.emitError(socket, 'INVALID_PAYLOAD', 'Invalid chat message', 'chat_message');
           }
+        }
+      });
+
+      // Lightweight diagnostic ping/pong channel used by load tests.
+      // This is intentionally transport-only and does not touch game
+      // state, the rules engine, or the database.
+      socket.on('diagnostic:ping', (data: unknown) => {
+        try {
+          const payload = WebSocketPayloadSchemas['diagnostic:ping'].parse(data);
+
+          // Echo the payload back with a server-side timestamp so clients
+          // (including k6) can compute round-trip latency.
+          const pongPayload: DiagnosticPongPayload = {
+            timestamp: payload.timestamp,
+            serverTimestamp: new Date().toISOString(),
+            ...(payload.vu !== undefined && { vu: payload.vu }),
+            ...(typeof payload.sequence === 'number' && { sequence: payload.sequence }),
+          };
+
+          socket.emit('diagnostic:pong', pongPayload);
+        } catch (error) {
+          if (error instanceof ZodError) {
+            this.handleWebSocketValidationError(socket, 'diagnostic:ping', error);
+            return;
+          }
+
+          logger.warn('Error handling diagnostic:ping', {
+            socketId: socket.id,
+            userId: socket.userId,
+            gameId: socket.gameId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+
+          this.emitError(
+            socket,
+            'INVALID_PAYLOAD',
+            'Invalid diagnostic ping payload',
+            'diagnostic:ping'
+          );
         }
       });
 
@@ -1073,6 +1110,24 @@ export class WebSocketServer {
     });
   }
 
+  /**
+   * HTTP harness entry point for applying a move via the same GameSession /
+   * RulesBackendFacade pipeline as WebSocket moves. Used by
+   * POST /api/games/:gameId/moves.
+   */
+  public async handlePlayerMoveFromHttp(
+    gameId: string,
+    userId: string,
+    move: PlayerMovePayload['move']
+  ): Promise<RulesResult> {
+    return this.sessionManager.withGameLock(gameId, async () => {
+      const session = await this.sessionManager.getOrCreateSession(gameId);
+      // Type assertion needed: Zod-inferred types have subtle differences from
+      // GameSession's PlayerMoveData due to exactOptionalPropertyTypes setting.
+      return session.handlePlayerMoveFromHttp(userId, move as any);
+    });
+  }
+
   private async handleChatMessage(socket: AuthenticatedSocket, data: ChatMessagePayload) {
     const { gameId, text } = data;
 
@@ -1234,7 +1289,7 @@ export class WebSocketServer {
 
             const timeout = setTimeout(() => {
               this.handleReconnectionTimeout(gameId, userId, player.playerNumber);
-            }, RECONNECTION_TIMEOUT_MS);
+            }, config.server.wsReconnectionTimeoutMs);
 
             this.pendingReconnections.set(reconnectionKey, {
               timeout,
@@ -1251,7 +1306,7 @@ export class WebSocketServer {
               gameId,
               userId,
               player.playerNumber,
-              RECONNECTION_TIMEOUT_MS
+              config.server.wsReconnectionTimeoutMs
             );
             this.playerConnectionStates.set(key, nextState);
 
@@ -1259,7 +1314,7 @@ export class WebSocketServer {
               userId,
               gameId,
               playerNumber: player.playerNumber,
-              timeoutMs: RECONNECTION_TIMEOUT_MS,
+              timeoutMs: config.server.wsReconnectionTimeoutMs,
             });
           }
         }

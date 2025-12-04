@@ -245,6 +245,57 @@ export function hasForcedEliminationAction(state: GameState, player: number): bo
 }
 
 /**
+ * A single stack that is eligible for forced elimination.
+ */
+export interface ForcedEliminationOption {
+  /** Position of the stack. */
+  position: Position;
+  /** Height of the current player's cap on this stack. */
+  capHeight: number;
+  /** Total stack height. */
+  stackHeight: number;
+  /** Move ID for the corresponding eliminate_rings_from_stack move. */
+  moveId: string;
+}
+
+/**
+ * Enumerate all stacks that are eligible for forced elimination for a player.
+ *
+ * When a player is blocked (has stacks but no legal placement, movement, or
+ * capture actions), they must eliminate a cap from one of their stacks. This
+ * function returns all eligible stacks so hosts can present a choice to the
+ * player (for human players) or auto-select (for AI).
+ *
+ * Returns an empty array if the player is not in a forced elimination state.
+ */
+export function enumerateForcedEliminationOptions(
+  state: GameState,
+  player: number
+): ForcedEliminationOption[] {
+  if (!hasForcedEliminationAction(state, player)) {
+    return [];
+  }
+
+  const options: ForcedEliminationOption[] = [];
+
+  for (const stack of state.board.stacks.values()) {
+    if (stack.controllingPlayer !== player || stack.stackHeight <= 0) {
+      continue;
+    }
+    const capHeight: number = typeof stack.capHeight === 'number' ? stack.capHeight : 0;
+
+    options.push({
+      position: stack.position,
+      capHeight,
+      stackHeight: stack.stackHeight,
+      moveId: `forced-elim-${positionToString(stack.position)}`,
+    });
+  }
+
+  return options;
+}
+
+/**
  * Canonical host-level forced-elimination operator aligned with RR-CANON-R205.
  *
  * This helper is intentionally small and purely functional so that:
@@ -259,11 +310,17 @@ export function hasForcedEliminationAction(state: GameState, player: number): bo
  * - player has no legal placements and no legal movement/capture actions
  *
  * The implementation:
- * - selects a stack controlled by `player`, preferring the smallest positive
- *   capHeight and falling back to the first stack when no caps exist;
- * - eliminates that stack's cap via applyEliminateRingsFromStackDecision; and
- * - returns the updated GameState along with basic accounting metadata so
+ * - If targetPosition is provided, uses that stack for elimination.
+ * - Otherwise, selects a stack controlled by `player`, preferring the smallest
+ *   positive capHeight and falling back to the first stack when no caps exist.
+ * - Eliminates that stack's cap via applyEliminateRingsFromStackDecision; and
+ * - Returns the updated GameState along with basic accounting metadata so
  *   callers can assert INV-ELIMINATION-MONOTONIC / INV-S-MONOTONIC.
+ *
+ * @param state - Current game state
+ * @param player - Player who must eliminate
+ * @param targetPosition - Optional: specific stack position chosen by player.
+ *                         If not provided, auto-selects (smallest cap heuristic).
  */
 export interface ForcedEliminationOutcome {
   /** Updated state after applying forced elimination. */
@@ -278,7 +335,8 @@ export interface ForcedEliminationOutcome {
 
 export function applyForcedEliminationForPlayer(
   state: GameState,
-  player: number
+  player: number,
+  targetPosition?: Position
 ): ForcedEliminationOutcome | undefined {
   if (!hasForcedEliminationAction(state, player)) {
     return undefined;
@@ -292,29 +350,46 @@ export function applyForcedEliminationForPlayer(
       }
     | undefined;
 
-  let smallestCap = Number.POSITIVE_INFINITY;
-
-  for (const stack of state.board.stacks.values()) {
-    if (stack.controllingPlayer !== player || stack.stackHeight <= 0) {
-      continue;
+  // If a specific target position was provided (player made a choice), use it
+  if (targetPosition) {
+    const targetKey = positionToString(targetPosition);
+    const stack = state.board.stacks.get(targetKey);
+    if (stack && stack.controllingPlayer === player && stack.stackHeight > 0) {
+      const capHeight: number = typeof stack.capHeight === 'number' ? stack.capHeight : 0;
+      chosenStack = {
+        position: stack.position,
+        capHeight,
+        stackHeight: stack.stackHeight,
+      };
     }
-    const capHeight: number = typeof stack.capHeight === 'number' ? stack.capHeight : 0;
+  }
 
-    if (capHeight > 0 && capHeight < smallestCap) {
-      smallestCap = capHeight;
-      chosenStack = {
-        position: stack.position,
-        capHeight,
-        stackHeight: stack.stackHeight,
-      };
-    } else if (!chosenStack) {
-      // Fallback: remember the first stack so that we always have a target
-      // even when all caps are zero in legacy or degenerate states.
-      chosenStack = {
-        position: stack.position,
-        capHeight,
-        stackHeight: stack.stackHeight,
-      };
+  // Auto-select if no target provided or target was invalid
+  if (!chosenStack) {
+    let smallestCap = Number.POSITIVE_INFINITY;
+
+    for (const stack of state.board.stacks.values()) {
+      if (stack.controllingPlayer !== player || stack.stackHeight <= 0) {
+        continue;
+      }
+      const capHeight: number = typeof stack.capHeight === 'number' ? stack.capHeight : 0;
+
+      if (capHeight > 0 && capHeight < smallestCap) {
+        smallestCap = capHeight;
+        chosenStack = {
+          position: stack.position,
+          capHeight,
+          stackHeight: stack.stackHeight,
+        };
+      } else if (!chosenStack) {
+        // Fallback: remember the first stack so that we always have a target
+        // even when all caps are zero in legacy or degenerate states.
+        chosenStack = {
+          position: stack.position,
+          capHeight,
+          stackHeight: stack.stackHeight,
+        };
+      }
     }
   }
 

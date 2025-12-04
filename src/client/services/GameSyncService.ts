@@ -121,13 +121,13 @@ class GameSyncServiceImpl {
   }
 
   private handleOnline = (): void => {
-    console.log('[GameSyncService] Online - triggering sync');
+    // Network came back online - reset failure count and trigger sync
     this.updateState({ status: 'idle', consecutiveFailures: 0 });
     this.attemptSync();
   };
 
   private handleOffline = (): void => {
-    console.log('[GameSyncService] Offline');
+    // Network went offline - update status to reflect unavailability
     this.updateState({ status: 'offline' });
   };
 
@@ -221,7 +221,7 @@ class GameSyncServiceImpl {
     const newPendingCount = await getPendingCount().catch(() => pendingGames.length - syncedCount);
 
     if (failedCount === 0 && syncedCount > 0) {
-      console.log(`[GameSyncService] Synced ${syncedCount} games successfully`);
+      // All games synced successfully
       this.updateState({
         status: 'idle',
         pendingCount: newPendingCount,
@@ -229,7 +229,8 @@ class GameSyncServiceImpl {
         consecutiveFailures: 0,
       });
     } else if (syncedCount > 0) {
-      console.log(`[GameSyncService] Partial sync: ${syncedCount} synced, ${failedCount} failed`);
+      // Partial success - some games synced, some failed
+      console.warn(`[GameSyncService] Partial sync: ${syncedCount} synced, ${failedCount} failed`);
       this.updateState({
         status: 'idle',
         pendingCount: newPendingCount,
@@ -248,10 +249,8 @@ class GameSyncServiceImpl {
 
   private async cleanupOldGames(): Promise<void> {
     try {
-      const deletedCount = await cleanupSyncedGames(7); // Clean games older than 7 days
-      if (deletedCount > 0) {
-        console.log(`[GameSyncService] Cleaned up ${deletedCount} old synced games`);
-      }
+      // Clean games synced more than 7 days ago to save local storage
+      await cleanupSyncedGames(7);
     } catch (err) {
       console.error('[GameSyncService] Failed to cleanup old games:', err);
     }

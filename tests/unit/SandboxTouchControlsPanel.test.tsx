@@ -194,4 +194,89 @@ describe('SandboxTouchControlsPanel', () => {
       expect(screen.queryByText('Error')).not.toBeInTheDocument();
     });
   });
+
+  describe('debug overlays UI', () => {
+    it('does not render debug overlays section when toggle props are undefined', () => {
+      render(<SandboxTouchControlsPanel {...baseProps} />);
+
+      expect(screen.queryByText(/Debug overlays/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/Show detected lines/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/Show territory regions/i)).not.toBeInTheDocument();
+    });
+
+    it('renders debug overlays section when toggle props are provided', () => {
+      const props = {
+        ...baseProps,
+        showLineOverlays: true,
+        onToggleLineOverlays: jest.fn(),
+        showTerritoryOverlays: true,
+        onToggleTerritoryOverlays: jest.fn(),
+      };
+
+      render(<SandboxTouchControlsPanel {...props} />);
+
+      expect(screen.getByText(/Debug overlays/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Show detected lines/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Show territory regions/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Highlights completed lines and territory control/i)
+      ).toBeInTheDocument();
+    });
+
+    it('toggles line overlays when checkbox is clicked', () => {
+      const onToggleLineOverlays = jest.fn();
+      const props = {
+        ...baseProps,
+        showLineOverlays: true,
+        onToggleLineOverlays,
+        showTerritoryOverlays: true,
+        onToggleTerritoryOverlays: jest.fn(),
+      };
+
+      render(<SandboxTouchControlsPanel {...props} />);
+
+      const checkbox = screen.getByLabelText(/Show detected lines/i);
+      fireEvent.click(checkbox);
+
+      expect(onToggleLineOverlays).toHaveBeenCalledWith(false);
+    });
+
+    it('toggles territory overlays when checkbox is clicked', () => {
+      const onToggleTerritoryOverlays = jest.fn();
+      const props = {
+        ...baseProps,
+        showLineOverlays: true,
+        onToggleLineOverlays: jest.fn(),
+        showTerritoryOverlays: true,
+        onToggleTerritoryOverlays,
+      };
+
+      render(<SandboxTouchControlsPanel {...props} />);
+
+      const checkbox = screen.getByLabelText(/Show territory regions/i);
+      fireEvent.click(checkbox);
+
+      expect(onToggleTerritoryOverlays).toHaveBeenCalledWith(false);
+    });
+
+    it('reflects current checkbox state from props', () => {
+      const props = {
+        ...baseProps,
+        showLineOverlays: false,
+        onToggleLineOverlays: jest.fn(),
+        showTerritoryOverlays: true,
+        onToggleTerritoryOverlays: jest.fn(),
+      };
+
+      render(<SandboxTouchControlsPanel {...props} />);
+
+      const lineCheckbox = screen.getByLabelText(/Show detected lines/i) as HTMLInputElement;
+      const territoryCheckbox = screen.getByLabelText(
+        /Show territory regions/i
+      ) as HTMLInputElement;
+
+      expect(lineCheckbox.checked).toBe(false);
+      expect(territoryCheckbox.checked).toBe(true);
+    });
+  });
 });

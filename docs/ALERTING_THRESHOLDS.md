@@ -565,11 +565,11 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 #### OrchestratorCircuitBreakerOpen
 
-| Property      | Value                                      |
-| ------------- | ------------------------------------------ |
-| **Severity**  | critical                                   |
-| **Threshold** | `ringrift_orchestrator_circuit_breaker_state == 1` |
-| **Duration**  | 30 seconds                                 |
+| Property      | Value                                                    |
+| ------------- | -------------------------------------------------------- |
+| **Severity**  | critical                                                 |
+| **Threshold** | `ringrift_orchestrator_circuit_breaker_state == 1`       |
+| **Duration**  | 30 seconds                                               |
 | **Impact**    | Orchestrator path disabled; all traffic on legacy engine |
 
 **Rationale**: A tripped circuit breaker means orchestrator error rate exceeded the configured threshold (default 5% over a 5‑minute window). This is a direct breach of `SLO-STAGE-ORCH-ERROR` / `SLO-PROD-ORCH-ERROR`.
@@ -587,12 +587,12 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 #### OrchestratorErrorRateWarning
 
-| Property      | Value                                   |
-| ------------- | --------------------------------------- |
-| **Severity**  | warning                                 |
+| Property      | Value                                          |
+| ------------- | ---------------------------------------------- |
+| **Severity**  | warning                                        |
 | **Threshold** | `ringrift_orchestrator_error_rate > 0.02` (2%) |
-| **Duration**  | 2 minutes                               |
-| **Impact**    | Elevated orchestrator-specific failure rate |
+| **Duration**  | 2 minutes                                      |
+| **Impact**    | Elevated orchestrator-specific failure rate    |
 
 **Rationale**: At 2% orchestrator error rate, the system is approaching the 5% circuit‑breaker threshold. This is an early warning aligned with the orchestrator error‑rate SLOs.
 
@@ -606,12 +606,12 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 #### OrchestratorShadowMismatches
 
-| Property      | Value                                          |
-| ------------- | ---------------------------------------------- |
-| **Severity**  | warning                                        |
+| Property      | Value                                                    |
+| ------------- | -------------------------------------------------------- |
+| **Severity**  | warning                                                  |
 | **Threshold** | `ringrift_orchestrator_shadow_mismatch_rate > 0.01` (1%) |
-| **Duration**  | 5 minutes                                      |
-| **Impact**    | Possible semantic divergence in shadow mode    |
+| **Duration**  | 5 minutes                                                |
+| **Impact**    | Possible semantic divergence in shadow mode              |
 
 **Rationale**: When running with `ORCHESTRATOR_SHADOW_MODE_ENABLED=true`, more than 1% mismatches between orchestrator and legacy paths indicates a likely rules or host‑integration bug. This maps to `SLO-STAGE-ORCH-PARITY` / `SLO-PROD-ORCH-PARITY`.
 
@@ -663,17 +663,113 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 ---
 
+### Connection & Session Lifecycle Alerts
+
+These alerts connect the decision/reconnection lifecycle SSoT in
+[`docs/P18.3-1_DECISION_LIFECYCLE_SPEC.md`](./P18.3-1_DECISION_LIFECYCLE_SPEC.md)
+to concrete Prometheus signals for WebSocket reconnection, session state, and abnormal termination.
+
+#### WebSocketReconnectionTimeouts
+
+| Property      | Value                                                                           |
+| ------------- | ------------------------------------------------------------------------------- |
+| **Severity**  | warning                                                                         |
+| **Threshold** | `sum(rate(ringrift_websocket_reconnection_total{result="timeout"}[5m])) > 0.05` |
+| **Duration**  | 10 minutes                                                                      |
+| **Impact**    | Many players are failing to reconnect within the defined window                 |
+
+**Rationale**: Occasional reconnect timeouts are expected (users closing laptops, transient network loss). A sustained rate above ~0.05/sec over 10 minutes (≈30 timeouts) indicates systemic issues with reconnect window handling, network conditions, or client reconnect logic. This corresponds to the reconnect/abandonment semantics in P18.3‑1 §§2.4/4.3 and is exercised by:
+
+- `tests/e2e/reconnection.simulation.test.ts`
+- `tests/e2e/decision-phase-timeout.e2e.spec.ts`
+
+**Example PromQL**:
+
+```promql
+sum(rate(ringrift_websocket_reconnection_total{result="timeout"}[5m])) > 0.05
+```
+
+**Response**:
+
+1. Check WebSocket logs and dashboards for elevated disconnect rates and reconnection latency.
+2. Correlate with deployment changes to `WebSocketServer`, GameConnection, and connection state machines.
+3. Inspect `ringrift_game_session_status_current{status=~"disconnected_.*"}` and `ringrift_game_session_status_transitions_total` to determine whether reconnect windows are expiring as expected or prematurely.
+4. If isolated to a region or environment, consider temporarily increasing the reconnection window and updating runbooks accordingly.
+
+---
+
+#### AbnormalGameSessionTerminationSpike
+
+| Property      | Value                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------- | -------------- | -------------------------------- |
+| **Severity**  | warning                                                                                     |
+| **Threshold** | `sum(rate(ringrift_game_session_abnormal_termination_total{reason=~"disconnect_timeout      | internal_error | session_cleanup"}[10m])) > 0.02` |
+| **Duration**  | 10 minutes                                                                                  |
+| **Impact**    | More games ending via abnormal paths (disconnect timeouts, internal errors, forced cleanup) |
+
+**Rationale**: `ringrift_game_session_abnormal_termination_total{reason}` is incremented when `GameSession.terminate(reason)` ends an `active` game for non‑standard reasons (see P18.3‑1 §4.3). A sustained increase indicates players are losing games to infrastructure or lifecycle bugs rather than normal victory conditions. This metric is backed by:
+
+- `tests/unit/GameSession.abnormalTermination.metrics.test.ts`
+- `tests/unit/WebSocketServer.sessionTermination.test.ts`
+
+**Example PromQL**:
+
+```promql
+sum(rate(ringrift_game_session_abnormal_termination_total{reason=~"disconnect_timeout|internal_error|session_cleanup"}[10m])) > 0.02
+```
+
+**Response**:
+
+1. Use Grafana panels over `ringrift_game_session_abnormal_termination_total` broken down by `reason` to identify which abnormal path is spiking.
+2. Correlate with AI and database health:
+   - `ringrift_ai_requests_total{outcome="error"}`
+   - `ringrift_service_status{service=~"database|ai_service"}`
+3. Inspect recent logs for `GameSession.terminate()` invocations with the same `reason` and sample game IDs; replay representative games in sandbox or replay tools.
+4. If driven by infrastructure issues (DB, AI, or WebSocket outages), follow the relevant runbooks; if driven by logic bugs, add a focused Jest regression anchored to P18.3‑1.
+
+---
+
+#### GameSessionStatusSkew
+
+| Property      | Value                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Severity**  | info                                                                                    |
+| **Threshold** | `sum(ringrift_game_session_status_current{status=~"active_decision_phase                | active_turn"}) == 0 and sum(ringrift_game_session_status_current) > 0` |
+| **Duration**  | 15 minutes                                                                              |
+| **Impact**    | All in‑memory sessions stuck in non‑active states (e.g. waiting, abandoned, or cleanup) |
+
+**Rationale**: `ringrift_game_session_status_current{status}` provides a coarse projection over the `GameSessionStatus` state machine. If there are live sessions but none in `active_turn` or `active_decision_phase` for an extended period, it may indicate a stuck lifecycle (for example, timers not firing or decisions never resolving). This complements the decision‑phase timeout alerts and is validated by:
+
+- `tests/unit/GameSession.aiDiagnostics.test.ts`
+- `tests/unit/WebSocketServer.connectionState.test.ts`
+
+**Example PromQL**:
+
+```promql
+sum(ringrift_game_session_status_current{status=~"active_decision_phase|active_turn"}) == 0
+and sum(ringrift_game_session_status_current) > 0
+```
+
+**Response**:
+
+1. Check WebSocket decision‑phase metrics and logs for pending choices that never resolve.
+2. Inspect `decision_phase_timed_out` events and `ringrift_ai_turn_request_terminal_total{kind="timed_out"}` to see if timers are firing but sessions are not progressing.
+3. Sample affected game IDs from logs and load them via `/games/:gameId/diagnostics/session` to inspect `sessionStatus` and `lastAIRequestState`.
+4. If a systemic state‑machine issue is suspected, roll back recent lifecycle changes and add regression tests under `tests/unit/stateMachines/*.test.ts`.
+
+---
+
 ### Python Invariant Alerts (Self‑Play / AI Service)
 
 These alerts track strict‑invariant violations observed by Python self‑play soaks and the AI service, using the same invariant IDs (`INV-*`) as the TS/orchestrator metrics.
 
 #### PythonInvariantViolations
 
-| Property      | Value                                                                 |
-| ------------- | --------------------------------------------------------------------- |
-| **Severity**  | warning                                                               |
-| **Threshold** | `increase(ringrift_python_invariant_violations_total[1h]) > 0`        |
-| **Duration**  | 5 minutes                                                             |
+| Property      | Value                                                                  |
+| ------------- | ---------------------------------------------------------------------- |
+| **Severity**  | warning                                                                |
+| **Threshold** | `increase(ringrift_python_invariant_violations_total[1h]) > 0`         |
+| **Duration**  | 5 minutes                                                              |
 | **Impact**    | Python self‑play invariants violated (training / AI rules regressions) |
 
 **Rationale**: Any strict‑invariant violation in Python self‑play soaks (for example `INV-S-MONOTONIC` or `INV-ACTIVE-NO-MOVES`) indicates potential divergence between Python rules/AI training behaviour and the TS orchestrator invariants. This maps to the Python invariant surfaces described in `INVARIANTS_AND_PARITY_FRAMEWORK.md` and `STRICT_INVARIANT_SOAKS.md`.
@@ -831,7 +927,7 @@ These alerts track database and cache response times.
 
 ## Dashboards & Observability Checklist
 
-This section describes the **minimum recommended dashboards** to keep rules/orchestrator, AI, and infra health observable in staging and production. It complements the alert rules in this document and the orchestrator rollout SLOs in [`ORCHESTRATOR_ROLLOUT_PLAN.md`](ORCHESTRATOR_ROLLOUT_PLAN.md:1).
+This section describes the **minimum recommended dashboards** to keep rules/orchestrator, AI, and infra health observable in staging and production. It complements the alert rules in this document and the orchestrator rollout SLOs in [`ORCHESTRATOR_ROLLOUT_PLAN.md`](./ORCHESTRATOR_ROLLOUT_PLAN.md).
 
 ### Rules / Orchestrator Dashboard
 

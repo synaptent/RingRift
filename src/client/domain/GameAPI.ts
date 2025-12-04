@@ -11,6 +11,8 @@ import type {
   RematchRequestPayload,
   RematchResponsePayload,
   PositionEvaluationPayload,
+  PlayerDisconnectedPayload,
+  PlayerReconnectedPayload,
 } from '../../shared/types/websocket';
 
 /**
@@ -55,6 +57,10 @@ export interface GameEventHandlers {
   onRematchResponse?: (payload: RematchResponsePayload) => void;
   /** Optional handler for AI position evaluation events (analysis mode). */
   onPositionEvaluation?: (payload: PositionEvaluationPayload) => void;
+  /** Optional handler for when another player in the game disconnects. */
+  onPlayerDisconnected?: (payload: PlayerDisconnectedPayload) => void;
+  /** Optional handler for when a disconnected player reconnects. */
+  onPlayerReconnected?: (payload: PlayerReconnectedPayload) => void;
 }
 
 export interface GameConnection {

@@ -60,6 +60,8 @@ class TaskResult:
     worker_id: str
     status: str  # "success" or "error"
     error: Optional[str] = None
+    # Optional game replay data (only populated if task requested recording)
+    game_replays: Optional[List[Dict[str, Any]]] = None
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TaskResult":
@@ -72,6 +74,7 @@ class TaskResult:
             worker_id=data.get("worker_id", "unknown"),
             status=data.get("status", "error"),
             error=data.get("error"),
+            game_replays=data.get("game_replays"),
         )
 
 
@@ -85,12 +88,17 @@ class EvaluationStats:
     total_games: int = 0
     total_time_sec: float = 0.0
     worker_task_counts: Dict[str, int] = field(default_factory=dict)
+    # Aggregated game replays from all workers (populated when record_games=True)
+    all_game_replays: List[Dict[str, Any]] = field(default_factory=list)
 
     def add_result(self, result: TaskResult) -> None:
         self.total_candidates += 1
         if result.status == "success":
             self.successful_evaluations += 1
             self.total_games += result.games_played
+            # Aggregate game replays if present
+            if result.game_replays:
+                self.all_game_replays.extend(result.game_replays)
         else:
             self.failed_evaluations += 1
 
@@ -281,6 +289,7 @@ class DistributedEvaluator:
         timeout: float = 300.0,
         max_retries: int = 2,
         fallback_fitness: float = 0.0,
+        record_games: bool = False,
     ):
         """
         Initialize the distributed evaluator.
@@ -311,6 +320,8 @@ class DistributedEvaluator:
             Maximum retries for failed tasks
         fallback_fitness : float
             Fitness to use when all retries fail
+        record_games : bool
+            If True, workers will record games and return them with results
         """
         self.workers = workers
         self.board_type = board_type
@@ -324,6 +335,7 @@ class DistributedEvaluator:
         self.timeout = timeout
         self.max_retries = max_retries
         self.fallback_fitness = fallback_fitness
+        self.record_games = record_games
 
         # Create clients for each worker
         self._clients = {url: WorkerClient(url, timeout) for url in workers}
@@ -405,6 +417,7 @@ class DistributedEvaluator:
             "max_moves": self.max_moves,
             "eval_randomness": self.eval_randomness,
             "seed": self.seed,
+            "record_games": self.record_games,
         }
 
     def _evaluate_with_retry(
@@ -555,3 +568,233 @@ class DistributedEvaluator:
         for url, client in self._clients.items():
             stats[url] = client.get_stats()
         return stats
+
+
+class QueueDistributedEvaluator:
+    """
+    Queue-based distributed evaluator for cloud CMA-ES deployment.
+
+    Unlike DistributedEvaluator (which uses direct HTTP to workers),
+    this class publishes tasks to a queue (Redis or SQS) and collects
+    results. Workers running cmaes_cloud_worker.py pull tasks from the
+    queue and push results back.
+
+    This mode is designed for:
+    - Docker/ECS/K8s deployments
+    - Auto-scaling worker pools
+    - AWS Spot instances with graceful shutdown
+    """
+
+    def __init__(
+        self,
+        queue_backend: str = "redis",
+        board_type: str = "square8",
+        num_players: int = 2,
+        games_per_eval: int = 24,
+        eval_mode: str = "multi-start",
+        state_pool_id: str = "v1",
+        max_moves: int = 200,
+        eval_randomness: float = 0.0,
+        seed: Optional[int] = None,
+        timeout: float = 300.0,
+        fallback_fitness: float = 0.0,
+        run_id: Optional[str] = None,
+        record_games: bool = False,
+        **queue_kwargs,
+    ):
+        """
+        Initialize the queue-based distributed evaluator.
+
+        Parameters
+        ----------
+        queue_backend : str
+            Queue backend type: "redis" or "sqs"
+        board_type : str
+            Board type for evaluation
+        num_players : int
+            Number of players
+        games_per_eval : int
+            Games per candidate evaluation
+        eval_mode : str
+            Evaluation mode ("initial-only" or "multi-start")
+        state_pool_id : str
+            State pool ID for multi-start mode
+        max_moves : int
+            Maximum moves per game
+        eval_randomness : float
+            Randomness parameter for evaluation
+        seed : Optional[int]
+            Base seed for reproducibility
+        timeout : float
+            Overall timeout for collecting results (seconds)
+        fallback_fitness : float
+            Fitness to use when task fails
+        run_id : Optional[str]
+            Run ID for tracking tasks
+        record_games : bool
+            If True, workers will record games and return them with results
+        **queue_kwargs
+            Additional arguments passed to get_task_queue()
+        """
+        from .queue import get_task_queue
+
+        self.queue = get_task_queue(backend=queue_backend, **queue_kwargs)
+        self.board_type = board_type
+        self.num_players = num_players
+        self.games_per_eval = games_per_eval
+        self.eval_mode = eval_mode
+        self.state_pool_id = state_pool_id
+        self.max_moves = max_moves
+        self.eval_randomness = eval_randomness
+        self.seed = seed
+        self.timeout = timeout
+        self.fallback_fitness = fallback_fitness
+        self.run_id = run_id or str(uuid.uuid4())[:8]
+        self.record_games = record_games
+
+        self._generation = 0
+
+    def close(self) -> None:
+        """Close the queue connection."""
+        self.queue.close()
+
+    def evaluate_population(
+        self,
+        population: List[HeuristicWeights],
+        baseline_weights: Optional[HeuristicWeights] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        generation: int = 0,
+    ) -> Tuple[List[float], EvaluationStats]:
+        """
+        Evaluate a population of candidates via queue-based workers.
+
+        Publishes all tasks to the queue, then collects results as
+        workers complete them.
+
+        Parameters
+        ----------
+        population : List[HeuristicWeights]
+            List of candidate weight dicts
+        baseline_weights : Optional[HeuristicWeights]
+            Baseline weights for evaluation (default: BASE_V1_BALANCED_WEIGHTS)
+        progress_callback : Optional[Callable[[int, int], None]]
+            Callback(completed, total) for progress reporting
+        generation : int
+            Current generation number (for task metadata)
+
+        Returns
+        -------
+        Tuple[List[float], EvaluationStats]
+            Tuple of (fitness_scores, statistics)
+        """
+        from .queue import EvalTask
+
+        if not population:
+            return [], EvaluationStats()
+
+        if baseline_weights is None:
+            baseline_weights = BASE_V1_BALANCED_WEIGHTS
+
+        self._generation = generation
+        population_size = len(population)
+
+        logger.info(
+            f"Publishing {population_size} tasks to queue for generation {generation}"
+        )
+
+        # Publish all tasks
+        task_ids: Dict[str, int] = {}  # task_id -> candidate_id
+        start_time = time.time()
+
+        for candidate_id, weights in enumerate(population):
+            task_id = f"{self.run_id}_gen{generation}_cand{candidate_id}"
+            task = EvalTask(
+                task_id=task_id,
+                candidate_id=candidate_id,
+                weights=weights,
+                board_type=self.board_type,
+                num_players=self.num_players,
+                games_per_eval=self.games_per_eval,
+                eval_mode=self.eval_mode,
+                state_pool_id=self.state_pool_id,
+                max_moves=self.max_moves,
+                eval_randomness=self.eval_randomness,
+                seed=self.seed,
+                generation=generation,
+                run_id=self.run_id,
+                baseline_weights=baseline_weights,
+                record_games=self.record_games,
+            )
+            self.queue.publish_task(task)
+            task_ids[task_id] = candidate_id
+
+        logger.info(f"Published {population_size} tasks, collecting results...")
+
+        # Collect results
+        results: Dict[int, float] = {}
+        stats = EvaluationStats()
+        stats.total_candidates = population_size
+
+        def on_progress(results_so_far: list) -> None:
+            if progress_callback:
+                progress_callback(len(results_so_far), population_size)
+
+        collected = self.queue.consume_results(
+            count=population_size,
+            timeout=self.timeout,
+            progress_callback=on_progress,
+        )
+
+        for result in collected:
+            candidate_id = result.candidate_id
+            results[candidate_id] = result.fitness
+
+            if result.status == "success":
+                stats.successful_evaluations += 1
+                stats.total_games += result.games_played
+                # Aggregate game replays if present
+                if result.game_replays:
+                    stats.all_game_replays.extend(result.game_replays)
+            else:
+                stats.failed_evaluations += 1
+                logger.warning(
+                    f"Task {result.task_id} failed: {result.error}"
+                )
+
+            worker = result.worker_id
+            stats.worker_task_counts[worker] = (
+                stats.worker_task_counts.get(worker, 0) + 1
+            )
+
+        stats.total_time_sec = time.time() - start_time
+
+        # Build fitness list in order, using fallback for missing results
+        fitness_scores = []
+        for candidate_id in range(population_size):
+            if candidate_id in results:
+                fitness_scores.append(results[candidate_id])
+            else:
+                logger.warning(
+                    f"No result for candidate {candidate_id}, using fallback"
+                )
+                fitness_scores.append(self.fallback_fitness)
+                stats.failed_evaluations += 1
+
+        logger.info(
+            f"Queue evaluation complete: "
+            f"{stats.successful_evaluations}/{population_size} successful, "
+            f"{stats.total_games} games, {stats.total_time_sec:.1f}s"
+        )
+
+        return fitness_scores, stats
+
+    def get_queue_stats(self) -> Dict[str, Any]:
+        """Get queue statistics for monitoring."""
+        try:
+            if hasattr(self.queue, "get_queue_lengths"):
+                return self.queue.get_queue_lengths()
+            elif hasattr(self.queue, "get_queue_attributes"):
+                return self.queue.get_queue_attributes()
+            return {}
+        except Exception as e:
+            return {"error": str(e)}

@@ -102,7 +102,7 @@ class TestFreshDatabaseCreation:
 
         # Verify schema version
         stats = db.get_stats()
-        assert stats["schema_version"] == 2
+        assert stats["schema_version"] == 4  # Updated from 2 for v4 schema
 
     def test_creates_schema_metadata_table(self, tmp_path: Path):
         """Fresh database should have schema_metadata table."""
@@ -285,9 +285,9 @@ class TestV1ToV2Migration:
         # Open with GameReplayDB (should trigger migration)
         db = GameReplayDB(str(db_path))
 
-        # Verify schema version is now 2
+        # Verify schema version is now at latest (v4)
         stats = db.get_stats()
-        assert stats["schema_version"] == 2
+        assert stats["schema_version"] == 4  # Migrates through v2, v3 to v4
 
     def test_preserves_existing_data_after_migration(self, tmp_path: Path):
         """Migration should preserve existing game data."""
@@ -454,7 +454,7 @@ class TestMigrationIdempotence:
         db2 = GameReplayDB(str(db_path))
         stats2 = db2.get_stats()
 
-        assert stats1["schema_version"] == stats2["schema_version"] == 2
+        assert stats1["schema_version"] == stats2["schema_version"] == 4  # Updated from 2 for v4 schema
 
     def test_handles_partial_migration_gracefully(self, tmp_path: Path):
         """Should handle case where some columns already exist."""
@@ -502,7 +502,7 @@ class TestMigrationIdempotence:
         # Should handle gracefully
         db = GameReplayDB(str(db_path))
         stats = db.get_stats()
-        assert stats["schema_version"] == 2
+        assert stats["schema_version"] == 4  # Migrates to latest version
 
 
 if __name__ == "__main__":

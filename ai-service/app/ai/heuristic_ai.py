@@ -471,7 +471,7 @@ class HeuristicAI(BaseAI):
                     # Add stochastic exploration for SWAP_SIDES
                     if move.type == MoveType.SWAP_SIDES:
                         if self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                            noise = np.random.normal(
+                            noise = self.rng.gauss(
                                 0,
                                 self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE
                             )
@@ -491,7 +491,7 @@ class HeuristicAI(BaseAI):
                     # Add stochastic exploration for SWAP_SIDES
                     if move.type == MoveType.SWAP_SIDES:
                         if self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                            noise = np.random.normal(
+                            noise = self.rng.gauss(
                                 0,
                                 self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE
                             )
@@ -513,7 +513,7 @@ class HeuristicAI(BaseAI):
                     # Add stochastic exploration for SWAP_SIDES
                     if move.type == MoveType.SWAP_SIDES:
                         if self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                            noise = np.random.normal(
+                            noise = self.rng.gauss(
                                 0,
                                 self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE
                             )
@@ -543,7 +543,7 @@ class HeuristicAI(BaseAI):
 
                         # Add stochastic exploration for training diversity
                         if self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE > 0:
-                            noise = np.random.normal(
+                            noise = self.rng.gauss(
                                 0,
                                 self.WEIGHT_SWAP_EXPLORATION_TEMPERATURE
                             )

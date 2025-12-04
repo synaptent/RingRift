@@ -213,13 +213,27 @@ export function MoveHistory({
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentMoveRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to current move when it changes
+  // Auto-scroll to current move when it changes (within container only)
   useEffect(() => {
     if (currentMoveRef.current && scrollRef.current) {
-      currentMoveRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
+      const container = scrollRef.current;
+      const element = currentMoveRef.current;
+
+      // Calculate if element is visible within the scroll container
+      const containerRect = container.getBoundingClientRect();
+      const elementRect = element.getBoundingClientRect();
+
+      const isAboveViewport = elementRect.top < containerRect.top;
+      const isBelowViewport = elementRect.bottom > containerRect.bottom;
+
+      // Only scroll within the container, don't affect page scroll
+      if (isAboveViewport || isBelowViewport) {
+        const scrollTop = element.offsetTop - container.offsetTop;
+        container.scrollTo({
+          top: Math.max(0, scrollTop - container.clientHeight / 2 + element.clientHeight / 2),
+          behavior: 'smooth',
+        });
+      }
     }
   }, [currentMoveIndex]);
 
@@ -255,7 +269,7 @@ export function MoveHistory({
       >
         {moves.map((move, index) => (
           <div
-            key={move.id || `move-${index}`}
+            key={`${move.id ?? 'move'}-${index}`}
             ref={index === effectiveCurrentIndex ? currentMoveRef : undefined}
             role="listitem"
           >

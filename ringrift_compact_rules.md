@@ -189,7 +189,7 @@ Given a stack at `from` with `height = H` (stackHeight):
 3. Landing cell `pk` must:
    - Not be a collapsed space.
    - Not contain any stack.
-   - If it has a marker, it **must** be a marker of `P` (same player as controllingPlayer). Landing on opponent marker is illegal.
+   - May contain any marker (own or opponent). Landing on any marker is legal but incurs a cap-elimination cost (see Section 3.2).
 
 ### 3.2 Marker interaction (movement)
 
@@ -200,7 +200,7 @@ When moving along the path:
   - If marker belongs to opponent `Q ≠ P`: **flip** it to `P`.
   - If marker belongs to `P`: **collapse** it to `collapsedSpaces[pos] = P` and remove marker.
 - At landing cell `pk`:
-  - If there is a `P` marker, **remove** it (no collapse on landing); then place the stack and immediately eliminate the top ring of that stack, crediting that eliminated ring to `P` for victory-condition purposes.
+  - If there is any marker (own or opponent), **remove** it (do not collapse); then place the stack and immediately eliminate the top ring of that stack's cap, crediting that eliminated ring to `P` for victory-condition purposes.
 
 You are **not required** to stop at the first legal landing after markers; any landing `pk` satisfying distance and landing conditions is allowed.
 
@@ -241,13 +241,13 @@ A single overtaking capture segment is defined by `(from, target, landing)`:
 5. **Landing cell**:
    - Not a collapsed space.
    - Does not contain a stack.
-   - If contains marker, it must be a marker of `P`.
+   - May contain any marker (own or opponent). Landing on a marker incurs a cap-elimination cost (see Section 4.2).
 
 6. **Markers on path**:
    - Process as in non-capture movement:
      - flip opponent markers to `P`;
      - collapse `P` markers on intermediate cells;
-     - remove a `P` marker if landing on it.
+     - if landing on any marker, remove it and eliminate the top ring of the attacking stack's cap.
 
 If all conditions hold, the segment is legal.
 
@@ -255,11 +255,12 @@ If all conditions hold, the segment is legal.
 
 When a legal `(from, target, landing)` is executed:
 
-1. Process markers along path as in movement.
+1. Process markers along path as in movement (flip opponent markers, collapse own markers on intermediate cells).
 2. Move the attacking stack from `from` to `landing` (update stacks map; `from` becomes empty).
-3. Pop the **top ring** from the `target` stack and append it to the **bottom** of the attacking stack’s `rings` array.
+3. Pop the **top ring** from the `target` stack and append it to the **bottom** of the attacking stack's `rings` array.
 4. Recompute `stackHeight` and `capHeight` for the updated stack.
 5. If the `target` stack becomes empty, remove it.
+6. If landing on any marker (own or opponent), remove the marker and eliminate the top ring of the attacking stack's cap.
 
 Capturing from your own stack is allowed; the ring changes vertical position but remains in play.
 

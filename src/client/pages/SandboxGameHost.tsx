@@ -14,11 +14,15 @@ import { EvaluationPanel } from '../components/EvaluationPanel';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import { SaveStateDialog } from '../components/SaveStateDialog';
 import { ReplayPanel } from '../components/ReplayPanel';
+import { HistoryPlaybackPanel } from '../components/HistoryPlaybackPanel';
+import { OnboardingModal } from '../components/OnboardingModal';
+import { useFirstTimePlayer } from '../hooks/useFirstTimePlayer';
 import type { LoadableScenario } from '../sandbox/scenarioTypes';
 import {
   BoardState,
   BoardType,
   GameState,
+  Move,
   PlayerChoice,
   PlayerChoiceResponseFor,
   Position,
@@ -33,13 +37,22 @@ import {
   toBoardViewModel,
   toEventLogViewModel,
   toVictoryViewModel,
+  toHUDViewModel,
   deriveBoardDecisionHighlights,
 } from '../adapters/gameViewModels';
+import { GameHUD, VictoryConditionsPanel } from '../components/GameHUD';
+import {
+  ScreenReaderAnnouncer,
+  useScreenReaderAnnouncement,
+} from '../components/ScreenReaderAnnouncer';
 import { gameApi } from '../services/api';
 import { getReplayService } from '../services/ReplayService';
 import { storeGameLocally, getPendingCount } from '../services/LocalGameStorage';
 import { GameSyncService, type SyncState } from '../services/GameSyncService';
-import type { SandboxInteractionHandler } from '../sandbox/ClientSandboxEngine';
+import type {
+  ClientSandboxEngine,
+  SandboxInteractionHandler,
+} from '../sandbox/ClientSandboxEngine';
 import { getGameOverBannerText } from '../utils/gameCopy';
 import { serializeGameState } from '../../shared/engine/contracts/serialization';
 import { buildTestFixtureFromGameState } from '../sandbox/statePersistence';
@@ -75,7 +88,11 @@ const QUICK_START_PRESETS: Array<{
   id: string;
   label: string;
   description: string;
+  /** Extended description shown on hover or in expanded view */
+  learnMoreText?: string;
   icon: string;
+  /** Badge shown next to preset (e.g., "Recommended", "New") */
+  badge?: string;
   config: {
     boardType: BoardType;
     numPlayers: number;
@@ -83,9 +100,25 @@ const QUICK_START_PRESETS: Array<{
   };
 }> = [
   {
+    id: 'learn-basics',
+    label: 'Learn the Basics',
+    description: 'Best for first-time players',
+    learnMoreText:
+      'Start here to learn ring placement, movement, and captures on a compact board. The AI plays at a beginner-friendly level.',
+    icon: '📚',
+    badge: 'Recommended',
+    config: {
+      boardType: 'square8',
+      numPlayers: 2,
+      playerTypes: ['human', 'ai', 'human', 'human'],
+    },
+  },
+  {
     id: 'human-vs-ai',
     label: 'Human vs AI',
     description: 'Quick 1v1 against the computer',
+    learnMoreText:
+      'A standard match against the AI. Practice your strategies and see how different tactics play out.',
     icon: '🤖',
     config: {
       boardType: 'square8',
@@ -94,9 +127,24 @@ const QUICK_START_PRESETS: Array<{
     },
   },
   {
+    id: 'square19-human-vs-ai',
+    label: 'Full Board vs AI',
+    description: '19×19 human vs AI marathon',
+    learnMoreText:
+      'Play a full-length RingRift game on the 19×19 board against the AI. Best once you are comfortable on 8×8.',
+    icon: '🏰',
+    config: {
+      boardType: 'square19',
+      numPlayers: 2,
+      playerTypes: ['human', 'ai', 'human', 'human'],
+    },
+  },
+  {
     id: 'ai-battle',
     label: 'AI Battle',
     description: 'Watch two AIs compete',
+    learnMoreText:
+      'Observe AI strategies without playing. Great for learning tactics and understanding game flow.',
     icon: '⚔️',
     config: {
       boardType: 'square8',
@@ -105,9 +153,24 @@ const QUICK_START_PRESETS: Array<{
     },
   },
   {
+    id: 'square19-ai-battle',
+    label: 'Full Board AI Battle',
+    description: 'Watch two AIs on 19×19',
+    learnMoreText:
+      'Let two AIs play a long game on the classic 19×19 board. Good for observing late-game territory and elimination patterns.',
+    icon: '🎥',
+    config: {
+      boardType: 'square19',
+      numPlayers: 2,
+      playerTypes: ['ai', 'ai', 'human', 'human'],
+    },
+  },
+  {
     id: 'hotseat',
     label: 'Hotseat',
     description: 'Two humans on one device',
+    learnMoreText:
+      'Pass-and-play mode for two players sharing a device. Take turns and compete face-to-face.',
     icon: '👥',
     config: {
       boardType: 'square8',
@@ -119,6 +182,8 @@ const QUICK_START_PRESETS: Array<{
     id: 'hex-challenge',
     label: 'Hex Challenge',
     description: 'Human vs AI on hex board',
+    learnMoreText:
+      'Hexagonal boards offer 6-way movement and unique tactical possibilities. A step up in complexity.',
     icon: '⬡',
     config: {
       boardType: 'hexagonal',
@@ -130,6 +195,8 @@ const QUICK_START_PRESETS: Array<{
     id: 'four-player',
     label: '4-Player Free-for-All',
     description: 'Chaotic multiplayer on hex',
+    learnMoreText:
+      'Compete against three AI opponents. Alliances shift, territory control is crucial, and no one is safe.',
     icon: '🎲',
     config: {
       boardType: 'hexagonal',
@@ -210,6 +277,8 @@ const PHASE_COPY: Record<
 export const SandboxGameHost: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { shouldShowWelcome, markWelcomeSeen, markGameCompleted, isFirstTimePlayer } =
+    useFirstTimePlayer();
 
   const {
     config,
@@ -237,17 +306,27 @@ export const SandboxGameHost: React.FC = () => {
   const [sandboxEvaluationHistory, setSandboxEvaluationHistory] = useState<
     PositionEvaluationPayload['data'][]
   >([]);
+  const [sandboxEvaluationError, setSandboxEvaluationError] = useState<string | null>(null);
   const [isSandboxAnalysisRunning, setIsSandboxAnalysisRunning] = useState(false);
 
   // Local-only diagnostics / UX state
   const [isSandboxVictoryModalDismissed, setIsSandboxVictoryModalDismissed] = useState(false);
 
-  // Replay mode state
+  // Replay mode state (for database-loaded games via ReplayPanel)
   const [isInReplayMode, setIsInReplayMode] = useState(false);
   const [replayState, setReplayState] = useState<GameState | null>(null);
   const [replayAnimation, setReplayAnimation] = useState<
     import('../components/BoardView').MoveAnimationData | null
   >(null);
+  // When a self-play scenario is loaded, this bridges the gameId into the
+  // ReplayPanel so it can attempt to drive the board from the AI service's
+  // /api/replay endpoints (Option A).
+  const [requestedReplayGameId, setRequestedReplayGameId] = useState<string | null>(null);
+
+  // History scrubbing state (for locally loaded fixtures/scenarios)
+  const [isViewingHistory, setIsViewingHistory] = useState(false);
+  const [historyViewIndex, setHistoryViewIndex] = useState(0);
+  const [hasHistorySnapshots, setHasHistorySnapshots] = useState(true);
 
   // Selection + valid target highlighting
   const [selected, setSelected] = useState<Position | undefined>();
@@ -256,6 +335,9 @@ export const SandboxGameHost: React.FC = () => {
   // players understand valid moves and adjacency patterns.
   const [showMovementGrid, setShowMovementGrid] = useState(true);
   const [showValidTargetsOverlay, setShowValidTargetsOverlay] = useState(true);
+  // Debug overlays for visualizing detected lines and territory regions
+  const [showLineOverlays, setShowLineOverlays] = useState(true);
+  const [showTerritoryOverlays, setShowTerritoryOverlays] = useState(true);
 
   // Help / controls overlay for the active sandbox host
   const [showBoardControls, setShowBoardControls] = useState(false);
@@ -276,6 +358,29 @@ export const SandboxGameHost: React.FC = () => {
   const initialGameStateRef = useRef<GameState | null>(null);
   const gameSavedRef = useRef(false);
 
+  // Screen reader announcements for accessibility (mirrors BackendGameHost)
+  const { message: srMessage, announce: srAnnounce } = useScreenReaderAnnouncement();
+  const prevTurnPlayerRef = useRef<number | null>(null);
+  const prevPhaseRef = useRef<string | null>(null);
+  const prevVictoryRef = useRef<boolean>(false);
+
+  // Show/hide advanced options - collapsed by default for first-time players
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(!isFirstTimePlayer);
+
+  // Safari and some older runtimes may not expose structuredClone; provide a
+  // small defensive wrapper so initial sandbox snapshots remain available
+  // without crashing the host. For replay storage we only require a
+  // JSON-serializable clone.
+  const cloneInitialGameState = useCallback((state: GameState): GameState => {
+    const globalClone = (globalThis as any).structuredClone as
+      | ((value: unknown) => unknown)
+      | undefined;
+    if (typeof globalClone === 'function') {
+      return globalClone(state) as GameState;
+    }
+    return JSON.parse(JSON.stringify(state)) as GameState;
+  }, []);
+
   const sandboxChoiceResolverRef = useRef<
     ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
   >(null);
@@ -292,6 +397,7 @@ export const SandboxGameHost: React.FC = () => {
     handleCellContextMenu: handleSandboxCellContextMenu,
     maybeRunSandboxAiIfNeeded,
     clearSelection: clearSandboxSelection,
+    shakingCellKey: sandboxShakingCellKey,
   } = useSandboxInteractions({
     selected,
     setSelected,
@@ -341,6 +447,7 @@ export const SandboxGameHost: React.FC = () => {
 
     try {
       setIsSandboxAnalysisRunning(true);
+      setSandboxEvaluationError(null);
 
       const serialized = sandboxEngine.getSerializedState();
 
@@ -353,9 +460,24 @@ export const SandboxGameHost: React.FC = () => {
       });
 
       if (!response.ok) {
-        console.warn('Sandbox evaluation request failed', {
-          status: response.status,
-        });
+        let message = 'Sandbox evaluation request failed.';
+        try {
+          const errorBody = (await response.json()) as { error?: string } | null;
+          if (errorBody && typeof errorBody.error === 'string') {
+            message = errorBody.error;
+          }
+        } catch {
+          // Ignore JSON parse errors (HTML or empty responses)
+        }
+
+        const statusHint =
+          response.status === 404
+            ? 'AI evaluation is not enabled for this environment.'
+            : response.status === 503
+              ? 'Sandbox AI evaluation service is unavailable. Ensure the AI service is running.'
+              : `HTTP ${response.status}`;
+
+        setSandboxEvaluationError(`${message} ${statusHint}`.trim());
         return;
       }
 
@@ -363,6 +485,9 @@ export const SandboxGameHost: React.FC = () => {
       setSandboxEvaluationHistory((prev) => [...prev, data]);
     } catch (err) {
       console.warn('Sandbox evaluation request threw', err);
+      const message =
+        err instanceof Error ? err.message : 'Unknown error during sandbox evaluation request';
+      setSandboxEvaluationError(`Sandbox evaluation failed: ${message}`);
     } finally {
       setIsSandboxAnalysisRunning(false);
     }
@@ -389,14 +514,114 @@ export const SandboxGameHost: React.FC = () => {
     });
   };
 
+  const startLocalSandboxGame = (snapshot: LocalConfig) => {
+    const nextBoardType = snapshot.boardType;
+
+    // Fallback: local sandbox engine using orchestrator-first semantics.
+    const interactionHandler = createSandboxInteractionHandler(
+      snapshot.playerTypes.slice(0, snapshot.numPlayers)
+    );
+    const engine = initLocalSandboxEngine({
+      boardType: nextBoardType,
+      numPlayers: snapshot.numPlayers,
+      playerTypes: snapshot.playerTypes.slice(0, snapshot.numPlayers) as LocalPlayerType[],
+      interactionHandler,
+    });
+
+    setSelected(undefined);
+    setValidTargets([]);
+    setSandboxPendingChoice(null);
+
+    // If the first player is an AI, immediately start the sandbox AI turn loop.
+    if (engine) {
+      const state = engine.getGameState();
+      const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
+      if (current && current.type === 'ai') {
+        maybeRunSandboxAiIfNeeded();
+      }
+    }
+  };
+
+  const startSandboxGame = async (snapshot: LocalConfig) => {
+    const nextBoardType = snapshot.boardType;
+
+    // When not authenticated, skip backend game creation entirely and go
+    // straight to the local sandbox engine to avoid expected 401 noise.
+    if (!user) {
+      startLocalSandboxGame(snapshot);
+      return;
+    }
+
+    // First, attempt to create a real backend game using the same CreateGameRequest
+    // shape as the lobby. On success, navigate into the real backend game route.
+    try {
+      const payload: CreateGameRequest = {
+        boardType: nextBoardType,
+        maxPlayers: snapshot.numPlayers,
+        isRated: false,
+        isPrivate: true,
+        timeControl: {
+          type: 'rapid',
+          initialTime: 600,
+          increment: 0,
+        },
+        aiOpponents: (() => {
+          const aiSeats = snapshot.playerTypes
+            .slice(0, snapshot.numPlayers)
+            .filter((t) => t === 'ai').length;
+          if (aiSeats <= 0) return undefined;
+          return {
+            count: aiSeats,
+            difficulty: Array(aiSeats).fill(5),
+            mode: 'service',
+            aiType: 'heuristic',
+          };
+        })(),
+        // Mirror lobby behaviour: default-enable the pie rule for 2-player
+        // backend sandbox games. Local-only sandbox games (fallback path)
+        // continue to use the shared engine's defaults.
+        rulesOptions: snapshot.numPlayers === 2 ? { swapRuleEnabled: true } : undefined,
+      };
+
+      const game = await gameApi.createGame(payload);
+      navigate(`/game/${game.id}`);
+      return;
+    } catch (err) {
+      console.error('Failed to create backend sandbox game, falling back to local-only board', err);
+      setBackendSandboxError(
+        'Backend sandbox game could not be created; falling back to local-only board only.'
+      );
+    }
+
+    startLocalSandboxGame(snapshot);
+  };
+
   const handleQuickStartPreset = (preset: (typeof QUICK_START_PRESETS)[number]) => {
-    setConfig((prev) => ({
-      ...prev,
+    // Build an explicit snapshot so we can both update config and launch a
+    // game immediately without relying on async state updates.
+    const baseTypes = [...config.playerTypes];
+    const updatedTypes = baseTypes.map((t, idx) =>
+      idx < preset.config.playerTypes.length ? preset.config.playerTypes[idx] : t
+    );
+
+    const snapshot: LocalConfig = {
       boardType: preset.config.boardType,
       numPlayers: preset.config.numPlayers,
-      playerTypes: preset.config.playerTypes,
-    }));
+      playerTypes: updatedTypes,
+    };
+
+    setConfig(snapshot);
+    void startSandboxGame(snapshot);
   };
+
+  // Handler for starting tutorial from onboarding modal - selects "Learn the Basics"
+  const handleStartTutorial = useCallback(() => {
+    markWelcomeSeen();
+    const learnBasicsPreset = QUICK_START_PRESETS.find((p) => p.id === 'learn-basics');
+    if (learnBasicsPreset) {
+      handleQuickStartPreset(learnBasicsPreset);
+    }
+  }, [markWelcomeSeen]);
 
   const setAllPlayerTypes = (type: LocalPlayerType) => {
     setConfig((prev) => {
@@ -437,6 +662,22 @@ export const SandboxGameHost: React.FC = () => {
           } as PlayerChoiceResponseFor<TChoice>;
         }
 
+        // Human players with a single available option: auto-resolve the
+        // choice without surfacing any blocking UI. This keeps sandbox
+        // decisions (including territory region and elimination) flowing
+        // without unnecessary dialogs when there is nothing to choose.
+        const rawOptions = (choice as any).options as TChoice['options'] | undefined;
+        const autoOptions = (rawOptions as unknown[]) ?? [];
+        if (autoOptions.length === 1) {
+          const onlyOption = autoOptions[0] as TChoice['options'][number];
+          return {
+            choiceId: choice.id,
+            playerNumber: choice.playerNumber,
+            choiceType: choice.type,
+            selectedOption: onlyOption,
+          } as PlayerChoiceResponseFor<TChoice>;
+        }
+
         // Human players
         if (choice.type === 'capture_direction') {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- capture_direction type narrowing
@@ -470,11 +711,18 @@ export const SandboxGameHost: React.FC = () => {
       numPlayers: scenario.playerCount,
     }));
 
-    // Get player types (default to human vs AI for 2 players)
-    const playerTypes: LocalPlayerType[] =
+    // Get player types. For general fixtures, default to human vs AI for 2
+    // players. For recorded self-play games, treat all seats as human so we
+    // do not auto-run local AI turns while we are replaying the canonical
+    // move sequence from the recorder.
+    let playerTypes: LocalPlayerType[] =
       scenario.playerCount === 2
         ? ['human', 'ai', 'human', 'human']
-        : config.playerTypes.slice(0, scenario.playerCount);
+        : (config.playerTypes.slice(0, scenario.playerCount) as LocalPlayerType[]);
+
+    if (scenario.selfPlayMeta) {
+      playerTypes = Array.from({ length: scenario.playerCount }, () => 'human' as LocalPlayerType);
+    }
 
     // Create interaction handler
     const interactionHandler = createSandboxInteractionHandler(playerTypes);
@@ -502,6 +750,88 @@ export const SandboxGameHost: React.FC = () => {
     setSandboxLastProgressAt(null);
     setSandboxStateVersion(0);
     setLastLoadedScenario(scenario);
+
+    // Reset history-playback availability; fixtures loaded via ScenarioPicker
+    // may or may not include internal snapshots. We conservatively assume
+    // snapshots exist for local fixtures and will downgrade this flag when
+    // getStateAtMoveIndex reports null for self-play snapshots.
+    setHasHistorySnapshots(true);
+    setIsViewingHistory(false);
+    setHistoryViewIndex(0);
+
+    // If this scenario originated from a recorded self-play game, attempt to
+    // reconstruct the full move trajectory locally (Option B) so the history
+    // slider under the board can scrub through every recorded move even when
+    // the AI service replay DB is unavailable.
+    if (scenario.selfPlayMeta) {
+      const recordedMoves: Move[] | undefined = scenario.selfPlayMeta.moves;
+
+      if (recordedMoves && recordedMoves.length > 0) {
+        void (async () => {
+          // Best-effort debug instrumentation so we can understand how many
+          // canonical moves successfully replay into the sandbox engine for
+          // recorded self-play games.
+          // eslint-disable-next-line no-console
+          console.log('[SandboxSelfPlayReplay] Replaying recorded self-play game', {
+            gameId: scenario.selfPlayMeta?.gameId,
+            totalRecordedMoves: recordedMoves.length,
+          });
+
+          let appliedCount = 0;
+
+          try {
+            for (let i = 0; i < recordedMoves.length; i += 1) {
+              const move = recordedMoves[i];
+              // Moves come from the recorder and already match the canonical
+              // Move surface; we cast through any to avoid over-constraining
+              // the type here.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              await (engine as ClientSandboxEngine).applyCanonicalMoveForReplay(move as any);
+              appliedCount += 1;
+            }
+
+            // Bump state version so derived views (board, HUD, history) pick
+            // up the final replayed state and the newly-populated snapshots.
+            setSandboxStateVersion((v) => v + 1);
+            setHasHistorySnapshots(true);
+
+            // eslint-disable-next-line no-console
+            console.log('[SandboxSelfPlayReplay] Finished local replay', {
+              gameId: scenario.selfPlayMeta?.gameId,
+              appliedMoves: appliedCount,
+              historyLength: (engine as ClientSandboxEngine).getGameState().moveHistory.length,
+            });
+          } catch (err) {
+            console.error(
+              '[SandboxGameHost] Failed to replay recorded self-play game into sandbox engine',
+              {
+                error: err,
+                gameId: scenario.selfPlayMeta?.gameId,
+                appliedMoves: appliedCount,
+                totalRecordedMoves: recordedMoves.length,
+              }
+            );
+            setHasHistorySnapshots(false);
+          }
+        })();
+      } else {
+        // No recorded moves were attached; disable snapshot-driven history so
+        // the slider renders with an explicit "unavailable" hint instead of
+        // appearing to scrub a static board.
+        setHasHistorySnapshots(false);
+      }
+
+      // Best-effort Option A: bridge this gameId into the ReplayPanel so,
+      // when the AI service is pointed at a compatible GameReplayDB, the
+      // board can also be driven directly from /api/replay.
+      setRequestedReplayGameId(scenario.selfPlayMeta.gameId);
+      setIsInReplayMode(false);
+      setReplayState(null);
+    } else {
+      setRequestedReplayGameId(null);
+      setIsInReplayMode(false);
+      setReplayState(null);
+    }
 
     toast.success(`Loaded scenario: ${scenario.name}`);
   };
@@ -574,10 +904,14 @@ export const SandboxGameHost: React.FC = () => {
       numPlayers: scenario.playerCount,
     }));
 
-    const playerTypes: LocalPlayerType[] =
+    let playerTypes: LocalPlayerType[] =
       scenario.playerCount === 2
         ? ['human', 'ai', 'human', 'human']
-        : config.playerTypes.slice(0, scenario.playerCount);
+        : (config.playerTypes.slice(0, scenario.playerCount) as LocalPlayerType[]);
+
+    if (scenario.selfPlayMeta) {
+      playerTypes = Array.from({ length: scenario.playerCount }, () => 'human' as LocalPlayerType);
+    }
 
     const interactionHandler = createSandboxInteractionHandler(playerTypes);
 
@@ -600,77 +934,50 @@ export const SandboxGameHost: React.FC = () => {
     setIsSandboxVictoryModalDismissed(false);
     setBackendSandboxError(null);
     setSandboxStateVersion((v) => v + 1);
+    setHasHistorySnapshots(true);
+    setIsViewingHistory(false);
+    setHistoryViewIndex(0);
+
+    // Re-run local reconstruction for recorded self-play scenarios so the
+    // history slider remains meaningful after a reset.
+    if (
+      scenario.selfPlayMeta &&
+      scenario.selfPlayMeta.moves &&
+      scenario.selfPlayMeta.moves.length
+    ) {
+      void (async () => {
+        let appliedCount = 0;
+        try {
+          for (const move of scenario.selfPlayMeta?.moves as Move[]) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (engine as ClientSandboxEngine).applyCanonicalMoveForReplay(move as any);
+            appliedCount += 1;
+          }
+          setSandboxStateVersion((v) => v + 1);
+          setHasHistorySnapshots(true);
+          // eslint-disable-next-line no-console
+          console.log('[SandboxSelfPlayReplay] Finished local replay on scenario reset', {
+            gameId: scenario.selfPlayMeta?.gameId,
+            appliedMoves: appliedCount,
+            historyLength: (engine as ClientSandboxEngine).getGameState().moveHistory.length,
+          });
+        } catch (err) {
+          console.error(
+            '[SandboxGameHost] Failed to replay recorded self-play game on scenario reset',
+            { error: err, gameId: scenario.selfPlayMeta?.gameId, appliedMoves: appliedCount }
+          );
+          setHasHistorySnapshots(false);
+        }
+      })();
+    } else if (scenario.selfPlayMeta) {
+      setHasHistorySnapshots(false);
+    }
 
     toast.success(`Scenario reset: ${scenario.name}`);
   };
 
   const handleStartLocalGame = async () => {
-    const nextBoardType = config.boardType;
-
-    // First, attempt to create a real backend game using the same CreateGameRequest
-    // shape as the lobby. On success, navigate into the real backend game route.
-    try {
-      const payload: CreateGameRequest = {
-        boardType: nextBoardType,
-        maxPlayers: config.numPlayers,
-        isRated: false,
-        isPrivate: true,
-        timeControl: {
-          type: 'rapid',
-          initialTime: 600,
-          increment: 0,
-        },
-        aiOpponents: (() => {
-          const aiSeats = config.playerTypes
-            .slice(0, config.numPlayers)
-            .filter((t) => t === 'ai').length;
-          if (aiSeats <= 0) return undefined;
-          return {
-            count: aiSeats,
-            difficulty: Array(aiSeats).fill(5),
-            mode: 'service',
-            aiType: 'heuristic',
-          };
-        })(),
-        // Mirror lobby behaviour: default-enable the pie rule for 2-player
-        // backend sandbox games. Local-only sandbox games (fallback path)
-        // continue to use the shared engine's defaults.
-        rulesOptions: config.numPlayers === 2 ? { swapRuleEnabled: true } : undefined,
-      };
-
-      const game = await gameApi.createGame(payload);
-      navigate(`/game/${game.id}`);
-      return;
-    } catch (err) {
-      console.error('Failed to create backend sandbox game, falling back to local-only board', err);
-      setBackendSandboxError(
-        'Backend sandbox game could not be created; falling back to local-only board only.'
-      );
-    }
-
-    // Fallback: local sandbox engine using orchestrator-first semantics.
-    const interactionHandler = createSandboxInteractionHandler(
-      config.playerTypes.slice(0, config.numPlayers)
-    );
-    const engine = initLocalSandboxEngine({
-      boardType: nextBoardType,
-      numPlayers: config.numPlayers,
-      playerTypes: config.playerTypes.slice(0, config.numPlayers) as LocalPlayerType[],
-      interactionHandler,
-    });
-
-    setSelected(undefined);
-    setValidTargets([]);
-    setSandboxPendingChoice(null);
-
-    // If the first player is an AI, immediately start the sandbox AI turn loop.
-    if (engine) {
-      const state = engine.getGameState();
-      const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
-      if (current && current.type === 'ai') {
-        maybeRunSandboxAiIfNeeded();
-      }
-    }
+    await startSandboxGame(config);
   };
 
   const handleCopySandboxTrace = async () => {
@@ -734,8 +1041,127 @@ export const SandboxGameHost: React.FC = () => {
   const sandboxGameState: GameState | null = sandboxEngine ? sandboxEngine.getGameState() : null;
   const sandboxVictoryResult = sandboxEngine ? sandboxEngine.getVictoryResult() : null;
 
+  // Announce turn and phase changes to screen readers (mirrors BackendGameHost)
+  useEffect(() => {
+    if (!sandboxGameState) return;
+
+    const currentTurnPlayer = sandboxGameState.currentPlayer;
+    const currentPhase = sandboxGameState.currentPhase;
+    const currentPlayerInfo = sandboxGameState.players.find(
+      (p) => p.playerNumber === currentTurnPlayer
+    );
+    const playerName = currentPlayerInfo?.username || `Player ${currentTurnPlayer}`;
+
+    // Announce turn changes
+    if (prevTurnPlayerRef.current !== null && prevTurnPlayerRef.current !== currentTurnPlayer) {
+      srAnnounce(`${playerName}'s turn`);
+    }
+    prevTurnPlayerRef.current = currentTurnPlayer;
+
+    // Announce significant phase changes (skip if also announcing turn)
+    if (prevPhaseRef.current !== null && prevPhaseRef.current !== currentPhase) {
+      const phaseLabels: Record<string, string> = {
+        ring_placement: 'Ring placement phase',
+        movement: 'Movement phase',
+        capture: 'Capture phase',
+        chain_capture: 'Chain capture phase',
+        line_processing: 'Line processing phase',
+        territory_processing: 'Territory processing phase',
+      };
+      const phaseLabel = phaseLabels[currentPhase] || currentPhase;
+      // Only announce phase if it wasn't just a turn change announcement
+      if (prevTurnPlayerRef.current === currentTurnPlayer) {
+        srAnnounce(phaseLabel);
+      }
+    }
+    prevPhaseRef.current = currentPhase;
+  }, [sandboxGameState, srAnnounce]);
+
+  // Announce victory to screen readers
+  useEffect(() => {
+    if (sandboxVictoryResult && !prevVictoryRef.current) {
+      const winnerInfo =
+        sandboxVictoryResult.winner !== undefined
+          ? sandboxGameState?.players.find((p) => p.playerNumber === sandboxVictoryResult.winner)
+          : null;
+      const winnerName =
+        winnerInfo?.username ||
+        (sandboxVictoryResult.winner !== undefined ? `Player ${sandboxVictoryResult.winner}` : '');
+
+      let announcement: string;
+
+      if (sandboxVictoryResult.winner === undefined) {
+        // No explicit winner – draw or abandoned game.
+        switch (sandboxVictoryResult.reason) {
+          case 'draw':
+            announcement = 'Game over. The game ended in a draw.';
+            break;
+          case 'abandonment':
+            announcement = 'Game over. The game was abandoned.';
+            break;
+          default:
+            announcement = 'Game over.';
+            break;
+        }
+      } else {
+        let reasonLabel = '';
+        switch (sandboxVictoryResult.reason) {
+          case 'ring_elimination':
+            reasonLabel = 'by elimination';
+            break;
+          case 'territory_control':
+            reasonLabel = 'by territory control';
+            break;
+          case 'last_player_standing':
+            reasonLabel = 'as the last player standing';
+            break;
+          default:
+            reasonLabel = '';
+            break;
+        }
+
+        announcement = `Game over. ${winnerName} wins${reasonLabel ? ` ${reasonLabel}` : ''}.`;
+      }
+
+      srAnnounce(announcement);
+      prevVictoryRef.current = true;
+
+      // Mark first game completed for onboarding tracking
+      markGameCompleted();
+    }
+
+    // Reset victory ref when starting a new game
+    if (!sandboxVictoryResult && prevVictoryRef.current) {
+      prevVictoryRef.current = false;
+    }
+  }, [sandboxVictoryResult, sandboxGameState, srAnnounce, markGameCompleted]);
+
+  // Get historical state when viewing history (for fixture/scenario playback)
+  const historyState: GameState | null =
+    isViewingHistory && sandboxEngine ? sandboxEngine.getStateAtMoveIndex(historyViewIndex) : null;
+
+  // If history playback is enabled but the engine reports no snapshot for
+  // the requested index (e.g. for imported self-play snapshots), mark
+  // hasHistorySnapshots=false so the UI can disable the slider with a hint
+  // instead of appearing to scrub while showing a static board.
+  useEffect(() => {
+    if (!isViewingHistory || !sandboxEngine) {
+      return;
+    }
+    const stateAtIndex = sandboxEngine.getStateAtMoveIndex(historyViewIndex);
+    if (!stateAtIndex && sandboxEngine.getGameState().moveHistory.length > 0) {
+      setHasHistorySnapshots(false);
+    }
+  }, [isViewingHistory, historyViewIndex, sandboxEngine]);
+
   // When in replay mode, show the replay state instead of the sandbox state
-  const displayGameState = isInReplayMode && replayState ? replayState : sandboxGameState;
+  // When viewing history (for fixtures), show the historical state
+  const displayGameState =
+    isInReplayMode && replayState
+      ? replayState
+      : isViewingHistory && historyState
+        ? historyState
+        : sandboxGameState;
   const sandboxBoardState: BoardState | null = displayGameState?.board ?? null;
 
   // Move animations - auto-detects moves from game state changes
@@ -759,6 +1185,12 @@ export const SandboxGameHost: React.FC = () => {
   const isRingEliminationChoice =
     (sandboxCaptureChoice ?? sandboxPendingChoice)?.type === 'ring_elimination';
 
+  // When a territory region-order decision is active, surface a territory-
+  // specific prompt chip so territory-processing phases receive the same
+  // high-attention treatment as line-formation eliminations.
+  const isRegionOrderChoice =
+    (sandboxCaptureChoice ?? sandboxPendingChoice)?.type === 'region_order';
+
   // When in chain_capture with available continuation segments, surface an
   // attention-style chip prompting the user to continue the chain. This mirrors
   // backend HUD semantics for mandatory chain continuation.
@@ -773,6 +1205,49 @@ export const SandboxGameHost: React.FC = () => {
       .getValidMoves(sandboxGameState.currentPlayer)
       .some((m: { type: string }) => m.type === 'continue_capture_segment')
   );
+
+  // Extract chain capture path for visualization during chain_capture phase.
+  // The path includes the starting position and all landing positions visited.
+  const chainCapturePath = React.useMemo(() => {
+    if (!sandboxGameState || sandboxGameState.currentPhase !== 'chain_capture') {
+      return undefined;
+    }
+
+    const moveHistory = sandboxGameState.moveHistory;
+    if (!moveHistory || moveHistory.length === 0) {
+      return undefined;
+    }
+
+    // Walk backwards from the end to find all chain capture moves by the current player
+    const currentPlayer = sandboxGameState.currentPlayer;
+    const path: Position[] = [];
+
+    for (let i = moveHistory.length - 1; i >= 0; i--) {
+      const move = moveHistory[i];
+      if (!move) continue;
+
+      // Stop if we hit a move by a different player or a non-capture move
+      if (
+        move.player !== currentPlayer ||
+        (move.type !== 'overtaking_capture' && move.type !== 'continue_capture_segment')
+      ) {
+        break;
+      }
+
+      // Add the landing position to the front of the path
+      if (move.to) {
+        path.unshift(move.to);
+      }
+
+      // If this is the first capture in the chain, add the starting position
+      if (move.type === 'overtaking_capture' && move.from) {
+        path.unshift(move.from);
+      }
+    }
+
+    // Need at least 2 positions to show a path
+    return path.length >= 2 ? path : undefined;
+  }, [sandboxGameState]);
 
   const sandboxPlayersList =
     sandboxGameState?.players ??
@@ -861,9 +1336,6 @@ export const SandboxGameHost: React.FC = () => {
       return;
     }
 
-    setSandboxLastProgressAt(Date.now());
-    setSandboxStallWarning(null);
-
     const timeoutId = window.setTimeout(() => {
       maybeRunSandboxAiIfNeeded();
     }, 60);
@@ -871,13 +1343,7 @@ export const SandboxGameHost: React.FC = () => {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [
-    sandboxEngine,
-    sandboxGameState,
-    maybeRunSandboxAiIfNeeded,
-    setSandboxLastProgressAt,
-    setSandboxStallWarning,
-  ]);
+  }, [sandboxEngine, sandboxGameState, maybeRunSandboxAiIfNeeded]);
 
   // Derive board VM + HUD-like summaries
   const primaryValidTargets =
@@ -976,16 +1442,6 @@ export const SandboxGameHost: React.FC = () => {
       )
     : null;
 
-  const sandboxHudPlayers = sandboxPlayersList.map((player) => ({
-    playerNumber: player.playerNumber,
-    username: player.username || `Player ${player.playerNumber}`,
-    type: player.type,
-    ringsInHand: player.ringsInHand,
-    eliminatedRings: player.eliminatedRings,
-    territorySpaces: player.territorySpaces,
-    isCurrent: player.playerNumber === sandboxCurrentPlayerNumber,
-  }));
-
   const sandboxModeNotes = [
     `Board: ${boardDisplayLabel}`,
     `${humanSeatCount} human seat${humanSeatCount === 1 ? '' : 's'} · ${aiSeatCount} AI`,
@@ -993,13 +1449,38 @@ export const SandboxGameHost: React.FC = () => {
       ? 'Engine parity mode with local AI and choice handler.'
       : 'Legacy local sandbox fallback (no backend).',
     'Runs entirely in-browser; use "Change Setup" to switch configurations.',
-  ];
+    !user ? 'You’re not logged in; this game runs as a local sandbox only.' : null,
+  ].filter(Boolean) as string[];
 
-  const sandboxHudViewModel = {
-    players: sandboxHudPlayers,
-    phaseDetails: sandboxPhaseDetails,
-    modeNotes: sandboxModeNotes,
-  };
+  // Create unified HUD view model using toHUDViewModel (matches backend host pattern)
+  const sandboxHudVM = sandboxGameState
+    ? toHUDViewModel(sandboxGameState, {
+        connectionStatus: 'connected',
+        lastHeartbeatAt: null,
+        isSpectator: false,
+        currentUserId: user?.id,
+        pendingChoice: activePendingChoice,
+        choiceDeadline: null,
+        choiceTimeRemainingMs: null,
+      })
+    : null;
+
+  // Short, phase-specific hint for touch controls, derived from the HUD
+  // decision view model where applicable. This keeps SandboxTouchControlsPanel
+  // rules-agnostic while still surfacing decision context for touch users.
+  const isDecisionPhaseForTouchHint =
+    sandboxPhaseKey === 'line_processing' ||
+    sandboxPhaseKey === 'territory_processing' ||
+    sandboxPhaseKey === 'chain_capture';
+
+  const sandboxTouchPhaseHint =
+    isDecisionPhaseForTouchHint && sandboxHudVM?.decisionPhase
+      ? (sandboxHudVM.decisionPhase.statusChip?.text ?? sandboxHudVM.decisionPhase.shortLabel)
+      : undefined;
+  const canSkipTerritoryProcessing =
+    !!sandboxHudVM?.decisionPhase?.canSkip &&
+    !!sandboxPendingChoice &&
+    sandboxPendingChoice.type === 'region_order';
 
   const sandboxEventLogViewModel = toEventLogViewModel(
     sandboxGameState?.history ?? [],
@@ -1077,11 +1558,11 @@ export const SandboxGameHost: React.FC = () => {
     // Capture initial state only once per game (when moveHistory is empty)
     const currentState = sandboxEngine.getGameState();
     if (currentState.moveHistory.length === 0 && !initialGameStateRef.current) {
-      initialGameStateRef.current = structuredClone(currentState);
+      initialGameStateRef.current = cloneInitialGameState(currentState);
       gameSavedRef.current = false;
       setGameSaveStatus('idle');
     }
-  }, [sandboxEngine]);
+  }, [sandboxEngine, cloneInitialGameState]);
 
   // Start game sync service and subscribe to state updates
   useEffect(() => {
@@ -1193,227 +1674,280 @@ export const SandboxGameHost: React.FC = () => {
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-400">Quick Start</p>
                 <h2 className="text-lg font-semibold text-white">Choose a preset</h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Click a preset to launch a local sandbox game immediately.
+                </p>
               </div>
+              {isFirstTimePlayer && (
+                <span className="text-sm text-emerald-400 animate-pulse flex items-center gap-1">
+                  <span aria-hidden="true">👇</span> Start here
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {QUICK_START_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => handleQuickStartPreset(preset)}
-                  className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-600 bg-slate-900/60 text-slate-200 hover:border-emerald-400 hover:text-emerald-200 transition text-sm"
-                >
-                  <span className="text-lg" role="img" aria-hidden="true">
-                    {preset.icon}
-                  </span>
-                  <div className="text-left">
-                    <p className="font-semibold">{preset.label}</p>
-                    <p className="text-xs text-slate-400">{preset.description}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
+              {QUICK_START_PRESETS.map((preset) => {
+                const isLearnBasics = preset.id === 'learn-basics';
+                const shouldHighlight = isLearnBasics && isFirstTimePlayer;
 
-          {/* Load Scenario section */}
-          <section className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Scenarios</p>
-                <h2 className="text-lg font-semibold text-white">Load a saved scenario</h2>
-              </div>
-            </div>
-            <p className="text-sm text-slate-400 mb-3">
-              Load test vectors, curated learning scenarios, or your own saved game states.
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowScenarioPicker(true)}
-              className="px-4 py-2 rounded-xl border border-slate-600 bg-slate-900/60 text-slate-200 hover:border-emerald-400 hover:text-emerald-200 transition text-sm font-medium"
-            >
-              Browse Scenarios
-            </button>
-          </section>
-
-          {/* Self-Play Games section */}
-          <section className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">AI Training</p>
-                <h2 className="text-lg font-semibold text-white">Browse self-play games</h2>
-              </div>
-            </div>
-            <p className="text-sm text-slate-400 mb-3">
-              Load and replay games recorded during CMA-ES training, self-play soaks, and other AI
-              training activities.
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowSelfPlayBrowser(true)}
-              className="px-4 py-2 rounded-xl border border-slate-600 bg-slate-900/60 text-slate-200 hover:border-sky-400 hover:text-sky-200 transition text-sm font-medium"
-            >
-              Browse Self-Play Games
-            </button>
-          </section>
-
-          <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-            <div className="p-5 rounded-2xl bg-slate-800/70 border border-slate-700 space-y-6 text-slate-100 shadow-lg">
-              {backendSandboxError && (
-                <div className="p-3 text-sm text-red-300 bg-red-900/40 border border-red-700 rounded-lg">
-                  {backendSandboxError}
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-400">Players</p>
-                    <h2 className="text-lg font-semibold text-white">Seats & control</h2>
-                  </div>
-                  <div className="flex gap-2 text-xs">
-                    {[2, 3, 4].map((count) => (
-                      <button
-                        key={count}
-                        type="button"
-                        onClick={() => handleSetupChange({ numPlayers: count })}
-                        className={`px-2 py-1 rounded-full border ${
-                          config.numPlayers === count
-                            ? 'border-emerald-400 text-emerald-200 bg-emerald-900/30'
-                            : 'border-slate-600 text-slate-300 hover:border-slate-400'
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleQuickStartPreset(preset)}
+                    title={preset.learnMoreText}
+                    className={`relative flex items-center gap-2 px-3 py-2 rounded-xl border text-slate-200 transition text-sm ${
+                      shouldHighlight
+                        ? 'border-emerald-400 bg-emerald-900/40 ring-2 ring-emerald-500/50 ring-offset-2 ring-offset-slate-900 animate-pulse hover:animate-none hover:bg-emerald-900/50'
+                        : preset.badge
+                          ? 'border-emerald-500/50 bg-emerald-900/20 hover:border-emerald-400 hover:bg-emerald-900/30'
+                          : 'border-slate-600 bg-slate-900/60 hover:border-emerald-400'
+                    } hover:text-emerald-200`}
+                  >
+                    {preset.badge && (
+                      <span
+                        className={`absolute -top-2 -right-2 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${
+                          shouldHighlight
+                            ? 'bg-emerald-400 text-slate-950'
+                            : 'bg-emerald-500 text-slate-950'
                         }`}
                       >
-                        {count} Players
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  {Array.from({ length: config.numPlayers }, (_, i) => {
-                    const type = config.playerTypes[i];
-                    const meta = PLAYER_TYPE_META[type];
-                    return (
-                      <div
-                        key={i}
-                        className={`rounded-xl border bg-slate-900/60 px-4 py-3 flex items-center justify-between gap-4 ${meta.accent}`}
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-white">Player {i + 1}</p>
-                          <p className="text-xs text-slate-300">{meta.description}</p>
-                        </div>
-                        <div className="flex gap-2">
-                          {(['human', 'ai'] as LocalPlayerType[]).map((candidate) => {
-                            const isActive = type === candidate;
-                            return (
-                              <button
-                                key={candidate}
-                                type="button"
-                                onClick={() => handlePlayerTypeChange(i, candidate)}
-                                className={`px-3 py-1 rounded-full border text-xs font-semibold transition ${
-                                  isActive
-                                    ? 'border-white/80 text-white bg-white/10'
-                                    : 'border-slate-600 text-slate-300 hover:border-slate-400'
-                                }`}
-                              >
-                                {PLAYER_TYPE_META[candidate].label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setAllPlayerTypes('human')}
-                    className="px-3 py-1 rounded-full border border-slate-500 text-slate-200 hover:border-emerald-400 hover:text-emerald-200 transition"
-                  >
-                    All Human
+                        {shouldHighlight ? '✨ Start Here' : preset.badge}
+                      </span>
+                    )}
+                    <span className="text-lg" role="img" aria-hidden="true">
+                      {preset.icon}
+                    </span>
+                    <div className="text-left">
+                      <p className="font-semibold">{preset.label}</p>
+                      <p className="text-xs text-slate-400">{preset.description}</p>
+                    </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setAllPlayerTypes('ai')}
-                    className="px-3 py-1 rounded-full border border-slate-500 text-slate-200 hover:border-sky-400 hover:text-sky-200 transition"
-                  >
-                    All AI
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-400">Board</p>
-                    <h2 className="text-lg font-semibold text-white">Choose a layout</h2>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {BOARD_PRESETS.map((preset) => {
-                    const isSelected = preset.value === config.boardType;
-                    return (
-                      <button
-                        key={preset.value}
-                        type="button"
-                        onClick={() => handleSetupChange({ boardType: preset.value })}
-                        className={`p-4 text-left rounded-2xl border transition shadow-sm ${
-                          isSelected
-                            ? 'border-emerald-400 bg-emerald-900/20 text-white'
-                            : 'border-slate-600 bg-slate-900/60 text-slate-200 hover:border-slate-400'
-                        }`}
-                      >
-                        <span className="text-xs uppercase tracking-wide text-slate-400">
-                          {preset.subtitle}
-                        </span>
-                        <p className="text-lg font-semibold">{preset.label}</p>
-                        <p className="text-xs text-slate-300 mt-1">{preset.blurb}</p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                );
+              })}
             </div>
+          </section>
 
-            <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-700 text-slate-100 shadow-lg space-y-4">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-400">Summary</p>
-                <h2 className="text-xl font-bold text-white">{selectedBoardPreset.label}</h2>
-                <p className="text-sm text-slate-300">{selectedBoardPreset.blurb}</p>
-              </div>
+          {/* Show/Hide Advanced Options Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+            className="flex items-center gap-2 text-sm text-slate-400 hover:text-slate-200 transition"
+          >
+            <span
+              className={`transform transition-transform ${showAdvancedOptions ? 'rotate-90' : ''}`}
+            >
+              ▶
+            </span>
+            {showAdvancedOptions ? 'Hide advanced options' : 'Show advanced options'}
+            {!showAdvancedOptions && (
+              <span className="text-xs text-slate-500">(scenarios, manual setup, AI training)</span>
+            )}
+          </button>
 
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">Humans</span>
-                  <span className="font-semibold">{setupHumanSeatCount}</span>
+          {showAdvancedOptions && (
+            <>
+              {/* Load Scenario section */}
+              <section className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Scenarios</p>
+                    <h2 className="text-lg font-semibold text-white">Load a saved scenario</h2>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">AI opponents</span>
-                  <span className="font-semibold">{setupAiSeatCount}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-300">Total seats</span>
-                  <span className="font-semibold">{config.numPlayers}</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs text-slate-400">
-                  We first attempt to stand up a backend game with these settings. If that fails, we
-                  fall back to a purely client-local sandbox so you can still test moves offline.
+                <p className="text-sm text-slate-400 mb-3">
+                  Load test vectors, curated learning scenarios, or your own saved game states.
                 </p>
                 <button
                   type="button"
-                  onClick={handleStartLocalGame}
-                  className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition"
+                  onClick={() => setShowScenarioPicker(true)}
+                  className="px-4 py-2 rounded-xl border border-slate-600 bg-slate-900/60 text-slate-200 hover:border-emerald-400 hover:text-emerald-200 transition text-sm font-medium"
                 >
-                  Launch Game
+                  Browse Scenarios
                 </button>
-              </div>
-            </div>
-          </section>
+              </section>
+
+              {/* Self-Play Games section */}
+              <section className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">AI Training</p>
+                    <h2 className="text-lg font-semibold text-white">Browse self-play games</h2>
+                  </div>
+                </div>
+                <p className="text-sm text-slate-400 mb-3">
+                  Load and replay games recorded during CMA-ES training, self-play soaks, and other
+                  AI training activities.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowSelfPlayBrowser(true)}
+                  className="px-4 py-2 rounded-xl border border-slate-600 bg-slate-900/60 text-slate-200 hover:border-sky-400 hover:text-sky-200 transition text-sm font-medium"
+                >
+                  Browse Self-Play Games
+                </button>
+              </section>
+
+              <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+                <div className="p-5 rounded-2xl bg-slate-800/70 border border-slate-700 space-y-6 text-slate-100 shadow-lg">
+                  {backendSandboxError && (
+                    <div className="p-3 text-sm text-red-300 bg-red-900/40 border border-red-700 rounded-lg">
+                      {backendSandboxError}
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Players</p>
+                        <h2 className="text-lg font-semibold text-white">Seats & control</h2>
+                      </div>
+                      <div className="flex gap-2 text-xs">
+                        {[2, 3, 4].map((count) => (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => handleSetupChange({ numPlayers: count })}
+                            className={`px-2 py-1 rounded-full border ${
+                              config.numPlayers === count
+                                ? 'border-emerald-400 text-emerald-200 bg-emerald-900/30'
+                                : 'border-slate-600 text-slate-300 hover:border-slate-400'
+                            }`}
+                          >
+                            {count} Players
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {Array.from({ length: config.numPlayers }, (_, i) => {
+                        const type = config.playerTypes[i];
+                        const meta = PLAYER_TYPE_META[type];
+                        return (
+                          <div
+                            key={i}
+                            className={`rounded-xl border bg-slate-900/60 px-4 py-3 flex items-center justify-between gap-4 ${meta.accent}`}
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-white">Player {i + 1}</p>
+                              <p className="text-xs text-slate-300">{meta.description}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              {(['human', 'ai'] as LocalPlayerType[]).map((candidate) => {
+                                const isActive = type === candidate;
+                                return (
+                                  <button
+                                    key={candidate}
+                                    type="button"
+                                    onClick={() => handlePlayerTypeChange(i, candidate)}
+                                    className={`px-3 py-1 rounded-full border text-xs font-semibold transition ${
+                                      isActive
+                                        ? 'border-white/80 text-white bg-white/10'
+                                        : 'border-slate-600 text-slate-300 hover:border-slate-400'
+                                    }`}
+                                  >
+                                    {PLAYER_TYPE_META[candidate].label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setAllPlayerTypes('human')}
+                        className="px-3 py-1 rounded-full border border-slate-500 text-slate-200 hover:border-emerald-400 hover:text-emerald-200 transition"
+                      >
+                        All Human
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAllPlayerTypes('ai')}
+                        className="px-3 py-1 rounded-full border border-slate-500 text-slate-200 hover:border-sky-400 hover:text-sky-200 transition"
+                      >
+                        All AI
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Board</p>
+                        <h2 className="text-lg font-semibold text-white">Choose a layout</h2>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {BOARD_PRESETS.map((preset) => {
+                        const isSelected = preset.value === config.boardType;
+                        return (
+                          <button
+                            key={preset.value}
+                            type="button"
+                            onClick={() => handleSetupChange({ boardType: preset.value })}
+                            className={`p-4 text-left rounded-2xl border transition shadow-sm ${
+                              isSelected
+                                ? 'border-emerald-400 bg-emerald-900/20 text-white'
+                                : 'border-slate-600 bg-slate-900/60 text-slate-200 hover:border-slate-400'
+                            }`}
+                          >
+                            <span className="text-xs uppercase tracking-wide text-slate-400">
+                              {preset.subtitle}
+                            </span>
+                            <p className="text-lg font-semibold">{preset.label}</p>
+                            <p className="text-xs text-slate-300 mt-1">{preset.blurb}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-slate-900/70 border border-slate-700 text-slate-100 shadow-lg space-y-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Summary</p>
+                    <h2 className="text-xl font-bold text-white">{selectedBoardPreset.label}</h2>
+                    <p className="text-sm text-slate-300">{selectedBoardPreset.blurb}</p>
+                  </div>
+
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300">Humans</span>
+                      <span className="font-semibold">{setupHumanSeatCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300">AI opponents</span>
+                      <span className="font-semibold">{setupAiSeatCount}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300">Total seats</span>
+                      <span className="font-semibold">{config.numPlayers}</span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-400">
+                      We first attempt to stand up a backend game with these settings. If that
+                      fails, we fall back to a purely client-local sandbox so you can still test
+                      moves offline.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleStartLocalGame}
+                      className="w-full px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold text-white shadow-lg shadow-emerald-900/40 transition"
+                    >
+                      Launch Game
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
         </div>
 
         <ScenarioPickerModal
@@ -1427,6 +1961,13 @@ export const SandboxGameHost: React.FC = () => {
           onClose={() => setShowSelfPlayBrowser(false)}
           onSelectGame={handleLoadScenario}
         />
+
+        {/* First-time player onboarding modal */}
+        <OnboardingModal
+          isOpen={shouldShowWelcome}
+          onClose={markWelcomeSeen}
+          onStartTutorial={handleStartTutorial}
+        />
       </div>
     );
   }
@@ -1435,6 +1976,9 @@ export const SandboxGameHost: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="container mx-auto px-4 py-8 space-y-4">
+        {/* Screen reader live region for game announcements (accessibility parity with BackendGameHost) */}
+        <ScreenReaderAnnouncer message={srMessage} />
+
         {sandboxStallWarning && (
           <div className="p-3 rounded-xl border border-amber-500/70 bg-amber-900/40 text-amber-100 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <span>{sandboxStallWarning}</span>
@@ -1516,9 +2060,11 @@ export const SandboxGameHost: React.FC = () => {
 
         <ChoiceDialog
           choice={
-            sandboxPendingChoice && sandboxPendingChoice.type === 'ring_elimination'
-              ? null
-              : sandboxPendingChoice
+            sandboxPendingChoice &&
+            sandboxPendingChoice.type !== 'ring_elimination' &&
+            sandboxPendingChoice.type !== 'region_order'
+              ? sandboxPendingChoice
+              : null
           }
           deadline={null}
           onSelectOption={(choice, option) => {
@@ -1638,8 +2184,8 @@ export const SandboxGameHost: React.FC = () => {
                     showCoordinateLabels={
                       sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
                     }
-                    showLineOverlays={true}
-                    showTerritoryRegionOverlays={true}
+                    showLineOverlays={showLineOverlays}
+                    showTerritoryRegionOverlays={showTerritoryOverlays}
                     pendingAnimation={
                       isInReplayMode
                         ? (replayAnimation ?? undefined)
@@ -1648,6 +2194,8 @@ export const SandboxGameHost: React.FC = () => {
                     onAnimationComplete={
                       isInReplayMode ? () => setReplayAnimation(null) : clearAnimation
                     }
+                    chainCapturePath={isInReplayMode ? undefined : chainCapturePath}
+                    shakingCellKey={isInReplayMode ? null : sandboxShakingCellKey}
                   />
                 )}
 
@@ -1660,6 +2208,10 @@ export const SandboxGameHost: React.FC = () => {
 
                       if (isRingEliminationChoice) {
                         primarySubtitleText = 'Select stack cap to eliminate';
+                        primarySubtitleClass =
+                          'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-sm shadow-amber-500/40';
+                      } else if (isRegionOrderChoice) {
+                        primarySubtitleText = 'Territory claimed – choose region to process';
                         primarySubtitleClass =
                           'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-sm shadow-amber-500/40';
                       } else if (isChainCaptureContinuationStep) {
@@ -1696,6 +2248,9 @@ export const SandboxGameHost: React.FC = () => {
                     })}
                   </div>
                 </section>
+
+                {/* Victory Conditions - placed below game info panel */}
+                <VictoryConditionsPanel className="mt-3" />
               </div>
             )}
           </section>
@@ -1707,47 +2262,19 @@ export const SandboxGameHost: React.FC = () => {
               onReplayModeChange={setIsInReplayMode}
               onForkFromPosition={handleForkFromReplay}
               onAnimationChange={setReplayAnimation}
+              requestedGameId={requestedReplayGameId}
               defaultCollapsed={true}
             />
 
-            <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-3">
-              <h2 className="font-semibold">Players</h2>
-              <div className="space-y-2">
-                {sandboxHudViewModel.players.map((player) => (
-                  <div
-                    key={player.playerNumber}
-                    className={`rounded-xl border px-3 py-2 text-xs flex items-center justify-between ${
-                      player.isCurrent
-                        ? 'border-emerald-400 bg-emerald-900/20'
-                        : 'border-slate-700 bg-slate-900/40'
-                    }`}
-                  >
-                    <div>
-                      <p className="font-semibold text-white">
-                        P{player.playerNumber} {player.username ? `• ${player.username}` : ''}
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        {player.type === 'ai' ? 'Computer' : 'Human'}
-                      </p>
-                    </div>
-                    <div className="flex gap-3 text-right">
-                      <div>
-                        <p className="text-sm font-bold text-white">{player.ringsInHand}</p>
-                        <p className="text-[11px] text-slate-400">in hand</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-white">{player.territorySpaces}</p>
-                        <p className="text-[11px] text-slate-400">territory</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold text-white">{player.eliminatedRings}</p>
-                        <p className="text-[11px] text-slate-400">eliminated</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Unified Game HUD - same component as backend games */}
+            {sandboxHudVM && (
+              <GameHUD
+                isLocalSandboxOnly={!user}
+                viewModel={sandboxHudVM}
+                onShowBoardControls={() => setShowBoardControls(true)}
+                hideVictoryConditions={true}
+              />
+            )}
 
             {sandboxEngine &&
               sandboxGameState &&
@@ -1780,12 +2307,50 @@ export const SandboxGameHost: React.FC = () => {
                 </div>
               )}
 
+            {/* History Playback Controls - visible when there's move history.
+                When no internal snapshots are available (e.g. imported self-play
+                snapshots), we render the panel in a disabled state with a hint
+                instead of allowing a no-op slider. */}
+            {!isInReplayMode && sandboxGameState && sandboxGameState.moveHistory.length > 0 && (
+              <HistoryPlaybackPanel
+                totalMoves={sandboxGameState.moveHistory.length}
+                currentMoveIndex={
+                  isViewingHistory ? historyViewIndex : sandboxGameState.moveHistory.length
+                }
+                isViewingHistory={isViewingHistory}
+                onMoveIndexChange={(index) => {
+                  setHistoryViewIndex(index);
+                  // If at end, exit history view
+                  if (index >= sandboxGameState.moveHistory.length) {
+                    setIsViewingHistory(false);
+                  }
+                }}
+                onExitHistoryView={() => {
+                  setIsViewingHistory(false);
+                  setHistoryViewIndex(sandboxGameState.moveHistory.length);
+                }}
+                onEnterHistoryView={() => {
+                  setIsViewingHistory(true);
+                }}
+                // New: pass a flag so the panel can disable scrubbing for
+                // scenarios without snapshots (self-play snapshots, some fixtures).
+                hasSnapshots={hasHistorySnapshots}
+              />
+            )}
+
             {/* Move History - compact notation display */}
-            {sandboxGameState && (
+            {!isInReplayMode && sandboxGameState && (
               <MoveHistory
                 moves={sandboxGameState.moveHistory}
                 boardType={sandboxGameState.boardType}
-                currentMoveIndex={sandboxGameState.moveHistory.length - 1}
+                currentMoveIndex={
+                  isViewingHistory ? historyViewIndex - 1 : sandboxGameState.moveHistory.length - 1
+                }
+                onMoveClick={(index) => {
+                  // Jump to the state after this move (index+1)
+                  setIsViewingHistory(true);
+                  setHistoryViewIndex(index + 1);
+                }}
               />
             )}
 
@@ -1895,6 +2460,11 @@ export const SandboxGameHost: React.FC = () => {
                 evaluationHistory={sandboxEvaluationHistory}
                 players={sandboxGameState?.players ?? []}
               />
+              {sandboxEvaluationError && (
+                <p className="text-xs text-amber-400" data-testid="sandbox-evaluation-error">
+                  {sandboxEvaluationError}
+                </p>
+              )}
             </div>
 
             <SandboxTouchControlsPanel
@@ -1922,7 +2492,40 @@ export const SandboxGameHost: React.FC = () => {
               onToggleMovementGrid={(next) => setShowMovementGrid(next)}
               showValidTargets={showValidTargetsOverlay}
               onToggleValidTargets={(next) => setShowValidTargetsOverlay(next)}
+              showLineOverlays={showLineOverlays}
+              onToggleLineOverlays={(next) => setShowLineOverlays(next)}
+              showTerritoryOverlays={showTerritoryOverlays}
+              onToggleTerritoryOverlays={(next) => setShowTerritoryOverlays(next)}
               phaseLabel={sandboxPhaseDetails.label}
+              phaseHint={sandboxTouchPhaseHint}
+              canSkipTerritoryProcessing={canSkipTerritoryProcessing}
+              onSkipTerritoryProcessing={() => {
+                if (!sandboxPendingChoice || sandboxPendingChoice.type !== 'region_order') {
+                  return;
+                }
+                const currentChoice = sandboxPendingChoice;
+                const options = (currentChoice.options ?? []) as Array<{
+                  regionId: string;
+                  size: number;
+                  representativePosition: Position;
+                  moveId: string;
+                }>;
+                const skipOption =
+                  options.find((opt) => opt.regionId === 'skip' || opt.size <= 0) ?? options[0];
+                const resolver = sandboxChoiceResolverRef.current;
+                if (resolver) {
+                  resolver({
+                    choiceId: currentChoice.id,
+                    playerNumber: currentChoice.playerNumber,
+                    choiceType: currentChoice.type,
+                    selectedOption: skipOption,
+                  } as PlayerChoiceResponseFor<PlayerChoice>);
+                  sandboxChoiceResolverRef.current = null;
+                }
+                setSandboxPendingChoice(null);
+                setSandboxStateVersion((v) => v + 1);
+                maybeRunSandboxAiIfNeeded();
+              }}
               autoSaveGames={autoSaveGames}
               onToggleAutoSave={(next) => setAutoSaveGames(next)}
               gameSaveStatus={gameSaveStatus}
@@ -1931,9 +2534,11 @@ export const SandboxGameHost: React.FC = () => {
             <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
               <h2 className="font-semibold">Phase Guide</h2>
               <p className="text-xs uppercase tracking-wide text-slate-400">
-                {sandboxHudViewModel.phaseDetails.label}
+                {sandboxHudVM?.phase.label ?? 'Initializing...'}
               </p>
-              <p className="text-sm text-slate-200">{sandboxHudViewModel.phaseDetails.summary}</p>
+              <p className="text-sm text-slate-200">
+                {sandboxHudVM?.phase.description ?? 'Setting up game state.'}
+              </p>
               <p className="text-xs text-slate-400">
                 Complete the current requirement to advance the turn (chain captures, line rewards,
                 etc.).
@@ -1943,7 +2548,7 @@ export const SandboxGameHost: React.FC = () => {
             <div className="p-4 border border-slate-700 rounded-2xl bg-slate-900/60 space-y-2">
               <h2 className="font-semibold">Sandbox Notes</h2>
               <ul className="list-disc list-inside text-slate-300 space-y-1 text-xs">
-                {sandboxHudViewModel.modeNotes.map((note, idx) => (
+                {sandboxModeNotes.map((note, idx) => (
                   <li key={idx}>{note}</li>
                 ))}
               </ul>

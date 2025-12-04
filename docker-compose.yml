@@ -1,9 +1,6 @@
 services:
   app:
     build: .
-    ports:
-      - '3000:3000'
-      - '3001:3001'
     environment:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://ringrift:${DB_PASSWORD:-password}@postgres:5432/ringrift

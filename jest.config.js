@@ -35,6 +35,41 @@
 // To run core tests (CI default):  npm run test:core
 // To run heavy diagnostics:        npm run test:diagnostics
 // To run everything (local dev):   npm run test
+//
+// =============================================================================
+// DIAGNOSING STUCK JEST WORKERS
+// =============================================================================
+// Common causes of Jest worker processes hanging indefinitely:
+//
+// 1. UNRESOLVED PROMISES / OPEN HANDLES
+//    - setTimeout/setInterval not cleared in afterEach/afterAll
+//    - WebSocket/HTTP connections not closed
+//    - Database connections left open
+//    - Event listeners not removed
+//    Diagnose: npm run test:debug-hangs (uses --detectOpenHandles)
+//
+// 2. INFINITE LOOPS IN TEST SETUP/TEARDOWN
+//    - beforeAll/afterAll that never resolve
+//    - Circular imports causing module resolution hangs
+//    - Mock implementations with infinite recursion
+//
+// 3. MEMORY PRESSURE / OOM
+//    - Large state space enumeration tests
+//    - Memory leaks in test fixtures
+//    - Too many parallel workers on constrained systems
+//    Mitigate: --workerIdleMemoryLimit=512MB kills bloated workers
+//
+// 4. EXTERNAL SERVICE DEPENDENCIES
+//    - Tests waiting for unreachable services
+//    - Missing mock for network calls
+//    - DNS resolution hangs
+//
+// SAFEGUARDS IN PLACE:
+//   - testTimeout: 30s per test (30min for coverage runs)
+//   - --forceExit: Kill Jest when tests complete even if handles remain
+//   - --workerIdleMemoryLimit=512MB: Kill workers exceeding memory
+//   - timeout 30m wrapper: System-level kill for entire test run
+//
 // =============================================================================
 
  // Heavy diagnostic suite patterns (excluded from test:core, run by test:diagnostics)

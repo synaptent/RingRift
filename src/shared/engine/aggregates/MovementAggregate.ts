@@ -202,7 +202,8 @@ function createMarkerHelpers(): MarkerPathHelpers {
  * - Must move in a valid direction (8 for square, 6 for hex)
  * - Distance must be >= stack height
  * - Path must be clear of stacks and collapsed spaces
- * - Cannot land on opponent marker or existing stack
+ * - Can land on any marker (own or opponent) with cap-elimination cost
+ * - Cannot land on existing stack
  */
 export function validateMovement(
   state: GameState,
@@ -317,15 +318,10 @@ export function validateMovement(
     return { valid: true };
   }
 
-  // Can land on own marker (will be removed and top ring eliminated)
-  if (landingMarker && landingMarker.player === action.playerId && !landingStack) {
+  // Can land on any marker (own or opponent) per RR-CANON-R091/R092.
+  // The marker is removed and a ring from the cap is eliminated.
+  if (landingMarker && !landingStack) {
     return { valid: true };
-  }
-
-  // Cannot land on opponent marker
-  // Rule 8.2: "Landing on opponent markers or collapsed spaces remains illegal."
-  if (landingMarker && landingMarker.player !== action.playerId && !landingStack) {
-    return { valid: false, reason: 'Cannot land on opponent marker', code: 'INVALID_LANDING' };
   }
 
   // Cannot land on existing stack
@@ -482,44 +478,34 @@ export function mutateMovement(state: GameState, action: MoveStackAction): GameS
   const landingMarker = newState.board.markers.get(toKey);
 
   if (landingMarker) {
-    // Landing on a marker
-    if (landingMarker.player === action.playerId) {
-      // Landing on OWN marker:
-      // - Remove the marker
-      newState.board.markers.delete(toKey);
+    // Landing on any marker (own or opponent) per RR-CANON-R091/R092:
+    // - Remove the marker (do not collapse it)
+    newState.board.markers.delete(toKey);
 
-      // - Eliminate the TOP ring of the moving stack (per rules 8.2, 8.3, 16.5.1)
-      // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
-      const topRingOwner = stack.rings[0];
-      const newRings = stack.rings.slice(1); // Remove first element (the top)
+    // - Eliminate the TOP ring of the moving stack's cap
+    // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
+    const topRingOwner = stack.rings[0];
+    const newRings = stack.rings.slice(1); // Remove first element (the top)
 
-      // Update elimination counts
-      newState.totalRingsEliminated++;
-      newState.board.eliminatedRings[topRingOwner] =
-        (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
+    // Update elimination counts
+    newState.totalRingsEliminated++;
+    newState.board.eliminatedRings[topRingOwner] =
+      (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
 
-      const player = newState.players.find((p) => p.playerNumber === topRingOwner);
-      if (player) {
-        player.eliminatedRings++;
-      }
+    const player = newState.players.find((p) => p.playerNumber === topRingOwner);
+    if (player) {
+      player.eliminatedRings++;
+    }
 
-      // If stack becomes empty (was height 1), it's gone. Otherwise place it.
-      if (newRings.length > 0) {
-        newState.board.stacks.set(toKey, {
-          position: action.to,
-          rings: newRings,
-          stackHeight: newRings.length,
-          capHeight: calculateCapHeight(newRings),
-          controllingPlayer: newRings[0], // New top ring is the controller
-        });
-      }
-    } else {
-      // Landing on OPPONENT marker:
-      // This is generally not allowed for simple moves.
-      // MovementValidator blocks this, but throw for safety.
-      throw new Error(
-        'MovementMutator: Landing on opponent marker is not supported in simple movement'
-      );
+    // If stack becomes empty (was height 1), it's gone. Otherwise place it.
+    if (newRings.length > 0) {
+      newState.board.stacks.set(toKey, {
+        position: action.to,
+        rings: newRings,
+        stackHeight: newRings.length,
+        capHeight: calculateCapHeight(newRings),
+        controllingPlayer: newRings[0], // New top ring is the controller
+      });
     }
   } else {
     // Landing on empty space
@@ -597,12 +583,10 @@ export function applySimpleMovement(
   // 1. Remove stack from origin
   newState.board.stacks.delete(fromKey);
 
-  // 2. BEFORE applying marker effects, capture landing marker state for own-marker elimination check
-  // This is critical because applyMarkerEffectsAlongPathOnBoard DELETES the own marker at landing,
-  // so we must capture the state before that happens. (Race condition fix)
+  // 2. BEFORE applying marker effects, capture landing marker state for marker elimination check
+  // This is critical because applyMarkerEffectsAlongPathOnBoard may modify/delete markers at landing,
+  // so we must capture the state before that happens.
   const landingMarkerBeforeEffects = newState.board.markers.get(toKey);
-  const landedOnOwnMarker =
-    landingMarkerBeforeEffects && landingMarkerBeforeEffects.player === params.player;
 
   // Apply marker effects along the path
   const leaveDepartureMarker = params.leaveDepartureMarker !== false;
@@ -625,12 +609,16 @@ export function applySimpleMovement(
     markerEffectsApplied = true;
   }
 
-  // 3. Handle landing on own marker (using pre-captured state)
-  if (landedOnOwnMarker) {
-    // Landing on OWN marker:
-    // - Remove the marker (already done by applyMarkerEffectsAlongPathOnBoard)
-    // - Eliminate the TOP ring of the moving stack (per rules section 8.2, 8.3, 16.5.1)
+  // 3. Handle landing on any marker (using pre-captured state)
+  // Per RR-CANON-R091/R092: landing on any marker (own or opponent) removes the marker
+  // and eliminates the top ring of the moving stack's cap.
+  if (landingMarkerBeforeEffects) {
+    // Landing on marker (own or opponent):
+    // - Remove the marker (already done by applyMarkerEffectsAlongPathOnBoard for own marker,
+    //   but for opponent marker we need to delete it explicitly)
+    newState.board.markers.delete(toKey);
 
+    // - Eliminate the TOP ring of the moving stack's cap
     // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
     const topRingOwner = stack.rings[0];
     const newRings = stack.rings.slice(1); // Remove first element (the top)

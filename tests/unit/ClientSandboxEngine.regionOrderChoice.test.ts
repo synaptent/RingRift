@@ -21,6 +21,10 @@ import * as sandboxTerritory from '../../src/client/sandbox/sandboxTerritory';
  * Mirrors GameEngine.regionOrderChoiceIntegration.test.ts but exercises
  * ClientSandboxEngine + SandboxInteractionHandler instead of the
  * server-side GameEngine + WebSocketInteractionHandler.
+ *
+ * Rules / docs anchors:
+ * - RULES_SCENARIO_MATRIX.md – "Region order PlayerChoice" row in the territory section
+ * - FAQ Q23 (self-elimination prerequisite and multi-region territory processing)
  */
 
 // Skip with orchestrator adapter - this test spies on internal sandbox methods

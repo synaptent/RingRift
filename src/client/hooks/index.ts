@@ -86,3 +86,13 @@ export {
   // Auto-detect animations from game state
   useAutoMoveAnimation,
 } from './useMoveAnimation';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Onboarding Hooks
+// ═══════════════════════════════════════════════════════════════════════════
+
+export {
+  useFirstTimePlayer,
+  type OnboardingState,
+  type UseFirstTimePlayerResult,
+} from './useFirstTimePlayer';

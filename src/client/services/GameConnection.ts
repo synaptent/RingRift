@@ -19,6 +19,8 @@ import type {
   RematchRequestClientPayload,
   RematchResponseClientPayload,
   PositionEvaluationPayload,
+  PlayerDisconnectedPayload,
+  PlayerReconnectedPayload,
 } from '../../shared/types/websocket';
 import type { Move, PlayerChoice } from '../../shared/types/game';
 import type { GameConnection, GameEventHandlers, ConnectionStatus } from '../domain/GameAPI';
@@ -163,6 +165,18 @@ export class SocketGameConnection implements GameConnection {
     socket.on('position_evaluation', (payload: PositionEvaluationPayload) => {
       if (this.handlers.onPositionEvaluation) {
         this.handlers.onPositionEvaluation(payload);
+      }
+    });
+
+    socket.on('player_disconnected', (payload: PlayerDisconnectedPayload) => {
+      if (this.handlers.onPlayerDisconnected) {
+        this.handlers.onPlayerDisconnected(payload);
+      }
+    });
+
+    socket.on('player_reconnected', (payload: PlayerReconnectedPayload) => {
+      if (this.handlers.onPlayerReconnected) {
+        this.handlers.onPlayerReconnected(payload);
       }
     });
 

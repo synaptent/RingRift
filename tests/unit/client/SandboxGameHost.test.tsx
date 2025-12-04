@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type {
   BoardState,
@@ -11,14 +11,31 @@ import type {
   Position,
 } from '../../../src/shared/types/game';
 import type { LocalConfig, LocalPlayerType } from '../../../src/client/contexts/SandboxContext';
+import type { LoadableScenario } from '../../../src/client/sandbox/scenarioTypes';
 import { SandboxGameHost } from '../../../src/client/pages/SandboxGameHost';
 import { gameApi } from '../../../src/client/services/api';
+import { serializeGameState } from '../../../src/shared/engine/contracts/serialization';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mocks
 // ─────────────────────────────────────────────────────────────────────────────
 
 const mockNavigate = jest.fn();
+const mockStoreGameLocally = jest.fn();
+const mockGetPendingCount = jest.fn();
+
+type MockSyncState = {
+  status: 'idle' | 'syncing' | 'error' | 'offline';
+  pendingCount: number;
+  lastSyncAttempt: Date | null;
+  lastSuccessfulSync: Date | null;
+  consecutiveFailures: number;
+};
+
+const mockGameSyncStart = jest.fn();
+const mockGameSyncStop = jest.fn();
+const mockGameSyncTriggerSync = jest.fn();
+let mockGameSyncSubscribeCallback: ((state: MockSyncState) => void) | null = null;
 
 jest.mock('react-router-dom', () => ({
   // Reuse actual exports where possible, but override useNavigate
@@ -34,6 +51,39 @@ jest.mock('@/client/contexts/AuthContext', () => ({
 
 jest.mock('../../../src/client/services/api');
 
+jest.mock('../../../src/client/services/LocalGameStorage', () => ({
+  __esModule: true,
+  storeGameLocally: (...args: unknown[]) => mockStoreGameLocally(...args),
+  getPendingCount: (...args: unknown[]) => mockGetPendingCount(...args),
+}));
+
+jest.mock('../../../src/client/services/GameSyncService', () => ({
+  __esModule: true,
+  GameSyncService: {
+    start: (...args: unknown[]) => mockGameSyncStart(...args),
+    stop: (...args: unknown[]) => mockGameSyncStop(...args),
+    subscribe: (cb: (state: MockSyncState) => void) => {
+      mockGameSyncSubscribeCallback = cb;
+      cb({
+        status: 'idle',
+        pendingCount: 0,
+        lastSyncAttempt: null,
+        lastSuccessfulSync: null,
+        consecutiveFailures: 0,
+      });
+      return jest.fn();
+    },
+    triggerSync: (...args: unknown[]) => mockGameSyncTriggerSync(...args),
+    getState: () => ({
+      status: 'idle',
+      pendingCount: 0,
+      lastSyncAttempt: null,
+      lastSuccessfulSync: null,
+      consecutiveFailures: 0,
+    }),
+  },
+}));
+
 // Mock ReplayService to prevent unhandled async state updates after tests complete
 const mockStoreGame = jest.fn().mockResolvedValue({ success: true, totalMoves: 10 });
 jest.mock('../../../src/client/services/ReplayService', () => ({
@@ -45,6 +95,7 @@ jest.mock('../../../src/client/services/ReplayService', () => ({
 
 let mockSandboxValue: any;
 let replayPanelProps: any | null = null;
+let scenarioPickerProps: any | null = null;
 
 // Choice + AI helpers wired via useSandboxInteractions mock
 const mockMaybeRunSandboxAiIfNeeded = jest.fn();
@@ -55,7 +106,19 @@ jest.mock('../../../src/client/contexts/SandboxContext', () => ({
   useSandbox: () => mockSandboxValue,
 }));
 
-jest.mock('../../../src/client/components/ReplayPanel/ReplayPanel', () => ({
+jest.mock('../../../src/client/components/ScenarioPickerModal', () => ({
+  __esModule: true,
+  ScenarioPickerModal: (props: any) => {
+    scenarioPickerProps = props;
+    return null;
+  },
+  default: (props: any) => {
+    scenarioPickerProps = props;
+    return null;
+  },
+}));
+
+jest.mock('../../../src/client/components/ReplayPanel', () => ({
   __esModule: true,
   // Capture props so tests can drive ReplayPanel callbacks (state change,
   // replay mode toggles, and fork-from-position) without rendering the full
@@ -243,7 +306,14 @@ describe('SandboxGameHost (React host behaviour)', () => {
     mockMaybeRunSandboxAiIfNeeded.mockReset();
     mockChoiceResolve.mockReset();
     mockStoreGame.mockClear();
+    mockStoreGameLocally.mockReset();
+    mockGetPendingCount.mockReset();
+    mockGameSyncStart.mockReset();
+    mockGameSyncStop.mockReset();
+    mockGameSyncTriggerSync.mockReset();
+    mockGameSyncSubscribeCallback = null;
     replayPanelProps = null;
+    scenarioPickerProps = null;
   });
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -524,6 +594,166 @@ describe('SandboxGameHost (React host behaviour)', () => {
     expect(highlightedCell).toHaveAttribute('data-decision-highlight', 'primary');
   });
 
+  it('surfaces territory region_order chip and highlights the full region in the sandbox BoardView and touch controls', () => {
+    // Board with a small disconnected territory region for Player 1.
+    const board = createEmptySquareBoard(8);
+    const regionSpaces: Position[] = [
+      { x: 3, y: 3 },
+      { x: 3, y: 4 },
+      { x: 4, y: 3 },
+    ];
+
+    const territoryRegion = {
+      spaces: regionSpaces,
+      controllingPlayer: 1,
+      isDisconnected: true,
+    } as any;
+
+    (board.territories as Map<string, any>).set('region-0', territoryRegion);
+
+    const sandboxState = createSandboxGameState({
+      board,
+      currentPhase: 'territory_processing',
+      gameStatus: 'active',
+    });
+
+    const engine = {
+      getGameState: jest.fn(() => sandboxState),
+      getVictoryResult: jest.fn(() => null as GameResult | null),
+    };
+
+    const pendingChoice: PlayerChoice = {
+      id: 'territory-choice-1',
+      playerNumber: 1,
+      type: 'region_order',
+      prompt: 'Choose which region to process',
+      timeoutMs: undefined,
+      options: [
+        {
+          regionId: '0',
+          size: regionSpaces.length,
+          representativePosition: regionSpaces[0],
+          moveId: 'process-region-0-3,3',
+        },
+      ],
+    } as any;
+
+    mockSandboxValue = createMockSandboxContext({
+      isConfigured: true,
+      sandboxEngine: engine,
+      sandboxPendingChoice: pendingChoice,
+    });
+
+    render(<SandboxGameHost />);
+
+    const decisionHintText = 'Territory claimed \u2013 choose region to process or skip';
+
+    // The summary chip under the board AND the touch controls panel should
+    // both surface the decision prompt for consistent UX across interaction
+    // modes. Use getAllByText since the hint now appears in both locations.
+    const hintElements = screen.getAllByText(decisionHintText);
+    expect(hintElements.length).toBeGreaterThanOrEqual(2);
+
+    // Verify the touch controls panel specifically contains the hint.
+    const touchControls = screen.getByTestId('sandbox-touch-controls');
+    expect(touchControls).toHaveTextContent(decisionHintText);
+
+    // All cells in the disconnected region should be highlighted as primary
+    // decision targets to make the territory geometry visible.
+    for (const p of regionSpaces) {
+      const cell = getSquareCell(p.x, p.y);
+      expect(cell).toHaveAttribute('data-decision-highlight', 'primary');
+    }
+  });
+
+  it('replays canonical self-play moves into the sandbox engine for scenarios with selfPlayMeta.moves', async () => {
+    const applyCanonicalMoveForReplay = jest.fn().mockResolvedValue(undefined);
+    const initFromSerializedState = jest.fn();
+
+    const engine = {
+      initFromSerializedState,
+      applyCanonicalMoveForReplay,
+      getGameState: jest.fn(() => createSandboxGameState()),
+      getVictoryResult: jest.fn(() => null as GameResult | null),
+    };
+
+    const setSandboxStateVersion = jest.fn();
+
+    mockSandboxValue = createMockSandboxContext({
+      initLocalSandboxEngine: jest.fn(() => engine),
+      setSandboxStateVersion,
+    });
+
+    render(<SandboxGameHost />);
+
+    expect(scenarioPickerProps).not.toBeNull();
+    if (!scenarioPickerProps) {
+      throw new Error('ScenarioPickerModal props were not captured');
+    }
+
+    const initialState = createSandboxGameState({
+      moveHistory: [],
+      history: [],
+    });
+    const serializedState = serializeGameState(initialState);
+
+    const now = new Date();
+
+    const moves: Move[] = [
+      {
+        id: 'm1',
+        type: 'place_ring',
+        player: 1,
+        from: undefined,
+        to: { x: 0, y: 0, z: null },
+        placedOnStack: false,
+        placementCount: 1,
+        timestamp: now,
+        thinkTime: 0,
+        moveNumber: 1,
+      },
+      {
+        id: 'm2',
+        type: 'eliminate_rings_from_stack',
+        player: 1,
+        from: undefined,
+        to: { x: 0, y: 0, z: null },
+        timestamp: now,
+        thinkTime: 0,
+        moveNumber: 2,
+      },
+    ];
+
+    const scenario: LoadableScenario = {
+      id: 'selfplay-fixture',
+      name: 'Self-Play Fixture',
+      description: 'Test self-play scenario',
+      category: 'custom',
+      tags: [],
+      boardType: 'square8',
+      playerCount: 2,
+      createdAt: now.toISOString(),
+      source: 'custom',
+      state: serializedState,
+      selfPlayMeta: {
+        dbPath: '/tmp/test-selfplay.db',
+        gameId: 'game-1',
+        totalMoves: moves.length,
+        moves,
+      },
+    };
+
+    await act(async () => {
+      scenarioPickerProps.onSelectScenario(scenario);
+    });
+
+    await waitFor(() => {
+      expect(applyCanonicalMoveForReplay).toHaveBeenCalledTimes(moves.length);
+    });
+
+    expect(setSandboxStateVersion).toHaveBeenCalled();
+  });
+
   // ───────────────────────────────────────────────────────────────────────────
   // 4. Touch controls / overlay toggles
   // ───────────────────────────────────────────────────────────────────────────
@@ -745,6 +975,46 @@ describe('SandboxGameHost (React host behaviour)', () => {
       expect(panel).toHaveTextContent('Move 3');
       expect(panel).toHaveTextContent('test-engine');
     });
+
+    (global as any).fetch = originalFetch;
+  });
+
+  it('surfaces a helpful error message when sandbox evaluation fails', async () => {
+    const sandboxState = createSandboxGameState({
+      currentPhase: 'movement',
+      gameStatus: 'active',
+    });
+
+    const engine = {
+      getGameState: jest.fn(() => sandboxState),
+      getVictoryResult: jest.fn(() => null as GameResult | null),
+      getSerializedState: jest.fn(() => ({ dummy: 'state' }) as any),
+    };
+
+    mockSandboxValue = createMockSandboxContext({
+      isConfigured: true,
+      sandboxEngine: engine,
+    });
+
+    const originalFetch = (global as any).fetch;
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'Sandbox AI evaluation is unavailable.' }),
+    } as any);
+    (global as any).fetch = fetchMock;
+
+    render(<SandboxGameHost />);
+
+    const evalButton = screen.getByRole('button', { name: /Request evaluation/i });
+    fireEvent.click(evalButton);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    const errorEl = await screen.findByTestId('sandbox-evaluation-error');
+    expect(errorEl.textContent || '').toContain('Sandbox AI evaluation is unavailable.');
 
     (global as any).fetch = originalFetch;
   });
@@ -1058,5 +1328,74 @@ describe('SandboxGameHost (React host behaviour)', () => {
     });
 
     expect(screen.getByText('Return to Lobby')).toBeInTheDocument();
+  });
+
+  it('falls back to local storage on autosave failure and surfaces saved-local + pending sync UI', async () => {
+    const players = createPlayers();
+    const completedState = createSandboxGameState({
+      players,
+      currentPhase: 'movement',
+      gameStatus: 'completed',
+    });
+
+    const engine = {
+      getGameState: jest.fn(() => completedState),
+      getVictoryResult: jest.fn(
+        () =>
+          ({
+            winner: 1,
+            reason: 'ring_elimination',
+            finalScore: {
+              ringsEliminated: {},
+              territorySpaces: {},
+              ringsRemaining: {},
+            },
+          }) as GameResult
+      ),
+    };
+
+    // First-tier ReplayService save fails, forcing SandboxGameHost to use
+    // LocalGameStorage as a fallback for recording.
+    mockStoreGame.mockRejectedValueOnce(new Error('service down'));
+    mockStoreGameLocally.mockResolvedValueOnce({ success: true, id: 'local-123' });
+    mockGetPendingCount.mockResolvedValueOnce(1);
+
+    mockSandboxValue = createMockSandboxContext({
+      isConfigured: true,
+      sandboxEngine: engine,
+    });
+
+    render(<SandboxGameHost />);
+
+    await waitFor(() => {
+      expect(mockStoreGame).toHaveBeenCalled();
+      expect(mockStoreGameLocally).toHaveBeenCalled();
+      // Pending-local-games badge should show exactly one pending game.
+      expect(screen.getByText(/1 game pending/)).toBeInTheDocument();
+    });
+
+    // The Sync button should delegate to GameSyncService.triggerSync.
+    const syncButton = screen.getByRole('button', { name: 'Sync' });
+    expect(syncButton).not.toBeDisabled();
+    fireEvent.click(syncButton);
+    expect(mockGameSyncTriggerSync).toHaveBeenCalled();
+
+    // Simulate a later successful sync that clears all pending games by
+    // invoking the subscribed callback with a zero-pending state.
+    if (mockGameSyncSubscribeCallback) {
+      act(() => {
+        mockGameSyncSubscribeCallback({
+          status: 'idle',
+          pendingCount: 0,
+          lastSyncAttempt: new Date(),
+          lastSuccessfulSync: new Date(),
+          consecutiveFailures: 0,
+        });
+      });
+    }
+
+    await waitFor(() => {
+      expect(screen.queryByText(/game pending/)).toBeNull();
+    });
   });
 });

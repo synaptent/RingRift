@@ -1,0 +1,111 @@
+# GPU-enabled Dockerfile for neural network training
+# Supports both NVIDIA CUDA and CPU-only modes
+#
+# Build:
+#   docker build -f docker/Dockerfile.training -t ringrift-ai-training .
+#
+# Run with GPU:
+#   docker run --gpus all -v ./data:/app/data -v ./models:/app/models ringrift-ai-training
+#
+# Run CPU-only:
+#   docker run -v ./data:/app/data -v ./models:/app/models ringrift-ai-training
+
+ARG CUDA_VERSION=12.1.0
+ARG PYTHON_VERSION=3.11
+
+# ============================================================================
+# Base stage with CUDA runtime
+# ============================================================================
+FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04 AS base
+
+ARG PYTHON_VERSION
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python${PYTHON_VERSION} \
+    python${PYTHON_VERSION}-venv \
+    python3-pip \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python \
+    && ln -sf /usr/bin/python${PYTHON_VERSION} /usr/bin/python3
+
+WORKDIR /app
+
+# ============================================================================
+# Dependencies stage - install Python packages
+# ============================================================================
+FROM base AS dependencies
+
+# Copy requirements first for caching
+COPY requirements.txt .
+
+# Install PyTorch with CUDA support first
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Install remaining requirements (skip torch/torchvision already installed)
+RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+
+# Install cloud storage dependencies (optional)
+RUN pip install --no-cache-dir boto3 google-cloud-storage 2>/dev/null || true
+
+# ============================================================================
+# Training stage - full application for neural network training
+# ============================================================================
+FROM dependencies AS training
+
+# Copy application code
+COPY app/ ./app/
+COPY scripts/ ./scripts/
+COPY data/eval_pools/ ./data/eval_pools/
+
+# Create directories for models and data
+RUN mkdir -p /app/models /app/data/training /app/logs
+
+# Environment variables for training
+ENV STORAGE_BACKEND=local \
+    RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+
+# Default command runs the training loop
+CMD ["python", "-m", "app.training.train_loop"]
+
+# ============================================================================
+# CPU-only variant (smaller image, no CUDA)
+# ============================================================================
+FROM python:${PYTHON_VERSION}-slim AS training-cpu
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY app/ ./app/
+COPY scripts/ ./scripts/
+COPY data/eval_pools/ ./data/eval_pools/
+
+RUN mkdir -p /app/models /app/data/training /app/logs
+
+ENV STORAGE_BACKEND=local \
+    RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+
+CMD ["python", "-m", "app.training.train_loop"]

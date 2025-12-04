@@ -365,7 +365,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Landing cell `pk`:
       - Not collapsed.
       - Contains no stack.
-      - If contains a marker, it must belong to P; landing on opponent markers is illegal.
+      - May contain any marker (own or opponent); landing on markers is always legal but incurs a cap-elimination cost per RR-CANON-R092.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §3.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§8.1–8.2, 16.9.4.1, 15.4 Q2.
 
 - **[RR-CANON-R092] Marker interaction during non-capture movement.**
@@ -374,9 +374,9 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - If marker belongs to opponent Q ≠ P, flip it to P.
     - If marker belongs to P, remove it and set that cell to a collapsed space owned by P.
   - At landing cell:
-    - If there is a marker of P, remove that marker (do **not** collapse it).
+    - If there is any marker (own or opponent), remove that marker (do **not** collapse it).
     - Then place the moving stack.
-    - Immediately eliminate the top ring of that stack and credit it to P.
+    - If a marker was present (regardless of owner), immediately eliminate the top ring of the moving stack's cap and credit it to P.
   - P is **not required** to stop at the first legal landing after markers; any landing that satisfies RR-CANON-R091 is legal.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §3.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.2.1, 8.2, 8.3, 15.4 Q2.
 
@@ -399,14 +399,14 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - A single overtaking capture segment is a triple (`from`, `target`, `landing`) where:
     - `from` contains a stack controlled by P with height H and capHeight CH.
     - `target` contains a stack T with capHeight CH_T (any owner).
-    - `landing` is an empty cell or a cell with a P marker, strictly beyond `target` along one movement direction.
+    - `landing` is an empty cell or a cell with any marker (own or opponent), strictly beyond `target` along one movement direction.
   - Requirements:
     - CH ≥ CH_T.
     - from, target, landing lie on one straight-line movement direction.
     - On from→target (excluding endpoints): no stacks, no collapsed spaces.
     - On target→landing (excluding endpoints): no stacks, no collapsed spaces.
     - Distance `distance(from, landing) ≥ H`.
-    - Landing cell not collapsed; if it has a marker, it must belong to P.
+    - Landing cell not collapsed; may contain any marker (landing on markers incurs cap-elimination cost per RR-CANON-R102).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §4.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9–10, 15.3, 15.4 Q2–Q5.
 
 - **[RR-CANON-R102] Applying a capture segment.**
@@ -416,7 +416,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Pop the top ring from the target stack and append it to the **bottom** of the attacking stack's ring list.
     - Recompute stackHeight and capHeight for both stacks.
     - If the target stack becomes empty, remove it.
-    - If landing on a P marker, remove the marker, then land and immediately eliminate the top ring of the attacking stack, crediting it to P (before line/territory processing).
+    - If landing on any marker (own or opponent), remove the marker (do **not** collapse it), then land and immediately eliminate the top ring of the attacking stack's cap, crediting it to P (before line/territory processing).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §4.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9–10, 15.3, 15.4 Q4–Q6.
 
 - **[RR-CANON-R103] Chain overtaking rule.**
@@ -442,7 +442,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Each `pi` is adjacent to `pi+1` along a single line axis (per `lineAdjacency`).
     - No empty cells, opponent markers, stacks, or collapsed spaces appear between positions in the sequence.
   - A line is **eligible** if `len = k+1 ≥ requiredLength`, where `requiredLength` is:
-    - 4 for `square8` in 2-player games (RR-CANON-R123).
+    - 4 for `square8` in 2-player games.
     - 3 for `square8` in 3-4 player games.
     - 4 for `square19` and `hexagonal` (all player counts).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§11.1, 15.3, 16.3, 16.9.4.3.

@@ -72,10 +72,8 @@ class MovementValidator(Validator):
             # Cannot land on existing stack in simple movement
             return False
 
-        if landing_marker:
-            if landing_marker.player != move.player:
-                # Cannot land on opponent's marker in simple movement
-                return False
-            # Landing on own marker is allowed (results in elimination)
+        # Per RR-CANON-R091/R092: landing on any marker (own or opponent) is legal.
+        # The marker is removed and a ring from the cap is eliminated.
+        # Landing on any marker is allowed (results in elimination).
 
         return True

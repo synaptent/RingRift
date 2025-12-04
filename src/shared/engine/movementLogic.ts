@@ -47,10 +47,9 @@ export type MovementBoardAdapters = MovementBoardView;
  *   spaces; markers are allowed on the path.
  * - Landing is allowed on:
  *   - Empty spaces;
- *   - Spaces containing a single marker owned by the moving player.
+ *   - Spaces containing any marker (own or opponent) - per RR-CANON-R091/R092.
+ *     Landing on a marker removes it and eliminates a ring from the cap.
  * - Landing on an existing stack is NOT allowed (stacks block the ray).
- * - Landing on an opponent marker is illegal, but such markers do not
- *   block further movement along the ray.
  */
 export function enumerateSimpleMoveTargetsFromStack(
   boardType: BoardType,
@@ -113,25 +112,18 @@ export function enumerateSimpleMoveTargetsFromStack(
       }
 
       const landingStack = board.getStackAt(to);
-      const markerOwner = board.getMarkerOwner?.(to);
-
       const distance = calculateDistance(boardType, from, to);
 
       if (!landingStack || landingStack.stackHeight === 0) {
         // Empty space or marker-only cell.
-        if (markerOwner !== undefined && markerOwner !== player) {
-          // Opponent marker: cannot land here, but the ray continues
-          // past this cell.
-          step += 1;
-          continue;
-        }
+        // Per RR-CANON-R091/R092: landing on any marker (own or opponent) is legal.
+        // The marker is removed and a ring from the cap is eliminated.
 
         if (distance >= stack.stackHeight) {
           results.push({ from, to });
         }
 
-        // Empty/own-marker cells do not block further exploration
-        // along this ray.
+        // Empty/marker cells do not block further exploration along this ray.
         step += 1;
         continue;
       }

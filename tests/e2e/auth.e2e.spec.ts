@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { generateTestUser, registerUser, loginUser, logout } from './helpers/test-utils';
+import {
+  generateTestUser,
+  registerUser,
+  loginUser,
+  logout,
+  waitForApiReady,
+} from './helpers/test-utils';
 import { LoginPage, RegisterPage, HomePage } from './pages';
 
 /**
@@ -23,6 +29,10 @@ import { LoginPage, RegisterPage, HomePage } from './pages';
 test.describe('Auth E2E – registration and login', () => {
   // Increase timeout for auth operations that involve database
   test.setTimeout(90_000);
+
+  test.beforeEach(async ({ page }) => {
+    await waitForApiReady(page);
+  });
 
   test('registers a new user, logs out, and logs back in', async ({ page }) => {
     const { email, username, password } = generateTestUser();

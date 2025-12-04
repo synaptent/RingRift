@@ -149,7 +149,8 @@ export function chooseLocalMoveFromCandidates(
     // Threshold: swap if opening is advantageous (positive value)
     // With randomness, this creates diversity in swap decisions
     if (swapValue > 0) {
-      return swapMoves[0]!;
+      const swapMove = swapMoves[0];
+      if (swapMove) return swapMove;
     }
     // Otherwise, continue with non-swap moves
     candidates = nonSwapMoves;

@@ -1,0 +1,70 @@
+# AI service Python dependencies for Intel (x86_64) Macs
+# Use this file instead of requirements.txt on Intel Macs.
+#
+# Key differences from requirements.txt (Apple Silicon):
+# - numpy 1.26.x instead of 2.x (numpy 2.x has x86_64 issues)
+# - torch 2.2.x instead of 2.6.x (latest torch optimized for ARM)
+# - scipy 1.12.x instead of 1.15.x (compatible with numpy 1.26)
+
+# Core FastAPI dependencies
+fastapi==0.122.0
+uvicorn[standard]==0.38.0
+pydantic==2.10.5
+
+# Utilities
+python-dotenv==1.2.1
+aiohttp==3.12.14
+redis==7.1.0
+httpx==0.28.1
+prometheus_client==0.23.1
+
+# Development tools
+pytest==9.0.1
+pytest-asyncio==1.3.0
+pytest-timeout==2.4.0
+black==25.11.0
+flake8==7.3.0
+
+# Core ML/Data Science libraries (Intel-compatible versions)
+numpy==1.26.4
+scipy==1.12.0
+scikit-learn==1.6.1
+
+# Deep Learning (Intel-compatible versions)
+torch==2.2.2
+torchvision==0.17.2
+
+# TensorBoard
+tensorboard==2.18.0
+tensorboardX==2.6.2.2
+
+# Reinforcement Learning
+gymnasium==1.0.0
+
+# CMA-ES for heuristic weight optimization
+cma>=3.3.0
+
+# Model serialization
+cloudpickle==3.1.0
+h5py==3.13.0
+
+# Data processing
+pandas==2.2.3
+matplotlib==3.10.0
+
+# Memory optimization
+msgpack==1.1.0
+lz4==4.4.5
+
+# Progress bars
+tqdm==4.67.1
+
+# Additional utilities
+python-dateutil==2.9.0
+pytz==2025.1
+
+# System monitoring
+psutil==6.1.1
+
+# Distributed training (cluster worker)
+zeroconf>=0.100.0

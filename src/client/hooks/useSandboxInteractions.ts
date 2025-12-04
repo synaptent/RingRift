@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Position, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
 import { useSandbox } from '../contexts/SandboxContext';
+import { useInvalidMoveFeedback } from './useInvalidMoveFeedback';
 
 interface UseSandboxInteractionsOptions {
   selected: Position | undefined;
@@ -37,6 +38,11 @@ export function useSandboxInteractions({
   // Local render tick used to force re-renders for AI-vs-AI games even when
   // React state derived from GameState hasn’t otherwise changed.
   const [, setSandboxTurn] = useState(0);
+
+  // Invalid move feedback for sandbox: mirrors backend UX with cell shake
+  // animation and contextual toasts when the user clicks illegal sources
+  // or targets during movement/capture/chain_capture phases.
+  const { shakingCellKey, triggerInvalidMove, analyzeInvalidMove } = useInvalidMoveFeedback();
 
   const runSandboxAiTurnLoop = async () => {
     const engine = sandboxEngine;
@@ -96,6 +102,73 @@ export function useSandboxInteractions({
   // available (Stage 2 harness), otherwise fall back to the legacy
   // LocalSandboxState controller.
   const handleCellClick = (pos: Position) => {
+    // When a territory region_order choice is pending, treat clicks inside
+    // any highlighted region as selecting that region. This mirrors the
+    // board-driven UX for ring_elimination and capture_direction choices.
+    if (sandboxPendingChoice && sandboxPendingChoice.type === 'region_order') {
+      const currentChoice = sandboxPendingChoice;
+      const options = (currentChoice.options ?? []) as Array<{
+        regionId: string;
+        size: number;
+        representativePosition: Position;
+        moveId: string;
+      }>;
+
+      if (options.length === 0) {
+        return;
+      }
+
+      const engine = sandboxEngine;
+      const state = engine?.getGameState();
+      const territories = state?.board.territories;
+
+      if (!engine || !state || !territories || territories.size === 0) {
+        return;
+      }
+
+      // Find the option whose territory region contains the clicked cell.
+      let selectedOption: (typeof options)[number] | undefined;
+
+      territories.forEach((territory) => {
+        if (selectedOption) return;
+        const spaces = territory.spaces ?? [];
+        const containsClick = spaces.some((space) => positionsEqual(space, pos));
+        if (!containsClick) return;
+
+        // Match this region to the option whose representativePosition is
+        // inside the same territory.
+        const hasRepresentative = spaces.some((space) =>
+          options.some((opt) => positionsEqual(opt.representativePosition, space))
+        );
+        if (hasRepresentative) {
+          selectedOption = options.find((opt) =>
+            spaces.some((space) => positionsEqual(space, opt.representativePosition))
+          );
+        }
+      });
+
+      if (selectedOption) {
+        const resolver = choiceResolverRef.current;
+        if (resolver) {
+          resolver({
+            choiceId: currentChoice.id,
+            playerNumber: currentChoice.playerNumber,
+            choiceType: currentChoice.type,
+            selectedOption,
+          } as PlayerChoiceResponseFor<PlayerChoice>);
+        }
+        choiceResolverRef.current = null;
+        window.setTimeout(() => {
+          setSandboxPendingChoice(null);
+          setSandboxStateVersion((v) => v + 1);
+          maybeRunSandboxAiIfNeeded();
+        }, 0);
+      }
+
+      // Ignore clicks that are not inside a highlighted territory region.
+      return;
+    }
+
     // When a ring_elimination choice is pending, treat clicks on highlighted
     // stacks as selecting the corresponding elimination option instead of
     // sending a normal click into the engine. This keeps elimination UX
@@ -187,6 +260,7 @@ export function useSandboxInteractions({
     }
 
     const phaseBefore = stateBefore.currentPhase;
+    const board = stateBefore.board;
 
     // Ring-placement phase: a single click attempts a 1-ring placement
     // via the engine. On success, we immediately highlight the legal
@@ -195,8 +269,17 @@ export function useSandboxInteractions({
     // the movement step completes.
     if (phaseBefore === 'ring_placement') {
       void (async () => {
+        const validMoves = engine.getValidMoves(stateBefore.currentPlayer);
         const placed = await engine.tryPlaceRings(pos, 1);
         if (!placed) {
+          const reason = analyzeInvalidMove(stateBefore, pos, {
+            isPlayer: true,
+            isMyTurn: true,
+            isConnected: true,
+            selectedPosition: null,
+            validMoves,
+          });
+          triggerInvalidMove(pos, reason);
           return;
         }
 
@@ -210,13 +293,22 @@ export function useSandboxInteractions({
 
     // Precompute whether this click is on a currently-highlighted target.
     const isTarget = validTargets.some((t) => positionsEqual(t, pos));
+    const validMoves = engine.getValidMoves(stateBefore.currentPlayer);
 
     // Chain-capture phase: only allow clicks on canonical continuation
     // landings exposed by the orchestrator via getValidMoves().
     if (phaseBefore === 'chain_capture') {
       if (!isTarget) {
-        // Ignore clicks outside the continuation landings while the chain
-        // capture decision is pending.
+        // Surface invalid-move feedback when clicking outside canonical
+        // continuation landings during a mandatory chain capture.
+        const reason = analyzeInvalidMove(stateBefore, pos, {
+          isPlayer: true,
+          isMyTurn: true,
+          isConnected: true,
+          selectedPosition: selected ?? null,
+          validMoves,
+        });
+        triggerInvalidMove(pos, reason);
         return;
       }
 
@@ -253,13 +345,40 @@ export function useSandboxInteractions({
     // and highlights its legal landing positions; second click on a
     // highlighted cell executes the move.
     if (!selected) {
-      // Selection click: record selected cell and highlight valid targets.
-      setSelected(pos);
-      const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
-      setValidTargets(targets);
-      // Inform the engine about the selection so its internal
-      // movement state (_selectedStackKey) matches the UI.
-      engine.handleHumanCellClick(pos);
+      // For non-movement/capture phases, retain the previous behaviour
+      // and let the engine interpret the click without invalid-move UX.
+      if (phaseBefore !== 'movement' && phaseBefore !== 'capture') {
+        setSelected(pos);
+        const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+        setValidTargets(targets);
+        engine.handleHumanCellClick(pos);
+        return;
+      }
+
+      const key = positionToString(pos);
+      const hasStack = !!board.stacks.get(key);
+      const hasMovesFromHere = validMoves.some(
+        (m) => m.from && positionsEqual(m.from as Position, pos)
+      );
+
+      if (hasStack && hasMovesFromHere) {
+        // Selection click: record selected cell and highlight valid targets.
+        setSelected(pos);
+        const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+        setValidTargets(targets);
+        // Inform the engine about the selection so its internal
+        // movement state (_selectedStackKey) matches the UI.
+        engine.handleHumanCellClick(pos);
+      } else {
+        const reason = analyzeInvalidMove(stateBefore, pos, {
+          isPlayer: true,
+          isMyTurn: true,
+          isConnected: true,
+          selectedPosition: null,
+          validMoves,
+        });
+        triggerInvalidMove(pos, reason);
+      }
       return;
     }
 
@@ -303,10 +422,19 @@ export function useSandboxInteractions({
       return;
     }
 
-    // Otherwise, ignore clicks on non-highlighted cells while a stack
-    // is selected so that invalid landings cannot be executed. Users
-    // can either click the selected stack again to clear selection, or
-    // select a different stack by first clearing and then re-clicking.
+    // Otherwise, treat clicks on non-highlighted cells while a stack is
+    // selected as invalid landings and surface feedback instead of silently
+    // ignoring them.
+    if (phaseBefore === 'movement' || phaseBefore === 'capture') {
+      const reason = analyzeInvalidMove(stateBefore, pos, {
+        isPlayer: true,
+        isMyTurn: true,
+        isConnected: true,
+        selectedPosition: selected,
+        validMoves,
+      });
+      triggerInvalidMove(pos, reason);
+    }
     return;
   };
 
@@ -449,6 +577,7 @@ export function useSandboxInteractions({
   };
 
   return {
+    shakingCellKey,
     handleCellClick,
     handleCellDoubleClick,
     handleCellContextMenu,

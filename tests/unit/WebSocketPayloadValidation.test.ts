@@ -362,4 +362,29 @@ describe('WebSocket payload validation with Zod', () => {
     const gameStateEvents = socket.emittedEvents.filter((e) => e.event === 'game_state');
     expect(gameStateEvents.length).toBe(0);
   });
+
+  it('accepts valid diagnostic:ping payload and echoes a diagnostic:pong with round-trip metadata', () => {
+    const { socket } = setupServerAndSocket();
+
+    const now = Date.now();
+    const pingPayload = {
+      timestamp: now,
+      vu: 42,
+      sequence: 7,
+    };
+
+    socket.trigger('diagnostic:ping', pingPayload);
+
+    const errorEvents = socket.emittedEvents.filter((e) => e.event === 'error');
+    expect(errorEvents.length).toBe(0);
+
+    const pongEvents = socket.emittedEvents.filter((e) => e.event === 'diagnostic:pong');
+    expect(pongEvents.length).toBe(1);
+
+    const pongPayload = pongEvents[0].payload;
+    expect(pongPayload.timestamp).toBe(now);
+    expect(pongPayload.vu).toBe(42);
+    expect(pongPayload.sequence).toBe(7);
+    expect(typeof pongPayload.serverTimestamp).toBe('string');
+  });
 });

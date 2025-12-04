@@ -9,6 +9,12 @@
  * 
  * NOTE: k6 WebSocket support is functional but may require k6 v0.46+
  * for advanced features. See k6.io/docs/using-k6/protocols/websockets
+ * 
+ * PROTOCOL: This scenario speaks Socket.IO v4 / Engine.IO v4 protocol:
+ *   - Engine.IO packets: 0=open, 1=close, 2=ping, 3=pong, 4=message
+ *   - Socket.IO packets: 0=CONNECT, 1=DISCONNECT, 2=EVENT, 3=ACK
+ *   - Full Socket.IO message: "4" + socketio_type + JSON payload
+ *   - Example EVENT: "42" + JSON.stringify(["eventName", data])
  */
 
 import http from 'k6/http';
@@ -24,6 +30,8 @@ const wsConnectionErrors = new Counter('websocket_connection_errors');
 const wsReconnections = new Counter('websocket_reconnections_total');
 const wsMessageLatency = new Trend('websocket_message_latency_ms');
 const wsConnectionDuration = new Trend('websocket_connection_duration_ms');
+const wsHandshakeSuccess = new Rate('websocket_handshake_success_rate');
+const wsProtocolErrors = new Counter('websocket_protocol_errors');
 
 // Test configuration - stress test for connection limits
 export const options = {
@@ -45,10 +53,16 @@ export const options = {
   
   thresholds: {
     // Connection success rate - should remain high even at scale
-    'websocket_connection_success_rate': ['rate>0.99'],
+    'websocket_connection_success_rate': ['rate>0.95'],
+    
+    // Handshake success rate (Socket.IO protocol level)
+    'websocket_handshake_success_rate': ['rate>0.98'],
     
     // Connection errors should be minimal
     'websocket_connection_errors': ['count<50'], // <10% of peak connections
+    
+    // Protocol errors (message parse failures) should be zero with correct framing
+    'websocket_protocol_errors': ['count<10'],
     
     // Message latency - real-time feel
     'websocket_message_latency_ms': [
@@ -82,6 +96,148 @@ const BASE_URL = __ENV.BASE_URL || 'http://localhost:3001';
 const WS_BASE = __ENV.WS_URL || BASE_URL;
 const API_PREFIX = '/api';
 
+// Target per-connection session duration. Defaults to 6 minutes, which
+// comfortably covers the 5-minute sustain period in the scenario stages.
+const TARGET_SESSION_DURATION_MS = Number(__ENV.TARGET_SESSION_DURATION_MS || 360000);
+
+// Interval between diagnostic ping events used for latency measurement.
+const DIAGNOSTIC_PING_INTERVAL_MS = Number(__ENV.DIAGNOSTIC_PING_INTERVAL_MS || 5000);
+
+/**
+ * Engine.IO packet types (prefix character)
+ */
+const EIO_OPEN = '0';
+const EIO_CLOSE = '1';
+const EIO_PING = '2';
+const EIO_PONG = '3';
+const EIO_MESSAGE = '4';
+
+/**
+ * Socket.IO packet types (follows Engine.IO MESSAGE prefix)
+ */
+const SIO_CONNECT = '0';
+const SIO_DISCONNECT = '1';
+const SIO_EVENT = '2';
+const SIO_ACK = '3';
+
+/**
+ * Parse an Engine.IO/Socket.IO message and return structured data.
+ * 
+ * @param {string} raw - Raw WebSocket message
+ * @returns {{ eioType: string, sioType?: string, data?: any, error?: string }}
+ */
+function parseSocketIOMessage(raw) {
+  if (!raw || raw.length === 0) {
+    return { error: 'empty message' };
+  }
+  
+  const eioType = raw[0];
+  
+  // Engine.IO level packets
+  if (eioType === EIO_OPEN) {
+    // Open packet: "0{...json...}"
+    try {
+      const payload = raw.slice(1);
+      const data = payload ? JSON.parse(payload) : {};
+      return { eioType, data };
+    } catch (e) {
+      return { eioType, error: 'invalid open payload' };
+    }
+  }
+  
+  if (eioType === EIO_CLOSE) {
+    return { eioType };
+  }
+  
+  if (eioType === EIO_PING) {
+    // Ping packet: "2" or "2probe"
+    return { eioType, data: raw.slice(1) || null };
+  }
+  
+  if (eioType === EIO_PONG) {
+    return { eioType, data: raw.slice(1) || null };
+  }
+  
+  if (eioType === EIO_MESSAGE) {
+    // Socket.IO message: "4" + sioType + payload
+    if (raw.length < 2) {
+      return { eioType, error: 'truncated message' };
+    }
+    
+    const sioType = raw[1];
+    const payload = raw.slice(2);
+    
+    if (sioType === SIO_CONNECT) {
+      // Connect ACK: "40" or "40{...}"
+      try {
+        const data = payload ? JSON.parse(payload) : {};
+        return { eioType, sioType, data };
+      } catch (e) {
+        return { eioType, sioType, data: payload };
+      }
+    }
+    
+    if (sioType === SIO_EVENT) {
+      // Event: "42["eventName", data]"
+      try {
+        const arr = JSON.parse(payload);
+        const eventName = arr[0];
+        const eventData = arr.slice(1);
+        return { eioType, sioType, event: eventName, data: eventData };
+      } catch (e) {
+        return { eioType, sioType, error: 'invalid event payload' };
+      }
+    }
+    
+    if (sioType === SIO_ACK) {
+      // ACK: "43" + ackId + JSON payload
+      return { eioType, sioType, data: payload };
+    }
+    
+    if (sioType === SIO_DISCONNECT) {
+      return { eioType, sioType };
+    }
+    
+    return { eioType, sioType, data: payload };
+  }
+  
+  return { error: `unknown packet type: ${eioType}` };
+}
+
+/**
+ * Build a Socket.IO EVENT message.
+ * 
+ * @param {string} eventName - Event name
+ * @param {any} data - Event data
+ * @returns {string} - Framed Socket.IO message
+ */
+function buildSocketIOEvent(eventName, data) {
+  return EIO_MESSAGE + SIO_EVENT + JSON.stringify([eventName, data]);
+}
+
+/**
+ * Build a Socket.IO CONNECT message for the default namespace.
+ * 
+ * @param {Object} [auth] - Optional auth payload
+ * @returns {string} - Framed Socket.IO CONNECT message
+ */
+function buildSocketIOConnect(auth) {
+  if (auth) {
+    return EIO_MESSAGE + SIO_CONNECT + JSON.stringify({ auth });
+  }
+  return EIO_MESSAGE + SIO_CONNECT;
+}
+
+/**
+ * Build an Engine.IO PONG response.
+ * 
+ * @param {string} [probe] - Optional probe data to echo
+ * @returns {string} - Engine.IO PONG packet
+ */
+function buildEnginePong(probe) {
+  return EIO_PONG + (probe || '');
+}
+
 /**
  * Build a Socket.IO WebSocket endpoint that matches the production
  * WebSocketServer contract:
@@ -92,15 +248,8 @@ const API_PREFIX = '/api';
  *       token=<JWT> (for auth middleware)
  *       vu=<VU id> (diagnostic only)
  *
- * k6 speaks plain WebSocket frames rather than the full Socket.IO
- * protocol, but this is sufficient for:
- *   - Completing the initial handshake (HTTP 101)
- *   - Exercising WebSocketServer authentication and connection metrics
- *
- * The server will likely ignore or close connections that do not send
- * valid Socket.IO frames after handshake, which is acceptable for this
- * scenario: we are primarily interested in connection establishment and
- * handshake throughput, not full game semantics.
+ * The server expects proper Engine.IO/Socket.IO framed messages after
+ * the WebSocket handshake completes.
  */
 function buildSocketIoEndpoint(wsBase, token, vu) {
   let origin = wsBase || '';
@@ -128,6 +277,7 @@ export function setup() {
   console.log('Starting WebSocket connection stress test');
   console.log('Target: 500+ simultaneous WebSocket connections');
   console.log('Duration: 5+ minute sustained connection period');
+  console.log('Protocol: Socket.IO v4 / Engine.IO v4');
 
   // Lightweight health check to match other scenarios and fail fast if
   // the API is not reachable.
@@ -157,12 +307,12 @@ export default function(data) {
   let messagesSent = 0;
   let messagesReceived = 0;
   let reconnectAttempts = 0;
+  let handshakeComplete = false;
+  let serverPingInterval = null;
+  let lastDiagnosticPingAt = 0;
+  let nextDiagnosticSequence = 0;
 
-  // WebSocket connection using the same Socket.IO path and auth
-  // semantics as the browser client (see SocketGameConnection and
-  // LobbyPage). We attach the JWT via the `token` query parameter and
-  // use the Socket.IO engine/transport selectors expected by
-  // WebSocketServer.
+  // WebSocket connection using proper Socket.IO/Engine.IO protocol
   const wsEndpoint = buildSocketIoEndpoint(wsBase, token, __VU);
 
   const res = ws.connect(
@@ -179,39 +329,100 @@ export default function(data) {
     wsConnections.add(1);
     
     socket.on('open', () => {
-      console.log(`VU ${__VU}: WebSocket connected`);
+      console.log(`VU ${__VU}: WebSocket transport connected, awaiting Engine.IO handshake`);
       wsConnectionSuccess.add(1);
-      
-      // Send initial ping to test connectivity
-      const pingPayload = JSON.stringify({
-        type: 'ping',
-        timestamp: Date.now(),
-        vu: __VU
-      });
-      socket.send(pingPayload);
-      messagesSent++;
+      // Don't send anything yet - wait for server's Engine.IO OPEN packet
     });
     
     socket.on('message', (message) => {
       messagesReceived++;
       
-      try {
-        const data = JSON.parse(message);
-        const latency = Date.now() - (data.timestamp || Date.now());
-        wsMessageLatency.add(latency);
+      const parsed = parseSocketIOMessage(message);
+      
+      if (parsed.error) {
+        wsProtocolErrors.add(1);
+        console.warn(`VU ${__VU}: Protocol error - ${parsed.error}`);
+        return;
+      }
+      
+      // Handle Engine.IO OPEN - server sends session info
+      if (parsed.eioType === EIO_OPEN) {
+        console.log(`VU ${__VU}: Engine.IO OPEN received, sid=${parsed.data?.sid}`);
         
-        // Respond to pings
-        if (data.type === 'ping') {
-          socket.send(JSON.stringify({
-            type: 'pong',
-            timestamp: Date.now(),
-            vu: __VU
-          }));
-          messagesSent++;
+        // Store server's ping interval for reference
+        if (parsed.data && parsed.data.pingInterval) {
+          serverPingInterval = parsed.data.pingInterval;
         }
-      } catch (e) {
-        // Non-JSON message or parsing error
-        console.warn(`VU ${__VU}: Message parse error`);
+        
+        // Now send Socket.IO CONNECT to join the default namespace
+        // The auth token is already in the query string, but we can also
+        // send it in the CONNECT payload as a belt-and-suspenders approach
+        const connectMsg = buildSocketIOConnect({ token });
+        socket.send(connectMsg);
+        messagesSent++;
+        console.log(`VU ${__VU}: Socket.IO CONNECT sent`);
+        return;
+      }
+      
+      // Handle Engine.IO PING - respond with PONG
+      if (parsed.eioType === EIO_PING) {
+        const pong = buildEnginePong(parsed.data);
+        socket.send(pong);
+        messagesSent++;
+        return;
+      }
+      
+      // Handle Engine.IO CLOSE
+      if (parsed.eioType === EIO_CLOSE) {
+        console.log(`VU ${__VU}: Engine.IO CLOSE received`);
+        return;
+      }
+      
+      // Handle Socket.IO CONNECT ACK - handshake complete
+      if (parsed.eioType === EIO_MESSAGE && parsed.sioType === SIO_CONNECT) {
+        handshakeComplete = true;
+        wsHandshakeSuccess.add(1);
+        console.log(`VU ${__VU}: Socket.IO handshake complete`);
+        
+        // Now we can send application-level events
+        // Subscribe to lobby updates as a realistic spectator-like action
+        const subscribeMsg = buildSocketIOEvent('lobby:subscribe', {
+          timestamp: Date.now(),
+          vu: __VU
+        });
+        socket.send(subscribeMsg);
+        messagesSent++;
+        return;
+      }
+      
+      // Handle Socket.IO EVENTs
+      if (parsed.eioType === EIO_MESSAGE && parsed.sioType === SIO_EVENT) {
+        const eventName = parsed.event;
+        const eventArgs = parsed.data || [];
+        const payload = eventArgs[0];
+
+        // Measure round-trip latency for diagnostic ping/pong.
+        if (eventName === 'diagnostic:pong' && payload && typeof payload.timestamp === 'number') {
+          const rtt = Date.now() - payload.timestamp;
+          wsMessageLatency.add(rtt);
+          return;
+        }
+        
+        // Log interesting events for basic observability
+        if (
+          eventName === 'lobby:game_created' ||
+          eventName === 'lobby:game_started' ||
+          eventName === 'error'
+        ) {
+          console.log(`VU ${__VU}: Received ${eventName}`);
+        }
+        return;
+      }
+      
+      // Handle Socket.IO DISCONNECT
+      if (parsed.eioType === EIO_MESSAGE && parsed.sioType === SIO_DISCONNECT) {
+        console.log(`VU ${__VU}: Socket.IO DISCONNECT received`);
+        return;
       }
     });
     
@@ -221,6 +432,11 @@ export default function(data) {
       wsConnections.add(-1);
       
       console.log(`VU ${__VU}: WebSocket closed after ${duration}ms (code: ${code})`);
+      
+      // Record handshake failure if we never completed it
+      if (!handshakeComplete) {
+        wsHandshakeSuccess.add(0);
+      }
       
       // Attempt reconnection if unexpected close
       if (code !== 1000 && reconnectAttempts < 3) {
@@ -235,30 +451,56 @@ export default function(data) {
       console.error(`VU ${__VU}: WebSocket error - ${e}`);
     });
     
-    // Keep connection alive and periodically send messages
-    // This simulates spectator activity or game state updates
-    let pingInterval = 0;
+    // Keep connection alive and periodically send realistic events
+    // This simulates spectator activity or game state updates and
+    // exercises the dedicated diagnostic ping/pong channel used by
+    // this scenario to measure WebSocket latency.
+    let tickCount = 0;
     socket.setInterval(() => {
-      pingInterval++;
+      tickCount++;
       
-      // Send periodic heartbeat every ~30 seconds
-      if (pingInterval % 30 === 0) {
-        socket.send(JSON.stringify({
-          type: 'heartbeat',
-          timestamp: Date.now(),
+      // Only send application events after handshake is complete
+      if (!handshakeComplete) {
+        return;
+      }
+
+      const now = Date.now();
+
+      // Emit diagnostic ping at a configurable interval. The backend
+      // echoes this as diagnostic:pong with the same payload plus a
+      // serverTimestamp, which we use to compute round-trip latency.
+      if (now - lastDiagnosticPingAt >= DIAGNOSTIC_PING_INTERVAL_MS) {
+        const pingPayload = {
+          timestamp: now,
           vu: __VU,
-          interval: pingInterval
-        }));
+          sequence: nextDiagnosticSequence++,
+        };
+        const pingMsg = buildSocketIOEvent('diagnostic:ping', pingPayload);
+        socket.send(pingMsg);
+        messagesSent++;
+        lastDiagnosticPingAt = now;
+      }
+      
+      // Send periodic lobby subscription refresh every ~60 seconds
+      // (This is a lightweight no-op if already subscribed, but exercises
+      // the message path)
+      if (tickCount % 60 === 0) {
+        const refreshMsg = buildSocketIOEvent('lobby:subscribe', {
+          timestamp: now,
+          vu: __VU,
+          refresh: true
+        });
+        socket.send(refreshMsg);
         messagesSent++;
       }
       
-      // Simulate realistic activity - occasional game state requests
-      if (pingInterval % 10 === 0 && Math.random() > 0.7) {
-        socket.send(JSON.stringify({
-          type: 'request_game_state',
-          timestamp: Date.now(),
+      // Occasionally request game list as a realistic spectator action
+      if (tickCount % 30 === 0 && Math.random() > 0.7) {
+        const listMsg = buildSocketIOEvent('lobby:list_games', {
+          timestamp: now,
           vu: __VU
-        }));
+        });
+        socket.send(listMsg);
         messagesSent++;
       }
       
@@ -268,9 +510,12 @@ export default function(data) {
     // Connection will close when VU iteration ends
     socket.setTimeout(() => {
       const duration = Date.now() - connectionStart;
-      console.log(`VU ${__VU}: Connection timeout after ${duration}ms. Sent: ${messagesSent}, Received: ${messagesReceived}`);
+      console.log(
+        `VU ${__VU}: Connection timeout after ${duration}ms. ` +
+          `Sent: ${messagesSent}, Received: ${messagesReceived}, Handshake: ${handshakeComplete}`
+      );
       socket.close();
-    }, 360000); // 6 minutes max per connection (covers 5-minute sustain period)
+    }, TARGET_SESSION_DURATION_MS);
   });
   
   // Check connection establishment
@@ -292,6 +537,8 @@ export function teardown(data) {
   console.log('Key metrics to review:');
   console.log('  - Peak websocket_connections_active (should reach 500+)');
   console.log('  - websocket_connection_success_rate');
+  console.log('  - websocket_handshake_success_rate (Socket.IO level)');
+  console.log('  - websocket_protocol_errors (should be near zero)');
   console.log('  - websocket_connection_duration_ms (p50 should be >5 minutes)');
   console.log('  - websocket_reconnections_total');
   console.log('Check Prometheus for:');

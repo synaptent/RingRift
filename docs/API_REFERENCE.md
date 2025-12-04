@@ -64,6 +64,8 @@ The API uses **JWT Bearer tokens** for authentication. Most endpoints require au
 
 ### Games (`/api/games`)
 
+> **Move transport:** Interactive move submission is performed over the WebSocket API, not via a general-purpose HTTP move endpoint. For the canonical transport decision (WebSocket vs HTTP, and the scope of any HTTP move harness), see [`PLAYER_MOVE_TRANSPORT_DECISION.md`](docs/PLAYER_MOVE_TRANSPORT_DECISION.md:1).
+
 | Method | Endpoint                             | Description                       | Auth Required |
 | ------ | ------------------------------------ | --------------------------------- | ------------- |
 | GET    | `/games`                             | List user's games                 | ✅            |
@@ -77,12 +79,26 @@ The API uses **JWT Bearer tokens** for authentication. Most endpoints require au
 | GET    | `/games/lobby/available`             | List available games to join      | ✅            |
 | GET    | `/games/user/:userId`                | Get games for a specific user     | ✅            |
 
+> **Lifecycle / spectator invariant:** The game detail, history, and diagnostics
+> routes (`GET /games/:gameId`, `GET /games/:gameId/history`,
+> `GET /games/:gameId/diagnostics/session`) all share the same authorization
+> rule derived from the lifecycle SSoT (`docs/CANONICAL_ENGINE_API.md`): callers
+> must either be **seated participants** in the game or, when
+> `allowSpectators=true`, permitted **spectators**. Violations surface as
+> standardized `RESOURCE_ACCESS_DENIED` / `GAME_NOT_FOUND` errors and are
+> exercised by `tests/unit/gameHistory.routes.test.ts` alongside the core
+> WebSocket lifecycle suites.
+
 ### Utility Endpoints
 
 | Method | Endpoint         | Description                         | Auth Required |
 | ------ | ---------------- | ----------------------------------- | ------------- |
 | GET    | `/`              | API info and available endpoints    | ❌            |
 | POST   | `/client-errors` | Report client-side errors (for SPA) | ❌            |
+
+### Internal / Test harness APIs
+
+> An internal HTTP move harness endpoint (`POST /api/games/:gameId/moves`) **may be enabled** in certain environments (for example, local, CI, dedicated loadtest, or tightly scoped staging) to support load testing and internal tools. It is a thin adapter over the same shared domain `applyMove` API used by WebSocket move handlers, is typically gated by feature flags such as `ENABLE_HTTP_MOVE_HARNESS`, and is **not** a general public HTTP move API for interactive clients. See [`PLAYER_MOVE_TRANSPORT_DECISION.md`](docs/PLAYER_MOVE_TRANSPORT_DECISION.md:1) for the canonical scope and constraints.
 
 ---
 
@@ -480,6 +496,8 @@ Clients calling `DELETE /api/users/me` should therefore expect:
 
 Real-time game communication uses Socket.IO over WebSockets. Authentication is required via JWT token passed in the handshake.
 
+WebSocket is the canonical move transport for interactive clients; any HTTP move endpoint that submits moves is an internal/test harness over the same shared domain API, as documented in [`PLAYER_MOVE_TRANSPORT_DECISION.md`](docs/PLAYER_MOVE_TRANSPORT_DECISION.md:1).
+
 For the **authoritative Move / PendingDecision / PlayerChoice / WebSocket lifecycle** (including concrete type definitions and a worked example), see [`docs/CANONICAL_ENGINE_API.md` §3.9–3.10](./CANONICAL_ENGINE_API.md). This section focuses on transport-level events and error codes; it assumes that orchestrator-centric lifecycle as its rules SSoT.
 
 ### Connection
@@ -508,22 +526,22 @@ const socket = io('http://localhost:3000', {
 
 ### Server → Client Events
 
-| Event                            | Description                                                                                                                                                                                         |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `game_state`                     | Full game state update (on join and after moves)                                                                                                                                                    |
-| `game_over`                      | Game ended (includes final state and result)                                                                                                                                                        |
-| `game_error`                     | Fatal game error (e.g., AI service failure)                                                                                                                                                         |
-| `player_joined`                  | Another player joined the game room                                                                                                                                                                 |
-| `player_left`                    | A player left the game room                                                                                                                                                                         |
-| `player_disconnected`            | A player disconnected (may reconnect)                                                                                                                                                               |
-| `player_reconnected`             | A player reconnected to the same game within the configured reconnection window (see connection state machine in `docs/STATE_MACHINES.md` and `tests/unit/WebSocketServer.connectionState.test.ts`) |
-| `chat_message`                   | Broadcast chat message                                                                                                                                                                              |
-| `time_update`                    | Time control update for a player                                                                                                                                                                    |
-| `player_choice_required`         | Server requests a decision from a player                                                                                                                                                            |
-| `player_choice_canceled`         | A pending choice was canceled                                                                                                                                                                       |
-| `decision_phase_timeout_warning` | Warning before auto-resolution of a decision. Emitted a short time (for example, ~5 seconds) before the server will auto-resolve a pending decision due to timeout; carries phase, player, and remaining time metadata so clients can surface a countdown. |
+| Event                            | Description                                                                                                                                                                                                                                                             |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `game_state`                     | Full game state update (on join and after moves)                                                                                                                                                                                                                        |
+| `game_over`                      | Game ended (includes final state and result)                                                                                                                                                                                                                            |
+| `game_error`                     | Fatal game error (e.g., AI service failure)                                                                                                                                                                                                                             |
+| `player_joined`                  | Another player joined the game room                                                                                                                                                                                                                                     |
+| `player_left`                    | A player left the game room                                                                                                                                                                                                                                             |
+| `player_disconnected`            | A player disconnected (may reconnect)                                                                                                                                                                                                                                   |
+| `player_reconnected`             | A player reconnected to the same game within the configured reconnection window (see connection state machine in `docs/STATE_MACHINES.md` and `tests/unit/WebSocketServer.connectionState.test.ts`)                                                                     |
+| `chat_message`                   | Broadcast chat message                                                                                                                                                                                                                                                  |
+| `time_update`                    | Time control update for a player                                                                                                                                                                                                                                        |
+| `player_choice_required`         | Server requests a decision from a player                                                                                                                                                                                                                                |
+| `player_choice_canceled`         | A pending choice was canceled                                                                                                                                                                                                                                           |
+| `decision_phase_timeout_warning` | Warning before auto-resolution of a decision. Emitted a short time (for example, ~5 seconds) before the server will auto-resolve a pending decision due to timeout; carries phase, player, and remaining time metadata so clients can surface a countdown.              |
 | `decision_phase_timed_out`       | Decision phase timed out; auto-resolved. Emitted when a pending decision has exceeded its timeout and the engine has applied a default Move (for example, a line reward or region order) on behalf of the player; the auto-selected move id is included in the payload. |
-| `error`                          | Structured error payload                                                                                                                                                                            |
+| `error`                          | Structured error payload                                                                                                                                                                                                                                                |
 
 #### Worked example: `player_choice_required` → `player_choice_response`
 
@@ -548,6 +566,15 @@ End-to-end behaviour for this flow is exercised by tests such as:
 | `lobby:game_joined`    | `{ gameId, playerCount }`                    | Player count updated       |
 | `lobby:game_started`   | `{ gameId, status, startedAt, playerCount }` | Game has started           |
 | `lobby:game_cancelled` | `{ gameId }`                                 | Game was cancelled         |
+
+### Diagnostic / Load‑Testing Events
+
+These events are transport-only and do not mutate game state. They are primarily used by k6 scenarios (see `tests/load/scenarios/websocket-stress.js`) and internal diagnostics.
+
+| Direction       | Event             | Payload                                                                                    | Description                                                                                       |
+| --------------- | ----------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| Client → Server | `diagnostic:ping` | `{ timestamp: number, vu?: string \| number, sequence?: number }`                          | Lightweight ping used to measure WebSocket round‑trip latency without touching rules or database. |
+| Server → Client | `diagnostic:pong` | `{ timestamp: number, vu?: string \| number, sequence?: number, serverTimestamp: string }` | Echo of the original ping payload with an added `serverTimestamp`; used for latency calculations. |
 
 ### WebSocket Error Codes
 

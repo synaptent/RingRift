@@ -300,9 +300,18 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             role="option"
             aria-selected={index === focusedOptionIndex}
           >
-            Region {opt.regionId} {opt.size} spaces, sample ({opt.representativePosition.x},{' '}
-            {opt.representativePosition.y}
-            {opt.representativePosition.z !== undefined ? `, ${opt.representativePosition.z}` : ''})
+            {opt.regionId === 'skip' || opt.size <= 0 ? (
+              <>Skip territory processing for this turn</>
+            ) : (
+              <>
+                Region {opt.regionId} {opt.size} spaces, sample ({opt.representativePosition.x},{' '}
+                {opt.representativePosition.y}
+                {opt.representativePosition.z !== undefined
+                  ? `, ${opt.representativePosition.z}`
+                  : ''}
+                )
+              </>
+            )}
           </button>
         ))}
       </div>

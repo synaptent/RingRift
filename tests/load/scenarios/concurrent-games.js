@@ -20,6 +20,12 @@ const gameStateErrors = new Counter('game_state_errors');
 const gameStateCheckSuccess = new Rate('game_state_check_success');
 const resourceOverhead = new Trend('game_resource_overhead_ms');
 
+// Basic lifecycle tuning for how long a single gameId should be polled.
+// MAX_POLLS_PER_GAME can be overridden via the GAME_MAX_POLLS env var for
+// experimentation in CI without changing the script.
+const TERMINAL_GAME_STATUSES = ['completed', 'abandoned', 'finished'];
+const MAX_POLLS_PER_GAME = Number(__ENV.GAME_MAX_POLLS || 60);
+
 // Test configuration for production-scale validation
 export const options = {
   scenarios: {
@@ -70,6 +76,7 @@ const API_PREFIX = '/api';
 
 // Track created games per VU for state checking
 let myGameId = null;
+let myGamePollCount = 0;
 
 export function setup() {
   console.log('Starting concurrent games stress test');
@@ -95,7 +102,9 @@ export default function(data) {
   const baseUrl = data.baseUrl;
   const token = data.token;
 
-  // Each VU creates and maintains one game
+  // Each VU creates and maintains one game at a time. When a game reaches a
+  // terminal state or is cleaned up, we retire its ID and create a new one on
+  // a subsequent iteration to keep the concurrent-games target realistic.
   if (!myGameId) {
     // Step 1: Create a game (contributes to concurrent count) using the
     // canonical create-game payload shape from the API:
@@ -151,12 +160,15 @@ export default function(data) {
 
     if (createRes.status === 201 && createdGameId) {
       myGameId = createdGameId;
+      myGamePollCount = 0;
       console.log(`VU ${__VU}: Created game ${myGameId} in ${createDuration}ms`);
     } else {
       console.error(
         `VU ${__VU}: Game creation failed - status=${createRes.status} body=${createRes.body}`
       );
       gameStateErrors.add(1);
+      // Without a valid game ID there is nothing useful to poll this iteration.
+      sleep(2);
       return;
     }
   }
@@ -170,21 +182,22 @@ export default function(data) {
     });
     const stateDuration = Date.now() - stateStart;
 
-    const stateValid = check(stateRes, {
-      'game state retrieved': (r) => r.status === 200,
-      'game ID matches': (r) => {
-        try {
-          const body = JSON.parse(r.body);
-          const game = body && body.data && body.data.game ? body.data.game : null;
-          return !!(game && game.id === myGameId);
-        } catch {
-          return false;
-        }
-      },
-      'game has players': (r) => {
-        try {
-          const body = JSON.parse(r.body);
-          const game = body && body.data && body.data.game ? body.data.game : null;
+    let stateValid = false;
+    let retireGameId = false;
+
+    if (stateRes.status === 200) {
+      let game = null;
+      try {
+        const body = JSON.parse(stateRes.body);
+        game = body && body.data && body.data.game ? body.data.game : null;
+      } catch {
+        game = null;
+      }
+
+      const checksOk = check(stateRes, {
+        'game state retrieved': (r) => r.status === 200,
+        'game ID matches': () => !!(game && game.id === myGameId),
+        'game has players': () => {
           if (!game) return false;
           const playerIds = [
             game.player1Id,
@@ -193,25 +206,88 @@ export default function(data) {
             game.player4Id,
           ].filter(Boolean);
           return playerIds.length > 0;
-        } catch {
-          return false;
+        },
+      });
+
+      stateValid = checksOk;
+
+      if (checksOk && game) {
+        const status = game.status;
+        const isTerminalStatus = TERMINAL_GAME_STATUSES.indexOf(status) !== -1;
+
+        if (isTerminalStatus) {
+          // Backend has marked this game as finished; retire the ID so we stop
+          // polling it and allow a new game to be created on a later iteration.
+          retireGameId = true;
+          console.log(
+            `VU ${__VU}: Game ${myGameId} reached terminal status ${status}; retiring from polling`
+          );
         }
-      },
-    });
-    
+
+        myGamePollCount += 1;
+
+        // Guardrail: even if a game remains in a non-terminal state, stop
+        // polling it after a bounded number of checks so we do not keep very
+        // old IDs hot forever.
+        if (!isTerminalStatus && myGamePollCount >= MAX_POLLS_PER_GAME) {
+          retireGameId = true;
+          console.log(
+            `VU ${__VU}: Retiring game ${myGameId} after ${myGamePollCount} polls (lifecycle budget reached)`
+          );
+        }
+      }
+    } else if (stateRes.status === 404) {
+      // The ID was once valid (came from POST /api/games) but the row is no
+      // longer present (expired/cleaned up). Treat this as "no longer
+      // pollable" and retire the ID so we don't keep hammering a 404.
+      stateValid = false;
+      retireGameId = true;
+      console.log(
+        `VU ${__VU}: Game ${myGameId} not found (404); treating as expired and stopping polling for this ID`
+      );
+    } else if (stateRes.status === 400) {
+      // 400 from GET /api/games/:gameId means the ID format itself is invalid.
+      // Since all IDs in this scenario come from POST /api/games, this
+      // indicates a scenario bug rather than expected behaviour.
+      stateValid = false;
+      retireGameId = true;
+      console.error(
+        `VU ${__VU}: Received 400 for GET /api/games/${myGameId}; invalid ID format indicates a scenario bug`
+      );
+    } else if (stateRes.status === 429) {
+      // Rate limiting is an expected source of failure at high concurrency, so
+      // we record it as an error but keep the ID for future polling.
+      stateValid = false;
+      console.warn(
+        `VU ${__VU}: Rate limited when fetching game ${myGameId} (429); backend capacity limit reached`
+      );
+    } else {
+      // Other 4xx/5xx responses are treated as backend or auth issues that
+      // should surface as failures in the k6 metrics.
+      stateValid = false;
+      console.error(
+        `VU ${__VU}: Unexpected status ${stateRes.status} for game ${myGameId} - body=${stateRes.body}`
+      );
+    }
+
     gameStateCheckSuccess.add(stateValid);
     resourceOverhead.add(stateDuration);
-    
+
     if (!stateValid) {
       gameStateErrors.add(1);
-      console.error(`VU ${__VU}: Game state check failed for ${myGameId}`);
+    }
+
+    if (retireGameId) {
+      myGameId = null;
+      myGamePollCount = 0;
+    } else if (myGameId) {
+      // Only count games that are still considered pollable toward the
+      // concurrent_active_games gauge. This keeps the metric aligned with
+      // "live" games rather than long-expired IDs.
+      activeGames.add(__VU);
     }
   }
-  
-  // Update concurrent games metric
-  // Note: This is approximate as VUs may be ramping
-  activeGames.add(__VU);
-  
+
   // Simulate realistic polling interval (players checking game state)
   sleep(2 + Math.random() * 3); // 2-5 seconds between checks
 }

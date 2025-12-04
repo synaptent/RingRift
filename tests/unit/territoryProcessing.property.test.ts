@@ -1,13 +1,33 @@
 import fc from 'fast-check';
 
-import { Territory, positionToString } from '../../src/shared/types/game';
+import {
+  Territory,
+  positionToString,
+  type GameState,
+  type Player,
+  type Position,
+} from '../../src/shared/types/game';
 import {
   getProcessableTerritoryRegions,
   applyTerritoryRegion,
   type TerritoryProcessingContext,
 } from '../../src/shared/engine/territoryProcessing';
 import { getBorderMarkerPositionsForRegion } from '../../src/shared/engine/territoryBorders';
-import { createTestBoard, addStack, addMarker, pos } from '../utils/fixtures';
+import {
+  createTestBoard,
+  createTestGameState,
+  createTestPlayer,
+  addStack,
+  addMarker,
+  pos,
+} from '../utils/fixtures';
+import {
+  enumerateProcessTerritoryRegionMoves,
+  applyProcessTerritoryRegionDecision,
+  enumerateTerritoryEliminationMoves,
+  applyEliminateRingsFromStackDecision,
+} from '../../src/shared/engine/territoryDecisionHelpers';
+import { calculateCapHeight } from '../../src/shared/engine/core';
 
 /**
  * Property-based harness for territory-processing invariants over simple 2x2
@@ -109,3 +129,256 @@ describe('territoryProcessing.property - 2x2 region invariants on square8', () =
   });
 });
 
+/**
+ * Additional property-based checks for the shared territory decision helpers:
+ *
+ * - enumerateProcessTerritoryRegionMoves must surface exactly the processable
+ *   regions discovered by getProcessableTerritoryRegions for random Q23-style
+ *   2x2 regions on square8.
+ * - Applying the surfaced move via applyProcessTerritoryRegionDecision must
+ *   match the lower-level applyTerritoryRegion outcome and project its deltas
+ *   into GameState-level aggregates.
+ * - When a single region has been processed and at least one eligible stack
+ *   remains outside the region, enumerateTerritoryEliminationMoves must surface
+ *   exactly those stacks and applyEliminateRingsFromStackDecision must update
+ *   elimination counters monotonically.
+ */
+describe('territoryDecisionHelpers.property – decision enumeration and self-elimination (square8)', () => {
+  const boardType = 'square8';
+  const movingPlayer: Player['playerNumber'] = 1;
+  const victimPlayer: Player['playerNumber'] = 2;
+
+  function buildRandomQ23LikeState(
+    x0: number,
+    y0: number,
+    internalHeights: [number, number, number, number],
+    outsideHeight: number
+  ): {
+    state: GameState;
+    regionSpaces: Position[];
+    expectedInternalRings: number;
+    expectedBorder: Position[];
+  } {
+    const board = createTestBoard(boardType);
+
+    const regionSpaces: Position[] = [
+      pos(x0, y0),
+      pos(x0 + 1, y0),
+      pos(x0, y0 + 1),
+      pos(x0 + 1, y0 + 1),
+    ];
+
+    let expectedInternalRings = 0;
+    regionSpaces.forEach((p, idx) => {
+      const h = internalHeights[idx];
+      addStack(board, p, victimPlayer, h);
+      expectedInternalRings += h;
+    });
+
+    const borderCoords: Array<[number, number]> = [];
+    for (let x = x0 - 1; x <= x0 + 2; x++) {
+      borderCoords.push([x, y0 - 1]);
+      borderCoords.push([x, y0 + 2]);
+    }
+    for (let y = y0; y <= y0 + 1; y++) {
+      borderCoords.push([x0 - 1, y]);
+      borderCoords.push([x0 + 2, y]);
+    }
+    borderCoords.forEach(([x, y]) => {
+      if (x >= 0 && x < board.size && y >= 0 && y < board.size) {
+        addMarker(board, pos(x, y), movingPlayer);
+      }
+    });
+
+    // Outside stack for the moving player to satisfy the self-elimination
+    // prerequisite; we randomise its height to vary the self-elim cost.
+    addStack(board, pos(0, 0), movingPlayer, outsideHeight);
+
+    const expectedBorder = getBorderMarkerPositionsForRegion(board, regionSpaces, {
+      mode: 'rust_aligned',
+    });
+
+    const state = createTestGameState({
+      boardType,
+      board,
+      currentPlayer: movingPlayer,
+      currentPhase: 'territory_processing',
+      players: [
+        createTestPlayer(1, { ringsInHand: 0, eliminatedRings: 0, territorySpaces: 0 }),
+        createTestPlayer(2, { ringsInHand: 0, eliminatedRings: 0, territorySpaces: 0 }),
+      ],
+    }) as unknown as GameState;
+
+    return { state, regionSpaces, expectedInternalRings, expectedBorder };
+  }
+
+  it('enumerateProcessTerritoryRegionMoves matches getProcessableTerritoryRegions and applyProcessTerritoryRegionDecision preserves invariants', () => {
+    fc.assert(
+      fc.property(
+        // Same region placement constraints as the board-level property: keep a
+        // one-cell margin to ensure the marker border stays within 0..7.
+        fc.integer({ min: 2, max: 4 }),
+        fc.integer({ min: 2, max: 4 }),
+        fc.tuple(
+          fc.integer({ min: 1, max: 3 }),
+          fc.integer({ min: 1, max: 3 }),
+          fc.integer({ min: 1, max: 3 }),
+          fc.integer({ min: 1, max: 3 })
+        ),
+        fc.integer({ min: 1, max: 4 }),
+        (x0, y0, heights, outsideHeight) => {
+          const { state, regionSpaces, expectedInternalRings, expectedBorder } =
+            buildRandomQ23LikeState(
+              x0,
+              y0,
+              heights as [number, number, number, number],
+              outsideHeight
+            );
+
+          const boardBefore = state.board;
+          const ctx: TerritoryProcessingContext = { player: movingPlayer };
+
+          const processable = getProcessableTerritoryRegions(boardBefore, ctx);
+          expect(processable.length).toBe(1);
+
+          const processableKey = new Set(processable[0].spaces.map((p) => positionToString(p)));
+
+          const beforeCollapsed = boardBefore.collapsedSpaces.size;
+          const beforeBoardElims = { ...boardBefore.eliminatedRings };
+          const p1Before = state.players.find((p) => p.playerNumber === movingPlayer)!;
+          const totalBefore = state.totalRingsEliminated;
+
+          const moves = enumerateProcessTerritoryRegionMoves(state, movingPlayer);
+          expect(moves.length).toBe(1);
+
+          const move = moves[0];
+          expect(move.type).toBe('process_territory_region');
+          expect(move.player).toBe(movingPlayer);
+          expect(move.disconnectedRegions && move.disconnectedRegions.length).toBeGreaterThan(0);
+
+          const fromMove = move.disconnectedRegions![0];
+          const fromMoveKey = new Set(fromMove.spaces.map((p) => positionToString(p)));
+          expect(fromMoveKey).toEqual(processableKey);
+
+          // Sanity: the self-elimination prerequisite must hold – there is at
+          // least one stack for movingPlayer outside the region.
+          const regionKeySet = new Set(regionSpaces.map((p) => positionToString(p)));
+          const outsideStacks = Array.from(boardBefore.stacks.entries()).filter(
+            ([key, stack]) => stack.controllingPlayer === movingPlayer && !regionKeySet.has(key)
+          );
+          expect(outsideStacks.length).toBeGreaterThan(0);
+
+          const outcome = applyProcessTerritoryRegionDecision(state, move);
+          expect(outcome.pendingSelfElimination).toBe(true);
+
+          const next = outcome.nextState;
+          const boardAfter = next.board;
+          const p1After = next.players.find((p) => p.playerNumber === movingPlayer)!;
+
+          const territoryGain = p1After.territorySpaces - p1Before.territorySpaces;
+          expect(territoryGain).toBe(regionSpaces.length + expectedBorder.length);
+
+          const boardElimsAfter = boardAfter.eliminatedRings[movingPlayer] ?? 0;
+          const boardElimsBefore = beforeBoardElims[movingPlayer] ?? 0;
+          const playerElimsDelta = p1After.eliminatedRings - p1Before.eliminatedRings;
+          const totalDelta = next.totalRingsEliminated - totalBefore;
+
+          expect(boardElimsAfter - boardElimsBefore).toBe(expectedInternalRings);
+          expect(playerElimsDelta).toBe(expectedInternalRings);
+          expect(totalDelta).toBe(expectedInternalRings);
+
+          const regionKeySetAfter = new Set(regionSpaces.map((p) => positionToString(p)));
+          const borderKeySetAfter = new Set(expectedBorder.map((p) => positionToString(p)));
+
+          for (const key of regionKeySetAfter) {
+            expect(boardAfter.stacks.has(key)).toBe(false);
+            expect(boardAfter.collapsedSpaces.get(key)).toBe(movingPlayer);
+          }
+          for (const key of borderKeySetAfter) {
+            expect(boardAfter.stacks.has(key)).toBe(false);
+            expect(boardAfter.collapsedSpaces.get(key)).toBe(movingPlayer);
+          }
+
+          expect(boardAfter.collapsedSpaces.size).toBeGreaterThanOrEqual(beforeCollapsed);
+        }
+      ),
+      { numRuns: 32 }
+    );
+  });
+
+  it('after processing a region, enumerateTerritoryEliminationMoves surfaces exactly the stacks with positive capHeight and applyEliminateRingsFromStackDecision updates elimination counters', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2, max: 4 }),
+        fc.integer({ min: 2, max: 4 }),
+        fc.tuple(
+          fc.integer({ min: 1, max: 3 }),
+          fc.integer({ min: 1, max: 3 }),
+          fc.integer({ min: 1, max: 3 }),
+          fc.integer({ min: 1, max: 3 })
+        ),
+        // Randomise the outside-stack height to vary self-elimination cost.
+        fc.integer({ min: 1, max: 4 }),
+        (x0, y0, heights, outsideHeight) => {
+          const { state } = buildRandomQ23LikeState(
+            x0,
+            y0,
+            heights as [number, number, number, number],
+            outsideHeight
+          );
+
+          const regionMoves = enumerateProcessTerritoryRegionMoves(state, movingPlayer);
+          expect(regionMoves.length).toBe(1);
+
+          const { nextState } = applyProcessTerritoryRegionDecision(state, regionMoves[0]);
+
+          const boardAfterRegion = nextState.board;
+
+          const stacksForPlayer: Array<{ key: string; cap: number }> = [];
+          for (const [key, stack] of boardAfterRegion.stacks.entries()) {
+            if (stack.controllingPlayer !== movingPlayer) continue;
+            const capHeight = calculateCapHeight(stack.rings);
+            if (capHeight > 0) {
+              stacksForPlayer.push({ key, cap: capHeight });
+            }
+          }
+
+          const elimMoves = enumerateTerritoryEliminationMoves(nextState, movingPlayer);
+          const moveTargets = new Set(
+            elimMoves
+              .map((m) => (m.to ? positionToString(m.to) : undefined))
+              .filter((k): k is string => !!k)
+          );
+          const expectedTargets = new Set(stacksForPlayer.map((s) => s.key));
+
+          expect(moveTargets).toEqual(expectedTargets);
+
+          if (elimMoves.length === 0) {
+            return;
+          }
+
+          const beforeBoardElims = { ...boardAfterRegion.eliminatedRings };
+          const p1Before = nextState.players.find((p) => p.playerNumber === movingPlayer)!;
+          const totalBefore = nextState.totalRingsEliminated;
+
+          const chosen = elimMoves[0];
+          const { nextState: afterElim } = applyEliminateRingsFromStackDecision(nextState, chosen);
+
+          const boardAfterElim = afterElim.board;
+          const p1After = afterElim.players.find((p) => p.playerNumber === movingPlayer)!;
+
+          const boardDelta =
+            (boardAfterElim.eliminatedRings[movingPlayer] ?? 0) -
+            (beforeBoardElims[movingPlayer] ?? 0);
+          const playerDelta = p1After.eliminatedRings - p1Before.eliminatedRings;
+          const totalDelta = afterElim.totalRingsEliminated - totalBefore;
+
+          expect(boardDelta).toBeGreaterThan(0);
+          expect(playerDelta).toBe(boardDelta);
+          expect(totalDelta).toBe(boardDelta);
+        }
+      ),
+      { numRuns: 32 }
+    );
+  });
+});

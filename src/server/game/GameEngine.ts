@@ -2110,6 +2110,27 @@ export class GameEngine {
       const regionMoves = this.getValidTerritoryProcessingMoves(playerNumber);
 
       if (regionMoves.length > 0) {
+        // When one or more regions are processable for this player and no
+        // self-elimination decision is currently outstanding in this
+        // territory_processing cycle, expose an explicit
+        // 'skip_territory_processing' meta-move alongside the region
+        // processing options. This lets humans and AI decline to process
+        // any further regions this turn while still recording that choice
+        // as a canonical Move.
+        if (!this.pendingTerritorySelfElimination) {
+          const moveNumber = this.gameState.history.length + 1;
+          const skipMove: Move = {
+            id: `skip-territory-${moveNumber}`,
+            type: 'skip_territory_processing',
+            player: playerNumber,
+            to: { x: 0, y: 0 },
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move;
+          return [...regionMoves, skipMove];
+        }
+
         return regionMoves;
       }
 

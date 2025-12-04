@@ -1,6 +1,8 @@
 import type { SandboxAIHooks } from '../../src/client/sandbox/sandboxAI';
+import { SANDBOX_STALL_WINDOW_STEPS } from '../../src/client/sandbox/sandboxAI';
 import { GameState } from '../../src/shared/types/game';
 import { createTestGameState } from '../utils/fixtures';
+import { STALL_WINDOW_STEPS } from '../utils/aiSimulationPolicy';
 
 describe('ClientSandboxEngine sandbox AI stall diagnostics', () => {
   const originalEnv = process.env;
@@ -11,6 +13,10 @@ describe('ClientSandboxEngine sandbox AI stall diagnostics', () => {
     if ((global as any).window) {
       delete (global as any).window;
     }
+  });
+
+  it('uses the same stall window length as the shared aiSimulationPolicy', () => {
+    expect(SANDBOX_STALL_WINDOW_STEPS).toBe(STALL_WINDOW_STEPS);
   });
 
   it('emits ai_turn and stall entries into window.__RINGRIFT_SANDBOX_TRACE__ for consecutive no-op AI turns', async () => {
@@ -47,7 +53,7 @@ describe('ClientSandboxEngine sandbox AI stall diagnostics', () => {
       getPlayerStacks: () => [],
       hasAnyLegalMoveOrCaptureFrom: () => false,
       enumerateLegalRingPlacements: () => [],
-      tryPlaceRings: () => false,
+      tryPlaceRings: async () => false,
       enumerateCaptureSegmentsFrom: () => [],
       enumerateSimpleMovementLandings: () => [],
       maybeProcessForcedEliminationForCurrentPlayer: () => false,
@@ -75,19 +81,33 @@ describe('ClientSandboxEngine sandbox AI stall diagnostics', () => {
       hasPendingLineRewardElimination: () => false,
       canCurrentPlayerSwapSides: () => false,
       applySwapSidesForCurrentPlayer: () => false,
+      // Unused in this focused stall-diagnostics test, but required by the
+      // SandboxAIHooks interface. We construct them as benign no-ops so that
+      // maybeRunAITurnSandbox can call them safely if its control flow ever
+      // expands.
+      getValidMovesForCurrentPlayer: () => [],
+      createHypotheticalBoardWithPlacement: (board, _position, _playerNumber, _count) => board,
     };
 
-    // Invoke the sandbox AI for several consecutive no-op turns. Because there
-    // are no legal placements or moves, each call should leave the GameState
-    // hash unchanged, while the same AI player remains to move in an active
-    // game. This should cause the internal consecutive-noop counter to
-    // increase and, after the threshold, emit a 'stall' entry.
-    const INVOCATIONS = 8;
-    for (let i = 0; i < INVOCATIONS; i += 1) {
-      await maybeRunAITurnSandbox(hooks);
+    const rng = () => 0.5;
+
+    // Phase 1: run strictly fewer than STALL_WINDOW_STEPS no-op turns and
+    // assert that no 'stall' entry has been emitted yet.
+    for (let i = 0; i < STALL_WINDOW_STEPS - 1; i += 1) {
+      await maybeRunAITurnSandbox(hooks, rng);
     }
 
-    const trace = ((global as any).window.__RINGRIFT_SANDBOX_TRACE__ ?? []) as any[];
+    let trace = ((global as any).window.__RINGRIFT_SANDBOX_TRACE__ ?? []) as any[];
+
+    expect(trace.length).toBeGreaterThan(0);
+    expect(trace.some((entry: any) => entry.kind === 'ai_turn')).toBe(true);
+    expect(trace.some((entry: any) => entry.kind === 'stall')).toBe(false);
+
+    // Phase 2: one more no-op turn should now take us to or past the canonical
+    // stall window, at which point a 'stall' entry must be present.
+    await maybeRunAITurnSandbox(hooks, rng);
+
+    trace = ((global as any).window.__RINGRIFT_SANDBOX_TRACE__ ?? []) as any[];
 
     expect(trace.length).toBeGreaterThan(0);
     expect(trace.some((entry: any) => entry.kind === 'ai_turn')).toBe(true);

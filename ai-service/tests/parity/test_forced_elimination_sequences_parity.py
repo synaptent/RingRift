@@ -387,12 +387,15 @@ class TestForcedEliminationPreconditions:
                 adj_pos = Position(x=3 + dx, y=3 + dy)
                 state.board.collapsed_spaces[adj_pos.to_key()] = 2  # Enemy territory
 
-        # No normal moves should be available
-        normal_moves = GameEngine.get_valid_moves(state, 1)
-        assert len(normal_moves) == 0, "Should have no normal moves"
+        # No normal moves (movement/capture) should be available
+        all_moves = GameEngine.get_valid_moves(state, 1)
+        normal_moves = [m for m in all_moves if m.type != MoveType.FORCED_ELIMINATION]
+        assert len(normal_moves) == 0, "Should have no normal moves (movement/capture)"
 
-        # But FE should be available
+        # But FE should be available (and should be included in get_valid_moves)
         assert ga.has_forced_elimination_action(state, 1)
+        fe_moves = [m for m in all_moves if m.type == MoveType.FORCED_ELIMINATION]
+        assert len(fe_moves) > 0, "FE moves should be included in get_valid_moves when blocked"
 
 
 class TestForcedEliminationCounting:

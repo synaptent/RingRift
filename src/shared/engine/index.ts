@@ -545,9 +545,12 @@ export {
   computeTMetric,
 } from './globalActions';
 
-export type { ForcedEliminationOutcome } from './globalActions';
+export type { ForcedEliminationOutcome, ForcedEliminationOption } from './globalActions';
 
-export { applyForcedEliminationForPlayer } from './globalActions';
+export {
+  applyForcedEliminationForPlayer,
+  enumerateForcedEliminationOptions,
+} from './globalActions';
 
 // =============================================================================
 // RULES CONFIGURATION HELPERS

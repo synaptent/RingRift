@@ -247,7 +247,7 @@ def validate_assertions(
 # ============================================================================
 
 
-def resolve_chain_captures(state):
+def resolve_chain_captures(state, expected_sequence=None):
     """Resolve any active chain capture by applying continuation moves.
 
     Mirrors the TS resolveChainIfPresent helper from chainCaptureExtended.test.ts.
@@ -257,12 +257,17 @@ def resolve_chain_captures(state):
 
     Args:
         state: The GameState after the initial capture
+        expected_sequence: Optional list of expected chain segments from the
+            contract vector. If provided, the function will follow this exact
+            sequence instead of using a heuristic to pick moves.
 
     Returns:
         The final GameState after resolving all chain captures
     """
     MAX_CHAIN_STEPS = 20
     steps = 0
+    # Skip segment 1 as it's the initial move already applied
+    sequence_index = 1
 
     while state.current_phase == GamePhase.CHAIN_CAPTURE:
         steps += 1
@@ -291,16 +296,40 @@ def resolve_chain_captures(state):
             # No more chain moves available - chain is complete
             break
 
-        # Select the move with closest landing to the capture target
-        # This matches TS behavior where closer landings are preferred
-        # and enables maximal chain continuation
-        def landing_distance(m):
-            if m.to and m.capture_target:
-                return abs(m.to.x - m.capture_target.x) + abs(m.to.y - m.capture_target.y)
-            return float('inf')
+        selected_move = None
 
-        chain_moves.sort(key=landing_distance)
-        state = GameEngine.apply_move(state, chain_moves[0])
+        # If we have an expected sequence, try to match the next segment
+        if expected_sequence and sequence_index < len(expected_sequence):
+            expected = expected_sequence[sequence_index]
+            expected_target = expected.get("captureTarget", {})
+            expected_landing = expected.get("landing", {})
+
+            # Find the move that matches the expected segment
+            for m in chain_moves:
+                if (
+                    m.capture_target
+                    and m.to
+                    and m.capture_target.x == expected_target.get("x")
+                    and m.capture_target.y == expected_target.get("y")
+                    and m.to.x == expected_landing.get("x")
+                    and m.to.y == expected_landing.get("y")
+                ):
+                    selected_move = m
+                    break
+
+            sequence_index += 1
+
+        # Fallback: select the move with closest landing to the capture target
+        if selected_move is None:
+            def landing_distance(m):
+                if m.to and m.capture_target:
+                    return abs(m.to.x - m.capture_target.x) + abs(m.to.y - m.capture_target.y)
+                return float('inf')
+
+            chain_moves.sort(key=landing_distance)
+            selected_move = chain_moves[0]
+
+        state = GameEngine.apply_move(state, selected_move)
 
     return state
 
@@ -342,7 +371,12 @@ def execute_vector(vector: TestVector) -> ValidationResult:
             and expected_status != "awaiting_decision"
         )
         if should_resolve:
-            result_state = resolve_chain_captures(result_state)
+            # Pass expected chain sequence if available to ensure we follow
+            # the exact path specified in the contract vector
+            result_state = resolve_chain_captures(
+                result_state,
+                expected_sequence=vector.expected_chain_sequence or None
+            )
 
     except Exception as e:
         validation = ValidationResult(vector.id)
@@ -425,8 +459,8 @@ class TestContractVectors:
             "chain_capture.4_targets.diagonal_with_turn" in vector_ids
         ), "Expected chain_capture.4_targets.diagonal_with_turn vector to be present"
         assert (
-            "chain_capture.5_plus_targets.extended_zigzag" in vector_ids
-        ), "Expected chain_capture.5_plus_targets.extended_zigzag vector to be present"
+            "chain_capture.5_plus_targets.extended_path" in vector_ids
+        ), "Expected chain_capture.5_plus_targets.extended_path vector to be present"
 
 
 # Parametrized test for all vectors

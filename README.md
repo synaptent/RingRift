@@ -10,7 +10,7 @@
 **Doc Status (2025-12-01): Active (project overview & navigation)**
 
 - High-level project overview, setup, and API surface.
-- Not a rules or lifecycle SSoT. For rules semantics, defer to `RULES_CANONICAL_SPEC.md` plus the shared TypeScript rules engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts + v2 contract vectors). For lifecycle semantics (move/decision/WebSocket), defer to `docs/CANONICAL_ENGINE_API.md` plus shared TS/WebSocket types and schemas.
+- Not a rules or lifecycle SSoT. For rules semantics, defer to `RULES_CANONICAL_SPEC.md` plus the shared TypeScript rules engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts + v2 contract vectors). For lifecycle semantics (move/decision/WebSocket), defer to `docs/architecture/CANONICAL_ENGINE_API.md` plus shared TS/WebSocket types and schemas.
 
 ⚠️ **PROJECT STATUS: STABLE BETA – BACKEND & RULES ENGINE ROBUST; FRONTEND UX POLISH IN PROGRESS** ⚠️
 

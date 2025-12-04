@@ -24,6 +24,8 @@ import {
   enumerateProcessTerritoryRegionMoves,
   enumerateTerritoryEliminationMoves,
   getEffectiveLineLengthThreshold,
+  enumerateProcessLineMoves,
+  enumerateChooseLineRewardMoves,
 } from '../../src/shared/engine';
 import {
   createTestBoard,
@@ -633,10 +635,12 @@ describe('Backend vs Sandbox advanced-phase parity – capture, line, territory'
 
       const currentPlayer = 1;
 
-      const backendLineMoves = backend
-        .getValidMoves(currentPlayer)
-        .filter((m) => m.type === 'process_line' || m.type === 'choose_line_reward');
+      const backendAllMoves = backend.getValidMoves(currentPlayer);
+      const backendLineMoves = backendAllMoves.filter(
+        (m) => m.type === 'process_line' || m.type === 'choose_line_reward'
+      );
 
+      const sandboxAllMoves = sandbox.getValidMoves(currentPlayer);
       const sandboxLineMoves: Move[] = (
         sandboxAny.getValidLineProcessingMovesForCurrentPlayer
           ? (sandboxAny.getValidLineProcessingMovesForCurrentPlayer() as Move[])
@@ -646,6 +650,30 @@ describe('Backend vs Sandbox advanced-phase parity – capture, line, territory'
       expect(backendLineMoves.length).toBeGreaterThan(0);
       expect(sandboxLineMoves.length).toBeGreaterThan(0);
 
+      // Backend and sandbox getValidMoves surfaces for this decision phase must
+      // only contain line-processing decision Moves.
+      expect(backendAllMoves.length).toBe(backendLineMoves.length);
+      expect(
+        backendAllMoves.every((m) => m.type === 'process_line' || m.type === 'choose_line_reward')
+      ).toBe(true);
+
+      expect(
+        sandboxAllMoves.every((m) => m.type === 'process_line' || m.type === 'choose_line_reward')
+      ).toBe(true);
+
+      // Shared helper enumeration must match the backend host getValidMoves surface.
+      const backendState = backendAny.gameState as GameState;
+      const helperProcessMoves = enumerateProcessLineMoves(backendState, currentPlayer);
+      const helperRewardMoves = enumerateChooseLineRewardMoves(backendState, currentPlayer, 0);
+      const helperLineMoves = [...helperProcessMoves, ...helperRewardMoves];
+
+      expectMoveSetsEqual(
+        backendLineMoves,
+        helperLineMoves,
+        'line_processing backend getValidMoves vs shared line helpers'
+      );
+
+      // Backend vs sandbox parity for line-processing decision surfaces.
       expectMoveSetsEqual(
         backendLineMoves,
         sandboxLineMoves,
@@ -691,12 +719,20 @@ describe('Backend vs Sandbox advanced-phase parity – capture, line, territory'
     const landing = firstCaptureBackend.to as Position;
 
     // STEP 2: Compare getValidMoves surfaces for chain continuations.
-    const backendChainMoves = backend
-      .getValidMoves(currentPlayer)
-      .filter((m) => m.type === 'continue_capture_segment');
-    const sandboxChainMoves = sandbox
-      .getValidMoves(currentPlayer)
-      .filter((m) => m.type === 'continue_capture_segment');
+    const backendChainAllMoves = backend.getValidMoves(currentPlayer);
+    const sandboxChainAllMoves = sandbox.getValidMoves(currentPlayer);
+
+    const backendChainMoves = backendChainAllMoves.filter(
+      (m) => m.type === 'continue_capture_segment'
+    );
+    const sandboxChainMoves = sandboxChainAllMoves.filter(
+      (m) => m.type === 'continue_capture_segment'
+    );
+
+    expect(backendChainAllMoves.length).toBe(backendChainMoves.length);
+    expect(backendChainAllMoves.every((m) => m.type === 'continue_capture_segment')).toBe(true);
+
+    expect(sandboxChainAllMoves.every((m) => m.type === 'continue_capture_segment')).toBe(true);
 
     expectMoveSetsEqual(
       backendChainMoves,
@@ -842,13 +878,27 @@ describe('Backend vs Sandbox advanced-phase parity – capture, line, territory'
     const canonicalRegionMove = selectCanonicalMove(backendEnumRegions);
 
     // Hosts should both expose this region decision via getValidMoves in the
-    // territory_processing phase.
-    const backendSurface = backend
-      .getValidMoves(currentPlayer)
-      .filter((m) => m.type === 'process_territory_region');
-    const sandboxSurface = sandbox
-      .getValidMoves(currentPlayer)
-      .filter((m) => m.type === 'process_territory_region');
+    // territory_processing phase, and no other Move types should appear.
+    const backendRegionAll = backend.getValidMoves(currentPlayer);
+    const sandboxRegionAll = sandbox.getValidMoves(currentPlayer);
+
+    const backendSurface = backendRegionAll.filter((m) => m.type === 'process_territory_region');
+    const sandboxSurface = sandboxRegionAll.filter((m) => m.type === 'process_territory_region');
+
+    expect(backendSurface.length).toBeGreaterThan(0);
+    expect(sandboxSurface.length).toBeGreaterThan(0);
+
+    expect(backendRegionAll.length).toBe(backendSurface.length);
+    expect(backendRegionAll.every((m) => m.type === 'process_territory_region')).toBe(true);
+
+    expect(sandboxRegionAll.every((m) => m.type === 'process_territory_region')).toBe(true);
+
+    // Shared helper enumeration must match the backend host surface.
+    expectMoveSetsEqual(
+      backendEnumRegions,
+      backendSurface,
+      'territory_processing backend getValidMoves vs shared region helper'
+    );
 
     expectMoveSetsEqual(
       backendSurface,
@@ -898,6 +948,9 @@ describe('Backend vs Sandbox advanced-phase parity – capture, line, territory'
       .getValidMoves(currentPlayer)
       .filter((m) => m.type === 'eliminate_rings_from_stack');
 
+    // Host-level elimination decision surfaces should remain in parity, but may
+    // be empty in scenarios where the engine auto-applies the unique
+    // self-elimination implied by the shared helper enumeration.
     expectMoveSetsEqual(
       backendElimSurface,
       sandboxElimSurface,

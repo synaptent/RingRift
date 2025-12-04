@@ -66,6 +66,32 @@ For architectural details, see:
 - `docs/RULES_SSOT_MAP.md` – SSOT boundaries and host integration
 - `docs/CANONICAL_ENGINE_API.md` – Lifecycle and API reference
 
+### Required tests for rules/AI/WebSocket changes
+
+When a change touches any of:
+
+- `src/shared/engine/**` (rules engine and orchestrator),
+- `src/server/game/**` (backend GameEngine, GameSession, WebSocket/AI integration),
+- `src/client/sandbox/**` (ClientSandboxEngine and sandbox AI/UX),
+- WebSocket lifecycle or AI service boundaries (`WebSocketServer`, `AIServiceClient`, `AIInteractionHandler`),
+
+you **must** run the P0 robustness profile before opening or merging a PR:
+
+```bash
+npm run test:p0-robustness
+```
+
+This script runs:
+
+- `npm run test:ts-rules-engine` (shared-engine + orchestrator rules suites: RulesMatrix, FAQ, advanced turn/territory helpers),
+- `npm run test:ts-integration` (backend/WebSocket/full game-flow integration),
+- A focused parity/cancellation bundle:
+  - `tests/contracts/contractVectorRunner.test.ts` (v2 contract vectors, including mixed territory/line sequences),
+  - `tests/parity/Backend_vs_Sandbox.CaptureAndTerritoryParity.test.ts` (advanced capture + single-/multi-region line+territory backend↔sandbox parity),
+  - `tests/unit/WebSocketServer.sessionTermination.test.ts` (WebSocket session termination + decision/AI cancellation for turn requests and AI-backed choices such as `region_order` and `line_reward_option`).
+
+For UI-only or documentation-only changes, you can usually rely on the lighter `npm run test:core` lane; for anything rules/AI/WebSocket-adjacent, treat `npm run test:p0-robustness` as the default local gate.
+
 ---
 
 <details>

@@ -180,7 +180,7 @@ describe('GameHUD – view-model props', () => {
 
     // Connection label with stale hint
     expect(screen.getByText(/Connection: Connected/i)).toBeInTheDocument();
-    expect(screen.getByText(/\(awaiting update…\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/\(no recent updates from server\)/i)).toBeInTheDocument();
 
     // Spectator count badge (there may be multiple '1's like timer "1:30")
     // Just verify at least one '1' exists; SVG eye icon accompanies spectator count
@@ -255,5 +255,43 @@ describe('GameHUD – view-model props', () => {
     const chip = screen.getByTestId('hud-decision-status-chip');
     expect(chip).toHaveTextContent('Select stack cap to eliminate');
     expect(chip).toHaveClass('bg-amber-500');
+  });
+
+  it('renders skip hint badge when decisionPhase.canSkip is true', () => {
+    const baseVm = createHUDViewModel();
+    const viewModel: HUDViewModel = {
+      ...baseVm,
+      decisionPhase: {
+        isActive: true,
+        actingPlayerNumber: 1,
+        actingPlayerName: 'Alice',
+        isLocalActor: true,
+        label: 'Your decision: Territory region order',
+        description: 'Choose a disconnected region to process or skip territory processing.',
+        shortLabel: 'Territory processing',
+        timeRemainingMs: null,
+        showCountdown: false,
+        warningThresholdMs: undefined,
+        isServerCapped: undefined,
+        spectatorLabel: 'Waiting for Alice to choose a territory region',
+        statusChip: {
+          text: 'Territory claimed – choose region to process or skip',
+          tone: 'attention',
+        },
+        canSkip: true,
+      },
+    };
+
+    render(
+      <GameHUD
+        viewModel={viewModel}
+        timeControl={{ type: 'rapid', initialTime: 600, increment: 0 }}
+      />
+    );
+
+    expect(screen.getByTestId('hud-decision-status-chip')).toBeInTheDocument();
+    const skipHint = screen.getByTestId('hud-decision-skip-hint');
+    expect(skipHint).toBeInTheDocument();
+    expect(skipHint).toHaveTextContent(/Skip available/i);
   });
 });

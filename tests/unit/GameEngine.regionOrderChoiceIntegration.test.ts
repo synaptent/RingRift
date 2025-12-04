@@ -15,6 +15,7 @@
  * - src/shared/engine/territoryDecisionHelpers.ts
  * - src/shared/engine/territoryProcessing.ts
  * - src/shared/engine/territoryDetection.ts
+ * - RULES_SCENARIO_MATRIX.md – territory section "Region order PlayerChoice" row (FAQ Q23 self-elimination prerequisite)
  */
 
 import {

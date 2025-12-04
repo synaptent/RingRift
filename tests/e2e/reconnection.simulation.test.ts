@@ -765,6 +765,81 @@ test.describe('Network Partition Simulation with NetworkSimulator', () => {
       }
     });
 
+    test('reconnects within reconnection window without abandonment (P18.3-1 §§2.4, 4.3)', async ({
+      browser,
+    }) => {
+      const coordinator = createNetworkAwareCoordinator(serverUrl);
+
+      const context1 = await browser.newContext();
+      const context2 = await browser.newContext();
+      const page1 = await context1.newPage();
+      const page2 = await context2.newPage();
+
+      const user1 = generateTestUser();
+      const user2 = generateTestUser();
+
+      try {
+        const token1 = await createUserAndGetToken(page1, user1);
+        const token2 = await createUserAndGetToken(page2, user2);
+
+        const fixture = await createFixtureGame(page1, {
+          scenario: 'line_processing',
+          isRated: true,
+          shortTimeoutMs: 4_000,
+          shortWarningBeforeMs: 2_000,
+        });
+
+        await coordinator.connect('player1', {
+          playerId: user1.username,
+          userId: user1.username,
+          token: token1,
+        });
+        await coordinator.connect('player2', {
+          playerId: user2.username,
+          userId: user2.username,
+          token: token2,
+        });
+
+        await coordinator.joinGame('player1', fixture.gameId);
+        await coordinator.joinGame('player2', fixture.gameId);
+
+        // Reach an interactive decision phase before simulating disconnect.
+        await coordinator.waitForPhase('player1', 'line_processing', 15_000);
+
+        // Player 1 disconnects but reconnects within the reconnection window.
+        await coordinator.network.forceDisconnect('player1');
+        expect(coordinator.network.isDisconnected('player1')).toBe(true);
+
+        await coordinator.network.simulateReconnect('player1', 1_000);
+
+        // Opponent should observe a player_reconnected event for player1.
+        const reconnectedEvent = await coordinator.waitForEvent(
+          'player2',
+          'player_reconnected',
+          (payload) => {
+            const msg = payload as any;
+            return msg?.data?.playerId === user1.username;
+          },
+          30_000
+        );
+        expect(reconnectedEvent).toBeTruthy();
+
+        // No abandonment game_over should have been emitted for player2.
+        const gameOverMessages = coordinator.getMessagesMatching(
+          'player2',
+          (m) => m.eventName === 'game_over'
+        );
+        const abandonment = gameOverMessages.filter(
+          (m) => (m.payload as any)?.data?.gameResult?.reason === 'abandonment'
+        );
+        expect(abandonment.length).toBe(0);
+      } finally {
+        await coordinator.cleanup();
+        await context1.close();
+        await context2.close();
+      }
+    });
+
     test('disconnect mid decision, reconnect, sees consistent timeout-based game_over', async ({
       browser,
     }) => {

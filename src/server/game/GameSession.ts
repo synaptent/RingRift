@@ -683,23 +683,53 @@ export class GameSession {
     socket: AuthenticatedSocket,
     moveData: PlayerMoveData
   ): Promise<void> {
+    if (!socket.userId) throw new Error('Socket not authenticated');
+
+    await this.handlePlayerMoveForUser(socket.userId, moveData);
+  }
+
+  /**
+   * HTTP harness entry point for applying a move on behalf of a specific
+   * authenticated userId. This mirrors the semantics of the WebSocket
+   * player_move path but is transport-agnostic so that Express routes
+   * can reuse the same domain pipeline.
+   */
+  public async handlePlayerMoveFromHttp(
+    userId: string,
+    moveData: PlayerMoveData
+  ): Promise<RulesResult> {
+    return this.handlePlayerMoveForUser(userId, moveData);
+  }
+
+  /**
+   * Core move application pipeline shared by both WebSocket and HTTP
+   * transports. This method performs:
+   *
+   * - Database/game-status validation
+   * - GameState lookup and player vs spectator authorization
+   * - Wire-level position -> engine Move conversion
+   * - RulesBackendFacade.applyMove (including orchestrator/shadow handling)
+   * - Persistence, broadcast, and AI turn chaining
+   */
+  private async handlePlayerMoveForUser(
+    userId: string,
+    moveData: PlayerMoveData
+  ): Promise<RulesResult> {
     const prisma = getDatabaseClient();
     if (!prisma) throw new Error('Database not available');
-    if (!socket.userId) throw new Error('Socket not authenticated');
 
     const game = await prisma.game.findUnique({ where: { id: this.gameId } });
     if (!game) throw new Error('Game not found');
     if (game.status !== 'active') throw new Error('Game is not active');
 
     const currentState = this.gameEngine.getGameState();
-    const userId = socket.userId;
     const player = currentState.players.find((p) => p.id === userId);
     if (!player) {
       // Check if user is a spectator
       if (currentState.spectators.includes(userId)) {
         throw new Error('Spectators cannot make moves');
       }
-      throw new Error('Current socket user is not a player in this game');
+      throw new Error('Current user is not a player in this game');
     }
 
     let from: Position | undefined;
@@ -717,6 +747,15 @@ export class GameSession {
           error: (err as Error).message,
         });
         throw new Error('Invalid move position payload');
+      }
+    } else if (moveData.position && typeof moveData.position === 'object') {
+      const parsed = moveData.position as { from?: Position; to?: Position } | Position;
+      if ('from' in parsed || 'to' in parsed) {
+        const posObj = parsed as { from?: Position; to?: Position };
+        from = posObj.from;
+        to = (posObj.to as Position | undefined) ?? (posObj as unknown as Position | undefined);
+      } else {
+        to = parsed as Position;
       }
     }
 
@@ -749,6 +788,8 @@ export class GameSession {
     await this.persistMove(userId, result);
     await this.broadcastUpdate(result);
     await this.maybePerformAITurn();
+
+    return result;
   }
 
   public async handlePlayerMoveById(socket: AuthenticatedSocket, moveId: string): Promise<void> {
@@ -1642,7 +1683,7 @@ export class GameSession {
         return {
           choiceType: 'region_order',
           choiceKind: 'territory_region_order',
-          candidateTypes: ['process_territory_region'],
+          candidateTypes: ['process_territory_region', 'skip_territory_processing'],
         };
       }
       if (moves.some((m) => m.type === 'eliminate_rings_from_stack')) {

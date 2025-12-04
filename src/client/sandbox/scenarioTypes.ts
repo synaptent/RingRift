@@ -69,6 +69,32 @@ export interface LoadableScenario extends ScenarioMetadata {
   state: SerializedGameState;
   /** Optional: suggested move for learning scenarios */
   suggestedMove?: Move;
+  /**
+   * Optional metadata for scenarios that originate from recorded self-play
+   * games. When present, the sandbox host can use this to:
+   * - seed the local engine from the serialized state, and
+   * - optionally drive full-move replays via the ReplayPanel using the
+   *   recorded gameId (when the AI service replay DB matches the source DB).
+   */
+  selfPlayMeta?: {
+    /** Absolute or workspace-relative path to the source SQLite database. */
+    dbPath: string;
+    /** Game identifier within the source database. */
+    gameId: string;
+    /** Total moves reported by the recorder for this game. */
+    totalMoves: number;
+    /**
+     * Optional canonical move sequence for this game.
+     * When present, the sandbox host can:
+     * - Reconstruct the full game trajectory locally via ClientSandboxEngine,
+     * - Populate history snapshots for the HistoryPlaybackPanel slider.
+     *
+     * This is populated by the Self-Play Browser when loading a game so
+     * that /sandbox can replay the full self-play run without making an
+     * additional round-trip to the self-play service.
+     */
+    moves?: Move[];
+  };
 }
 
 /**

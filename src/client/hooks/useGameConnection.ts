@@ -14,7 +14,7 @@
  */
 
 import { useMemo, useCallback } from 'react';
-import { useGame, ConnectionStatus } from '../contexts/GameContext';
+import { useGame, ConnectionStatus, DisconnectedPlayer } from '../contexts/GameContext';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -62,6 +62,10 @@ export interface GameConnectionState extends ConnectionHealth, ConnectionActions
   error: string | null;
   /** Timestamp of last heartbeat */
   lastHeartbeatAt: number | null;
+  /** Players who have disconnected but may reconnect */
+  disconnectedOpponents: DisconnectedPlayer[];
+  /** Whether the game ended due to abandonment (reconnection timeout expired) */
+  gameEndedByAbandonment: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -110,6 +114,8 @@ export function useGameConnection(): GameConnectionState {
     isConnecting: _isConnecting,
     connectToGame,
     disconnect,
+    disconnectedOpponents,
+    gameEndedByAbandonment,
   } = useGame();
 
   // Derive connection health
@@ -182,6 +188,8 @@ export function useGameConnection(): GameConnectionState {
     disconnect: stableDisconnect,
     error,
     lastHeartbeatAt,
+    disconnectedOpponents,
+    gameEndedByAbandonment,
   };
 }
 

@@ -499,6 +499,10 @@ class ContractVector:
         # Check for 'move' first, then fall back to 'initialMove' for multi-phase vectors
         move_data = input_data.get("move") or input_data.get("initialMove") or {}
         self.input_move: Optional[Move] = deserialize_move(move_data)
+        # Expected chain sequence for multi-segment chain capture tests
+        self.expected_chain_sequence: List[Dict[str, Any]] = input_data.get(
+            "expectedChainSequence", []
+        )
 
         # Expected output
         expected_data = data.get("expectedOutput", {})

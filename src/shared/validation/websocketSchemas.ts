@@ -80,9 +80,34 @@ export const PlayerChoiceResponsePayloadSchema = z.object({
   selectedOption: z.unknown(),
 });
 
-export type PlayerChoiceResponsePayload = z.infer<
-  typeof PlayerChoiceResponsePayloadSchema
->;
+export type PlayerChoiceResponsePayload = z.infer<typeof PlayerChoiceResponsePayloadSchema>;
+
+// --- Diagnostic / load-testing events ---
+
+/**
+ * Lightweight ping payload used by WebSocket load tests. This is intentionally
+ * generic and non-game-specific so it can be exercised at high volume without
+ * touching the rules engine or database.
+ */
+export const DiagnosticPingPayloadSchema = z.object({
+  /**
+   * Client-side timestamp in milliseconds since epoch. Used by load tests to
+   * compute round-trip latency without relying on server clocks.
+   */
+  timestamp: z.number().int().nonnegative(),
+  /**
+   * Optional virtual-user identifier or other opaque tag attached by the
+   * caller. This is propagated unchanged in the diagnostic:pong response.
+   */
+  vu: z.union([z.number().int().nonnegative(), z.string()]).optional(),
+  /**
+   * Optional monotonically-increasing sequence number for correlating
+   * individual ping/pong pairs. Also echoed back verbatim.
+   */
+  sequence: z.number().int().nonnegative().optional(),
+});
+
+export type DiagnosticPingPayload = z.infer<typeof DiagnosticPingPayloadSchema>;
 
 // --- Server → client metadata schemas (game_state diff summaries) ---
 
@@ -91,11 +116,7 @@ export type PlayerChoiceResponsePayload = z.infer<
  *
  * This mirrors DecisionAutoResolveReason in src/shared/types/websocket.ts.
  */
-export const DecisionAutoResolveReasonSchema = z.enum([
-  'timeout',
-  'disconnected',
-  'fallback',
-]);
+export const DecisionAutoResolveReasonSchema = z.enum(['timeout', 'disconnected', 'fallback']);
 
 /**
  * High-level semantic grouping of a decision, aligned with ChoiceViewModels.
@@ -157,6 +178,7 @@ export const WebSocketPayloadSchemas = {
   player_move_by_id: PlayerMoveByIdPayloadSchema,
   chat_message: ChatMessagePayloadSchema,
   player_choice_response: PlayerChoiceResponsePayloadSchema,
+  'diagnostic:ping': DiagnosticPingPayloadSchema,
 } as const;
 
 export type WebSocketEventName = keyof typeof WebSocketPayloadSchemas;

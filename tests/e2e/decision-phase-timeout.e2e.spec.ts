@@ -10,6 +10,7 @@ import {
   createMultiClientCoordinator,
   type MultiClientCoordinator,
 } from '../helpers/MultiClientCoordinator';
+import { createNetworkAwareCoordinator } from '../helpers/NetworkSimulator';
 import type { DecisionPhaseTimedOutPayload } from '../../src/shared/types/websocket';
 
 /**
@@ -246,6 +247,87 @@ test.describe('Decision-phase timeout E2E', () => {
       expect(p1.data.autoSelectedMoveId.length).toBeGreaterThan(0);
       expect(p1.data.autoSelectedMoveId).toBe(p2.data.autoSelectedMoveId);
     } finally {
+      await coordinator.cleanup();
+      await context1.close();
+      await context2.close();
+    }
+  });
+
+  test('line_processing timeout still delivers deterministic autoSelectedMoveId under packet loss', async ({
+    browser,
+  }) => {
+    const coordinator = createNetworkAwareCoordinator(serverUrl);
+
+    const context1 = await browser.newContext();
+    const context2 = await browser.newContext();
+    const page1 = await context1.newPage();
+    const page2 = await context2.newPage();
+
+    await waitForApiReady(page1);
+
+    const user1 = generateTestUser();
+    const user2 = generateTestUser();
+
+    try {
+      const token1 = await createUserAndGetToken(page1, user1);
+      const token2 = await createUserAndGetToken(page2, user2);
+
+      const { gameId } = await createFixtureGame(page1, {
+        scenario: 'line_processing',
+        isRated: false,
+        shortTimeoutMs: 4_000,
+        shortWarningBeforeMs: 2_000,
+      });
+
+      await coordinator.connect('player1', {
+        playerId: user1.username,
+        userId: user1.username,
+        token: token1,
+      });
+      await coordinator.connect('player2', {
+        playerId: user2.username,
+        userId: user2.username,
+        token: token2,
+      });
+
+      await coordinator.joinGame('player1', gameId);
+      await coordinator.joinGame('player2', gameId);
+
+      // Drive into the line_processing decision phase per P18.3‑1.
+      await coordinator.waitForPhase('player1', 'line_processing', 15_000);
+
+      // Apply degraded network conditions to player1: moderate packet loss + latency.
+      coordinator.network.setCondition('player1', {
+        packetLoss: 0.4,
+        latencyMs: 150,
+      });
+
+      const results = await coordinator.waitForAll(['player1', 'player2'], {
+        type: 'event',
+        eventName: 'decision_phase_timed_out',
+        predicate: (payload) => {
+          const msg = payload as DecisionPhaseTimedOutPayload;
+          return msg?.data?.phase === 'line_processing' && !!msg.data.autoSelectedMoveId;
+        },
+        timeout: 40_000,
+      });
+
+      const p1 = results.get('player1') as DecisionPhaseTimedOutPayload | undefined;
+      const p2 = results.get('player2') as DecisionPhaseTimedOutPayload | undefined;
+
+      if (!p1 || !p2) {
+        throw new Error('Expected decision_phase_timed_out payloads for both players');
+      }
+
+      expect(p1.data.gameId).toBe(gameId);
+      expect(p2.data.gameId).toBe(gameId);
+      expect(p1.data.phase).toBe('line_processing');
+      expect(p2.data.phase).toBe('line_processing');
+      expect(typeof p1.data.autoSelectedMoveId).toBe('string');
+      expect(p1.data.autoSelectedMoveId.length).toBeGreaterThan(0);
+      expect(p1.data.autoSelectedMoveId).toBe(p2.data.autoSelectedMoveId);
+    } finally {
+      coordinator.network.clearCondition('player1');
       await coordinator.cleanup();
       await context1.close();
       await context2.close();

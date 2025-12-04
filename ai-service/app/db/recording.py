@@ -76,9 +76,22 @@ class GameRecorder:
         self._finalized = False
 
     def __enter__(self) -> "GameRecorder":
+        # For recording we want the "initial" state to represent the start
+        # of the recorded sequence, not a mid-game snapshot with an existing
+        # move_history. To make downstream replay/debugging consistent, we
+        # clear any pre-populated move history before storing the initial
+        # state in GameReplayDB.
+        initial_for_recording = (
+            self.initial_state.model_copy(deep=True) if self.initial_state is not None else None
+        )
+        if initial_for_recording is not None and getattr(
+            initial_for_recording, "move_history", None
+        ):
+            initial_for_recording.move_history = []
+
         self._writer = self.db.store_game_incremental(
             self.game_id,
-            self.initial_state,
+            initial_for_recording,
         )
         return self
 
@@ -134,9 +147,18 @@ def record_completed_game(
         The game ID that was stored
     """
     gid = game_id or str(uuid.uuid4())
+
+    # As with GameRecorder, ensure the stored "initial" state does not carry
+    # a pre-populated move_history from a longer game. For replay and
+    # sandbox parity we treat the initial snapshot as the start of the
+    # recorded sequence and rely on game_moves for the full trajectory.
+    initial_for_recording = initial_state.model_copy(deep=True)
+    if getattr(initial_for_recording, "move_history", None):
+        initial_for_recording.move_history = []
+
     db.store_game(
         game_id=gid,
-        initial_state=initial_state,
+        initial_state=initial_for_recording,
         final_state=final_state,
         moves=moves,
         metadata=metadata,

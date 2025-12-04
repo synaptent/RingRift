@@ -11,7 +11,7 @@
  * See: docs/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GameFilters } from './GameFilters';
 import { GameList } from './GameList';
 import { PlaybackControls } from './PlaybackControls';
@@ -32,6 +32,8 @@ export interface ReplayPanelProps {
   onForkFromPosition?: (state: GameState) => void;
   /** Called when an animation should be triggered */
   onAnimationChange?: (animation: MoveAnimationData | null) => void;
+  /** Optional externally requested gameId to auto-load (e.g. from Self-Play Browser) */
+  requestedGameId?: string | null;
   /** Whether the panel starts collapsed */
   defaultCollapsed?: boolean;
   className?: string;
@@ -44,10 +46,12 @@ export function ReplayPanel({
   onReplayModeChange,
   onForkFromPosition,
   onAnimationChange,
+  requestedGameId = null,
   defaultCollapsed = true,
   className = '',
 }: ReplayPanelProps) {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
+  const [autoLoadError, setAutoLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ReplayGameQueryParams>({
     limit: DEFAULT_PAGE_SIZE,
     offset: 0,
@@ -74,6 +78,11 @@ export function ReplayPanel({
     enabled: playback.gameId !== null,
   });
 
+  // Track the last externally requested gameId so we only attempt to load
+  // each game once per request. This prevents repeated load attempts when
+  // the replay service does not contain the requested game.
+  const lastRequestedGameIdRef = useRef<string | null>(null);
+
   // Notify parent when state changes
   useEffect(() => {
     onStateChange?.(playback.currentState);
@@ -88,6 +97,48 @@ export function ReplayPanel({
   useEffect(() => {
     onAnimationChange?.(pendingAnimation);
   }, [pendingAnimation, onAnimationChange]);
+
+  // Best-effort bridge from external callers (e.g. the Self-Play Browser
+  // via SandboxGameHost) that want to treat a recorded game as a live
+  // replay source. When a requestedGameId is provided and the replay
+  // service is available, automatically expand the panel and attempt to
+  // load that game. If the game is missing from the replay DB, we log
+  // an error but leave the panel in browse mode.
+  useEffect(() => {
+    if (!requestedGameId) {
+      if (autoLoadError) {
+        setAutoLoadError(null);
+      }
+      return;
+    }
+
+    if (isAvailable !== true) {
+      return;
+    }
+
+    if (requestedGameId === lastRequestedGameIdRef.current) {
+      return;
+    }
+
+    lastRequestedGameIdRef.current = requestedGameId;
+    setAutoLoadError(null);
+
+    if (playback.gameId === requestedGameId) {
+      return;
+    }
+
+    setIsCollapsed(false);
+
+    playback.loadGame(requestedGameId).catch((err) => {
+      console.error('ReplayPanel: failed to auto-load requested game', {
+        gameId: requestedGameId,
+        error: err,
+      });
+      setAutoLoadError(
+        'Requested game not found in replay DB (check GAME_REPLAY_DB_PATH). Using local sandbox replay instead.'
+      );
+    });
+  }, [requestedGameId, isAvailable, playback, setIsCollapsed, autoLoadError]);
 
   // Handle game selection
   const handleSelectGame = useCallback(
@@ -351,6 +402,12 @@ export function ReplayPanel({
           ▲ Collapse
         </button>
       </div>
+
+      {autoLoadError && (
+        <div className="mb-3 p-2 rounded-lg bg-amber-900/40 border border-amber-600/70 text-[11px] text-amber-100">
+          {autoLoadError}
+        </div>
+      )}
 
       {/* Filters */}
       <GameFilters filters={filters} onFilterChange={setFilters} className="mb-3" />

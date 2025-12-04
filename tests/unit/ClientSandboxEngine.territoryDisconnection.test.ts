@@ -113,23 +113,19 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     const finalBoard = finalState.board;
     const player1 = finalState.players.find((p) => p.playerNumber === 1)!;
 
-    const interiorKeys = new Set(
-      interiorCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
-    );
-    const borderKeys = new Set(
-      borderCoords.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`))
-    );
+    const interiorKeys = new Set(interiorCoords.map(positionToString));
+    const borderKeys = new Set(borderCoords.map(positionToString));
 
     // 1. Interior region spaces should be collapsed to player 1 and free of stacks.
     interiorCoords.forEach((p) => {
-      const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+      const key = positionToString(p);
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
       expect(finalBoard.stacks.get(key)).toBeUndefined();
     });
 
     // 2. Border marker positions should be collapsed to player 1.
     borderCoords.forEach((p) => {
-      const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+      const key = positionToString(p);
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
     });
 
@@ -212,8 +208,7 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     const finalBoard = finalState.board;
     const player1 = finalState.players.find((p) => p.playerNumber === 1)!;
 
-    const keysFrom = (positions: Position[]) =>
-      new Set(positions.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`)));
+    const keysFrom = (positions: Position[]) => new Set(positions.map(positionToString));
 
     const interiorKeys1 = keysFrom(block1);
     const interiorKeys2 = keysFrom(block2);
@@ -222,14 +217,14 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
 
     // 1. All interior spaces of both regions should be collapsed for P1 and empty of stacks.
     for (const p of [...block1, ...block2]) {
-      const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+      const key = positionToString(p);
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
       expect(finalBoard.stacks.get(key)).toBeUndefined();
     }
 
     // 2. All border markers for both regions should be collapsed for P1.
     for (const p of [...border1, ...border2]) {
-      const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+      const key = positionToString(p);
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
     }
 
@@ -324,8 +319,7 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
     const finalBoard = finalState.board;
     const player1 = finalState.players.find((p) => p.playerNumber === 1)!;
 
-    const keysFrom = (positions: Position[]) =>
-      new Set(positions.map((p) => (p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`)));
+    const keysFrom = (positions: Position[]) => new Set(positions.map(positionToString));
 
     const interiorKeys = keysFrom(interiorCoords);
     const borderKeys = keysFrom(borderCoords);
@@ -333,20 +327,20 @@ describe('ClientSandboxEngine territory disconnection (square19)', () => {
 
     // 1. All interior region spaces should be collapsed for P1 and empty of stacks.
     for (const p of interiorCoords) {
-      const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+      const key = positionToString(p);
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
       expect(finalBoard.stacks.get(key)).toBeUndefined();
     }
 
     // 2. All border markers should be collapsed for P1.
     for (const p of borderCoords) {
-      const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+      const key = positionToString(p);
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
     }
 
     // 3. All line marker positions should be collapsed for P1 as a result of line processing.
     for (const p of lineCoords) {
-      const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+      const key = positionToString(p);
       expect(finalBoard.collapsedSpaces.get(key)).toBe(1);
     }
 

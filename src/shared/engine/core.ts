@@ -395,6 +395,10 @@ export function validateCaptureSegmentOnBoard(
     return false;
   }
 
+  // RR-CANON-R091/R101: Landing on any marker (own or opponent) is legal.
+  // The marker is removed and the top cap ring is eliminated.
+  // Validation allows this; mutation handles the elimination cost.
+
   return true;
 }
 
@@ -469,13 +473,11 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
       }
 
       const landingStack = board.getStackAt(target);
-      const markerOwner = board.getMarkerOwner?.(target);
 
       if (!landingStack || landingStack.stackHeight === 0) {
-        // Empty space or marker
-        if (markerOwner === undefined || markerOwner === player) {
-          return true;
-        }
+        // Empty space or marker - landing on any marker (own or opponent) is legal
+        // per RR-CANON-R091/R092 (uniform marker landing rule).
+        return true;
       } else {
         // Landing on a stack is NOT allowed - stacks block the ray.
         // Rule 8.1: "Cannot pass through other rings or stacks"

@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 # Version history:
 # - v1: Initial schema (games, players, initial_state, moves, snapshots, choices)
 # - v2: Added time control fields and engine evaluation fields
-SCHEMA_VERSION = 2
+# - v3: Added game_history_entries table for GameTrace validation, state hash fields
+# - v4: Added state_before_json and state_after_json to game_history_entries for full state replay
+SCHEMA_VERSION = 4
 
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
@@ -125,6 +127,7 @@ CREATE TABLE IF NOT EXISTS game_state_snapshots (
     move_number INTEGER NOT NULL,
     state_json TEXT NOT NULL,
     compressed INTEGER DEFAULT 0,
+    state_hash TEXT,
     PRIMARY KEY (game_id, move_number),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );
@@ -141,6 +144,36 @@ CREATE TABLE IF NOT EXISTS game_choices (
     PRIMARY KEY (game_id, move_number, choice_type),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );
+
+-- v3: History entries for GameTrace-style storage with cross-validation
+-- Stores metadata for each move matching TypeScript GameHistoryEntry interface
+-- v4: Added state_before_json and state_after_json for full state replay
+CREATE TABLE IF NOT EXISTS game_history_entries (
+    game_id TEXT NOT NULL,
+    move_number INTEGER NOT NULL,
+    player INTEGER NOT NULL,
+    phase_before TEXT NOT NULL,
+    phase_after TEXT NOT NULL,
+    status_before TEXT NOT NULL,
+    status_after TEXT NOT NULL,
+    progress_before_json TEXT NOT NULL,
+    progress_after_json TEXT NOT NULL,
+    state_hash_before TEXT,
+    state_hash_after TEXT,
+    board_summary_before_json TEXT,
+    board_summary_after_json TEXT,
+    -- v4 additions: full state snapshots before and after each move
+    state_before_json TEXT,
+    state_after_json TEXT,
+    compressed_states INTEGER DEFAULT 0,
+    PRIMARY KEY (game_id, move_number),
+    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_game ON game_history_entries(game_id);
+
+-- v3: Add state_hash to snapshots for validation
+-- (Added via migration for existing DBs)
 """
 
 
@@ -174,11 +207,29 @@ def _deserialize_move(json_str: str) -> Move:
     return Move.model_validate_json(json_str)
 
 
+def _compute_state_hash(state: GameState) -> str:
+    """Compute a deterministic hash of game state for validation.
+
+    Uses SHA-256 of the canonical JSON representation.
+    """
+    import hashlib
+    json_str = _serialize_state(state)
+    return hashlib.sha256(json_str.encode("utf-8")).hexdigest()[:16]
+
+
 class GameWriter:
     """Incremental game writer for live games.
 
     Use this when storing games incrementally during play rather than
     all at once after completion.
+
+    Args:
+        db: GameReplayDB instance
+        game_id: Unique game identifier
+        initial_state: Initial game state
+        snapshot_interval: Create snapshots every N moves (default 20)
+        all_snapshots: If True, store snapshot after EVERY move (for validation)
+        store_history_entries: If True, store GameTrace-style history entries
     """
 
     def __init__(
@@ -187,15 +238,23 @@ class GameWriter:
         game_id: str,
         initial_state: GameState,
         snapshot_interval: int = DEFAULT_SNAPSHOT_INTERVAL,
+        all_snapshots: bool = False,
+        store_history_entries: bool = False,
     ):
         self._db = db
         self._game_id = game_id
         self._initial_state = initial_state
         self._snapshot_interval = snapshot_interval
+        self._all_snapshots = all_snapshots
+        self._store_history_entries = store_history_entries
         self._move_count = 0
         self._turn_count = 0
         self._current_player = initial_state.current_player
         self._finalized = False
+
+        # Track previous state for history entries
+        self._prev_state: Optional[GameState] = initial_state
+        self._prev_state_hash: Optional[str] = _compute_state_hash(initial_state) if store_history_entries else None
 
         # Create placeholder games record first (for FK constraint)
         self._db._create_placeholder_game(game_id, initial_state)
@@ -203,12 +262,20 @@ class GameWriter:
         # Store initial state
         self._db._store_initial_state(game_id, initial_state)
 
-    def add_move(self, move: Move, state_after: Optional[GameState] = None) -> None:
+    def add_move(
+        self,
+        move: Move,
+        state_after: Optional[GameState] = None,
+        state_before: Optional[GameState] = None,
+    ) -> None:
         """Add a move to the game.
 
         Args:
             move: The move that was played
             state_after: Optional state after the move (for snapshotting)
+            state_before: Optional state before the move (for history entries)
+                          If not provided but store_history_entries is True,
+                          uses the tracked previous state.
         """
         if self._finalized:
             raise RuntimeError("GameWriter has been finalized")
@@ -225,17 +292,42 @@ class GameWriter:
             move=move,
         )
 
-        # Create snapshot if interval reached
-        if (
-            state_after is not None
-            and self._move_count > 0
-            and self._move_count % self._snapshot_interval == 0
-        ):
+        # Handle snapshots
+        should_snapshot = False
+        if state_after is not None:
+            if self._all_snapshots:
+                # All-snapshots mode: store after every move
+                should_snapshot = True
+            elif self._move_count > 0 and self._move_count % self._snapshot_interval == 0:
+                # Interval mode: store at configured intervals
+                should_snapshot = True
+
+        if should_snapshot and state_after is not None:
+            state_hash = _compute_state_hash(state_after) if self._all_snapshots else None
             self._db._store_snapshot(
                 game_id=self._game_id,
                 move_number=self._move_count,
                 state=state_after,
+                state_hash=state_hash,
             )
+
+        # Store history entry for GameTrace-style recording
+        if self._store_history_entries and state_after is not None:
+            before = state_before if state_before is not None else self._prev_state
+            if before is not None:
+                after_hash = _compute_state_hash(state_after)
+                self._db._store_history_entry(
+                    game_id=self._game_id,
+                    move_number=self._move_count,
+                    move=move,
+                    state_before=before,
+                    state_after=state_after,
+                    state_hash_before=self._prev_state_hash,
+                    state_hash_after=after_hash,
+                )
+                # Update tracked state for next move
+                self._prev_state = state_after
+                self._prev_state_hash = after_hash
 
         self._move_count += 1
 
@@ -377,12 +469,19 @@ class GameReplayDB:
                 ).fetchone() is not None
 
                 if has_games:
-                    # Existing v1 database - needs migration
+                    # Existing v1 database - needs migration from v1
                     logger.info("Detected v1 schema, running migration to v2")
                     self._migrate_v1_to_v2(conn)
+                    # Continue with further migrations if needed (v2->v3, v3->v4, etc.)
+                    current_version = self._get_schema_version(conn)
+                    if current_version < SCHEMA_VERSION:
+                        logger.info(
+                            f"Continuing migrations from v{current_version} to v{SCHEMA_VERSION}"
+                        )
+                        self._run_migrations(conn, current_version, SCHEMA_VERSION)
                 else:
-                    # Fresh database - create v2 schema directly
-                    logger.info("Creating fresh v2 schema")
+                    # Fresh database - create current schema directly
+                    logger.info(f"Creating fresh v{SCHEMA_VERSION} schema")
                     conn.executescript(SCHEMA_SQL)
                     self._set_schema_version(conn, SCHEMA_VERSION)
             else:
@@ -499,6 +598,116 @@ class GameReplayDB:
         self._set_schema_version(conn, 2)
         logger.info("Migration to v2 complete")
 
+    def _migrate_v2_to_v3(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v2 to v3.
+
+        Adds:
+        - game_history_entries table for GameTrace-style storage
+        - state_hash column to game_state_snapshots for validation
+        """
+        logger.info("Migrating schema from v2 to v3")
+
+        # Create game_history_entries table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS game_history_entries (
+                game_id TEXT NOT NULL,
+                move_number INTEGER NOT NULL,
+                player INTEGER NOT NULL,
+                phase_before TEXT NOT NULL,
+                phase_after TEXT NOT NULL,
+                status_before TEXT NOT NULL,
+                status_after TEXT NOT NULL,
+                progress_before_json TEXT NOT NULL,
+                progress_after_json TEXT NOT NULL,
+                state_hash_before TEXT,
+                state_hash_after TEXT,
+                board_summary_before_json TEXT,
+                board_summary_after_json TEXT,
+                PRIMARY KEY (game_id, move_number),
+                FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+            )
+        """)
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_history_game ON game_history_entries(game_id)"
+        )
+
+        # Add state_hash column to snapshots (if table exists)
+        # Check if game_state_snapshots table exists first
+        has_snapshots = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='game_state_snapshots'"
+        ).fetchone() is not None
+
+        if has_snapshots:
+            try:
+                conn.execute(
+                    "ALTER TABLE game_state_snapshots ADD COLUMN state_hash TEXT"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+                logger.debug("state_hash column already exists")
+        else:
+            # Create the snapshots table if missing (partial database scenario)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS game_state_snapshots (
+                    game_id TEXT NOT NULL,
+                    move_number INTEGER NOT NULL,
+                    state_json TEXT NOT NULL,
+                    compressed INTEGER DEFAULT 0,
+                    state_hash TEXT,
+                    PRIMARY KEY (game_id, move_number),
+                    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+                )
+            """)
+            logger.debug("Created game_state_snapshots table (was missing)")
+
+        self._set_schema_version(conn, 3)
+        logger.info("Migration to v3 complete")
+
+    def _migrate_v3_to_v4(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v3 to v4.
+
+        Adds:
+        - state_before_json column to game_history_entries for full state before move
+        - state_after_json column to game_history_entries for full state after move
+        - compressed_states column to indicate if state JSON is gzip compressed
+        """
+        logger.info("Migrating schema from v3 to v4")
+
+        # Add state_before_json column
+        try:
+            conn.execute(
+                "ALTER TABLE game_history_entries ADD COLUMN state_before_json TEXT"
+            )
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+            logger.debug("state_before_json column already exists")
+
+        # Add state_after_json column
+        try:
+            conn.execute(
+                "ALTER TABLE game_history_entries ADD COLUMN state_after_json TEXT"
+            )
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+            logger.debug("state_after_json column already exists")
+
+        # Add compressed_states column (0 = uncompressed, 1 = gzip compressed)
+        try:
+            conn.execute(
+                "ALTER TABLE game_history_entries ADD COLUMN compressed_states INTEGER DEFAULT 0"
+            )
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+            logger.debug("compressed_states column already exists")
+
+        self._set_schema_version(conn, 4)
+        logger.info("Migration to v4 complete")
+
     # =========================================================================
     # Write Operations
     # =========================================================================
@@ -511,6 +720,8 @@ class GameReplayDB:
         moves: List[Move],
         choices: Optional[List[dict]] = None,
         metadata: Optional[dict] = None,
+        store_history_entries: bool = True,
+        compress_states: bool = False,
     ) -> None:
         """Store a complete game with all associated data.
 
@@ -521,7 +732,13 @@ class GameReplayDB:
             moves: List of all moves in order
             choices: Optional list of player choices
             metadata: Optional game metadata (source, termination_reason, etc.)
+            store_history_entries: If True (default), store history entries with
+                                   full before/after state snapshots for each move
+            compress_states: If True, gzip compress state JSON in history entries
         """
+        # Import here to avoid circular imports
+        from app.game_engine import GameEngine
+
         metadata = metadata or {}
         choices = choices or []
 
@@ -541,8 +758,11 @@ class GameReplayDB:
             self._store_initial_state_conn(conn, game_id, initial_state)
 
             # Store moves and create snapshots
+            # Also compute and store history entries with before/after states
             turn_number = 0
             current_player = initial_state.current_player
+            prev_state = initial_state
+            prev_state_hash = _compute_state_hash(initial_state) if store_history_entries else None
 
             for i, move in enumerate(moves):
                 if move.player != current_player:
@@ -556,6 +776,29 @@ class GameReplayDB:
                     turn_number=turn_number,
                     move=move,
                 )
+
+                # Store history entry with before/after states (v4 feature)
+                if store_history_entries:
+                    # Compute state after applying this move
+                    state_after = GameEngine.apply_move(prev_state, move)
+                    state_hash_after = _compute_state_hash(state_after)
+
+                    self._store_history_entry_conn(
+                        conn,
+                        game_id=game_id,
+                        move_number=i,
+                        move=move,
+                        state_before=prev_state,
+                        state_after=state_after,
+                        state_hash_before=prev_state_hash,
+                        state_hash_after=state_hash_after,
+                        store_full_states=True,
+                        compress_states=compress_states,
+                    )
+
+                    # Update for next iteration
+                    prev_state = state_after
+                    prev_state_hash = state_hash_after
 
             # Store choices
             for choice in choices:
@@ -588,12 +831,17 @@ class GameReplayDB:
         self,
         game_id: Optional[str] = None,
         initial_state: Optional[GameState] = None,
+        all_snapshots: bool = False,
+        store_history_entries: bool = True,
     ) -> GameWriter:
         """Begin incremental game storage.
 
         Args:
             game_id: Optional game ID (generated if not provided)
             initial_state: Initial game state (required)
+            all_snapshots: If True, store snapshot after EVERY move for validation
+            store_history_entries: If True (default), store history entries with
+                                   full before/after state snapshots for each move
 
         Returns:
             GameWriter for incremental storage
@@ -609,6 +857,8 @@ class GameReplayDB:
             game_id=game_id,
             initial_state=initial_state,
             snapshot_interval=self._snapshot_interval,
+            all_snapshots=all_snapshots,
+            store_history_entries=store_history_entries,
         )
 
     # =========================================================================
@@ -836,6 +1086,136 @@ class GameReplayDB:
                 }
                 for row in rows
             ]
+
+    def get_history_entry(
+        self,
+        game_id: str,
+        move_number: int,
+    ) -> Optional[dict]:
+        """Get a history entry with before/after states for a specific move.
+
+        Returns a dictionary with:
+        - move_number: The move number
+        - player: The player who made the move
+        - phase_before/phase_after: Game phase before/after the move
+        - status_before/status_after: Game status before/after the move
+        - progress_before/progress_after: Player progress snapshots
+        - state_hash_before/state_hash_after: State hashes for validation
+        - state_before/state_after: Full GameState objects (if stored, v4+)
+
+        Returns None if no history entry exists for this move.
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT move_number, player, phase_before, phase_after,
+                       status_before, status_after, progress_before_json,
+                       progress_after_json, state_hash_before, state_hash_after,
+                       state_before_json, state_after_json, compressed_states
+                FROM game_history_entries
+                WHERE game_id = ? AND move_number = ?
+                """,
+                (game_id, move_number),
+            ).fetchone()
+
+            if row is None:
+                return None
+
+            result = {
+                "move_number": row["move_number"],
+                "player": row["player"],
+                "phase_before": row["phase_before"],
+                "phase_after": row["phase_after"],
+                "status_before": row["status_before"],
+                "status_after": row["status_after"],
+                "progress_before": json.loads(row["progress_before_json"]),
+                "progress_after": json.loads(row["progress_after_json"]),
+                "state_hash_before": row["state_hash_before"],
+                "state_hash_after": row["state_hash_after"],
+                "state_before": None,
+                "state_after": None,
+            }
+
+            # Deserialize full states if present (v4+ feature)
+            if row["state_before_json"]:
+                state_json = row["state_before_json"]
+                if row["compressed_states"]:
+                    import base64
+                    state_json = _decompress_json(base64.b64decode(state_json))
+                result["state_before"] = _deserialize_state(state_json)
+
+            if row["state_after_json"]:
+                state_json = row["state_after_json"]
+                if row["compressed_states"]:
+                    import base64
+                    state_json = _decompress_json(base64.b64decode(state_json))
+                result["state_after"] = _deserialize_state(state_json)
+
+            return result
+
+    def get_all_history_entries(
+        self,
+        game_id: str,
+        include_full_states: bool = True,
+    ) -> List[dict]:
+        """Get all history entries for a game.
+
+        Args:
+            game_id: Game identifier
+            include_full_states: If True, deserialize and include full GameState
+                                objects (may be memory-intensive for large games)
+
+        Returns a list of history entry dictionaries, ordered by move number.
+        """
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT move_number, player, phase_before, phase_after,
+                       status_before, status_after, progress_before_json,
+                       progress_after_json, state_hash_before, state_hash_after,
+                       state_before_json, state_after_json, compressed_states
+                FROM game_history_entries
+                WHERE game_id = ?
+                ORDER BY move_number
+                """,
+                (game_id,),
+            ).fetchall()
+
+            results = []
+            for row in rows:
+                entry = {
+                    "move_number": row["move_number"],
+                    "player": row["player"],
+                    "phase_before": row["phase_before"],
+                    "phase_after": row["phase_after"],
+                    "status_before": row["status_before"],
+                    "status_after": row["status_after"],
+                    "progress_before": json.loads(row["progress_before_json"]),
+                    "progress_after": json.loads(row["progress_after_json"]),
+                    "state_hash_before": row["state_hash_before"],
+                    "state_hash_after": row["state_hash_after"],
+                    "state_before": None,
+                    "state_after": None,
+                }
+
+                if include_full_states:
+                    if row["state_before_json"]:
+                        state_json = row["state_before_json"]
+                        if row["compressed_states"]:
+                            import base64
+                            state_json = _decompress_json(base64.b64decode(state_json))
+                        entry["state_before"] = _deserialize_state(state_json)
+
+                    if row["state_after_json"]:
+                        state_json = row["state_after_json"]
+                        if row["compressed_states"]:
+                            import base64
+                            state_json = _decompress_json(base64.b64decode(state_json))
+                        entry["state_after"] = _deserialize_state(state_json)
+
+                results.append(entry)
+
+            return results
 
     # =========================================================================
     # Query Operations
@@ -1184,10 +1564,11 @@ class GameReplayDB:
         game_id: str,
         move_number: int,
         state: GameState,
+        state_hash: Optional[str] = None,
     ) -> None:
         """Store a state snapshot (standalone transaction)."""
         with self._get_conn() as conn:
-            self._store_snapshot_conn(conn, game_id, move_number, state)
+            self._store_snapshot_conn(conn, game_id, move_number, state, state_hash)
 
     def _store_snapshot_conn(
         self,
@@ -1195,16 +1576,133 @@ class GameReplayDB:
         game_id: str,
         move_number: int,
         state: GameState,
+        state_hash: Optional[str] = None,
     ) -> None:
         """Store a state snapshot (within existing transaction)."""
         json_str = _serialize_state(state)
+        # Ensure state_hash is populated so that all snapshots (not just
+        # all-snapshots mode) can participate in cross-engine validation.
+        hash_value = state_hash if state_hash is not None else _compute_state_hash(state)
         conn.execute(
             """
             INSERT OR REPLACE INTO game_state_snapshots
-            (game_id, move_number, state_json, compressed)
-            VALUES (?, ?, ?, 0)
+            (game_id, move_number, state_json, compressed, state_hash)
+            VALUES (?, ?, ?, 0, ?)
             """,
-            (game_id, move_number, json_str),
+            (game_id, move_number, json_str, hash_value),
+        )
+
+    def _store_history_entry(
+        self,
+        game_id: str,
+        move_number: int,
+        move: Move,
+        state_before: GameState,
+        state_after: GameState,
+        state_hash_before: Optional[str] = None,
+        state_hash_after: Optional[str] = None,
+    ) -> None:
+        """Store a history entry for GameTrace-style recording."""
+        with self._get_conn() as conn:
+            self._store_history_entry_conn(
+                conn, game_id, move_number, move,
+                state_before, state_after, state_hash_before, state_hash_after
+            )
+
+    def _store_history_entry_conn(
+        self,
+        conn: sqlite3.Connection,
+        game_id: str,
+        move_number: int,
+        move: Move,
+        state_before: GameState,
+        state_after: GameState,
+        state_hash_before: Optional[str] = None,
+        state_hash_after: Optional[str] = None,
+        store_full_states: bool = True,
+        compress_states: bool = False,
+    ) -> None:
+        """Store a history entry (within existing transaction).
+
+        Args:
+            conn: Database connection
+            game_id: Game identifier
+            move_number: Move sequence number (0-indexed)
+            move: The Move object
+            state_before: Full GameState before the move
+            state_after: Full GameState after the move
+            state_hash_before: Optional pre-computed hash of state_before
+            state_hash_after: Optional pre-computed hash of state_after
+            store_full_states: If True (default), store full state JSON before/after
+            compress_states: If True, gzip compress state JSON (default: False)
+        """
+        # Build progress snapshots
+        progress_before = {
+            "players": [
+                {
+                    "playerNumber": p.player_number,
+                    "eliminatedRings": p.eliminated_rings,
+                    "territorySpaces": p.territory_spaces,
+                    "ringsInHand": p.rings_in_hand,
+                }
+                for p in state_before.players
+            ]
+        }
+        progress_after = {
+            "players": [
+                {
+                    "playerNumber": p.player_number,
+                    "eliminatedRings": p.eliminated_rings,
+                    "territorySpaces": p.territory_spaces,
+                    "ringsInHand": p.rings_in_hand,
+                }
+                for p in state_after.players
+            ]
+        }
+
+        # Serialize full states if requested (v4 feature)
+        state_before_json: Optional[str] = None
+        state_after_json: Optional[str] = None
+        compressed_flag = 0
+
+        if store_full_states:
+            before_str = _serialize_state(state_before)
+            after_str = _serialize_state(state_after)
+            if compress_states:
+                # Store as base64-encoded gzip for text column compatibility
+                import base64
+                state_before_json = base64.b64encode(_compress_json(before_str)).decode("ascii")
+                state_after_json = base64.b64encode(_compress_json(after_str)).decode("ascii")
+                compressed_flag = 1
+            else:
+                state_before_json = before_str
+                state_after_json = after_str
+
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO game_history_entries
+            (game_id, move_number, player, phase_before, phase_after,
+             status_before, status_after, progress_before_json, progress_after_json,
+             state_hash_before, state_hash_after, state_before_json, state_after_json,
+             compressed_states)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                game_id,
+                move_number,
+                move.player,
+                state_before.current_phase.value,
+                state_after.current_phase.value,
+                state_before.game_status.value,
+                state_after.game_status.value,
+                json.dumps(progress_before),
+                json.dumps(progress_after),
+                state_hash_before,
+                state_hash_after,
+                state_before_json,
+                state_after_json,
+                compressed_flag,
+            ),
         )
 
     def _store_choice(

@@ -365,6 +365,22 @@ Maximum concurrent AI requests (backpressure control).
 
 Enable AI fallback to local heuristics when service unavailable.
 
+### `GAME_REPLAY_DB_PATH`
+
+| Property | Value                      |
+| -------- | -------------------------- |
+| Type     | `string` (filesystem path) |
+| Default  | `data/games/selfplay.db`   |
+| Required | No                         |
+
+Path to the SQLite **GameReplayDB** file used by the AI service replay API (`/api/replay/*`).  
+When set, this overrides the default `data/games/selfplay.db` used by `ai-service/app/routes/replay.py`.  
+For `/sandbox`:
+
+- The **ReplayPanel** can auto-load games whose `gameId` exists in this DB.
+- If a self-play game is loaded from a different DB and the `gameId` is not present here, the ReplayPanel shows a banner:
+  `Requested game not found in replay DB (check GAME_REPLAY_DB_PATH). Using local sandbox replay instead.`
+
 ---
 
 ## Rate Limiting
@@ -625,6 +641,33 @@ The `useOrchestratorAdapter` property on [`GameEngine`](../src/server/game/GameE
 
 Enable AI analysis mode for position evaluation streaming. When enabled, allows clients to request continuous position analysis from the AI service.
 
+### `ENABLE_HTTP_MOVE_HARNESS`
+
+| Property | Value     |
+| -------- | --------- |
+| Type     | `boolean` |
+| Default  | `false`   |
+| Required | No        |
+
+Controls availability of the **internal HTTP move harness** endpoint
+(`POST /api/games/:gameId/moves`) on the backend. When set to `true`,
+the route is registered as a thin adapter over the same canonical move
+pipeline used by WebSocket move handlers. When `false` or unset, the
+harness route is disabled and will typically respond with `404 Not Found`
+for move submissions.
+
+This flag is intended only for **internal/test** environments such as
+local development, CI, dedicated load-testing, or tightly scoped staging
+environments. It is **not** a general public move API for interactive
+clients and must not be exposed as such.
+
+For full semantics, security constraints, and recommended environment
+defaults, see:
+
+- [`PLAYER_MOVE_TRANSPORT_DECISION.md`](./PLAYER_MOVE_TRANSPORT_DECISION.md:1)
+- The "Internal / Test harness APIs" section of
+  [`API_REFERENCE.md`](./API_REFERENCE.md:1)
+
 ### Orchestrator rollout controls
 
 These variables control **automatic rollback** of the orchestrator in production.
@@ -794,7 +837,7 @@ Maximum spectators per game.
 
 Optional overrides for decision-phase timeouts. Primarily intended for non-production environments and specialized test harnesses (e.g., Playwright E2E) that need shorter timeouts to exercise decision timeout behavior end-to-end.
 
-When unset, the server falls back to hard-coded defaults in [`unified.ts`](../src/shared/engine/orchestration/unified.ts): 30s total timeout, 5s warning, 15s extension.
+When unset, the server falls back to hard-coded defaults in [`unified.ts`](../src/server/config/unified.ts): 30s total timeout, 5s warning, 15s extension.
 
 #### `DECISION_PHASE_TIMEOUT_MS`
 

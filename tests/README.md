@@ -1264,6 +1264,16 @@ This matrix links key sections of `ringrift_complete_rules.md` and FAQ entries t
   - (existing) `tests/unit/ClientSandboxEngine.victory.test.ts` — sandbox ring‑elimination & territory victories
   - (planned) `tests/unit/GameEngine.victory.scenarios.test.ts` — ring‑elimination, territory‑majority, last‑player‑standing, stalemate tiebreaker examples
 
+### Connection lifecycle & reconnection
+
+- **Lifecycle & reconnection window semantics**, **docs/CANONICAL_ENGINE_API.md §3.9.4**, **RULES_SCENARIO_MATRIX LF1**
+  - (existing) `tests/unit/GameSession.reconnectFlow.test.ts` — server-side reconnection windows, GameSession preservation, and abandonment hooks.
+  - (existing) `tests/unit/GameSession.reconnectDuringDecision.test.ts` — reconnect during an in‑flight PlayerChoice / decision phase.
+  - (existing) `tests/unit/GameConnection.reconnection.test.ts` — client `SocketGameConnection` status transitions and reconnect attempts.
+  - (existing) `tests/integration/GameReconnection.test.ts` — WebSocket `player_disconnected` / `player_reconnected` and reconnection-window semantics at the API edge.
+  - (existing) `tests/integration/LobbyRealtime.test.ts` — lobby `lobby:subscribe`/`lobby:game_*` updates under join/leave/reconnect flows.
+  - (existing) `tests/e2e/reconnection.simulation.test.ts` — network partition and reconnection-window expiry (rated vs unrated abandonment) plus HUD‑level reconnect UX.
+
 ### PlayerChoice flows (engine + transport + sandbox)
 
 - **Sections 4.5, 10.3, 11–12 (Lines, Territory, Chain choices)**, **FAQ 7, 15, 22–23**

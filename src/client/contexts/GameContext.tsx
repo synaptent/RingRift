@@ -33,9 +33,22 @@ import type {
   RematchRequestPayload,
   RematchResponsePayload,
   PositionEvaluationPayload,
+  PlayerDisconnectedPayload,
+  PlayerReconnectedPayload,
 } from '../../shared/types/websocket';
 
 export type ConnectionStatus = DomainConnectionStatus;
+
+/**
+ * Information about a player who has disconnected from the game.
+ * Used to show opponent disconnect banners in the UI.
+ */
+export interface DisconnectedPlayer {
+  id: string;
+  username: string;
+  /** Timestamp when disconnect was detected (ms since epoch). */
+  disconnectedAt: number;
+}
 
 interface GameContextType {
   gameId: string | null;
@@ -95,6 +108,18 @@ interface GameContextType {
   rematchGameId: string | null;
   /** Streaming AI evaluation history for the current game (analysis mode). */
   evaluationHistory: PositionEvaluationPayload['data'][];
+
+  // Opponent connection state (Wave 2.2)
+  /**
+   * List of players who have disconnected from the game but may still reconnect.
+   * Cleared when game ends or when player_reconnected is received.
+   */
+  disconnectedOpponents: DisconnectedPlayer[];
+  /**
+   * Derived flag: true if the game ended due to abandonment (reconnection timeout).
+   * Consumers can use this to show appropriate game-over messaging.
+   */
+  gameEndedByAbandonment: boolean;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -171,6 +196,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [evaluationHistory, setEvaluationHistory] = useState<PositionEvaluationPayload['data'][]>(
     []
   );
+  const [disconnectedOpponents, setDisconnectedOpponents] = useState<DisconnectedPlayer[]>([]);
   const connectionRef = useRef<GameConnection | null>(null);
   const lastStatusRef = useRef<ConnectionStatus | null>(null);
   const hasEverConnectedRef = useRef(false);
@@ -192,6 +218,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setError(null);
         setConnectionStatus('connected');
         setLastHeartbeatAt(Date.now());
+        // Any fresh game_state snapshot is treated as authoritative and
+        // clears any previously pending choices/deadlines so the HUD does
+        // not display stale decision banners after a reconnect or resync.
+        setPendingChoice(null);
+        setChoiceDeadline(null);
         // Each fresh game_state diff summary replaces any prior auto-resolve
         // metadata and clears outstanding timeout warnings.
         setDecisionAutoResolved(data.meta?.diffSummary?.decisionAutoResolved ?? null);
@@ -349,6 +380,36 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (!data?.gameId) return;
         setEvaluationHistory((prev) => [...prev, data]);
       },
+      onPlayerDisconnected: (payload: PlayerDisconnectedPayload) => {
+        // Add the disconnected player to our tracking list
+        const { player } = payload.data;
+        setDisconnectedOpponents((prev) => {
+          // Avoid duplicates
+          if (prev.some((p) => p.id === player.id)) return prev;
+          return [
+            ...prev,
+            {
+              id: player.id,
+              username: player.username ?? 'Player',
+              disconnectedAt: Date.now(),
+            },
+          ];
+        });
+        // Show a toast notification for UX
+        toast(`${player.username ?? 'A player'} disconnected`, {
+          icon: '⚠️',
+          id: `disconnect-${player.id}`,
+        });
+      },
+      onPlayerReconnected: (payload: PlayerReconnectedPayload) => {
+        // Remove the reconnected player from our tracking list
+        const { player } = payload.data;
+        setDisconnectedOpponents((prev) => prev.filter((p) => p.id !== player.id));
+        // Show a toast notification for UX
+        toast.success(`${player.username ?? 'Player'} reconnected`, {
+          id: `disconnect-${player.id}`,
+        });
+      },
     };
 
     const connection = new SocketGameConnection(handlers);
@@ -376,6 +437,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setPendingRematchRequest(null);
     setRematchGameId(null);
     setEvaluationHistory([]);
+    setDisconnectedOpponents([]);
   }, []);
 
   const connectToGame = useCallback(
@@ -528,6 +590,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     declineRematch,
     rematchGameId,
     evaluationHistory,
+    // Opponent connection state (Wave 2.2)
+    disconnectedOpponents,
+    gameEndedByAbandonment: victoryState?.reason === 'abandonment',
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

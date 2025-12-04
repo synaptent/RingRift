@@ -1,9 +1,12 @@
+import fc from 'fast-check';
+
 import {
   hasTurnMaterial,
   hasGlobalPlacementAction,
   hasPhaseLocalInteractiveMove,
   hasForcedEliminationAction,
   applyForcedEliminationForPlayer,
+  enumerateForcedEliminationOptions,
   computeGlobalLegalActionsSummary,
   isANMState,
   computeSMetric,
@@ -263,7 +266,7 @@ describe('globalActions – R200/R2xx global legal actions and ANM semantics', (
       (board as any).size = 1;
 
       // Add two stacks with different cap heights
-      addStack(board, pos(0, 0), 1, 3, 2); // capHeight 2
+      addStack(board, pos(0, 0), 1, 3); // capHeight 3
       // Manually add another stack at a different position
       board.stacks.set('0,1', {
         position: pos(0, 1),
@@ -411,6 +414,64 @@ describe('globalActions – R200/R2xx global legal actions and ANM semantics', (
       expect(isANMState(state)).toBe(false);
       expect(isANMState(outcome.nextState)).toBe(false);
     });
+
+    it('enumerates all candidate stacks with capHeight and stackHeight for forced elimination', () => {
+      const board = createTestBoard('square8');
+      // Force a 1×1 effective grid so no movement/capture exists.
+      (board as any).size = 1;
+
+      // Two stacks for player 1 at different positions.
+      addStack(board, pos(0, 0), 1, 3); // capHeight 3, stackHeight 3
+      board.stacks.set('0,1', {
+        position: pos(0, 1),
+        controllingPlayer: 1,
+        stackHeight: 4,
+        capHeight: 1,
+        rings: [1, 1, 1, 1],
+      } as any);
+
+      const state = createTestGameState({
+        board,
+        players: [createTestPlayer(1, { ringsInHand: 0 }), createTestPlayer(2, { ringsInHand: 0 })],
+        currentPlayer: 1,
+        currentPhase: 'movement',
+        gameStatus: 'active',
+        totalRingsEliminated: 0,
+      });
+
+      expect(hasForcedEliminationAction(state, 1)).toBe(true);
+
+      const options = enumerateForcedEliminationOptions(state, 1);
+      const keys = options.map((opt) => `${opt.position.x},${opt.position.y}`).sort();
+      expect(keys).toEqual(['0,0', '0,1']);
+
+      const byKey = new Map(options.map((opt) => [`${opt.position.x},${opt.position.y}`, opt]));
+      const opt00 = byKey.get('0,0')!;
+      const opt01 = byKey.get('0,1')!;
+
+      expect(opt00.capHeight).toBe(3);
+      expect(opt00.stackHeight).toBe(3);
+
+      expect(opt01.capHeight).toBe(1);
+      expect(opt01.stackHeight).toBe(4);
+    });
+
+    it('returns an empty option set when forced-elimination preconditions are not met', () => {
+      const board = createTestBoard('square8');
+      addStack(board, pos(0, 0), 1, 2);
+
+      const state = createTestGameState({
+        board,
+        players: [createTestPlayer(1, { ringsInHand: 3 }), createTestPlayer(2)],
+        currentPlayer: 1,
+        currentPhase: 'movement',
+        gameStatus: 'active',
+      });
+
+      // Player has placements, so forced elimination is not available.
+      expect(hasForcedEliminationAction(state, 1)).toBe(false);
+      expect(enumerateForcedEliminationOptions(state, 1)).toEqual([]);
+    });
   });
 
   // INV-ACTIVE-NO-MOVES (R200–R203) and INV-ANM-TURN-MATERIAL-SKIP (R201)
@@ -504,5 +565,126 @@ describe('globalActions – R200/R2xx global legal actions and ANM semantics', (
       // INV-ACTIVE-NO-MOVES: ANM(state) holds for this synthetic candidate.
       expect(isANMState(state)).toBe(true);
     });
+  });
+});
+
+describe('globalActions – forced elimination property-based ordering', () => {
+  it('enumerateForcedEliminationOptions matches stacks and applyForcedEliminationForPlayer selects a smallest-cap stack', () => {
+    fc.assert(
+      fc.property(
+        // Choose between 2 and 4 distinct stack positions on a small square
+        // sub-board to keep geometry simple while varying cap heights.
+        fc.uniqueArray(fc.tuple(fc.integer({ min: 0, max: 3 }), fc.integer({ min: 0, max: 3 })), {
+          minLength: 2,
+          maxLength: 4,
+          selector: ([x, y]) => `${x},${y}`,
+        }),
+        fc.array(fc.integer({ min: 1, max: 4 }), { minLength: 2, maxLength: 4 }),
+        (coords, rawHeights) => {
+          const heights = rawHeights.slice(0, coords.length);
+
+          const board = createTestBoard('square8');
+          // Restrict movement geometry to a small 4×4 patch and collapse all
+          // non-stack cells to block movement/capture while preserving stacks
+          // as turn material.
+          (board as any).size = 4;
+
+          const players = [
+            createTestPlayer(1, { ringsInHand: 0 }),
+            createTestPlayer(2, { ringsInHand: 0 }),
+          ];
+
+          const state = createTestGameState({
+            boardType: 'square8',
+            board,
+            players,
+            currentPlayer: 1,
+            currentPhase: 'movement',
+            gameStatus: 'active',
+            totalRingsEliminated: 0,
+          });
+
+          const activePlayer = 1;
+
+          const stackPositions = coords.map(([x, y]) => pos(x, y));
+          const candidateKeys = new Set<string>();
+
+          stackPositions.forEach((p, idx) => {
+            const h = heights[idx % heights.length];
+            addStack(board, p, activePlayer, h);
+            const key = p.z !== undefined ? `${p.x},${p.y},${p.z}` : `${p.x},${p.y}`;
+            candidateKeys.add(key);
+          });
+
+          // Collapse every other cell on the 4×4 patch so no legal movement or
+          // capture exists from any controlled stack; this mirrors the semantics
+          // of the synthetic 1×1 forced-elimination tests but allows multiple
+          // stacks for ordering checks.
+          for (let x = 0; x < board.size; x++) {
+            for (let y = 0; y < board.size; y++) {
+              const key = `${x},${y}`;
+              if (candidateKeys.has(key)) {
+                continue;
+              }
+              // Treat all other cells as opponent territory.
+              board.collapsedSpaces.set(key, 2);
+            }
+          }
+
+          // Preconditions: player is blocked with stacks but has no placements
+          // or movement/capture actions, so forced elimination must be available.
+          expect(hasForcedEliminationAction(state, activePlayer)).toBe(true);
+
+          const options = enumerateForcedEliminationOptions(state, activePlayer);
+          expect(options.length).toBe(stackPositions.length);
+
+          const optionKeys = new Set(options.map((opt) => `${opt.position.x},${opt.position.y}`));
+          const expectedKeys = new Set(stackPositions.map((p) => `${p.x},${p.y}`));
+          expect(optionKeys).toEqual(expectedKeys);
+
+          // All options must report capHeight / stackHeight metadata that matches
+          // the underlying stacks on the board.
+          options.forEach((opt) => {
+            const stackKey =
+              opt.position.z !== undefined
+                ? `${opt.position.x},${opt.position.y},${opt.position.z}`
+                : `${opt.position.x},${opt.position.y}`;
+            const stack = board.stacks.get(stackKey)!;
+            expect(opt.capHeight).toBe(stack.capHeight);
+            expect(opt.stackHeight).toBe(stack.stackHeight);
+          });
+
+          const positiveCaps = options.map((o) => o.capHeight).filter((h) => h > 0);
+          expect(positiveCaps.length).toBeGreaterThan(0);
+          const minCap = Math.min(...positiveCaps);
+
+          const minCapTargets = new Set(
+            options
+              .filter((o) => o.capHeight === minCap)
+              .map((o) => `${o.position.x},${o.position.y}`)
+          );
+
+          const beforeTotal = state.totalRingsEliminated;
+          const outcome = applyForcedEliminationForPlayer(state, activePlayer);
+          expect(outcome).toBeDefined();
+          if (!outcome) {
+            return;
+          }
+
+          expect(outcome.eliminatedFrom).toBeDefined();
+          const eliminated = outcome.eliminatedFrom!;
+          const eliminatedKey = `${eliminated.x},${eliminated.y}`;
+
+          // Selection must pick one of the stacks with minimum positive capHeight.
+          expect(minCapTargets.has(eliminatedKey)).toBe(true);
+
+          const afterTotal = outcome.nextState.totalRingsEliminated;
+          expect(afterTotal).toBeGreaterThan(beforeTotal);
+          // eliminatedCount should match the observed totalRingsEliminated delta.
+          expect(outcome.eliminatedCount).toBe(afterTotal - beforeTotal);
+        }
+      ),
+      { numRuns: 32 }
+    );
   });
 });

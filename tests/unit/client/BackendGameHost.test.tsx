@@ -98,6 +98,10 @@ jest.mock('@/client/hooks/useGameConnection', () => ({
     disconnect: jest.fn(),
     error: mockConnectionError,
     lastHeartbeatAt: mockLastHeartbeatAt,
+    // Wave 1.2 lifecycle fields: by default there are no disconnected opponents
+    // and the game has not ended by abandonment in these host tests.
+    disconnectedOpponents: [],
+    gameEndedByAbandonment: false,
   }),
 }));
 
@@ -618,6 +622,93 @@ describe('BackendGameHost (React host behaviour)', () => {
     expect(screen.getByText(/Connection lost. Attempting to reconnect…/)).toBeInTheDocument();
   });
 
+  it('shows invalid-move feedback when clicking an empty cell in movement phase', () => {
+    // Movement phase with a single legal move from (0,0) to (0,1)
+    const source: Position = { x: 0, y: 0 };
+    const target: Position = { x: 0, y: 1 };
+
+    const gameState = createGameState('movement');
+    mockGameState = gameState;
+    mockPlayers = gameState.players;
+    mockCurrentPlayer = mockPlayers[0];
+
+    const move: Move = {
+      id: 'm1',
+      type: 'move_stack',
+      player: 1,
+      from: source,
+      to: target,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+    mockValidMoves = [move];
+
+    render(<BackendGameHost gameId="game-123" />);
+
+    // Click on an empty cell far from any valid move
+    const invalidCell = getSquareCell(3, 3);
+    fireEvent.click(invalidCell);
+
+    // No move should be submitted
+    expect(mockSubmitMove).not.toHaveBeenCalled();
+
+    // The clicked cell should receive the invalid-move shake class for visual feedback
+    expect(invalidCell.className).toContain('invalid-move-shake');
+  });
+
+  it('drives reconnect UX from reconnecting to fresh game_state with a clean HUD', () => {
+    // Initial render: active game with a pending decision, but connection has
+    // dropped and is in the "reconnecting" state.
+    setBackendHostState({ phase: 'line_processing', validMoves: [] });
+    mockConnectionStatus = 'reconnecting';
+    mockIsConnecting = true;
+
+    mockPendingChoice = {
+      id: 'choice-reconnect',
+      playerNumber: 1,
+      type: 'line_reward_option',
+      prompt: 'How do you want to process this line?',
+      timeoutMs: 10_000,
+      options: ['option_1_collapse_all_and_eliminate', 'option_2_min_collapse_no_elimination'],
+    } as any;
+    mockChoiceDeadline = Date.now() + 10_000;
+
+    const { rerender } = render(<BackendGameHost gameId="game-123" />);
+
+    // While reconnecting, the HUD connection label should reflect the
+    // reconnecting state and the board interaction helper should indicate that
+    // moves are effectively paused.
+    expect(screen.getByText(/Connection: Reconnecting…/i)).toBeInTheDocument();
+    expect(screen.getByText('Reconnecting to server…')).toBeInTheDocument();
+
+    // Attempting to click on the board while reconnecting must not submit
+    // backend moves, keeping the board effectively read-only.
+    fireEvent.click(getSquareCell(0, 0));
+    expect(mockSubmitMove).not.toHaveBeenCalled();
+
+    // Decision UI should still reflect the pending choice before the fresh
+    // game_state snapshot is applied.
+    expect(screen.getByText(/How do you want to process this line\?/i)).toBeInTheDocument();
+
+    // Simulate a successful reconnect with a fresh game_state snapshot that
+    // clears any stale pending choices/decision banners.
+    mockConnectionStatus = 'connected';
+    mockIsConnecting = false;
+    mockPendingChoice = null;
+    mockChoiceDeadline = null;
+
+    rerender(<BackendGameHost gameId="game-123" />);
+
+    // After the fresh snapshot, the reconnect copy should disappear and the
+    // HUD connection label should return to "Connected".
+    expect(screen.getByText(/Connection: Connected/i)).toBeInTheDocument();
+    expect(screen.queryByText('Reconnecting to server…')).not.toBeInTheDocument();
+
+    // Stale decision UI for the earlier choice must no longer be visible.
+    expect(screen.queryByText(/How do you want to process this line\?/i)).not.toBeInTheDocument();
+  });
+
   it('shows an error view when the backend reports a connection error before any game state', () => {
     mockGameState = null;
     mockConnectionStatus = 'disconnected';
@@ -631,6 +722,43 @@ describe('BackendGameHost (React host behaviour)', () => {
     expect(screen.getByText(/Game ID: missing-game/)).toBeInTheDocument();
   });
 
+  it('keeps selection and surfaces invalid-move feedback when clicking an out-of-range target', () => {
+    // Movement phase with a single legal move from (0,0) to (0,1)
+    const source: Position = { x: 0, y: 0 };
+    const legalTarget: Position = { x: 0, y: 1 };
+
+    const gameState = createGameState('movement');
+    mockGameState = gameState;
+    mockPlayers = gameState.players;
+    mockCurrentPlayer = mockPlayers[0];
+
+    const move: Move = {
+      id: 'm1',
+      type: 'move_stack',
+      player: 1,
+      from: source,
+      to: legalTarget,
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: 1,
+    };
+    mockValidMoves = [move];
+
+    render(<BackendGameHost gameId="game-123" />);
+
+    // First click selects the source stack
+    fireEvent.click(getSquareCell(source.x, source.y));
+    expect(mockSubmitMove).not.toHaveBeenCalled();
+
+    // Second click on an invalid, out-of-range target should not submit a move
+    const invalidTarget = getSquareCell(3, 3);
+    fireEvent.click(invalidTarget);
+
+    expect(mockSubmitMove).not.toHaveBeenCalled();
+    // The invalid target cell should receive the shake class
+    expect(invalidTarget.className).toContain('invalid-move-shake');
+  });
+
   it('surfaces a stale connection hint when last heartbeat is old but status is still connected', () => {
     const state = createGameState('movement');
     mockGameState = state;
@@ -642,8 +770,8 @@ describe('BackendGameHost (React host behaviour)', () => {
 
     render(<BackendGameHost gameId="game-123" />);
 
-    // GameHUD uses an "awaiting update…" hint when connection is stale
-    expect(screen.getByText(/awaiting update…/i)).toBeInTheDocument();
+    // GameHUD uses a "no recent updates from server" hint when connection is stale
+    expect(screen.getByText(/no recent updates from server/i)).toBeInTheDocument();
   });
 
   // ───────────────────────────────────────────────────────────────────────────

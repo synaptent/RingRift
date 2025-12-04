@@ -117,11 +117,11 @@ export async function getUnsyncedGames(): Promise<LocalGameRecord[]> {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readonly');
       const store = transaction.objectStore(STORE_NAME);
-      const index = store.index('synced');
-      const request = index.getAll(IDBKeyRange.only(false));
+      const request = store.getAll();
 
       request.onsuccess = () => {
-        resolve(request.result as LocalGameRecord[]);
+        const allRecords = request.result as LocalGameRecord[];
+        resolve(allRecords.filter((record) => record.synced === false));
       };
 
       request.onerror = () => {
@@ -216,11 +216,12 @@ export async function getPendingCount(): Promise<number> {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readonly');
       const store = transaction.objectStore(STORE_NAME);
-      const index = store.index('synced');
-      const request = index.count(IDBKeyRange.only(false));
+      const request = store.getAll();
 
       request.onsuccess = () => {
-        resolve(request.result);
+        const allRecords = request.result as LocalGameRecord[];
+        const pendingCount = allRecords.filter((record) => record.synced === false).length;
+        resolve(pendingCount);
       };
 
       request.onerror = () => {
@@ -250,8 +251,7 @@ export async function cleanupSyncedGames(daysOld = 7): Promise<number> {
     return new Promise((resolve, reject) => {
       const transaction = db.transaction([STORE_NAME], 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const index = store.index('synced');
-      const request = index.openCursor(IDBKeyRange.only(true));
+      const request = store.openCursor();
 
       let deletedCount = 0;
 
@@ -259,7 +259,7 @@ export async function cleanupSyncedGames(daysOld = 7): Promise<number> {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
         if (cursor) {
           const record = cursor.value as LocalGameRecord;
-          if (record.createdAt < cutoffIso) {
+          if (record.synced === true && record.createdAt < cutoffIso) {
             cursor.delete();
             deletedCount++;
           }

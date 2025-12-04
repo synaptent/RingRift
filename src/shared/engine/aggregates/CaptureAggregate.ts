@@ -732,52 +732,45 @@ export function mutateCapture(
   }
 
   // 5. Handle landing on marker (if applicable)
-  // Rule: If landing on your own marker, remove the marker and eliminate the TOP ring
-  // from the NEW combined stack (per rules 8.2, 8.3, 16.5.1).
-  // If landing on opponent marker, remove the marker (no ring elimination) to maintain
-  // the invariant that stacks and markers cannot coexist at the same position.
+  // Per RR-CANON-R101/R102: landing on any marker (own or opponent) removes the marker
+  // and eliminates the top ring of the attacking stack's cap.
   const landingMarker = newState.board.markers.get(toKey);
   if (landingMarker) {
-    if (landingMarker.player === action.playerId) {
-      // Own marker: remove and eliminate top ring
-      newState.board.markers.delete(toKey);
+    // Remove the marker (do not collapse it)
+    newState.board.markers.delete(toKey);
 
-      const currentStack = newState.board.stacks.get(toKey);
-      if (!currentStack) {
-        throw new Error(`Expected stack at landing position ${toKey}`);
-      }
-      // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
-      const topRingOwner = currentStack.rings[0];
-      const reducedRings = currentStack.rings.slice(1); // Remove first element (the top)
+    const currentStack = newState.board.stacks.get(toKey);
+    if (!currentStack) {
+      throw new Error(`Expected stack at landing position ${toKey}`);
+    }
 
-      // Update elimination counts
-      newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + 1;
-      newState.board.eliminatedRings[topRingOwner] =
-        (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
+    // Eliminate the TOP ring of the attacking stack's cap
+    // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
+    const topRingOwner = currentStack.rings[0];
+    const reducedRings = currentStack.rings.slice(1); // Remove first element (the top)
 
-      const player = newState.players.find((p) => p.playerNumber === topRingOwner);
-      if (player) {
-        player.eliminatedRings++;
-      }
+    // Update elimination counts
+    newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + 1;
+    newState.board.eliminatedRings[topRingOwner] =
+      (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
 
-      // Update the stack on board with the reduced rings
-      if (reducedRings.length > 0) {
-        newState.board.stacks.set(toKey, {
-          ...currentStack,
-          rings: reducedRings,
-          stackHeight: reducedRings.length,
-          capHeight: calculateCapHeight(reducedRings),
-          controllingPlayer: reducedRings[0], // New top ring is the controller
-        });
-      } else {
-        // Stack eliminated completely
-        newState.board.stacks.delete(toKey);
-      }
+    const player = newState.players.find((p) => p.playerNumber === topRingOwner);
+    if (player) {
+      player.eliminatedRings++;
+    }
+
+    // Update the stack on board with the reduced rings
+    if (reducedRings.length > 0) {
+      newState.board.stacks.set(toKey, {
+        ...currentStack,
+        rings: reducedRings,
+        stackHeight: reducedRings.length,
+        capHeight: calculateCapHeight(reducedRings),
+        controllingPlayer: reducedRings[0], // New top ring is the controller
+      });
     } else {
-      // Opponent marker: remove the marker (no ring elimination)
-      // This handles the case where a capture lands on an opponent's marker.
-      // The marker is simply removed to maintain the stack/marker coexistence invariant.
-      newState.board.markers.delete(toKey);
+      // Stack eliminated completely
+      newState.board.stacks.delete(toKey);
     }
   }
 

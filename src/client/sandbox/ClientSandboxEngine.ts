@@ -54,6 +54,9 @@ import {
   shouldOfferSwapSides,
   // Player state helpers
   hasAnyRealAction,
+  // Forced elimination helpers
+  enumerateForcedEliminationOptions,
+  applyForcedEliminationForPlayer,
 } from '../../shared/engine';
 import type { LpsTrackingState } from '../../shared/engine';
 import {
@@ -66,6 +69,7 @@ import type {
   PlayerChoiceResponseFor,
   PlayerChoiceResponse,
   CaptureDirectionChoice,
+  RingEliminationChoice,
 } from '../../shared/types/game';
 import { isSandboxAiTraceModeEnabled, isTestEnvironment } from '../../shared/utils/envFlags';
 import { SeededRNG, generateGameSeed } from '../../shared/utils/rng';
@@ -220,6 +224,14 @@ export class ClientSandboxEngine {
   // processLinesForCurrentPlayer and consumed via consumeRecentLineHighlights.
   private _recentLineHighlightKeys: string[] = [];
 
+  // State snapshots for history playback. Each entry is a deep clone of the
+  // game state after the corresponding move was applied.
+  // _stateSnapshots[0] = state after move 1, _stateSnapshots[N-1] = state after move N
+  // For moveIndex=0 (initial state), use _initialStateSnapshot.
+  private _stateSnapshots: GameState[] = [];
+  // The initial game state before any moves were applied (for moveIndex=0).
+  private _initialStateSnapshot: GameState | null = null;
+
   // Test-only checkpoint hook used by parity/diagnostic harnesses to capture
   // GameState snapshots at key points inside canonical move application and
   // post-movement processing. When unset, all debugCheckpoint calls are no-ops.
@@ -325,6 +337,14 @@ export class ClientSandboxEngine {
     const entry = createHistoryEntry(before, after, action, {
       normalizeMoveNumber: true,
     });
+
+    // Capture state snapshots for history playback.
+    // For the first move, also capture the initial state (before any moves).
+    if (this.gameState.history.length === 0) {
+      this._initialStateSnapshot = this.cloneGameState(before);
+    }
+    // Capture the "after" state for this move.
+    this._stateSnapshots.push(this.cloneGameState(after));
 
     this.gameState = {
       ...this.gameState,
@@ -557,6 +577,15 @@ export class ClientSandboxEngine {
           type: 'region_order',
           prompt: 'Select which region to process first',
           options: options.map((opt: Move, idx: number) => {
+            if (opt.type === 'skip_territory_processing') {
+              return {
+                regionId: 'skip',
+                size: 0,
+                representativePosition: { x: 0, y: 0 },
+                moveId: opt.id || `move-${idx}`,
+              };
+            }
+
             const region = opt.disconnectedRegions?.[0];
             return {
               regionId: `region-${idx}`,
@@ -851,6 +880,83 @@ export class ClientSandboxEngine {
   }
 
   /**
+   * Get the game state at a specific move index for history playback.
+   *
+   * @param moveIndex - The move index to retrieve state for:
+   *   - 0 = initial state (before any moves)
+   *   - N = state after move N (1-indexed moves)
+   *   - Total moves = current/final state
+   * @returns The GameState at that point, or null if unavailable
+   *
+   * This method extracts state from the history entries which contain
+   * before/after snapshots for each move. For fixtures loaded with
+   * pre-existing move history, historical states are only available
+   * if the history entries contain the snapshots.
+   */
+  public getStateAtMoveIndex(moveIndex: number): GameState | null {
+    const history = this.gameState.history;
+    const totalMoves = history.length;
+
+    // If at or beyond total moves, return current state
+    if (moveIndex >= totalMoves) {
+      return this.getGameState();
+    }
+
+    // If negative, invalid
+    if (moveIndex < 0) {
+      return null;
+    }
+
+    // For index 0 (initial state), return the initial state snapshot
+    if (moveIndex === 0) {
+      if (this._initialStateSnapshot) {
+        return this.cloneGameState(this._initialStateSnapshot);
+      }
+      // No initial snapshot - can't determine initial state for pre-loaded fixtures
+      return null;
+    }
+
+    // For index N (1..totalMoves-1), return snapshot N-1's state
+    // _stateSnapshots[0] = state after move 1
+    // _stateSnapshots[N-1] = state after move N
+    // So for moveIndex = N, we need _stateSnapshots[N-1]
+    const snapshotIndex = moveIndex - 1;
+    if (snapshotIndex >= 0 && snapshotIndex < this._stateSnapshots.length) {
+      return this.cloneGameState(this._stateSnapshots[snapshotIndex]);
+    }
+
+    // Snapshot not available (e.g., for pre-loaded fixtures without snapshots)
+    return null;
+  }
+
+  /**
+   * Deep-clone a GameState for safe history viewing.
+   * Similar to getGameState() but operates on any state object.
+   */
+  private cloneGameState(state: GameState): GameState {
+    const board = state.board;
+
+    const clonedBoard: BoardState = {
+      ...board,
+      stacks: new Map(board.stacks),
+      markers: new Map(board.markers),
+      collapsedSpaces: new Map(board.collapsedSpaces),
+      territories: new Map(board.territories),
+      formedLines: [...board.formedLines],
+      eliminatedRings: { ...board.eliminatedRings },
+    };
+
+    return {
+      ...state,
+      board: clonedBoard,
+      moveHistory: [...state.moveHistory],
+      history: [...state.history],
+      players: state.players.map((p) => ({ ...p })),
+      spectators: [...state.spectators],
+    };
+  }
+
+  /**
    * Initialize the sandbox engine from a pre-existing serialized game state.
    * Used by the Scenario Picker to load test vectors and saved states.
    *
@@ -867,7 +973,24 @@ export class ClientSandboxEngine {
     interactionHandler: SandboxInteractionHandler
   ): void {
     // 1. Deserialize the game state using existing utility
-    const gameState = deserializeGameState(serializedState);
+    let gameState = deserializeGameState(serializedState);
+
+    // 1a. Normalise structurally completed but mid-capture states that may
+    // have been produced by older sandbox AI stall behaviour or imported
+    // ringrift_sandbox_fixture_v1 snapshots. Completed games should not
+    // present as if they were still in a capture/decision phase.
+    if (gameState.gameStatus === 'completed') {
+      const hasLegacyMustMoveCursor =
+        (gameState as unknown as { mustMoveFromStackKey?: string | undefined })
+          .mustMoveFromStackKey !== undefined;
+
+      gameState = {
+        ...gameState,
+        currentPhase: 'ring_placement',
+        chainCapturePosition: undefined,
+        ...(hasLegacyMustMoveCursor ? { mustMoveFromStackKey: undefined } : {}),
+      } as GameState;
+    }
 
     // 2. Apply player types to the deserialized state
     gameState.players = gameState.players.map((p, idx) => ({
@@ -889,6 +1012,10 @@ export class ClientSandboxEngine {
     this._pendingTerritorySelfElimination = false;
     // 5. Reset LPS tracking state using shared helper
     this._lpsState = createLpsTrackingState();
+
+    // 5b. Clear state snapshots (fixtures don't have them, they'll be captured for new moves)
+    this._stateSnapshots = [];
+    this._initialStateSnapshot = null;
 
     // 6. Clear victory result
     this.victoryResult = null;
@@ -1557,7 +1684,8 @@ export class ClientSandboxEngine {
         this.hasAnyMovementOrCaptureForPlayer(state, playerNumber, turn as SandboxTurnState),
       applyForcedElimination: (state, playerNumber) => {
         this.gameState = state;
-        this.forceEliminateCap(playerNumber);
+        // Use sync version for delegate (TurnLogicDelegates requires sync execution)
+        this.forceEliminateCapSync(playerNumber);
         this.checkAndApplyVictory();
         return this.gameState;
       },
@@ -1727,8 +1855,9 @@ export class ClientSandboxEngine {
     }
 
     // Forced elimination: eliminate a cap and advance to next player.
+    // Use sync version here as this is a synchronous turn-transition path.
     this.gameState = state;
-    this.forceEliminateCap(current);
+    this.forceEliminateCapSync(current);
     let nextState = this.gameState;
 
     const nextPlayer = this.getNextPlayerNumber(current);
@@ -1762,7 +1891,25 @@ export class ClientSandboxEngine {
     this.handleStartOfInteractiveTurn();
   }
 
-  private forceEliminateCap(playerNumber: number): void {
+  /**
+   * Sync forced elimination helper for blocked players - uses
+   * applyForcedEliminationForPlayer which checks preconditions (player must
+   * be blocked with no legal actions). Used by TurnLogicDelegates.
+   */
+  private forceEliminateCapSync(playerNumber: number): void {
+    const outcome = applyForcedEliminationForPlayer(this.gameState, playerNumber);
+    if (!outcome || outcome.eliminatedCount <= 0) {
+      return;
+    }
+    this.gameState = outcome.nextState;
+  }
+
+  /**
+   * Unconditional cap elimination for line rewards - eliminates a cap from the
+   * player's stacks without checking forced elimination preconditions. Used
+   * for exact-length lines and collapse-all line reward options.
+   */
+  private eliminateCapForLineReward(playerNumber: number): void {
     const { board, players } = this.gameState;
     const stacks = this.getPlayerStacks(playerNumber, board);
 
@@ -1777,6 +1924,61 @@ export class ClientSandboxEngine {
       players: result.players,
       totalRingsEliminated: this.gameState.totalRingsEliminated + result.totalRingsEliminatedDelta,
     };
+  }
+
+  /**
+   * Async forced elimination helper - presents a RingEliminationChoice to
+   * human players when multiple stacks are available. For AI players or
+   * single-stack scenarios, auto-selects immediately.
+   */
+  private async forceEliminateCap(playerNumber: number): Promise<void> {
+    const { players } = this.gameState;
+
+    // Use the enumerate function to get all elimination options
+    const options = enumerateForcedEliminationOptions(this.gameState, playerNumber);
+    if (options.length === 0) {
+      return; // No elimination needed
+    }
+
+    // Determine target position - either from player choice or auto-select
+    let targetPosition: Position | undefined;
+
+    // Check if this is a human player with multiple stacks (should present choice)
+    const player = players.find((p) => p.playerNumber === playerNumber);
+    const isHumanPlayer = player?.type === 'human';
+    const hasMultipleOptions = options.length > 1;
+
+    if (isHumanPlayer && hasMultipleOptions) {
+      // Present RingEliminationChoice to human player
+      const choice: RingEliminationChoice = {
+        id: `sandbox-forced-elim-${Date.now()}`,
+        gameId: this.gameState.id,
+        playerNumber,
+        type: 'ring_elimination',
+        prompt: 'Choose which stack to eliminate from (forced elimination)',
+        options: options.map((opt) => ({
+          stackPosition: opt.position,
+          capHeight: opt.capHeight,
+          totalHeight: opt.stackHeight,
+          moveId: opt.moveId,
+        })),
+      };
+
+      const response = await this.interactionHandler.requestChoice(choice);
+      targetPosition = response.selectedOption.stackPosition;
+    } else if (options.length === 1) {
+      // Only one option, use it directly
+      targetPosition = options[0].position;
+    }
+    // If no targetPosition, applyForcedEliminationForPlayer will auto-select
+
+    // Apply elimination using the shared helper with the chosen target
+    const outcome = applyForcedEliminationForPlayer(this.gameState, playerNumber, targetPosition);
+    if (!outcome || outcome.eliminatedCount <= 0) {
+      return;
+    }
+
+    this.gameState = outcome.nextState;
   }
 
   private getNextPlayerNumber(current: number): number {
@@ -2390,15 +2592,24 @@ export class ClientSandboxEngine {
 
       let regionSpaces = eligible[0].spaces;
 
-      // When multiple regions are eligible and we have an interaction handler,
-      // surface a RegionOrderChoice to let the player choose which to process.
-      if (this.interactionHandler && eligible.length > 1) {
+      const movingPlayerRecord = state.players.find((p) => p.playerNumber === movingPlayer);
+      const isHumanPlayer = movingPlayerRecord?.type === 'human';
+
+      // When at least one region is eligible for a human player and we have
+      // an interaction handler, surface a RegionOrderChoice so the sandbox UI
+      // can highlight the region geometry and prompt the user. When only one
+      // region exists this still produces a single-option choice, mirroring
+      // backend decision-phase semantics while remaining trivial to resolve.
+      const shouldPromptRegionOrder =
+        !!this.interactionHandler && isHumanPlayer && !this.traceMode && eligible.length > 0;
+
+      if (shouldPromptRegionOrder) {
         const choice: RegionOrderChoice = {
           id: `sandbox-region-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           gameId: state.id,
           playerNumber: movingPlayer,
           type: 'region_order',
-          prompt: 'Choose which disconnected region to process first',
+          prompt: 'Territory claimed – choose area to process',
           options: eligible.map((r, index) => {
             const representative = r.spaces[0];
             const regionKey = representative
@@ -2449,40 +2660,104 @@ export class ClientSandboxEngine {
       const outcome = applyProcessTerritoryRegionDecision(state, regionMove);
       state = outcome.nextState;
 
-      // If this region triggered a self-elimination requirement, apply it
-      // immediately within the loop (matching backend processOneDisconnectedRegion).
+      // If this region triggered a self-elimination requirement, either
+      // surface an explicit elimination choice for human players or fall
+      // back to automatic elimination for AI/legacy flows.
       if (outcome.pendingSelfElimination) {
         pendingSelfElimination = true;
 
-        const candidateStacks: Array<{ key: string; capHeight: number }> = [];
-        for (const [key, stack] of state.board.stacks.entries()) {
-          if (stack.controllingPlayer === movingPlayer && stack.capHeight > 0) {
-            candidateStacks.push({ key, capHeight: stack.capHeight });
+        const shouldPromptElimination =
+          !!this.interactionHandler && isHumanPlayer && !this.traceMode;
+
+        if (shouldPromptElimination) {
+          // Mark the pending flag so parity/diagnostic helpers that inspect
+          // _pendingTerritorySelfElimination remain meaningful while an
+          // explicit ring_elimination decision is outstanding.
+          this._pendingTerritorySelfElimination = true;
+
+          const eliminationMoves = enumerateTerritoryEliminationMoves(state, movingPlayer);
+          if (eliminationMoves.length > 0) {
+            let elimMove: Move = eliminationMoves[0];
+
+            if (eliminationMoves.length > 1) {
+              const choice: RingEliminationChoice = {
+                id: `sandbox-territory-elim-${Date.now()}`,
+                gameId: state.id,
+                playerNumber: movingPlayer,
+                type: 'ring_elimination',
+                prompt: 'Territory claimed – choose stack to eliminate',
+                options: eliminationMoves.map((opt: Move) => {
+                  const pos = opt.to as Position;
+                  const key = positionToString(pos);
+                  const stack = state.board.stacks.get(key);
+
+                  const capHeight =
+                    (opt.eliminationFromStack && opt.eliminationFromStack.capHeight) ||
+                    (stack ? stack.capHeight : 1);
+                  const totalHeight =
+                    (opt.eliminationFromStack && opt.eliminationFromStack.totalHeight) ||
+                    (stack ? stack.stackHeight : capHeight || 1);
+
+                  return {
+                    stackPosition: pos,
+                    capHeight,
+                    totalHeight,
+                    moveId: opt.id || key,
+                  };
+                }),
+              };
+
+              const response = await this.interactionHandler.requestChoice(choice);
+              const selectedPos = response.selectedOption?.stackPosition as Position | undefined;
+
+              if (selectedPos) {
+                const selectedKey = positionToString(selectedPos);
+                const byPos =
+                  eliminationMoves.find(
+                    (m) => m.to && positionToString(m.to as Position) === selectedKey
+                  ) ?? eliminationMoves[0];
+                elimMove = byPos;
+              }
+            }
+
+            const beforeElim = state;
+            const { nextState } = applyEliminateRingsFromStackDecision(state, elimMove);
+            state = nextState;
+            this.appendHistoryEntry(beforeElim, elimMove);
           }
-        }
 
-        if (candidateStacks.length > 0) {
-          candidateStacks.sort((a, b) => b.capHeight - a.capHeight);
-          const target = candidateStacks[0];
+          this._pendingTerritorySelfElimination = false;
+        } else {
+          const candidateStacks: Array<{ key: string; capHeight: number }> = [];
+          for (const [key, stack] of state.board.stacks.entries()) {
+            if (stack.controllingPlayer === movingPlayer && stack.capHeight > 0) {
+              candidateStacks.push({ key, capHeight: stack.capHeight });
+            }
+          }
 
-          const elimMove: Move = {
-            id: `auto-eliminate-${target.key}-${Date.now()}`,
-            type: 'eliminate_rings_from_stack',
-            player: movingPlayer,
-            to: (() => {
-              const [xStr, yStr, zStr] = target.key.split(',');
-              const x = Number(xStr);
-              const y = Number(yStr);
-              const z = zStr !== undefined && zStr.length > 0 ? Number(zStr) : undefined;
-              return z !== undefined ? { x, y, z } : { x, y };
-            })() as Position,
-            timestamp: new Date(),
-            thinkTime: 0,
-            moveNumber: state.history.length + 1,
-          } as Move;
+          if (candidateStacks.length > 0) {
+            candidateStacks.sort((a, b) => b.capHeight - a.capHeight);
+            const target = candidateStacks[0];
 
-          const { nextState } = applyEliminateRingsFromStackDecision(state, elimMove);
-          state = nextState;
+            const elimMove: Move = {
+              id: `auto-eliminate-${target.key}-${Date.now()}`,
+              type: 'eliminate_rings_from_stack',
+              player: movingPlayer,
+              to: (() => {
+                const [xStr, yStr, zStr] = target.key.split(',');
+                const x = Number(xStr);
+                const y = Number(yStr);
+                const z = zStr !== undefined && zStr.length > 0 ? Number(zStr) : undefined;
+                return z !== undefined ? { x, y, z } : { x, y };
+              })() as Position,
+              timestamp: new Date(),
+              thinkTime: 0,
+              moveNumber: state.history.length + 1,
+            } as Move;
+
+            const { nextState } = applyEliminateRingsFromStackDecision(state, elimMove);
+            state = nextState;
+          }
         }
       }
 
@@ -2740,7 +3015,7 @@ export class ClientSandboxEngine {
     //
     // Automatic sandbox behaviour remains:
     // - Exact-length lines: collapse all markers and immediately eliminate
-    //   a cap via forceEliminateCapOnBoard.
+    //   a cap via eliminateCapForLineReward.
     // - Overlength lines: default to Option 2 (minimum contiguous subset of
     //   length L, no elimination) for the first available line.
     //
@@ -2853,7 +3128,7 @@ export class ClientSandboxEngine {
       // when the shared helper reports a pending line-reward elimination
       // (exact-length lines and collapse-all rewards).
       if (outcome.pendingLineRewardElimination) {
-        this.forceEliminateCap(moveToApply.player);
+        this.eliminateCapForLineReward(moveToApply.player);
       }
 
       // Record the canonical decision in history so that parity harnesses
@@ -3083,6 +3358,248 @@ export class ClientSandboxEngine {
       // This matches backend ordering where history is recorded after advanceGame().
       this.appendHistoryEntry(beforeStateForHistory, move);
     }
+  }
+
+  /**
+   * Replay helper: apply a canonical Move into the sandbox engine and always
+   * record a history entry, even when the move does not change state.
+   *
+   * This is used by the /sandbox self-play replay path so that:
+   * - moveHistory.length matches the recorder's total_moves, and
+   * - the HistoryPlayback slider can scrub per recorded step, even for
+   *   no-op bookkeeping moves that leave the board unchanged.
+   *
+   * Behaviour for state-changing moves mirrors applyCanonicalMove; for
+   * no-op moves we skip any extra phase/turn advancement and simply record
+   * a before/after history entry with identical snapshots.
+   */
+  public async applyCanonicalMoveForReplay(move: Move): Promise<void> {
+    const beforeStateForHistory = this.getGameState();
+
+    // If game is already complete, still record the move in history for UI
+    // purposes (history scrubbing) but don't actually apply it.
+    if (this.gameState.gameStatus !== 'active') {
+      this.appendHistoryEntry(beforeStateForHistory, move);
+      return;
+    }
+
+    // Auto-resolve pending decision phases before applying a move that expects
+    // a different phase. The Python AI engine auto-handled territory/line processing
+    // internally without recording explicit decision moves, so we must do the same
+    // during replay to maintain phase alignment.
+    await this.autoResolvePendingDecisionPhasesForReplay(move);
+
+    // If auto-resolve caused game completion, still record the move
+    if (this.gameState.gameStatus !== 'active') {
+      this.appendHistoryEntry(beforeStateForHistory, move);
+      return;
+    }
+
+    const supportedTypes: Move['type'][] = [
+      'place_ring',
+      'skip_placement',
+      'move_ring',
+      'move_stack',
+      'overtaking_capture',
+      'continue_capture_segment',
+      'process_line',
+      'choose_line_reward',
+      'process_territory_region',
+      'eliminate_rings_from_stack',
+    ];
+
+    if (!supportedTypes.includes(move.type)) {
+      throw new Error(
+        `ClientSandboxEngine.applyCanonicalMoveForReplay: unsupported move type ${move.type}`
+      );
+    }
+
+    const changed = await this.applyCanonicalMoveInternal(move, {
+      bypassNoDeadPlacement: true,
+    });
+
+    if (changed) {
+      if (
+        this.gameState.gameStatus === 'active' &&
+        this.gameState.currentPhase === 'territory_processing' &&
+        (move.type === 'overtaking_capture' || move.type === 'continue_capture_segment')
+      ) {
+        const disconnected = findDisconnectedRegionsOnBoard(this.gameState.board);
+        const eligible = disconnected.filter((region) =>
+          this.canProcessDisconnectedRegion(region.spaces, move.player, this.gameState.board)
+        );
+
+        if (eligible.length === 0) {
+          this.advanceTurnAndPhaseForCurrentPlayer();
+        }
+      }
+
+      this.appendHistoryEntry(beforeStateForHistory, move);
+    } else {
+      // No semantic change, but we still want a stable history step for
+      // replay purposes. Record a history entry with identical before/after
+      // snapshots so moveHistory and _stateSnapshots remain aligned with
+      // the recorder's canonical move numbering.
+      this.appendHistoryEntry(beforeStateForHistory, move);
+    }
+  }
+
+  /**
+   * Auto-resolve pending decision phases (territory_processing, line_processing)
+   * before attempting to apply a move that expects a different phase.
+   *
+   * The Python AI engine auto-handled these phases internally without recording
+   * explicit decision moves, so during replay we must auto-resolve them to
+   * maintain phase alignment with the recorded move sequence.
+   */
+  private async autoResolvePendingDecisionPhasesForReplay(nextMove: Move): Promise<void> {
+    // Only auto-resolve if the next move expects a turn-start phase (placement/movement)
+    // and we're currently stuck in a decision phase
+    const turnStartPhases: GamePhase[] = ['ring_placement', 'movement'];
+    const turnStartMoveTypes: Move['type'][] = [
+      'place_ring',
+      'skip_placement',
+      'move_stack',
+      'move_ring',
+      'overtaking_capture',
+      'continue_capture_segment',
+    ];
+
+    if (!turnStartMoveTypes.includes(nextMove.type)) {
+      // The next move is already a decision-phase move (like process_territory_region),
+      // so let it proceed normally
+      return;
+    }
+
+    // Safety limit to prevent infinite loops
+    const maxIterations = 100;
+    let iterations = 0;
+
+    while (
+      this.gameState.gameStatus === 'active' &&
+      !turnStartPhases.includes(this.gameState.currentPhase) &&
+      iterations < maxIterations
+    ) {
+      iterations += 1;
+
+      if (this.gameState.currentPhase === 'territory_processing') {
+        const resolved = await this.autoResolveOneTerritoryRegionForReplay();
+        if (!resolved) {
+          // No more regions to process, but still in territory_processing
+          // This shouldn't happen, but advance turn to recover
+          this.advanceTurnAndPhaseForCurrentPlayer();
+        }
+      } else if (this.gameState.currentPhase === 'line_processing') {
+        const resolved = await this.autoResolveOneLineForReplay();
+        if (!resolved) {
+          // No more lines to process, advance turn
+          this.advanceTurnAndPhaseForCurrentPlayer();
+        }
+      } else if (this.gameState.currentPhase === 'chain_capture') {
+        // Chain capture phase - recorded games may not have continuation moves
+        // If the next move is a new turn move, skip the chain and advance
+        this.advanceTurnAndPhaseForCurrentPlayer();
+      } else {
+        // Unknown phase, try to advance
+        this.advanceTurnAndPhaseForCurrentPlayer();
+      }
+    }
+
+    if (iterations >= maxIterations) {
+      console.warn(
+        '[autoResolvePendingDecisionPhasesForReplay] Max iterations reached, possible infinite loop',
+        { currentPhase: this.gameState.currentPhase, nextMoveType: nextMove.type }
+      );
+    }
+  }
+
+  /**
+   * Auto-process one territory region during replay.
+   * Returns true if a region was processed, false if none available.
+   */
+  private async autoResolveOneTerritoryRegionForReplay(): Promise<boolean> {
+    const state = this.gameState;
+    const regions = findDisconnectedRegionsOnBoard(state.board);
+    const eligible = regions.filter((region) =>
+      this.canProcessDisconnectedRegion(region.spaces, state.currentPlayer, state.board)
+    );
+
+    if (eligible.length === 0) {
+      return false;
+    }
+
+    // Process the first eligible region
+    const region = eligible[0];
+    const move: Move = {
+      id: `auto-replay-territory-${Date.now()}`,
+      type: 'process_territory_region',
+      player: state.currentPlayer,
+      to: region.spaces[0],
+      disconnectedRegions: [region],
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber: state.moveHistory.length + 1,
+    };
+
+    // Apply via the orchestrator adapter
+    const result = await this.processMoveViaAdapter(move, state);
+
+    // Handle any self-elimination that results from territory processing
+    if (
+      result &&
+      this.gameState.gameStatus === 'active' &&
+      this.gameState.currentPhase === 'territory_processing'
+    ) {
+      // Check if elimination is required
+      const elimMoves = enumerateTerritoryEliminationMoves(
+        this.gameState,
+        this.gameState.currentPlayer
+      );
+      if (elimMoves.length > 0) {
+        // Auto-apply the first elimination option
+        const elimMove = elimMoves[0];
+        await this.processMoveViaAdapter(elimMove, this.gameState);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Auto-process one line during replay.
+   * Returns true if a line was processed, false if none available.
+   */
+  private async autoResolveOneLineForReplay(): Promise<boolean> {
+    const state = this.gameState;
+    const lineMoves = enumerateProcessLineMoves(state, state.currentPlayer);
+
+    if (lineMoves.length === 0) {
+      return false;
+    }
+
+    // Process the first available line move
+    const lineMove = lineMoves[0];
+    await this.processMoveViaAdapter(lineMove, state);
+
+    // Handle line reward choice if needed
+    if (
+      this.gameState.gameStatus === 'active' &&
+      this.gameState.currentPhase === 'line_processing'
+    ) {
+      const currentPlayer = this.gameState.currentPlayer;
+      const playerLines = findLinesForPlayer(this.gameState.board, currentPlayer);
+      const rewardMoves: Move[] = [];
+      playerLines.forEach((_line, index) => {
+        rewardMoves.push(...enumerateChooseLineRewardMoves(this.gameState, currentPlayer, index));
+      });
+      if (rewardMoves.length > 0) {
+        // Auto-select first reward option
+        const rewardMove = rewardMoves[0];
+        await this.processMoveViaAdapter(rewardMove, this.gameState);
+      }
+    }
+
+    return true;
   }
 }
 

@@ -202,10 +202,9 @@ def validate_capture_segment_on_board_py(
     if BoardManager.get_stack(landing_pos, board):
         return False
 
-    # If there is a marker at landing, it must belong to the capturing player.
-    marker = board.markers.get(landing_pos.to_key())
-    if marker is not None and marker.player != attacker.controlling_player:
-        return False
+    # Per RR-CANON-R101/R102: landing on any marker (own or opponent) is legal.
+    # The marker is removed and the top ring of the attacking stack's cap is eliminated.
+    # Validation allows this; mutation handles the elimination cost.
 
     return True
 

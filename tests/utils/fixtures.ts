@@ -10,6 +10,7 @@ import {
   Position,
   Player,
   GamePhase,
+  positionToString,
 } from '../../src/shared/types/game';
 
 /**
@@ -161,10 +162,7 @@ export function addStack(
   player: number,
   height: number = 1
 ): void {
-  const key =
-    position.z !== undefined
-      ? `${position.x},${position.y},${position.z}`
-      : `${position.x},${position.y}`;
+  const key = positionToString(position);
 
   board.stacks.set(key, {
     position,
@@ -184,10 +182,7 @@ export function addMarker(
   player: number,
   type: 'regular' | 'collapsed' = 'regular'
 ): void {
-  const key =
-    position.z !== undefined
-      ? `${position.x},${position.y},${position.z}`
-      : `${position.x},${position.y}`;
+  const key = positionToString(position);
 
   board.markers.set(key, {
     position,
@@ -200,10 +195,7 @@ export function addMarker(
  * Helper to add a collapsed space
  */
 export function addCollapsedSpace(board: BoardState, position: Position, player: number): void {
-  const key =
-    position.z !== undefined
-      ? `${position.x},${position.y},${position.z}`
-      : `${position.x},${position.y}`;
+  const key = positionToString(position);
 
   board.collapsedSpaces.set(key, player);
 }

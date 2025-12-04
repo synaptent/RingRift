@@ -9,11 +9,14 @@ import { AuthenticatedRequest, getAuthUserId } from '../middleware/auth';
 import { createError, asyncHandler } from '../middleware/errorHandler';
 import { consumeRateLimit, adaptiveRateLimiter } from '../middleware/rateLimiter';
 import { httpLogger, logger } from '../utils/logger';
+import { ErrorCodes, ErrorCodeMessages } from '../errors';
 import {
   CreateGameSchema,
   CreateGameInput,
   GameIdParamSchema,
   GameListingQuerySchema,
+  MoveSchema,
+  type MoveInput,
 } from '../../shared/validation/schemas';
 import { RatingService, RatingUpdateResult } from '../services/RatingService';
 import { AiOpponentsConfig, BoardType, GameStatus, GameState } from '../../shared/types/game';
@@ -203,18 +206,32 @@ router.post(
 
     const gameState = deserializeGameState(body.state);
     const aiClient = getAIServiceClient();
-    const response = await aiClient.evaluatePositionMulti(gameState);
+    try {
+      const response = await aiClient.evaluatePositionMulti(gameState);
 
-    const data: PositionEvaluationPayload['data'] = {
-      gameId: gameState.id,
-      moveNumber: response.move_number,
-      boardType: (response.board_type as GameState['boardType']) ?? gameState.boardType,
-      perPlayer: response.per_player,
-      engineProfile: response.engine_profile,
-      evaluationScale: response.evaluation_scale,
-    };
+      const data: PositionEvaluationPayload['data'] = {
+        gameId: gameState.id,
+        moveNumber: response.move_number,
+        boardType: (response.board_type as GameState['boardType']) ?? gameState.boardType,
+        perPlayer: response.per_player,
+        engineProfile: response.engine_profile,
+        evaluationScale: response.evaluation_scale,
+      };
 
-    res.status(200).json(data);
+      res.status(200).json(data);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'AI Service failed to evaluate sandbox position';
+      logger.warn('Sandbox position evaluation failed', {
+        gameId: gameState.id,
+        error: message,
+      });
+      res.status(503).json({
+        error:
+          'Sandbox AI evaluation is unavailable. Ensure the AI service is running and analysis mode is enabled.',
+        details: message,
+      });
+    }
   })
 );
 
@@ -438,12 +455,19 @@ router.get(
 router.get(
   '/:gameId',
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
-    // Validate gameId parameter
-    const paramResult = GameIdParamSchema.safeParse(req.params);
-    if (!paramResult.success) {
+    // Validate gameId parameter using a lightweight, format-tolerant check
+    // that accepts both legacy UUIDs and the CUID values generated for the
+    // Game model. Any non-empty, reasonably sized string is treated as a
+    // candidate ID and then resolved via the database so that:
+    //   - 400 is reserved for truly malformed/empty IDs
+    //   - 404 is used for well-formed but unknown/expired IDs
+    const rawGameId = req.params.gameId;
+
+    if (typeof rawGameId !== 'string' || rawGameId.trim().length < 3 || rawGameId.length > 64) {
       throw createError('Invalid game ID format', 400, 'INVALID_GAME_ID');
     }
-    const { gameId } = paramResult.data;
+
+    const gameId = rawGameId.trim();
     const userId = getAuthUserId(req);
 
     const prisma = getDatabaseClient();
@@ -1327,6 +1351,191 @@ router.get(
     res.json({
       success: true,
       data: { moves },
+    });
+  })
+);
+
+/**
+ * INTERNAL: HTTP move harness endpoint for load tests and diagnostics.
+ *
+ * This route is a thin adapter over the canonical GameSession /
+ * RulesBackendFacade pipeline used by WebSocket moves. It is guarded
+ * by the ENABLE_HTTP_MOVE_HARNESS feature flag and is not intended
+ * as a public client API.
+ */
+router.post(
+  '/:gameId/moves',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    // Feature flag guard - behave as if the route does not exist when
+    // the harness is disabled, so production can keep the surface dark.
+    if (!config.featureFlags.httpMoveHarness.enabled) {
+      throw createError('Route not found', 404, 'RESOURCE_ROUTE_NOT_FOUND');
+    }
+
+    if (!wsServerInstance || typeof wsServerInstance.handlePlayerMoveFromHttp !== 'function') {
+      throw createError('Service temporarily unavailable', 503, 'SERVER_SERVICE_UNAVAILABLE');
+    }
+
+    // Validate gameId parameter
+    const paramResult = GameIdParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      throw createError('Invalid game ID format', 400, 'INVALID_GAME_ID');
+    }
+    const { gameId } = paramResult.data;
+    const userId = getAuthUserId(req);
+
+    // Validate move payload using the same wire-level MoveSchema used
+    // by WebSocket player_move. Support both a bare Move payload and a
+    // wrapped { move } object so that internal harnesses and the public
+    // gameApi.makeMove client helper can share this endpoint.
+    const rawBody = req.body as unknown;
+    const candidateMove =
+      rawBody && typeof rawBody === 'object' ? ((rawBody as any).move ?? rawBody) : rawBody;
+
+    const moveResult = MoveSchema.safeParse(candidateMove);
+    if (!moveResult.success) {
+      const code = ErrorCodes.GAME_INVALID_MOVE;
+      res.status(400).json({
+        success: false,
+        error: {
+          code,
+          message: ErrorCodeMessages[code],
+        },
+      });
+      return;
+    }
+    const moveInput: MoveInput = moveResult.data;
+
+    let rulesResult: import('../game/RulesBackendFacade').RulesResult | undefined;
+    try {
+      rulesResult = await wsServerInstance.handlePlayerMoveFromHttp(gameId, userId, moveInput);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message === 'Database not available') {
+        const code = ErrorCodes.SERVER_DATABASE_UNAVAILABLE;
+        res.status(503).json({
+          success: false,
+          error: {
+            code,
+            message: ErrorCodeMessages[code],
+          },
+        });
+        return;
+      }
+
+      if (message === 'Game not found') {
+        const code = ErrorCodes.GAME_NOT_FOUND;
+        res.status(404).json({
+          success: false,
+          error: {
+            code,
+            message: ErrorCodeMessages[code],
+          },
+        });
+        return;
+      }
+
+      if (message === 'Game is not active') {
+        const code = ErrorCodes.GAME_ALREADY_ENDED;
+        res.status(400).json({
+          success: false,
+          error: {
+            code,
+            message: ErrorCodeMessages[code],
+          },
+        });
+        return;
+      }
+
+      if (
+        message === 'Spectators cannot make moves' ||
+        message === 'Current user is not a player in this game' ||
+        message === 'Current socket user is not a player in this game'
+      ) {
+        const code = ErrorCodes.RESOURCE_ACCESS_DENIED;
+        res.status(403).json({
+          success: false,
+          error: {
+            code,
+            message: ErrorCodeMessages[code],
+          },
+        });
+        return;
+      }
+
+      if (message.toLowerCase().includes('not your turn')) {
+        const code = ErrorCodes.GAME_NOT_YOUR_TURN;
+        res.status(400).json({
+          success: false,
+          error: {
+            code,
+            message: ErrorCodeMessages[code],
+          },
+        });
+        return;
+      }
+
+      if (
+        message === 'Invalid move position payload' ||
+        message === 'Move destination is required'
+      ) {
+        const code = ErrorCodes.GAME_INVALID_MOVE;
+        res.status(400).json({
+          success: false,
+          error: {
+            code,
+            message: ErrorCodeMessages[code],
+          },
+        });
+        return;
+      }
+
+      // For all other domain-level rejections surfaced as exceptions, treat
+      // them as illegal moves rather than generic server errors so that the
+      // HTTP harness mirrors the WebSocket MOVE_REJECTED semantics.
+      logger.warn('Engine rejected move via HTTP harness (exception path)', {
+        gameId,
+        userId,
+        error: message,
+      });
+      const code = ErrorCodes.GAME_INVALID_MOVE;
+      res.status(400).json({
+        success: false,
+        error: {
+          code,
+          message: 'Move was not valid in the current game state',
+        },
+      });
+      return;
+    }
+
+    // Defensive: handle an explicit non-success RulesResult if the host path
+    // ever returns one instead of throwing.
+    if (!rulesResult || !rulesResult.success) {
+      logger.warn('Engine rejected move via HTTP harness (result path)', {
+        gameId,
+        userId,
+        reason: rulesResult?.error,
+      });
+      const code = ErrorCodes.GAME_INVALID_MOVE;
+      res.status(400).json({
+        success: false,
+        error: {
+          code,
+          message: rulesResult?.error || 'Move was not valid in the current game state',
+        },
+      });
+      return;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        gameId,
+        gameState: rulesResult.gameState,
+        gameResult: rulesResult.gameResult ?? null,
+      },
     });
   })
 );

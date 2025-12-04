@@ -3,17 +3,17 @@
   "generated": "2025-12-01T11:00:00.000Z",
   "count": 2,
   "categories": ["chain-capture"],
-  "description": "Test vectors for extended chain capture scenarios with 4+ targets - P19B.2-2. Note: 5+ target chains are geometrically constrained on 8x8 boards due to distance >= stackHeight requirements.",
+  "description": "Test vectors for extended chain capture scenarios with 4+ targets - P19B.2-2. Key insight: each capture must land at distance >= current stack height.",
   "vectors": [
     {
       "id": "chain_capture.4_targets.diagonal_with_turn",
       "version": "v2",
       "category": "chain-capture",
-      "description": "Chain capture with exactly 4 targets: diagonal SE followed by W turn. Geometry satisfies distance >= stackHeight at each segment.",
+      "description": "Chain capture with exactly 4 targets: diagonal SE (landing at 7,7 to satisfy distance 3) followed by W turn",
       "tags": ["chain-capture", "extended", "4-targets"],
       "source": "manual",
       "createdAt": "2025-12-01T11:00:00.000Z",
-      "ruleReferences": ["§10.3", "FAQ 15.3.1", "FAQ 15.3.2"],
+      "ruleReferences": ["§10.2", "§10.3", "FAQ 15.3.1", "FAQ 15.3.2"],
       "input": {
         "state": {
           "gameId": "test-chain-capture-4",
@@ -103,7 +103,8 @@
             "captureTarget": { "x": 1, "y": 1 },
             "landing": { "x": 2, "y": 2 },
             "direction": "SE",
-            "attackerHeightAfter": 2
+            "attackerHeightAfter": 2,
+            "distanceConstraint": "distance 2 >= height 1"
           },
           {
             "segment": 2,
@@ -111,7 +112,8 @@
             "captureTarget": { "x": 3, "y": 3 },
             "landing": { "x": 4, "y": 4 },
             "direction": "SE",
-            "attackerHeightAfter": 3
+            "attackerHeightAfter": 3,
+            "distanceConstraint": "distance 2 >= height 2"
           },
           {
             "segment": 3,
@@ -119,7 +121,8 @@
             "captureTarget": { "x": 5, "y": 5 },
             "landing": { "x": 7, "y": 7 },
             "direction": "SE",
-            "attackerHeightAfter": 4
+            "attackerHeightAfter": 4,
+            "distanceConstraint": "distance 3 >= height 3 (cannot land at 6,6 because distance 2 < height 3)"
           },
           {
             "segment": 4,
@@ -127,7 +130,8 @@
             "captureTarget": { "x": 6, "y": 7 },
             "landing": { "x": 3, "y": 7 },
             "direction": "W",
-            "attackerHeightAfter": 5
+            "attackerHeightAfter": 5,
+            "distanceConstraint": "distance 4 >= height 4"
           }
         ]
       },
@@ -145,22 +149,22 @@
           "finalStackPosition": { "x": 3, "y": 7 },
           "markerPositions": [
             { "x": 0, "y": 0 },
-            { "x": 1, "y": 1 },
-            { "x": 3, "y": 3 },
-            { "x": 5, "y": 5 }
+            { "x": 2, "y": 2 },
+            { "x": 4, "y": 4 },
+            { "x": 7, "y": 7 }
           ]
         }
       }
     },
     {
-      "id": "chain_capture.5_plus_targets.extended_zigzag",
+      "id": "chain_capture.5_plus_targets.extended_path",
       "version": "v2",
       "category": "chain-capture",
-      "description": "Chain capture testing 4-target diagonal zigzag. Note: True 5+ target chains are geometrically constrained on 8x8 boards due to distance >= stackHeight requirements. This vector uses the same geometry as the 4-target test to validate zigzag behavior.",
-      "tags": ["chain-capture", "extended", "4-targets", "zigzag"],
+      "description": "Chain capture with 5 targets: diagonal SE, W turn, then N",
+      "tags": ["chain-capture", "extended", "5-targets"],
       "source": "manual",
       "createdAt": "2025-12-01T11:00:00.000Z",
-      "ruleReferences": ["§10.3", "FAQ 15.3.1", "FAQ 15.3.2"],
+      "ruleReferences": ["§10.2", "§10.3", "FAQ 15.3.1", "FAQ 15.3.2"],
       "input": {
         "state": {
           "gameId": "test-chain-capture-5",
@@ -202,6 +206,13 @@
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
+              },
+              "3,2": {
+                "position": { "x": 3, "y": 2 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
               }
             },
             "markers": {},
@@ -218,7 +229,7 @@
             },
             {
               "playerNumber": 2,
-              "ringsInHand": 14,
+              "ringsInHand": 13,
               "eliminatedRings": 0,
               "territorySpaces": 0,
               "isActive": true
@@ -250,7 +261,8 @@
             "captureTarget": { "x": 1, "y": 1 },
             "landing": { "x": 2, "y": 2 },
             "direction": "SE",
-            "attackerHeightAfter": 2
+            "attackerHeightAfter": 2,
+            "distanceConstraint": "distance 2 >= height 1"
           },
           {
             "segment": 2,
@@ -258,7 +270,8 @@
             "captureTarget": { "x": 3, "y": 3 },
             "landing": { "x": 4, "y": 4 },
             "direction": "SE",
-            "attackerHeightAfter": 3
+            "attackerHeightAfter": 3,
+            "distanceConstraint": "distance 2 >= height 2"
           },
           {
             "segment": 3,
@@ -266,7 +279,8 @@
             "captureTarget": { "x": 5, "y": 5 },
             "landing": { "x": 7, "y": 7 },
             "direction": "SE",
-            "attackerHeightAfter": 4
+            "attackerHeightAfter": 4,
+            "distanceConstraint": "distance 3 >= height 3"
           },
           {
             "segment": 4,
@@ -274,27 +288,38 @@
             "captureTarget": { "x": 6, "y": 7 },
             "landing": { "x": 3, "y": 7 },
             "direction": "W",
-            "attackerHeightAfter": 5
+            "attackerHeightAfter": 5,
+            "distanceConstraint": "distance 4 >= height 4"
+          },
+          {
+            "segment": 5,
+            "from": { "x": 3, "y": 7 },
+            "captureTarget": { "x": 3, "y": 2 },
+            "landing": { "x": 3, "y": 0 },
+            "direction": "N",
+            "attackerHeightAfter": 6,
+            "distanceConstraint": "distance 7 >= height 5"
           }
         ]
       },
       "expectedOutput": {
         "status": "complete",
         "assertions": {
-          "totalCapturesInChain": 4,
-          "finalStackHeight": 5,
+          "totalCapturesInChain": 5,
+          "finalStackHeight": 6,
           "finalStackController": 1,
           "targetStacksRemaining": 0,
-          "markersCreated": 4,
-          "sInvariantDelta": 4
+          "markersCreated": 5,
+          "sInvariantDelta": 5
         },
         "finalState": {
-          "finalStackPosition": { "x": 3, "y": 7 },
+          "finalStackPosition": { "x": 3, "y": 0 },
           "markerPositions": [
             { "x": 0, "y": 0 },
-            { "x": 1, "y": 1 },
-            { "x": 3, "y": 3 },
-            { "x": 5, "y": 5 }
+            { "x": 2, "y": 2 },
+            { "x": 4, "y": 4 },
+            { "x": 7, "y": 7 },
+            { "x": 3, "y": 7 }
           ]
         }
       }

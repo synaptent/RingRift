@@ -1,3 +1,4 @@
+
 import json
 import os
 import sys
@@ -275,6 +276,225 @@ def test_line_and_territory_scenario_parity(board_type: BoardType) -> None:
         BoardManager.get_border_marker_positions = orig_get_border_markers
 
 
+def test_get_valid_moves_line_processing_surfaces_only_line_decisions() -> None:
+    """Decision-phase parity: LINE_PROCESSING get_valid_moves surface.
+
+    For an overlength line, GameEngine.get_valid_moves in LINE_PROCESSING
+    must surface only PROCESS_LINE and CHOOSE_LINE_REWARD moves whose
+    geometry matches the synthetic line used in this scenario, for all
+    supported board types.
+    """
+    orig_find_all_lines = BoardManager.find_all_lines
+
+    try:
+        for board_type in (
+            BoardType.SQUARE8,
+            BoardType.SQUARE19,
+            BoardType.HEXAGONAL,
+        ):
+            state = create_base_state(board_type)
+            required_length = REQUIRED_LENGTH_BY_BOARD[board_type]
+
+            # Synthetic overlength line for Player 1: length = requiredLength + 1.
+            line_positions = [Position(x=i, y=0) for i in range(required_length + 1)]
+            synthetic_line = LineInfo(
+                positions=line_positions,
+                player=1,
+                length=len(line_positions),
+                direction=Position(x=1, y=0),
+            )
+
+            BoardManager.find_all_lines = staticmethod(lambda board, sl=synthetic_line: [sl])
+
+            state.current_phase = GamePhase.LINE_PROCESSING
+            state.current_player = 1
+
+            moves = GameEngine.get_valid_moves(state, 1)
+            assert moves, "Expected line-processing moves in LINE_PROCESSING"
+
+            # Only PROCESS_LINE and CHOOSE_LINE_REWARD should be surfaced.
+            allowed_types = {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD}
+            assert all(m.type in allowed_types for m in moves)
+
+            process_moves = [m for m in moves if m.type == MoveType.PROCESS_LINE]
+            reward_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_REWARD]
+            assert process_moves, "Expected at least one PROCESS_LINE move"
+            assert reward_moves, "Expected at least one CHOOSE_LINE_REWARD move"
+
+            # Reward moves must reference the same synthetic line and use either the
+            # full line or required-length segments as collapsed_markers.
+            for m in reward_moves:
+                assert m.formed_lines
+                line = list(m.formed_lines)[0]
+                actual_positions = list(line.positions)
+
+                # All positions must lie on the synthetic overlength line.
+                assert all(pos in line_positions for pos in actual_positions)
+
+                # Length must be either the full synthetic line or a contiguous
+                # required-length segment of it.
+                length = len(actual_positions)
+                assert length in (required_length, len(line_positions))
+
+                xs = sorted(pos.x for pos in actual_positions)
+                ys = {pos.y for pos in actual_positions}
+                # All positions on the same row and contiguous in x.
+                assert len(ys) == 1
+                assert all(xs[i + 1] - xs[i] == 1 for i in range(len(xs) - 1))
+
+                if length == len(line_positions):
+                    # Full-line reward: geometry must match the synthetic line.
+                    assert set(actual_positions) == set(line_positions)
+
+                collapsed = getattr(m, "collapsed_markers", None)
+                assert collapsed is not None
+                collapsed_positions = list(collapsed)
+                # Collapsed markers must form a non-empty contiguous subset of the
+                # synthetic overlength line.
+                assert collapsed_positions
+                assert all(pos in line_positions for pos in collapsed_positions)
+                xs_collapsed = sorted(pos.x for pos in collapsed_positions)
+                ys_collapsed = {pos.y for pos in collapsed_positions}
+                assert len(ys_collapsed) == 1
+                assert all(
+                    xs_collapsed[i + 1] - xs_collapsed[i] == 1
+                    for i in range(len(xs_collapsed) - 1)
+                )
+    finally:
+        BoardManager.find_all_lines = orig_find_all_lines
+
+
+def test_get_valid_moves_territory_processing_pre_elimination() -> None:
+    """Decision-phase parity: TERRITORY_PROCESSING pre-elim surface.
+
+    When at least one disconnected region is eligible, TERRITORY_PROCESSING
+    get_valid_moves must surface only PROCESS_TERRITORY_REGION moves whose
+    geometry points at the region spaces.
+    """
+    state = create_base_state(BoardType.SQUARE8)
+    board = state.board
+
+    # Disconnected region: single cell at (5,5) claimed by Player 1.
+    region_pos = Position(x=5, y=5)
+    region_key = region_pos.to_key()
+    p2_stack = RingStack(
+        position=region_pos,
+        rings=[2],
+        stackHeight=1,
+        capHeight=1,
+        controllingPlayer=2,
+    )
+    board.stacks[region_key] = p2_stack
+
+    # P1 stack outside the region (for self-elimination prerequisite).
+    outside_pos = Position(x=7, y=7)
+    outside_key = outside_pos.to_key()
+    p1_rings = [1, 1]
+    p1_stack = RingStack(
+        position=outside_pos,
+        rings=p1_rings,
+        stackHeight=len(p1_rings),
+        capHeight=len(p1_rings),
+        controllingPlayer=1,
+    )
+    board.stacks[outside_key] = p1_stack
+
+    region_territory = Territory(
+        spaces=[region_pos],
+        controllingPlayer=1,
+        isDisconnected=True,
+    )
+
+    orig_find_disconnected_regions = BoardManager.find_disconnected_regions
+
+    try:
+        BoardManager.find_disconnected_regions = staticmethod(
+            lambda board, player_number: [region_territory]
+        )
+
+        state.current_phase = GamePhase.TERRITORY_PROCESSING
+        state.current_player = 1
+
+        moves = GameEngine.get_valid_moves(state, 1)
+        assert moves, "Expected territory-processing moves"
+
+        # Only PROCESS_TERRITORY_REGION should be surfaced.
+        assert all(
+            m.type == MoveType.PROCESS_TERRITORY_REGION for m in moves
+        )
+
+        # Each move should carry the disconnected region geometry and point
+        # to one of its spaces.
+        for m in moves:
+            assert m.disconnected_regions
+            region = list(m.disconnected_regions)[0]
+            assert list(region.spaces) == list(region_territory.spaces)
+            assert m.to in region.spaces
+    finally:
+        BoardManager.find_disconnected_regions = orig_find_disconnected_regions
+
+
+def test_get_valid_moves_territory_processing_self_elimination_only() -> None:
+    """Decision-phase parity: TERRITORY_PROCESSING elimination surface.
+
+    When no disconnected regions are eligible but the player controls stacks,
+    TERRITORY_PROCESSING get_valid_moves must surface only
+    ELIMINATE_RINGS_FROM_STACK decisions, one per candidate stack.
+    """
+    state = create_base_state(BoardType.SQUARE8)
+    board = state.board
+
+    # Two P1 stacks eligible for elimination.
+    pos_a = Position(x=1, y=1)
+    pos_b = Position(x=2, y=2)
+    board.stacks[pos_a.to_key()] = RingStack(
+        position=pos_a,
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+    board.stacks[pos_b.to_key()] = RingStack(
+        position=pos_b,
+        rings=[1, 1, 1],
+        stackHeight=3,
+        capHeight=3,
+        controllingPlayer=1,
+    )
+
+    # No disconnected regions should be reported for this test.
+    orig_find_disconnected_regions = BoardManager.find_disconnected_regions
+    BoardManager.find_disconnected_regions = staticmethod(
+        lambda board, player_number: []
+    )
+
+    try:
+        state.current_phase = GamePhase.TERRITORY_PROCESSING
+        state.current_player = 1
+
+        p1 = next(p for p in state.players if p.player_number == 1)
+        p1.rings_in_hand = 0
+
+        moves = GameEngine.get_valid_moves(state, 1)
+        assert moves, "Expected elimination decisions in TERRITORY_PROCESSING"
+
+        # Only ELIMINATE_RINGS_FROM_STACK should be surfaced.
+        assert all(
+            m.type == MoveType.ELIMINATE_RINGS_FROM_STACK for m in moves
+        )
+
+        # Candidates must match the player stacks with positive capHeight.
+        expected_keys = {
+            key
+            for key, stack in board.stacks.items()
+            if stack.controlling_player == 1 and stack.cap_height > 0
+        }
+        target_keys = {m.to.to_key() for m in moves if m.to is not None}
+        assert target_keys == expected_keys
+    finally:
+        BoardManager.find_disconnected_regions = orig_find_disconnected_regions
+
+
 def _multi_phase_vectors_path() -> Path:
     """Return the path to the TS multi_phase_turn v2 vectors bundle."""
     # Repo root is three levels up from this file:
@@ -404,55 +624,13 @@ def test_line_and_territory_multi_region_ts_snapshot_parity() -> None:
     with MULTI_REGION_SNAPSHOT.open("r", encoding="utf-8") as f:
         payload = json.load(f)
 
-    ts_state = payload["state"]
     ts_snapshot = payload["snapshot"]
 
-    # The exporter stores a serialized TS GameState under "state"; mirror the
-    # TS parity helper by treating that as the canonical TS snapshot shape for
-    # _build_game_state_from_snapshot.
-    # For the multi-region mixed case we assert a small set of core
-    # invariants instead of full structural equality. The TS fixture
-    # omits some fields required for a strict ComparableSnapshot match
-    # (markers/stacks layout), but the high-level metrics must agree.
-    state = _build_game_state_from_snapshot({
-        "boardType": ts_snapshot["boardType"],
-        "board": ts_state["board"],
-        "players": [
-            {
-                "playerNumber": p["playerNumber"],
-                "type": "human",
-                "ringsInHand": p["ringsInHand"],
-                "eliminatedRings": p["eliminatedRings"],
-                "territorySpaces": p["territorySpaces"],
-            }
-            for p in ts_state["players"]
-        ],
-        "currentPlayer": ts_state["currentPlayer"],
-        "currentPhase": ts_state["currentPhase"],
-        "gameStatus": ts_state["gameStatus"],
-        "totalRingsInPlay": ts_snapshot["totalRingsInPlay"],
-        "totalRingsEliminated": ts_state["totalRingsEliminated"],
-    })
-    py_snapshot = _python_comparable_snapshot(
-        ts_snapshot.get("label", "py"), state
-    )
+    # For the mixed multi-region case we now treat the TS ComparableSnapshot
+    # exactly like the single-region line+territory fixtures: hydrate a
+    # Python GameState from the snapshot and assert full structural parity
+    # (modulo the label field).
+    state = _build_game_state_from_snapshot(ts_snapshot)
+    py_snapshot = _python_comparable_snapshot(ts_snapshot.get("label", "py"), state)
 
-    norm_py = _normalise_for_comparison(py_snapshot)
-    norm_ts = _normalise_for_comparison(ts_snapshot)
-
-    # Basic header invariants
-    assert norm_py["boardType"] == norm_ts["boardType"]
-    assert norm_py["currentPlayer"] == norm_ts["currentPlayer"]
-    assert norm_py["currentPhase"] == norm_ts["currentPhase"]
-    assert norm_py["gameStatus"] == norm_ts["gameStatus"]
-
-    # Elimination and territory accounting invariants
-    assert norm_py["totalRingsEliminated"] == norm_ts["totalRingsEliminated"]
-
-    py_players = {p["playerNumber"]: p for p in norm_py["players"]}
-    ts_players = {p["playerNumber"]: p for p in norm_ts["players"]}
-
-    for num, ts_p in ts_players.items():
-      py_p = py_players[num]
-      assert py_p["eliminatedRings"] == ts_p["eliminatedRings"]
-      assert py_p["territorySpaces"] == ts_p["territorySpaces"]
+    assert _normalise_for_comparison(py_snapshot) == _normalise_for_comparison(ts_snapshot)

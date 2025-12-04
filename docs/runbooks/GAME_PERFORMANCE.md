@@ -395,3 +395,128 @@ Classification:
 - It is tracked separately and should **not** be interpreted as an infrastructure regression or stability issue when reviewing k6 summaries for this scenario.
 
 Operators and engineers should treat the elevated `http_req_failed` in this specific scenario as a known artifact of the GET endpoint contract bug until that issue is resolved.
+
+## 8. PASS24.1 – k6 baselines after HTTP/WebSocket stabilization
+
+&gt; **Context:** PASS24.1 re-ran all four k6 scenarios against the Docker stack after fixing HTTP/WebSocket availability issues by routing load through nginx on port 80 instead of hitting the Node app container directly on port 3000. All runs used `BASE_URL=http://127.0.0.1` (nginx → `app:3000`) and, where applicable, `WS_URL=ws://127.0.0.1`.
+
+### 8.1 Scenario 1 – Game Creation
+
+**Environment**
+
+- `BASE_URL=http://127.0.0.1` (nginx listening on port 80 and proxying to the Node `app` service on port 3000).
+- k6 scenario script: [`game-creation.js`](../../tests/load/scenarios/game-creation.js:1).
+- Auth and health probes as in §7 (shared login helper and `/health`).
+
+**Infra / availability status**
+
+- `/health` and `POST /api/auth/login` were consistently 200 throughout the run.
+- No socket-level connection failures were observed (`http_req_failed` due to `status=0` / `connect: connection refused` dropped to 0).
+- The app container remained reachable for the full duration of the test; no k6 VUs were forced to back off due to transport errors.
+
+**Application behaviour and SLOs**
+
+- `POST /api/games` continued to behave like the PASS22 baseline:
+  - All game-creation failures were HTTP-level responses (validation errors or `429 Too Many Requests` under higher RPS), not transport errors.
+  - Creation latency remained far below the staging SLOs (p95 ≤ 800 ms, p99 ≤ 1500 ms).
+- The dedicated PASS22 baseline run (see §7) remains representative after PASS24.1:
+  - `game_creation_latency_ms`: p95 ≈ 13 ms, p99 ≈ 16 ms.
+  - `game_creation_success_rate`: ≈ 100% (all creations succeed while GET failures are tracked separately).
+- GETs issued by the scenario against `GET /api/games/:gameId` still surface the `GAME_INVALID_ID` contract issue described in §7.4, so the aggregate `http_req_failed` metric for the scenario stays elevated even though infrastructure availability is now healthy.
+
+**Summary**
+
+- **Infra / availability:** Healthy. No `ECONNREFUSED` / status=0 failures when routing through nginx.
+- **Application correctness / SLOs:** Latency SLOs for `POST /api/games` are strongly met; remaining work is to fix the `GET /api/games/:gameId` ID/validation contract so that aggregate k6 error-rate thresholds reflect true service health.
+
+### 8.2 Scenario 2 – Concurrent Games
+
+**Environment**
+
+- Same as Scenario 1 (`BASE_URL=http://127.0.0.1` via nginx → `app:3000`).
+- k6 scenario script: [`concurrent-games.js`](../../tests/load/scenarios/concurrent-games.js:1).
+
+**Infra / availability status**
+
+- Setup phase (`/health`, `/api/auth/login`) was stable; no `status=0` or connection-refused errors.
+- `POST /api/games` and `GET /api/games/:gameId` remained reachable for the full test window.
+- Node and nginx stayed responsive under the 100+ concurrent game load.
+
+**Application behaviour and SLOs**
+
+- The dominant failures were HTTP 4xx responses rather than transport errors:
+  - Many `GET /api/games/:gameId` calls returned `400 GAME_INVALID_ID` because the scenario still assumes an older ID shape / URL contract.
+  - A minority of rate-limit responses (`429`) appear when ramping quickly to 100+ concurrent games.
+- From an infra perspective the scenario demonstrates that the backend can maintain 100+ active games without dropping connections; however the high 4xx rate prevents SLO thresholds for error rate from passing until the contract between k6 and the game routes is corrected.
+
+**Summary**
+
+- **Infra / availability:** Healthy. No socket-level errors; k6 can sustain the target concurrency against nginx.
+- **Application correctness / SLOs:** Failing due to contract/ID issues in `GET /api/games/:gameId` and some rate limiting, not due to capacity or availability problems.
+
+### 8.3 Scenario 3 – Player Moves
+
+**Environment**
+
+- Same nginx-fronted HTTP topology as Scenarios 1–2.
+- k6 scenario script: [`player-moves.js`](../../tests/load/scenarios/player-moves.js:1).
+- HTTP move endpoint flag: `MOVE_HTTP_ENDPOINT_ENABLED=false` in the script; the scenario currently exercises game creation and polling only.
+
+**Infra / availability status**
+
+- `/health` and `/api/auth/login` remained stable (200) throughout the run.
+- Repeated `GET /api/games/:gameId` polling did not produce any socket-level failures; no `ECONNREFUSED` or `status=0` errors were observed.
+- Overall HTTP availability under this pattern is acceptable after PASS24.1.
+
+**Application behaviour and SLOs**
+
+- Because `MOVE_HTTP_ENDPOINT_ENABLED=false`, this scenario primarily stresses:
+  - Creation of small AI-backed games via `POST /api/games`.
+  - Polling reads via `GET /api/games/:gameId` while the game progresses via AI and WebSockets.
+- Under the current implementation:
+  - `GET /api/games/:gameId` shows a high 4xx rate driven by validation/contract assumptions (IDs, lifecycle timing), not transport issues.
+  - Latency for successful GETs is low and well within the SLOs; the failures are functional (bad IDs / timing) rather than performance-related.
+- This scenario will become more representative once an HTTP move endpoint is introduced and the script is updated to submit legal moves rather than only poll state.
+
+**Summary**
+
+- **Infra / availability:** Healthy. No socket or connection-refused errors when polling game state under load.
+- **Application correctness / SLOs:** Thresholds currently fail because a large fraction of GETs return functional 4xx responses; fixing the `GET /api/games/:gameId` contract and aligning the scenario with the canonical move API are required before using this scenario as an SLO gate.
+
+### 8.4 Scenario 4 – WebSocket Stress
+
+**Environment**
+
+- `BASE_URL=http://127.0.0.1`.
+- `WS_URL=ws://127.0.0.1`.
+- k6 scenario script: [`websocket-stress.js`](../../tests/load/scenarios/websocket-stress.js:1).
+- WebSocket connections target the same Socket.IO endpoint as the browser client: `/socket.io/?EIO=4&amp;transport=websocket&amp;token=…`.
+
+**Infra / availability status**
+
+- After routing through nginx, k6 is able to establish WebSocket connections reliably:
+  - Handshakes to `/socket.io/` complete successfully (HTTP 101 switching protocols) across all VUs.
+  - No `ECONNREFUSED` or low-level TCP failures were observed.
+- This confirms that nginx + WebSocketServer can absorb the connection load without dropping handshakes.
+
+**Application behaviour and SLOs**
+
+- Connections are short-lived:
+  - The server closes many sockets shortly after handshake with "message parse error" / invalid Socket.IO frame semantics.
+  - As a result, connection-duration and message-latency thresholds in the k6 script are not met.
+- The root cause is **protocol mismatch**:
+  - The k6 script speaks plain WebSocket frames with simple JSON envelopes.
+  - The production client uses the full Socket.IO protocol and a richer message envelope.
+  - WebSocketServer expects well-formed Socket.IO messages and terminates connections that do not conform.
+- From an infra perspective, this is acceptable—the handshakes and nginx proxying behave correctly—but the scenario cannot yet be used as a strict SLO gate for steady-state WebSocket behaviour until its message format is aligned with the real client protocol.
+
+**Summary**
+
+- **Infra / availability:** Healthy. 100% of attempted WebSocket handshakes succeed via nginx and `/socket.io/`.
+- **Application correctness / SLOs:** Failing due to WebSocket protocol/message-format mismatch between the k6 script and the production client; connection duration and message-latency thresholds currently reflect this mismatch, not infrastructure instability.
+
+&gt; For up-to-date guidance on how these PASS24.1 scenario baselines relate to P21.4‑2 (production-scale load test) and P22.10 ("Document baseline metrics from load test"), see:
+&gt;
+&gt; - [`docs/PASS21_ASSESSMENT_REPORT.md`](../PASS21_ASSESSMENT_REPORT.md:393) – updated Follow-up Status (PASS24.1) note under Production Validation.
+&gt; - [`docs/PASS22_COMPLETION_SUMMARY.md`](../PASS22_COMPLETION_SUMMARY.md:205) – Load Test Baselines section with PASS24.1 follow-up summary.
+&gt; - [`docs/PASS22_ASSESSMENT_REPORT.md`](../PASS22_ASSESSMENT_REPORT.md:393) – Production Validation section with infra vs functional k6 scenario status.

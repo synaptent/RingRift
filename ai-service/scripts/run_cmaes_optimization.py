@@ -113,14 +113,18 @@ from app.db import GameReplayDB  # noqa: E402
 try:
     from app.distributed import (  # noqa: E402
         DistributedEvaluator,
+        QueueDistributedEvaluator,
         discover_workers,
         wait_for_workers,
         parse_manual_workers,
         filter_healthy_workers,
+        write_games_to_db,
     )
     DISTRIBUTED_AVAILABLE = True
 except ImportError:
     DISTRIBUTED_AVAILABLE = False
+
+QUEUE_DISTRIBUTED_AVAILABLE = DISTRIBUTED_AVAILABLE
 
 
 FitnessDebugCallback = Callable[
@@ -967,6 +971,8 @@ def evaluate_fitness_multiplayer(
     boards: List[BoardType],
     state_pool_id: str = "v1",
     seed: Optional[int] = None,
+    game_db: Optional[GameReplayDB] = None,
+    recording_context: Optional[Dict[str, Any]] = None,
 ) -> float:
     """Minimal rank-based fitness for 3p/4p heuristic evaluation.
 
@@ -1079,6 +1085,10 @@ def evaluate_fitness_multiplayer(
                 heuristic_eval_mode=heuristic_eval_mode,
             )
 
+        # Track initial state and moves for recording
+        initial_state = game_state.model_copy(deep=True)
+        moves_list: List[Move] = []
+
         moves_played = 0
         while (
             game_state.game_status == GameStatus.ACTIVE
@@ -1100,6 +1110,7 @@ def evaluate_fitness_multiplayer(
                 game_state.winner = None
                 break
 
+            moves_list.append(move)
             game_state = rules_engine.apply_move(game_state, move)
             moves_played += 1
 
@@ -1114,6 +1125,32 @@ def evaluate_fitness_multiplayer(
 
         total_score += score
         games_played += 1
+
+        # Record the game if db is provided
+        if game_db is not None:
+            try:
+                metadata = {
+                    "source": "cmaes_multiplayer",
+                    "num_players": num_players,
+                    "candidate_seat": candidate_seat_index,
+                    "candidate_player_number": candidate_player_number,
+                    "board_type": board.value if hasattr(board, "value") else str(board),
+                    "state_pool_id": state_pool_id,
+                    "score": score,
+                }
+                if recording_context:
+                    metadata.update(recording_context)
+                record_completed_game(
+                    db=game_db,
+                    initial_state=initial_state,
+                    final_state=game_state,
+                    moves=moves_list,
+                    metadata=metadata,
+                )
+            except Exception as e:
+                # Don't fail evaluation if recording fails
+                import logging
+                logging.warning(f"Failed to record multiplayer game: {e}")
 
     return total_score / games_played if games_played > 0 else 0.0
 
@@ -1362,6 +1399,9 @@ class CMAESConfig:
     workers: Optional[List[str]] = None  # List of worker URLs (host:port)
     discover_workers: bool = False  # Auto-discover workers via Bonjour
     min_workers: int = 1  # Minimum workers required to start
+    # Queue-based distributed evaluation for cloud deployment
+    queue_backend: Optional[str] = None  # None, "redis", or "sqs"
+    queue_timeout: float = 600.0  # Timeout for collecting queue results
 
 
 def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
@@ -1620,8 +1660,37 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         report_interval_sec=config.progress_interval_sec,
     )
 
-    # Initialize distributed evaluator if requested
+    # Initialize distributed evaluator if requested (HTTP or queue-based)
     distributed_evaluator: Optional[Any] = None
+    queue_evaluator: Optional[Any] = None
+
+    # Queue-based distributed evaluation (for cloud deployment)
+    if config.queue_backend:
+        if not QUEUE_DISTRIBUTED_AVAILABLE:
+            raise RuntimeError(
+                "Queue-based distributed mode requires the distributed module. "
+                "Run 'pip install redis' for Redis or 'pip install boto3' for SQS."
+            )
+
+        board = eval_boards[0] if eval_boards else config.board_type
+        queue_evaluator = QueueDistributedEvaluator(
+            queue_backend=config.queue_backend,
+            board_type=board.value,
+            num_players=config.num_players,
+            games_per_eval=config.games_per_eval,
+            eval_mode=config.eval_mode,
+            state_pool_id=config.state_pool_id or "v1",
+            max_moves=config.max_moves,
+            eval_randomness=config.eval_randomness,
+            seed=config.seed,
+            timeout=config.queue_timeout,
+            run_id=run_id,
+            record_games=recording_enabled,  # Enable game recording
+        )
+        print(f"  Queue backend: {config.queue_backend}")
+        print(f"  Queue timeout: {config.queue_timeout}s")
+
+    # HTTP-based distributed evaluation (for local Mac cluster)
     if config.distributed:
         if not DISTRIBUTED_AVAILABLE:
             raise RuntimeError(
@@ -1670,6 +1739,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             max_moves=config.max_moves,
             eval_randomness=config.eval_randomness,
             seed=config.seed,
+            record_games=recording_enabled,  # Enable game recording
         )
 
         # Preload state pools on workers
@@ -1701,8 +1771,59 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         boards_for_eval = eval_boards
         candidate_per_board_fitness: List[Dict[BoardType, float]] = []
 
-        # Distributed evaluation: evaluate entire population in parallel on workers
-        if distributed_evaluator is not None:
+        # Queue-based distributed evaluation (for cloud deployment)
+        if queue_evaluator is not None:
+            # Convert solutions to weight dicts
+            population_weights = [
+                array_to_weights(np.array(sol, dtype=float))
+                for sol in solutions
+            ]
+
+            # Progress callback
+            def queue_progress(completed: int, total: int) -> None:
+                progress_reporter.update_candidates_evaluated(completed)
+
+            # Evaluate population via queue-based workers
+            fitness_scores, eval_stats = queue_evaluator.evaluate_population(
+                population=population_weights,
+                baseline_weights=baseline_weights,
+                progress_callback=queue_progress,
+                generation=generation,
+            )
+
+            # Convert to CMA-ES format (negate for minimization)
+            for idx, fitness in enumerate(fitness_scores):
+                gen_fitnesses.append(fitness)
+                fitnesses.append(-fitness)
+                # For queue mode, we don't have per-board breakdown
+                # so use the aggregate fitness for all boards
+                per_board = {board: fitness for board in boards_for_eval}
+                candidate_per_board_fitness.append(per_board)
+
+            # Log queue eval stats
+            if eval_stats.failed_evaluations > 0:
+                print(
+                    f"  [Queue] Gen {generation}: "
+                    f"{eval_stats.successful_evaluations}/{eval_stats.total_candidates} "
+                    f"successful, {eval_stats.failed_evaluations} failed"
+                )
+
+            # Write collected games from workers to local DB
+            if game_db is not None and eval_stats.all_game_replays:
+                games_written = write_games_to_db(
+                    db=game_db,
+                    game_data_list=eval_stats.all_game_replays,
+                    extra_metadata={
+                        "run_id": run_id,
+                        "generation": generation,
+                        "eval_mode": "queue-distributed",
+                    },
+                )
+                if games_written > 0:
+                    print(f"  [Queue] Wrote {games_written} games to DB")
+
+        # HTTP-based distributed evaluation: evaluate entire population in parallel on workers
+        elif distributed_evaluator is not None:
             # Convert solutions to weight dicts
             population_weights = [
                 array_to_weights(np.array(sol, dtype=float))
@@ -1736,6 +1857,20 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                     f"{eval_stats.successful_evaluations}/{eval_stats.total_candidates} "
                     f"successful, {eval_stats.failed_evaluations} failed"
                 )
+
+            # Write collected games from workers to local DB
+            if game_db is not None and eval_stats.all_game_replays:
+                games_written = write_games_to_db(
+                    db=game_db,
+                    game_data_list=eval_stats.all_game_replays,
+                    extra_metadata={
+                        "run_id": run_id,
+                        "generation": generation,
+                        "eval_mode": "http-distributed",
+                    },
+                )
+                if games_written > 0:
+                    print(f"  [Distributed] Wrote {games_written} games to DB")
 
         else:
             # Local evaluation: evaluate candidates sequentially
@@ -1778,8 +1913,6 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                     # evaluate_fitness_multiplayer returns a score in [-1, 1].
                     # Normalise this to [0, 1] so that CMA-ES sees a consistent
                     # fitness range with the 2-player win-rate metric.
-                    # NOTE: Multi-player evaluation does not support game recording
-                    # yet; game_db is ignored for this path.
                     raw_score = evaluate_fitness_multiplayer(
                         candidate_weights=candidate_weights,
                         baseline_weights=baseline_weights,
@@ -1788,6 +1921,8 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                         boards=boards_for_eval,
                         state_pool_id=config.state_pool_id or "",
                         seed=config.seed,
+                        game_db=game_db,
+                        recording_context=recording_context,
                     )
                     fitness = (raw_score + 1.0) / 2.0
                     # We do not have per-board breakdown from the multi-player
@@ -1948,6 +2083,11 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         fitness=best_fitness,
     )
     print(f"Optimized weights saved to: {config.output_path}")
+
+    # Cleanup queue connection if used
+    if queue_evaluator is not None:
+        queue_evaluator.close()
+        logger.info("Queue evaluator connection closed")
 
     return best_weights
 
@@ -2205,6 +2345,28 @@ def main():
             "If fewer workers are discovered, optimization will fail. Default: 1."
         ),
     )
+    # Queue-based cloud distributed evaluation arguments
+    parser.add_argument(
+        "--queue-backend",
+        type=str,
+        choices=["redis", "sqs"],
+        default=None,
+        help=(
+            "Queue backend for cloud distributed evaluation. Workers must be "
+            "running cmaes_cloud_worker.py and connected to the same queue. "
+            "Mutually exclusive with --distributed (HTTP-based mode). "
+            "Options: 'redis' (local/small-scale), 'sqs' (AWS production)."
+        ),
+    )
+    parser.add_argument(
+        "--queue-timeout",
+        type=float,
+        default=600.0,
+        help=(
+            "Timeout in seconds for collecting queue results per generation. "
+            "Increase for large populations or slow workers. Default: 600."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -2301,7 +2463,16 @@ def main():
         ),
         discover_workers=args.discover_workers,
         min_workers=args.min_workers,
+        queue_backend=args.queue_backend,
+        queue_timeout=args.queue_timeout,
     )
+
+    # Validate mutually exclusive modes
+    if config.distributed and config.queue_backend:
+        raise ValueError(
+            "--distributed (HTTP) and --queue-backend are mutually exclusive. "
+            "Use --distributed for local Mac cluster, --queue-backend for cloud."
+        )
 
     run_cmaes_optimization(config)
 

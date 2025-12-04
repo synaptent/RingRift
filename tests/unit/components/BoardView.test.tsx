@@ -414,6 +414,65 @@ describe('BoardView', () => {
     });
   });
 
+  describe('chain capture path visualization', () => {
+    it('accepts chainCapturePath prop and renders board without errors', () => {
+      const board = createEmptyBoardState('square8');
+      const chainCapturePath = [
+        { x: 2, y: 2 },
+        { x: 4, y: 2 },
+        { x: 6, y: 2 },
+      ];
+
+      // The SVG overlay relies on DOM geometry (getBoundingClientRect) which
+      // isn't available in JSDOM. This test verifies the component accepts
+      // the prop and renders the board correctly without errors.
+      render(<BoardView boardType="square8" board={board} chainCapturePath={chainCapturePath} />);
+
+      // Board should render correctly with the chainCapturePath prop
+      expect(screen.getByTestId('board-view')).toBeInTheDocument();
+    });
+
+    it('does not render chain capture overlay when path has fewer than 2 positions', () => {
+      const board = createEmptyBoardState('square8');
+      const chainCapturePath = [{ x: 2, y: 2 }]; // Only one position
+
+      const { container } = render(
+        <BoardView boardType="square8" board={board} chainCapturePath={chainCapturePath} />
+      );
+
+      // Should not have the chain capture arrow marker (path too short)
+      const arrowMarker = container.querySelector('#chain-capture-arrow');
+      expect(arrowMarker).toBeNull();
+    });
+
+    it('does not render chain capture overlay when path is undefined', () => {
+      const board = createEmptyBoardState('square8');
+
+      const { container } = render(<BoardView boardType="square8" board={board} />);
+
+      // Should not have the chain capture arrow marker
+      const arrowMarker = container.querySelector('#chain-capture-arrow');
+      expect(arrowMarker).toBeNull();
+    });
+
+    it('accepts chainCapturePath prop on hex boards', () => {
+      const board = createEmptyBoardState('hexagonal');
+      board.type = 'hexagonal';
+      board.size = 11;
+
+      const chainCapturePath = [
+        { x: 0, y: 0, z: 0 },
+        { x: 1, y: -1, z: 0 },
+        { x: 2, y: -2, z: 0 },
+      ];
+
+      // Verify component accepts the prop without errors on hex boards
+      render(<BoardView boardType="hexagonal" board={board} chainCapturePath={chainCapturePath} />);
+
+      expect(screen.getByTestId('board-view')).toBeInTheDocument();
+    });
+  });
+
   describe('coordinate labels', () => {
     it('shows coordinate labels when enabled', () => {
       const board = createEmptyBoardState('square8');

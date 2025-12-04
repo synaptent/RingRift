@@ -225,11 +225,33 @@ function createLineOrderDecision(state: GameState, lines: DetectedLineInfo[]): P
  * Create a pending decision for territory region processing.
  */
 function createRegionOrderDecision(state: GameState, regions: Territory[]): PendingDecision {
-  const moves = enumerateProcessTerritoryRegionMoves(state, state.currentPlayer);
+  const player = state.currentPlayer;
+  const regionMoves = enumerateProcessTerritoryRegionMoves(state, player);
+  const elimMoves = enumerateTerritoryEliminationMoves(state, player);
+
+  const moves: Move[] = [...regionMoves];
+
+  // When one or more regions are processable for this player and no
+  // self-elimination decision is currently outstanding, include the
+  // canonical skip_territory_processing Move alongside the explicit
+  // process_territory_region options. This keeps the PendingDecision
+  // surface aligned with getValidMoves for territory_processing.
+  if (regionMoves.length > 0 && elimMoves.length === 0) {
+    const moveNumber = state.moveHistory.length + 1;
+    moves.push({
+      id: `skip-territory-${moveNumber}`,
+      type: 'skip_territory_processing',
+      player,
+      to: { x: 0, y: 0 },
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber,
+    } as Move);
+  }
 
   return {
     type: 'region_order',
-    player: state.currentPlayer,
+    player,
     options: moves,
     context: {
       description: `Choose which region to process (${regions.length} regions available)`,
@@ -521,6 +543,16 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       };
     }
 
+    case 'skip_capture': {
+      // RR-CANON-R070: Skip optional capture after movement, proceed to line processing
+      return {
+        nextState: {
+          ...state,
+          currentPhase: 'line_processing' as GamePhase,
+        },
+      };
+    }
+
     case 'move_stack':
     case 'move_ring': {
       if (!move.from) {
@@ -591,6 +623,7 @@ function processPostMovePhases(stateMachine: PhaseStateMachine): {
   victoryResult?: VictoryState;
 } {
   const state = stateMachine.gameState;
+  const originalMoveType = stateMachine.processingState.originalMove.type;
 
   // Check for chain capture continuation first
   if (stateMachine.processingState.chainCaptureInProgress) {
@@ -619,6 +652,29 @@ function processPostMovePhases(stateMachine: PhaseStateMachine): {
       ...stateMachine.gameState,
       chainCapturePosition: undefined,
     });
+  }
+
+  // RR-CANON-R070 / Section 4.3: After a non-capturing movement (move_stack/move_ring),
+  // the player may opt to make an overtaking capture before proceeding to line processing.
+  // Check if the original move was a simple movement and if capture opportunities exist
+  // FROM THE LANDING POSITION (not from all stacks).
+  const wasSimpleMovement = originalMoveType === 'move_stack' || originalMoveType === 'move_ring';
+  const moveLandingPos = stateMachine.processingState.originalMove.to;
+  if (wasSimpleMovement && state.currentPhase === 'movement' && moveLandingPos) {
+    // Enumerate all captures and filter to only those from the landing position
+    const allCaptures = enumerateAllCaptureMoves(
+      stateMachine.gameState,
+      stateMachine.gameState.currentPlayer
+    );
+    const landingKey = positionToString(moveLandingPos);
+    const capturesFromLanding = allCaptures.filter(
+      (m) => m.from && positionToString(m.from) === landingKey
+    );
+    if (capturesFromLanding.length > 0) {
+      // Stay in capture phase to allow optional overtaking capture from the moved stack
+      stateMachine.transitionTo('capture');
+      return {};
+    }
   }
 
   // Transition to line processing phase
@@ -680,36 +736,41 @@ function processPostMovePhases(stateMachine: PhaseStateMachine): {
 
   // Process territory
   if (stateMachine.currentPhase === 'territory_processing') {
-    const regions = getProcessableTerritoryRegions(state.board, {
-      player: state.currentPlayer,
-    });
-
-    if (regions.length > 1) {
-      // Multiple regions: player must choose order
-      return {
-        pendingDecision: createRegionOrderDecision(state, regions),
-      };
-    } else if (regions.length === 1) {
-      // Single region: process automatically
-      const region = regions[0];
-      const move: Move = {
-        id: `auto-process-region`,
-        type: 'process_territory_region',
+    // If the original move was an explicit skip_territory_processing,
+    // treat territory processing as complete for this turn and proceed
+    // directly to victory/turn advancement.
+    if (originalMoveType !== 'skip_territory_processing') {
+      const regions = getProcessableTerritoryRegions(state.board, {
         player: state.currentPlayer,
-        to: region.spaces[0],
-        disconnectedRegions: [region],
-        timestamp: new Date(),
-        thinkTime: 0,
-        moveNumber: state.moveHistory.length + 1,
-      };
-      const outcome = applyProcessTerritoryRegionDecision(state, move);
-      stateMachine.updateGameState(outcome.nextState);
+      });
 
-      // Check if elimination decision is needed
-      if (outcome.pendingSelfElimination) {
+      if (regions.length > 1) {
+        // Multiple regions: player must choose order
         return {
-          pendingDecision: createEliminationDecision(stateMachine.gameState),
+          pendingDecision: createRegionOrderDecision(state, regions),
         };
+      } else if (regions.length === 1) {
+        // Single region: process automatically
+        const region = regions[0];
+        const move: Move = {
+          id: `auto-process-region`,
+          type: 'process_territory_region',
+          player: state.currentPlayer,
+          to: region.spaces[0],
+          disconnectedRegions: [region],
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: state.moveHistory.length + 1,
+        };
+        const outcome = applyProcessTerritoryRegionDecision(state, move);
+        stateMachine.updateGameState(outcome.nextState);
+
+        // Check if elimination decision is needed
+        if (outcome.pendingSelfElimination) {
+          return {
+            pendingDecision: createEliminationDecision(stateMachine.gameState),
+          };
+        }
       }
     }
   }
@@ -931,6 +992,43 @@ export function getValidMoves(state: GameState): Move[] {
       return [...movements, ...captures];
     }
 
+    case 'capture': {
+      // RR-CANON-R070 / Section 4.3: In capture phase (after non-capturing movement),
+      // the player may optionally make overtaking captures or skip to line processing.
+      // Only captures from the last moved stack are valid (not all stacks).
+      const lastMove =
+        state.moveHistory.length > 0 ? state.moveHistory[state.moveHistory.length - 1] : null;
+      const attackerPos = lastMove?.to;
+
+      if (!attackerPos) {
+        // No last move position, can't determine attacker - return empty
+        return [];
+      }
+
+      // Get all captures and filter to only those from the attacker position
+      const allCaptures = enumerateAllCaptureMoves(state, player);
+      const attackerKey = positionToString(attackerPos);
+      const captures = allCaptures.filter(
+        (m) => m.from && positionToString(m.from) === attackerKey
+      );
+
+      const moves: Move[] = [...captures];
+
+      // Add skip option to proceed to line processing without capturing
+      // (always available in capture phase since captures are optional)
+      moves.push({
+        id: `skip-capture-${moveNumber}`,
+        type: 'skip_capture',
+        player,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber,
+      } as Move);
+
+      return moves;
+    }
+
     case 'chain_capture': {
       // Get capture continuations from current position
       // Note: This requires knowing the chain position, which needs context
@@ -945,7 +1043,27 @@ export function getValidMoves(state: GameState): Move[] {
     case 'territory_processing': {
       const regionMoves = enumerateProcessTerritoryRegionMoves(state, player);
       const elimMoves = enumerateTerritoryEliminationMoves(state, player);
-      return [...regionMoves, ...elimMoves];
+
+      const moves: Move[] = [...regionMoves, ...elimMoves];
+
+      // When one or more regions are processable for this player and no
+      // self-elimination decision is currently outstanding, expose an
+      // explicit "skip territory processing" meta-move. This lets humans
+      // and AIs opt out of processing some or all eligible regions while
+      // still recording that decision in canonical history.
+      if (regionMoves.length > 0 && elimMoves.length === 0) {
+        moves.push({
+          id: `skip-territory-${moveNumber}`,
+          type: 'skip_territory_processing',
+          player,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber,
+        } as Move);
+      }
+
+      return moves;
     }
 
     default:

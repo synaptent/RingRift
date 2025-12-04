@@ -33,7 +33,7 @@ import type {
   PlayerChoice,
   PlayerChoiceType,
 } from '../../shared/types/game';
-import { positionToString } from '../../shared/types/game';
+import { positionToString, positionsEqual } from '../../shared/types/game';
 import type { ConnectionStatus } from '../domain/GameAPI';
 import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModels';
 import type { ChoiceKind } from './choiceViewModels';
@@ -56,6 +56,16 @@ export interface PhaseViewModel {
   colorClass: string;
   /** Emoji icon for the phase */
   icon: string;
+  /**
+   * Short, action-oriented hint for the active player.
+   * E.g., "Click an empty cell to place" or "Select your stack, then destination".
+   */
+  actionHint: string;
+  /**
+   * Spectator-oriented description of what's happening.
+   * E.g., "Watching ring placement" or "Player is selecting a move".
+   */
+  spectatorHint: string;
 }
 
 /**
@@ -144,6 +154,13 @@ export interface HUDDecisionPhaseViewModel {
         tone: 'info' | 'attention';
       }
     | undefined;
+  /**
+   * Optional flag indicating that a skip action is available in this decision
+   * phase (for example, skip_territory_processing when disconnected regions
+   * exist). Used by HUDs to render an explicit "Skip" control instead of
+   * relying solely on board highlights.
+   */
+  canSkip?: boolean | undefined;
 }
 export interface HUDViewModel {
   phase: PhaseViewModel;
@@ -401,39 +418,51 @@ export function getPlayerColors(playerNumber?: number) {
 const PHASE_INFO: Record<GamePhase, Omit<PhaseViewModel, 'phaseKey'>> = {
   ring_placement: {
     label: 'Ring Placement',
-    description: 'Place your rings on the board',
+    description: 'Place your rings on the board to build stacks',
     colorClass: 'bg-blue-500',
     icon: '🎯',
+    actionHint: 'Click an empty cell or your own stack to place rings',
+    spectatorHint: 'Player is placing rings on the board',
   },
   movement: {
     label: 'Movement Phase',
-    description: 'Move a stack or capture opponent rings',
+    description: 'Move a stack or initiate a capture',
     colorClass: 'bg-green-500',
     icon: '⚡',
+    actionHint: 'Select your stack, then click a destination to move',
+    spectatorHint: 'Player is choosing a move',
   },
   capture: {
     label: 'Capture Phase',
-    description: 'Execute a capture move',
+    description: 'Jump over opponent stacks to capture rings',
     colorClass: 'bg-orange-500',
     icon: '⚔️',
+    actionHint: 'Select your stack, then jump over an opponent to capture',
+    spectatorHint: 'Player is executing a capture',
   },
   chain_capture: {
     label: 'Chain Capture',
-    description: 'Chain capture in progress – select next target',
+    description: 'Continue capturing with the same stack',
     colorClass: 'bg-orange-500',
     icon: '🔗',
+    actionHint: 'Click the next target to continue capturing, or end chain',
+    spectatorHint: 'Player is continuing a chain capture',
   },
   line_processing: {
     label: 'Line Processing',
-    description: 'Choose line completion reward',
+    description: 'A line of 5+ rings was formed – choose your reward',
     colorClass: 'bg-purple-500',
     icon: '📏',
+    actionHint: 'Choose which line to process and your reward',
+    spectatorHint: 'Player is choosing a line reward',
   },
   territory_processing: {
     label: 'Territory Processing',
-    description: 'Process disconnected regions',
+    description: 'Disconnected regions detected – resolve ownership',
     colorClass: 'bg-pink-500',
     icon: '🏰',
+    actionHint: 'Choose which region to process first',
+    spectatorHint: 'Player is resolving territory',
   },
 };
 
@@ -443,6 +472,8 @@ function toPhaseViewModel(phase: GamePhase): PhaseViewModel {
     description: '',
     colorClass: 'bg-gray-400',
     icon: '❓',
+    actionHint: 'Make your move',
+    spectatorHint: 'Waiting for player action',
   };
   return { phaseKey: phase, ...info };
 }
@@ -711,6 +742,11 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
         text: 'Select stack cap to eliminate',
         tone: 'attention',
       };
+    } else if (vm.kind === 'territory_region_order') {
+      statusChip = {
+        text: 'Territory claimed – choose region to process or skip',
+        tone: 'attention',
+      };
     }
 
     decisionPhase = {
@@ -727,6 +763,14 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
       isServerCapped: vm.timeout.showCountdown ? decisionIsServerCapped : undefined,
       spectatorLabel,
       statusChip,
+      // Expose a generic skip hint when the underlying pending choice is a
+      // region_order that includes an explicit skip_territory_processing move.
+      canSkip:
+        vm.kind === 'territory_region_order' &&
+        Array.isArray((pendingChoice as any).options) &&
+        (pendingChoice as any).options.some(
+          (opt: Move) => opt && opt.type === 'skip_territory_processing'
+        ),
     };
   }
 
@@ -805,10 +849,43 @@ export function deriveBoardDecisionHighlights(
     }
     case 'region_order': {
       // Territory decisions expose a representativePosition for each region.
-      // We highlight those representatives; future extensions may expand this
-      // to the full region geometry via territoryDecisionHelpers.
+      // Prefer to highlight the full region geometry when the board's
+      // territories map is populated; otherwise fall back to the
+      // representative positions so the decision surface remains visible.
+      const territories = gameState.board.territories;
+
       for (const option of pendingChoice.options) {
-        pushPosition(option.representativePosition, 'primary');
+        // Skip options represent the meta-move "skip_territory_processing"
+        // and do not correspond to a concrete region on the board. Avoid
+        // highlighting their representative sentinel position.
+        if (option.regionId === 'skip' || option.size <= 0) {
+          continue;
+        }
+
+        const rep = option.representativePosition;
+        if (!rep) continue;
+
+        let highlighted = false;
+
+        if (territories && territories.size > 0) {
+          territories.forEach((territory) => {
+            if (highlighted) return;
+            const containsRep = territory.spaces.some((pos) => positionsEqual(pos, rep));
+            if (containsRep) {
+              for (const pos of territory.spaces) {
+                pushPosition(pos, 'primary');
+              }
+              highlighted = true;
+            }
+          });
+        }
+
+        // Fallback: if we could not map the representative position to
+        // a concrete territory region, still highlight the representative
+        // cell so players and spectators see where the choice lives.
+        if (!highlighted) {
+          pushPosition(rep, 'primary');
+        }
       }
       break;
     }

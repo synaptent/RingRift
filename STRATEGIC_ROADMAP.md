@@ -3,7 +3,7 @@
 > **Doc Status (2025-11-30): Active (roadmap & SLOs)**
 >
 > - Canonical phased roadmap and performance/scale SLO reference.
-> - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+> - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/architecture/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 > - Relationship to goals: For the canonical statement of RingRift’s product/technical goals, v1.0 success criteria, and scope boundaries, see [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1). This roadmap operationalises those goals into phases, milestones, and SLOs and should be read as the **“how we plan to get there”** companion to [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1).
 
 **Version:** 3.3
@@ -172,6 +172,8 @@ list of tasks that roll up into these phases.
 
 ## 📊 Success Metrics for v1.0
 
+These metrics restate and operationalise the v1.0 success criteria defined in [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1); if wording here ever appears to conflict, treat [`PROJECT_GOALS.md`](PROJECT_GOALS.md:1) as canonical and update this section to match.
+
 1.  **Reliability:** >99.9% uptime, zero critical bugs.
 2.  **Performance:** AI moves <1s, UI updates <16ms.
 3.  **Engagement:** Users completing full games without errors.
@@ -322,6 +324,8 @@ Tracked via the load tool’s timing plus HTTP status codes; if HTTP latency his
 #### 2.2 WebSocket gameplay SLOs
 
 These SLOs are defined for **move-to-acknowledgement latency** and are validated via:
+
+For the canonical decision on player move transport (WebSocket vs HTTP), see [`PLAYER_MOVE_TRANSPORT_DECISION.md`](docs/PLAYER_MOVE_TRANSPORT_DECISION.md:1). WebSocket is the authoritative move channel for interactive clients; any HTTP move endpoint is an internal/test harness over the same shared domain API.
 
 - Client-side timing in the load tool (emit move → receive authoritative broadcast/ack).
 - Server-side metrics:

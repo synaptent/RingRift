@@ -57,6 +57,7 @@ from scripts.run_cmaes_optimization import (
     evaluate_fitness,
     BOARD_NAME_TO_TYPE,
 )
+from app.distributed.game_collector import InMemoryGameCollector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -160,7 +161,8 @@ def evaluate_candidate_task(task: Dict[str, Any]) -> Dict[str, Any]:
         "state_pool_id": "v1",
         "max_moves": 200,
         "eval_randomness": 0.02,
-        "seed": 42
+        "seed": 42,
+        "record_games": false  # Optional: if true, return game data
     }
     """
     global WORKER_STATS
@@ -186,10 +188,14 @@ def evaluate_candidate_task(task: Dict[str, Any]) -> Dict[str, Any]:
         max_moves = task.get("max_moves", 200)
         eval_randomness = task.get("eval_randomness", 0.0)
         seed = task.get("seed")
+        record_games = task.get("record_games", False)
 
         # Pre-load state pool if using multi-start mode
         if eval_mode == "multi-start":
             get_cached_state_pool(board_type, num_players, state_pool_id)
+
+        # Create game collector if recording is requested
+        game_collector = InMemoryGameCollector() if record_games else None
 
         # Evaluate fitness using the existing function
         fitness = evaluate_fitness(
@@ -203,6 +209,7 @@ def evaluate_candidate_task(task: Dict[str, Any]) -> Dict[str, Any]:
             state_pool_id=state_pool_id,
             eval_randomness=eval_randomness,
             seed=seed,
+            game_db=game_collector,  # Pass collector as game_db
         )
 
         elapsed = time.time() - start_time
@@ -216,9 +223,10 @@ def evaluate_candidate_task(task: Dict[str, Any]) -> Dict[str, Any]:
         logger.info(
             f"Task {task_id} complete: fitness={fitness:.3f}, "
             f"games={games_per_eval}, time={elapsed:.1f}s"
+            + (f", recorded={len(game_collector.get_games())}" if game_collector else "")
         )
 
-        return {
+        result = {
             "task_id": task_id,
             "candidate_id": candidate_id,
             "fitness": fitness,
@@ -227,6 +235,12 @@ def evaluate_candidate_task(task: Dict[str, Any]) -> Dict[str, Any]:
             "worker_id": WORKER_ID,
             "status": "success",
         }
+
+        # Include game replays if recording was requested
+        if game_collector:
+            result["game_replays"] = game_collector.get_serialized_games()
+
+        return result
 
     except Exception as e:
         elapsed = time.time() - start_time

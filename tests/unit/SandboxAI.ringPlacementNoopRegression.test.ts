@@ -9,7 +9,8 @@ import {
   PlayerChoiceResponseFor,
   CaptureDirectionChoice,
 } from '../../src/shared/types/game';
-import { hashGameState } from '../../src/shared/engine/core';
+import { hashGameState, computeProgressSnapshot } from '../../src/shared/engine/core';
+import { STALL_WINDOW_STEPS, MAX_AI_ACTIONS_PER_GAME } from '../utils/aiSimulationPolicy';
 
 /**
  * Focused regression for the historical sandbox AI stall observed in the
@@ -34,9 +35,12 @@ test('Sandbox AI regression: square8 / 2p / seed=18 terminates without long no-o
 
   // Action budget and no-op window are deliberately smaller than the
   // single-seed debug harness, since this test is meant to be a quick
-  // regression rather than a full diagnostic run.
-  const MAX_AI_ACTIONS = 400;
-  const MAX_STAGNANT = 12;
+  // regression rather than a full diagnostic run. The window length is
+  // aligned with the canonical STALL_WINDOW_STEPS used by the shared
+  // aiSimulationPolicy tests so that "no-op stall" semantics match the
+  // S-invariant + hash-based stall classification.
+  const MAX_AI_ACTIONS = MAX_AI_ACTIONS_PER_GAME;
+  const MAX_STAGNANT = STALL_WINDOW_STEPS;
 
   function makePrng(seedValue: number): () => number {
     let s = seedValue >>> 0;
@@ -108,9 +112,16 @@ test('Sandbox AI regression: square8 / 2p / seed=18 terminates without long no-o
 
     let stagnantSteps = 0;
     let lastHash = hashGameState(engine.getGameState());
+    let lastProgress = computeProgressSnapshot(engine.getGameState());
 
     for (let i = 0; i < MAX_AI_ACTIONS; i++) {
       const before = engine.getGameState();
+      const beforeProgress = computeProgressSnapshot(before);
+
+      // Global S-invariant: non-decreasing over time.
+      expect(beforeProgress.S).toBeGreaterThanOrEqual(lastProgress.S);
+      lastProgress = beforeProgress;
+
       if (before.gameStatus !== 'active') {
         break;
       }
@@ -118,6 +129,10 @@ test('Sandbox AI regression: square8 / 2p / seed=18 terminates without long no-o
       await engine.maybeRunAITurn();
       const after = engine.getGameState();
       const afterHash = hashGameState(after);
+      const afterProgress = computeProgressSnapshot(after);
+
+      // Per-action S-invariant: S must not decrease across an AI action.
+      expect(afterProgress.S).toBeGreaterThanOrEqual(beforeProgress.S);
 
       if (afterHash === lastHash && after.gameStatus === 'active') {
         stagnantSteps++;
@@ -126,10 +141,13 @@ test('Sandbox AI regression: square8 / 2p / seed=18 terminates without long no-o
       }
 
       lastHash = afterHash;
+      lastProgress = afterProgress;
 
       // Guard: we should never see a long run of true no-op AI turns
       // in this scenario now that ring_placement control flow correctly
-      // forces progress (placement, movement, or elimination).
+      // forces progress (placement, movement, or elimination). The stall
+      // window is aligned with the canonical STALL_WINDOW_STEPS used by
+      // the shared aiSimulationPolicy classification.
       if (stagnantSteps >= MAX_STAGNANT) {
         throw new Error(
           `Sandbox AI regression: detected ${stagnantSteps} consecutive no-op AI turns ` +

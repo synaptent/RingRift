@@ -115,23 +115,14 @@ export function validateMovement(state: GameState, action: MoveStackAction): Val
     return { valid: true };
   }
 
-  // Can land on own marker (will be removed and top ring eliminated)
-  if (landingMarker && landingMarker.player === action.playerId && !landingStack) {
+  // Per RR-CANON-R091/R092: Can land on any marker (own or opponent).
+  // The marker is removed and a ring from the cap is eliminated.
+  if (landingMarker && !landingStack) {
     return { valid: true };
   }
 
-  // Cannot land on opponent marker (unless it's a capture, but this is MoveStackAction)
-  // Wait, rules say: "When moving over markers... you may land on any valid space beyond the markers... provided it is either (a) empty or (b) occupied by a single marker of the moving stack's color"
-  // Opponent markers flip when jumped over. But can you land ON them?
-  // Rule 8.2: "Landing on opponent markers or collapsed spaces remains illegal."
-  if (landingMarker && landingMarker.player !== action.playerId && !landingStack) {
-    return { valid: false, reason: 'Cannot land on opponent marker', code: 'INVALID_LANDING' };
-  }
-
-  // Cannot land on existing stack (unless merging? Rules don't explicitly mention merging stacks in movement phase, only placement)
+  // Cannot land on existing stack
   // Rule 8.1: "Cannot pass through other rings or stacks".
-  // Rule 8.2: "Landing on ... empty or occupied by a single marker".
-  // It implies you cannot land on a stack.
   if (landingStack) {
     return { valid: false, reason: 'Cannot land on existing stack', code: 'INVALID_LANDING' };
   }

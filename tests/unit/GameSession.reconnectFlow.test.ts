@@ -381,6 +381,43 @@ describe('GameSession Reconnect Flow Tests', () => {
     });
   });
 
+  describe('Server-side full state sync on reconnect', () => {
+    it('calls getGameState and emits game_state on player reconnect', async () => {
+      const gameState = createBasePlacementPhaseState();
+      mockSession.getGameState.mockReturnValue(gameState);
+
+      const socket1 = createMockSocket(userId1, 'socket-1');
+
+      // Initial join
+      await (wsServer as any).handleJoinGame(socket1, gameId);
+
+      // Disconnect within reconnection window
+      (wsServer as any).handleDisconnect(socket1);
+
+      // Clear prior getGameState calls so we can attribute the next call to reconnect
+      mockSession.getGameState.mockClear();
+
+      // Reconnect with a new socket instance
+      const socket1Reconnect = createMockSocket(userId1, 'socket-1-reconnect');
+      await (wsServer as any).handleJoinGame(socket1Reconnect, gameId);
+
+      // On reconnect, the session must be queried for a fresh GameState snapshot
+      expect(mockSession.getGameState).toHaveBeenCalledTimes(1);
+
+      // And the server must emit a full game_state payload to the reconnecting socket
+      expect(socket1Reconnect.emit).toHaveBeenCalledWith(
+        'game_state',
+        expect.objectContaining({
+          type: 'game_update',
+          data: expect.objectContaining({
+            gameId,
+            gameState: expect.any(Object),
+          }),
+        })
+      );
+    });
+  });
+
   describe('Reconnection Edge Cases', () => {
     it('should handle rapid disconnect/reconnect within grace period', async () => {
       const gameState = createBasePlacementPhaseState();
@@ -767,5 +804,47 @@ describe('WebSocketServer reconnection timeout abandonment semantics', () => {
     (wsServer as any).handleReconnectionTimeout(gameId, disconnectingUserId, 1);
 
     expect(mockSession.handleAbandonmentForDisconnectedPlayer).toHaveBeenCalledWith(1, false);
+  });
+
+  it('does not trigger abandonment when game already ended by timeout before reconnection window expires', () => {
+    // Simulate a game that has already been completed by rules-level timeout
+    const completedState = {
+      ...(mockSession.getGameState() as GameState),
+      gameStatus: 'completed',
+      gameResult: {
+        winner: 2,
+        reason: 'timeout',
+        finalScore: { 1: 0, 2: 1 },
+      },
+    } as GameState;
+
+    mockSession.getGameState.mockReturnValueOnce(completedState);
+
+    const states = (wsServer as any).playerConnectionStates as Map<string, any>;
+    states.set(`${gameId}:${disconnectingUserId}`, {
+      kind: 'disconnected_pending_reconnect',
+      gameId,
+      userId: disconnectingUserId,
+      playerNumber: 1,
+    });
+    states.set(`${gameId}:${opponentUserId}`, {
+      kind: 'connected',
+      gameId,
+      userId: opponentUserId,
+      playerNumber: 2,
+    });
+
+    (wsServer as any).handleReconnectionTimeout(gameId, disconnectingUserId, 1);
+
+    // Abandonment helper must not be invoked once the rules-level result is final.
+    expect(mockSession.handleAbandonmentForDisconnectedPlayer).not.toHaveBeenCalled();
+
+    // Connection diagnostics still record the expired reconnection window.
+    const snapshot = wsServer.getPlayerConnectionStateSnapshotForTesting(
+      gameId,
+      disconnectingUserId
+    );
+    expect(snapshot).toBeDefined();
+    expect(snapshot!.kind).toBe('disconnected_expired');
   });
 });

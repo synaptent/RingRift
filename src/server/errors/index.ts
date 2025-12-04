@@ -23,5 +23,11 @@
 export { ApiError, CommonErrors, isAppError } from './ApiError';
 export type { ApiErrorResponse, ApiErrorOptions, ValidationErrorDetail } from './ApiError';
 
-export { ErrorCodes, ErrorCodeToStatus, ErrorCodeMessages, LegacyCodeMapping, normalizeErrorCode } from './errorCodes';
+export {
+  ErrorCodes,
+  ErrorCodeToStatus,
+  ErrorCodeMessages,
+  LegacyCodeMapping,
+  normalizeErrorCode,
+} from './errorCodes';
 export type { ErrorCode } from './errorCodes';

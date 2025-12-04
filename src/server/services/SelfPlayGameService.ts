@@ -115,7 +115,7 @@ export class SelfPlayGameService {
     for (const searchPath of searchPaths) {
       if (!fs.existsSync(searchPath)) continue;
 
-      this.findDatabasesRecursive(searchPath, results, 3);
+      this.findDatabasesRecursive(searchPath, results, 7);
     }
 
     return results;
@@ -138,6 +138,14 @@ export class SelfPlayGameService {
             const countResult = db.prepare('SELECT COUNT(*) as count FROM games').get() as {
               count: number;
             };
+
+            // Skip empty databases so the sandbox self-play browser only shows
+            // databases that contain at least one recorded game. This keeps the
+            // dropdown tidy when old runs created placeholder DBs with no data.
+            if (!countResult.count || countResult.count <= 0) {
+              continue;
+            }
+
             const firstGame = db
               .prepare('SELECT created_at FROM games ORDER BY created_at LIMIT 1')
               .get() as

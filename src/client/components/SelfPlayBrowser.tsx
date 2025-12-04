@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { LoadableScenario } from '../sandbox/scenarioTypes';
-import type { BoardType } from '../../shared/types/game';
+import type { BoardType, Move, Position } from '../../shared/types/game';
 
 // API response types matching the backend service
 interface SelfPlayGameSummary {
@@ -39,7 +39,7 @@ interface SelfPlayGameDetail extends SelfPlayGameSummary {
     player: number;
     phase: string;
     moveType: string;
-    move: unknown;
+    move: Move;
     thinkTimeMs: number | null;
     engineEval: number | null;
   }>;
@@ -61,6 +61,55 @@ export interface SelfPlayBrowserProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectGame: (scenario: LoadableScenario) => void;
+}
+
+/**
+ * Normalize a recorded move from the self-play database into the canonical
+ * Move surface expected by the sandbox engine.
+ *
+ * Responsibilities:
+ * - Map legacy `forced_elimination` records to `eliminate_rings_from_stack`
+ *   so ClientSandboxEngine.applyCanonicalMove can consume them.
+ * - Ensure timestamp is a Date instance.
+ * - Provide a sane moveNumber/thinkTime when the recorder omitted them.
+ */
+function normalizeRecordedMove(rawMove: Move, fallbackMoveNumber: number): Move {
+  const anyMove = rawMove as any;
+
+  const type: Move['type'] =
+    anyMove.type === 'forced_elimination' ? 'eliminate_rings_from_stack' : anyMove.type;
+
+  const timestampRaw = anyMove.timestamp;
+  const timestamp: Date =
+    timestampRaw instanceof Date
+      ? timestampRaw
+      : typeof timestampRaw === 'string'
+        ? new Date(timestampRaw)
+        : new Date();
+
+  const from: Position | undefined =
+    anyMove.from && typeof anyMove.from === 'object' ? anyMove.from : undefined;
+
+  const moveNumber =
+    typeof anyMove.moveNumber === 'number' && Number.isFinite(anyMove.moveNumber)
+      ? anyMove.moveNumber
+      : fallbackMoveNumber;
+
+  const thinkTime =
+    typeof anyMove.thinkTime === 'number'
+      ? anyMove.thinkTime
+      : typeof anyMove.thinkTimeMs === 'number'
+        ? anyMove.thinkTimeMs
+        : 0;
+
+  return {
+    ...anyMove,
+    type,
+    from,
+    timestamp,
+    thinkTime,
+    moveNumber,
+  } as Move;
 }
 
 export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
@@ -92,6 +141,22 @@ export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
       setError(null);
       try {
         const response = await fetch('/api/selfplay/databases');
+
+        if (!response.ok) {
+          // Attempt to parse an error payload, but tolerate empty/non‑JSON bodies.
+          let errorMessage = `Failed to load databases (HTTP ${response.status})`;
+          try {
+            const data = await response.json();
+            if (data && typeof data === 'object' && 'error' in data && data.error) {
+              errorMessage = String((data as any).error);
+            }
+          } catch {
+            // Ignore JSON parse errors for non‑JSON error bodies.
+          }
+          setError(errorMessage);
+          return;
+        }
+
         const data = await response.json();
         if (data.success) {
           setDatabases(data.databases);
@@ -130,6 +195,21 @@ export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
         if (hasWinnerFilter !== 'all') params.set('hasWinner', String(hasWinnerFilter));
 
         const response = await fetch(`/api/selfplay/games?${params}`);
+
+        if (!response.ok) {
+          let errorMessage = `Failed to load games (HTTP ${response.status})`;
+          try {
+            const data = await response.json();
+            if (data && typeof data === 'object' && 'error' in data && data.error) {
+              errorMessage = String((data as any).error);
+            }
+          } catch {
+            // Ignore JSON parse errors for non‑JSON error bodies.
+          }
+          setError(errorMessage);
+          return;
+        }
+
         const data = await response.json();
         if (data.success) {
           setGames(data.games);
@@ -200,6 +280,26 @@ export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
         const response = await fetch(
           `/api/selfplay/games/${encodeURIComponent(game.gameId)}?db=${encodeURIComponent(selectedDb)}`
         );
+
+        if (!response.ok) {
+          let errorMessage = `Failed to load game (HTTP ${response.status})`;
+          try {
+            const maybeData = await response.json();
+            if (
+              maybeData &&
+              typeof maybeData === 'object' &&
+              'error' in maybeData &&
+              (maybeData as any).error
+            ) {
+              errorMessage = String((maybeData as any).error);
+            }
+          } catch {
+            // Ignore JSON parse errors when the server returned a non‑JSON body.
+          }
+          setError(errorMessage);
+          return;
+        }
+
         const data = await response.json();
 
         if (!data.success) {
@@ -209,7 +309,31 @@ export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
 
         const detail: SelfPlayGameDetail = data.game;
 
-        // Convert to LoadableScenario format
+        // Sanitize the initial state for sandbox consumption. Some self-play
+        // databases (especially CMA-ES iterative runs) record initial_state_json
+        // as a mid-game snapshot that already includes a non-empty moveHistory,
+        // while the game_moves table only contains the suffix of moves from
+        // that point onward. For /sandbox replay we want:
+        // - move index 0 to represent "this snapshot as-is", and
+        // - the recorded moves list to be the full canonical sequence from
+        //   that snapshot forward.
+        //
+        // To avoid double-counting earlier moves, we drop any pre-populated
+        // moveHistory/history from the serialized state here and treat the
+        // DB's moves array as the complete canonical sequence for replay.
+        const rawState = detail.initialState as any;
+        const sanitizedState =
+          rawState && typeof rawState === 'object' ? { ...rawState } : rawState;
+        if (sanitizedState && Array.isArray(sanitizedState.moveHistory)) {
+          sanitizedState.moveHistory = [];
+        }
+        if (sanitizedState && Array.isArray(sanitizedState.history)) {
+          sanitizedState.history = [];
+        }
+
+        // Convert to LoadableScenario format. We attach selfPlayMeta so hosts
+        // can distinguish recorded self-play scenarios from other vectors and
+        // optionally wire them into the ReplayPanel / history playback.
         const scenario: LoadableScenario = {
           id: `selfplay-${detail.gameId}`,
           name: `${detail.source || 'Self-Play'} Game (${detail.boardType}, ${detail.numPlayers}P)`,
@@ -222,7 +346,19 @@ export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
           playerCount: detail.numPlayers,
           createdAt: detail.createdAt,
           source: 'custom',
-          state: detail.initialState as LoadableScenario['state'],
+          state: sanitizedState as LoadableScenario['state'],
+          selfPlayMeta: {
+            dbPath: selectedDb,
+            gameId: detail.gameId,
+            totalMoves: detail.totalMoves,
+            // Include a canonicalized move sequence so the sandbox host can
+            // reconstruct the full game trajectory locally via the
+            // ClientSandboxEngine without needing an extra round-trip to
+            // the self-play service. Legacy forced_elimination records are
+            // mapped to eliminate_rings_from_stack for compatibility with
+            // the canonical Move surface.
+            moves: detail.moves.map((m) => normalizeRecordedMove(m.move, m.moveNumber)),
+          },
         };
 
         onSelectGame(scenario);
@@ -240,7 +376,9 @@ export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
   if (!isOpen) return null;
 
   // Extract unique sources from games for filter dropdown
-  const uniqueSources = Array.from(new Set(games.map((g) => g.source).filter(Boolean)));
+  const uniqueSources = Array.from(
+    new Set(games.map((g) => g.source).filter((s): s is string => Boolean(s)))
+  );
 
   return (
     <div
@@ -334,7 +472,7 @@ export const SelfPlayBrowser: React.FC<SelfPlayBrowserProps> = ({
             >
               <option value="all">All</option>
               {uniqueSources.map((src) => (
-                <option key={src} value={src!}>
+                <option key={src} value={src}>
                   {src}
                 </option>
               ))}

@@ -190,8 +190,8 @@ export class RuleEngine {
    * - Straight-line movement along canonical directions only.
    * - Distance at least equal to stack height.
    * - Path clear of stacks and collapsed spaces.
-   * - Landing on empty spaces, own markers, or any stack (merge).
-   * - Landing on opponent markers remains illegal.
+   * - Landing on empty spaces or any marker (own or opponent).
+   * - Landing on any marker incurs cap-elimination cost per RR-CANON-R091/R092.
    *
    * Rule Reference: Section 8.2, FAQ Q2.
    */

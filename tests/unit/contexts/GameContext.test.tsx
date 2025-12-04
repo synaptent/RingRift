@@ -274,7 +274,12 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
             setError(null);
             setConnectionStatus('connected');
             setLastHeartbeatAt(Date.now());
+            // Fresh snapshots clear any prior pending choices/deadlines so the
+            // HUD does not show stale decision banners after reconnect/resync.
+            setPendingChoice(null);
+            setChoiceDeadline(null);
             setDecisionAutoResolved(data.meta?.diffSummary?.decisionAutoResolved ?? null);
+            setDecisionPhaseTimeoutWarning(null);
           }
         });
 
@@ -309,9 +314,12 @@ function TestGameProvider({ children }: { children: React.ReactNode }) {
           setChoiceDeadline((current) => (current ? null : current));
         });
 
-        socket.on('decision_phase_timeout_warning', (payload: DecisionPhaseTimeoutWarningPayload) => {
-          setDecisionPhaseTimeoutWarning(payload);
-        });
+        socket.on(
+          'decision_phase_timeout_warning',
+          (payload: DecisionPhaseTimeoutWarningPayload) => {
+            setDecisionPhaseTimeoutWarning(payload);
+          }
+        );
 
         socket.on('decision_phase_timed_out', () => {
           setDecisionPhaseTimeoutWarning(null);
@@ -1078,6 +1086,44 @@ describe('GameContext', () => {
       });
 
       expect(screen.getByTestId('pending-choice')).toHaveTextContent('none');
+    });
+
+    it('clears pending choice on fresh game_state snapshot (e.g. reconnect)', async () => {
+      render(
+        <TestGameProvider>
+          <TestConsumer />
+        </TestGameProvider>
+      );
+
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('connect-btn'));
+
+      act(() => {
+        socketEventHandlers['connect']?.();
+      });
+
+      // Simulate an in-flight decision
+      act(() => {
+        socketEventHandlers['player_choice_required']?.(createMockChoice());
+      });
+
+      expect(screen.getByTestId('pending-choice')).toHaveTextContent('choice-123');
+
+      // A subsequent authoritative game_state snapshot (such as after a
+      // reconnect) should clear any stale pending choice so the HUD does
+      // not display decision banners that no longer match server state.
+      act(() => {
+        socketEventHandlers['game_state']?.({
+          data: {
+            gameId: 'game-123',
+            gameState: createMockGameState(),
+            validMoves: [],
+          },
+        });
+      });
+
+      expect(screen.getByTestId('pending-choice')).toHaveTextContent('none');
+      expect(screen.getByTestId('choice-deadline')).toHaveTextContent('none');
     });
 
     it('clears decisionAutoResolved and timeout warning on game_over', async () => {

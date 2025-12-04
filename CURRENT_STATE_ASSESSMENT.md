@@ -274,6 +274,10 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 - **Reconnection UX:** Core reconnection and abandonment flows are implemented and now exercised end‑to‑end:
   - `multiPlayer.coordination.test.ts` – swap rule, near‑victory fixtures (elimination/territory), deep chain‑capture decisions.
   - `reconnection.simulation.test.ts` – network partition and reconnection‑window expiry, including rated vs unrated abandonment behaviour.
+  - `tests/unit/GameSession.reconnectFlow.test.ts` – server-side reconnect window handling and guarantees that `handleJoinGame` always emits a fresh `game_state` snapshot on reconnect (players and spectators).
+  - `tests/unit/contexts/GameContext.test.tsx` – verifies that fresh `game_state` snapshots clear stale `pendingChoice`/`choiceDeadline`/timeout warnings, so HUD decision banners never survive a reconnect.
+  - `tests/unit/hooks/useGameConnection.test.tsx` – covers connection status transitions (`connecting`/`reconnecting`/`connected`) and reconnect labels used by BackendGameHost/GameHUD.
+  - `tests/unit/client/BackendGameHost.test.tsx` – host-level reconnect UX from the client’s perspective: asserts that during `reconnecting` the HUD shows “Connection: Reconnecting…”, the board interaction helper reads “Reconnecting to server…”, moves are effectively read-only, and that after a fresh `game_state` snapshot the reconnect copy disappears and stale decision UI is cleared.
   - `timeout-and-ratings.e2e.spec.ts` – short time‑control timeout completions with `result.reason === 'timeout'` and rating semantics (rated vs unrated).
   - `decision-phase-timeout.e2e.spec.ts` – decision‑phase timeouts for line, territory **and chain_capture** via shortTimeoutMs fixtures, asserting deterministic `decision_phase_timed_out` payloads for both players.
   - Additional MultiClientCoordinator slices now cover back‑to‑back near‑victory fixtures (elimination and territory_control) across two players **and a spectator**, asserting consistent `game_over` reasons/winner on all three clients.

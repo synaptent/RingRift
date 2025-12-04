@@ -104,3 +104,23 @@ ai-service/ai-service/app/models/
 ai-service/ai-service/**/*.pth
 ai-service/ai-service/**/*.npz
 ai-service/checkpoints/
+
+# AI service logs and caches
+ai-service/logs/
+ai-service/.hypothesis/
+
+# Local database and backup dumps
+backups/
+
+# Local environment backups
+.env.bak
+.env.pre-*
+
+# Lint / tooling reports
+eslint-report*.json
+
+# Load test result artifacts
+tests/load/*.load.results.json
+
+# Local sync archives
+ai-service-sync.zip

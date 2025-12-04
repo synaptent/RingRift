@@ -272,14 +272,140 @@ code {
 }
 
 /* Valid move indicator with subtle pulse */
+@keyframes move-target-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(var(--ring-color), 0);
+  }
+  40% {
+    box-shadow: 0 0 0 3px rgba(var(--ring-color), 0.4);
+  }
+}
+
 .valid-move-cell {
   /* Approximate Tailwind transition-colors-shadow duration-250 */
   transition: color 0.25s ease-in-out,
     background-color 0.25s ease-in-out,
     border-color 0.25s ease-in-out,
     box-shadow 0.25s ease-in-out;
-  animation: selection-pulse 2s ease-in-out infinite;
+  /* Slight, continuous pulse for legal destinations */
+  animation: move-target-pulse 2.4s ease-in-out infinite;
+  /* Let board-specific background classes (e.g. bg-emerald-50 on squares,
+     bg-emerald-400/[0.03] on hex) control the fill colour so highlights
+     stay light on both board types. */
   --ring-color: 34, 197, 94; /* green-500 RGB */
+}
+
+/* Decision-phase pulses for board-level choices */
+.decision-pulse-capture {
+  animation: selection-pulse 1.6s ease-in-out infinite;
+  /* Slightly deeper green overlay than generic valid moves so
+     mandatory chain-capture landings stand out. */
+  background-color: rgba(16, 185, 129, 0.18); /* emerald-500-ish @18% */
+  box-shadow:
+    0 0 0 1px rgba(16, 185, 129, 0.8),
+    0 0 10px rgba(6, 95, 70, 0.8);
+  --ring-color: 16, 185, 129; /* emerald-500 RGB */
+}
+
+.decision-pulse-elimination {
+  animation: selection-pulse 2.2s ease-in-out infinite;
+  --ring-color: 251, 191, 36; /* amber-300/400 RGB */
+  /* Amber inner halo used for elimination choices. The halo is slightly
+     inset from the outer border so it appears as a thicker inner ring
+     rather than a full cell fill, and remains legible on both square
+     and hex boards. */
+  position: relative;
+  background-image: radial-gradient(
+    circle at center,
+    rgba(251, 191, 36, 0.18),
+    transparent 65%
+  );
+  box-shadow:
+    0 0 0 1px rgba(251, 191, 36, 0.65),
+    0 0 14px 2px rgba(15, 23, 42, 0.95);
+}
+
+.decision-pulse-elimination::before {
+  content: "";
+  position: absolute;
+  inset: 4px; /* inset to avoid touching the outer border */
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px rgba(251, 191, 36, 0.9),
+    0 0 10px rgba(251, 191, 36, 0.7);
+}
+
+.decision-pulse-territory {
+  animation: selection-pulse 2s ease-in-out infinite;
+  --ring-color: 16, 185, 129; /* emerald-500 RGB, distinct from valid-move tint */
+}
+
+/* Stack-level pulse for elimination choices so the stack itself breathes. */
+.decision-elimination-stack-pulse {
+  animation: selection-pulse 1.8s ease-in-out infinite;
+  --ring-color: 251, 191, 36; /* amber-300/400 RGB */
+}
+
+/* ==========================================================================
+   Invalid Move Feedback Animation
+   ========================================================================== */
+
+/* Subtle shake animation for invalid move attempts */
+@keyframes invalid-move-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  10%, 30%, 50%, 70%, 90% {
+    transform: translateX(-3px);
+  }
+  20%, 40%, 60%, 80% {
+    transform: translateX(3px);
+  }
+}
+
+/* Cell shake animation when an invalid move is attempted */
+.invalid-move-shake {
+  animation: invalid-move-shake 0.4s ease-in-out;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.6), /* red-500 with alpha */
+              0 0 8px rgba(239, 68, 68, 0.4);
+}
+
+/* Briefly tint the cell red during shake to reinforce the invalid state */
+.invalid-move-shake::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(239, 68, 68, 0.15);
+  border-radius: inherit;
+  pointer-events: none;
+  animation: invalid-move-flash 0.4s ease-out forwards;
+}
+
+@keyframes invalid-move-flash {
+  0% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Board-level shake for more severe invalid move attempts */
+.board-shake {
+  animation: board-shake 0.35s ease-in-out;
+}
+
+@keyframes board-shake {
+  0%, 100% {
+    transform: translateX(0) rotate(0);
+  }
+  20%, 60% {
+    transform: translateX(-2px) rotate(-0.5deg);
+  }
+  40%, 80% {
+    transform: translateX(2px) rotate(0.5deg);
+  }
 }
 
 /* --------------------------------------------------------------------------

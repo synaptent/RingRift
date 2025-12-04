@@ -158,4 +158,34 @@ describe('SandboxGameHost', () => {
       'Backend sandbox game could not be created; falling back to local-only board only.'
     );
   });
+
+  it('skips backend game creation and starts a local sandbox when unauthenticated', async () => {
+    const createGameMock = gameApi.createGame as jest.Mock;
+    createGameMock.mockResolvedValue({ id: 'game-should-not-be-used' } as any);
+
+    const initLocalSandboxEngine = sandboxValue.initLocalSandboxEngine as jest.Mock;
+
+    mockedUseAuth.mockReturnValue({
+      user: null,
+      isLoading: false,
+      login: jest.fn(),
+      register: jest.fn(),
+      logout: jest.fn(),
+      updateUser: jest.fn(),
+    } as any);
+
+    render(
+      <MemoryRouter initialEntries={['/sandbox']}>
+        <SandboxGameHost />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Launch Game/i }));
+
+    await waitFor(() => {
+      expect(initLocalSandboxEngine).toHaveBeenCalledTimes(1);
+    });
+
+    expect(createGameMock).not.toHaveBeenCalled();
+  });
 });

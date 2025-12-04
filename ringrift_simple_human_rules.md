@@ -128,11 +128,6 @@ phases in this fixed order:
     immediately after placement.
   - This ensures newly placed stacks will always have something they could
     do on a future movement/capture phase.
-- **Auto‑advance to movement**:
-  - If you have **0 rings in hand** (or no valid placement spots), the turn
-    automatically advances to the movement phase.
-  - In this case, you must move a stack you control (if any legal movement or
-    capture exists).
 
 ### 3.2 Movement
 
@@ -146,7 +141,11 @@ After (or instead of) placing, you **move** a stack you control:
   - Must be at least the stack’s total height.
 - You cannot:
   - Move through other stacks or collapsed spaces.
-  - Land on an illegal cell (off‑board, blocked, etc.).
+  - Land on collapsed spaces.
+- **Landing on markers**:
+  - You may land on any marker (yours or an opponent's).
+  - When you do, the marker is removed and the top ring of your stack's
+    cap is immediately eliminated (credited to you).
 - As you leave a space, you always leave a **marker** of your colour
   behind.
 
@@ -182,8 +181,7 @@ At the **start of your turn**, before placement or movement:
   - Have **no legal placements**, **no legal movements**, and **no legal
     overtaking captures** anywhere,
 - Then you are **blocked** and must perform a **forced elimination**:
-  - **You choose** which of your controlled stacks to eliminate from.
-  - You must eliminate the **entire cap** of that stack.
+  - You must eliminate the **entire cap** of **one** stack you control.
   - All those rings are removed from play and added to your **eliminated
     rings** total.
   - This is treated as a legal action and counts toward your ring‑elimination
@@ -192,14 +190,6 @@ At the **start of your turn**, before placement or movement:
 Forced elimination ensures that as long as any stacks exist on the board,
 **someone** always has a legal action: either movement/capture, placement, or
 forced elimination.
-
-**Control-flip edge case:** If your only control over a stack was a cap of
-height 1 (just one of your rings on top of opponent rings), forced elimination
-removes that cap and flips control to the opponent. If this leaves you with
-**no stacks at all** and **no rings in hand**, you become "temporarily inactive"
-(see §6.3). Your turn ends immediately and play passes to the next player;
-you can potentially become active again later if captures expose one of your
-buried rings.
 
 ---
 
@@ -427,4 +417,4 @@ So there can only be **finitely many** real actions in any game. Eventually:
 - The LPS condition is satisfied, or
 - No one can act at all and the stalemate tiebreakers apply.
 
-In all cases, the game ends in **finite time** with a single winner.
+In all cases, the game ends in **finite time** with a single winner.t

@@ -1,0 +1,80 @@
+# Lightweight Dockerfile for CMA-ES distributed workers
+# Optimized for fast startup and minimal image size
+#
+# Build:
+#   docker build -f docker/Dockerfile.cmaes-worker -t ringrift-cmaes-worker .
+#
+# Run as worker:
+#   docker run -p 8765:8765 -e WORKER_ID=worker-1 ringrift-cmaes-worker
+#
+# Run with state pool mount:
+#   docker run -p 8765:8765 -v ./data/eval_pools:/app/data/eval_pools ringrift-cmaes-worker
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only the minimal requirements for CMA-ES workers
+COPY requirements.txt .
+
+# Create a minimal requirements file for workers
+RUN cat requirements.txt | grep -E '^(fastapi|uvicorn|pydantic|numpy|scipy|aiohttp|httpx|requests|cma|msgpack|lz4)' > requirements-worker.txt || true
+RUN echo "fastapi==0.122.0" >> requirements-worker.txt
+RUN echo "uvicorn[standard]==0.38.0" >> requirements-worker.txt
+RUN echo "pydantic==2.10.5" >> requirements-worker.txt
+RUN echo "numpy>=1.26.0" >> requirements-worker.txt
+RUN echo "scipy>=1.12.0" >> requirements-worker.txt
+RUN echo "aiohttp>=3.9.0" >> requirements-worker.txt
+RUN echo "httpx>=0.27.0" >> requirements-worker.txt
+RUN echo "requests>=2.31.0" >> requirements-worker.txt
+RUN echo "msgpack>=1.0.0" >> requirements-worker.txt
+RUN echo "lz4>=4.3.0" >> requirements-worker.txt
+RUN sort -u requirements-worker.txt -o requirements-worker.txt
+
+# Install dependencies to a virtual env
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir -r requirements-worker.txt
+
+# ============================================================================
+# Production stage - minimal runtime
+# ============================================================================
+FROM python:3.11-slim AS worker
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/opt/venv/bin:$PATH" \
+    WORKER_PORT=8765
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Copy only necessary application code
+COPY app/__init__.py ./app/
+COPY app/models/ ./app/models/
+COPY app/rules/ ./app/rules/
+COPY app/ai/ ./app/ai/
+COPY app/game_engine.py ./app/
+COPY app/board_manager.py ./app/
+COPY app/distributed/ ./app/distributed/
+COPY scripts/cluster_worker.py ./scripts/
+
+# Create data directory for state pools
+RUN mkdir -p /app/data/eval_pools
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD python -c "import httpx; r = httpx.get('http://localhost:${WORKER_PORT}/health', timeout=2.0); exit(0 if r.status_code == 200 else 1)" || exit 1
+
+# Expose worker port
+EXPOSE 8765
+
+# Run the worker
+CMD ["python", "scripts/cluster_worker.py", "--port", "8765"]

@@ -44,6 +44,10 @@ import {
 } from '../hooks/useGameActions';
 import { useDecisionCountdown } from '../hooks/useDecisionCountdown';
 import { useAutoMoveAnimation } from '../hooks/useMoveAnimation';
+import {
+  useInvalidMoveFeedback,
+  analyzeInvalidMove as analyzeInvalid,
+} from '../hooks/useInvalidMoveFeedback';
 import type { PlayerChoice } from '../../shared/types/game';
 import type {
   DecisionAutoResolvedMeta,
@@ -338,6 +342,9 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   // ConnectionShell: own connection lifecycle & status for the backend game
   const connection = useBackendConnectionShell(routeGameId);
 
+  // Opponent disconnection signals (from useGameConnection, separate from shell)
+  const { disconnectedOpponents, gameEndedByAbandonment } = useGameConnection();
+
   // GameStateController: subscribe to backend GameState and actions
   const {
     gameId,
@@ -353,6 +360,9 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
 
   // Move animations - auto-detects moves from game state changes
   const { pendingAnimation, clearAnimation } = useAutoMoveAnimation(gameState);
+
+  // Invalid move feedback - shake animation and explanatory toasts
+  const { shakingCellKey, triggerInvalidMove } = useInvalidMoveFeedback();
 
   // DecisionUI: pending choice state + countdown timer
   const {
@@ -688,6 +698,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   // Backend board click handling
   const handleBackendCellClick = (pos: Position, board: BoardState) => {
     if (!gameState) return;
+    const posKey = positionToString(pos);
 
     if (!isPlayer) {
       toast.error('Spectators cannot submit moves', { id: 'interaction-locked' });
@@ -705,15 +716,23 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
         return;
       }
 
-      const key = positionToString(pos);
-      const hasStack = !!board.stacks.get(key);
+      const hasStack = !!board.stacks.get(posKey);
 
       if (!hasStack) {
         const placeMovesAtPos = validMoves.filter(
           (m) => m.type === 'place_ring' && positionsEqual(m.to, pos)
         );
         if (placeMovesAtPos.length === 0) {
-          toast.error('Invalid placement position');
+          // Use enhanced invalid move feedback with shake animation and explanatory toast
+          const reason = analyzeInvalid(gameState, pos, {
+            isPlayer,
+            isMyTurn,
+            isConnected: isConnectionActive,
+            selectedPosition: selected,
+            validMoves,
+            mustMoveFrom: backendMustMoveFrom,
+          });
+          triggerInvalidMove(pos, reason);
           return;
         }
 
@@ -740,14 +759,35 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
 
     // Movement/capture phases: select source, then target.
     if (!selected) {
-      setSelected(pos);
-      if (Array.isArray(validMoves) && validMoves.length > 0) {
+      // When there are no valid moves at all, keep the previous behaviour and
+      // simply allow selection without special feedback.
+      if (!Array.isArray(validMoves) || validMoves.length === 0) {
+        setSelected(pos);
+        setValidTargets([]);
+        return;
+      }
+
+      const hasStack = !!board.stacks.get(posKey);
+      const hasMovesFromHere = validMoves.some(
+        (m) => m.from && positionsEqual(m.from as Position, pos)
+      );
+
+      if (hasStack && hasMovesFromHere) {
+        setSelected(pos);
         const targets = validMoves
-          .filter((m) => m.from && positionsEqual(m.from, pos))
+          .filter((m) => m.from && positionsEqual(m.from as Position, pos))
           .map((m) => m.to);
         setValidTargets(targets);
       } else {
-        setValidTargets([]);
+        const reason = analyzeInvalid(gameState, pos, {
+          isPlayer,
+          isMyTurn,
+          isConnected: isConnectionActive,
+          selectedPosition: null,
+          validMoves,
+          mustMoveFrom: backendMustMoveFrom,
+        });
+        triggerInvalidMove(pos, reason);
       }
       return;
     }
@@ -778,15 +818,33 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
       }
     }
 
-    // Otherwise treat as new selection.
-    setSelected(pos);
-    if (Array.isArray(validMoves) && validMoves.length > 0) {
-      const targets = validMoves
-        .filter((m) => m.from && positionsEqual(m.from, pos))
-        .map((m) => m.to);
-      setValidTargets(targets);
+    // Otherwise, treat either as a new (valid) selection or as an invalid
+    // landing/selection and surface feedback.
+    const hasStack = !!board.stacks.get(posKey);
+    const hasMovesFromHere =
+      Array.isArray(validMoves) &&
+      validMoves.some((m) => m.from && positionsEqual(m.from as Position, pos));
+
+    if (hasStack && hasMovesFromHere) {
+      setSelected(pos);
+      if (Array.isArray(validMoves) && validMoves.length > 0) {
+        const targets = validMoves
+          .filter((m) => m.from && positionsEqual(m.from as Position, pos))
+          .map((m) => m.to);
+        setValidTargets(targets);
+      } else {
+        setValidTargets([]);
+      }
     } else {
-      setValidTargets([]);
+      const reason = analyzeInvalid(gameState, pos, {
+        isPlayer,
+        isMyTurn,
+        isConnected: isConnectionActive,
+        selectedPosition: selected ?? null,
+        validMoves,
+        mustMoveFrom: backendMustMoveFrom,
+      });
+      triggerInvalidMove(pos, reason);
     }
   };
 
@@ -1019,6 +1077,41 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
 
       {reconnectionBanner}
 
+      {/* Opponent disconnection banner - shown when opponents have disconnected but game continues */}
+      {disconnectedOpponents.length > 0 && !gameEndedByAbandonment && !victoryState && (
+        <div className="bg-orange-500/20 border border-orange-500/50 text-orange-200 px-4 py-2 rounded mb-4 flex items-center gap-3">
+          <svg
+            className="w-5 h-5 flex-shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+          <span>
+            {disconnectedOpponents.length === 1
+              ? `${disconnectedOpponents[0].username || 'A player'} has disconnected. Waiting for reconnection…`
+              : `${disconnectedOpponents.length} players have disconnected. Waiting for reconnection…`}
+          </span>
+          <div className="ml-auto animate-pulse h-2 w-2 rounded-full bg-orange-400" />
+        </div>
+      )}
+
+      {/* Abandonment banner - shown when game ended due to reconnection timeout */}
+      {gameEndedByAbandonment && (
+        <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-2 rounded mb-4">
+          <span className="font-semibold">Game ended by abandonment.</span>
+          <span className="ml-2 text-red-300/80">
+            A player failed to reconnect within the allowed time.
+          </span>
+        </div>
+      )}
+
       {gameOverBannerText && (
         <div className="bg-emerald-900/30 border border-emerald-500/60 text-emerald-100 px-4 py-2 rounded mb-2 text-sm">
           {gameOverBannerText}
@@ -1128,6 +1221,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             isSpectator={!isPlayer}
             pendingAnimation={pendingAnimation ?? undefined}
             onAnimationComplete={clearAnimation}
+            shakingCellKey={shakingCellKey}
           />
         </section>
 

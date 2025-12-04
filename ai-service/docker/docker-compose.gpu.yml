@@ -1,0 +1,177 @@
+# Docker Compose for local GPU training and distributed workers
+#
+# Usage:
+#   # Build all images
+#   docker compose -f docker/docker-compose.gpu.yml build
+#
+#   # Run GPU training
+#   docker compose -f docker/docker-compose.gpu.yml up training
+#
+#   # Scale CMA-ES workers
+#   docker compose -f docker/docker-compose.gpu.yml up --scale cmaes-worker=4
+#
+#   # Run inference server
+#   docker compose -f docker/docker-compose.gpu.yml up inference
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # Neural Network Training (GPU-enabled)
+  # ==========================================================================
+  training:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.training
+      target: training
+    image: ringrift-ai-training:latest
+    container_name: ringrift-training
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ../data:/app/data
+      - ../models:/app/models
+      - ../logs:/app/logs
+    environment:
+      - RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+      - RINGRIFT_NN_DEVICE=cuda
+      - RINGRIFT_NN_BATCH_SIZE=256
+      - STORAGE_BACKEND=local
+      - STORAGE_BASE_PATH=/app/data
+    networks:
+      - training-network
+    command: python -m app.training.train_loop
+
+  # CPU-only training variant (for testing without GPU)
+  training-cpu:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.training
+      target: training-cpu
+    image: ringrift-ai-training-cpu:latest
+    container_name: ringrift-training-cpu
+    volumes:
+      - ../data:/app/data
+      - ../models:/app/models
+      - ../logs:/app/logs
+    environment:
+      - RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+      - RINGRIFT_NN_DEVICE=cpu
+      - STORAGE_BACKEND=local
+    networks:
+      - training-network
+    command: python -m app.training.train_loop
+
+  # ==========================================================================
+  # CMA-ES Distributed Workers
+  # ==========================================================================
+  cmaes-worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cmaes-worker
+    image: ringrift-cmaes-worker:latest
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+    volumes:
+      - ../data/eval_pools:/app/data/eval_pools:ro
+    environment:
+      - RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+      - WORKER_PORT=8765
+    ports:
+      - '8765'
+    networks:
+      - training-network
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import httpx; r = httpx.get('http://localhost:8765/health', timeout=2.0); exit(0 if r.status_code == 200 else 1)",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================================================
+  # AI Inference Server
+  # ==========================================================================
+  inference:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.inference
+    image: ringrift-ai-inference:latest
+    container_name: ringrift-inference
+    ports:
+      - '8001:8001'
+    volumes:
+      - ../models:/app/models:ro
+    environment:
+      - AI_SERVICE_PORT=8001
+      - RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+    networks:
+      - training-network
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import httpx; r = httpx.get('http://localhost:8001/health', timeout=2.0); exit(0 if r.status_code == 200 else 1)",
+        ]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # CMA-ES Coordinator (for cloud deployment)
+  # ==========================================================================
+  cmaes-coordinator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.training
+      target: training-cpu
+    image: ringrift-cmaes-coordinator:latest
+    container_name: ringrift-coordinator
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+    environment:
+      - RINGRIFT_SKIP_SHADOW_CONTRACTS=true
+      - RINGRIFT_CMAES_DISTRIBUTED=true
+      - RINGRIFT_CMAES_OUTPUT_DIR=/app/logs/cmaes
+      - STORAGE_BACKEND=local
+    networks:
+      - training-network
+    depends_on:
+      - cmaes-worker
+    command: >
+      python scripts/run_cmaes_optimization.py
+        --distributed
+        --workers cmaes-worker:8765
+        --generations 20
+        --population-size 16
+        --games-per-eval 24
+        --board square8
+        --num-players 2
+        --output /app/logs/cmaes/distributed_run
+
+networks:
+  training-network:
+    driver: bridge
+
+volumes:
+  model-data:
+  training-data:
+  logs:

@@ -7,7 +7,7 @@ training loop. After each CMA-ES run:
 1. If improvement > threshold: promote new weights as baseline, restart
 2. If plateau detected: declare convergence
 
-Usage:
+Usage (local):
     python scripts/run_iterative_cmaes.py \
         --board square8 \
         --num-players 2 \
@@ -16,6 +16,16 @@ Usage:
         --improvement-threshold 0.55 \
         --plateau-generations 5 \
         --output-dir logs/cmaes/iterative/square8_2p
+
+Usage (distributed):
+    python scripts/run_iterative_cmaes.py \
+        --board square8 \
+        --num-players 3 \
+        --generations-per-iter 10 \
+        --max-iterations 5 \
+        --output-dir logs/cmaes/iterative/square8_3p_dist \
+        --distributed \
+        --workers http://worker1:8000,http://worker2:8000
 """
 
 from __future__ import annotations
@@ -151,6 +161,11 @@ def run_cmaes_iteration(
     no_record: bool = False,
     sigma: float = 0.5,
     inject_profiles: Optional[List[str]] = None,
+    # Distributed mode options
+    distributed: bool = False,
+    workers: Optional[str] = None,
+    discover_workers: bool = False,
+    min_workers: int = 1,
 ) -> Tuple[str, int]:
     """Run a single CMA-ES iteration.
 
@@ -187,6 +202,15 @@ def run_cmaes_iteration(
     # Only inject profiles on the first iteration to seed initial population
     if inject_profiles and iteration == 1:
         cmd.extend(["--inject-profiles", ",".join(inject_profiles)])
+
+    # Add distributed mode flags
+    if distributed:
+        cmd.append("--distributed")
+        if workers:
+            cmd.extend(["--workers", workers])
+        if discover_workers:
+            cmd.append("--discover-workers")
+        cmd.extend(["--min-workers", str(min_workers)])
 
     print(f"\n{'='*60}")
     print(f"ITERATION {iteration}")
@@ -307,6 +331,11 @@ def run_iterative_pipeline(
     no_record: bool = False,
     sigma: float = 0.5,
     inject_profiles: Optional[List[str]] = None,
+    # Distributed mode options
+    distributed: bool = False,
+    workers: Optional[str] = None,
+    discover_workers: bool = False,
+    min_workers: int = 1,
 ) -> None:
     """Run the iterative CMA-ES pipeline."""
 
@@ -352,6 +381,17 @@ def run_iterative_pipeline(
     print(f"Plateau detection: {plateau_generations} generations")
     print(f"State pool: {state_pool_id}")
     print(f"Output: {output_dir}")
+    if distributed:
+        print(f"Distributed mode: ENABLED")
+        if workers:
+            print(f"  Workers: {workers}")
+        if discover_workers:
+            print(f"  Worker discovery: enabled")
+        print(f"  Min workers: {min_workers}")
+        if not no_record:
+            print(f"  Game recording: enabled (games collected from workers)")
+    else:
+        print(f"Distributed mode: disabled (local)")
     print()
 
     for iteration in range(1, max_iterations + 1):
@@ -374,6 +414,11 @@ def run_iterative_pipeline(
             no_record=no_record,
             sigma=sigma,
             inject_profiles=inject_profiles,
+            # Distributed mode
+            distributed=distributed,
+            workers=workers,
+            discover_workers=discover_workers,
+            min_workers=min_workers,
         )
 
         if return_code != 0:
@@ -591,6 +636,36 @@ def main() -> None:
         ),
     )
 
+    # Distributed mode arguments
+    parser.add_argument(
+        "--distributed",
+        action="store_true",
+        help=(
+            "Enable distributed mode. Fitness evaluations will be distributed "
+            "across worker nodes for parallel processing."
+        ),
+    )
+    parser.add_argument(
+        "--workers",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated list of worker URLs for distributed mode "
+            "(e.g., 'http://worker1:8000,http://worker2:8000')"
+        ),
+    )
+    parser.add_argument(
+        "--discover-workers",
+        action="store_true",
+        help="Auto-discover workers via mDNS/service discovery",
+    )
+    parser.add_argument(
+        "--min-workers",
+        type=int,
+        default=1,
+        help="Minimum number of workers required to start (default: 1)",
+    )
+
     args = parser.parse_args()
 
     # Parse inject_profiles from comma-separated string to list
@@ -616,6 +691,11 @@ def main() -> None:
         no_record=args.no_record,
         sigma=args.sigma,
         inject_profiles=inject_profiles_list,
+        # Distributed mode
+        distributed=args.distributed,
+        workers=args.workers,
+        discover_workers=args.discover_workers,
+        min_workers=args.min_workers,
     )
 
 

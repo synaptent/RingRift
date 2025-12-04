@@ -3,7 +3,7 @@
 > **Doc Status (2025-11-27): Active (project direction SSoT)**
 >
 > - Single authoritative source for product/technical goals and non-goals.
-> - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+> - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/architecture/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 
 **Version:** 1.0  
 **Created:** November 26, 2025  
@@ -73,9 +73,17 @@ Together, these goals define **how the game should feel**: simple to describe at
 
 ---
 
-## 3. Current Phase Objectives
+## 3. Core Objectives for Current Phase (v1.0)
 
 > For the current v1.0 phase, these objectives describe what the project must deliver in terms of gameplay features, architecture, and quality. Read them together with [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1) for the phased execution plan and [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:1) for factual implementation status.
+
+### 3.0 Core Objectives Summary
+
+1. Deliver a rules-complete online implementation of RingRift across the three supported board types (8×8, 19×19, hexagonal) with correct resolution of all victory conditions for 2–4 player games.
+2. Provide a stable, responsive multiplayer experience over WebSocket and HTTP with real-time game state synchronisation and spectator support suitable for public beta and production use.
+3. Maintain a single shared TypeScript rules engine reused by backend and client sandbox hosts, with the Python AI service kept in deterministic parity via contracts, tests, and observability.
+4. Offer AI opponents across a 1–10 difficulty ladder integrated through the Python AI service and resilient local fallbacks so that AI-controlled seats never stall games.
+5. Achieve v1.0 readiness on reliability, performance, and quality by meeting the documented SLOs and test coverage targets while keeping the project maintainable and observable in production.
 
 ### 3.1 Product Objectives (Gameplay Features)
 
@@ -155,14 +163,14 @@ From [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:144-149):
 
 ### 4.2 Test Coverage Requirements
 
-| Category                  | Requirement              | Current Status                                                                 |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------ |
-| **TypeScript tests**      | All passing              | ✅ 2,987 tests passing, ~130 skipped (see `CURRENT_STATE_ASSESSMENT.md`)       |
-| **Python tests**          | All passing              | ✅ 836 tests passing (see `CURRENT_STATE_ASSESSMENT.md`)                       |
-| **Contract vectors**      | 100% parity              | ✅ 49/49 passing, 0 mismatches                                                 |
-| **Coverage target**       | 80% lines                | 🟡 ~69% lines (improved from 65.55%), key contexts now covered (89.52%/84.21%) |
-| **Rules scenario matrix** | All FAQ examples covered | 🟡 Coverage in progress (~18-20/24 scenarios)                                  |
-| **Integration tests**     | Core workflows passing   | ✅ AI resilience, reconnection, sessions, contexts                             |
+| Category                  | Requirement              | Current Status                                                                                |
+| ------------------------- | ------------------------ | --------------------------------------------------------------------------------------------- |
+| **TypeScript tests**      | All passing              | ✅ 2,987 tests passing, ~130 skipped (see `CURRENT_STATE_ASSESSMENT.md`)                      |
+| **Python tests**          | All passing              | ✅ 836 tests passing (see `CURRENT_STATE_ASSESSMENT.md`)                                      |
+| **Contract vectors**      | 100% parity              | ✅ 49/49 passing, 0 mismatches                                                                |
+| **Coverage target**       | 80% lines                | 🟡 ~69% lines (improved from 65.55%), key contexts now covered (89.52%/84.21%)                |
+| **Rules scenario matrix** | All FAQ examples covered | 🟡 Coverage in progress (~18-20/24 scenarios)                                                 |
+| **Integration tests**     | Core workflows passing   | ✅ AI resilience, reconnection (including reconnect → fresh `game_state`), sessions, contexts |
 
 > **Note:** Live test counts and coverage breakdowns are maintained in [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md:236). This document is not the single source of truth for those numbers; it records only the high-level requirements.
 
@@ -223,11 +231,26 @@ These criteria are intentionally high‑level and goal‑oriented; detailed roll
 
 ---
 
-## 5. Scope & Non-Goals (v1.0 and beyond)
+## 5. Key Dependencies & Assumptions
 
-Sections 5–7 collectively define what is in scope for the current v1.0 phase (required features and user flows), what is intentionally deferred to later phases, and what is explicitly out of scope or constrained for this project.
+These goals assume the following technical and operational dependencies, which are defined in more detail in the referenced architecture and operations documents:
 
-### 5.1 Required Features
+- **Shared TypeScript rules engine and turn orchestrator as canonical rules SSoT.** All gameplay semantics are defined by the shared TypeScript engine under `src/shared/engine/**` (helpers → aggregates → orchestrator) orchestrated via the turn orchestrator, plus its contract tests and parity suites. Backend hosts, the client sandbox, and the Python rules engine are adapters over this shared surface; changes to rules must converge here first. See [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md), [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md), and [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md) for the canonical module catalog, aggregate design, and Move/orchestrator/WebSocket lifecycle that implement these goals.
+- **Python AI service as the primary tactical engine.** Higher AI difficulties (3–10) depend on the Python `ai-service` for Minimax, MCTS, and Descent-style search as described in [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1) and AI docs under `docs/ai/` and `ai-service/docs/`. The TypeScript fallback AI exists for resilience and low-difficulty play, not as the sole long-term AI.
+- **Single-region, single-app-instance topology for v1.0.** The production topology assumes a single Node.js app instance per environment (`RINGRIFT_APP_TOPOLOGY=single`) backed by PostgreSQL and Redis, as described in [`docs/DEPLOYMENT_REQUIREMENTS.md`](docs/DEPLOYMENT_REQUIREMENTS.md:1) and [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1). Horizontal scaling beyond this and multi-region deployments are explicitly post‑v1.0 concerns.
+- **PostgreSQL, Redis, and WebSocket infrastructure.** Game lifecycle, session management, and real-time multiplayer depend on PostgreSQL, Redis, and a WebSocket server as described in [`README.md`](README.md:1) and [`docs/OPERATIONS_DB.md`](docs/OPERATIONS_DB.md:1).
+- **Observability stack and load-testing tooling.** Meeting the SLOs in §4 and validating production readiness requires the Prometheus/Grafana/Alertmanager stack and the k6 load scenarios defined in [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md:1) and [`docs/ALERTING_THRESHOLDS.md`](docs/ALERTING_THRESHOLDS.md:1).
+- **Canonical board topologies.** Only the three documented board types (square8, square19, hexagonal) are in scope for v1.0; rules semantics, tests, and AI training pipelines assume the geometry contracts in [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1).
+
+If any of these assumptions change materially (for example, a different deployment topology or AI service design), this goals document should be updated first and downstream roadmaps and assessments should be adjusted to match.
+
+---
+
+## 6. Scope & Non-Goals (v1.0 and beyond)
+
+Sections 6–8 collectively define what is in scope for the current v1.0 phase (required features and user flows), what is intentionally deferred to later phases, and what is explicitly out of scope or constrained for this project.
+
+### 6.1 Required Features
 
 **Game Mechanics (Must Have)**
 
@@ -263,7 +286,7 @@ Sections 5–7 collectively define what is in scope for the current v1.0 phase (
 - Python AI service with FastAPI
 - JWT authentication
 
-### 5.2 Required User Flows
+### 6.2 Required User Flows
 
 1. **Account creation and login** - Register, authenticate, maintain session
 2. **Game creation** - Choose board type, player count, AI configuration
@@ -271,11 +294,21 @@ Sections 5–7 collectively define what is in scope for the current v1.0 phase (
 4. **Gameplay** - Move selection, choice dialogs, state synchronization
 5. **Game completion** - Victory display, return to lobby
 
+### 5.3 Key Dependencies & Assumptions
+
+The goals above rely on the following platform and architecture assumptions:
+
+- **Shared TypeScript rules engine as canonical rules SSoT.** All production gameplay uses the shared engine under `src/shared/engine/**` orchestrated via the turn orchestrator, with backend and sandbox hosts acting as adapters; the Python rules engine in the AI service is treated as a validated adapter, not an independent rules SSoT. See [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md), [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md), and [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md).
+- **Single-region, single-app-instance topology for v1.0.** The supported deployment is a single Node.js backend instance per environment, backed by PostgreSQL and Redis, as described in [`docs/DEPLOYMENT_REQUIREMENTS.md`](docs/DEPLOYMENT_REQUIREMENTS.md) and [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md). Horizontal scaling beyond this is post-v1.0 work.
+- **Dedicated Python AI service.** AI difficulty ladder, advanced search, and training pipelines depend on the separate `ai-service` FastAPI application and its training tooling; production gameplay assumes this service is reachable within the SLOs in [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md) with fallbacks handled as in [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md).
+- **Monitoring and load-testing stack.** Meeting the performance and availability goals assumes the Prometheus + Grafana + Alertmanager stack and k6 load scenarios described in [`docs/ALERTING_THRESHOLDS.md`](docs/ALERTING_THRESHOLDS.md), [`docs/DEPLOYMENT_REQUIREMENTS.md`](docs/DEPLOYMENT_REQUIREMENTS.md), and [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md) are present and maintained.
+- **Canonical board topologies.** Only the three documented board types (square8, square19, hexagonal) are in scope; rules semantics and tests assume the geometry contracts in [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md).
+
 ---
 
-## 6. Future Scope (Post-v1.0)
+## 7. Future Scope (Post-v1.0)
 
-### 6.1 Planned for Later Phases
+### 7.1 Planned for Later Phases
 
 | Feature                   | Description                                                              | Phase     |
 | ------------------------- | ------------------------------------------------------------------------ | --------- |
@@ -289,7 +322,7 @@ Sections 5–7 collectively define what is in scope for the current v1.0 phase (
 | **Mobile optimization**   | Touch-friendly UI, responsive design polish                              | Post-v1.0 |
 | **Game timers**           | Configurable time controls with UI display                               | Post-v1.0 |
 
-### 6.2 Nice-to-Haves (Deferred)
+### 7.2 Nice-to-Haves (Deferred)
 
 - Interactive tutorial system
 - Video demonstrations of rules
@@ -301,9 +334,9 @@ Sections 5–7 collectively define what is in scope for the current v1.0 phase (
 
 ---
 
-## 7. Non-Goals (Explicitly Out of Scope)
+## 8. Non-Goals (Explicitly Out of Scope)
 
-### 7.1 What RingRift Will NOT Do
+### 8.1 What RingRift Will NOT Do
 
 | Non-Goal                       | Rationale                                                                                                         |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
@@ -315,7 +348,7 @@ Sections 5–7 collectively define what is in scope for the current v1.0 phase (
 | **Embedded video/voice chat**  | Existing external solutions are adequate                                                                          |
 | **Offline-first architecture** | Real-time multiplayer is core; local sandbox covers offline needs                                                 |
 
-### 7.2 Boundaries and Constraints
+### 8.2 Boundaries and Constraints
 
 - **Single-region deployment** for v1.0 (multi-region is post-v1.0)
 - **Single app instance topology** is the supported production configuration
@@ -326,7 +359,7 @@ Sections 5–7 collectively define what is in scope for the current v1.0 phase (
 
 ---
 
-## 8. Relationship to Other Docs
+## 9. Relationship to Other Docs
 
 This goals document sits at the top of the planning stack for **project direction**:
 
@@ -357,12 +390,16 @@ The tables below group key related documents by role so readers can quickly jump
 
 ### 8.3 Architecture & Technical
 
-| Document                                                                                 | Purpose                         |
-| ---------------------------------------------------------------------------------------- | ------------------------------- |
-| [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md)                               | System architecture review      |
-| [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md)                           | Rules engine design             |
-| [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md)                                               | AI service architecture         |
-| [`src/shared/engine/orchestration/README.md`](src/shared/engine/orchestration/README.md) | Turn orchestrator documentation |
+| Document                                                                                       | Purpose                                                                                                       |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [`ARCHITECTURE_ASSESSMENT.md`](ARCHITECTURE_ASSESSMENT.md)                                     | High-level system architecture review and historical remediation context subordinate to the goals in this doc |
+| [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md)       | Canonical Move/orchestrator/WebSocket lifecycle and engine public API that implements the rules engine goals  |
+| [`RULES_ENGINE_ARCHITECTURE.md`](RULES_ENGINE_ARCHITECTURE.md)                                 | Detailed rules engine design and TS↔Python parity mapping                                                     |
+| [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md) | Module catalog for the shared TypeScript engine helpers, aggregates, and orchestrator                         |
+| [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md) | Aggregate-level design reference for the shared engine                                                        |
+| [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md)                   | Supported board topologies and geometry constraints                                                           |
+| [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md)                                                     | AI service architecture, difficulty ladder, and training/parity plans subordinate to the goals defined here   |
+| [`src/shared/engine/orchestration/README.md`](src/shared/engine/orchestration/README.md)       | Turn orchestrator implementation guide                                                                        |
 
 ### 8.4 Operations & Development
 
@@ -372,6 +409,27 @@ The tables below group key related documents by role so readers can quickly jump
 | [`QUICKSTART.md`](QUICKSTART.md)     | Getting started guide      |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Contribution guidelines    |
 | [`docs/INDEX.md`](docs/INDEX.md)     | Documentation index        |
+
+---
+
+## 10. Open Questions / Owner Decisions Required
+
+This section records goal-level questions that are not fully specified by the current documentation and require explicit owner decisions. Until resolved, implementers should treat these as constraints on making irreversible changes, not as implicit commitments.
+
+1. **AI difficulty ladder positioning in v1.0 experience.** The current docs agree that the 1–10 difficulty ladder exists and that difficulties 7–10 are more experimental or advanced (see [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md) and [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md)), but they do not clearly state whether v1.0's primary experience should emphasise the beginner–intermediate band (1–6) in rated queues while keeping 7–10 as opt-in expert modes.
+   - **Option A:** Treat 1–6 as the canonical supported ladder for public/rated queues at v1.0, with 7–10 flagged as experimental or unrated.
+   - **Option B:** Treat the full 1–10 ladder as in scope for rated play at v1.0, accepting higher variance in AI strength and latency at the top difficulties.
+   - **Implication:** Affects UX copy, lobby defaults, and how strictly we gate SLOs and regression budgets for higher difficulties.
+
+2. **Initial public launch concurrency target.** [`STRATEGIC_ROADMAP.md`](STRATEGIC_ROADMAP.md) defines load-test scenarios around ~100 concurrent active games and 200–300 players, but the goals docs do not explicitly state whether this is the minimum acceptable production scale for v1.0 or a stretch target.
+   - **Option A:** Declare the documented P‑01 target (≈100 concurrent games, 200–300 players) as the baseline concurrency that must be demonstrated before launch.
+   - **Option B:** Allow a smaller initial public rollout (for example, friends-and-family scale) with the same SLO shape but lower absolute concurrency, treating the P‑01 numbers as follow-up stretch goals.
+   - **Implication:** Affects acceptance criteria for "production-ready" and how we interpret completion of Wave 7 / P‑01 validation.
+
+3. **Long-term emphasis: competitive ladder vs casual sandbox.** The docs describe both a robust sandbox for rules exploration and AI work, and plans for rated matchmaking and leaderboards, but they do not explicitly prioritise one as the primary long-term focus for design and engineering trade-offs.
+   - **Option A:** Optimise first for a high-quality competitive ladder (ratings, time controls, production SLOs), treating the sandbox primarily as a developer/designer/analysis tool.
+   - **Option B:** Optimise first for a rich exploratory sandbox and AI testbed, with competitive ladder features as secondary.
+   - **Implication:** Affects where to invest limited UX and feature capacity (for example, tutorialisation and analysis tools versus rating UX, anti-abuse, and matchmaking sophistication).
 
 ---
 

@@ -150,6 +150,7 @@ describe('RematchService', () => {
 
       expect(result.success).toBe(true);
       expect(result.newGameId).toBe('new-game-id');
+      expect(createGameFn).toHaveBeenCalledTimes(1);
       expect(createGameFn).toHaveBeenCalledWith('game-1');
     });
 
@@ -188,6 +189,8 @@ describe('RematchService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('expired');
+      // Expired requests must not result in a new game being created.
+      expect(createGameFn).not.toHaveBeenCalled();
     });
 
     it('should reject if accepter was not a player', async () => {

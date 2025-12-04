@@ -161,7 +161,7 @@ class TestSoakProgressReporter:
         """record_game updates internal statistics."""
         reporter = SoakProgressReporter(
             total_games=10,
-            report_interval_sec=100.0,  # Long interval to avoid mid-test reports
+            report_interval_sec=100.0,  # Long interval
         )
 
         reporter.record_game(moves=50, duration_sec=1.5)

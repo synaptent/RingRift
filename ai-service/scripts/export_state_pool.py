@@ -92,7 +92,7 @@ def export_states_from_db(
     states: List[Dict[str, Any]] = []
 
     # Build query to list games
-    query = "SELECT id, board_type, num_players, total_moves, winner FROM games WHERE 1=1"
+    query = "SELECT game_id, board_type, num_players, total_moves, winner, source FROM games WHERE 1=1"
     params: List[Any] = []
 
     if board_type:
@@ -110,69 +110,50 @@ def export_states_from_db(
     if winners_only:
         query += " AND winner IS NOT NULL"
 
-    # Execute query
-    cursor = db.conn.execute(query, params)
-    games = cursor.fetchall()
+    if source_filter:
+        query += " AND source = ?"
+        params.append(source_filter)
+
+    # Execute query using the proper connection context
+    with db._get_conn() as conn:
+        cursor = conn.execute(query, params)
+        games = cursor.fetchall()
 
     print(f"Found {len(games)} matching games in {db_path}")
 
     for game_row in games:
-        game_id = game_row[0]
-        game_board_type = game_row[1]
-        game_num_players = game_row[2]
-        game_total_moves = game_row[3]
-
-        # Get game metadata if source filter is specified
-        if source_filter:
-            meta_cursor = db.conn.execute(
-                "SELECT metadata FROM games WHERE id = ?", (game_id,)
-            )
-            meta_row = meta_cursor.fetchone()
-            if meta_row and meta_row[0]:
-                try:
-                    metadata = json.loads(meta_row[0])
-                    if metadata.get("source") != source_filter:
-                        continue
-                except (json.JSONDecodeError, TypeError):
-                    continue
+        game_id = game_row["game_id"]
+        game_board_type = game_row["board_type"]
+        game_num_players = game_row["num_players"]
+        game_total_moves = game_row["total_moves"]
 
         # Sample states at specified move numbers
         for sample_move in sample_moves:
             if sample_move > game_total_moves:
                 continue
 
-            # Try to get the state snapshot at this move
-            # First check if we have a snapshot
-            snapshot_cursor = db.conn.execute(
-                """
-                SELECT state_json FROM state_snapshots
-                WHERE game_id = ? AND move_number = ?
-                """,
-                (game_id, sample_move),
-            )
-            snapshot_row = snapshot_cursor.fetchone()
-
-            if snapshot_row and snapshot_row[0]:
-                try:
-                    state_dict = json.loads(snapshot_row[0])
-                    state_dict["_export_meta"] = {
-                        "source_db": os.path.basename(db_path),
-                        "game_id": game_id,
-                        "sample_move": sample_move,
-                        "board_type": game_board_type,
-                        "num_players": game_num_players,
-                    }
-                    states.append(state_dict)
-
-                    if max_states is not None and len(states) >= max_states:
-                        return states
-                except (json.JSONDecodeError, TypeError) as e:
-                    print(f"WARNING: Failed to parse snapshot for game {game_id} move {sample_move}: {e}")
+            # Try to get the state at this move using the DB's get_state_at_move method
+            try:
+                state = db.get_state_at_move(game_id, sample_move)
+                if state is None:
                     continue
 
-            # If no snapshot, we could reconstruct from initial state + moves
-            # but that's more complex - for now just skip
-            # In the future, add reconstruction logic here
+                # Convert to dict for JSON serialization
+                state_dict = state.model_dump()
+                state_dict["_export_meta"] = {
+                    "source_db": os.path.basename(db_path),
+                    "game_id": game_id,
+                    "sample_move": sample_move,
+                    "board_type": game_board_type,
+                    "num_players": game_num_players,
+                }
+                states.append(state_dict)
+
+                if max_states is not None and len(states) >= max_states:
+                    return states
+            except Exception as e:
+                print(f"WARNING: Failed to get state for game {game_id} move {sample_move}: {e}")
+                continue
 
     return states
 

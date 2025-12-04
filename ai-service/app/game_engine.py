@@ -1466,13 +1466,9 @@ class GameEngine:
         if landing_stack:
             return False
 
-        # Landing marker, if any, must belong to attacker.
-        landing_marker = board.markers.get(landing_pos.to_key())
-        if (
-            landing_marker is not None
-            and landing_marker.player != attacker.controlling_player
-        ):
-            return False
+        # Per RR-CANON-R101/R102: landing on any marker (own or opponent) is legal.
+        # The marker is removed and the top ring of the attacking stack's cap is
+        # eliminated. Validation allows this; mutation handles the elimination cost.
 
         return True
 
@@ -1525,16 +1521,15 @@ class GameEngine:
 
                 key = target.to_key()
                 dest_stack = board.stacks.get(key)
-                dest_marker = board.markers.get(key)
 
                 if dest_stack is None or dest_stack.stack_height == 0:
                     # Empty space or marker-only cell.
-                    if dest_marker is None or dest_marker.player == player_number:
-                        _debug(
-                            f"DEBUG: _has_any found move from {from_pos} "
-                            f"to {target} dist {distance}\n"
-                        )
-                        return True
+                    # Per RR-CANON-R091/R092: landing on any marker is legal.
+                    _debug(
+                        f"DEBUG: _has_any found move from {from_pos} "
+                        f"to {target} dist {distance}\n"
+                    )
+                    return True
                 else:
                     # Landing on a stack (for merging) is also a legal move.
                     _debug(
@@ -2721,7 +2716,7 @@ class GameEngine:
         Mirrors the TS GameEngine.applyMove 'move_stack' logic:
         - Leave a marker at departure.
         - Process markers along the path (flip or collapse).
-        - Handle landing on own marker (remove + self-eliminate).
+        - Handle landing on any marker per RR-CANON-R091/R092 (remove + eliminate).
         - Merge with any existing stack at destination.
         """
         if not move.from_pos:
@@ -2766,35 +2761,18 @@ class GameEngine:
         )
 
         # Check for marker at landing
+        # Per RR-CANON-R091/R092: landing on any marker (own or opponent) removes
+        # the marker and eliminates the top ring of the moving stack's cap.
         landing_marker = board.markers.get(to_key)
-        landed_on_own_marker = (
-            landing_marker is not None and landing_marker.player == move.player
-        )
+        landed_on_marker = landing_marker is not None
 
-        if landed_on_own_marker:
-            # Remove own marker before landing
+        if landed_on_marker:
+            # Remove marker before landing
             if game_state.zobrist_hash is not None:
                 game_state.zobrist_hash ^= zobrist.get_marker_hash(
                     to_key, landing_marker.player
                 )
             del board.markers[to_key]
-        elif landing_marker is not None:
-            # Landing on opponent marker is illegal by construction for
-            # non-capture moves; this path should not be reachable if move
-            # generation is correct. As a defensive fallback, flip it.
-            if game_state.zobrist_hash is not None:
-                game_state.zobrist_hash ^= zobrist.get_marker_hash(
-                    to_key, landing_marker.player
-                )
-            # Copy marker before modification
-            new_marker = landing_marker.model_copy()
-            new_marker.player = move.player
-            board.markers[to_key] = new_marker
-
-            if game_state.zobrist_hash is not None:
-                game_state.zobrist_hash ^= zobrist.get_marker_hash(
-                    to_key, new_marker.player
-                )
 
         # Handle merge with any existing stack at destination
         dest_stack = board.stacks.get(to_key)
@@ -2849,8 +2827,8 @@ class GameEngine:
                     tuple(moving_stack.rings)
                 )
 
-        # Self-elimination when landing on own marker
-        if landed_on_own_marker:
+        # Cap-elimination when landing on any marker
+        if landed_on_marker:
             GameEngine._eliminate_top_ring_at(game_state, move.to, move.player)
     @staticmethod
     def _apply_overtaking_capture(game_state: GameState, move: Move):
@@ -2877,7 +2855,8 @@ class GameEngine:
           it at the bottom of the attacker.
         - Move the attacker stack to the landing space (merging if a stack is
           already present).
-        - If landing on own marker, remove it and self-eliminate one ring.
+        - If landing on any marker (per RR-CANON-R101/R102), remove it and
+          eliminate one ring from the top of the attacking stack's cap.
         - Update chain_capture_state so subsequent segments continue from the
           new position.
         """
@@ -3037,33 +3016,20 @@ class GameEngine:
                 )
 
         # Handle landing on marker
+        # Per RR-CANON-R101/R102: landing on any marker (own or opponent) removes
+        # the marker and eliminates the top ring of the attacking stack's cap.
         landing_marker = board.markers.get(landing_key)
         if landing_marker is not None:
-            if landing_marker.player == move.player:
-                # Landing on own marker: remove and self-eliminate
-                if game_state.zobrist_hash is not None:
-                    game_state.zobrist_hash ^= zobrist.get_marker_hash(
-                        landing_key, landing_marker.player
-                    )
-                del board.markers[landing_key]
-                GameEngine._eliminate_top_ring_at(
-                    game_state, landing_pos, move.player
+            # Remove marker (do not collapse it)
+            if game_state.zobrist_hash is not None:
+                game_state.zobrist_hash ^= zobrist.get_marker_hash(
+                    landing_key, landing_marker.player
                 )
-            else:
-                # Defensive: flip opponent marker (should not normally occur)
-                if game_state.zobrist_hash is not None:
-                    game_state.zobrist_hash ^= zobrist.get_marker_hash(
-                        landing_key, landing_marker.player
-                    )
-                # Copy marker before modification
-                new_marker = landing_marker.model_copy()
-                new_marker.player = move.player
-                board.markers[landing_key] = new_marker
-
-                if game_state.zobrist_hash is not None:
-                    game_state.zobrist_hash ^= zobrist.get_marker_hash(
-                        landing_key, new_marker.player
-                    )
+            del board.markers[landing_key]
+            # Eliminate top ring of the attacking stack's cap
+            GameEngine._eliminate_top_ring_at(
+                game_state, landing_pos, move.player
+            )
 
         # Update chain capture state (Python analogue of
         # updateChainCaptureStateAfterCapture)

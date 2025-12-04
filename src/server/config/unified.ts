@@ -191,6 +191,7 @@ const ConfigSchema = z.object({
     publicClientUrl: z.string().min(1),
     allowedOrigins: z.array(z.string().min(1)).nonempty(),
     websocketOrigin: z.string().min(1),
+    wsReconnectionTimeoutMs: z.number().int().positive(),
   }),
   database: z.object({
     // Optional outside production; required in production via manual guard above.
@@ -246,6 +247,17 @@ const ConfigSchema = z.object({
         enabled: z.boolean(),
       })
       .optional(),
+    httpMoveHarness: z.object({
+      /**
+       * Master switch for the internal HTTP move harness endpoint
+       * (POST /api/games/:gameId/moves).
+       *
+       * When false, the harness route must behave as if it does not exist
+       * (e.g. 404/NOT_FOUND) so that production environments can keep the
+       * surface fully disabled by default.
+       */
+      enabled: z.boolean(),
+    }),
   }),
   orchestrator: z.object({
     /**
@@ -278,6 +290,7 @@ const preliminaryConfig = {
     publicClientUrl,
     allowedOrigins,
     websocketOrigin,
+    wsReconnectionTimeoutMs: env.WS_RECONNECTION_TIMEOUT_MS,
   },
   database: {
     url: databaseUrl,
@@ -342,6 +355,9 @@ const preliminaryConfig = {
     },
     analysisMode: {
       enabled: env.ENABLE_ANALYSIS_MODE,
+    },
+    httpMoveHarness: {
+      enabled: env.ENABLE_HTTP_MOVE_HARNESS,
     },
   },
 };

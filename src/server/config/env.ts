@@ -295,6 +295,19 @@ export const EnvSchema = z.object({
   ALLOWED_ORIGINS: z.string().default('http://localhost:5173,http://localhost:3000'),
 
   // ===================================================================
+  // WEBSOCKET / REAL-TIME
+  // ===================================================================
+
+  /**
+   * WebSocket reconnection window in milliseconds.
+   *
+   * Players who disconnect during an active game have this long to reconnect
+   * before their pending choices are cleared and abandonment handling may
+   * apply. Defaults to 30 seconds to match documented behaviour.
+   */
+  WS_RECONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+
+  // ===================================================================
   // FEATURE FLAGS
   // ===================================================================
 
@@ -338,6 +351,25 @@ export const EnvSchema = z.object({
     .string()
     .optional()
     .transform((val) => (val === undefined ? false : val === 'true' || val === '1')),
+
+  /**
+   * Enable the internal HTTP move harness endpoint
+   * (POST /api/games/:gameId/moves).
+   *
+   * This flag controls the availability of the internal/test-only HTTP move
+   * submission surface documented in PLAYER_MOVE_TRANSPORT_DECISION.md.
+   * When unset or set to "false"/"0", the harness is disabled.
+   */
+  ENABLE_HTTP_MOVE_HARNESS: z
+    .string()
+    .optional()
+    .transform((val) => {
+      if (val === undefined) {
+        return false;
+      }
+      const normalized = val.trim().toLowerCase();
+      return ['1', 'true', 'yes', 'on'].includes(normalized);
+    }),
 
   // ===================================================================
   // ORCHESTRATOR ROLLOUT CONFIGURATION

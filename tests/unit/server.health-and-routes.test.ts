@@ -384,18 +384,39 @@ describe('Protected game route authorization', () => {
     expect(res.body.error.code).toBe('AUTH_TOKEN_REQUIRED');
   });
 
-  it('GET /api/games/:gameId returns 400 GAME_INVALID_ID for malformed gameId', async () => {
+  it('POST /api/games/:gameId/moves returns 404 RESOURCE_ROUTE_NOT_FOUND when HTTP move harness is disabled', async () => {
+    const app = createTestApp();
+
+    const res = await request(app)
+      .post('/api/games/550e8400-e29b-41d4-a716-446655440099/moves')
+      .set('Authorization', 'Bearer user-1')
+      .send({
+        moveType: 'place_ring',
+        position: {
+          to: { x: 3, y: 3 },
+        },
+      })
+      .expect(404);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error.code).toBe('RESOURCE_ROUTE_NOT_FOUND');
+    // Harness should be fully dark when disabled – no DB lookups for the game.
+    expect(mockPrisma.game.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('GET /api/games/:gameId returns 404 GAME_NOT_FOUND for non-existent string gameId', async () => {
     const app = createTestApp();
 
     const res = await request(app)
       .get('/api/games/not-a-valid-id')
       .set('Authorization', 'Bearer user-1')
-      .expect(400);
+      .expect(404);
 
     expect(res.body.success).toBe(false);
-    expect(res.body.error.code).toBe('GAME_INVALID_ID');
-    // Invalid IDs should be rejected at validation layer without hitting the DB.
-    expect(mockPrisma.game.findUnique).not.toHaveBeenCalled();
+    expect(res.body.error.code).toBe('GAME_NOT_FOUND');
+    // String IDs that pass the lightweight format check are resolved via the DB
+    // so unknown values surface as GAME_NOT_FOUND rather than GAME_INVALID_ID.
+    expect(mockPrisma.game.findUnique).toHaveBeenCalled();
   });
 
   it('GET /api/games/:gameId returns 404 GAME_NOT_FOUND for well-formed but missing gameId', async () => {

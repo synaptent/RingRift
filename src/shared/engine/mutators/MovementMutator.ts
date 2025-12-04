@@ -45,47 +45,34 @@ export function mutateMovement(state: GameState, action: MoveStackAction): GameS
   const landingMarker = newState.board.markers.get(toKey);
 
   if (landingMarker) {
-    // Landing on a marker
-    if (landingMarker.player === action.playerId) {
-      // Landing on OWN marker:
-      // - Remove the marker
-      newState.board.markers.delete(toKey);
+    // Landing on any marker (own or opponent) per RR-CANON-R091/R092:
+    // - Remove the marker (do not collapse)
+    newState.board.markers.delete(toKey);
 
-      // - Eliminate the TOP ring of the moving stack (per rules 8.2, 8.3, 16.5.1)
-      // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
-      const topRingOwner = stack.rings[0];
-      const newRings = stack.rings.slice(1); // Remove first element (the top)
+    // - Eliminate the TOP ring of the moving stack's cap
+    // TOP ring is rings[0] per actual codebase convention (consistent with calculateCapHeight)
+    const topRingOwner = stack.rings[0];
+    const newRings = stack.rings.slice(1); // Remove first element (the top)
 
-      // Update elimination counts
-      newState.totalRingsEliminated++;
-      newState.board.eliminatedRings[topRingOwner] =
-        (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
+    // Update elimination counts
+    newState.totalRingsEliminated++;
+    newState.board.eliminatedRings[topRingOwner] =
+      (newState.board.eliminatedRings[topRingOwner] || 0) + 1;
 
-      const player = newState.players.find((p) => p.playerNumber === topRingOwner);
-      if (player) {
-        player.eliminatedRings++;
-      }
+    const player = newState.players.find((p) => p.playerNumber === topRingOwner);
+    if (player) {
+      player.eliminatedRings++;
+    }
 
-      // If stack becomes empty (was height 1), it's gone. Otherwise place it.
-      if (newRings.length > 0) {
-        newState.board.stacks.set(toKey, {
-          position: action.to,
-          rings: newRings,
-          stackHeight: newRings.length,
-          capHeight: calculateCapHeight(newRings),
-          controllingPlayer: newRings[0], // New top ring is the controller
-        });
-      }
-    } else {
-      // Landing on OPPONENT marker:
-      // This is generally not allowed for simple moves, but if valid (e.g. future rule change or specific context),
-      // the marker would flip. However, MovementValidator currently blocks this.
-      // We'll assume validator passed, so this branch shouldn't be reached for standard moves unless rules change.
-      // For robustness, we'll treat it as a normal move (replacing marker? No, that's capture).
-      // Let's throw for now to ensure we don't silently do the wrong thing.
-      throw new Error(
-        'MovementMutator: Landing on opponent marker is not supported in simple movement'
-      );
+    // If stack becomes empty (was height 1), it's gone. Otherwise place it.
+    if (newRings.length > 0) {
+      newState.board.stacks.set(toKey, {
+        position: action.to,
+        rings: newRings,
+        stackHeight: newRings.length,
+        capHeight: calculateCapHeight(newRings),
+        controllingPlayer: newRings[0], // New top ring is the controller
+      });
     }
   } else {
     // Landing on empty space

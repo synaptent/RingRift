@@ -486,8 +486,13 @@ async def store_game(request: StoreGameRequest):
 
         game_id = request.gameId or str(uuid.uuid4())
 
-        # Parse states
+        # Parse states. For recording we treat the provided initial state as
+        # the start of the stored sequence and rely on the moves list for the
+        # full trajectory. To keep replay semantics and parity harnesses
+        # consistent, we clear any pre-populated move history here.
         initial_state = GameState.model_validate(request.initialState)
+        if initial_state.move_history:
+            initial_state = initial_state.model_copy(update={"move_history": []})
         final_state = GameState.model_validate(request.finalState)
 
         # Parse moves

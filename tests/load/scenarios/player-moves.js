@@ -1,15 +1,36 @@
 /**
  * RingRift Load Test: Player Move Submission Scenario
- * 
+ *
  * Tests move submission latency and turn processing throughput.
  * Validates production-scale assumptions for real-time gameplay.
- * 
+ *
  * Scenario from STRATEGIC_ROADMAP.md §3: Player Moves
  * SLOs from STRATEGIC_ROADMAP.md §2.2: WebSocket gameplay SLOs
- * 
+ *
  * NOTE: k6 has limited WebSocket support. For full real-time testing,
  * consider supplementing with socket.io-client or Playwright tests.
  * This scenario focuses on HTTP-based move submission where available.
+ *
+ * Modes:
+ *  - Poll-only (default): MOVE_HTTP_ENDPOINT_ENABLED unset or "false".
+ *    Creates games and polls state only; no HTTP move submissions.
+ *  - HTTP move harness mode: backend ENABLE_HTTP_MOVE_HARNESS=true and
+ *    k6 MOVE_HTTP_ENDPOINT_ENABLED=true. Submits moves via
+ *    POST /api/games/:gameId/moves and tracks move metrics.
+ *
+ * To run (examples):
+ *   # Poll-only baseline (local dev)
+ *   k6 run tests/load/scenarios/player-moves.js
+ *
+ *   # HTTP move harness (staging/load)
+ *   ENABLE_HTTP_MOVE_HARNESS=true \\
+ *   MOVE_HTTP_ENDPOINT_ENABLED=true \\
+ *   k6 run tests/load/scenarios/player-moves.js
+ *
+ * When MOVE_HTTP_ENDPOINT_ENABLED=true but the backend harness is disabled,
+ * POST /api/games/:gameId/moves will typically return 404 and move-related
+ * thresholds in this scenario are expected to fail; that configuration is
+ * intentionally unsupported for harness validation.
  */
 
 import http from 'k6/http';
@@ -17,74 +38,112 @@ import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 import { loginAndGetToken } from '../auth/helpers.js';
 
-// Custom metrics aligned with STRATEGIC_ROADMAP metrics
-const moveSubmissionLatency = new Trend('move_submission_latency_ms');
-const moveSubmissionSuccess = new Rate('move_submission_success_rate');
-const moveProcessingErrors = new Counter('move_processing_errors');
-const turnProcessingLatency = new Trend('turn_processing_latency_ms');
-const stalledMoves = new Counter('stalled_moves_total'); // >2s threshold per STRATEGIC_ROADMAP
+ // Custom metrics aligned with STRATEGIC_ROADMAP metrics
+ const moveSubmissionLatency = new Trend('move_submission_latency_ms');
+ const moveSubmissionSuccess = new Rate('move_submission_success_rate');
+ const moveProcessingErrors = new Counter('move_processing_errors');
+ const turnProcessingLatency = new Trend('turn_processing_latency_ms');
+ const stalledMoves = new Counter('stalled_moves_total'); // >2s threshold per STRATEGIC_ROADMAP
+ const movesAttemptedTotal = new Counter('moves_attempted_total');
 
-// Test configuration
-export const options = {
-  scenarios: {
-    realistic_gameplay: {
-      executor: 'ramping-vus',
-      startVUs: 0,
-      stages: [
-        { duration: '1m', target: 20 },   // Ramp up to 20 concurrent games (40 players)
-        { duration: '3m', target: 40 },   // Increase to 40 games (80 players)
-        { duration: '5m', target: 40 },   // Sustain realistic gameplay
-        { duration: '1m', target: 0 }     // Ramp down
-      ],
-      gracefulRampDown: '30s',
-    }
-  },
-  
-  thresholds: {
-    // Move submission latency - staging SLOs from STRATEGIC_ROADMAP §2.2
-    'move_submission_latency_ms': [
-      'p(95)<300',   // Staging: 95% ≤ 300ms
-      'p(99)<600'    // Staging: 99% ≤ 600ms
-    ],
-    
-    // Stall rate - moves taking >2s should be rare
-    'stalled_moves_total': ['count<10'], // <0.5% for staging (assuming ~2000 moves)
-    
-    // Success rate
-    'move_submission_success_rate': ['rate>0.99'],
-    
-    // Turn processing (includes validation + state update)
-    'turn_processing_latency_ms': [
-      'p(95)<400',
-      'p(99)<800'
-    ]
-  },
-  
-  tags: {
-    scenario: 'player-moves',
-    test_type: 'load',
-    environment: 'staging'
-  }
-};
+// Lifecycle tuning for how long a single gameId should be polled by this scenario.
+// MAX_POLLS_PER_GAME can be overridden via the GAME_MAX_POLLS env var without
+// changing the script.
+const TERMINAL_GAME_STATUSES = ['completed', 'abandoned', 'finished'];
+const MAX_POLLS_PER_GAME = Number(__ENV.GAME_MAX_POLLS || 60);
+
+ // Test configuration
+ const moveHarnessEnabledForThresholds = (() => {
+   const raw = String(__ENV.MOVE_HTTP_ENDPOINT_ENABLED || '').toLowerCase();
+   return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+ })();
+ 
+ const thresholds = {};
+ 
+ if (moveHarnessEnabledForThresholds) {
+   // Move submission latency - staging SLOs from STRATEGIC_ROADMAP §2.2
+   thresholds['move_submission_latency_ms'] = [
+     'p(95)<300', // Staging: 95% ≤ 300ms
+     'p(99)<600', // Staging: 99% ≤ 600ms
+   ];
+ 
+   // Stall rate - moves taking >2s should be rare
+   thresholds['stalled_moves_total'] = ['count<10']; // ~0.5% for staging (assuming ~2000 moves)
+ 
+   // Success rate in harness mode; tolerate occasional failures while still
+   // catching systemic transport/validation issues.
+   thresholds['move_submission_success_rate'] = ['rate>0.95'];
+ 
+   // Ensure that when MOVE_HTTP_ENDPOINT_ENABLED=true we actually exercise
+   // the harness by making at least one move attempt.
+   thresholds['moves_attempted_total'] = ['count>0'];
+ 
+   // Turn processing (includes validation + state update)
+   thresholds['turn_processing_latency_ms'] = [
+     'p(95)<400',
+     'p(99)<800',
+   ];
+ }
+ 
+ // In poll-only mode (MOVE_HTTP_ENDPOINT_ENABLED=false), no move-specific
+ // thresholds are applied. The scenario remains a pure creation+polling
+ // baseline and is safe to run against local dev even if the backend does
+ // not expose the HTTP move harness.
+ 
+ export const options = {
+   scenarios: {
+     realistic_gameplay: {
+       executor: 'ramping-vus',
+       startVUs: 0,
+       stages: [
+         { duration: '1m', target: 20 }, // Ramp up to 20 concurrent games (40 players)
+         { duration: '3m', target: 40 }, // Increase to 40 games (80 players)
+         { duration: '5m', target: 40 }, // Sustain realistic gameplay
+         { duration: '1m', target: 0 }, // Ramp down
+       ],
+       gracefulRampDown: '30s',
+     },
+   },
+ 
+   thresholds,
+ 
+   tags: {
+     scenario: 'player-moves',
+     test_type: 'load',
+     environment: 'staging',
+   },
+ };
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:3001';
 const API_PREFIX = '/api';
 
-// HTTP move submission is currently **not** part of the production API
-// surface; moves are carried exclusively over WebSockets (see
-// src/server/websocket/server.ts and shared websocket types). This flag
-// guards the legacy HTTP move path so that the scenario can still be
-// compiled and iterated on without generating guaranteed 404s. When an
-// HTTP move endpoint is introduced, this flag can be flipped and the
-// payload adjusted to match the new contract.
-const MOVE_HTTP_ENDPOINT_ENABLED = false;
+// HTTP move submission is enabled only when the internal HTTP move harness
+// endpoint is available on the backend. This flag is driven by the k6 env
+// var MOVE_HTTP_ENDPOINT_ENABLED so operators can toggle between poll-only
+// mode and poll+HTTP-move mode without changing the script. When false or
+// unset, the scenario only creates games and polls state.
+const MOVE_HTTP_ENDPOINT_ENABLED = (() => {
+  const raw = String(__ENV.MOVE_HTTP_ENDPOINT_ENABLED || '').toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
+})();
 
-// Game state per VU
-let myGameId = null;
+ // Game state per VU
+ let myGameId = null;
+ let myGamePollCount = 0;
 
 export function setup() {
   console.log('Starting player move submission load test');
   console.log('Focus: Move processing latency and turn throughput');
+
+  if (MOVE_HTTP_ENDPOINT_ENABLED) {
+    console.log(
+      'HTTP move harness enabled; submitting moves via POST /api/games/:gameId/moves (internal endpoint)'
+    );
+  } else {
+    console.log(
+      'HTTP move harness disabled; running in poll-only mode (no move submissions from this scenario)'
+    );
+  }
 
   const healthCheck = http.get(`${BASE_URL}/health`);
   check(healthCheck, {
@@ -150,6 +209,7 @@ export default function(data) {
 
     if (createRes.status === 201 && createdGameId) {
       myGameId = createdGameId;
+      myGamePollCount = 0;
       console.log(`VU ${__VU}: Created game ${myGameId}`);
     } else {
       console.error(
@@ -159,91 +219,163 @@ export default function(data) {
     }
   }
 
-  // Step 2: Poll game state and (optionally) submit HTTP "moves"
-  if (myGameId && token) {
-    // Get current game state
-    const stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (stateRes.status !== 200) {
-      moveProcessingErrors.add(1);
-      sleep(2);
-      return;
-    }
-    
-    let game = null;
-    try {
-      const body = JSON.parse(stateRes.body);
-      game = body && body.data && body.data.game ? body.data.game : null;
-    } catch {
-      game = null;
-    }
-
-    if (!game) {
-      moveProcessingErrors.add(1);
-      sleep(2);
-      return;
-    }
-
-    // Check if game is still active
-    if (game.status !== 'active' && game.status !== 'waiting') {
-      console.log(`VU ${__VU}: Game ${myGameId} ended with status ${game.status}`);
-      // Reset to create a new game next iteration
-      myGameId = null;
-      sleep(5);
-      return;
-    }
-    
-    if (MOVE_HTTP_ENDPOINT_ENABLED) {
-      // Simulate move submission via a hypothetical HTTP endpoint. At the
-      // time of PASS23, moves are carried exclusively over WebSockets, so
-      // this path is kept disabled by default to avoid exercising a
-      // non-existent contract. When an HTTP move endpoint is added, this
-      // block can be updated to match its payload/response shape.
-      const movePayload = {
-        gameId: myGameId,
-        // Placeholder action payload; real implementation should generate
-        // a valid MovePayload compatible with the backend rules engine.
-        action: generateRandomMove(game),
-      };
-
-      const moveStart = Date.now();
-      const moveRes = http.post(
-        `${baseUrl}${API_PREFIX}/games/${myGameId}/moves`,
-        JSON.stringify(movePayload),
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          tags: { name: 'submit-move' },
-        }
-      );
-      const moveLatency = Date.now() - moveStart;
-
-      // Track metrics
-      moveSubmissionLatency.add(moveLatency);
-
-      const moveSuccess = check(moveRes, {
-        'move accepted': (r) => r.status === 200 || r.status === 201,
+   // Step 2: Poll game state and (optionally) submit HTTP "moves"
+    if (myGameId && token) {
+      // Get current game state
+      const stateRes = http.get(`${baseUrl}${API_PREFIX}/games/${myGameId}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-
-      moveSubmissionSuccess.add(moveSuccess);
-
-      if (moveSuccess) {
-        turnProcessingLatency.add(moveLatency);
+  
+      let game = null;
+      let retireGameId = false;
+  
+      if (stateRes.status === 200) {
+        try {
+          const body = JSON.parse(stateRes.body);
+          game = body && body.data && body.data.game ? body.data.game : null;
+        } catch {
+          game = null;
+        }
+  
+        if (!game) {
+          moveProcessingErrors.add(1);
+          console.error(
+            `VU ${__VU}: Failed to parse game state for ${myGameId} from 200 response: ${stateRes.body}`
+          );
+          retireGameId = true;
+        } else {
+          // Check if game is still active/pollable
+          const status = game.status;
+          const isTerminalStatus = TERMINAL_GAME_STATUSES.indexOf(status) !== -1;
+  
+          if (isTerminalStatus) {
+            console.log(`VU ${__VU}: Game ${myGameId} ended with status ${status}`);
+            retireGameId = true;
+          } else if (status !== 'active' && status !== 'waiting' && status !== 'paused') {
+            // Unknown non-terminal status; keep polling but log once for diagnostics.
+            console.warn(
+              `VU ${__VU}: Game ${myGameId} in unexpected non-terminal status ${status}; continuing to poll`
+            );
+          }
+  
+          myGamePollCount += 1;
+  
+          // Guardrail: even if a game remains in a non-terminal state, stop
+          // polling it after a bounded number of checks so we do not keep very
+          // old IDs hot forever.
+          if (!isTerminalStatus && myGamePollCount >= MAX_POLLS_PER_GAME) {
+            retireGameId = true;
+            console.log(
+              `VU ${__VU}: Retiring game ${myGameId} after ${myGamePollCount} polls (lifecycle budget reached)`
+            );
+          }
+        }
+      } else if (stateRes.status === 404) {
+        // The game ID came from POST /api/games but the row is no longer present.
+        // Treat as "expired/cleaned up" and retire this ID so we stop polling it.
+        moveProcessingErrors.add(1);
+        retireGameId = true;
+        console.log(
+          `VU ${__VU}: Game ${myGameId} not found (404); treating as expired and stopping polling for this ID`
+        );
+      } else if (stateRes.status === 400) {
+        // 400 implies an invalid gameId format. Since IDs originate from
+        // POST /api/games, this indicates a scenario bug rather than expected
+        // backend behaviour.
+        moveProcessingErrors.add(1);
+        retireGameId = true;
+        console.error(
+          `VU ${__VU}: Received 400 for GET /api/games/${myGameId}; invalid ID format indicates a scenario bug`
+        );
+      } else if (stateRes.status === 429) {
+        // Rate limiting at high concurrency is expected; keep the ID and allow a
+        // later iteration to retry.
+        moveProcessingErrors.add(1);
+        console.warn(
+          `VU ${__VU}: Rate limited when fetching game ${myGameId} (429); backend capacity limit reached`
+        );
       } else {
         moveProcessingErrors.add(1);
+        console.error(
+          `VU ${__VU}: Unexpected status ${stateRes.status} when fetching game ${myGameId} - body=${stateRes.body}`
+        );
       }
+  
+      if (retireGameId) {
+        myGameId = null;
+        myGamePollCount = 0;
+        // Simulate a player briefly reviewing the final state before starting a new game.
+        sleep(5);
+        return;
+      }
+  
+      if (!game) {
+        // We already counted an error and handled retirement above where relevant.
+        sleep(2);
+        return;
+      }
+  
+      if (MOVE_HTTP_ENDPOINT_ENABLED) {
+        // Submit a real move via the internal HTTP move harness endpoint.
+        // The payload conforms to the shared MoveSchema used by both the
+        // harness and the WebSocket player_move path.
+        const movePayload = generateRandomMove(game);
 
-      // Track stalled moves (>2s per STRATEGIC_ROADMAP stall definition)
-      if (moveLatency > 2000) {
-        stalledMoves.add(1);
-        console.warn(`VU ${__VU}: Stalled move detected - ${moveLatency}ms`);
+        const moveStart = Date.now();
+        movesAttemptedTotal.add(1);
+
+        const moveRes = http.post(
+          `${baseUrl}${API_PREFIX}/games/${myGameId}/moves`,
+          JSON.stringify(movePayload),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            tags: { name: 'submit-move' },
+          }
+        );
+        const moveLatency = Date.now() - moveStart;
+
+        // Track metrics
+        moveSubmissionLatency.add(moveLatency);
+
+        const moveSuccess = check(moveRes, {
+          'move accepted': (r) => r.status >= 200 && r.status < 300,
+        });
+
+        moveSubmissionSuccess.add(moveSuccess);
+
+        if (moveSuccess) {
+          // For now we treat turn processing latency as approximately the
+          // HTTP move submission latency; a future refinement can measure
+          // move-to-visible-state-change latency via polling.
+          turnProcessingLatency.add(moveLatency);
+        } else {
+          moveProcessingErrors.add(1);
+
+          if (moveRes.status === 404) {
+            console.warn(
+              `VU ${__VU}: HTTP move harness returned 404 for game ${myGameId} - is ENABLE_HTTP_MOVE_HARNESS enabled on the backend?`
+            );
+          } else if (moveRes.status >= 500) {
+            console.error(
+              `VU ${__VU}: Server error submitting move for game ${myGameId} - status=${moveRes.status} body=${moveRes.body}`
+            );
+          } else if (moveRes.status >= 400) {
+            console.warn(
+              `VU ${__VU}: Move rejected for game ${myGameId} - status=${moveRes.status} body=${moveRes.body}`
+            );
+          }
+        }
+
+        // Track stalled moves (>2s per STRATEGIC_ROADMAP stall definition)
+        if (moveLatency > 2000) {
+          stalledMoves.add(1);
+          console.warn(`VU ${__VU}: Stalled move detected - ${moveLatency}ms`);
+        }
       }
     }
-  }
   
   // Think time between moves - realistic gameplay pacing
   sleep(1 + Math.random() * 3); // 1-4 seconds between moves
@@ -255,23 +387,25 @@ export default function(data) {
  * For load testing, simplified placeholder logic
  */
 function generateRandomMove(gameState) {
-  const moveTypes = ['PLACE_RING', 'MOVE_RING', 'PLACE_MARKER'];
-  const moveType = moveTypes[Math.floor(Math.random() * moveTypes.length)];
-  
-  // Simplified move generation - actual implementation needs game rules
+  // Basic, high-success-rate move generator:
+  // - Always uses the canonical "place_ring" move type.
+  // - Targets a random coordinate within the board bounds.
+  //
+  // This prioritises exercising the full move pipeline and collecting
+  // meaningful latency/success metrics over strict gameplay realism.
+  const boardType = gameState.boardType || 'square8';
+  const size = boardType === 'square19' ? 19 : 8;
+
+  const to = {
+    x: Math.floor(Math.random() * size),
+    y: Math.floor(Math.random() * size),
+  };
+
   return {
-    type: moveType,
+    moveType: 'place_ring',
     position: {
-      q: Math.floor(Math.random() * 8),
-      r: Math.floor(Math.random() * 8)
+      to,
     },
-    // Add fields based on move type
-    ...(moveType === 'MOVE_RING' && {
-      from: {
-        q: Math.floor(Math.random() * 8),
-        r: Math.floor(Math.random() * 8)
-      }
-    })
   };
 }
 
@@ -280,5 +414,6 @@ export function teardown(data) {
   console.log('Key metrics to review:');
   console.log('  - move_submission_latency_ms (p95, p99)');
   console.log('  - stalled_moves_total (should be <0.5% of total moves)');
-  console.log('  - move_submission_success_rate');
+  console.log('  - move_submission_success_rate (should stay >=0.95 in harness mode)');
+  console.log('  - moves_attempted_total (should be >0 when MOVE_HTTP_ENDPOINT_ENABLED=true)');
 }

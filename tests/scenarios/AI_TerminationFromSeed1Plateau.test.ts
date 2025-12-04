@@ -1,5 +1,6 @@
 import { hashGameState, computeProgressSnapshot } from '../../src/shared/engine/core';
 import { reproduceSquare8TwoAiSeed1AtAction } from '../utils/aiSeedSnapshots';
+import { MAX_AI_ACTIONS_PER_GAME } from '../utils/aiSimulationPolicy';
 
 /**
  * Scenario-level check derived from the AI fuzz harness:
@@ -22,8 +23,11 @@ import { reproduceSquare8TwoAiSeed1AtAction } from '../utils/aiSeedSnapshots';
 
 test('AI termination scenario: square8 / 2 AI / seed=1 plateau eventually reaches a terminal state', async () => {
   const targetActionIndex = 58;
-  const { engine, state: checkpointState, actionsTaken } =
-    await reproduceSquare8TwoAiSeed1AtAction(targetActionIndex);
+  const {
+    engine,
+    state: checkpointState,
+    actionsTaken,
+  } = await reproduceSquare8TwoAiSeed1AtAction(targetActionIndex);
 
   // Basic sanity: we are looking at the intended configuration.
   expect(checkpointState.boardType).toBe('square8');
@@ -40,7 +44,11 @@ test('AI termination scenario: square8 / 2 AI / seed=1 plateau eventually reache
   // the S metric. This is intentionally looser than the unit-level stall
   // regression, and is aimed at the rules/termination layer rather than
   // exact AI policy.
-  const MAX_FOLLOWUP_ACTIONS = 200;
+  //
+  // Use a follow-up window derived from the canonical per-seed action budget
+  // used by the shared aiSimulationPolicy helper so that scenario-level
+  // expectations remain consistent with the fuzz harness semantics.
+  const MAX_FOLLOWUP_ACTIONS = Math.floor(MAX_AI_ACTIONS_PER_GAME / 2);
 
   let lastHash = hashGameState(engine.getGameState());
   let lastProgress = computeProgressSnapshot(engine.getGameState());

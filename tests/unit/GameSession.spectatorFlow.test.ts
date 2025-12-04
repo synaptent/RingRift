@@ -238,6 +238,42 @@ describe('Spectator Flow Tests', () => {
       expect(spectatorSocket.join).toHaveBeenCalledWith(gameId);
     });
 
+    it('should send read-only game_state snapshot with no validMoves for spectator', async () => {
+      const gameState = createActiveGameState([spectatorId]);
+      mockSession.getGameState.mockReturnValue(gameState);
+
+      mockGameFindUnique.mockResolvedValueOnce({
+        id: gameId,
+        allowSpectators: true,
+        player1Id: player1Id,
+        player2Id: player2Id,
+        player3Id: null,
+        player4Id: null,
+      });
+
+      const spectatorSocket = createMockSocket(spectatorId, 'spectator-socket-emit');
+      await (wsServer as any).handleJoinGame(spectatorSocket, gameId);
+
+      // The initial game_state payload for a spectator must include the full
+      // gameState but an empty validMoves array so that spectators are
+      // strictly read-only (LF3).
+      const gameStateEmit = spectatorSocket.emit.mock.calls.find(
+        ([event]: [string, unknown]) => event === 'game_state'
+      );
+
+      expect(gameStateEmit).toBeDefined();
+      if (!gameStateEmit) {
+        throw new Error('Expected game_state emit for spectator join');
+      }
+
+      const payload = gameStateEmit[1] as any;
+      expect(payload).toBeDefined();
+      expect(payload.type).toBe('game_update');
+      expect(payload.data.gameId).toBe(gameId);
+      expect(payload.data.gameState).toEqual(gameState);
+      expect(payload.data.validMoves).toEqual([]);
+    });
+
     it('should not include spectator in player list', async () => {
       const gameState = createActiveGameState([spectatorId]);
       mockSession.getGameState.mockReturnValue(gameState);

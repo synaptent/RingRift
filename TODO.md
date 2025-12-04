@@ -5,7 +5,7 @@
 > - Canonical high-level task/backlog tracker for near- and mid-term work.
 > - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 
-**Last Updated:** November 30, 2025
+**Last Updated:** December 3, 2025
 
 This file is the canonical high-level task tracker for the project.
 When it disagrees with older planning docs (for example files under
@@ -210,35 +210,40 @@ Planned work:
         `LineRewardChoice`.
   - [x] In `territory_processing` phase, enumerate eligible disconnected
         regions as `process_territory_region` moves instead of (or in addition
-        to) `RegionOrderChoice` for ordering (explicit elimination moves remain
-        future work).
-- [ ] Update `GameEngine` to drive these phases via `makeMove` rather than
+        to) `RegionOrderChoice` for ordering (explicit elimination moves are
+        now surfaced via `eliminate_rings_from_stack` Moves on both backend
+        and sandbox hosts using the shared decision helpers + orchestrator).
+- [x] Update `GameEngine` to drive these phases via `makeMove` rather than
       direct `PlayerInteractionManager` calls, so that:
-  - [ ] Human clients and AI both select from the same `getValidMoves`
-        result set for all interactive decisions.
-  - [ ] Internal post-move processors (`lineProcessing`,
+  - [x] Human clients and AI both select from the same `getValidMoves`
+        result set for all interactive decisions in the canonical
+        orchestrator-backed path (legacy helpers remain only for
+        diagnostics and archived tests).
+  - [x] Internal post-move processors (`lineProcessing`,
         `territoryProcessing`, `captureChainEngine`) are refactored to apply
-        selected decision-moves instead of bespoke `PlayerChoice` branches.
+        selected decision-moves instead of bespoke `PlayerChoice` branches
+        on the production/orchestrator path.
 - [ ] Adjust `PlayerInteractionManager` and WebSocket handlers so that
       frontends treat these new decision-move types as first-class actions
       (selecting among moves) rather than distinct `PlayerChoice` payloads.
-- [ ] Keep `ClientSandboxEngine` in sync by:
-  - [ ] Importing the same extended `Move` types.
-  - [ ] Mirroring the new interactive phases and decision-move handling in
+- [x] Keep `ClientSandboxEngine` in sync by:
+  - [x] Importing the same extended `Move` types.
+  - [x] Mirroring the new interactive phases and decision-move handling in
         the sandbox (e.g., chain capture, line processing, territory
         processing, elimination) using the existing sandbox helpers
-        (`sandboxMovement.ts`, `sandboxElimination`).
-  - [ ] Updating `sandboxAI` to select among these richer `Move` sets,
+        (`sandboxMovement.ts`, `sandboxElimination`) plus the
+        `SandboxOrchestratorAdapter`.
+  - [x] Updating `sandboxAI` to select among these richer `Move` sets,
         staying in lockstep with backend `getValidMoves`.
-- [ ] Align sandbox Move/phase handling with backend:
-  - [ ] Route all sandbox actions (human and AI) through the canonical
+- [x] Align sandbox Move/phase handling with backend:
+  - [x] Route all sandbox actions (human and AI) through the canonical
         `applyCanonicalMoveInternal` path using the same `Move` types and
         `GamePhase` transitions as the backend, including `chain_capture`,
         `line_processing`, and `territory_processing`.
-  - [ ] Ensure `ClientSandboxEngine` respects the same decision semantics
+  - [x] Ensure `ClientSandboxEngine` respects the same decision semantics
         for `continue_capture_segment`, `process_line`, and
         `process_territory_region`.
-  - [ ] Update sandbox parity and RulesMatrix-backed tests to assert both
+  - [x] Update sandbox parity and RulesMatrix-backed tests to assert both
         the legal-move sets and resulting phases for these advanced phases.
 - [ ] Extend and/or add parity tests to cover the new decision-move
       surface:
@@ -252,7 +257,7 @@ Planned work:
 
 - [x] Backend `GameEngine` / `RuleEngine` now model capture-chain continuation via a distinct `chain_capture` phase and `continue_capture_segment` moves.
 - [x] Backend capture-sequence enumeration now uses `captureChainEngine.getCaptureOptionsFromPosition` plus shared `validateCaptureSegmentOnBoard`, keeping [`captureSequenceEnumeration.test.ts`](tests/unit/captureSequenceEnumeration.test.ts) green across square and hex boards.
-- [x] Backend territory-processing now enumerates explicit `eliminate_rings_from_stack` Moves via `RuleEngine.getValidEliminationDecisionMoves`, and `RingEliminationChoice.options[].moveId` / `RegionOrderChoice.options[].moveId` are wired to canonical `Move.id` values for elimination and disconnected-region decisions (sandbox Move/phase parity and WebSocket/AI adoption of these Move ids remain future work).
+- [x] Backend territory-processing now enumerates explicit `eliminate_rings_from_stack` Moves via `RuleEngine.getValidEliminationDecisionMoves`, and `RingEliminationChoice.options[].moveId` / `RegionOrderChoice.options[].moveId` are wired to canonical `Move.id` values for elimination and disconnected-region decisions (sandbox Move/phase parity and WebSocket/AI adoption of these Move ids have been implemented via the orchestrator-backed adapters and choice→Move mapping).
 - [x] Chain-capture + heuristic coverage suites are now passing:
   - [x] [`ComplexChainCaptures.test.ts`](tests/scenarios/ComplexChainCaptures.test.ts) – chain capture scenarios pass
   - [x] [`RulesMatrix.ChainCapture.GameEngine.test.ts`](tests/scenarios/RulesMatrix.ChainCapture.GameEngine.test.ts) – backend chain capture passes
@@ -263,14 +268,14 @@ Planned work:
   - [x] [`TraceParity.seed*.firstDivergence.test.ts`](tests/unit/TraceParity.seed5.firstDivergence.test.ts) – diagnostic helpers for legacy path; skipped when orchestrator enabled (canonical path); aiHeuristicCoverage provides primary parity verification
 - [x] Sandbox engine and `sandboxAI` now participate in the new `chain_capture` / `continue_capture_segment` Move model for AI turns and canonical traces; remaining divergences (e.g. seed 14 trace parity) are localized and tracked via `TraceParity.seed14.*` / `ParityDebug.seed14.*` helpers.
 
-**Near-term P0.4 tasks inferred from current test failures:**
+**Near-term P0.4 tasks inferred from current test failures (historical):**
 
 - [x] Finalize backend chain-capture semantics for cyclic/triangle patterns so that FAQ scenarios in [`rulesMatrix.ts`](tests/scenarios/rulesMatrix.ts) and [`GameEngine.cyclicCapture.*.test.ts`](tests/unit/GameEngine.cyclicCapture.scenarios.test.ts) pass under the new model. (See `GameEngine.cyclicCapture.scenarios.test.ts` and `tests/scenarios/ComplexChainCaptures.test.ts` for the current FAQ-aligned coverage.)
 - [x] Migrate `ComplexChainCaptures` and `RulesMatrix.ChainCapture` suites to drive chains via `chain_capture` + `continue_capture_segment` rather than internal while-loops. (Both suites now resolve mandatory continuations via `GameEngine.getValidMoves` in the `chain_capture` phase.)
 - [x] Mirror the chain-capture phase and `continue_capture_segment` moves into [`ClientSandboxEngine`](src/client/sandbox/ClientSandboxEngine.ts) and [`sandboxAI`](src/client/sandbox/sandboxAI.ts), then restore:
   - [x] [`Sandbox_vs_Backend.aiHeuristicCoverage.test.ts`](tests/unit/Sandbox_vs_Backend.aiHeuristicCoverage.test.ts)
   - [x] `TraceParity.seed*.firstDivergence.test.ts` (trace parity helpers for seeds 5/14/17)
-- [ ] Once chain capture is stable across backend and sandbox, extend the same Move/phase unification to line-processing and territory-processing (as described above).
+- [x] Once chain capture is stable across backend and sandbox, extend the same Move/phase unification to line-processing and territory-processing (as described above). Backend and sandbox now both enumerate `process_line`, `choose_line_reward`, `process_territory_region`, and `eliminate_rings_from_stack` Moves via the shared helpers + orchestrator adapters, and these paths are exercised by the existing line/territory decision suites and sandbox/backend parity tests.
 - [ ] Keep `tests/integration/FullGameFlow.test.ts` green by ensuring AI-vs-AI backend games using local AI fallback always reach a terminal `gameStatus` (e.g. `completed`/`finished`) within the configured move budget. Treat regressions here as part of P0.4 since they exercise the unified Move model end-to-end.
 
 ### P0.5 – Python AI-service rules engine parity (P0) ✅
@@ -530,54 +535,299 @@ keep them green; treat regressions as P0 until resolved.
 - [x] Document load testing scenarios and SLOs
 - [x] Add PASS21 assessment report
 
-## Wave 7 – Production Validation & Scaling (P0 - NEXT)
+## Wave 7 – Production Validation & Scaling ✅ COMPLETE (Dec 3, 2025)
 
 > **Goal:** Validate system performance at production scale and establish operational baselines.
 >
-> **Status:** 🔄 IN PLANNING
+> **Status:** ✅ COMPLETE (Dec 3, 2025)
 
-### Wave 7.1 – Load Test Execution
+### Wave 7.1 – Load Test Execution ✅ COMPLETE (Dec 3, 2025)
 
-- [ ] Run Scenario P1 against staging (40-60 players, validate SLOs)
-- [ ] Run Scenario P2 against staging (AI-heavy, 10-20 concurrent AI games)
-- [ ] Run Scenario P3 against staging (reconnection + spectator resilience)
-- [ ] Run Scenario P4 against staging (long-running games, memory/performance)
-- [ ] Document results and identify bottlenecks
+- [x] Run Scenario P1 against local Docker (player-moves) – 100% success, 0% errors
+- [x] Run Scenario P2 against local Docker (concurrent-games) – p95 latency 10.79ms (<400ms target)
+- [x] Run Scenario P3 against local Docker (websocket-stress) – 100% connection success, p95 latency 2ms
+- [x] Run Scenario P4 against local Docker (game-creation) – p95 latency 15ms (<800ms target)
+- [x] Document results and identify bottlenecks → [`docs/LOAD_TEST_BASELINE_REPORT.md`](docs/LOAD_TEST_BASELINE_REPORT.md)
 
-### Wave 7.2 – Baseline Metrics Establishment
+**Issue Fixed:** Game ID validation in Docker container was outdated (only accepted UUID, not CUID). Rebuilt container with updated `GameIdParamSchema` that accepts both formats.
 
-- [ ] Capture "healthy system" metric ranges from staging runs
-- [ ] Document p50/p95/p99 latencies for all critical paths
-- [ ] Establish capacity model (games per instance, concurrent players)
-- [ ] Tune alert thresholds based on observed behavior
+### Wave 7.2 – Baseline Metrics Establishment ✅ COMPLETE (Dec 3, 2025)
 
-### Wave 7.3 – Operational Drills
+- [x] Capture "healthy system" metric ranges from local Docker runs
+  - Game creation p95: 15ms (target <800ms) – 53x headroom
+  - GET /api/games/:id p95: 10.79ms (target <400ms) – 37x headroom
+  - WebSocket message latency p95: 2ms (target <200ms) – 100x headroom
+- [x] Document p50/p95/p99 latencies → [`docs/LOAD_TEST_BASELINE_REPORT.md`](docs/LOAD_TEST_BASELINE_REPORT.md)
+- [x] Establish capacity model (estimated from 5-50 VU tests):
+  - Game creation: ~1.6/s sustained, ~100/min at moderate load
+  - WebSocket connections: 50 tested, 500+ projected
+  - Error rate: 0% at test load
+- [x] Tune alert thresholds based on observed behavior → recommendations in baseline report
 
-- [ ] Execute secrets rotation drill
-- [ ] Execute backup/restore drill
-- [ ] Simulate incident response scenarios
-- [ ] Document lessons learned and refine runbooks
+### Wave 7.3 – Operational Drills ✅ COMPLETE (Dec 3, 2025)
 
-### Wave 7.4 – Production Preview
+- [x] Execute secrets rotation drill – Token invalidation verified, ~30s recovery
+- [x] Execute backup/restore drill – 11MB backup, full integrity verified (40K games)
+- [x] Simulate incident response scenarios – AI service outage, detection <75s
+- [x] Document lessons learned and refine runbooks → Added to [`docs/LOAD_TEST_BASELINE_REPORT.md`](docs/LOAD_TEST_BASELINE_REPORT.md)
 
-- [ ] Deploy to production-like environment
-- [ ] Run smoke tests with real traffic patterns
-- [ ] Validate monitoring and alerting
-- [ ] Execute go/no-go checklist
+**Key Findings:**
+
+- Docker Compose doesn't auto-reload .env changes (must export vars)
+- Nginx restart needed after app container recreation
+- Prometheus scrape interval (15s) determines detection speed
+
+### Wave 7.4 – Production Preview ✅ COMPLETE (Dec 3, 2025)
+
+- [x] Deploy to production-like environment (local Docker with full stack)
+- [x] Run smoke tests with real traffic patterns (k6 load scenarios)
+- [x] Validate monitoring and alerting:
+  - Prometheus: 3/3 targets healthy, 40 alert rules
+  - Grafana: Healthy with Prometheus datasource
+  - Alertmanager: ⚠️ Needs production notification config (created local config)
+- [x] Execute go/no-go checklist → [`docs/GO_NO_GO_CHECKLIST.md`](docs/GO_NO_GO_CHECKLIST.md)
+
+**Verdict: ✅ GO (with caveats)**
+
+- System demonstrates production readiness for soft launch
+- All SLOs met with 37x-100x headroom
+- Alertmanager needs production notification channels before full launch
+
+### Wave 7.5 – k6 scenario contract/protocol alignment (Code/Debug)
+
+- [x] Fix contract / ID behavior for `GET /api/games/:gameId` under k6 scenarios (Code/Debug)
+  - `concurrent-games` and `player-moves` under `tests/load/scenarios/` now create, track, and retire game IDs in a way that reflects the backend’s actual lifecycle and expiry semantics (terminal statuses, 404 expiry, bounded poll counts), so 4xx rates are driven by genuine behaviour (e.g., rate limits) rather than `GAME_INVALID_ID` from stale IDs.
+  - Any remaining HTTP errors in these scenarios should be interpreted as capacity/behaviour issues surfaced by the backend, not as fundamental contract mismatches in the k6 harness.
+  - References: [`GAME_PERFORMANCE.md`](docs/runbooks/GAME_PERFORMANCE.md), [`PASS22_COMPLETION_SUMMARY.md`](docs/PASS22_COMPLETION_SUMMARY.md), [`PASS22_ASSESSMENT_REPORT.md`](docs/PASS22_ASSESSMENT_REPORT.md), [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+
+- [x] Align WebSocket message format for `websocket-stress` with production client protocol (Code/Debug)
+  - [`tests/load/scenarios/websocket-stress.js`](tests/load/scenarios/websocket-stress.js) now speaks the same Socket.IO v4 / Engine.IO v4 wire protocol as `WebSocketServer` (handshake, ping/pong, lobby events), eliminating "message parse error" closes when the server is healthy.
+  - With protocol alignment in place, connection-duration and message-latency thresholds in this scenario correspond to realistic production SLOs rather than protocol mismatches.
+  - References: [`GAME_PERFORMANCE.md`](docs/runbooks/GAME_PERFORMANCE.md), [`PASS21_ASSESSMENT_REPORT.md`](docs/PASS21_ASSESSMENT_REPORT.md), [`PASS22_COMPLETION_SUMMARY.md`](docs/PASS22_COMPLETION_SUMMARY.md), [`PASS22_ASSESSMENT_REPORT.md`](docs/PASS22_ASSESSMENT_REPORT.md), [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
+
+---
+
+## Wave 8 – Player Experience & UX Polish (P1 - IN PROGRESS)
+
+> **Goal:** Transform developer-oriented UI into player-friendly experience suitable for public release.
+>
+> **Status:** 🔄 IN PROGRESS (Waves 8.1, 8.3, 8.4 Complete; 8.2 Mostly Complete)
+> **Spec:** [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md) §Wave 8
+
+### Wave 8.1 – First-Time Player Experience ✅ COMPLETE (Dec 4, 2025)
+
+- [x] Create onboarding modal for first-time players (`OnboardingModal.tsx`)
+  - Multi-step introduction: Welcome, Phases, Victory Conditions, Ready to Play
+  - Keyboard navigation (arrow keys, Enter, Escape)
+- [x] Create `useFirstTimePlayer` hook for tracking onboarding state
+  - Persists to localStorage, tracks welcome seen, games completed
+- [x] Enhance "Learn the Basics" preset visibility
+  - Pulsing animation for first-time players
+  - "Start Here" badge and indicator
+- [x] Simplify sandbox presets – hide advanced options behind "Show Advanced"
+  - Collapsed by default for first-time players
+  - Expands Scenarios, Self-Play, and Manual Config sections
+- [ ] Add contextual tooltips explaining game mechanics (deferred to 8.6)
+- [ ] Redesign HUD visual hierarchy (existing HUD functional, minor polish deferred)
+
+### Wave 8.2 – Game Flow Polish ✅ MOSTLY COMPLETE
+
+- [x] Improve phase-specific prompts with clearer action buttons (Dec 3, 2025)
+- [x] Enhanced invalid-move feedback (subtle animations, explanatory toasts) (Dec 4, 2025)
+- [x] Decision-phase countdown with visual urgency (color changes, pulsing) (Dec 3, 2025)
+- [x] Victory/defeat screens with game summary (Dec 3, 2025)
+- [ ] Key moments replay (deferred to 8.3)
+
+### Wave 8.3 – UI/UX Theme Polish ✅ COMPLETE (Dec 4, 2025)
+
+- [x] Dark theme for turn number panel (`GameProgress` component)
+- [x] Dark theme for player card panels (`PlayerCardFromVM`, `RingStatsFromVM`)
+- [x] Extract `VictoryConditionsPanel` component for flexible placement
+- [x] Move Victory panel below game info panel (sandbox layout)
+- [x] Fix MoveHistory scroll to stay within container (prevent page scroll)
+
+### Wave 8.4 – Spectator & Analysis Experience ✅ COMPLETE (Dec 4, 2025)
+
+- [x] `SpectatorHUD` component with dedicated spectator layout
+  - Player standings with ring/territory stats
+  - Current player indicator with phase hints
+  - Collapsible analysis section
+  - Recent moves with annotations
+- [x] `EvaluationGraph` component for evaluation timeline
+  - Per-player evaluation lines over time
+  - Click-to-jump to specific moves
+  - Current move indicator
+- [x] `MoveAnalysisPanel` for per-move insights
+  - Move quality assessment (excellent/good/neutral/inaccuracy/mistake/blunder)
+  - Evaluation change tracking
+  - Think time and engine depth display
+- [x] `TeachingOverlay` component for rules/FAQ scenarios
+  - Contextual help for all game mechanics
+  - Victory condition explanations
+  - `useTeachingOverlay` hook for state management
+  - `TeachingTopicButtons` quick-access component
+
+### Wave 8.5 – Mobile & Responsive
+
+- [ ] Responsive board rendering for mobile devices
+- [ ] Touch-optimized controls for stack selection and movement
+- [ ] Simplified mobile HUD layout
+
+### Wave 8.6 – Accessibility
+
+- [ ] Keyboard navigation for all game actions
+- [ ] Screen reader support for game state announcements
+- [ ] High-contrast mode option
+- [ ] Colorblind-friendly player color palette
+
+---
+
+## Wave 9 – AI Strength & Optimization (P1 - PLANNED)
+
+> **Goal:** Provide challenging AI opponents across all skill levels, from beginner to expert.
+>
+> **Status:** 📋 PLANNED
+> **Spec:** [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md) §Wave 9
+
+### Wave 9.1 – Production AI Ladder
+
+- [ ] Wire MinimaxAI for medium-high difficulty levels (currently falling back to HeuristicAI)
+- [ ] Expose MCTS implementation in production behind AIProfile
+- [ ] Complete service-backing for remaining PlayerChoices:
+  - [x] line_reward_option ✅
+  - [x] ring_elimination ✅
+  - [x] region_order ✅
+  - [ ] line_order
+  - [ ] capture_direction
+
+### Wave 9.2 – Heuristic Weight Optimization
+
+- [ ] Complete weight sensitivity analysis on square8, square19, hex
+- [ ] Classify weights by signal strength:
+  - Strong positive (>55% win rate) → Keep
+  - Strong negative (<45% win rate) → Invert sign
+  - Noise band (45-55%) → Prune or zero-initialize
+- [ ] Run CMA-ES optimization on pruned weight set
+- [ ] Validate optimized weights via tournament against baseline
+- [ ] Create board-type specific profiles if results differ significantly
+
+### Wave 9.3 – RNG Determinism
+
+- [ ] Replace global `random` with per-game seeded RNG in Python AI
+- [ ] Update ZobristHash to use stable, seeded RNG
+- [ ] Pass RNG seeds from TS backend to Python service in /ai/move requests
+
+### Wave 9.4 – Search Enhancements (Future)
+
+- [ ] Move ordering heuristics for better alpha-beta pruning
+- [ ] Transposition table for position caching
+- [ ] Iterative deepening with time limits
+- [ ] Opening book generation from strong AI self-play
+
+### Wave 9.5 – AI Observability
+
+- [ ] Per-difficulty latency tracking in Grafana
+- [ ] AI quality metrics (win rate vs random, move consistency)
+- [ ] Fallback rate monitoring by endpoint
+
+---
+
+## Wave 10 – Game Records & Training Data (P2 - PLANNED)
+
+> **Goal:** Comprehensive game storage, notation, and replay system for analysis, training, and competitive features.
+>
+> **Status:** 📋 PLANNED
+> **Spec:** [`IMPROVEMENT_PLAN.md`](IMPROVEMENT_PLAN.md) §Wave 10
+
+### Wave 10.1 – Game Record Types
+
+- [ ] Python `GameRecord` types in `ai-service/app/models/game_record.py`
+- [ ] TypeScript `GameRecord` types in `src/shared/types/gameRecord.ts`
+- [ ] JSONL export format for training data pipelines
+- [ ] Algebraic notation (RRN) generator and parser
+- [ ] Coordinate conversion utilities for all board types
+
+### Wave 10.2 – Database Integration
+
+- [ ] Add `games` and `moves` tables to Prisma schema
+- [ ] Create `GameRecordRepository` for CRUD operations
+- [ ] Wire game storage into online game completion
+- [ ] Wire game storage into self-play scripts (CMA-ES, soak tests)
+
+### Wave 10.3 – Self-Play Recording (Track 11)
+
+- [ ] Default-enabled game recording in `run_cmaes_optimization.py`
+  - Per-run DB at `{output_dir}/games.db`
+  - Rich metadata: source, generation, candidate, board_type, num_players
+- [ ] State pool export utility (`scripts/export_state_pool.py`)
+- [ ] Database merge utility (`scripts/merge_game_dbs.py`)
+- [ ] Environment variables: `RINGRIFT_RECORD_SELFPLAY_GAMES`, `RINGRIFT_SELFPLAY_DB_PATH`
+
+### Wave 10.4 – Replay System
+
+- [ ] `reconstructStateAtMove(gameRecord, moveIndex)` in shared engine
+- [ ] Checkpoint caching for efficient backward navigation
+- [ ] `ReplayControls` UI component with play/pause/step/seek
+- [ ] `MoveList` component with move annotations
+- [ ] Sandbox integration for replay viewing
+
+### Wave 10.5 – Self-Play Browser UI
+
+- [x] API endpoints in `src/server/routes/selfplay.ts`
+- [x] `SelfPlayGameService` for database access (read-only SQLite, with empty
+      `games` tables filtered out so 0-game databases are not shown in the
+      sandbox self-play browser dropdown).
+- [x] `SelfPlayBrowser` component for game discovery
+      (`src/client/components/SelfPlayBrowser.tsx`), wired into
+      `SandboxGameHost` via the "Browse Self-Play Games" panel.
+- [x] Filter by board type, player count, outcome, source (implemented via
+      query params on `/api/selfplay/games` and client-side dropdown filters).
+- [x] Fork games from replay position into sandbox by loading a selected
+      self-play game as a `LoadableScenario` and initializing the local
+      `ClientSandboxEngine` via `handleLoadScenario` in
+      `SandboxGameHost.tsx`.
+
+---
 
 ## Phase 3 – Multiplayer Polish (P1)
 
 ### P1.1 – WebSocket Lifecycle & Reconnection
 
-- [ ] Tighten and test WebSocket lifecycle around:
+- [x] Tighten and test WebSocket lifecycle around:
   - Reconnects and late joins in
     [`WebSocketServer`](src/server/websocket/server.ts) and
-    [`WebSocketInteractionHandler`](src/server/game/WebSocketInteractionHandler.ts).
-  - Consistent `game_over` handling and clearing of any pending choices.
-  - Spectator join/leave flows, ensuring spectators are always read-only.
-- [ ] Add focused Jest integration tests for lifecycle aspects under
-      `tests/unit/`, and cross-link them from
-      [`tests/README.md`](tests/README.md).
+    [`WebSocketInteractionHandler`](src/server/game/WebSocketInteractionHandler.ts), including
+    bounded reconnection windows (`pendingReconnections`), connection diagnostics
+    (`playerConnectionStates`), and abandonment handling in
+    `handleReconnectionTimeout`.
+  - Consistent `game_over` handling and clearing of any pending choices on both
+    server (GameSession / PlayerInteractionManager) and client
+    ([`GameContext`](src/client/contexts/GameContext.tsx) clears
+    `pendingChoice`/`choiceDeadline` on `game_over`).
+  - Spectator join/leave flows, ensuring spectators are always read-only and do
+    not receive reconnection windows (see strict spectator guards in
+    `player_move` / `player_move_by_id` / `player_choice_response` handlers and
+    the spectator branch in `WebSocketServer.handleDisconnect`).
+- [x] Add focused Jest unit/integration/E2E tests for reconnection and lifecycle
+      aspects and cross-link them from docs:
+  - `tests/unit/GameConnection.reconnection.test.ts` – client
+    `SocketGameConnection` status transitions and reconnect attempts.
+  - `tests/unit/GameSession.reconnectFlow.test.ts`,
+    `tests/unit/GameSession.reconnectDuringDecision.test.ts` – server-side
+    reconnection windows, preservation of GameSession, and reconnect during a
+    pending decision.
+  - `tests/integration/GameReconnection.test.ts` – WebSocket reconnection window
+    semantics (`player_disconnected` / `player_reconnected`) at the API edge.
+  - `tests/e2e/reconnection.simulation.test.ts` – network partition and
+    reconnection-window expiry (rated vs unrated abandonment), plus HUD-level
+    reconnect UX.
+  - See also `KNOWN_ISSUES.md` P1.2 “WebSocket Game Loop” and the reconnection
+    section of `docs/CANONICAL_ENGINE_API.md` for the current lifecycle
+    summary and remaining UX/documentation work.
+- [ ] Remaining polish: multiplayer UX and documentation around connection
+      lifecycle (multi-tab/cross-device reconnect messaging, richer HUD copy
+      for “reconnecting” vs “abandoned”, and expanded end-to-end examples in
+      `docs/CANONICAL_ENGINE_API.md` and lobby docs).
 
 ### P1.2 – Game HUD & Game Host UX
 
@@ -586,11 +836,13 @@ keep them green; treat regressions as P0 until resolved.
   - Per-player ring counts (in hand / on board / eliminated).
   - Territory spaces per player.
   - Basic timer readout derived from `timeControl` and `timeRemaining`.
-- [ ] Ensure the same HUD behaviour is shared between backend games
+- [x] Ensure the same HUD behaviour is shared between backend games
       (`/game/:gameId` and `/spectate/:gameId` via
       [`BackendGameHost`](src/client/pages/BackendGameHost.tsx)) and
       sandbox games (`/sandbox` via
-      [`SandboxGameHost`](src/client/pages/SandboxGameHost.tsx)).
+      [`SandboxGameHost`](src/client/pages/SandboxGameHost.tsx)) by
+      routing both hosts through the shared `toHUDViewModel` adapter and
+      the unified `GameHUD` view-model surface.
 - [x] Add a minimal per-game event log in the game host shell
       (`BackendGameHost` / `SandboxGameHost`) for moves, PlayerChoices,
       and `game_over` events (using `GameEventLog` + system events).
@@ -1046,8 +1298,12 @@ Spec: [`ai-service/docs/GAME_RECORD_SPEC.md`](ai-service/docs/GAME_RECORD_SPEC.m
   - [ ] Add `RINGRIFT_SELFPLAY_DB_PATH` env var
 
 - [ ] **Phase 5 – Sandbox UI Integration (HIGH)**:
-  - [ ] Create `src/server/routes/selfplay.ts` API endpoints
-  - [ ] Create `src/server/services/SelfPlayGameService.ts`
-  - [ ] Create `src/client/components/SelfPlayBrowser.tsx` game browser
+  - [x] Create `src/server/routes/selfplay.ts` API endpoints
+  - [x] Create `src/server/services/SelfPlayGameService.ts`
+  - [x] Create `src/client/components/SelfPlayBrowser.tsx` game browser
   - [ ] Create `src/client/components/ReplayControls.tsx` playback controls
-  - [ ] Add "Self-Play Games" tab to scenario selector
+  - [x] Add a dedicated "Self-Play Games" section to the sandbox configuration panel (via `SandboxGameHost.tsx`) that opens the Self-Play Browser and bridges into ReplayPanel when possible.
+  - [x] Add maintenance script `scripts/cleanup-empty-selfplay-dbs.ts` to
+        remove 0-game SQLite databases from `data/games` and
+        `ai-service/**/games` so the sandbox self-play browser only surfaces
+        databases with at least one recorded game.

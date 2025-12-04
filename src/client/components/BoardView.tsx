@@ -120,6 +120,18 @@ export interface BoardViewProps {
    * Triggered when user presses "?" key while focused on the board.
    */
   onShowKeyboardHelp?: () => void;
+  /**
+   * Optional chain capture path to visualize. When provided, renders
+   * arrows connecting the positions in the capture sequence. Used during
+   * chain_capture phase to show the path traversed so far.
+   */
+  chainCapturePath?: Position[];
+  /**
+   * Position key of a cell that should display the invalid-move shake animation.
+   * Used to provide visual feedback when a player attempts an invalid move.
+   * The animation is typically cleared automatically after ~400ms.
+   */
+  shakingCellKey?: string | null;
 }
 
 // Tailwind-friendly, fixed color classes per player number to avoid
@@ -376,9 +388,9 @@ const MoveAnimationLayer: React.FC<MoveAnimationLayerProps> = ({
     [cellRefs, containerRef]
   );
 
-  // Duration per segment (slightly longer to make motion clearly visible
-  // on large boards such as full hex).
-  const segmentDuration = animation.type === 'chain_capture' ? 520 : 600;
+  // Duration per segment – tuned so motion is readable without feeling sluggish.
+  // Slightly faster than the previous values (~50% speed-up).
+  const segmentDuration = animation.type === 'chain_capture' ? 700 : 800;
 
   // Animate through the path
   // NOTE: `position` is intentionally NOT in the dependency array.
@@ -466,7 +478,7 @@ const MoveAnimationLayer: React.FC<MoveAnimationLayerProps> = ({
       }}
     >
       {/* Animated piece representation */}
-      <div className="flex flex-col items-center gap-[1px] animate-pulse">
+      <div className="flex flex-col items-center gap-[1px]">
         {Array.from({ length: Math.min(animation.stackHeight || 1, 3) }).map((_, i) => (
           <div
             key={i}
@@ -507,6 +519,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
   pendingAnimation,
   onAnimationComplete,
   onShowKeyboardHelp,
+  chainCapturePath,
+  shakingCellKey,
 }) => {
   // Animation state tracking
   const [animations, setAnimations] = useState<AnimationState[]>([]);
@@ -546,13 +560,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
     return map;
   }, [viewModel]);
 
-  // Lightweight flag indicating whether the current decision highlight context
-  // is line-related (line order / line reward). Used to apply a brief, more
-  // celebratory burst animation to primary-highlighted cells when a line has
-  // just been completed and is being resolved.
+  // Lightweight flags indicating the current decision highlight context. These
+  // are used to tailor board-level animations (line bursts, pulsing targets,
+  // etc.) without leaking PlayerChoice details into the view.
+  const decisionChoiceKind = viewModel?.decisionHighlights?.choiceKind;
   const isLineDecisionContext =
-    viewModel?.decisionHighlights?.choiceKind === 'line_order' ||
-    viewModel?.decisionHighlights?.choiceKind === 'line_reward';
+    decisionChoiceKind === 'line_order' || decisionChoiceKind === 'line_reward';
+  const isCaptureDirectionDecisionContext = decisionChoiceKind === 'capture_direction';
+  const isRingEliminationDecisionContext = decisionChoiceKind === 'ring_elimination';
+  const isTerritoryRegionDecisionContext = decisionChoiceKind === 'territory_region_order';
 
   // Rules-lab overlays: lightweight lookup maps for lines and territory
   // regions so we can cheaply decorate cells without re-walking geometry.
@@ -1153,6 +1169,188 @@ export const BoardView: React.FC<BoardViewProps> = ({
     );
   };
 
+  /**
+   * Renders an SVG overlay showing the chain capture path with arrows.
+   * Arrows connect each position in the sequence, and the current position
+   * (last in path) is highlighted with a pulsing ring.
+   */
+  const renderChainCapturePathOverlay = () => {
+    if (!chainCapturePath || chainCapturePath.length < 2) {
+      return null;
+    }
+
+    const container = boardGeometryRef.current;
+    if (!container) return null;
+
+    const containerRect = container.getBoundingClientRect();
+    const width = containerRect.width;
+    const height = containerRect.height;
+
+    if (!width || !height) return null;
+
+    // Build position to pixel center map from DOM
+    const cellPositions = new Map<string, { cx: number; cy: number }>();
+    const cellElements = container.querySelectorAll<HTMLButtonElement>('button[data-x]');
+    cellElements.forEach((el) => {
+      const xAttr = el.getAttribute('data-x');
+      const yAttr = el.getAttribute('data-y');
+      if (xAttr == null || yAttr == null) return;
+
+      const zAttr = el.getAttribute('data-z');
+      const position: Position =
+        zAttr != null
+          ? { x: Number(xAttr), y: Number(yAttr), z: Number(zAttr) }
+          : { x: Number(xAttr), y: Number(yAttr) };
+
+      const key = positionToString(position);
+      const rect = el.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2 - containerRect.left;
+      const centerY = rect.top + rect.height / 2 - containerRect.top;
+
+      cellPositions.set(key, { cx: centerX, cy: centerY });
+    });
+
+    // Scale factors for visual elements
+    const scale = Math.min(width, height);
+    const strokeWidth = Math.max(2, scale * 0.006);
+    const arrowSize = Math.max(6, scale * 0.015);
+    const currentPosRadius = Math.max(8, scale * 0.02);
+
+    // Generate path segments
+    const pathSegments: Array<{
+      from: { cx: number; cy: number };
+      to: { cx: number; cy: number };
+      key: string;
+    }> = [];
+
+    for (let i = 0; i < chainCapturePath.length - 1; i++) {
+      const fromPos = chainCapturePath[i];
+      const toPos = chainCapturePath[i + 1];
+      const fromKey = positionToString(fromPos);
+      const toKey = positionToString(toPos);
+      const fromCenter = cellPositions.get(fromKey);
+      const toCenter = cellPositions.get(toKey);
+
+      if (fromCenter && toCenter) {
+        pathSegments.push({
+          from: fromCenter,
+          to: toCenter,
+          key: `${fromKey}->${toKey}`,
+        });
+      }
+    }
+
+    // Current position (end of chain)
+    const currentPos = chainCapturePath[chainCapturePath.length - 1];
+    const currentKey = positionToString(currentPos);
+    const currentCenter = cellPositions.get(currentKey);
+
+    return (
+      <svg
+        className="pointer-events-none absolute inset-0"
+        style={{
+          width: '100%',
+          height: '100%',
+        }}
+        viewBox={`0 0 ${width} ${height}`}
+        preserveAspectRatio="xMidYMid slice"
+      >
+        {/* Arrow marker definition */}
+        <defs>
+          <marker
+            id="chain-capture-arrow"
+            markerWidth={arrowSize}
+            markerHeight={arrowSize}
+            refX={arrowSize - 1}
+            refY={arrowSize / 2}
+            orient="auto"
+            markerUnits="userSpaceOnUse"
+          >
+            <polygon
+              points={`0,0 ${arrowSize},${arrowSize / 2} 0,${arrowSize}`}
+              fill="rgba(251, 146, 60, 0.9)"
+            />
+          </marker>
+        </defs>
+
+        {/* Path segments as arrows */}
+        {pathSegments.map((segment, index) => {
+          // Shorten the line slightly so arrow doesn't overlap with target
+          const dx = segment.to.cx - segment.from.cx;
+          const dy = segment.to.cy - segment.from.cy;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const shortenBy = arrowSize * 0.8;
+          const adjustedTo = {
+            cx: segment.to.cx - (dx / len) * shortenBy,
+            cy: segment.to.cy - (dy / len) * shortenBy,
+          };
+
+          // Fade earlier segments slightly
+          const opacity = 0.6 + (index / pathSegments.length) * 0.4;
+
+          return (
+            <line
+              key={segment.key}
+              x1={segment.from.cx}
+              y1={segment.from.cy}
+              x2={adjustedTo.cx}
+              y2={adjustedTo.cy}
+              stroke={`rgba(251, 146, 60, ${opacity})`}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              markerEnd="url(#chain-capture-arrow)"
+            />
+          );
+        })}
+
+        {/* Highlight circles at each visited position */}
+        {chainCapturePath.slice(0, -1).map((pos, index) => {
+          const key = positionToString(pos);
+          const center = cellPositions.get(key);
+          if (!center) return null;
+
+          const opacity = 0.3 + (index / chainCapturePath.length) * 0.3;
+          return (
+            <circle
+              key={`visited-${key}`}
+              cx={center.cx}
+              cy={center.cy}
+              r={currentPosRadius * 0.7}
+              fill="none"
+              stroke={`rgba(251, 146, 60, ${opacity})`}
+              strokeWidth={strokeWidth * 0.8}
+            />
+          );
+        })}
+
+        {/* Current position - pulsing highlight (inner ring pulses, outer ring pings once) */}
+        {currentCenter && (
+          <>
+            <circle
+              cx={currentCenter.cx}
+              cy={currentCenter.cy}
+              r={currentPosRadius}
+              fill="none"
+              stroke="rgba(251, 146, 60, 0.9)"
+              strokeWidth={strokeWidth * 1.2}
+              className="animate-pulse"
+            />
+            <circle
+              cx={currentCenter.cx}
+              cy={currentCenter.cy}
+              r={currentPosRadius * 1.5}
+              fill="none"
+              stroke="rgba(251, 146, 60, 0.4)"
+              strokeWidth={strokeWidth * 0.6}
+              className="animate-ping"
+              style={{ animationDuration: '1.5s', animationIterationCount: 1 }}
+            />
+          </>
+        )}
+      </svg>
+    );
+  };
+
   // Square boards: simple grid using (x, y) coordinates.
   // Hex board: rendered using the same cube/axial coordinate system
   // as BoardManager (q = x, r = y, s = z, with q + r + s = 0).
@@ -1300,12 +1498,29 @@ export const BoardView: React.FC<BoardViewProps> = ({
             }
           );
         }
-        const decisionHighlightClass =
-          decisionHighlight === 'primary'
-            ? `decision-highlight-primary ${isLineDecisionContext ? 'line-formation-burst' : ''}`
-            : decisionHighlight === 'secondary'
-              ? 'decision-highlight-secondary'
-              : '';
+        let decisionHighlightClass = '';
+        if (decisionHighlight === 'primary') {
+          if (isLineDecisionContext) {
+            decisionHighlightClass = 'decision-highlight-primary line-formation-burst';
+          } else if (!isRingEliminationDecisionContext) {
+            // For elimination decisions, rely on the dedicated amber
+            // pulse/halo classes so they remain visually distinct from
+            // generic cyan decision highlights.
+            decisionHighlightClass = 'decision-highlight-primary';
+          }
+        } else if (decisionHighlight === 'secondary') {
+          decisionHighlightClass = 'decision-highlight-secondary';
+        }
+
+        // Invalid move shake animation: apply when this cell is the target of an invalid move attempt
+        const isShaking = shakingCellKey === key;
+
+        const shouldPulseCaptureTarget =
+          decisionHighlight === 'primary' && isCaptureDirectionDecisionContext;
+        const shouldPulseEliminationTarget =
+          decisionHighlight === 'primary' && isRingEliminationDecisionContext;
+        const shouldPulseTerritoryRegion =
+          decisionHighlight === 'primary' && isTerritoryRegionDecisionContext;
 
         const cellClasses = [
           'relative border flex items-center justify-center text-[11px] md:text-xs rounded-sm',
@@ -1314,6 +1529,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
           territoryClasses || baseSquareBg,
           decisionHighlightClass,
           isMoveDestination ? 'move-destination-pulse' : '',
+          shouldPulseCaptureTarget ? 'decision-pulse-capture' : '',
+          shouldPulseEliminationTarget ? 'decision-pulse-elimination' : '',
+          shouldPulseTerritoryRegion ? 'decision-pulse-territory' : '',
           effectiveIsSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
           // Valid target highlighting on square boards: thin, bright-green inset
           // ring plus a light near-white emerald tint that reads clearly even
@@ -1321,6 +1539,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
           effectiveIsValid
             ? 'outline outline-[2px] outline-emerald-300/90 outline-offset-[-4px] bg-emerald-50 valid-move-cell'
             : '',
+          // Invalid move shake animation
+          isShaking ? 'invalid-move-shake' : '',
         ]
           .filter(Boolean)
           .join(' ');
@@ -1390,7 +1610,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
               <StackFromViewModel
                 stack={cellVM.stack}
                 boardType={boardType}
-                animationClass={getAnimationClass(key)}
+                animationClass={`${getAnimationClass(key) ?? ''} ${
+                  shouldPulseEliminationTarget ? 'decision-elimination-stack-pulse' : ''
+                }`.trim()}
                 isSelected={!!effectiveIsSelected}
                 ownerPlayerId={stackOwner}
               />
@@ -1398,7 +1620,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
               <StackWidget
                 stack={stack}
                 boardType={boardType}
-                animationClass={getAnimationClass(key)}
+                animationClass={`${getAnimationClass(key) ?? ''} ${
+                  shouldPulseEliminationTarget ? 'decision-elimination-stack-pulse' : ''
+                }`.trim()}
                 isSelected={!!effectiveIsSelected}
                 ownerPlayerId={stackOwner}
               />
@@ -1442,6 +1666,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       >
         {rows}
         {renderMovementOverlay()}
+        {renderChainCapturePathOverlay()}
         {showCoordinateLabels ? renderSquareCoordinateLabels(size) : null}
         {/* Move animation layer */}
         {pendingAnimation && (
@@ -1540,12 +1765,22 @@ export const BoardView: React.FC<BoardViewProps> = ({
             }
           );
         }
-        const decisionHighlightClass =
-          decisionHighlight === 'primary'
-            ? `decision-highlight-primary ${isLineDecisionContext ? 'line-formation-burst' : ''}`
-            : decisionHighlight === 'secondary'
-              ? 'decision-highlight-secondary'
-              : '';
+        let decisionHighlightClass = '';
+        if (decisionHighlight === 'primary') {
+          if (isLineDecisionContext) {
+            decisionHighlightClass = 'decision-highlight-primary line-formation-burst';
+          } else if (!isRingEliminationDecisionContext) {
+            decisionHighlightClass = 'decision-highlight-primary';
+          }
+        } else if (decisionHighlight === 'secondary') {
+          decisionHighlightClass = 'decision-highlight-secondary';
+        }
+
+        // Invalid move shake animation: apply when this cell is the target of an invalid move attempt
+        const isShaking = shakingCellKey === key;
+
+        const shouldPulseEliminationTargetHex =
+          decisionHighlight === 'primary' && isRingEliminationDecisionContext;
 
         const cellClasses = [
           'relative w-8 h-8 md:w-9 md:h-9 mx-0 flex items-center justify-center text-[11px] md:text-xs rounded-full border',
@@ -1553,11 +1788,14 @@ export const BoardView: React.FC<BoardViewProps> = ({
           territoryClasses,
           decisionHighlightClass,
           isMoveDestination ? 'move-destination-pulse' : '',
+          shouldPulseEliminationTargetHex ? 'decision-pulse-elimination' : '',
           effectiveIsSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
           // Valid target highlighting with subtle pulse animation
           effectiveIsValid
             ? 'outline outline-[2px] outline-emerald-300/90 outline-offset-[-4px] bg-emerald-400/[0.03] valid-move-cell'
             : '',
+          // Invalid move shake animation
+          isShaking ? 'invalid-move-shake' : '',
         ]
           .filter(Boolean)
           .join(' ');
@@ -1629,7 +1867,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
               <StackFromViewModel
                 stack={cellVM.stack}
                 boardType={boardType}
-                animationClass={getAnimationClass(key)}
+                animationClass={`${getAnimationClass(key) ?? ''} ${
+                  shouldPulseEliminationTargetHex ? 'decision-elimination-stack-pulse' : ''
+                }`.trim()}
                 isSelected={!!effectiveIsSelected}
                 ownerPlayerId={stackOwner}
               />
@@ -1637,7 +1877,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
               <StackWidget
                 stack={stack}
                 boardType={boardType}
-                animationClass={getAnimationClass(key)}
+                animationClass={`${getAnimationClass(key) ?? ''} ${
+                  shouldPulseEliminationTargetHex ? 'decision-elimination-stack-pulse' : ''
+                }`.trim()}
                 isSelected={!!effectiveIsSelected}
                 ownerPlayerId={stackOwner}
               />
@@ -1687,6 +1929,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       >
         {rows}
         {renderMovementOverlay()}
+        {renderChainCapturePathOverlay()}
         {/* Move animation layer */}
         {pendingAnimation && (
           <MoveAnimationLayer

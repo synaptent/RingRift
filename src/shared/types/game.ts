@@ -23,6 +23,8 @@ export type BoardType = 'square8' | 'square19' | 'hexagonal';
  *   - Legal MoveType values:
  *     - 'overtaking_capture' – initial overtaking capture chosen directly from
  *                              the capture phase (alternative entry to chains).
+ *     - 'skip_capture'       – decline optional capture after movement and proceed
+ *                              to line processing (RR-CANON-R070 / Section 4.3).
  * - 'chain_capture'
  *   - Legal MoveType values:
  *     - 'continue_capture_segment' – mandatory follow-up capture segments in an
@@ -87,7 +89,10 @@ export type MoveType =
   | 'choose_line_reward'
   // Territory-processing decisions (see GamePhase 'territory_processing').
   | 'process_territory_region'
+  | 'skip_territory_processing'
   | 'eliminate_rings_from_stack'
+  // Capture phase skip: decline optional capture after movement (RR-CANON-R070).
+  | 'skip_capture'
   // Legacy / experimental move types (not used by the unified Move model).
   | 'line_formation'
   | 'territory_claim'
@@ -287,6 +292,12 @@ export interface LineInfo {
  *     - Required:
  *       - disconnectedRegions[0] – identifies the region being processed
  *                                  (spaces, controllingPlayer, isDisconnected).
+ *   - type: 'skip_territory_processing'
+ *     - Represents an explicit choice by the moving player to end the
+ *       current territory-processing phase without processing any further
+ *       disconnected regions this turn. This is a no-op on the board
+ *       state but is still recorded as a canonical Move in history so
+ *       that "decline to process" decisions remain observable.
  *   - type: 'eliminate_rings_from_stack'
  *     - Required:
  *       - to                    – position of the on-board stack the moving
@@ -785,14 +796,15 @@ export interface Game {
 
 // Utility functions for position handling
 export const positionToString = (pos: Position): string => {
-  return pos.z !== undefined ? `${pos.x},${pos.y},${pos.z}` : `${pos.x},${pos.y}`;
+  // Only include z in key if it's a valid number (handles both null and undefined the same way)
+  return typeof pos.z === 'number' ? `${pos.x},${pos.y},${pos.z}` : `${pos.x},${pos.y}`;
 };
 
 export const stringToPosition = (str: string): Position => {
-  const parts = str.split(',').map(Number);
+  const parts = str.split(',');
   return parts.length === 3
-    ? { x: parts[0], y: parts[1], z: parts[2] }
-    : { x: parts[0], y: parts[1] };
+    ? { x: Number(parts[0]), y: Number(parts[1]), z: Number(parts[2]) }
+    : { x: Number(parts[0]), y: Number(parts[1]) };
 };
 
 export const positionsEqual = (pos1: Position, pos2: Position): boolean => {
@@ -908,10 +920,11 @@ export interface RegionOrderChoice extends PlayerChoiceBase {
     size: number;
     representativePosition: Position;
     /**
-     * Stable identifier of the canonical 'process_territory_region' Move
-     * that this option corresponds to. Engines and AI clients must treat
-     * this choice as "select Move with id === moveId" to ensure decisions
-     * are applied only via canonical Moves.
+     * Stable identifier of the canonical territory-processing Move that
+     * this option corresponds to. Engines and AI clients must treat this
+     * choice as "select Move with id === moveId" to ensure decisions are
+     * applied only via canonical Moves (for example, 'process_territory_region'
+     * or 'skip_territory_processing').
      */
     moveId: string;
   }>;

@@ -27,9 +27,26 @@ interface SandboxTraceWindow extends Window {
   __RINGRIFT_SANDBOX_TRACE__?: SandboxAITurnTraceEntry[];
 }
 
-const SANDBOX_NOOP_STALL_THRESHOLD = 5;
+/**
+ * Canonical sandbox stall threshold for consecutive no-op AI turns.
+ *
+ * This is intentionally aligned with the test-layer STALL_WINDOW_STEPS
+ * defined in tests/utils/aiSimulationPolicy.ts (currently 8) so that:
+ *   - in-browser 'stall' trace entries,
+ *   - sandbox fuzz harness classification,
+ *   - and backend/sandbox parity diagnostics
+ * all share the same semantic window for structural stalls.
+ */
+const SANDBOX_NOOP_STALL_THRESHOLD = 8;
 const SANDBOX_NOOP_MAX_THRESHOLD = 10; // Stop execution after this many consecutive no-ops
 const MAX_SANDBOX_TRACE_ENTRIES = 2000;
+
+/**
+ * Exported view of the sandbox stall window so tests and diagnostic harnesses
+ * can assert alignment with the canonical STALL_WINDOW_STEPS used by
+ * aiSimulationPolicy without reaching into internal constants.
+ */
+export const SANDBOX_STALL_WINDOW_STEPS = SANDBOX_NOOP_STALL_THRESHOLD;
 
 // Module-level counter tracking consecutive AI turns that leave the
 // sandbox GameState hash unchanged while the same AI player remains
@@ -218,10 +235,13 @@ function getTerritoryDecisionMovesForSandboxAI(
     return [];
   }
 
-  // 1. Prefer explicit region‑processing moves when present.
+  // 1. Prefer explicit region‑processing moves when present, but treat
+  //    skip_territory_processing as a sibling option so the AI can choose
+  //    to defer additional region processing when the rules allow.
   const regionMoves = allMoves.filter((m) => m.type === 'process_territory_region');
-  if (regionMoves.length > 0) {
-    return regionMoves;
+  const skipMoves = allMoves.filter((m) => m.type === 'skip_territory_processing');
+  if (regionMoves.length > 0 || skipMoves.length > 0) {
+    return [...regionMoves, ...skipMoves];
   }
 
   // 2. Otherwise, fall back to any explicit elimination decisions.
@@ -1276,6 +1296,12 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
       const stalled: GameState = {
         ...afterStateForHistory,
         gameStatus: 'completed',
+        // Normalise terminal phase and clear capture-specific cursor
+        // state so completed sandbox games do not present as if they
+        // were still mid-capture or awaiting a mandatory continuation.
+        currentPhase: 'ring_placement',
+        chainCapturePosition: undefined,
+        mustMoveFromStackKey: undefined,
       };
       hooks.setGameState(stalled);
       sandboxStallLoggingSuppressed = true;

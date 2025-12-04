@@ -1,0 +1,89 @@
+# =============================================================================
+# Dockerfile for CMA-ES Cloud Worker
+# =============================================================================
+# Optimized for AWS Fargate / ECS deployment
+#
+# Build:
+#   docker build -t ringrift-ai-worker -f docker/Dockerfile.worker .
+#
+# Run locally:
+#   docker run -p 8080:8080 \
+#     -e QUEUE_BACKEND=redis \
+#     -e REDIS_URL=redis://host.docker.internal:6379 \
+#     ringrift-ai-worker
+# =============================================================================
+
+FROM python:3.11-slim AS base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Dependencies Stage
+# -----------------------------------------------------------------------------
+FROM base AS dependencies
+
+# Copy requirements first for better layer caching
+COPY requirements.txt requirements-worker.txt* ./
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt && \
+    if [ -f requirements-worker.txt ]; then pip install -r requirements-worker.txt; fi
+
+# Install cloud-specific dependencies
+RUN pip install \
+    boto3>=1.28 \
+    redis>=4.5 \
+    httpx>=0.24
+
+# -----------------------------------------------------------------------------
+# Production Stage
+# -----------------------------------------------------------------------------
+FROM base AS production
+
+# Copy installed packages from dependencies stage
+COPY --from=dependencies /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=dependencies /usr/local/bin /usr/local/bin
+
+# Copy application code
+COPY app/ ./app/
+COPY scripts/cmaes_cloud_worker.py ./scripts/
+
+# Copy state pools (if baked into image - optional)
+# COPY data/eval_pools/ ./data/eval_pools/
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash worker && \
+    chown -R worker:worker /app
+USER worker
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose health check port
+EXPOSE 8080
+
+# Default environment variables
+ENV QUEUE_BACKEND=sqs \
+    HEALTH_PORT=8080 \
+    POLL_TIMEOUT=30 \
+    RINGRIFT_SKIP_SHADOW_CONTRACTS=true \
+    RINGRIFT_USE_MAKE_UNMAKE=true \
+    RINGRIFT_USE_BATCH_EVAL=true
+
+# Run the worker
+ENTRYPOINT ["python", "scripts/cmaes_cloud_worker.py"]
+CMD ["--health-port", "8080", "--poll-timeout", "30"]

@@ -256,6 +256,31 @@ This scenario connects to the same Socket.IO endpoint used by the frontend clien
 
 so that `WebSocketServer` authentication and connection metrics are exercised under realistic, production-like handshake conditions.
 
+**Socket.IO v4 Protocol Implementation:**
+
+Unlike basic k6 WebSocket scenarios that send raw JSON payloads, this scenario fully implements the Socket.IO v4 / Engine.IO v4 wire protocol:
+
+| Stage                 | k6 Action                                                           | Server Response                                          |
+| :-------------------- | :------------------------------------------------------------------ | :------------------------------------------------------- |
+| 1. Transport          | Open WebSocket to `/socket.io/?EIO=4&transport=websocket&token=...` | HTTP 101 Upgrade                                         |
+| 2. Engine.IO OPEN     | Wait for `0{...}` (open packet with sid/pingInterval)               | Server sends `0{"sid":"...", "pingInterval":25000, ...}` |
+| 3. Socket.IO CONNECT  | Send `40{}` (connect to default namespace)                          | Server sends `40{"sid":"..."}` (connect ACK)             |
+| 4. Application Events | Send `42["lobby:subscribe", {...}]`                                 | Server sends `42["lobby:game_created", ...]` etc.        |
+| 5. Keepalive          | Respond to `2` (ping) with `3` (pong)                               | Connection maintained                                    |
+
+This protocol-correct implementation eliminates the "message parse error" failures that occurred with earlier versions of this scenario.
+
+**Custom Metrics:**
+
+| Metric                              | Description                                                    |
+| :---------------------------------- | :------------------------------------------------------------- |
+| `websocket_connection_success_rate` | Rate of successful WebSocket transport connections (HTTP 101)  |
+| `websocket_handshake_success_rate`  | Rate of successful Socket.IO handshakes (CONNECT ACK received) |
+| `websocket_protocol_errors`         | Count of protocol-level parse/framing errors                   |
+| `websocket_connection_errors`       | Count of connection-level errors                               |
+| `websocket_message_latency_ms`      | Latency trend for timestamped events                           |
+| `websocket_connection_duration_ms`  | Connection duration trend                                      |
+
 **Load Pattern:**
 
 - Ramp: 100 → 500 connections over 7 minutes
@@ -281,6 +306,10 @@ k6 run \
 
 - `ringrift_websocket_connections` gauge
 - Alert threshold: >1000 connections (warning)
+- **Lifecycle metrics to watch** (see `docs/ALERTING_THRESHOLDS.md` and Grafana "Game Performance" / "System Health" dashboards):
+  - `ringrift_websocket_reconnection_total{result}` – reconnection outcomes (success/failed/timeout); sustained `result="timeout"` spikes may trigger `WebSocketReconnectionTimeouts`.
+  - `ringrift_game_session_status_current{status}` – in‑memory sessions by derived status; watch for all sessions stuck outside `active_turn` / `active_decision_phase` (see `GameSessionStatusSkew`).
+  - `ringrift_game_session_abnormal_termination_total{reason}` – abnormal endings (for example `disconnect_timeout`, `internal_error`, `session_cleanup`); spikes may indicate lifecycle/infra issues (`AbnormalGameSessionTerminationSpike`).
 
 ## Configuration
 
@@ -418,6 +447,9 @@ Load tests may trigger these alerts (defined in [`monitoring/prometheus/alerts.y
 - `HighMemoryUsage` - Process memory > 1.5GB
 - `HighWebSocketConnections` - > 1000 connections
 - `AIFallbackRateHigh` - > 30% AI requests falling back
+- `WebSocketReconnectionTimeouts` - sustained `ringrift_websocket_reconnection_total{result="timeout"}` spikes (reconnect window failures)
+- `AbnormalGameSessionTerminationSpike` - elevated `ringrift_game_session_abnormal_termination_total{reason=~"disconnect_timeout|internal_error|session_cleanup"}` during tests
+- `GameSessionStatusSkew` - in‑memory sessions present but none in `active_turn` / `active_decision_phase` (possible stuck lifecycle)
 
 **Expected behavior:** Alerts should NOT fire during normal load tests at target scale.
 
