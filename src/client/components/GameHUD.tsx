@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { GameState, Player, GamePhase, BOARD_CONFIGS, TimeControl } from '../../shared/types/game';
 import { ConnectionStatus } from '../contexts/GameContext';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { getCountdownSeverity } from '../utils/countdown';
 import type {
   HUDViewModel,
@@ -119,10 +120,19 @@ export interface GameHUDViewModelProps {
   /** Additional GameState needed for time control display */
   timeControl?: TimeControl | undefined;
   /**
+   * Optional flag used by sandbox hosts to indicate that this game is
+   * running entirely as a local sandbox (no backend game session).
+   * When true, the HUD surfaces a small non-intrusive banner so users
+   * understand why features like matchmaking or persistence are absent.
+   */
+  isLocalSandboxOnly?: boolean;
+  /**
    * Optional callback used by hosts to surface a contextual
    * "Board controls & shortcuts" overlay entry point.
    */
   onShowBoardControls?: (() => void) | undefined;
+  /** Hide the victory conditions panel (when rendering it elsewhere) */
+  hideVictoryConditions?: boolean;
 }
 
 /**
@@ -158,42 +168,42 @@ function getPhaseInfo(phase: GamePhase): PhaseInfo {
     case 'ring_placement':
       return {
         label: 'Ring Placement',
-        description: 'Place your rings on the board',
+        description: 'Place a ring on an empty space or on top of one of your own stacks.',
         color: 'bg-blue-500',
         icon: '🎯',
       };
     case 'movement':
       return {
         label: 'Movement Phase',
-        description: 'Move a stack or capture opponent rings',
+        description: 'Select one of your stacks and move it to a legal destination.',
         color: 'bg-green-500',
         icon: '⚡',
       };
     case 'capture':
       return {
         label: 'Capture Phase',
-        description: 'Execute a capture move',
+        description: 'Overtake an adjacent stack by jumping over it to a legal landing space.',
         color: 'bg-orange-500',
         icon: '⚔️',
       };
     case 'chain_capture':
       return {
         label: 'Chain Capture',
-        description: 'Select a capture segment to continue the chain',
+        description: 'Continue the capture by choosing the next target and landing space.',
         color: 'bg-orange-500',
         icon: '🔗',
       };
     case 'line_processing':
       return {
         label: 'Line Processing',
-        description: 'Choose line completion reward',
+        description: 'Choose which completed line to resolve and what reward to take.',
         color: 'bg-purple-500',
         icon: '📏',
       };
     case 'territory_processing':
       return {
         label: 'Territory Processing',
-        description: 'Process disconnected regions',
+        description: 'Choose a disconnected region to resolve; some choices may cost you rings.',
         color: 'bg-pink-500',
         icon: '🏰',
       };
@@ -212,17 +222,62 @@ function getPhaseInfo(phase: GamePhase): PhaseInfo {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Phase indicator showing current game phase with icon and description
+ * Phase indicator showing current game phase with icon, description, and action hint
  * Supports both legacy GameState and PhaseViewModel
  */
-function PhaseIndicator({ phase }: { phase: PhaseViewModel }) {
+function PhaseIndicator({
+  phase,
+  isMyTurn,
+  isSpectator,
+}: {
+  phase: PhaseViewModel;
+  isMyTurn?: boolean;
+  isSpectator?: boolean;
+}) {
+  // Determine which hint to display based on the viewer's role
+  const contextualHint = isSpectator
+    ? phase.spectatorHint
+    : isMyTurn
+      ? phase.actionHint
+      : undefined;
+
+  const tooltipLines: string[] = [];
+  if (phase.description) {
+    tooltipLines.push(phase.description);
+  }
+  if (isSpectator) {
+    tooltipLines.push('', `Spectators: ${phase.spectatorHint}`);
+  } else if (phase.actionHint) {
+    tooltipLines.push('', `On your turn: ${phase.actionHint}`);
+  }
+  const tooltipContent = tooltipLines.join('\n');
+
   return (
-    <div className={`${phase.colorClass} text-white px-4 py-2 rounded-lg shadow-lg`}>
-      <div className="flex items-center gap-2">
-        {phase.icon && <span className="text-2xl">{phase.icon}</span>}
-        <div>
-          <div className="font-bold">{phase.label}</div>
+    <div className={`${phase.colorClass} text-white px-4 py-3 rounded-lg shadow-lg`}>
+      <div className="flex items-center gap-3">
+        {phase.icon && <span className="text-2xl flex-shrink-0">{phase.icon}</span>}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <div className="font-bold text-base">{phase.label}</div>
+            <Tooltip content={tooltipContent}>
+              <span
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-100/70 bg-white/10 text-[10px] text-slate-50"
+                aria-label="Phase details"
+                data-testid="phase-tooltip-trigger"
+              >
+                ?
+              </span>
+            </Tooltip>
+          </div>
           <div className="text-sm opacity-90">{phase.description}</div>
+          {contextualHint && (
+            <div
+              className="mt-1.5 text-xs font-medium bg-white/20 rounded px-2 py-1 inline-block"
+              data-testid="phase-action-hint"
+            >
+              {contextualHint}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -393,10 +448,10 @@ function GameProgress({ gameState }: { gameState: GameState }) {
     gameState.history.length > 0 ? gameState.history[gameState.history.length - 1]?.moveNumber : 0;
 
   return (
-    <div className="text-center py-2 bg-gray-100 rounded">
-      <div className="text-2xl font-bold">{turnNumber}</div>
-      <div className="text-xs text-gray-600">Turn</div>
-      {moveNumber > 0 && <div className="text-xs text-gray-500">Move #{moveNumber}</div>}
+    <div className="text-center py-2 bg-slate-800/60 border border-slate-700 rounded">
+      <div className="text-2xl font-bold text-slate-100">{turnNumber}</div>
+      <div className="text-xs text-slate-400">Turn</div>
+      {moveNumber > 0 && <div className="text-xs text-slate-500">Move #{moveNumber}</div>}
     </div>
   );
 }
@@ -498,16 +553,16 @@ function RingStatsFromVM({ stats }: { stats: PlayerRingStatsViewModel }) {
   return (
     <div className="grid grid-cols-3 gap-2 text-xs mt-2">
       <div className="text-center">
-        <div className="font-bold">{stats.inHand}</div>
-        <div className="text-gray-500">In Hand</div>
+        <div className="font-bold text-slate-200">{stats.inHand}</div>
+        <div className="text-slate-400">In Hand</div>
       </div>
       <div className="text-center">
-        <div className="font-bold">{stats.onBoard}</div>
-        <div className="text-gray-500">On Board</div>
+        <div className="font-bold text-slate-200">{stats.onBoard}</div>
+        <div className="text-slate-400">On Board</div>
       </div>
       <div className="text-center">
-        <div className="font-bold text-red-600">{stats.eliminated}</div>
-        <div className="text-gray-500">Captured</div>
+        <div className="font-bold text-red-400">{stats.eliminated}</div>
+        <div className="text-slate-400">Captured</div>
       </div>
     </div>
   );
@@ -526,15 +581,15 @@ function PlayerCardFromVM({
   return (
     <div
       className={`
-      p-3 rounded-lg border-2 transition-all
-      ${player.isCurrentPlayer ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}
+      p-3 rounded-lg border-2 transition-all bg-slate-800/60
+      ${player.isCurrentPlayer ? 'border-blue-500' : 'border-slate-700'}
       ${player.isUserPlayer ? 'ring-2 ring-green-400' : ''}
     `}
     >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <div className={`w-4 h-4 rounded-full ${player.colorClass}`} />
-          <span className="font-semibold">{player.username}</span>
+          <span className="font-semibold text-slate-100">{player.username}</span>
           {player.aiInfo.isAI && <Badge>🤖 AI</Badge>}
           {player.isCurrentPlayer && <Badge variant="primary">Current Turn</Badge>}
         </div>
@@ -543,6 +598,7 @@ function PlayerCardFromVM({
           <PlayerTimerFromVM
             timeRemaining={player.timeRemaining}
             isActive={player.isCurrentPlayer}
+            playerName={player.username}
           />
         )}
       </div>
@@ -562,8 +618,9 @@ function PlayerCardFromVM({
 
       <RingStatsFromVM stats={player.ringStats} />
       {player.territorySpaces > 0 && (
-        <div className="text-sm mt-1 text-center">
-          <span className="font-semibold">{player.territorySpaces}</span> territory space
+        <div className="text-sm mt-1 text-center text-slate-300">
+          <span className="font-semibold text-slate-100">{player.territorySpaces}</span> territory
+          space
           {player.territorySpaces !== 1 ? 's' : ''}
         </div>
       )}
@@ -577,9 +634,11 @@ function PlayerCardFromVM({
 function PlayerTimerFromVM({
   timeRemaining,
   isActive,
+  playerName,
 }: {
   timeRemaining: number;
   isActive: boolean;
+  playerName: string;
 }) {
   const [displayTime, setDisplayTime] = useState(timeRemaining);
 
@@ -602,11 +661,22 @@ function PlayerTimerFromVM({
 
   const minutes = Math.floor(displayTime / 60000);
   const seconds = Math.floor((displayTime % 60000) / 1000);
-  const isLowTime = displayTime < 60000;
+
+  const severity = getCountdownSeverity(displayTime);
+
+  let timerClass = 'font-mono text-gray-700';
+  if (severity === 'warning') {
+    timerClass = 'font-mono text-amber-400 font-semibold';
+  } else if (severity === 'critical') {
+    timerClass = 'font-mono text-red-600 font-bold animate-pulse';
+  }
+
+  const clockLabel = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  const ariaLabel = `${playerName} time remaining: ${clockLabel}`;
 
   return (
-    <div className={`font-mono ${isLowTime ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
-      {minutes}:{seconds.toString().padStart(2, '0')}
+    <div className={timerClass} aria-label={ariaLabel} data-severity={severity ?? undefined}>
+      {clockLabel}
     </div>
   );
 }
@@ -721,6 +791,8 @@ export function GameHUD(props: GameHUDProps) {
         viewModel={props.viewModel}
         timeControl={props.timeControl}
         onShowBoardControls={props.onShowBoardControls}
+        hideVictoryConditions={props.hideVictoryConditions}
+        isLocalSandboxOnly={props.isLocalSandboxOnly}
       />
     );
   }
@@ -730,16 +802,105 @@ export function GameHUD(props: GameHUDProps) {
 }
 
 /**
+ * Standalone Victory conditions panel - can be rendered outside the HUD
+ */
+export function VictoryConditionsPanel({ className = '' }: { className?: string }) {
+  return (
+    <div
+      className={`px-4 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-[11px] text-slate-300 leading-snug ${className}`}
+      data-testid="victory-conditions-help"
+    >
+      <div className="font-semibold text-slate-100 mb-1">Victory</div>
+
+      <div className="space-y-1.5">
+        <div className="flex items-start gap-1">
+          <span className="mt-0.5">•</span>
+          <div className="flex-1">
+            <div className="flex items-center gap-1">
+              <span>Elimination – eliminate {'>'}50% of all rings.</span>
+              <Tooltip
+                content={
+                  'Capture more than half of all rings in the game.\nAs soon as your captured-rings total exceeds 50% of the total ring supply, you win by Ring Elimination.'
+                }
+              >
+                <span
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[10px] text-slate-200"
+                  aria-label="Elimination victory details"
+                  data-testid="victory-tooltip-elimination-trigger"
+                >
+                  ?
+                </span>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-1">
+          <span className="mt-0.5">•</span>
+          <div className="flex-1">
+            <div className="flex items-center gap-1">
+              <span>Territory – control {'>'}50% of all board spaces.</span>
+              <Tooltip
+                content={
+                  'Claim territory regions so that you control more than half of all board spaces.\nTerritory wins are checked during territory processing once your secured regions pass the 50% threshold.'
+                }
+              >
+                <span
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[10px] text-slate-200"
+                  aria-label="Territory victory details"
+                  data-testid="victory-tooltip-territory-trigger"
+                >
+                  ?
+                </span>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-start gap-1">
+          <span className="mt-0.5">•</span>
+          <div className="flex-1">
+            <div className="flex items-center gap-1">
+              <span>
+                Last Player Standing – after a full round you are the only player able to make real
+                moves (placements, movements, or captures).
+              </span>
+              <Tooltip
+                content={
+                  'After a full round of turns, any player with no legal moves (placements, movements, or captures) is treated as eliminated.\nIf you are the only player still able to make real moves for an entire round, you win by Last Player Standing.'
+                }
+              >
+                <span
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 text-[10px] text-slate-200"
+                  aria-label="Last Player Standing victory details"
+                  data-testid="victory-tooltip-last-player-standing-trigger"
+                >
+                  ?
+                </span>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * View model-based HUD implementation
  */
 function GameHUDFromViewModel({
   viewModel,
   timeControl,
   onShowBoardControls,
+  hideVictoryConditions = false,
+  isLocalSandboxOnly = false,
 }: {
   viewModel: HUDViewModel;
   timeControl?: TimeControl | undefined;
   onShowBoardControls?: (() => void) | undefined;
+  hideVictoryConditions?: boolean;
+  isLocalSandboxOnly?: boolean;
 }) {
   const {
     phase,
@@ -755,6 +916,9 @@ function GameHUDFromViewModel({
     subPhaseDetail,
     decisionPhase,
   } = viewModel;
+
+  // Derive isMyTurn: true if the current user is both the active player and it's their turn
+  const isMyTurn = players.some((p) => p.isUserPlayer && p.isCurrentPlayer);
 
   const connectionLabel = (() => {
     switch (connectionStatus) {
@@ -777,8 +941,46 @@ function GameHUDFromViewModel({
         ? 'text-amber-300'
         : 'text-rose-300';
 
+  const decisionSeverity =
+    decisionPhase && decisionPhase.showCountdown && decisionPhase.timeRemainingMs !== null
+      ? getCountdownSeverity(decisionPhase.timeRemainingMs)
+      : null;
+
+  function formatMsAsClock(ms: number): string {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
   return (
     <div className="w-full max-w-4xl mx-auto mb-4" data-testid="game-hud">
+      {/* Local sandbox-only banner: surfaced by SandboxGameHost when backend
+          game creation is skipped (e.g. unauthenticated users). */}
+      {isLocalSandboxOnly && (
+        <div
+          className="mb-3 px-3 py-2 rounded-lg bg-slate-900/70 border border-slate-600 flex items-center justify-between text-xs text-slate-200"
+          role="status"
+          aria-live="polite"
+          data-testid="sandbox-local-only-banner"
+        >
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[11px] text-slate-100 border border-slate-500">
+              !
+            </span>
+            <div className="flex flex-col">
+              <span className="font-semibold">
+                You&apos;re not logged in; this game runs as a local sandbox only.
+              </span>
+              <span className="text-[11px] text-slate-300/80">
+                Moves, AI, and analysis stay in this browser session and are not saved to your
+                account.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Spectator mode banner - prominent indicator when spectating */}
       {isSpectator && (
         <div
@@ -817,7 +1019,7 @@ function GameHUDFromViewModel({
         <div className={`font-semibold ${connectionColor}`}>
           Connection: {connectionLabel}
           {isConnectionStale && (
-            <span className="ml-1 text-[11px] text-amber-200">(awaiting update…)</span>
+            <span className="ml-1 text-[11px] text-amber-200">(no recent updates from server)</span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -861,8 +1063,36 @@ function GameHUDFromViewModel({
       </div>
 
       {/* Phase Indicator */}
-      <PhaseIndicator phase={phase} />
+      <PhaseIndicator phase={phase} isMyTurn={isMyTurn} isSpectator={isSpectator} />
       <SubPhaseDetails detail={subPhaseDetail} />
+
+      {/* High-level decision time-pressure cue for the current phase */}
+      {decisionPhase && decisionSeverity && (
+        <div className="mt-1 flex items-center text-[11px] text-slate-200">
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${
+              decisionSeverity === 'critical'
+                ? 'bg-red-900/80 border-red-400/80 text-red-50 animate-pulse'
+                : decisionSeverity === 'warning'
+                  ? 'bg-amber-900/80 border-amber-400/80 text-amber-50'
+                  : 'bg-emerald-900/70 border-emerald-400/80 text-emerald-50'
+            }`}
+            data-testid="hud-decision-time-pressure"
+            data-severity={decisionSeverity}
+          >
+            <span aria-hidden="true" className="text-xs">
+              ⏱
+            </span>
+            <span className="truncate">
+              {decisionPhase.isLocalActor
+                ? `Your decision timer: ${formatMsAsClock(decisionPhase.timeRemainingMs!)}`
+                : `Time left for ${decisionPhase.actingPlayerName}'s decision: ${formatMsAsClock(
+                    decisionPhase.timeRemainingMs!
+                  )}`}
+            </span>
+          </span>
+        </div>
+      )}
 
       {/* Decision-specific status chip (e.g. ring elimination prompt) */}
       {decisionPhase?.statusChip && (
@@ -877,6 +1107,14 @@ function GameHUDFromViewModel({
           >
             {decisionPhase.statusChip.text}
           </span>
+          {decisionPhase.canSkip && (
+            <span
+              className="px-2 py-0.5 rounded-full bg-slate-800/80 border border-slate-600 text-[10px] uppercase tracking-wide text-slate-200"
+              data-testid="hud-decision-skip-hint"
+            >
+              Skip available
+            </span>
+          )}
         </div>
       )}
 
@@ -889,10 +1127,24 @@ function GameHUDFromViewModel({
 
       {/* Game Progress */}
       <div className="mt-3">
-        <div className="text-center py-2 bg-gray-100 rounded">
-          <div className="text-2xl font-bold">{turnNumber}</div>
-          <div className="text-xs text-gray-600">Turn</div>
-          {moveNumber > 0 && <div className="text-xs text-gray-500">Move #{moveNumber}</div>}
+        <div className="text-center py-2 rounded-lg border border-slate-700 bg-slate-900/70">
+          <div className="text-2xl font-bold text-slate-100">{turnNumber}</div>
+          <Tooltip
+            content={
+              'Turn counts completed full cycles around the table.\nMove # counts individual actions within those turns.'
+            }
+          >
+            <span className="inline-flex items-center justify-center gap-1 text-xs text-slate-400">
+              <span>Turn</span>
+              <span
+                aria-hidden="true"
+                className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 text-[10px] text-slate-300"
+              >
+                ?
+              </span>
+            </span>
+          </Tooltip>
+          {moveNumber > 0 && <div className="text-xs text-slate-500">Move #{moveNumber}</div>}
         </div>
       </div>
 
@@ -906,19 +1158,8 @@ function GameHUDFromViewModel({
       {/* Decision Phase Banner */}
       {decisionPhase && decisionPhase.isActive && <DecisionPhaseBanner vm={decisionPhase} />}
 
-      {/* Victory Conditions Helper */}
-      <div
-        className="mt-3 px-4 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-[11px] text-slate-300 leading-snug"
-        data-testid="victory-conditions-help"
-      >
-        <div className="font-semibold text-slate-100 mb-1">Victory</div>
-        <div>• Elimination – eliminate {'>'}50% of all rings.</div>
-        <div>• Territory – control {'>'}50% of all board spaces.</div>
-        <div>
-          • Last Player Standing – after a full round you are the only player able to make real
-          moves (placements, movements, or captures).
-        </div>
-      </div>
+      {/* Victory Conditions Helper - can be hidden when rendered elsewhere */}
+      {!hideVictoryConditions && <VictoryConditionsPanel className="mt-3" />}
 
       {/* Player Cards */}
       <div className="mt-4 space-y-3">
@@ -1015,7 +1256,7 @@ function GameHUDLegacy({
         <div className={`font-semibold ${connectionColor}`}>
           Connection: {connectionLabel()}
           {isHeartbeatStale && (
-            <span className="ml-1 text-[11px] text-amber-200">(awaiting update…)</span>
+            <span className="ml-1 text-[11px] text-amber-200">(no recent updates from server)</span>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -1075,18 +1316,7 @@ function GameHUDLegacy({
       )}
 
       {/* Victory Conditions Helper */}
-      <div
-        className="mt-3 px-4 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-[11px] text-slate-300 leading-snug"
-        data-testid="victory-conditions-help"
-      >
-        <div className="font-semibold text-slate-100 mb-1">Victory</div>
-        <div>• Elimination – eliminate {'>'}50% of all rings.</div>
-        <div>• Territory – control {'>'}50% of all board spaces.</div>
-        <div>
-          • Last Player Standing – after a full round you are the only player able to make real
-          moves (placements, movements, or captures).
-        </div>
-      </div>
+      <VictoryConditionsPanel className="mt-3" />
 
       {/* Player Cards */}
       <div className="mt-4 space-y-3">

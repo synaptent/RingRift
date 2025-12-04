@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { GameHUD } from '../../src/client/components/GameHUD';
 import { toHUDViewModel } from '../../src/client/adapters/gameViewModels';
@@ -75,7 +75,9 @@ describe('GameHUD', () => {
     render(<GameHUD gameState={gameState} currentPlayer={currentPlayer} />);
 
     expect(screen.getByText('Movement Phase')).toBeInTheDocument();
-    expect(screen.getByText('Move a stack or capture opponent rings')).toBeInTheDocument();
+    expect(
+      screen.getByText('Select one of your stacks and move it to a legal destination.')
+    ).toBeInTheDocument();
   });
 
   it('should highlight current player', () => {
@@ -286,6 +288,40 @@ describe('GameHUD', () => {
     expect(screen.getByText(/Last Player Standing/)).toBeInTheDocument();
   });
 
+  it('renders contextual tooltips for each victory condition', () => {
+    const gameState = createTestGameState();
+    const currentPlayer = gameState.players[0];
+
+    render(<GameHUD gameState={gameState} currentPlayer={currentPlayer} />);
+
+    const eliminationTrigger = screen.getByTestId('victory-tooltip-elimination-trigger');
+    const territoryTrigger = screen.getByTestId('victory-tooltip-territory-trigger');
+    const lastPlayerTrigger = screen.getByTestId('victory-tooltip-last-player-standing-trigger');
+
+    // Elimination tooltip
+    fireEvent.mouseEnter(eliminationTrigger);
+    let tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Capture more than half of all rings in the game.');
+    fireEvent.mouseLeave(eliminationTrigger);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
+    // Territory tooltip
+    fireEvent.mouseEnter(territoryTrigger);
+    tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Claim territory regions so that you control');
+    fireEvent.mouseLeave(territoryTrigger);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+
+    // Last Player Standing tooltip
+    fireEvent.mouseEnter(lastPlayerTrigger);
+    tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent(
+      'After a full round of turns, any player with no legal moves'
+    );
+    fireEvent.mouseLeave(lastPlayerTrigger);
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
   describe('spectator banner (view model path)', () => {
     it('renders spectator mode banner with accessible status when spectating', () => {
       const gameState = createTestGameState({
@@ -308,6 +344,30 @@ describe('GameHUD', () => {
       expect(banner).toHaveAttribute('aria-live', 'polite');
       expect(screen.getByText('You are watching this game')).toBeInTheDocument();
       expect(screen.getByText('1 viewer total')).toBeInTheDocument();
+    });
+
+    it('renders phase tooltip with spectator-focused copy when spectating', () => {
+      const gameState = createTestGameState({
+        spectators: ['spectator-1'],
+        currentPhase: 'ring_placement',
+      });
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: true,
+        currentUserId: 'spectator-1',
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const trigger = screen.getByTestId('phase-tooltip-trigger');
+      fireEvent.mouseEnter(trigger);
+
+      const tooltip = screen.getByRole('tooltip');
+      expect(tooltip).toHaveTextContent('Place your rings on the board to build stacks');
+      expect(tooltip).toHaveTextContent('Spectators: Player is placing rings on the board');
     });
 
     it('renders spectator count chip with accessible label for non-spectator viewers', () => {
@@ -499,6 +559,38 @@ describe('GameHUD', () => {
       expect(countdownPill).toHaveAttribute('data-severity', 'critical');
     });
 
+    it('renders a HUD-level decision time-pressure chip with severity and copy', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-hud-pressure',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+        timeoutMs: 30_000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now() + 4_000,
+        choiceTimeRemainingMs: 4_000,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const chip = screen.getByTestId('hud-decision-time-pressure');
+      expect(chip).toBeInTheDocument();
+      expect(chip).toHaveAttribute('data-severity', 'warning');
+      expect(chip).toHaveTextContent('Your decision timer: 0:04');
+    });
+
     it('renders spectator-oriented decision banner when user is not acting player', () => {
       const gameState = createTestGameState({
         currentPhase: 'line_processing',
@@ -551,6 +643,93 @@ describe('GameHUD', () => {
       render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
 
       expect(screen.queryByTestId('decision-phase-banner')).toBeNull();
+    });
+
+    it('renders territory region-order decision banner for territory_processing', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'territory_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'territory-choice-1',
+        type: 'region_order',
+        playerNumber: 1,
+        options: [{}] as any,
+        timeoutMs: 30_000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now() + 15_000,
+        choiceTimeRemainingMs: 15_000,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const banner = screen.getByTestId('decision-phase-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Your decision:');
+      expect(banner).toHaveTextContent('Choose Territory Region');
+    });
+
+    it('renders phase tooltip with action-focused copy for the active player', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'movement',
+        currentPlayer: 1,
+      });
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const trigger = screen.getByTestId('phase-tooltip-trigger');
+      fireEvent.mouseEnter(trigger);
+
+      const tooltip = screen.getByRole('tooltip');
+      expect(tooltip).toHaveTextContent('Move a stack or initiate a capture');
+      expect(tooltip).toHaveTextContent(
+        'On your turn: Select your stack, then click a destination'
+      );
+    });
+
+    it('renders sandbox local-only banner when flagged by host', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'movement',
+        currentPlayer: 1,
+      });
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'disconnected',
+        lastHeartbeatAt: null,
+        isSpectator: false,
+        currentUserId: 'p1',
+      });
+
+      render(
+        <GameHUD
+          viewModel={hudViewModel}
+          timeControl={gameState.timeControl}
+          isLocalSandboxOnly={true}
+        />
+      );
+
+      const banner = screen.getByTestId('sandbox-local-only-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent(
+        "You're not logged in; this game runs as a local sandbox only."
+      );
     });
   });
 });
