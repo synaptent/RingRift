@@ -207,7 +207,7 @@ describe('MovementMutator', () => {
       state.board.markers.set(posStr(5, 3), marker);
     });
 
-    it('throws error (not supported in simple movement)', () => {
+    it('removes marker and eliminates top ring (per RR-CANON-R091/R092)', () => {
       const action: MoveStackAction = {
         type: 'move_stack',
         playerId: 1,
@@ -215,9 +215,15 @@ describe('MovementMutator', () => {
         to: pos(5, 3),
       };
 
-      expect(() => mutateMovement(state, action)).toThrow(
-        'Landing on opponent marker is not supported in simple movement'
-      );
+      const result = mutateMovement(state, action);
+
+      // Opponent marker should be removed
+      expect(result.board.markers.has(posStr(5, 3))).toBe(false);
+      // Top ring should be eliminated
+      expect(result.totalRingsEliminated).toBe(1);
+      // Stack should be at destination with reduced height
+      const destStack = result.board.stacks.get(posStr(5, 3));
+      expect(destStack?.stackHeight).toBe(1); // Was 2, now 1
     });
   });
 

@@ -4,16 +4,18 @@
 This script orchestrates the core checks described in the
 AI_TIER_TRAINING_AND_PROMOTION_PIPELINE for a single difficulty tier:
 
-- Runs the canonical difficulty-tier gate via run_tier_gate.py.
-- Runs the small tier perf benchmark via run_tier_perf_benchmark.py.
-- Aggregates results into a single gate_report JSON with:
-  - tier, board_type, num_players
-  - candidate_model_id, current_model_id (when available)
-  - tier evaluation summary (overall_pass + key win-rate metrics)
-  - perf benchmark summary (average/p95, budgets, within_avg/within_p95)
+1) Load ``training_report.json`` from a tier training run directory and
+   validate that ``tier`` and ``candidate_id`` match the CLI arguments.
+2) Run the canonical difficulty-tier gate via ``run_tier_gate.py`` in
+   difficulty mode for the given candidate.
+3) Run the small tier perf benchmark for tiers with configured budgets
+   (D4/D6/D8) unless ``--no-perf`` is supplied.
+4) Optionally perform cross-tier sanity probes (currently stubbed).
+5) Aggregate everything into a ``gate_report.json`` plus an updated
+   ``status.json`` under the same ``--run-dir``.
 
-It does not modify ladder_config; promotions are still a manual,
-explicit step that consumes the generated report.
+The script is safe to run in ``--demo`` mode, which uses very small
+game counts for evaluation and perf to keep CI/local smoke tests fast.
 """
 
 from __future__ import annotations
@@ -23,8 +25,8 @@ import json
 import os
 import subprocess
 import sys
-from typing import Any, Dict
-
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -32,103 +34,130 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from app.config.perf_budgets import (  # noqa: E402
-    TierPerfBudget,
     get_tier_perf_budget,
 )
 from app.training.tier_perf_benchmark import (  # noqa: E402
     TierPerfResult,
     run_tier_perf_benchmark,
 )
-from scripts.run_tier_gate import parse_args as parse_tier_gate_args  # type: ignore[import]  # noqa: E402
+
+# Filenames within a run directory
+TRAINING_REPORT_NAME = "training_report.json"
+TIER_EVAL_FILENAME = "tier_eval_result.json"
+PROMOTION_PLAN_FILENAME = "promotion_plan.json"
+TIER_PERF_FILENAME = "tier_perf_report.json"
+GATE_REPORT_NAME = "gate_report.json"
+STATUS_NAME = "status.json"
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    """Parse command-line arguments for full tier gating."""
     parser = argparse.ArgumentParser(
         description=(
-            "Run difficulty-tier gating and perf benchmark for a ladder tier "
-            "(e.g. D4/D6/D8 on square8 2p) and emit a combined gate_report.json."
+            "Run difficulty-tier gating and (optionally) perf benchmark for a "
+            "ladder tier candidate based on an existing training run "
+            "directory."
         ),
     )
-
     parser.add_argument(
         "--tier",
         required=True,
         help="Difficulty tier name (e.g. D2, D4, D6, D8).",
     )
     parser.add_argument(
-        "--candidate-model-id",
+        "--candidate-id",
         required=True,
-        help="Candidate model identifier for the tier gate.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=1,
-        help="Base RNG seed for reproducible evaluations (default: 1).",
+        help="Candidate id to gate (must match training_report.json).",
     )
     parser.add_argument(
         "--run-dir",
-        type=str,
-        default="logs/tier_gate",
-        help="Directory to write tier gate and perf benchmark artefacts.",
-    )
-    parser.add_argument(
-        "--num-games",
-        type=int,
-        default=None,
+        required=True,
         help=(
-            "Optional override for games per opponent in difficulty-tier gate. "
-            "When unset, TierEvaluationConfig defaults are used."
+            "Path to a run directory produced by "
+            "run_tier_training_pipeline.py containing training_report.json."
         ),
     )
     parser.add_argument(
-        "--perf-num-games",
-        type=int,
-        default=1,
-        help="Number of games for perf benchmark (default: 1).",
+        "--board",
+        default="square8",
+        help=(
+            "Board identifier for future multi-board support "
+            "(default: square8)."
+        ),
     )
     parser.add_argument(
-        "--perf-moves-per-game",
+        "--num-players",
         type=int,
-        default=4,
-        help="Maximum moves sampled per perf benchmark game (default: 4).",
+        default=2,
+        help="Number of players (default: 2).",
     )
-
+    parser.add_argument(
+        "--no-perf",
+        action="store_true",
+        help="Skip perf benchmark even when a TierPerfBudget exists.",
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help=(
+            "Use lightweight configs (few games, small perf sample) suitable "
+            "for CI and local smoke tests."
+        ),
+    )
     return parser.parse_args(argv)
 
 
-def _run_tier_gate_cli(args: argparse.Namespace, run_dir: str) -> Dict[str, Any]:
-    """Invoke run_tier_gate.py in difficulty-tier mode and return its JSON."""
-    tier = args.tier.upper()
-    output_path = os.path.join(run_dir, f"{tier}_tier_eval.json")
-    promotion_path = os.path.join(run_dir, f"{tier}_promotion_plan.json")
+def _load_training_report(run_dir: str) -> Dict[str, Any]:
+    """Load training_report.json from *run_dir* or exit with an error."""
+    path = os.path.join(run_dir, TRAINING_REPORT_NAME)
+    if not os.path.exists(path):
+        raise SystemExit(
+            f"training_report.json not found in run dir {run_dir!r}; "
+            "ensure run_tier_training_pipeline.py has completed."
+        )
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _run_tier_gate_cli(
+    tier: str,
+    candidate_id: str,
+    run_dir: str,
+    seed: Optional[int],
+    num_games_override: Optional[int],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Invoke run_tier_gate.py in difficulty-tier mode.
+
+    Returns the TierEvaluationResult payload and the promotion plan
+    payload as Python dicts. Both JSON files are written into *run_dir*.
+    """
+    eval_path = os.path.join(run_dir, TIER_EVAL_FILENAME)
+    plan_path = os.path.join(run_dir, PROMOTION_PLAN_FILENAME)
 
     cmd = [
         sys.executable,
         os.path.join(SCRIPT_DIR, "run_tier_gate.py"),
-    ]
-    gate_args = [
         "--tier",
         tier,
-        "--seed",
-        str(args.seed),
         "--candidate-model-id",
-        args.candidate_model_id,
+        candidate_id,
         "--output-json",
-        output_path,
+        eval_path,
         "--promotion-plan-out",
-        promotion_path,
+        plan_path,
     ]
+    if seed is not None:
+        cmd.extend(["--seed", str(seed)])
+    if num_games_override is not None:
+        cmd.extend(["--num-games", str(num_games_override)])
 
-    if args.num_games is not None:
-        gate_args.extend(["--num-games", str(args.num_games)])
+    subprocess.run(cmd, check=True)
 
-    full_cmd = cmd + gate_args
-    subprocess.run(full_cmd, check=True)
-
-    with open(output_path, "r", encoding="utf-8") as f:
-        payload = json.load(f)
-    return payload
+    with open(eval_path, "r", encoding="utf-8") as f:
+        eval_payload = json.load(f)
+    with open(plan_path, "r", encoding="utf-8") as f:
+        plan_payload = json.load(f)
+    return eval_payload, plan_payload
 
 
 def _eval_perf_budget(result: TierPerfResult) -> Dict[str, Any]:
@@ -143,101 +172,259 @@ def _eval_perf_budget(result: TierPerfResult) -> Dict[str, Any]:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
+def _run_perf_if_available(
+    tier: str,
+    run_dir: str,
+    demo: bool,
+) -> Tuple[Optional[TierPerfResult], Optional[Dict[str, Any]], Optional[str]]:
+    """Run perf benchmark when a TierPerfBudget exists for *tier*.
+
+    Returns (TierPerfResult or None, evaluation dict or None,
+    relative_result_path or None).
+    """
+    try:
+        # Probe for a configured budget; we ignore the returned object
+        # here and rely on run_tier_perf_benchmark for details.
+        get_tier_perf_budget(tier)
+    except KeyError:
+        return None, None, None
+
+    num_games = 1 if demo else 4
+    moves_per_game = 4 if demo else 16
+    seed = 1
+
+    result = run_tier_perf_benchmark(
+        tier_name=tier,
+        num_games=num_games,
+        moves_per_game=moves_per_game,
+        seed=seed,
+    )
+    eval_dict = _eval_perf_budget(result)
+
+    perf_path = os.path.join(run_dir, TIER_PERF_FILENAME)
+    payload: Dict[str, Any] = {
+        "tier_name": result.tier_name,
+        "difficulty": result.budget.difficulty,
+        "board_type": result.budget.board_type.value,
+        "num_players": result.budget.num_players,
+        "metrics": {
+            "average_ms": result.average_ms,
+            "p95_ms": result.p95_ms,
+        },
+        "budget": {
+            "max_avg_move_ms": result.budget.max_avg_move_ms,
+            "max_p95_move_ms": result.budget.max_p95_move_ms,
+        },
+        "evaluation": eval_dict,
+    }
+    with open(perf_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, sort_keys=True)
+
+    return result, eval_dict, TIER_PERF_FILENAME
+
+
+def _update_status_json(
+    run_dir: str,
+    tier: str,
+    board: str,
+    num_players: int,
+    candidate_id: str,
+) -> None:
+    """Create or update status.json for the run directory."""
+    status_path = os.path.join(run_dir, STATUS_NAME)
+    status: Dict[str, Any] = {}
+    if os.path.exists(status_path):
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                status = json.load(f)
+        except Exception:  # pragma: no cover - defensive
+            status = {}
+
+    status["tier"] = tier
+    status["board"] = board
+    status["num_players"] = num_players
+    status["candidate_id"] = candidate_id
+
+    training = status.get("training") or {}
+    training.setdefault("status", "completed")
+    training.setdefault("report_path", TRAINING_REPORT_NAME)
+    status["training"] = training
+
+    # Automated gate block: mark as completed and record artefact paths.
+    auto_gate = status.get("automated_gate") or {}
+    auto_gate["status"] = "completed"
+    auto_gate.setdefault("eval_json", TIER_EVAL_FILENAME)
+    auto_gate.setdefault("promotion_plan", PROMOTION_PLAN_FILENAME)
+    status["automated_gate"] = auto_gate
+
+    # Perf block: mark as completed if a perf report exists in the run dir.
+    perf = status.get("perf") or {}
+    perf_path = os.path.join(run_dir, TIER_PERF_FILENAME)
+    if os.path.exists(perf_path):
+        perf["status"] = "completed"
+        perf.setdefault("perf_json", TIER_PERF_FILENAME)
+    else:
+        perf.setdefault("status", "not_started")
+        perf.setdefault("perf_json", None)
+    status["perf"] = perf
+
+    # Human calibration block remains a stub for now; the pipeline doc
+    # treats calibration as a follow-up step once automated gates pass.
+    human = status.get("human_calibration") or {
+        "required": True,
+        "status": "pending",
+        "min_games": 50,
+    }
+    status["human_calibration"] = human
+
+    # Backwards-compatible alias used by existing tests and tooling.
+    gating = status.get("gating") or {}
+    gating["status"] = auto_gate["status"]
+    gating["report_path"] = GATE_REPORT_NAME
+    status["gating"] = gating
+
+    status["updated_at"] = datetime.now(timezone.utc).isoformat()
+    with open(status_path, "w", encoding="utf-8") as f:
+        json.dump(status, f, indent=2, sort_keys=True)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """Main entry point for the full tier gating pipeline."""
     args = parse_args(argv)
+    tier = args.tier.upper()
+
+    if tier not in {"D2", "D4", "D6", "D8"}:
+        raise SystemExit(
+            f"Unsupported tier {args.tier!r}; expected one of "
+            "D2, D4, D6, D8."
+        )
 
     run_dir = os.path.abspath(args.run_dir)
     os.makedirs(run_dir, exist_ok=True)
 
-    tier_key = args.tier.upper()
+    training_report = _load_training_report(run_dir)
+    report_tier = str(training_report.get("tier", "")).upper()
+    report_candidate = training_report.get("candidate_id")
 
-    # Difficulty-tier gate JSON (TierEvaluationResult).
-    tier_eval = _run_tier_gate_cli(args, run_dir)
-
-    # Perf benchmark for tiers that have budgets; for others we still
-    # measure latency but treat the budget as informational only.
-    perf_budget: TierPerfBudget | None
-    try:
-        perf_budget = get_tier_perf_budget(tier_key)
-    except KeyError:
-        perf_budget = None
-
-    perf_result: TierPerfResult | None = None
-    perf_eval: Dict[str, Any] | None = None
-
-    if perf_budget is not None:
-        perf_result = run_tier_perf_benchmark(
-            tier_name=tier_key,
-            num_games=args.perf_num_games,
-            moves_per_game=args.perf_moves_per_game,
-            seed=args.seed,
+    if report_tier != tier:
+        raise SystemExit(
+            "Tier mismatch between CLI and training_report.json: "
+            f"CLI tier={tier!r}, report tier={report_tier!r}"
         )
-        perf_eval = _eval_perf_budget(perf_result)
+    if report_candidate != args.candidate_id:
+        raise SystemExit(
+            "candidate_id mismatch between CLI and training_report.json: "
+            f"CLI id={args.candidate_id!r}, report id={report_candidate!r}"
+        )
 
-        perf_json_path = os.path.join(run_dir, f"{tier_key}_perf.json")
-        with open(perf_json_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "tier_name": perf_result.tier_name,
-                    "difficulty": perf_result.budget.difficulty,
-                    "board_type": perf_result.budget.board_type.value,
-                    "num_players": perf_result.budget.num_players,
-                    "metrics": {
-                        "average_ms": perf_result.average_ms,
-                        "p95_ms": perf_result.p95_ms,
-                    },
-                    "budget": {
-                        "max_avg_move_ms": perf_result.budget.max_avg_move_ms,
-                        "max_p95_move_ms": perf_result.budget.max_p95_move_ms,
-                    },
-                    "evaluation": perf_eval,
-                },
-                f,
-                indent=2,
-                sort_keys=True,
-            )
+    # Prefer the board/num_players recorded in the training report.
+    board_from_report = training_report.get("board") or args.board
+    num_players_from_report = int(
+        training_report.get("num_players") or args.num_players
+    )
 
-    # Combined gate report.
-    ladder_info = tier_eval.get("ladder", {})
-    report: Dict[str, Any] = {
-        "tier": tier_key,
-        "board_type": tier_eval.get("board_type"),
-        "num_players": tier_eval.get("num_players"),
-        "candidate_model_id": ladder_info.get("candidate_model_id"),
-        "current_model_id": ladder_info.get("current_model_id"),
-        "automated_gate": {
-            "overall_pass": tier_eval.get("overall_pass"),
-            "metrics": tier_eval.get("metrics", {}),
-        },
+    if board_from_report != args.board:
+        print(
+            "Warning: CLI board does not match training_report.json "
+            f"(cli={args.board!r}, report={board_from_report!r}); "
+            "using the report value in gate_report.json."
+        )
+    if num_players_from_report != args.num_players:
+        print(
+            "Warning: CLI num_players does not match training_report.json "
+            f"(cli={args.num_players}, report={num_players_from_report}); "
+            "using the report value in gate_report.json."
+        )
+
+    # Difficulty-tier evaluation and promotion plan.
+    seed = 1
+    num_games_override = 4 if args.demo else None
+    tier_eval, promotion_plan = _run_tier_gate_cli(
+        tier=tier,
+        candidate_id=args.candidate_id,
+        run_dir=run_dir,
+        seed=seed,
+        num_games_override=num_games_override,
+    )
+    gate_pass = bool(tier_eval.get("overall_pass"))
+
+    # Perf benchmark (when budgets exist and not explicitly disabled).
+    perf_result: Optional[TierPerfResult] = None
+    perf_eval: Optional[Dict[str, Any]] = None
+    perf_result_path: Optional[str] = None
+    perf_run = False
+
+    if not args.no_perf:
+        perf_result, perf_eval, perf_result_path = _run_perf_if_available(
+            tier=tier,
+            run_dir=run_dir,
+            demo=args.demo,
+        )
+        perf_run = perf_result is not None
+
+    perf_pass = True
+    if perf_run and perf_eval is not None:
+        perf_pass = bool(perf_eval.get("overall_pass"))
+
+    # Cross-tier sanity checks are currently stubbed; the structure is
+    # left in place for future tiny tournaments.
+    cross_tier_sanity: Dict[str, Any] = {
+        "run": False,
     }
 
-    if perf_result is not None and perf_eval is not None:
-        report["perf"] = {
-            "tier_name": perf_result.tier_name,
-            "average_ms": perf_result.average_ms,
-            "p95_ms": perf_result.p95_ms,
-            "budget": {
-                "max_avg_move_ms": perf_result.budget.max_avg_move_ms,
-                "max_p95_move_ms": perf_result.budget.max_p95_move_ms,
-            },
-            "evaluation": perf_eval,
-        }
+    # Final decision: require both the difficulty gate and perf (when run)
+    # to pass, and the promotion plan to recommend promotion.
+    plan_decision = promotion_plan.get("decision", "reject")
+    if gate_pass and perf_pass and plan_decision == "promote":
+        final_decision = "promote"
+    else:
+        final_decision = "reject"
 
-    report_path = os.path.join(run_dir, f"{tier_key}_gate_report.json")
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2, sort_keys=True)
-    print(f"\nWrote combined gate report to {report_path}")
+    created_at = datetime.now(timezone.utc).isoformat()
 
-    # For CI convenience, treat failure of either gate or perf budget as
-    # a non-zero exit status so that pipelines can depend on this script.
-    overall_gate_ok = bool(tier_eval.get("overall_pass"))
-    perf_ok = True
-    if perf_eval is not None:
-        perf_ok = bool(perf_eval.get("overall_pass"))
+    evaluation_block: Dict[str, Any] = {
+        "result_path": TIER_EVAL_FILENAME,
+        "promotion_plan_path": PROMOTION_PLAN_FILENAME,
+        "overall_pass": gate_pass,
+    }
 
-    return 0 if (overall_gate_ok and perf_ok) else 1
+    perf_block: Dict[str, Any] = {
+        "run": perf_run,
+        "result_path": perf_result_path,
+        "overall_pass": (
+            perf_eval.get("overall_pass") if perf_run and perf_eval else None
+        ),
+    }
+
+    gate_report: Dict[str, Any] = {
+        "tier": tier,
+        "board": board_from_report,
+        "num_players": num_players_from_report,
+        "candidate_id": args.candidate_id,
+        "evaluation": evaluation_block,
+        "perf": perf_block,
+        "cross_tier_sanity": cross_tier_sanity,
+        "final_decision": final_decision,
+        "created_at": created_at,
+    }
+
+    gate_path = os.path.join(run_dir, GATE_REPORT_NAME)
+    with open(gate_path, "w", encoding="utf-8") as f:
+        json.dump(gate_report, f, indent=2, sort_keys=True)
+    print(f"Wrote combined gate report to {gate_path}")
+
+    _update_status_json(
+        run_dir=run_dir,
+        tier=tier,
+        board=board_from_report,
+        num_players=num_players_from_report,
+        candidate_id=args.candidate_id,
+    )
+
+    # Exit code: 0 only when both gate and perf (if run) pass.
+    exit_ok = gate_pass and (not perf_run or perf_pass)
+    return 0 if exit_ok else 1
 
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-

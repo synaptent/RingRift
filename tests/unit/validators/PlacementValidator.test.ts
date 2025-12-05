@@ -356,5 +356,115 @@ describe('PlacementValidator', () => {
       const result = validateSkipPlacement(state, action);
       expect(result.valid).toBe(true);
     });
+
+    it('rejects skip when player not found', () => {
+      const action: SkipPlacementAction = {
+        type: 'skip_placement',
+        playerId: 99, // Non-existent player
+      };
+      state.currentPlayer = 99; // Also set current player to bypass turn check
+      const result = validateSkipPlacement(state, action);
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('PLAYER_NOT_FOUND');
+    });
+
+    it('skips stacks with zero height when checking for legal actions', () => {
+      // Add a stack with zero height (defensive case)
+      const emptyStack: RingStack = {
+        position: pos(5, 5),
+        rings: [],
+        stackHeight: 0,
+        capHeight: 0,
+        controllingPlayer: 1,
+      };
+      state.board.stacks.set(posStr(5, 5), emptyStack);
+
+      const action: SkipPlacementAction = {
+        type: 'skip_placement',
+        playerId: 1,
+      };
+      // Should still succeed because we have the other stack with legal moves
+      const result = validateSkipPlacement(state, action);
+      expect(result.valid).toBe(true);
+    });
+
+    it('uses getMarkerOwner when checking legal captures', () => {
+      // Add markers near the stack to test getMarkerOwner branch
+      const marker: MarkerInfo = { player: 2, position: pos(4, 3), type: 'regular' };
+      state.board.markers.set(posStr(4, 3), marker);
+
+      const action: SkipPlacementAction = {
+        type: 'skip_placement',
+        playerId: 1,
+      };
+      const result = validateSkipPlacement(state, action);
+      // Should still be valid - the marker doesn't block moves
+      expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('validatePlacement edge cases', () => {
+    let state: GameState;
+
+    beforeEach(() => {
+      state = createTestGameState({
+        currentPhase: 'ring_placement',
+        currentPlayer: 1,
+        players: [
+          createTestPlayer(1, { ringsInHand: 18 }),
+          createTestPlayer(2, { ringsInHand: 18 }),
+        ],
+      });
+    });
+
+    it('rejects placement when player not found', () => {
+      const action: PlaceRingAction = {
+        type: 'place_ring',
+        playerId: 99, // Non-existent player
+        position: pos(3, 3),
+        count: 1,
+      };
+      state.currentPlayer = 99; // Bypass turn check
+      const result = validatePlacement(state, action);
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('PLAYER_NOT_FOUND');
+    });
+
+    it('considers existing stacks when validating placement moves', () => {
+      // Add a stack adjacent to placement position to trigger getStackAt branch
+      const adjacentStack: RingStack = {
+        position: pos(4, 3),
+        rings: [2],
+        stackHeight: 1,
+        capHeight: 1,
+        controllingPlayer: 2,
+      };
+      state.board.stacks.set(posStr(4, 3), adjacentStack);
+
+      const action: PlaceRingAction = {
+        type: 'place_ring',
+        playerId: 1,
+        position: pos(3, 3),
+        count: 1,
+      };
+      // Placement should be valid - can still move/capture
+      const result = validatePlacement(state, action);
+      expect(result.valid).toBe(true);
+    });
+
+    it('uses markers when checking legal moves from placement', () => {
+      // Add markers near placement position
+      const marker: MarkerInfo = { player: 2, position: pos(4, 3), type: 'regular' };
+      state.board.markers.set(posStr(4, 3), marker);
+
+      const action: PlaceRingAction = {
+        type: 'place_ring',
+        playerId: 1,
+        position: pos(3, 3),
+        count: 1,
+      };
+      const result = validatePlacement(state, action);
+      expect(result.valid).toBe(true);
+    });
   });
 });

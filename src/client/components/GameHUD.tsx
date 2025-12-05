@@ -448,7 +448,11 @@ function LegacySubPhaseDetails({ gameState }: { gameState: GameState }) {
   // For territory processing, we don't have a direct count in GameState,
   // but we can show a generic message
   if (gameState.currentPhase === 'territory_processing') {
-    return <div className="text-sm text-gray-600 mt-1">Processing disconnected regions</div>;
+    return (
+      <div className="text-sm text-gray-600 mt-1">
+        Processing disconnected regions; you must eliminate one outside ring per region.
+      </div>
+    );
   }
 
   return null;

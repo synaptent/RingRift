@@ -511,11 +511,11 @@ For each tier T ∈ {D2, D4, D6, D8}, the pipeline is:
    - If all required stages succeed, update ladder configs in [`ladder_config.py`](ai-service/app/config/ladder_config.py:47) in a Code-mode change.
    - Record promotion descriptor and supporting evidence (JSON, perf benchmark outputs, calibration summary).
 
-### 8.2 Proposed new scripts / configs
+### 8.2 Orchestration scripts / configs
 
-To make the above reproducible, H-AI-9 proposes the following new orchestration entrypoints (for later implementation):
+To make the above reproducible, H-AI-9 defines the following orchestration entrypoints:
 
-1. **`ai-service/scripts/run_tier_training_pipeline.py`**
+1. **`ai-service/scripts/run_tier_training_pipeline.py`** (implemented)
    - Arguments:
      - `--tier {D2,D4,D6,D8}`.
      - `--board square8`.

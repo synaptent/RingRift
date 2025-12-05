@@ -54,6 +54,14 @@ A central navigation guide for developers to quickly locate all rules-related do
 | [docs/supplementary/RULES_DOCS_UX_AUDIT.md](docs/supplementary/RULES_DOCS_UX_AUDIT.md)                   | Documentation/UX audit findings | Improving player-facing documentation         |
 | [archive/FINAL_RULES_AUDIT_REPORT.md](archive/FINAL_RULES_AUDIT_REPORT.md)                               | Complete audit report           | Understanding overall rules compliance status |
 
+Additional rules‑UX and onboarding specs:
+
+- [`UX_RULES_COPY_SPEC.md`](../docs/UX_RULES_COPY_SPEC.md:1) – Canonical copy for HUD, VictoryModal, TeachingOverlay, and sandbox rules explanations.
+- [`UX_RULES_TELEMETRY_SPEC.md`](../docs/UX_RULES_TELEMETRY_SPEC.md:1) – Rules‑UX telemetry envelope, metrics, and hotspot queries (W‑UX‑1).
+- [`UX_RULES_WEIRD_STATES_SPEC.md`](../docs/UX_RULES_WEIRD_STATES_SPEC.md:1) – Weird‑state reason codes and UX mappings for ANM/FE, structural stalemate, and LPS (W‑UX‑2).
+- [`UX_RULES_TEACHING_SCENARIOS.md`](../docs/UX_RULES_TEACHING_SCENARIOS.md:1) – Scenario‑driven teaching flows for complex mechanics (W‑UX‑3).
+- [`UX_RULES_IMPROVEMENT_LOOP.md`](../docs/UX_RULES_IMPROVEMENT_LOOP.md:1) – Telemetry‑driven rules‑UX improvement process (W‑UX‑4).
+
 ### Process & Tools
 
 | Document                                                               | Description                                    | When to Use                                                       |

@@ -1,0 +1,51 @@
+{
+  "board_type": "square8",
+  "num_players": 2,
+  "description": "Canonical square8 2-player tier training pipeline settings used by run_tier_training_pipeline.py and run_full_tier_gating.py.",
+  "tiers": {
+    "D2": {
+      "training": {
+        "mode": "heuristic_stub_demo",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games_override": 4
+      }
+    },
+    "D4": {
+      "training": {
+        "mode": "search_persona_demo",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games_override": 4
+      }
+    },
+    "D6": {
+      "training": {
+        "mode": "neural_demo",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games_override": 4
+      }
+    },
+    "D8": {
+      "training": {
+        "mode": "neural_demo",
+        "seed": 123
+      },
+      "gating": {
+        "enabled": true,
+        "seed": 1,
+        "num_games_override": 4
+      }
+    }
+  }
+}

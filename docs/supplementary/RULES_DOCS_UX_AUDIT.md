@@ -10,6 +10,8 @@
 
 This audit compares the current documentation and user experience text against the authoritative **RR‑CANON** (`RULES_CANONICAL_SPEC.md`) and the actual codebase behaviour.
 
+As of 2025‑12‑05, dedicated rules‑UX specs have been added under `docs/` (see §3.6) and partially wired into the client, telemetry, and teaching surfaces. Future remediation work for the findings below SHOULD treat those specs as the canonical contract for copy, weird‑state handling, and teaching scenarios.
+
 **Headline Findings:**
 
 1.  **Critical UX Mismatch on Chain Captures:** The GameHUD explicitly tells players they can "end your turn" during chain captures, but RR‑CANON-R103 mandates **mandatory continuation** if any capture is available. This is a high-severity rule misstatement in the UI.
@@ -32,6 +34,13 @@ This section reviews text visible to end-users in the web client and the primary
 | **DOCUX-P2** | **Medium** | `VictoryModal.tsx`        | **Ring Elimination:** Description reads "Victory by eliminating **all** opponent rings". RR‑CANON-R170 is **>50%** of total rings. Eliminating all is a win, but not the threshold.                  | Change to: "Victory by eliminating >50% of total rings."                                                    |
 | **DOCUX-P3** | Low        | `GameHUD.tsx` (PhaseInfo) | **Line Reward:** Description "Choose how to process your line" implies choice exists for _all_ lines. For exact-length lines (RR‑CANON-R122 Case 1), there is no choice (must collapse & eliminate). | Change to: "Process line reward" (generic) or conditionally show "Choose reward" only for overlength lines. |
 | **DOCUX-P4** | Low        | `GameHUD.tsx` (SubPhase)  | **Territory:** "Processing disconnected regions" is vague regarding the **self-elimination cost** (RR‑CANON-R145). Players may be surprised they have to lose a ring.                                | Add tooltip or sub-text: "Regions collapse; you must eliminate one outside ring per region."                |
+
+**Implementation status snapshot (2025‑12‑05, post‑W‑UX work):**
+
+- DOCUX‑P1 – Addressed: GameHUD chain capture copy now describes mandatory continuation without suggesting you can “end your turn”.
+- DOCUX‑P2 – Addressed: Victory/Help copy for Ring Elimination now consistently describes the >50% global elimination threshold.
+- DOCUX‑P3 – Addressed: Line‑processing HUD copy no longer promises “Choose how to process your line” for all cases; generic copy is used unless a real choice exists.
+- DOCUX‑P4 – Addressed: Territory HUD and sub‑phase copy now explicitly mentions the “one outside ring per disconnected region” self‑elimination cost.
 
 ### Public Rulebook (`ringrift_complete_rules.md`)
 
@@ -80,3 +89,27 @@ Mapping from `RULES_CONSISTENCY_EDGE_CASES.md` (CCE) to Documentation/UX needs.
 | **CCE-006** | **Last Player Standing:** Not explicit; relies on game continuing to stalemate. | Undocumented | Update `RULES_ENGINE_ARCHITECTURE.md` to clarify R172 is handled via standard play-to-completion. |
 | **CCE-007** | **Forced Elim Heuristic:** Auto-selects smallest cap.                           | Undocumented | Add comment to `TurnEngine.ts` that this is a deterministic tie-break choice.                     |
 | **CCE-008** | **Phase Ordering:** Move->Line->Territory->Victory.                             | Documented   | Well-covered in `GameEngine.ts` comments. No action.                                              |
+
+## 3.6 Related Rules-UX Specs
+
+The following documents define the canonical contracts for rules UX copy, telemetry, weird-state mapping, and teaching flows:
+
+- [`UX_RULES_COPY_SPEC.md`](../UX_RULES_COPY_SPEC.md:1) – Canonical copy for HUD, VictoryModal, TeachingOverlay, and sandbox rules explanations.
+- [`UX_RULES_TELEMETRY_SPEC.md`](../UX_RULES_TELEMETRY_SPEC.md:1) – Rules-UX telemetry envelope, event types, and hotspot metric definitions (W-UX-1).
+- [`UX_RULES_WEIRD_STATES_SPEC.md`](../UX_RULES_WEIRD_STATES_SPEC.md:1) – Reason codes and UX mappings for ANM/FE, structural stalemate, and Last-Player-Standing outcomes (W-UX-2).
+- [`UX_RULES_TEACHING_SCENARIOS.md`](../UX_RULES_TEACHING_SCENARIOS.md:1) – Scenario-driven teaching flows for complex mechanics such as mini-regions, capture chains, and line-vs-territory turns (W-UX-3).
+- [`UX_RULES_IMPROVEMENT_LOOP.md`](../UX_RULES_IMPROVEMENT_LOOP.md:1) – Telemetry-driven process for iterating on rules UX and onboarding over time (W-UX-4).
+
+Future UX and documentation remediation work referenced in this audit should treat these specs as the contract for concrete copy, telemetry, and teaching changes.
+
+## 3.7 Suggested Next Remediation Targets (Post–Dec 2025)
+
+Given the partial remediation to date (see §3.2 implementation snapshot), the next high-leverage items from this audit are:
+
+- **DOCUX-C1 / C2 – Rules mode and placement cap documentation:**
+  - Expand `README.md` and/or `RULES_ENGINE_ARCHITECTURE.md` with a short “Rules Engine Modes” subsection that references `RINGRIFT_RULES_MODE` and clarifies shadow-mode parity behaviour.
+  - Add a brief comment in `BOARD_CONFIGS` or the placement validator describing the stack-height approximation (CCE-002), with a pointer back to `RULES_CONSISTENCY_EDGE_CASES.md`.
+- **CCE-001 / CCE-005 / CCE-006 / CCE-007 – Implementation compromises:**
+  - Fold the remaining undocum…ion compromises into targeted code comments and/or short subsections in the relevant rules/architecture docs, so future changes do not reintroduce the same edge cases.
+
+These changes should be scheduled through the process in `UX_RULES_IMPROVEMENT_LOOP.md`, using telemetry from `ringrift_rules_ux_events_total` and curated teaching scenarios to measure impact where feasible.

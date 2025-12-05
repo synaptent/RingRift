@@ -8,6 +8,22 @@
  * - getMooreNeighbors: hex board returns empty
  * - isValidPositionOnBoard: hex vs square validation
  * - comparePositionsStable: square vs hex sorting
+ *
+ * COVERAGE ANALYSIS:
+ * Lines 160-170: Moore adjacency fallback in getTerritoryNeighbors.
+ *   This branch is only reached when territoryAdjacency === 'moore'.
+ *   However, NO production board type uses 'moore' for territoryAdjacency:
+ *   - square8, square19: 'von_neumann'
+ *   - hexagonal: 'hexagonal'
+ *   This is defensive code for potential future board types.
+ *
+ * Line 180: Hex check in getMooreNeighbors.
+ *   getMooreNeighbors is ONLY called when board.type !== 'hexagonal' (line 83),
+ *   so the condition `if (board.type === 'hexagonal')` can never be true.
+ *   This is unreachable defensive code.
+ *
+ * Maximum achievable branch coverage: ~78.43% (40/51 branches)
+ * Unreachable branches: lines 160-170 (Moore fallback), 180 (hex check in getMooreNeighbors)
  */
 
 import {

@@ -227,6 +227,22 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Note: The `skip_capture` move type exists for cases where a player declines an optional capture opportunity; it explicitly transitions from `capture` to `line_processing` without executing a capture.
   - References: RR-CANON-R070, RR-CANON-R093, RR-CANON-R103; TS `turnOrchestrator.ts` `processPostMovePhases` and `phaseStateMachine.ts`.
 
+- **[RR-CANON-R074] Explicit recording of all turn actions and voluntary skips.**
+  - At the rules level, a **turn action** for player P is any state change that:
+    - places one or more rings for P,
+    - moves a stack or ring controlled by P (capture or non-capture),
+    - processes a line owned by P (RR-CANON-R120–R122),
+    - processes a Territory region or applies required self-elimination for P (RR-CANON-R140–R145), or
+    - performs a forced elimination or explicit elimination decision (RR-CANON-R100, RR-CANON-R205).
+  - A **voluntary forgo decision** is any choice by P to decline an otherwise legal action that the rules allow them to take at that point in the turn (for example, `skip_placement` when placements are legal, or `skip_capture` when a capture is optional).
+  - Canonical constraint:
+    - Whenever P performs a turn action **or** voluntarily forgoes an available action, that decision MUST be represented as an explicit, player-visible move or choice in the game record and engine APIs (e.g., `place_ring`, `move_stack`, `overtaking_capture`, `process_line`, `choose_line_reward`, `process_territory_region`, `eliminate_rings_from_stack`, `skip_placement`, `skip_capture`, `skip_territory_processing`).
+    - Engines and hosts MUST NOT treat such actions or voluntary skips as implicit side effects of other moves or silently "assume" them without recording a corresponding decision.
+    - Internal helper steps that are logically equivalent to a rules-level action (for example, auto-collapsing a single exact-length line, auto-processing a single Territory region, or auto-selecting a self-elimination target) are permitted **only** as UX conveniences when they also surface and persist a concrete move/choice in the canonical history.
+  - This applies uniformly to:
+    - Analogue play (each step is announced and agreed upon by players), and
+    - Digital implementations, including AI self-play and parity/training harnesses, which must record every rules-level action and voluntary skip as an explicit move/choice for reproducibility and analysis.
+
 ---
 
 ## 4.5 Active-No-Moves & Forced Elimination Semantics (R2xx)
@@ -509,9 +525,18 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - After movement and any captures:
     - Compute all eligible lines in the current state.
     - While at least one eligible line remains:
-      - Moving player P chooses one eligible line L to process.
-      - Apply collapse/elimination per RR-CANON-R122.
+      - Moving player P chooses one eligible line L to process. This choice is
+        always represented as an explicit, player-visible line-processing
+        decision in the `line_processing` phase (e.g. a `process_line`
+        decision for exact-length lines, possibly followed by a
+        `choose_line_reward` decision for overlength lines).
+      - Apply collapse/elimination for L per RR-CANON-R122 as a consequence
+        of that explicit decision.
       - Recompute eligible lines; continue until none remain or P cannot pay required eliminations.
+  - Engines and hosts MUST NOT auto-collapse lines as a silent side effect of
+    movement or capture moves, even when there is only a single eligible line
+    for P. Every processed line (exact-length or overlength) corresponds to
+    at least one explicit decision move recorded in the game history.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5, 11.2–11.3, 15.4 Q7.
 
 - **[RR-CANON-R122] Line collapse and elimination.**
@@ -527,6 +552,9 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - P chooses Option 1 or Option 2:
         - **Option 1 (max Territory):** collapse **all len** markers in the line and then eliminate one ring or one cap as above.
         - **Option 2 (ring preservation):** choose any contiguous subsegment of length requiredLen within the line; collapse exactly those requiredLen markers; eliminate **no** rings.
+      - This choice between Option 1 and Option 2 is always an explicit,
+        player-visible decision (typically via `choose_line_reward`); engines
+        must not silently default to either option for overlength lines.
   - After each processed line, update all counters and recompute lines.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5, 11.2–11.3, 15.4 Q7, Q22.
 
@@ -708,13 +736,27 @@ Below are the most important differences, categorized by type, with canonical in
    - Category: **Simplification** (compact version generalizes rule).
    - Canonical: Follow the general rule: any len > lineLength is overlength with Options 1 and 2 (RR-CANON-R122).
 
-4. **Forced elimination impossibility edge case.**
+4. **Explicit line decisions vs auto-processing.**
+   - Some early engine implementations and prose describe auto-collapsing a
+     single exact-length line immediately after a movement/capture, without
+     surfacing a separate line-processing decision.
+   - RR-CANON-R121–R122 clarify that **all** line processing—both exact-length
+     and overlength—must be expressed as explicit, player-visible decisions in
+     the `line_processing` phase (`process_line` / `choose_line_reward` +
+     any required self-elimination decisions). Engines must not silently
+     process lines as a side effect of other moves, even when there is only
+     one eligible line.
+   - Canonical: Treat line processing as purely decision-driven; any
+     auto-processing behaviour is a non-canonical UX shortcut and must not
+     affect the recorded game history or training data.
+
+5. **Forced elimination impossibility edge case.**
    - Complete Rules: FAQ Q24 mentions the possibility that a player "cannot perform" forced elimination because "all caps have already been eliminated", suggesting a skip.
    - Compact Spec: §2.3 assumes that if a player controls a stack, they always have at least one ring in the cap to eliminate.
    - Category: **Genuine contradiction**, but the Complete Rules scenario is structurally impossible under the stack model.
    - Canonical: Treat forced elimination as always applicable whenever a player controls any stack (RR-CANON-R100), and treat the Q24 skip example as unreachable commentary.
 
-5. **Territory border marker collapse scope.**
+6. **Territory border marker collapse scope.**
    - Complete Rules: §12.2 states that only spaces occupied by markers of the single color that "actually forms the disconnecting border" are collapsed, but does not fully define "actually forms".
    - Compact Spec: §6.4 clarifies that border markers "that participate in the disconnection (i.e., contiguous along the border path)" are collapsed.
    - Category: **Alternative presentation / clarification**.

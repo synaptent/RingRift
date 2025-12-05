@@ -22,9 +22,12 @@ const ConceptToPhrases: Partial<Record<ScenarioRulesConcept, readonly string[]>>
   lines_overlength_option2: RulesUxPhrases.lines.overlengthOption2,
 
   territory_basic: RulesUxPhrases.territory.basicRegion,
+  territory_multi_region: RulesUxPhrases.territory.basicRegion,
   territory_near_victory: RulesUxPhrases.victory.territory,
 
   victory_ring_elimination: RulesUxPhrases.victory.ringElimination,
+
+  anm_forced_elimination: RulesUxPhrases.feAnm.forcedElimination,
 
   turn_multi_phase: ['movement or capture', 'line processing', 'Territory processing'],
   // board_intro_* and placement_basic / puzzle_capture concepts are intentionally

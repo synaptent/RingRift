@@ -40,7 +40,7 @@ import {
   type SandboxInteractionHandler,
 } from '../src/client/sandbox/ClientSandboxEngine';
 import type { BoardType, GameState, Move, Position } from '../src/shared/types/game';
-import { hashGameStateSHA256 } from '../src/shared/engine';
+import { hashGameStateSHA256, getEffectiveLineLengthThreshold } from '../src/shared/engine';
 import { serializeGameState } from '../src/shared/engine/contracts/serialization';
 import { connectDatabase, disconnectDatabase } from '../src/server/database/connection';
 import type { PrismaClient } from '@prisma/client';
@@ -231,6 +231,68 @@ function normalizeRecordedMove(rawMove: Move, fallbackMoveNumber: number): Move 
   } as Move;
 }
 
+/**
+ * Replay-only compatibility shim for legacy line-processing moves.
+ *
+ * Older self-play databases sometimes record overlength line rewards as a
+ * single `process_line` Move with `formedLines[0].length > L` (where L is the
+ * effective line length). Modern semantics express overlength rewards via
+ * `choose_line_reward` moves instead, and the shared
+ * `applyProcessLineDecision()` helper treats such overlength `process_line`
+ * moves as a no-op.
+ *
+ * For replay/parity purposes we want to preserve the original behaviour
+ * encoded in the DB: collapsing the full line as if Option‑1 had been chosen.
+ * To do this without changing shared engine semantics, we rewrite those
+ * legacy `process_line` moves into `choose_line_reward` moves with the same
+ * `formedLines` payload and no `collapsedMarkers` (collapse-all sentinel)
+ * before feeding them into the sandbox.
+ */
+function rewriteLegacyProcessLineMoves(
+  moves: Move[],
+  boardType: BoardType,
+  numPlayers: number
+): Move[] {
+  const requiredLength = getEffectiveLineLengthThreshold(boardType, numPlayers, undefined);
+
+  return moves.map((move) => {
+    if (move.type !== 'process_line') {
+      return move;
+    }
+
+    const anyMove = move as any;
+    const formed = anyMove.formedLines as { positions?: Position[]; length?: number }[] | undefined;
+    const line0 = formed && formed[0];
+    if (!line0) {
+      return move;
+    }
+
+    const length =
+      typeof line0.length === 'number'
+        ? line0.length
+        : Array.isArray(line0.positions)
+          ? line0.positions.length
+          : 0;
+
+    if (length <= requiredLength) {
+      // Exact-length or shorter: leave as process_line and let the shared
+      // helpers handle it according to modern semantics.
+      return move;
+    }
+
+    // Overlength legacy process_line: rewrite as a collapse-all
+    // choose_line_reward for replay purposes.
+    const rewritten: Move = {
+      ...(move as any),
+      type: 'choose_line_reward',
+      // Keep formedLines; omit / clear collapsedMarkers so that the shared
+      // helper interprets this as a collapse-all variant.
+      collapsedMarkers: undefined,
+    };
+    return rewritten;
+  });
+}
+
 function summarizeState(label: string, state: GameState): Record<string, unknown> {
   return {
     label,
@@ -310,8 +372,15 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
   engine.initFromSerializedState(sanitizedState, config.playerKinds, interactionHandler);
 
-  const recordedMoves: Move[] = detail.moves.map((m) =>
+  const normalizedMoves: Move[] = detail.moves.map((m) =>
     normalizeRecordedMove(m.move as Move, m.moveNumber)
+  );
+
+  // Replay-only compatibility pass for legacy overlength process_line moves.
+  const recordedMoves: Move[] = rewriteLegacyProcessLineMoves(
+    normalizedMoves,
+    detail.boardType as BoardType,
+    detail.numPlayers
   );
 
   // eslint-disable-next-line no-console

@@ -106,16 +106,16 @@ function createMinimalState(
 describe('LineMutator', () => {
   describe('mutateProcessLine', () => {
     it('should collapse line when exact length matches threshold', () => {
+      // square8 has lineLength: 3
       const positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
-        { x: 3, y: 0 },
       ];
 
       const state = createMinimalState({
         currentPlayer: 1,
-        formedLines: [{ player: 1, length: 4, positions, direction: { x: 1, y: 0 } }],
+        formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
       });
 
       const action: ProcessLineAction = {
@@ -127,20 +127,20 @@ describe('LineMutator', () => {
       const result = mutateProcessLine(state, action);
 
       // All positions should be collapsed
-      expect(result.board.collapsedSpaces.size).toBe(4);
+      expect(result.board.collapsedSpaces.size).toBe(3);
       expect(result.board.collapsedSpaces.has('0,0')).toBe(true);
-      expect(result.board.collapsedSpaces.has('3,0')).toBe(true);
+      expect(result.board.collapsedSpaces.has('2,0')).toBe(true);
       // Line should be removed
       expect(result.board.formedLines.length).toBe(0);
     });
 
     it('should throw when line length exceeds threshold', () => {
+      // square8 has lineLength: 3, so 4 positions exceeds threshold
       const positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
         { x: 3, y: 0 },
-        { x: 4, y: 0 }, // 5 positions > 4 threshold
       ];
 
       const state = createMinimalState({
@@ -160,11 +160,11 @@ describe('LineMutator', () => {
     });
 
     it('should remove stacks at collapsed positions and return rings to hand', () => {
+      // square8 has lineLength: 3
       const positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
-        { x: 3, y: 0 },
       ];
 
       const stacks = new Map<string, RingStack>([
@@ -183,7 +183,7 @@ describe('LineMutator', () => {
       const state = createMinimalState({
         currentPlayer: 1,
         stacks,
-        formedLines: [{ player: 1, length: 4, positions, direction: { x: 1, y: 0 } }],
+        formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
         players: [
           { playerNumber: 1, ringsInHand: 5, eliminated: false },
           { playerNumber: 2, ringsInHand: 5, eliminated: false },
@@ -206,11 +206,11 @@ describe('LineMutator', () => {
     });
 
     it('should remove markers at collapsed positions', () => {
+      // square8 has lineLength: 3
       const positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
-        { x: 3, y: 0 },
       ];
 
       const markers = new Map<string, { player: number }>([['2,0', { player: 1 }]]);
@@ -218,7 +218,7 @@ describe('LineMutator', () => {
       const state = createMinimalState({
         currentPlayer: 1,
         markers,
-        formedLines: [{ player: 1, length: 4, positions, direction: { x: 1, y: 0 } }],
+        formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
       });
 
       const action: ProcessLineAction = {
@@ -234,25 +234,24 @@ describe('LineMutator', () => {
     });
 
     it('should break other lines that share collapsed positions', () => {
+      // square8 has lineLength: 3
       const line1Positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
-        { x: 3, y: 0 },
       ];
 
       const line2Positions: Position[] = [
         { x: 1, y: 0 }, // Shares position with line 1
         { x: 1, y: 1 },
         { x: 1, y: 2 },
-        { x: 1, y: 3 },
       ];
 
       const state = createMinimalState({
         currentPlayer: 1,
         formedLines: [
-          { player: 1, length: 4, positions: line1Positions, direction: { x: 1, y: 0 } },
-          { player: 1, length: 4, positions: line2Positions, direction: { x: 0, y: 1 } },
+          { player: 1, length: 3, positions: line1Positions, direction: { x: 1, y: 0 } },
+          { player: 1, length: 3, positions: line2Positions, direction: { x: 0, y: 1 } },
         ],
       });
 
@@ -364,16 +363,16 @@ describe('LineMutator', () => {
 
   describe('edge cases', () => {
     it('should handle empty stacks map', () => {
+      // square8 has lineLength: 3
       const positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
-        { x: 3, y: 0 },
       ];
 
       const state = createMinimalState({
         currentPlayer: 1,
-        formedLines: [{ player: 1, length: 4, positions, direction: { x: 1, y: 0 } }],
+        formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
       });
 
       const action: ProcessLineAction = {
@@ -384,7 +383,7 @@ describe('LineMutator', () => {
 
       const result = mutateProcessLine(state, action);
 
-      expect(result.board.collapsedSpaces.size).toBe(4);
+      expect(result.board.collapsedSpaces.size).toBe(3);
     });
 
     it('should handle 3-player game line length threshold', () => {
@@ -416,26 +415,25 @@ describe('LineMutator', () => {
     });
 
     it('should preserve unaffected lines', () => {
+      // square8 has lineLength: 3
       const line1Positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
-        { x: 3, y: 0 },
       ];
 
       const line2Positions: Position[] = [
         { x: 5, y: 5 },
         { x: 6, y: 5 },
-        { x: 7, y: 5 },
-        { x: 8, y: 5 }, // Different area, should be preserved
+        { x: 7, y: 5 }, // Different area, should be preserved
       ];
 
       const state = createMinimalState({
         currentPlayer: 1,
         boardSize: 10,
         formedLines: [
-          { player: 1, length: 4, positions: line1Positions, direction: { x: 1, y: 0 } },
-          { player: 1, length: 4, positions: line2Positions, direction: { x: 1, y: 0 } },
+          { player: 1, length: 3, positions: line1Positions, direction: { x: 1, y: 0 } },
+          { player: 1, length: 3, positions: line2Positions, direction: { x: 1, y: 0 } },
         ],
       });
 
@@ -453,17 +451,17 @@ describe('LineMutator', () => {
     });
 
     it('should throw when current player not found in players array', () => {
+      // square8 has lineLength: 3
       const positions: Position[] = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
         { x: 2, y: 0 },
-        { x: 3, y: 0 },
       ];
 
       // Create state with currentPlayer=99 which doesn't exist in players array
       const state = createMinimalState({
         currentPlayer: 99, // Non-existent player
-        formedLines: [{ player: 1, length: 4, positions, direction: { x: 1, y: 0 } }],
+        formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
         players: [
           { playerNumber: 1, ringsInHand: 10, eliminated: false },
           { playerNumber: 2, ringsInHand: 10, eliminated: false },

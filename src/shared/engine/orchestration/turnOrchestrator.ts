@@ -365,6 +365,16 @@ export interface ProcessTurnOptions {
    * process_territory_region moves from recordings should be used.
    */
   skipSingleTerritoryAutoProcess?: boolean;
+
+  /**
+   * When true, line-processing is never auto-applied (even for a single
+   * exact-length line). Instead, a `line_order` decision is surfaced and
+   * the host is expected to apply an explicit `process_line` /
+   * `choose_line_reward` move. This is primarily used in replay/trace
+   * contexts so that recorded move sequences remain the sole source of
+   * truth for when lines are processed.
+   */
+  skipAutoLineProcessing?: boolean;
 }
 
 /**
@@ -711,8 +721,11 @@ function processPostMovePhases(
   if (stateMachine.currentPhase === 'line_processing') {
     const lines = findAllLines(state.board).filter((l) => l.player === state.currentPlayer);
 
-    if (lines.length > 1) {
-      // Multiple lines: player must choose order
+    if (lines.length > 0) {
+      // At least one line exists. When skipAutoLineProcessing is enabled
+      // (e.g. replay/trace contexts), always surface a line_order decision
+      // so hosts can apply explicit process_line / choose_line_reward moves
+      // based on the recorded sequence instead of auto-resolving lines.
       const detectedLines = lines.map((l) => ({
         positions: l.positions,
         player: l.player,
@@ -721,11 +734,22 @@ function processPostMovePhases(
         collapseOptions: [],
       }));
       stateMachine.setPendingLines(detectedLines);
-      return {
-        pendingDecision: createLineOrderDecision(state, detectedLines),
-      };
-    } else if (lines.length === 1) {
-      // Single line: process automatically
+      if (options?.skipAutoLineProcessing) {
+        return {
+          pendingDecision: createLineOrderDecision(state, detectedLines),
+        };
+      }
+
+      if (lines.length > 1) {
+        // Multiple lines: player must choose order
+        return {
+          pendingDecision: createLineOrderDecision(state, detectedLines),
+        };
+      }
+
+      // Single line and auto-processing allowed: preserve legacy behaviour
+      // of collapsing the exact-length line immediately and then checking
+      // for any mandatory elimination decision.
       const line = lines[0];
       const move: Move = {
         id: `auto-process-line`,

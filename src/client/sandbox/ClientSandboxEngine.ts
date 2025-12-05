@@ -3948,7 +3948,16 @@ export class ClientSandboxEngine {
         );
 
         if (eligible.length === 0) {
-          // No pending regions - safe to advance phase/turn
+          // No pending regions - safe to advance phase/turn, unless the
+          // next recorded move is itself a territory decision. In traceMode
+          // we trust the recorded move sequence over TS detection.
+          if (
+            this.traceMode &&
+            (nextMove.type === 'process_territory_region' ||
+              nextMove.type === 'eliminate_rings_from_stack')
+          ) {
+            break;
+          }
           this.advanceTurnAndPhaseForCurrentPlayer();
         } else if (this.traceMode) {
           // PARITY FIX: In traceMode, if there are pending regions, do NOT
@@ -3969,7 +3978,15 @@ export class ClientSandboxEngine {
         const lineMoves = enumerateProcessLineMoves(this.gameState, this.gameState.currentPlayer);
 
         if (lineMoves.length === 0) {
-          // No pending lines - safe to advance phase/turn
+          // No pending lines - safe to advance phase/turn, unless the next
+          // recorded move is itself a line-processing decision. In traceMode
+          // we trust the recorded move sequence over TS detection.
+          if (
+            this.traceMode &&
+            (nextMove.type === 'process_line' || nextMove.type === 'choose_line_reward')
+          ) {
+            break;
+          }
           this.advanceTurnAndPhaseForCurrentPlayer();
         } else if (this.traceMode) {
           // PARITY FIX: In traceMode, if there are pending lines, do NOT

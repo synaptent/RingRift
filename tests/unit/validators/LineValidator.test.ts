@@ -245,18 +245,17 @@ describe('LineValidator', () => {
       expect(result.code).toBe('NOT_YOUR_LINE');
     });
 
-    it('should reject MINIMUM_COLLAPSE for exact length line (4-in-a-row)', () => {
+    it('should reject MINIMUM_COLLAPSE for exact length line (3-in-a-row)', () => {
       const state = createMockState();
-      // Create a line of exactly 4 (the threshold for 2-player 8x8)
+      // Create a line of exactly 3 (the threshold for 2-player square8)
       state.board.formedLines = [
         createFormedLine({
           player: 1,
-          length: 4,
+          length: 3,
           positions: [
             { x: 0, y: 0 },
             { x: 1, y: 0 },
             { x: 2, y: 0 },
-            { x: 3, y: 0 },
           ],
         }),
       ];
@@ -269,7 +268,6 @@ describe('LineValidator', () => {
           { x: 0, y: 0 },
           { x: 1, y: 0 },
           { x: 2, y: 0 },
-          { x: 3, y: 0 },
         ],
       };
 
@@ -307,8 +305,7 @@ describe('LineValidator', () => {
         collapsedPositions: [
           { x: 0, y: 0 },
           { x: 1, y: 0 },
-          { x: 2, y: 0 },
-        ], // Only 3 positions, need 4
+        ], // Only 2 positions, need 3 (square8 threshold)
       };
 
       const result = validateChooseLineReward(state, action);
@@ -327,8 +324,7 @@ describe('LineValidator', () => {
         collapsedPositions: [
           { x: 0, y: 0 },
           { x: 1, y: 0 },
-          { x: 2, y: 0 },
-          { x: 99, y: 99 }, // Not part of the line
+          { x: 99, y: 99 }, // Not part of the line (need 3 positions for square8)
         ],
       };
 
@@ -348,11 +344,10 @@ describe('LineValidator', () => {
         selection: 'MINIMUM_COLLAPSE',
         collapsedPositions: [
           { x: 0, y: 0 },
-          { x: 1, y: 0 },
-          // Skip { x: 2, y: 0 }
+          // Skip { x: 1, y: 0 }
+          { x: 2, y: 0 },
           { x: 3, y: 0 },
-          { x: 4, y: 0 },
-        ],
+        ], // 3 positions for square8 threshold, but non-consecutive
       };
 
       const result = validateChooseLineReward(state, action);
@@ -373,8 +368,7 @@ describe('LineValidator', () => {
           { x: 1, y: 0 },
           { x: 2, y: 0 },
           { x: 3, y: 0 },
-          { x: 4, y: 0 },
-        ],
+        ], // 3 consecutive positions for square8 threshold
       };
 
       const result = validateChooseLineReward(state, action);
@@ -393,8 +387,7 @@ describe('LineValidator', () => {
           { x: 0, y: 0 },
           { x: 1, y: 0 },
           { x: 2, y: 0 },
-          { x: 3, y: 0 },
-        ],
+        ], // 3 consecutive positions at start for square8 threshold
       };
 
       const result = validateChooseLineReward(state, action);
@@ -409,12 +402,11 @@ describe('LineValidator', () => {
         playerId: 1,
         lineIndex: 0,
         selection: 'MINIMUM_COLLAPSE',
-        // Provide positions in reverse order - should still work
+        // Provide 3 positions in reverse order - should still work (square8 threshold)
         collapsedPositions: [
-          { x: 4, y: 0 },
-          { x: 2, y: 0 },
           { x: 3, y: 0 },
           { x: 1, y: 0 },
+          { x: 2, y: 0 },
         ],
       };
 

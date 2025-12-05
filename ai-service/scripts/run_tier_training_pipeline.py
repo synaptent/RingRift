@@ -332,12 +332,36 @@ def _update_status_json(
     status["board"] = board
     status["num_players"] = num_players
     status["candidate_id"] = candidate_id
-    status.setdefault("training", {})
-    status["training"]["status"] = "completed"
-    status["training"]["report_path"] = "training_report.json"
+    # Training block mirrors the pipeline doc: status + report reference.
+    training = status.get("training") or {}
+    training["status"] = "completed"
+    training["report_path"] = "training_report.json"
+    status["training"] = training
 
+    # Automated gate / perf / human calibration blocks are initialised
+    # here so later orchestration (run_full_tier_gating.py) can fill
+    # them in without having to create structure from scratch.
+    auto_gate = status.get("automated_gate") or {}
+    auto_gate.setdefault("status", "not_started")
+    auto_gate.setdefault("eval_json", None)
+    auto_gate.setdefault("promotion_plan", None)
+    status["automated_gate"] = auto_gate
+
+    perf = status.get("perf") or {}
+    perf.setdefault("status", "not_started")
+    perf.setdefault("perf_json", None)
+    status["perf"] = perf
+
+    human = status.get("human_calibration") or {
+        "required": True,
+        "status": "pending",
+        "min_games": 50,
+    }
+    status["human_calibration"] = human
+
+    # Backwards-compatible alias used by some tests and tooling.
     gating = status.get("gating") or {}
-    gating.setdefault("status", "not_started")
+    gating.setdefault("status", auto_gate["status"])
     gating.setdefault("report_path", None)
     status["gating"] = gating
 

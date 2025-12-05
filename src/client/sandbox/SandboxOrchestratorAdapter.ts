@@ -226,6 +226,10 @@ export class SandboxOrchestratorAdapter {
         // In replay/traceMode, don't auto-process single territory regions so
         // explicit process_territory_region moves from the recording are used.
         skipSingleTerritoryAutoProcess: this.skipTerritoryAutoResolve,
+        // In replay/traceMode, also avoid auto-processing single-line
+        // line_processing phases; instead, surface explicit process_line
+        // decisions so recorded move sequences remain the sole authority.
+        skipAutoLineProcessing: this.skipTerritoryAutoResolve,
       };
       const runProcessTurn = (state: GameState, moveToApply: Move): ProcessTurnResult => {
         const result = processTurn(state, moveToApply, processTurnOptions);
@@ -259,6 +263,15 @@ export class SandboxOrchestratorAdapter {
         // is enabled. This is used in replay/traceMode contexts where explicit
         // process_territory_region moves should come from the recording.
         if (decision.type === 'region_order' && this.skipTerritoryAutoResolve) {
+          break;
+        }
+
+        // Line-order decisions are also skipped when skipTerritoryAutoResolve
+        // is enabled (trace/replay mode). In that context we want explicit
+        // process_line / choose_line_reward moves from the recording to drive
+        // line processing, rather than auto-selecting a line inside the
+        // adapter.
+        if (decision.type === 'line_order' && this.skipTerritoryAutoResolve) {
           break;
         }
 

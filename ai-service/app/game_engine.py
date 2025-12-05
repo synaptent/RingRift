@@ -2171,19 +2171,37 @@ class GameEngine:
 
     @staticmethod
     def _has_valid_movements(
-        game_state: GameState, player_number: int
+        game_state: GameState,
+        player_number: int,
+        ignore_must_move_key: bool = False,
     ) -> bool:
-        """True if the player has any legal non-capture movements."""
-        # Movement availability is independent of current_phase for our
-        # forced-elimination gating: we ask "could this player move at all?"
+        """True if the player has any legal non-capture movements.
+
+        Args:
+            ignore_must_move_key: If True, ignore the must_move_from_stack_key
+                constraint. Use True for FE eligibility checks (asking "would
+                this player have any moves on a fresh turn?"), and False for
+                post-placement phase advancement (asking "can this player move
+                from the stack they just placed?").
+        """
         # Use limit=1 for early return optimization on large boards.
         return bool(
-            GameEngine._get_movement_moves(game_state, player_number, limit=1)
+            GameEngine._get_movement_moves(
+                game_state,
+                player_number,
+                limit=1,
+                ignore_must_move_key=ignore_must_move_key,
+            )
         )
 
     @staticmethod
     def _has_valid_captures(game_state: GameState, player_number: int) -> bool:
-        """True if the player has any legal overtaking capture segments."""
+        """True if the player has any legal overtaking capture segments.
+
+        Note: Captures don't use must_move_from_stack_key (attacker position
+        comes from chain state or last move), so no special handling needed
+        for FE eligibility checks.
+        """
         # Use limit=1 for early return optimization on large boards.
         return bool(
             GameEngine._get_capture_moves(game_state, player_number, limit=1)
@@ -2197,10 +2215,18 @@ class GameEngine:
         This is a Python analogue of TS hasValidActions used to decide when
         forced elimination is required. If ANY legal placement, movement, or
         capture exists for the player, forced elimination is not permitted.
+
+        For FE eligibility, we ignore must_move_from_stack_key since that's a
+        per-turn constraint that doesn't apply when evaluating whether a player
+        COULD have any moves on a hypothetical fresh turn.
         """
         if GameEngine._has_valid_placements(game_state, player_number):
             return True
-        if GameEngine._has_valid_movements(game_state, player_number):
+        # FE checks: ignore must_move_key since we're asking about potential
+        # moves on a fresh turn, not constrained by current turn's placement.
+        if GameEngine._has_valid_movements(
+            game_state, player_number, ignore_must_move_key=True
+        ):
             return True
         if GameEngine._has_valid_captures(game_state, player_number):
             return True
@@ -2558,13 +2584,19 @@ class GameEngine:
 
     @staticmethod
     def _get_movement_moves(
-        game_state: GameState, player_number: int, limit: int | None = None
+        game_state: GameState,
+        player_number: int,
+        limit: int | None = None,
+        ignore_must_move_key: bool = False,
     ) -> List[Move]:
         """
         Get valid non-capture movement moves.
 
         Args:
             limit: If provided, return after finding this many moves (for early-return checks).
+            ignore_must_move_key: If True, ignore the must_move_from_stack_key
+                constraint. Used when checking valid actions for FE eligibility
+                where the constraint shouldn't apply.
         """
         moves: List[Move] = []
         board = game_state.board
@@ -2572,7 +2604,11 @@ class GameEngine:
         # Per-turn must-move constraint: when a ring has been placed this
         # turn, only the updated stack (tracked via must_move_from_stack_key)
         # may move or capture, mirroring TurnEngine.mustMoveFromStackKey.
-        must_move_key = game_state.must_move_from_stack_key
+        # When ignore_must_move_key is True (FE eligibility checks), we skip
+        # this constraint since it's specific to the current player's turn.
+        must_move_key = (
+            None if ignore_must_move_key else game_state.must_move_from_stack_key
+        )
 
         directions = BoardManager._get_all_directions(board.type)
         _debug(f"DEBUG: _get_movement_moves directions: {directions}\n")

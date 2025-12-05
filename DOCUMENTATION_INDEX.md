@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-04
+> **Last Updated:** 2025-12-05
 > **Organization:** Core docs in root (~16 files), detailed docs in `/docs/` subdirectories
 
 This index catalogs all project documentation organized by topic and location.
@@ -167,11 +167,15 @@ Active planning and roadmap documents.
 
 Reference documentation kept at docs/ root.
 
-| Document                                                                                                                  | Purpose                                    |
-| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| [GAME_COMPARISON_ANALYSIS.md](docs/GAME_COMPARISON_ANALYSIS.md)                                                           | Game comparison studies                    |
-| [UX_RULES_COPY_SPEC.md](docs/UX_RULES_COPY_SPEC.md)                                                                       | UX copy for rules display                  |
-| [archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md](docs/archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md) | GameReplayDB ↔ /sandbox replay integration |
+| Document                                                                                                                  | Purpose                                              |
+| ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [GAME_COMPARISON_ANALYSIS.md](docs/GAME_COMPARISON_ANALYSIS.md)                                                           | Game comparison studies                              |
+| [UX_RULES_COPY_SPEC.md](docs/UX_RULES_COPY_SPEC.md)                                                                       | UX copy for rules display                            |
+| [UX_RULES_TELEMETRY_SPEC.md](docs/UX_RULES_TELEMETRY_SPEC.md)                                                             | Rules UX telemetry schema and hotspot metrics        |
+| [UX_RULES_WEIRD_STATES_SPEC.md](docs/UX_RULES_WEIRD_STATES_SPEC.md)                                                       | Weird-state rules UX reason codes and copy mapping   |
+| [UX_RULES_TEACHING_SCENARIOS.md](docs/UX_RULES_TEACHING_SCENARIOS.md)                                                     | Scenario-driven teaching flows for complex mechanics |
+| [UX_RULES_IMPROVEMENT_LOOP.md](docs/UX_RULES_IMPROVEMENT_LOOP.md)                                                         | Telemetry-driven rules UX improvement process        |
+| [archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md](docs/archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md) | GameReplayDB ↔ /sandbox replay integration           |
 
 ### /docs/supplementary/
 

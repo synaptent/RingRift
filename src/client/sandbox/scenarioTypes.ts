@@ -47,12 +47,15 @@ export type ScenarioRulesConcept =
   | 'lines_basic'
   | 'lines_overlength_option2'
   | 'territory_basic'
+  | 'territory_multi_region'
   | 'territory_mini_region_q23'
   | 'territory_near_victory'
   | 'victory_ring_elimination'
   | 'victory_territory'
   | 'turn_multi_phase'
-  | 'puzzle_capture';
+  | 'puzzle_capture'
+  | 'anm_forced_elimination'
+  | 'anm_last_player_standing';
 
 /**
  * Source of a scenario for filtering and display.
@@ -254,10 +257,13 @@ export const SCENARIO_RULES_CONCEPTS: readonly ScenarioRulesConcept[] = [
   'lines_basic',
   'lines_overlength_option2',
   'territory_basic',
+  'territory_multi_region',
   'territory_mini_region_q23',
   'territory_near_victory',
   'victory_ring_elimination',
   'victory_territory',
   'turn_multi_phase',
   'puzzle_capture',
+  'anm_forced_elimination',
+  'anm_last_player_standing',
 ] as const;

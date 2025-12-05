@@ -8,6 +8,25 @@
  * - Minimum distance constraints
  * - Path obstruction checks
  * - Landing position validation
+ *
+ * COVERAGE ANALYSIS:
+ *
+ * Line 60 (else if dir.z branch):
+ *   This branch is UNREACHABLE because:
+ *   - It requires a direction where x=0 AND y=0 AND z!=0
+ *   - All HEX_DIRECTIONS have either x!=0 or y!=0
+ *   - All SQUARE_MOORE_DIRECTIONS have either x!=0 or y!=0
+ *   - No standard direction triggers this branch
+ *
+ * Line 130 (final return { valid: true }):
+ *   This branch is UNREACHABLE (dead code) because:
+ *   - Line 114-115: handles (!landingStack && !landingMarker) → empty space
+ *   - Line 120-121: handles (landingMarker && !landingStack) → marker only
+ *   - Line 126-127: handles (landingStack) → any stack (with or without marker)
+ *   - All possible landing states are exhaustively covered by earlier conditions
+ *
+ * Maximum achievable branch coverage: 89.74% (35/39 branches)
+ * Unreachable branches: line 60 (z-only direction), line 130 (dead code)
  */
 
 import { validateMovement } from '../../../src/shared/engine/validators/MovementValidator';

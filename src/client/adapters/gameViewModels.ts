@@ -714,7 +714,8 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
       subPhaseDetail = `Processing ${lineCount} line${lineCount !== 1 ? 's' : ''}`;
     }
   } else if (gameState.currentPhase === 'territory_processing') {
-    subPhaseDetail = 'Processing disconnected regions';
+    subPhaseDetail =
+      'Processing disconnected regions; you must eliminate one outside ring per region.';
   }
 
   // When a line-related decision is active during line/territory processing,

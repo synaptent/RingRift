@@ -1,0 +1,130 @@
+{
+  "games_with_semantic_divergence": 0,
+  "games_with_structural_issues": 20,
+  "mismatch_counts_by_dimension": {},
+  "semantic_divergences": [],
+  "structural_issues": [
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "1f548a03-da60-4113-afa3-c1359012fede",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "7dd973db-3857-482d-b790-9004508534a9",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "5b9f8fdc-f779-4097-ab57-e715ec875067",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "80403f8c-5eae-4e22-acab-6a21f2835a8d",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "a54122e6-9357-423c-88cf-46c5a7a78a77",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "41ca1180-0de1-44d2-b6da-a58f8e1aa2fb",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "3f9641f6-5f17-423d-b529-aa9fc054d786",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "89fabff1-1898-4585-9fc7-ea0350a2a99a",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "7cd9e854-a739-4902-866e-2cd034f526b8",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "e1212ce7-aa7c-4190-bc52-7d9f6d443e84",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "966e8704-a178-47c9-9352-cb41c7c39d07",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "c88caef9-20ab-4d8f-a95b-ef5f073e76ab",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "d5180c12-14fe-43c6-9339-4c4f650591d2",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "027adf51-2068-4815-a051-9a1487119c87",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "e8bf602d-dc84-407c-b674-595891b2f1ec",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "48a467fc-d2dc-46b1-a9f8-8369c90df927",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "ffc12031-71be-4e9c-ae90-17bcfce42dc4",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "f45ab0d3-1741-4ab8-9e42-8cd4ddae8225",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "71328859-d33f-42c3-ae13-68bf84269a89",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    },
+    {
+      "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/selfplay_square8_2p.db",
+      "game_id": "53d98a0e-ccb8-4adb-bef4-5be6db392987",
+      "structure": "error",
+      "structure_reason": "TypeError: GameEngine._get_capture_moves() got an unexpected keyword argument 'ignore_must_move_key'"
+    }
+  ],
+  "total_databases": 1,
+  "total_games_checked": 20
+}
