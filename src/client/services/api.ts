@@ -81,11 +81,21 @@ export interface GameDetailsResponse {
 
 /**
  * Summary of a game for listing purposes
+ *
+ * This shape is used by:
+ * - Profile/recent-games views
+ * - User games API (gameApi.getUserGames)
+ * - Backend replay browser as the source of per-game metadata.
+ *
+ * New optional fields should be added conservatively and only when they can be
+ * derived from existing columns on the Game row so that the backend route
+ * remains cheap.
  */
 export interface GameSummary {
   id: string;
   boardType: BoardType;
   status: GameStatus;
+  /** Number of seated players (historical name kept for compatibility). */
   playerCount: number;
   maxPlayers: number;
   winnerId?: string | null;
@@ -93,6 +103,35 @@ export interface GameSummary {
   createdAt: string;
   endedAt?: string | null;
   moveCount: number;
+
+  /**
+   * Alias for playerCount used by replay tooling. When present, this should
+   * always equal playerCount.
+   */
+  numPlayers?: number;
+
+  /** Whether the game was rated. */
+  isRated?: boolean;
+
+  /**
+   * High-level source of the record, when available:
+   * - 'online_game'  – standard backend game
+   * - 'self_play'    – imported self-play record
+   * - other strings for future extensions (tournament, soak tests, etc.)
+   */
+  source?: string;
+
+  /**
+   * Canonical outcome for the game when available (timeout, resignation,
+   * ring_elimination, etc.). Mirrors GameResult['reason'] on the backend.
+   */
+  outcome?: GameResult['reason'] | string;
+
+  /**
+   * Lightweight terminal result reason projected from finalState.gameResult for
+   * compatibility with older callers. Prefer `outcome` when present.
+   */
+  resultReason?: GameResult['reason'] | string;
 }
 
 /**
@@ -175,8 +214,9 @@ api.interceptors.response.use(
       //   local sandbox rather than being forced to /login.
       const isGameEndpoint = url.startsWith('/games');
       const isAuthEndpoint = url.startsWith('/auth');
+      const isRulesUxTelemetryEndpoint = url.startsWith('/telemetry/rules-ux');
 
-      if (!isGameEndpoint && !isAuthEndpoint) {
+      if (!isGameEndpoint && !isAuthEndpoint && !isRulesUxTelemetryEndpoint) {
         window.location.href = '/login';
       }
     }

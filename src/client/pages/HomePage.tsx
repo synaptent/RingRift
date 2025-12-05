@@ -4,7 +4,8 @@ export default function HomePage() {
   return (
     <div className="container mx-auto px-4 py-10 space-y-8">
       <header className="space-y-2">
-        <h1 className="text-4xl font-extrabold tracking-tight text-slate-50">
+        <h1 className="text-4xl font-extrabold tracking-tight text-slate-50 flex items-center gap-3">
+          <img src="/ringrift-icon.png" alt="RingRift" className="w-10 h-10" />
           Welcome to RingRift
         </h1>
         <p className="text-sm text-slate-400 max-w-2xl">

@@ -253,6 +253,16 @@ base) are intended to mirror the setups in this guide:
   board type, number of players, difficulty, result, moves played, and
   optional perceived difficulty ratings.
 
-As these telemetry pipelines mature, their aggregate data should be
-interpreted using the qualitative anchors and experiment templates in
-this guide.
+As these telemetry pipelines mature, their aggregate data should be:
+
+- Interpreted using the qualitative anchors and experiment templates in
+  this guide (Templates A/B/C), and
+- Analysed using the workflow and decision rules defined in
+  [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1), which joins
+  human calibration data with automated tier evaluation, perf budgets,
+  and the Square‑8 2‑player tier candidate registry.
+
+Operationally:
+
+- **This guide** defines _how to run and log human calibration sessions_ and what outcomes (“too easy”, “about right”, “too hard”) mean at a qualitative level.
+- **`AI_DIFFICULTY_CALIBRATION_ANALYSIS`** defines _how aggregated calibration telemetry and playtest results feed back into concrete ladder tuning decisions_ for the Square‑8 2‑player D2/D4/D6/D8 tiers.

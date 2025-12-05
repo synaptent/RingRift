@@ -1873,21 +1873,74 @@ router.get(
 
     const total = await prisma.game.count({ where: whereClause });
 
-    // Format response
-    // Winner name is transformed to show "Deleted Player" for anonymized users
-    const formattedGames = games.map((game) => ({
-      id: game.id,
-      boardType: game.boardType as BoardType,
-      status: game.status as GameStatus,
-      playerCount: [game.player1Id, game.player2Id, game.player3Id, game.player4Id].filter(Boolean)
-        .length,
-      maxPlayers: game.maxPlayers,
-      winnerId: game.winnerId,
-      winnerName: game.winner ? getDisplayUsername(game.winner.username) : null,
-      createdAt: game.createdAt.toISOString(),
-      endedAt: game.endedAt?.toISOString() || null,
-      moveCount: game._count.moves,
-    }));
+    // Format response:
+    // - Winner name is transformed to show "Deleted Player" for anonymized users.
+    // - recordMetadata.source is surfaced as `source` so clients can distinguish
+    //   online games from imported self-play/training records.
+    // - A lightweight terminal result reason is projected when available so
+    //   profile/replay views can show "Timeout", "Resignation", etc. without
+    //   requiring a separate history/details round-trip.
+    const formattedGames = games.map((game) => {
+      const participantIds = [
+        game.player1Id,
+        game.player2Id,
+        game.player3Id,
+        game.player4Id,
+      ].filter(Boolean);
+      const playerCount = participantIds.length;
+
+      // Project a lightweight terminal result reason for completed/abandoned games,
+      // mirroring the main /games listing behaviour.
+      let resultReason: string | undefined;
+      if (
+        game.status === PrismaGameStatus.completed ||
+        game.status === PrismaGameStatus.abandoned ||
+        (game.status as string) === 'finished'
+      ) {
+        const finalState = (game as any).finalState as Prisma.JsonObject | null | undefined;
+        const gameResult = (finalState?.gameResult ?? null) as { reason?: string } | null;
+        if (gameResult && typeof gameResult.reason === 'string') {
+          resultReason = gameResult.reason;
+        }
+      }
+
+      // Surface recordMetadata.source when available so callers can distinguish
+      // online games from imported self-play games and other record sources.
+      const recordMetadata = (game as any).recordMetadata as
+        | (Prisma.JsonObject & { source?: string })
+        | null
+        | undefined;
+      const source =
+        recordMetadata && typeof recordMetadata.source === 'string'
+          ? recordMetadata.source
+          : 'online_game';
+
+      // Where available, prefer the canonical outcome column; otherwise fall back
+      // to the projected resultReason derived from finalState.gameResult.
+      const rawOutcome = (game as any).outcome as string | null | undefined;
+      const outcome = typeof rawOutcome === 'string' ? rawOutcome : resultReason;
+
+      return {
+        id: game.id,
+        boardType: game.boardType as BoardType,
+        status: game.status as GameStatus,
+        // playerCount is preserved for backwards compatibility; numPlayers is a
+        // more explicit alias used by the replay browser.
+        playerCount,
+        numPlayers: playerCount,
+        maxPlayers: game.maxPlayers,
+        winnerId: game.winnerId,
+        winnerName: game.winner ? getDisplayUsername(game.winner.username) : null,
+        createdAt: game.createdAt.toISOString(),
+        endedAt: game.endedAt?.toISOString() || null,
+        moveCount: game._count.moves,
+        // New fields for replay/profile consumers
+        isRated: (game as any).isRated === true,
+        source,
+        ...(outcome && { outcome }),
+        ...(resultReason && { resultReason }),
+      };
+    });
 
     res.json({
       success: true,

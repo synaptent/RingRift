@@ -6,7 +6,12 @@ import {
   type PlayerFinalStatsViewModel,
   type PlayerViewModel,
 } from '../adapters/gameViewModels';
-import { TeachingOverlay, useTeachingOverlay, type TeachingTopic } from './TeachingOverlay';
+import {
+  TeachingOverlay,
+  useTeachingOverlay,
+  type TeachingTopic,
+  type WeirdStateOverlayContext,
+} from './TeachingOverlay';
 import {
   getWeirdStateReasonForGameResult,
   getTeachingTopicForReason,
@@ -538,6 +543,20 @@ export function VictoryModal({
     }
   }
 
+  const teachingWeirdStateContext: WeirdStateOverlayContext | null =
+    weirdStateInfo && overlaySessionIdRef.current
+      ? {
+          reasonCode: weirdStateInfo.reasonCode,
+          rulesContext: weirdStateInfo.rulesContext,
+          weirdStateType: weirdStateInfo.weirdStateType,
+          boardType: gameSummary.boardType,
+          numPlayers: gameSummary.playerCount,
+          isRanked: gameState?.isRated,
+          isSandbox: isSandbox ?? false,
+          overlaySessionId: overlaySessionIdRef.current,
+        }
+      : null;
+
   const { title, description, finalStats, winner, gameSummary, userWon, userLost, isDraw } =
     effectiveViewModel;
 
@@ -678,6 +697,7 @@ export function VictoryModal({
           isOpen={isTeachingOpen}
           onClose={hideTopic}
           position="center"
+          weirdStateOverlayContext={teachingWeirdStateContext}
         />
       )}
     </div>

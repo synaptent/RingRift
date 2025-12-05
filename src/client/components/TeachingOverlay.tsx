@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import type { GamePhase, Move } from '../../shared/types/game';
+import type { BoardType, GamePhase, Move } from '../../shared/types/game';
+import type { RulesUxContext, RulesUxWeirdStateType } from '../../shared/telemetry/rulesUxEvents';
+import type { RulesWeirdStateReasonCode } from '../../shared/engine/weirdStateReasons';
 import {
   TEACHING_SCENARIOS,
   type RulesConcept,
   type TeachingScenarioMetadata,
 } from '../../shared/teaching/teachingScenarios';
+import { getRulesUxContextForTeachingScenario } from '../../shared/teaching/scenarioTelemetry';
+import { logRulesUxEvent, newTeachingFlowId } from '../utils/rulesUxTelemetry';
 
 export type TeachingTopic =
   | 'ring_placement'
@@ -170,6 +174,17 @@ const TOPIC_RULES_CONCEPTS: Partial<Record<TeachingTopic, RulesConcept[]>> = {
   victory_stalemate: ['structural_stalemate', 'last_player_standing'],
 };
 
+export interface WeirdStateOverlayContext {
+  reasonCode: RulesWeirdStateReasonCode;
+  rulesContext: RulesUxContext;
+  weirdStateType?: RulesUxWeirdStateType;
+  boardType: BoardType;
+  numPlayers: number;
+  isRanked?: boolean;
+  isSandbox?: boolean;
+  overlaySessionId: string;
+}
+
 export interface TeachingOverlayProps {
   /** The topic to display */
   topic: TeachingTopic;
@@ -181,6 +196,8 @@ export interface TeachingOverlayProps {
   position?: 'center' | 'bottom-right';
   /** Additional CSS classes */
   className?: string;
+  /** Optional weird-state context when opened from a weird-state help surface. */
+  weirdStateOverlayContext?: WeirdStateOverlayContext | null;
 }
 
 /**
@@ -193,6 +210,7 @@ export function TeachingOverlay({
   onClose,
   position = 'center',
   className = '',
+  weirdStateOverlayContext,
 }: TeachingOverlayProps) {
   const content = TEACHING_CONTENT[topic];
 
@@ -206,6 +224,169 @@ export function TeachingOverlay({
         concepts.includes(scenario.rulesConcept) && scenario.showInTeachingOverlay === true
     );
   }, [topic]);
+
+  const [currentFlowId, setCurrentFlowId] = useState<string | null>(null);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
+  const [teachingFlowId, setTeachingFlowId] = useState<string | null>(null);
+
+  const lastWeirdStateContextRef = React.useRef<WeirdStateOverlayContext | null>(null);
+  const hasShownForSessionRef = React.useRef<string | null>(null);
+  const hasDismissedForSessionRef = React.useRef<string | null>(null);
+  const prevIsOpenRef = React.useRef(false);
+
+  const selectedScenario: TeachingScenarioMetadata | undefined = React.useMemo(() => {
+    if (!currentFlowId || currentStepIndex == null) {
+      return undefined;
+    }
+    return relatedScenarios.find(
+      (scenario) => scenario.flowId === currentFlowId && scenario.stepIndex === currentStepIndex
+    );
+  }, [currentFlowId, currentStepIndex, relatedScenarios]);
+
+  // Reset local teaching-flow state whenever the overlay closes or the topic changes.
+  useEffect(() => {
+    if (!isOpen) {
+      setCurrentFlowId(null);
+      setCurrentStepIndex(null);
+      setTeachingFlowId(null);
+    }
+  }, [isOpen, topic]);
+
+  // Track the last non-null weird-state context so that dismiss events can still
+  // be emitted even if the parent clears the prop before closing the overlay.
+  useEffect(() => {
+    if (weirdStateOverlayContext) {
+      lastWeirdStateContextRef.current = weirdStateOverlayContext;
+    }
+  }, [weirdStateOverlayContext]);
+
+  // Emit weird_state_overlay_shown / weird_state_overlay_dismiss lifecycle events
+  // when the TeachingOverlay is used in a weird-state help context.
+  useEffect(() => {
+    const ctx = weirdStateOverlayContext ?? lastWeirdStateContextRef.current;
+    const wasOpen = prevIsOpenRef.current;
+    const nowOpen = isOpen;
+    prevIsOpenRef.current = nowOpen;
+
+    if (!ctx) {
+      return;
+    }
+
+    if (nowOpen && ctx.overlaySessionId !== hasShownForSessionRef.current) {
+      hasShownForSessionRef.current = ctx.overlaySessionId;
+      void logRulesUxEvent({
+        type: 'weird_state_overlay_shown',
+        boardType: ctx.boardType,
+        numPlayers: ctx.numPlayers,
+        rulesContext: ctx.rulesContext,
+        source: 'teaching_overlay',
+        weirdStateType: ctx.weirdStateType,
+        reasonCode: ctx.reasonCode,
+        isRanked: ctx.isRanked,
+        isSandbox: ctx.isSandbox,
+        overlaySessionId: ctx.overlaySessionId,
+      });
+    }
+
+    if (wasOpen && !nowOpen && ctx.overlaySessionId !== hasDismissedForSessionRef.current) {
+      hasDismissedForSessionRef.current = ctx.overlaySessionId;
+      void logRulesUxEvent({
+        type: 'weird_state_overlay_dismiss',
+        boardType: ctx.boardType,
+        numPlayers: ctx.numPlayers,
+        rulesContext: ctx.rulesContext,
+        source: 'teaching_overlay',
+        weirdStateType: ctx.weirdStateType,
+        reasonCode: ctx.reasonCode,
+        isRanked: ctx.isRanked,
+        isSandbox: ctx.isSandbox,
+        overlaySessionId: ctx.overlaySessionId,
+      });
+    }
+  }, [isOpen, weirdStateOverlayContext]);
+
+  // When opened from a weird-state surface, auto-select the first related
+  // teaching step (preferring exact reason-code matches) and emit
+  // teaching_step_started for that step.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!weirdStateOverlayContext) return;
+    if (currentFlowId || currentStepIndex != null) return;
+    if (relatedScenarios.length === 0) return;
+
+    const preferred =
+      relatedScenarios.find(
+        (scenario) => scenario.uxWeirdStateReasonCode === weirdStateOverlayContext.reasonCode
+      ) ?? relatedScenarios[0];
+
+    handleScenarioSelect(preferred, { isAuto: true });
+  }, [isOpen, weirdStateOverlayContext, relatedScenarios]);
+
+  function handleScenarioSelect(
+    scenario: TeachingScenarioMetadata,
+    options: { isAuto?: boolean } = {}
+  ) {
+    const nextFlowId = scenario.flowId;
+    const nextStepIndex = scenario.stepIndex;
+    setCurrentFlowId(nextFlowId);
+    setCurrentStepIndex(nextStepIndex);
+
+    let flowId = teachingFlowId;
+    if (!flowId || currentFlowId !== nextFlowId) {
+      flowId = newTeachingFlowId();
+      setTeachingFlowId(flowId);
+    }
+
+    const rulesContext = getRulesUxContextForTeachingScenario(scenario);
+
+    void logRulesUxEvent({
+      type: 'teaching_step_started',
+      source: 'teaching_overlay',
+      boardType: scenario.recommendedBoardType,
+      numPlayers: scenario.recommendedNumPlayers,
+      rulesContext,
+      rulesConcept: scenario.rulesConcept,
+      scenarioId: scenario.scenarioId,
+      teachingFlowId: flowId,
+      payload: {
+        flowId: scenario.flowId,
+        stepIndex: scenario.stepIndex,
+        topic,
+        startedAutomatically: options.isAuto === true,
+      },
+    });
+  }
+
+  function handleMarkStepUnderstood() {
+    if (!selectedScenario) {
+      return;
+    }
+
+    let flowId = teachingFlowId;
+    if (!flowId) {
+      flowId = newTeachingFlowId();
+      setTeachingFlowId(flowId);
+    }
+
+    const rulesContext = getRulesUxContextForTeachingScenario(selectedScenario);
+
+    void logRulesUxEvent({
+      type: 'teaching_step_completed',
+      source: 'teaching_overlay',
+      boardType: selectedScenario.recommendedBoardType,
+      numPlayers: selectedScenario.recommendedNumPlayers,
+      rulesContext,
+      rulesConcept: selectedScenario.rulesConcept,
+      scenarioId: selectedScenario.scenarioId,
+      teachingFlowId: flowId,
+      payload: {
+        flowId: selectedScenario.flowId,
+        stepIndex: selectedScenario.stepIndex,
+        topic,
+        completionAction: 'mark_understood',
+      },
+    });
+  }
 
   // Close on Escape key
   useEffect(() => {
@@ -294,15 +475,64 @@ export function TeachingOverlay({
               Related teaching steps
             </h3>
             <ul className="space-y-1.5">
-              {relatedScenarios.map((scenario) => (
-                <li key={scenario.scenarioId} className="text-xs text-slate-300">
-                  <div className="font-semibold text-slate-100">
-                    {scenario.flowId} · Step {scenario.stepIndex}
-                  </div>
-                  <div className="text-slate-400">{scenario.learningObjectiveShort}</div>
-                </li>
-              ))}
+              {relatedScenarios.map((scenario) => {
+                const isActive =
+                  currentFlowId === scenario.flowId && currentStepIndex === scenario.stepIndex;
+
+                return (
+                  <li key={scenario.scenarioId}>
+                    <button
+                      type="button"
+                      onClick={() => handleScenarioSelect(scenario)}
+                      className={`w-full text-left rounded-lg border px-3 py-2 text-xs transition ${
+                        isActive
+                          ? 'border-emerald-500 bg-emerald-900/40 text-emerald-50'
+                          : 'border-slate-700 bg-slate-900/60 text-slate-200 hover:border-slate-400'
+                      }`}
+                      data-testid="teaching-related-step"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-semibold text-slate-100">
+                          {scenario.flowId} · Step {scenario.stepIndex}
+                        </div>
+                        {isActive && (
+                          <span className="text-[10px] uppercase tracking-wide text-emerald-300">
+                            Selected
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-slate-400">{scenario.learningObjectiveShort}</div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
+
+            {selectedScenario && (
+              <div
+                className="mt-3 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-xs text-slate-200"
+                data-testid="teaching-step-details"
+              >
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Step details
+                </div>
+                <div className="mt-1 font-semibold text-slate-100">
+                  {selectedScenario.flowId} · Step {selectedScenario.stepIndex}
+                </div>
+                <p className="mt-1 text-slate-300">{selectedScenario.learningObjectiveShort}</p>
+                <p className="mt-1 text-slate-400">
+                  Play this scenario from the sandbox presets to practice this situation with a real
+                  board.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleMarkStepUnderstood}
+                  className="mt-2 inline-flex items-center justify-center rounded-md border border-emerald-500 bg-emerald-700/30 px-3 py-1 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-600/40"
+                >
+                  Mark as understood
+                </button>
+              </div>
+            )}
           </div>
         )}
 

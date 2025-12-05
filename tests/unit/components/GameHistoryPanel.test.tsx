@@ -135,6 +135,30 @@ describe('GameHistoryPanel', () => {
     expect(badge).toHaveTextContent(expected);
   });
 
+  it('includes choiceKind and choiceType details in the auto-resolve badge aria-label when present', async () => {
+    const autoResolvedMove = createMove({
+      autoResolved: {
+        reason: 'timeout',
+        choiceKind: 'line',
+        choiceType: 'reward',
+      } as any,
+    });
+
+    const history: GameHistoryResponse = {
+      gameId: 'game-aria-auto-resolve',
+      moves: [autoResolvedMove],
+      totalMoves: 1,
+    };
+
+    mockGetGameHistory.mockResolvedValue(history);
+
+    render(<GameHistoryPanel gameId="game-aria-auto-resolve" />);
+
+    const badge = await waitFor(() => screen.getByTestId('auto-resolved-badge'));
+    expect(badge).toHaveTextContent('Auto-resolved (timeout)');
+    expect(badge).toHaveAttribute('aria-label', expect.stringContaining('line reward decision'));
+  });
+
   it('does not render an auto-resolve badge when no moves are auto-resolved', async () => {
     const normalMove = createMove({
       moveNumber: 1,

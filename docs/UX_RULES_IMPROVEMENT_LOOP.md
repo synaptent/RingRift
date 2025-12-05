@@ -203,11 +203,13 @@ Document key observations in the iteration summary and mark open threads for the
 
 All iteration notes should live under:
 
-- `docs/ux/rules_iterations/ITERATION_YYYYMMDD_short_name.md`
+- `docs/ux/rules_iterations/ITERATION_YYYYMMDD_short_name.md` for dated, ad-hoc iteration summaries; and
+- `docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_####.md` for numbered, process-driven iterations (e.g. W-UX-7).
 
 For example:
 
 - `docs/ux/rules_iterations/ITERATION_20251205_fe_and_stalemate.md`
+- `docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0001.md` (first full telemetry-driven iteration focusing on ANM/FE, structural stalemate, and mini-regions)
 
 ### 3.1 Suggested File Structure
 
@@ -353,8 +355,9 @@ This section describes roles by **responsibility**, not by person.
 - All iteration notes MUST reside under:
   - `docs/ux/rules_iterations/`
 
-- Each iteration file name MUST follow:
-  - `ITERATION_YYYYMMDD_short_name.md`
+- Iteration file names MAY follow either:
+  - `ITERATION_YYYYMMDD_short_name.md` for organic, date-keyed notes (see §3.1 example), or
+  - `UX_RULES_IMPROVEMENT_ITERATION_####.md` for numbered, explicitly tracked iterations (e.g. [`UX_RULES_IMPROVEMENT_ITERATION_0001.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0001.md:1)) introduced by W-UX-7.
 
 - `DOCUMENTATION_INDEX.md` SHOULD include an index entry pointing to this directory and the latest iteration file (see W‑UX‑2/3/4 cross‑reference tasks).
 

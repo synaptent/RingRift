@@ -11,6 +11,7 @@ import { BoardView } from './BoardView';
 import { MoveHistory } from './MoveHistory';
 import { HistoryPlaybackPanel } from './HistoryPlaybackPanel';
 import { reconstructStateAtMove } from '../../shared/engine/replayHelpers';
+import { adaptHistoryToGameRecord } from '../services/ReplayService';
 import type {
   GameRecord,
   MoveRecord,
@@ -99,257 +100,6 @@ function getPositionDescription(moveData: Record<string, unknown>): string {
   return parts.join(' → ');
 }
 
-/**
- * Narrow unknown to Position
- */
-function isPosition(value: unknown): value is Position {
-  if (!value || typeof value !== 'object') return false;
-  const obj = value as Record<string, unknown>;
-  return typeof obj.x === 'number' && typeof obj.y === 'number';
-}
-
-/**
- * Normalise raw boardType string from the backend into a shared BoardType.
- * Falls back to 'square8' for unknown values.
- */
-function toBoardType(raw: string): BoardType {
-  if (raw === 'square8' || raw === 'square19' || raw === 'hexagonal') {
-    return raw;
-  }
-  return 'square8';
-}
-
-/**
- * Map a GameHistoryResponse.result into a GameOutcome for GameRecord.
- * Defaults to 'abandonment' for unknown or missing reasons so that
- * downstream tooling always sees a valid outcome.
- */
-function toGameOutcome(result: GameHistoryResponse['result'] | undefined): GameOutcome {
-  if (!result) {
-    return 'abandonment';
-  }
-
-  const reason = result.reason as string;
-  const allowed: GameOutcome[] = [
-    'ring_elimination',
-    'territory_control',
-    'last_player_standing',
-    'timeout',
-    'resignation',
-    'draw',
-    'abandonment',
-  ];
-
-  if ((allowed as string[]).includes(reason)) {
-    return reason as GameOutcome;
-  }
-
-  return 'abandonment';
-}
-
-/**
- * Build a minimal but valid FinalScore structure with zeroed fields for all
- * players. Backend history does not currently expose full score breakdown,
- * but replayHelpers only need structural correctness here.
- */
-function createEmptyFinalScore(numPlayers: number): FinalScore {
-  const ringsEliminated: FinalScore['ringsEliminated'] = {};
-  const territorySpaces: FinalScore['territorySpaces'] = {};
-  const ringsRemaining: FinalScore['ringsRemaining'] = {};
-
-  for (let p = 1; p <= numPlayers; p += 1) {
-    ringsEliminated[p] = 0;
-    territorySpaces[p] = 0;
-    ringsRemaining[p] = 0;
-  }
-
-  return { ringsEliminated, territorySpaces, ringsRemaining };
-}
-
-/**
- * Adapt a backend GameHistoryResponse + GameDetailsResponse pair into:
- * - A minimal GameRecord suitable for replayHelpers.reconstructStateAtMove.
- * - A parallel Move[] array for feeding MoveHistory.
- *
- * This keeps the mapping logic in one place and avoids leaking GameRecord
- * details throughout the UI.
- */
-function adaptHistoryToGameRecord(
-  history: GameHistoryResponse,
-  details: GameDetailsResponse
-): { record: GameRecord; movesForDisplay: Move[] } {
-  const boardType = toBoardType(details.boardType);
-  const historyMoves = history.moves ?? [];
-
-  // Map backend player IDs to seat indices for robust playerNumber mapping.
-  const playerIdToSeat = new Map<string, number>();
-  details.players.forEach((p, index) => {
-    if (p && p.id) {
-      playerIdToSeat.set(p.id, index + 1);
-    }
-  });
-
-  // Infer number of players from details first, then from history payload.
-  const distinctSeatsFromHistory = new Set<number>();
-  historyMoves.forEach((entry) => {
-    const raw = entry.moveData ?? {};
-    const seat =
-      typeof (raw as any).player === 'number' ? ((raw as any).player as number) : undefined;
-    if (seat) distinctSeatsFromHistory.add(seat);
-  });
-
-  const numPlayers =
-    details.players.length > 0 ? details.players.length : distinctSeatsFromHistory.size || 2;
-
-  // Build PlayerRecordInfo array from game details, stubbing unknown seats.
-  const players: PlayerRecordInfo[] = [];
-  for (let i = 0; i < numPlayers; i += 1) {
-    const seatIndex = i;
-    const p = details.players[seatIndex];
-    players.push({
-      playerNumber: i + 1,
-      username: p?.username ?? `Player ${i + 1}`,
-      playerType: 'human',
-      ...(typeof p?.rating === 'number' ? { ratingBefore: p.rating } : {}),
-    });
-  }
-
-  // Helper to choose a player seat for a history entry.
-  const inferPlayerSeat = (entry: GameHistoryMove): number => {
-    const raw = entry.moveData ?? {};
-    const seatFromMove =
-      typeof (raw as any).player === 'number' ? ((raw as any).player as number) : undefined;
-    if (seatFromMove && seatFromMove >= 1 && seatFromMove <= numPlayers) {
-      return seatFromMove;
-    }
-    const seatFromId = playerIdToSeat.get(entry.playerId);
-    if (seatFromId && seatFromId >= 1 && seatFromId <= numPlayers) {
-      return seatFromId;
-    }
-    return 1;
-  };
-
-  const moveRecords: MoveRecord[] = [];
-  const movesForDisplay: Move[] = [];
-
-  historyMoves.forEach((entry) => {
-    const raw = entry.moveData ?? {};
-    const type = ((raw as any).type ?? entry.moveType) as MoveRecord['type'];
-
-    const from = isPosition((raw as any).from) ? ((raw as any).from as Position) : undefined;
-    const to = isPosition((raw as any).to) ? ((raw as any).to as Position) : undefined;
-    const captureTarget = isPosition((raw as any).captureTarget)
-      ? ((raw as any).captureTarget as Position)
-      : undefined;
-
-    const placementCount =
-      typeof (raw as any).placementCount === 'number'
-        ? ((raw as any).placementCount as number)
-        : undefined;
-    const placedOnStack =
-      typeof (raw as any).placedOnStack === 'boolean'
-        ? ((raw as any).placedOnStack as boolean)
-        : undefined;
-
-    const formedLines =
-      Array.isArray((raw as any).formedLines) && (raw as any).formedLines.length > 0
-        ? ((raw as any).formedLines as LineInfo[])
-        : undefined;
-    const collapsedMarkers =
-      Array.isArray((raw as any).collapsedMarkers) && (raw as any).collapsedMarkers.length > 0
-        ? ((raw as any).collapsedMarkers as Position[])
-        : undefined;
-    const disconnectedRegions =
-      Array.isArray((raw as any).disconnectedRegions) && (raw as any).disconnectedRegions.length > 0
-        ? ((raw as any).disconnectedRegions as Territory[])
-        : undefined;
-    const eliminatedRings =
-      Array.isArray((raw as any).eliminatedRings) && (raw as any).eliminatedRings.length > 0
-        ? ((raw as any).eliminatedRings as { player: number; count: number }[])
-        : undefined;
-
-    const thinkTimeCandidate = (raw as any).thinkTimeMs ?? (raw as any).thinkTime;
-    const thinkTimeMs =
-      typeof thinkTimeCandidate === 'number' && Number.isFinite(thinkTimeCandidate)
-        ? (thinkTimeCandidate as number)
-        : 0;
-
-    const player = inferPlayerSeat(entry);
-
-    const recordMove: MoveRecord = {
-      moveNumber: entry.moveNumber,
-      player,
-      type,
-      thinkTimeMs,
-      ...(from ? { from } : {}),
-      ...(to ? { to } : {}),
-      ...(captureTarget ? { captureTarget } : {}),
-      ...(placementCount !== undefined ? { placementCount } : {}),
-      ...(placedOnStack !== undefined ? { placedOnStack } : {}),
-      ...(formedLines ? { formedLines } : {}),
-      ...(collapsedMarkers ? { collapsedMarkers } : {}),
-      ...(disconnectedRegions ? { disconnectedRegions } : {}),
-      ...(eliminatedRings ? { eliminatedRings } : {}),
-    };
-
-    moveRecords.push(recordMove);
-
-    const uiMove: Move = {
-      id: `history-${history.gameId}-${entry.moveNumber}`,
-      type,
-      player,
-      ...(from ? { from } : {}),
-      to: to ?? from ?? { x: 0, y: 0 },
-      ...(captureTarget ? { captureTarget } : {}),
-      ...(formedLines ? { formedLines } : {}),
-      ...(collapsedMarkers ? { collapsedMarkers } : {}),
-      ...(disconnectedRegions ? { disconnectedRegions } : {}),
-      ...(eliminatedRings ? { eliminatedRings } : {}),
-      timestamp: new Date(entry.timestamp),
-      thinkTime: thinkTimeMs,
-      moveNumber: entry.moveNumber,
-    };
-
-    movesForDisplay.push(uiMove);
-  });
-
-  const firstHistoryTs = historyMoves[0]?.timestamp;
-  const lastHistoryTs = historyMoves[historyMoves.length - 1]?.timestamp ?? firstHistoryTs;
-
-  const startedAt = details.startedAt ?? firstHistoryTs ?? new Date().toISOString();
-  const endedAt = details.endedAt ?? lastHistoryTs ?? startedAt;
-
-  const totalDurationMs = Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime());
-
-  const outcome = toGameOutcome(history.result);
-  const finalScore = createEmptyFinalScore(numPlayers);
-
-  const record: GameRecord = {
-    id: history.gameId,
-    boardType,
-    numPlayers,
-    isRated: details.isRated,
-    players,
-    winner: typeof history.result?.winner === 'number' ? history.result.winner : undefined,
-    outcome,
-    finalScore,
-    startedAt,
-    endedAt,
-    totalMoves: history.totalMoves,
-    totalDurationMs,
-    moves: moveRecords,
-    metadata: {
-      recordVersion: '1.0.0-client-replay',
-      createdAt: endedAt,
-      source: 'online_game',
-      sourceId: history.gameId,
-      tags: ['client_replay', 'backend_history'],
-    },
-  };
-
-  return { record, movesForDisplay };
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Sub-Components
 // ═══════════════════════════════════════════════════════════════════════════
@@ -367,7 +117,8 @@ function MoveItem({ move }: MoveItemProps) {
     Object.keys(move.moveData).some((k) => !['id', 'type', 'player', 'from', 'to'].includes(k));
 
   const isAutoResolved = !!move.autoResolved;
-  let autoResolvedLabel: string | null = null;
+  let autoResolvedText: string | null = null;
+  let autoResolvedAriaLabel: string | null = null;
 
   if (isAutoResolved && move.autoResolved) {
     const reason = move.autoResolved.reason;
@@ -378,7 +129,22 @@ function MoveItem({ move }: MoveItemProps) {
     else if (reason === 'fallback') reasonDisplay = 'fallback move';
     else reasonDisplay = reason;
 
-    autoResolvedLabel = `Auto-resolved (${reasonDisplay})`;
+    const baseLabel = `Auto-resolved (${reasonDisplay})`;
+    autoResolvedText = baseLabel;
+
+    const detailParts: string[] = [];
+    if (move.autoResolved.choiceKind) {
+      detailParts.push(String(move.autoResolved.choiceKind));
+    }
+    if (move.autoResolved.choiceType) {
+      detailParts.push(String(move.autoResolved.choiceType));
+    }
+
+    if (detailParts.length > 0) {
+      autoResolvedAriaLabel = `${baseLabel} – ${detailParts.join(' ')} decision`;
+    } else {
+      autoResolvedAriaLabel = baseLabel;
+    }
   }
 
   return (
@@ -406,14 +172,14 @@ function MoveItem({ move }: MoveItemProps) {
         {/* Move Type + Auto-resolve badge (if present) */}
         <div className="text-xs text-slate-300 flex-1 flex items-center gap-2 min-w-0">
           <span className="truncate">{formatMoveType(move.moveType)}</span>
-          {autoResolvedLabel && (
+          {autoResolvedText && (
             <Badge
               variant="warning"
               className="shrink-0"
               data-testid="auto-resolved-badge"
-              aria-label={autoResolvedLabel}
+              aria-label={autoResolvedAriaLabel ?? autoResolvedText}
             >
-              {autoResolvedLabel}
+              {autoResolvedText}
             </Badge>
           )}
         </div>

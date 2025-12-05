@@ -711,7 +711,10 @@ export default function LobbyPage() {
     <div className="container mx-auto px-4 py-8 space-y-6">
       <header className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-slate-50">Game Lobby</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-50 flex items-center gap-2">
+            <img src="/ringrift-icon.png" alt="RingRift" className="w-8 h-8" />
+            Game Lobby
+          </h1>
           <p className="text-sm text-slate-400 mt-1">Find and join games in real-time</p>
         </div>
         <div className="flex flex-col items-end gap-2">

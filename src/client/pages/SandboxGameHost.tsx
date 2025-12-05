@@ -54,6 +54,10 @@ import type {
   ClientSandboxEngine,
   SandboxInteractionHandler,
 } from '../sandbox/ClientSandboxEngine';
+import {
+  logSandboxScenarioLoaded,
+  logSandboxScenarioCompleted,
+} from '../sandbox/sandboxRulesUxTelemetry';
 import { getGameOverBannerText } from '../utils/gameCopy';
 import { serializeGameState } from '../../shared/engine/contracts/serialization';
 import { buildTestFixtureFromGameState, exportGameStateToFile } from '../sandbox/statePersistence';
@@ -554,6 +558,10 @@ export const SandboxGameHost: React.FC = () => {
   const startSandboxGame = async (snapshot: LocalConfig) => {
     const nextBoardType = snapshot.boardType;
 
+    // Starting a non-scenario sandbox game; clear any prior scenario context so
+    // scenario-specific telemetry does not attribute future victories here.
+    setLastLoadedScenario(null);
+
     // When not authenticated, skip backend game creation entirely and go
     // straight to the local sandbox engine to avoid expected 401 noise.
     if (!user) {
@@ -775,6 +783,9 @@ export const SandboxGameHost: React.FC = () => {
     setSandboxStateVersion(0);
     setLastLoadedScenario(scenario);
 
+    // Emit a sandbox_scenario_loaded event for curated teaching scenarios.
+    void logSandboxScenarioLoaded(scenario);
+
     // Reset history-playback availability; fixtures loaded via ScenarioPicker
     // may or may not include internal snapshots. We conservatively assume
     // snapshots exist for local fixtures and will downgrade this flag when
@@ -973,6 +984,9 @@ export const SandboxGameHost: React.FC = () => {
     setIsViewingHistory(false);
     setHistoryViewIndex(0);
 
+    // Treat a scenario reset as a fresh load from a telemetry perspective.
+    void logSandboxScenarioLoaded(scenario);
+
     // Re-run local reconstruction for recorded self-play scenarios so the
     // history slider remains meaningful after a reset.
     if (
@@ -1129,7 +1143,7 @@ export const SandboxGameHost: React.FC = () => {
     prevPhaseRef.current = currentPhase;
   }, [sandboxGameState, srAnnounce]);
 
-  // Announce victory to screen readers
+  // Announce victory to screen readers and emit sandbox scenario completion telemetry.
   useEffect(() => {
     if (sandboxVictoryResult && !prevVictoryRef.current) {
       const winnerInfo =
@@ -1180,13 +1194,21 @@ export const SandboxGameHost: React.FC = () => {
 
       // Mark first game completed for onboarding tracking
       markGameCompleted();
+
+      // Emit sandbox_scenario_completed for curated teaching scenarios when applicable.
+      if (lastLoadedScenario) {
+        void logSandboxScenarioCompleted({
+          scenario: lastLoadedScenario,
+          victoryReason: sandboxVictoryResult.reason,
+        });
+      }
     }
 
     // Reset victory ref when starting a new game
     if (!sandboxVictoryResult && prevVictoryRef.current) {
       prevVictoryRef.current = false;
     }
-  }, [sandboxVictoryResult, sandboxGameState, srAnnounce, markGameCompleted]);
+  }, [sandboxVictoryResult, sandboxGameState, srAnnounce, markGameCompleted, lastLoadedScenario]);
 
   // Get historical state when viewing history (for fixture/scenario playback)
   const historyState: GameState | null =
@@ -1874,8 +1896,13 @@ export const SandboxGameHost: React.FC = () => {
         <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
           <header className="flex flex-col gap-2 sm:gap-3 sm:flex-row sm:items-baseline sm:justify-between">
             <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold mb-1">
-                Start a Game (Sandbox)
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold mb-1 flex items-center gap-2">
+                <img
+                  src="/ringrift-icon.png"
+                  alt="RingRift"
+                  className="w-6 h-6 sm:w-8 sm:h-8 flex-shrink-0"
+                />
+                <span>RingRift – Start a Game (Sandbox)</span>
               </h1>
               <p className="text-sm text-slate-400">
                 This mode runs entirely in the browser using a local board. To view or play a real
@@ -2254,9 +2281,12 @@ export const SandboxGameHost: React.FC = () => {
               setBackendSandboxError(null);
               setSandboxPendingChoice(null);
               setIsSandboxVictoryModalDismissed(false);
+              setLastLoadedScenario(null);
             }}
             onRematch={() => {
-              // Reset state and start a new game with the same configuration
+              // Reset state and start a new game with the same configuration.
+              // Rematches are treated as generic sandbox games rather than
+              // curated teaching scenarios, so we clear any scenario context.
               setIsSandboxVictoryModalDismissed(false);
               setSelected(undefined);
               setValidTargets([]);
@@ -2265,6 +2295,7 @@ export const SandboxGameHost: React.FC = () => {
               setSandboxCaptureTargets([]);
               setSandboxStallWarning(null);
               setSandboxLastProgressAt(null);
+              setLastLoadedScenario(null);
 
               // Re-initialize with the same config
               const interactionHandler = createSandboxInteractionHandler(

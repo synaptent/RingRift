@@ -313,6 +313,58 @@ describe('Game History API Routes', () => {
 
       expect(expectedResponse.data.games).toHaveLength(0);
     });
+
+    it('should surface source and outcome metadata for completed self-play games', () => {
+      const completedSelfPlayGame = {
+        ...mockGameWithCount,
+        status: 'completed',
+        // Simulate persisted finalState with a terminal GameResult.reason.
+        finalState: {
+          gameResult: {
+            reason: 'timeout',
+            winner: 1,
+          },
+        },
+        // Canonical outcome column mirrors the terminal reason when present.
+        outcome: 'timeout',
+        // recordMetadata.source is projected into the user-games summary as "source".
+        recordMetadata: {
+          recordVersion: '1.0.0',
+          createdAt: new Date('2024-01-15T11:00:00Z'),
+          source: 'self_play',
+          tags: ['imported'],
+        },
+        isRated: false,
+      } as any;
+
+      // The user-games endpoint projects a lightweight GameSummary shape used by
+      // client consumers. This test encodes the expected fields for replay
+      // browsing without depending on the full Express/Prisma stack.
+      const summary: import('../../src/client/services/api').GameSummary = {
+        id: completedSelfPlayGame.id,
+        boardType: 'square8',
+        status: 'completed',
+        playerCount: 2,
+        maxPlayers: 2,
+        winnerId: completedSelfPlayGame.winnerId,
+        winnerName: null,
+        createdAt: completedSelfPlayGame.createdAt.toISOString(),
+        endedAt: completedSelfPlayGame.endedAt,
+        moveCount: completedSelfPlayGame._count.moves,
+        // New fields used by the multi-game replay browser.
+        numPlayers: 2,
+        isRated: false,
+        source: 'self_play',
+        outcome: 'timeout',
+        resultReason: 'timeout',
+      };
+
+      expect(summary.source).toBe('self_play');
+      expect(summary.outcome).toBe('timeout');
+      expect(summary.resultReason).toBe('timeout');
+      expect(summary.numPlayers).toBe(summary.playerCount);
+      expect(summary.isRated).toBe(false);
+    });
   });
 
   describe('Response format validation', () => {

@@ -625,8 +625,10 @@ This status file can be updated incrementally by the orchestration scripts and c
 Follow-up doc work (in Code/Docs-mode) should:
 
 - Add a short “Training & promotion pipeline” subsection to the future `AI_DIFFICULTY_SPEC.md` that points at this document as the process SSoT for D2/D4/D6/D8 on Square-8 2-player.
+- Cross-link the calibration analysis process in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1) as the **human-facing difficulty tuning SSoT**, sitting on top of the automated training and gating loop defined here.
 - Add a note to [`AI_HUMAN_CALIBRATION_GUIDE.md`](docs/ai/AI_HUMAN_CALIBRATION_GUIDE.md:1) clarifying that:
   - calibration templates A/B/C feed into the H-AI-9 promotion loop; and
+  - calibration telemetry and experiment results are interpreted using the workflow and decision rules in [`AI_DIFFICULTY_CALIBRATION_ANALYSIS.md`](docs/ai/AI_DIFFICULTY_CALIBRATION_ANALYSIS.md:1); and
   - calibration is run on candidates that have already passed automated gates and perf budgets.
 
 This completes the architectural design for H-AI-9 – Tiered Model Training & Promotion Loop (Square-8 2-Player). Implementation work is limited to adding orchestration scripts, wiring model ids / heuristic profiles into the existing training code, and updating ladder configs in controlled, well-documented promotions.

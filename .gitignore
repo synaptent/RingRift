@@ -89,7 +89,10 @@ ai-service/results/
 # Local debug artifacts
 debug_output.txt
 ts-replay-dumps/
+ts-replay-dumps-local/
+ai-service/ts-replay-dumps-local/
 ai-service/tmp_state_*.json
+results/ops/
 
 # Local cluster configuration (contains personal IPs)
 ai-service/scripts/cluster_workers.txt

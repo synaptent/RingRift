@@ -98,7 +98,7 @@ const CHOICE_VIEW_MODEL_MAP: Record<PlayerChoiceType, ChoiceViewModelConfig> = {
     copy: {
       title: 'Choose Elimination Stack',
       description:
-        'You must eliminate rings to pay for this claim. Select which of your stacks to sacrifice rings from; eliminated rings are permanently removed and count toward Ring Elimination.',
+        'You must sacrifice a ring from one of your stacks. This cost is typically required after choosing a line reward with elimination bonus, or when processing territory. Eliminated rings are permanently removed and count toward Ring Elimination victory.',
       shortLabel: 'Ring elimination',
       spectatorLabel: ({ actingPlayerName }) =>
         `Waiting for ${actingPlayerName} to choose a stack for ring elimination`,

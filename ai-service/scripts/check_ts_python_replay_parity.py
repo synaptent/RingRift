@@ -30,6 +30,8 @@ import argparse
 import json
 import os
 import subprocess
+import tempfile
+import uuid
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -111,6 +113,141 @@ def find_dbs(explicit_db: Optional[str] = None) -> List[Path]:
     return results
 
 
+def import_json_to_temp_db(json_path: str) -> Tuple[Path, str]:
+    """Import a JSON scenario/fixture file into a temporary GameReplayDB.
+
+    Supports three formats:
+      1. LoadableScenario: { id, name, boardType, state, selfPlayMeta?: { moves } }
+      2. ringrift_sandbox_fixture_v1: { kind, boardType, state, moveHistory }
+      3. GameRecord (golden games): { id, boardType, numPlayers, players, moves }
+
+    Returns (temp_db_path, game_id).
+    """
+    import sqlite3
+    from datetime import datetime
+
+    with open(json_path, "r") as f:
+        data = json.load(f)
+
+    # Detect format and extract fields
+    if data.get("kind") == "ringrift_sandbox_fixture_v1":
+        # Sandbox fixture format
+        game_id = data.get("id") or str(uuid.uuid4())
+        board_type = data.get("boardType") or data.get("state", {}).get("board", {}).get("type", "square8")
+        state_json = data.get("state", {})
+        moves = data.get("moveHistory", [])
+        num_players = len(state_json.get("players", [])) or 2
+    elif "state" in data:
+        # LoadableScenario format
+        game_id = data.get("id") or str(uuid.uuid4())
+        board_type = data.get("boardType", "square8")
+        state_json = data.get("state", {})
+        num_players = data.get("playerCount", 2)
+        # Moves can be in selfPlayMeta.moves or directly in moveHistory
+        moves = []
+        if "selfPlayMeta" in data and "moves" in data["selfPlayMeta"]:
+            moves = data["selfPlayMeta"]["moves"]
+        elif "moveHistory" in state_json:
+            moves = state_json.get("moveHistory", [])
+    elif "moves" in data and "boardType" in data:
+        # GameRecord format (golden games, soak exports)
+        game_id = data.get("id") or str(uuid.uuid4())
+        board_type = data.get("boardType", "square8")
+        num_players = data.get("numPlayers", 2)
+        moves = data.get("moves", [])
+        # No initial state - use empty dict to signal fresh game
+        state_json = {}
+    else:
+        raise ValueError(f"Unrecognized JSON format in {json_path}")
+
+    # Create temporary DB
+    temp_dir = tempfile.mkdtemp(prefix="parity_json_")
+    temp_db_path = Path(temp_dir) / "imported.db"
+    conn = sqlite3.connect(str(temp_db_path))
+    cur = conn.cursor()
+
+    # Create minimal schema (version 6 to match current GameReplayDB)
+    cur.executescript("""
+        CREATE TABLE IF NOT EXISTS schema_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        INSERT OR REPLACE INTO schema_metadata (key, value) VALUES ('schema_version', '6');
+
+        CREATE TABLE IF NOT EXISTS games (
+            game_id TEXT PRIMARY KEY,
+            board_type TEXT NOT NULL,
+            num_players INTEGER NOT NULL,
+            rng_seed INTEGER,
+            created_at TEXT NOT NULL,
+            completed_at TEXT,
+            game_status TEXT NOT NULL,
+            winner INTEGER,
+            termination_reason TEXT,
+            total_moves INTEGER NOT NULL,
+            total_turns INTEGER NOT NULL,
+            duration_ms INTEGER,
+            source TEXT,
+            schema_version INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS game_initial_state (
+            game_id TEXT PRIMARY KEY,
+            initial_state_json TEXT NOT NULL,
+            compressed INTEGER DEFAULT 0,
+            FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS game_moves (
+            game_id TEXT NOT NULL,
+            move_number INTEGER NOT NULL,
+            turn_number INTEGER NOT NULL,
+            player INTEGER NOT NULL,
+            phase TEXT NOT NULL,
+            move_type TEXT NOT NULL,
+            move_json TEXT NOT NULL,
+            timestamp TEXT,
+            think_time_ms INTEGER,
+            engine_eval TEXT,
+            PRIMARY KEY (game_id, move_number),
+            FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
+        );
+    """)
+
+    # Insert game record
+    now = datetime.now().isoformat()
+    cur.execute("""
+        INSERT INTO games (game_id, board_type, num_players, created_at, game_status,
+                          total_moves, total_turns, source, schema_version)
+        VALUES (?, ?, ?, ?, 'completed', ?, ?, 'json_import', 6)
+    """, (game_id, board_type, num_players, now, len(moves), len(moves)))
+
+    # Insert initial state only if we have one (GameRecord format has empty state_json)
+    if state_json:
+        cur.execute("""
+            INSERT INTO game_initial_state (game_id, initial_state_json, compressed)
+            VALUES (?, ?, 0)
+        """, (game_id, json.dumps(state_json)))
+
+    # Insert moves
+    for i, move in enumerate(moves):
+        # Extract move metadata with fallbacks
+        move_type = move.get("type") or move.get("actionType") or move.get("action_type") or "unknown"
+        player = move.get("player") or move.get("playerNumber") or 1
+        phase = move.get("phase") or move.get("currentPhase") or "unknown"
+        turn = move.get("turn") or move.get("turnNumber") or i
+
+        cur.execute("""
+            INSERT INTO game_moves (game_id, move_number, turn_number, player, phase, move_type, move_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (game_id, i, turn, player, phase, move_type, json.dumps(move)))
+
+    conn.commit()
+    conn.close()
+
+    return temp_db_path, game_id
+
+
 def summarize_python_state(db: GameReplayDB, game_id: str, move_index: int) -> StateSummary:
     """Summarize state AFTER move_index is applied."""
     state = db.get_state_at_move(game_id, move_index)
@@ -162,7 +299,10 @@ def classify_game_structure(db: GameReplayDB, game_id: str) -> Tuple[str, str]:
     """
     initial = db.get_initial_state(game_id)
     if initial is None:
-        return "invalid", "no initial_state record"
+        # No initial_state record means a fresh game from empty board (e.g., soak
+        # test games, GameRecord format imports). Treat as "good" since both TS
+        # and Python can replay from the standard empty board for this board type.
+        return "good", None
 
     # Treat any pre-populated history or board content as a mid-game snapshot.
     move_hist_len = len(initial.move_history or [])
@@ -277,9 +417,10 @@ def check_game_parity(db_path: Path, game_id: str) -> GameParityResult:
     structure, structure_reason = classify_game_structure(db, game_id)
     total_moves_py = int(meta["total_moves"])
 
-    # For structurally bad games we don't attempt TS replay; they are not
-    # suitable for start-to-finish parity and are reported separately.
-    if structure != "good":
+    # For invalid games (missing data) we don't attempt TS replay.
+    # mid_snapshot games (CMA-ES multi-start) ARE valid for parity testing
+    # because the TS replay script loads the initial state from game_initial_state.
+    if structure == "invalid":
         return GameParityResult(
             db_path=str(db_path),
             game_id=game_id,
@@ -574,6 +715,17 @@ def main() -> None:
         "When omitted, scans all known self-play locations.",
     )
     parser.add_argument(
+        "--json",
+        type=str,
+        default=None,
+        help=(
+            "Path to a JSON scenario/fixture file to check. "
+            "Supports LoadableScenario format (from sandbox export) or "
+            "ringrift_sandbox_fixture_v1 format. Creates a temporary DB "
+            "and runs parity check on the imported game."
+        ),
+    )
+    parser.add_argument(
         "--limit-games-per-db",
         type=int,
         default=0,
@@ -616,7 +768,19 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    db_paths = find_dbs(args.db)
+    # Handle JSON input mode: import to temp DB and check single game
+    temp_db_path: Optional[Path] = None
+    json_game_id: Optional[str] = None
+    if args.json:
+        import shutil
+        try:
+            temp_db_path, json_game_id = import_json_to_temp_db(args.json)
+            print(f"[json] Imported {args.json} -> temp DB at {temp_db_path}, game_id={json_game_id}")
+        except Exception as e:
+            print(f"[json] Failed to import {args.json}: {e}")
+            return
+
+    db_paths = find_dbs(args.db) if not temp_db_path else [temp_db_path]
     if not db_paths:
         print("No GameReplayDB databases found.")
         return
@@ -679,7 +843,10 @@ def main() -> None:
                 total_structural_issues += 1
                 continue
 
-            if result.structure != "good":
+            # Only skip truly invalid games. mid_snapshot games (CMA-ES multi-start,
+            # soak test games, etc.) are valid for parity testing since the TS replay
+            # script loads the initial state from game_initial_state table.
+            if result.structure == "invalid":
                 total_structural_issues += 1
                 structural_issues.append(
                     {
@@ -782,6 +949,10 @@ def main() -> None:
                 f"dims={','.join(dims)}"
             )
             print(line)
+        # Cleanup temp DB if we created one
+        if temp_db_path is not None:
+            import shutil
+            shutil.rmtree(temp_db_path.parent, ignore_errors=True)
         return
 
     summary = {
@@ -796,6 +967,11 @@ def main() -> None:
         "mismatch_counts_by_dimension": mismatch_counts_by_dimension,
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
+
+    # Cleanup temp DB if we created one
+    if temp_db_path is not None:
+        import shutil
+        shutil.rmtree(temp_db_path.parent, ignore_errors=True)
 
 
 if __name__ == "__main__":

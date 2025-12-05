@@ -84,7 +84,14 @@ def run_selfplay_soak(board_type: str, num_games: int, db_path: Path, seed: int,
     ]
 
     # Enable strict invariant by default so soak respects ANM constraints.
-    env_overrides = {"RINGRIFT_STRICT_NO_MOVE_INVARIANT": "1", "PYTHONPATH": str(AI_SERVICE_ROOT)}
+    env_overrides = {
+        "RINGRIFT_STRICT_NO_MOVE_INVARIANT": "1",
+        "PYTHONPATH": str(AI_SERVICE_ROOT),
+        # Keep OpenMP usage conservative for long-running soaks and
+        # avoid environment-specific SHM issues on some platforms.
+        "OMP_NUM_THREADS": os.environ.get("OMP_NUM_THREADS", "1"),
+        "MKL_NUM_THREADS": os.environ.get("MKL_NUM_THREADS", "1"),
+    }
 
     proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT, env_overrides=env_overrides)
     result: Dict[str, Any] = {
@@ -171,12 +178,23 @@ def main() -> None:
 
     parity_summary = run_parity_check(db_path)
 
-    # Basic gate: no structural issues and no semantic divergences.
+    # Basic gate: soak must succeed and parity must be clean.
+    #
+    # We require:
+    #   - soak_returncode == 0 (Python self-play soak did not abort), and
+    #   - no structural issues and no semantic divergences, and
+    #   - at least one game was parity-checked.
     passed = False
-    if "error" not in parity_summary and parity_summary.get("returncode") == 0:
-        struct = parity_summary.get("games_with_structural_issues", 0)
-        sem = parity_summary.get("games_with_semantic_divergence", 0)
-        passed = struct == 0 and sem == 0
+    soak_rc = soak_result.get("returncode")
+    if (
+        soak_rc == 0
+        and "error" not in parity_summary
+        and parity_summary.get("returncode") == 0
+    ):
+        struct = int(parity_summary.get("games_with_structural_issues", 0))
+        sem = int(parity_summary.get("games_with_semantic_divergence", 0))
+        total_checked = int(parity_summary.get("total_games_checked", 0))
+        passed = struct == 0 and sem == 0 and total_checked > 0
 
     gate_summary: Dict[str, Any] = {
         "board_type": args.board_type,
@@ -200,4 +218,3 @@ def main() -> None:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
     main()
-

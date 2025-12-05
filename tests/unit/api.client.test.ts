@@ -989,6 +989,21 @@ describe('API Client', () => {
         expect(gameUrl.startsWith('/games')).toBe(true);
         expect(profileUrl.startsWith('/games')).toBe(false);
       });
+
+      it('should not redirect on 401 from rules-UX telemetry endpoint', async () => {
+        const error401: any = new Error('Unauthorized');
+        error401.response = { status: 401 };
+        error401.config = { url: '/telemetry/rules-ux' };
+
+        locationMock.href = '';
+
+        // Invoke the interceptor manually with a 401 from the telemetry endpoint
+        await expect(responseInterceptor.onRejected(error401)).rejects.toBe(error401);
+
+        // Token is cleared but no hard navigation occurs
+        expect(localStorageMock.removeItem).toHaveBeenCalledWith('token');
+        expect(locationMock.href).toBe('');
+      });
     });
   });
 

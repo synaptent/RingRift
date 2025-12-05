@@ -19,7 +19,12 @@ import type {
   HUDDecisionPhaseViewModel,
   HUDWeirdStateViewModel,
 } from '../adapters/gameViewModels';
-import { TeachingOverlay, useTeachingOverlay, type TeachingTopic } from './TeachingOverlay';
+import {
+  TeachingOverlay,
+  useTeachingOverlay,
+  type TeachingTopic,
+  type WeirdStateOverlayContext,
+} from './TeachingOverlay';
 import type { RulesUxWeirdStateType } from '../../shared/telemetry/rulesUxEvents';
 import {
   sendRulesUxEvent,
@@ -1224,6 +1229,7 @@ function GameHUDFromViewModel({
   const autoScenarioHelpShownRef = React.useRef<Record<string, boolean>>({});
   const weirdStateOverlaySessionRef = React.useRef<string | null>(null);
   const lastWeirdStateTypeRef = React.useRef<RulesUxWeirdStateType | null>(null);
+  const teachingWeirdStateContextRef = React.useRef<WeirdStateOverlayContext | null>(null);
   const phaseHelpTopic: TeachingTopic | null = React.useMemo(() => {
     switch (phase.phaseKey) {
       case 'movement':
@@ -1504,7 +1510,21 @@ function GameHUDFromViewModel({
       rulesConcept: rulesUxRulesConcept,
       scenarioId: rulesUxScenarioId,
     });
+
+    // Provide a narrow weird-state context for TeachingOverlay so it can emit
+    // overlay lifecycle telemetry only when opened from this help entrypoint.
+    teachingWeirdStateContextRef.current = {
+      reasonCode,
+      rulesContext,
+      weirdStateType,
+      boardType: rulesUxBoardType,
+      numPlayers: rulesUxNumPlayers,
+      isRanked: undefined,
+      isSandbox: isLocalSandboxOnly ? true : undefined,
+      overlaySessionId,
+    };
   }, [
+    isLocalSandboxOnly,
     rulesUxAiDifficulty,
     rulesUxBoardType,
     rulesUxNumPlayers,
@@ -1519,6 +1539,15 @@ function GameHUDFromViewModel({
     // dedicated TeachingOverlay topic for a concise rules recap.
     showTopic('territory');
   }, [showTopic]);
+
+  // Clear any stale weird-state overlay context once the TeachingOverlay
+  // has fully closed so future non-weird-state help uses do not emit
+  // overlay lifecycle telemetry.
+  React.useEffect(() => {
+    if (!isOpen) {
+      teachingWeirdStateContextRef.current = null;
+    }
+  }, [isOpen]);
 
   function formatMsAsClock(ms: number): string {
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -1794,6 +1823,7 @@ function GameHUDFromViewModel({
           isOpen={isOpen}
           onClose={hideTopic}
           position="bottom-right"
+          weirdStateOverlayContext={teachingWeirdStateContextRef.current}
         />
       )}
     </div>

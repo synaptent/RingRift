@@ -118,7 +118,10 @@ function renderGameHeader(gameState: GameState) {
 
   return (
     <>
-      <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">Game</h1>
+      <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold flex items-center gap-2">
+        <img src="/ringrift-icon.png" alt="RingRift" className="w-6 h-6 sm:w-8 sm:h-8" />
+        Game
+      </h1>
       <p className="text-xs sm:text-sm text-gray-500 hidden sm:block">
         Board: {gameState.boardType} • {playerSummary}
       </p>

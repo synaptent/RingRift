@@ -40,7 +40,10 @@ export default function LeaderboardPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Leaderboard</h1>
+        <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-2">
+          <img src="/ringrift-icon.png" alt="RingRift" className="w-8 h-8" />
+          Leaderboard
+        </h1>
         <p className="text-slate-400">Top players ranked by rating</p>
       </header>
 

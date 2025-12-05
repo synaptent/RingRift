@@ -40,6 +40,7 @@ from app.ai.neural_net import (
     P_HEX,
     MAX_PLAYERS,
     multi_player_value_loss,
+    get_policy_size_for_board,
 )
 from app.training.config import TrainConfig
 from app.models import BoardType
@@ -788,6 +789,8 @@ class RingRiftDataset(Dataset):
         # Multi-player value support metadata
         self.has_multi_player_values = False
         self.num_players_arr: Optional[np.ndarray] = None
+        # Effective dense policy vector length inferred from data
+        self.policy_size: int = 0
 
         if os.path.exists(data_path):
             try:
@@ -869,6 +872,42 @@ class RingRiftDataset(Dataset):
                         # Best-effort only; training will still work as long
                         # as individual samples are well-formed.
                         self.spatial_shape = None
+
+                    # Infer effective policy_size from sparse indices.
+                    try:
+                        max_index = -1
+                        for i in self.valid_indices or []:
+                            indices = np.asarray(
+                                policy_indices_arr[i],
+                                dtype=np.int64,
+                            )
+                            if indices.size == 0:
+                                continue
+                            local_max = int(indices.max())
+                            if local_max > max_index:
+                                max_index = local_max
+                        if max_index >= 0:
+                            self.policy_size = max_index + 1
+                            logger.info(
+                                "Inferred policy_size=%d from %s",
+                                self.policy_size,
+                                data_path,
+                            )
+                        else:
+                            # Fallback to board-default if no non-empty policies
+                            self.policy_size = get_policy_size_for_board(
+                                self.board_type
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to infer policy_size from %s (%s); "
+                            "falling back to board default.",
+                            data_path,
+                            e,
+                        )
+                        self.policy_size = get_policy_size_for_board(
+                            self.board_type
+                        )
                 else:
                     print("Invalid data format in npz")
                     self.length = 0
@@ -898,6 +937,8 @@ class RingRiftDataset(Dataset):
                     for _ in range(dummy_count)
                 ], dtype=object),
             }
+            # Dummy data uses a conservative large policy size
+            self.policy_size = 55000
             self.valid_indices = list(range(dummy_count))
             self.length = dummy_count
             self.spatial_shape = (8, 8)
@@ -960,7 +1001,10 @@ class RingRiftDataset(Dataset):
 
         # Reconstruct dense policy vector on-the-fly
         # Since we filter for non-empty policies, this should always have data
-        policy_vector = torch.zeros(55000, dtype=torch.float32)
+        if self.policy_size <= 0:
+            # Defensive fallback; should not normally happen
+            self.policy_size = get_policy_size_for_board(self.board_type)
+        policy_vector = torch.zeros(self.policy_size, dtype=torch.float32)
 
         if len(policy_indices) > 0:
             # Convert to proper numpy arrays with correct dtype
@@ -1285,14 +1329,84 @@ def train_model(
     # Determine whether to use HexNeuralNet for hexagonal boards
     use_hex_model = config.board_type == BoardType.HEXAGONAL
 
+    # Determine effective policy head size.
+    policy_size: int
+    if not use_hex_model and not use_streaming:
+        # Non-hex, non-streaming: infer from the NPZ file if possible.
+        if isinstance(data_path, list):
+            data_path_str = data_path[0] if data_path else ""
+        else:
+            data_path_str = data_path
+
+        inferred_size: Optional[int] = None
+        if data_path_str:
+            try:
+                if os.path.exists(data_path_str):
+                    with np.load(
+                        data_path_str,
+                        mmap_mode="r",
+                        allow_pickle=True,
+                    ) as d:
+                        if "policy_indices" in d:
+                            pi = d["policy_indices"]
+                            max_idx = -1
+                            for i in range(len(pi)):
+                                arr = np.asarray(pi[i])
+                                if arr.size == 0:
+                                    continue
+                                local_max = int(np.asarray(arr).max())
+                                if local_max > max_idx:
+                                    max_idx = local_max
+                            if max_idx >= 0:
+                                inferred_size = max_idx + 1
+            except Exception as exc:
+                if not distributed or is_main_process():
+                    logger.warning(
+                        "Failed to infer policy_size from %s: %s",
+                        data_path_str,
+                        exc,
+                    )
+
+        if inferred_size is not None:
+            policy_size = inferred_size
+            if not distributed or is_main_process():
+                logger.info(
+                    "Using inferred policy_size=%d from dataset %s",
+                    policy_size,
+                    data_path_str,
+                )
+        else:
+            policy_size = get_policy_size_for_board(config.board_type)
+            if not distributed or is_main_process():
+                logger.info(
+                    "Using board-default policy_size=%d for board_type=%s",
+                    policy_size,
+                    config.board_type.name,
+                )
+    else:
+        # Hex or streaming: rely on board defaults.
+        if use_hex_model:
+            policy_size = P_HEX
+        else:
+            policy_size = get_policy_size_for_board(config.board_type)
+        if not distributed or is_main_process():
+            logger.info(
+                "Using board-default policy_size=%d for board_type=%s "
+                "(hex or streaming path)",
+                policy_size,
+                config.board_type.name,
+            )
+
     if not distributed or is_main_process():
         if use_hex_model:
             logger.info(
-                f"Initializing HexNeuralNet with board_size={board_size}"
+                f"Initializing HexNeuralNet with board_size={board_size}, "
+                f"policy_size={policy_size}"
             )
         else:
             logger.info(
-                f"Initializing RingRiftCNN with board_size={board_size}"
+                f"Initializing RingRiftCNN with board_size={board_size}, "
+                f"policy_size={policy_size}"
             )
 
     # Initialize model based on board type and multi-player mode
@@ -1306,7 +1420,7 @@ def train_model(
             num_res_blocks=8,
             num_filters=128,
             board_size=board_size,
-            policy_size=P_HEX,
+            policy_size=policy_size,
         )
         if multi_player:
             if not distributed or is_main_process():
@@ -1322,6 +1436,7 @@ def train_model(
             global_features=10,
             history_length=config.history_length,
             max_players=MAX_PLAYERS,
+            policy_size=policy_size,
         )
         if not distributed or is_main_process():
             logger.info(
@@ -1333,7 +1448,8 @@ def train_model(
             board_size=board_size,
             in_channels=10,
             global_features=10,
-            history_length=config.history_length
+            history_length=config.history_length,
+            policy_size=policy_size,
         )
     model.to(device)
 
@@ -1501,6 +1617,7 @@ def train_model(
                 shuffle=True,
                 seed=config.seed,
                 drop_last=False,
+                policy_size=policy_size,
                 rank=stream_rank,
                 world_size=stream_world_size,
                 sampling_weights=sampling_weights,
@@ -1517,6 +1634,7 @@ def train_model(
                 shuffle=True,
                 seed=config.seed,
                 drop_last=False,
+                policy_size=policy_size,
                 rank=stream_rank,
                 world_size=stream_world_size,
             )
@@ -1528,6 +1646,7 @@ def train_model(
             shuffle=False,
             seed=config.seed + 1000,
             drop_last=False,
+            policy_size=policy_size,
             rank=stream_rank,
             world_size=stream_world_size,
         )

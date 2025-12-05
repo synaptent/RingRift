@@ -146,7 +146,7 @@ function coerceRulesUxEventPayload(raw: unknown): RulesUxEventPayload {
   }
 
   if (typeof clientPlatform === 'string' && clientPlatform.length > 0) {
-    payload.clientPlatform = clientPlatform as RulesUxEventPayload['clientPlatform'];
+    payload.clientPlatform = clientPlatform;
   }
 
   if (typeof locale === 'string' && locale.length > 0) {

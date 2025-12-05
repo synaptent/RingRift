@@ -249,6 +249,67 @@ class PreflightChecker:
                 suggestion="Check app/training/generate_data.py",
             ))
 
+        # Canonical parity gate for Square-8 self-play data.
+        #
+        # We treat canonical_square8.db as the primary training source for
+        # Square-8; before running serious training, its parity summary must
+        # show:
+        #   - games_with_semantic_divergence == 0
+        #   - games_with_structural_issues == 0
+        #   - total_games_checked > 0
+        try:
+            from pathlib import Path
+
+            root = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            summary_path = root / "parity_summary.canonical_square8.json"
+
+            if not summary_path.exists():
+                self.add_check(cat, CheckResult(
+                    name="Canonical square8 parity summary",
+                    passed=False,
+                    error="parity_summary.canonical_square8.json not found",
+                    suggestion=(
+                        "Run scripts/check_ts_python_replay_parity.py "
+                        "--db data/games/canonical_square8.db and keep the "
+                        "summary JSON alongside TRAINING_DATA_REGISTRY.md "
+                        "before training on canonical_square8.db."
+                    ),
+                ))
+            else:
+                with summary_path.open("r", encoding="utf-8") as f:
+                    summary = json.load(f)
+
+                sem = int(summary.get("games_with_semantic_divergence", 1))
+                struct = int(summary.get("games_with_structural_issues", 1))
+                total = int(summary.get("total_games_checked", 0))
+
+                if sem == 0 and struct == 0 and total > 0:
+                    self.add_check(cat, CheckResult(
+                        name="Canonical square8 parity summary",
+                        passed=True,
+                        message=f"OK ({total} games parity-checked, no semantic divergences)",
+                    ))
+                else:
+                    self.add_check(cat, CheckResult(
+                        name="Canonical square8 parity summary",
+                        passed=False,
+                        error=(
+                            f"Parity summary reports semantic_divergences={sem}, "
+                            f"structural_issues={struct}, total_games_checked={total}"
+                        ),
+                        suggestion=(
+                            "Investigate TS↔Python replay parity for "
+                            "canonical_square8.db and rerun the parity gate "
+                            "before training."
+                        ),
+                    ))
+        except Exception as e:  # pragma: no cover - defensive
+            self.add_check(cat, CheckResult(
+                name="Canonical square8 parity summary",
+                passed=False,
+                error=f"Failed to load parity summary: {e}",
+            ))
+
     def _check_neural_networks(self) -> None:
         """Check neural network components."""
         cat = "Neural Networks"
