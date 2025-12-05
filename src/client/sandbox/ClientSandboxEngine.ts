@@ -507,12 +507,17 @@ export class ClientSandboxEngine {
           (opt: Move) => opt.type === 'eliminate_rings_from_stack' && opt.to
         );
 
+        // Use context description if available, otherwise provide a helpful default
+        const eliminationPrompt =
+          decision.context?.description ||
+          'You must eliminate a ring from one of your stacks. This is required to complete a line reward or territory claim.';
+
         return {
           id: `sandbox-ring-elimination-${Date.now()}`,
           gameId: this.gameState.id,
           playerNumber: decision.player,
           type: 'ring_elimination',
-          prompt: 'Choose which stack to eliminate from',
+          prompt: eliminationPrompt,
           options: eliminationMoves.map((opt: Move, idx: number) => {
             const pos = opt.to as Position;
             const key = positionToString(pos);
@@ -1142,6 +1147,21 @@ export class ClientSandboxEngine {
       const key = positionToString(pos);
       const existingBefore = beforeState.board.stacks.get(key);
       const placedOnStack = !!existingBefore && existingBefore.rings.length > 0;
+
+      // Selection logic for stacking on existing stacks:
+      // - Click on ANY stack (own or opponent) not yet selected → just select it (don't place)
+      // - Click on selected stack → place ring on top (taking control if opponent's)
+      // - Click on empty space → place ring there
+      // Rules §2.1: "On existing stack (any owner)" - placing on opponent stacks takes control
+      if (existingBefore) {
+        // Clicking on any existing stack
+        if (this._selectedStackKey !== key) {
+          // Not currently selected → select it and return (don't place yet)
+          this._selectedStackKey = key;
+          return;
+        }
+        // Already selected → fall through to place ring on top
+      }
 
       const moveNumber = beforeState.history.length + 1;
 
@@ -2775,10 +2795,17 @@ export class ClientSandboxEngine {
       const outcome = applyProcessTerritoryRegionDecision(state, regionMove);
       state = outcome.nextState;
 
+      // Sanity check: compare collapsed spaces before/after to ensure actual
+      // territory was claimed. This guards against edge cases where region
+      // detection finds a region but processing results in no state change.
+      const collapsedAfterProcessing = state.board.collapsedSpaces.size;
+      const actualTerritoryGain = collapsedAfterProcessing - beforeSnapshot.collapsedSpaces;
+
       // If this region triggered a self-elimination requirement, either
       // surface an explicit elimination choice for human players or fall
       // back to automatic elimination for AI/legacy flows.
-      if (outcome.pendingSelfElimination) {
+      // Skip elimination if no actual territory was gained (defensive guard).
+      if (outcome.pendingSelfElimination && actualTerritoryGain > 0) {
         pendingSelfElimination = true;
 
         const shouldPromptElimination =
@@ -2795,12 +2822,20 @@ export class ClientSandboxEngine {
             let elimMove: Move = eliminationMoves[0];
 
             if (eliminationMoves.length > 1) {
+              // Build a descriptive prompt explaining which spaces were claimed
+              const spacesList = regionSpaces
+                .slice(0, 4)
+                .map((p) => `(${p.x},${p.y})`)
+                .join(', ');
+              const truncated = regionSpaces.length > 4 ? ` +${regionSpaces.length - 4} more` : '';
+              const territoryPrompt = `Territory claimed at ${spacesList}${truncated}. To complete this claim, you must sacrifice a ring from one of your stacks.`;
+
               const choice: RingEliminationChoice = {
                 id: `sandbox-territory-elim-${Date.now()}`,
                 gameId: state.id,
                 playerNumber: movingPlayer,
                 type: 'ring_elimination',
-                prompt: 'Territory claimed – choose stack to eliminate',
+                prompt: territoryPrompt,
                 options: eliminationMoves.map((opt: Move) => {
                   const pos = opt.to as Position;
                   const key = positionToString(pos);
