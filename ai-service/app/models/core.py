@@ -83,10 +83,12 @@ class MoveType(str, Enum):
 
     # Territory Processing
     PROCESS_TERRITORY_REGION = "process_territory_region"
-    # Voluntary skip: player has eligible regions but chooses not to process them.
+    # Voluntary skip: player has eligible regions but chooses not to
+    # process them.
     SKIP_TERRITORY_PROCESSING = "skip_territory_processing"
-    # Forced no-op: player entered territory_processing but has no eligible regions.
-    # Semantically distinct from SKIP_TERRITORY_PROCESSING per RR-CANON-R075.
+    # Forced no-op: player entered territory_processing but has no
+    # eligible regions. Semantically distinct from
+    # SKIP_TERRITORY_PROCESSING per RR-CANON-R075.
     NO_TERRITORY_ACTION = "no_territory_action"
     ELIMINATE_RINGS_FROM_STACK = "eliminate_rings_from_stack"
 
@@ -107,12 +109,20 @@ class MoveType(str, Enum):
 
 
 class AIType(str, Enum):
-    """AI type enumeration"""
+    """AI type enumeration.
+
+    The NEURAL_DEMO variant is reserved for experimental / sandbox use and
+    is never selected by the canonical difficulty ladder by default. It is
+    gated behind an environment flag on the Python AI service to ensure that
+    neural-only demo engines cannot be enabled accidentally in production
+    ladders.
+    """
     RANDOM = "random"
     HEURISTIC = "heuristic"
     MINIMAX = "minimax"
     MCTS = "mcts"
     DESCENT = "descent"
+    NEURAL_DEMO = "neural_demo"
 
 
 class Position(BaseModel):
@@ -242,7 +252,8 @@ class Move(BaseModel):
     type: MoveType
     player: int
 
-    # Spatial metadata (both optional for certain move types like forced_elimination, swap_sides)
+    # Spatial metadata (both optional for certain move types like
+    # forced_elimination or swap_sides).
     from_pos: Optional[Position] = Field(None, alias="from")
     to: Optional[Position] = None
 
@@ -695,7 +706,9 @@ class CaptureDirectionChoiceRequest(BaseModel):
 class CaptureDirectionChoiceResponse(BaseModel):
     """Response model for AI-backed capture direction choices."""
 
-    selected_option: CaptureDirectionChoiceOption = Field(alias="selectedOption")
+    selected_option: CaptureDirectionChoiceOption = Field(
+        alias="selectedOption"
+    )
     ai_type: str = Field(alias="aiType")
     difficulty: int
 

@@ -423,7 +423,7 @@ Before diving into the detailed rules, it's helpful to understand some core conc
 
 ## 4. Turn Sequence (19×19 Full Version)
 
-Each player's turn consists of distinct phases that must be executed in order:
+Each player's turn consists of distinct phases that must be executed in order. When the game ends (victory/stalemate), `currentPhase` moves to a terminal `game_over` phase to keep the recorded state aligned with `gameStatus: completed`; this terminal phase is outside the normal turn loop.
 
 ### 4.1 Ring Placement Phase
 

@@ -317,9 +317,7 @@ describe('GameHUD', () => {
     // Last Player Standing tooltip
     fireEvent.mouseEnter(lastPlayerTrigger);
     tooltip = screen.getByRole('tooltip');
-    expect(tooltip).toHaveTextContent(
-      'After a full round of turns, any player with no legal moves'
-    );
+    expect(tooltip).toHaveTextContent('Last Player Standing requires two consecutive full rounds');
     fireEvent.mouseLeave(lastPlayerTrigger);
     expect(screen.queryByRole('tooltip')).toBeNull();
   });

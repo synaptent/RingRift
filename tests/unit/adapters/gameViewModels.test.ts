@@ -320,7 +320,7 @@ describe('gameViewModels', () => {
 
       expect(vm?.title).toBe('🏰 Alice Wins!');
       expect(vm?.description).toContain(
-        'Victory by territory after resolving the final disconnected mini-region'
+        'Victory by Territory Control after resolving the final disconnected mini-region'
       );
     });
 

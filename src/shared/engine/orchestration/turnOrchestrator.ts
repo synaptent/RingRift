@@ -1473,6 +1473,7 @@ function processPostMovePhases(
         ...stateMachine.gameState,
         gameStatus: 'completed',
         winner: victoryResult.winner,
+        currentPhase: 'game_over',
       });
       return { victoryResult };
     }
@@ -1667,6 +1668,7 @@ function processPostMovePhases(
       ...stateMachine.gameState,
       gameStatus: 'completed',
       winner: victoryResult.winner,
+      currentPhase: 'game_over',
     });
     return { victoryResult };
   }

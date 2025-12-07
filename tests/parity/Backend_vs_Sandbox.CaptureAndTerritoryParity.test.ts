@@ -1011,6 +1011,12 @@ describe('Backend vs Sandbox advanced-phase parity – capture, line, territory'
   // even after an explicit choose_line_reward has collapsed the line.
   // FIX NEEDED: Either adjust traceMode handling or update the mock to
   // correctly reflect post-collapse state to findAllLines.
+  // Analysis: The issue is that backend auto-processes all phases after
+  // choose_line_reward (line → territory → ring_placement), while sandbox
+  // in traceMode breaks early at the line_order decision due to
+  // skipTerritoryAutoResolve. The fix requires updating SandboxOrchestratorAdapter
+  // to continue processing after choose_line_reward even in traceMode, or
+  // having the test apply additional moves to complete the turn on sandbox.
   test.skip('combined line + territory parity (line then region + self-elimination, square8)', async () => {
     const {
       state: baseState,

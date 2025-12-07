@@ -1073,19 +1073,42 @@ def _get_randomness_for_difficulty(difficulty: int) -> float:
 
 
 def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
-    """Factory function to create AI instances"""
+    """Factory function to create AI instances.
+
+    The NEURAL_DEMO branch is reserved for experimental / sandbox use and is
+    gated behind the AI_ENGINE_NEURAL_DEMO_ENABLED environment variable so
+    that neural-only engines cannot be enabled accidentally on production
+    ladders.
+    """
     if ai_type == AIType.RANDOM:
         return RandomAI(player_number, config)
     elif ai_type == AIType.HEURISTIC:
         return HeuristicAI(player_number, config)
     elif ai_type == AIType.MINIMAX:
         from .ai.minimax_ai import MinimaxAI
+
         return MinimaxAI(player_number, config)
     elif ai_type == AIType.MCTS:
         from .ai.mcts_ai import MCTSAI
+
         return MCTSAI(player_number, config)
     elif ai_type == AIType.DESCENT:
         return DescentAI(player_number, config)
+    elif ai_type == AIType.NEURAL_DEMO:
+        # Experimental / demo-only neural engine. This is never selected by
+        # the canonical difficulty ladder and must be explicitly enabled via
+        # AI_ENGINE_NEURAL_DEMO_ENABLED for safety.
+        flag = os.getenv("AI_ENGINE_NEURAL_DEMO_ENABLED", "").lower()
+        if flag in {"1", "true", "yes", "on"}:
+            from .ai.neural_net import NeuralNetAI
+
+            return NeuralNetAI(player_number, config)
+
+        logger.warning(
+            "AIType.NEURAL_DEMO requested but AI_ENGINE_NEURAL_DEMO_ENABLED "
+            "is not set; falling back to HeuristicAI."
+        )
+        return HeuristicAI(player_number, config)
     else:
         # Default to heuristic
         return HeuristicAI(player_number, config)

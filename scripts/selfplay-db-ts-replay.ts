@@ -522,20 +522,42 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
       ...finalState,
       gameStatus: 'completed',
       winner: verdict.winner,
+      currentPhase: 'game_over',
     };
+  }
 
-    // Normalise terminal states out of decision phases for stability with
-    // parity tooling and UI (mirrors sandbox checkAndApplyVictory).
-    if (
-      finalState.currentPhase === 'territory_processing' ||
-      finalState.currentPhase === 'line_processing'
-    ) {
-      finalState = {
-        ...finalState,
-        currentPhase: 'ring_placement',
-      };
+  // If the final k was requested for dumping, overwrite it with the recomputed
+  // terminal state so parity bundles see the canonical phase/winner.
+  if (shouldDumpState && dumpKSet.has(applied)) {
+    try {
+      fs.mkdirSync(dumpDir, { recursive: true });
+      const fileName = `${path.basename(dbPath)}__${gameId}__k${applied}.ts_state.json`;
+      const outPath = path.join(dumpDir, fileName);
+      fs.writeFileSync(outPath, JSON.stringify(serializeGameState(finalState), null, 2), 'utf-8');
+    } catch (err) {
+      console.error(
+        `[selfplay-db-ts-replay] Failed to dump FINAL TS state for ${gameId} @ k=${applied}:`,
+        err
+      );
     }
   }
+
+  // Emit a final step summary with the recomputed terminal state. The parity
+  // parser keeps the last summary for a given k, so this overrides the
+  // pre-recompute summary for the last move.
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({
+      kind: 'ts-replay-step',
+      k: applied,
+      moveType: recordedMoves.length > 0 ? recordedMoves[recordedMoves.length - 1].type : undefined,
+      movePlayer:
+        recordedMoves.length > 0 ? recordedMoves[recordedMoves.length - 1].player : undefined,
+      moveNumber:
+        recordedMoves.length > 0 ? recordedMoves[recordedMoves.length - 1].moveNumber : undefined,
+      summary: summarizeState(`after_move_${applied}_final`, finalState),
+    })
+  );
   // eslint-disable-next-line no-console
   console.log(
     JSON.stringify({

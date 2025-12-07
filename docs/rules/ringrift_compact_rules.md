@@ -77,7 +77,7 @@ At minimum, your engine must maintain:
     - `ringsInHand: number`
     - `eliminatedRings: number`
     - `territorySpaces: number`
-  - `currentPhase: GamePhase ∈ { ring_placement, movement, capture, chain_capture, line_processing, territory_processing, forced_elimination }`
+  - `currentPhase: GamePhase ∈ { ring_placement, movement, capture, chain_capture, line_processing, territory_processing, forced_elimination, game_over }`
   - `currentPlayer: PlayerId`
   - `moveHistory: Move[]`
   - Victory metadata:
