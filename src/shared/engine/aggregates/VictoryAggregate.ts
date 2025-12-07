@@ -28,6 +28,7 @@ import type { GameState, BoardState, BoardType, Position, Player } from '../../t
 import { positionToString } from '../../types/game';
 import type { MovementBoardView } from '../core';
 import { hasAnyLegalMoveOrCaptureFromOnBoard } from '../core';
+import { hasGlobalPlacementAction, hasForcedEliminationAction } from '../globalActions';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -332,11 +333,56 @@ export function evaluateVictory(state: GameState): VictoryResult {
     }
   }
 
-  // 4) Bare-board structural terminality & global stalemate.
-  const noStacksLeft = state.board.stacks.size === 0;
-  if (!noStacksLeft) {
-    return { isGameOver: false };
+  // 4) Trapped position stalemate: All active players have stacks but no legal actions.
+  // This handles AI vs AI games that stall when both players are blocked.
+  if (state.board.stacks.size > 0) {
+    // Check if any player with material can still make progress
+    let somePlayerCanAct = false;
+
+    for (const p of players) {
+      // Check if player has any stacks
+      let playerHasStacks = false;
+      for (const stack of state.board.stacks.values()) {
+        if (stack.controllingPlayer === p.playerNumber) {
+          playerHasStacks = true;
+          break;
+        }
+      }
+
+      // Check if player has material (stacks or rings in hand)
+      const hasMaterial = playerHasStacks || p.ringsInHand > 0;
+      if (!hasMaterial) {
+        continue; // Player eliminated, skip
+      }
+
+      // Check if player can place a ring
+      if (hasGlobalPlacementAction(state, p.playerNumber)) {
+        somePlayerCanAct = true;
+        break;
+      }
+
+      // If player has stacks, check if they can move/capture
+      // hasForcedEliminationAction returns true only if player has stacks AND cannot place AND cannot move
+      // Since we already checked placement and it's false, if hasForcedEliminationAction is false,
+      // that means they can move/capture
+      if (playerHasStacks && !hasForcedEliminationAction(state, p.playerNumber)) {
+        somePlayerCanAct = true;
+        break;
+      }
+
+      // If playerHasStacks && hasForcedEliminationAction is true: player is trapped
+      // If !playerHasStacks && cannot place: player has rings but nowhere to place = trapped
+    }
+
+    if (somePlayerCanAct) {
+      return { isGameOver: false };
+    }
+
+    // All players with material are trapped - fall through to stalemate ladder below
   }
+
+  // 5) Bare-board structural terminality & global stalemate.
+  const noStacksLeft = state.board.stacks.size === 0;
 
   const anyRingsInHand = players.some((p) => p.ringsInHand > 0);
   let treatHandAsEliminated = false;

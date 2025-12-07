@@ -38,6 +38,118 @@ describe('LineAggregate - Advanced Branch Coverage', () => {
   // validateChooseLineReward additional branches
   // ==========================================================================
   describe('validateChooseLineReward additional branches', () => {
+    it('rejects when not in line_processing phase', () => {
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
+      state.currentPhase = 'movement';
+      state.currentPlayer = 1;
+      state.board.formedLines = [
+        {
+          player: 1,
+          positions: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 2, y: 0 },
+            { x: 3, y: 0 },
+          ],
+          length: 4,
+        },
+      ];
+
+      const result = validateChooseLineReward(state, {
+        type: 'CHOOSE_LINE_REWARD',
+        playerId: 1,
+        lineIndex: 0,
+        selection: 'COLLAPSE_ALL',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('INVALID_PHASE');
+    });
+
+    it('rejects when it is not the player turn', () => {
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
+      state.currentPhase = 'line_processing';
+      state.currentPlayer = 2; // Player 1 trying to act during player 2's turn
+      state.board.formedLines = [
+        {
+          player: 1,
+          positions: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 2, y: 0 },
+            { x: 3, y: 0 },
+          ],
+          length: 4,
+        },
+      ];
+
+      const result = validateChooseLineReward(state, {
+        type: 'CHOOSE_LINE_REWARD',
+        playerId: 1,
+        lineIndex: 0,
+        selection: 'COLLAPSE_ALL',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('NOT_YOUR_TURN');
+    });
+
+    it('rejects invalid line index', () => {
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
+      state.currentPhase = 'line_processing';
+      state.currentPlayer = 1;
+      state.board.formedLines = [
+        {
+          player: 1,
+          positions: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 2, y: 0 },
+            { x: 3, y: 0 },
+          ],
+          length: 4,
+        },
+      ];
+
+      const result = validateChooseLineReward(state, {
+        type: 'CHOOSE_LINE_REWARD',
+        playerId: 1,
+        lineIndex: 2, // out of bounds
+        selection: 'COLLAPSE_ALL',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('INVALID_LINE_INDEX');
+    });
+
+    it('rejects lines owned by another player', () => {
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
+      state.currentPhase = 'line_processing';
+      state.currentPlayer = 1;
+      state.board.formedLines = [
+        {
+          player: 2,
+          positions: [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 2, y: 0 },
+            { x: 3, y: 0 },
+          ],
+          length: 4,
+        },
+      ];
+
+      const result = validateChooseLineReward(state, {
+        type: 'CHOOSE_LINE_REWARD',
+        playerId: 1,
+        lineIndex: 0,
+        selection: 'COLLAPSE_ALL',
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('NOT_YOUR_LINE');
+    });
+
     it('rejects MINIMUM_COLLAPSE for exact-length line (square19 = 4 threshold)', () => {
       // square19 has threshold 4, so 4 markers is exact length
       const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });

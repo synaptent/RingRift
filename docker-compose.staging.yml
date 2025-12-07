@@ -15,14 +15,12 @@
 # - >99.9% uptime
 #
 # Usage:
-#   docker-compose -f docker-compose.staging.yml up -d
+#   docker compose -f docker-compose.staging.yml up -d
 #
 # Or with explicit .env file:
-#   docker-compose -f docker-compose.staging.yml --env-file .env.staging up -d
+#   docker compose -f docker-compose.staging.yml --env-file .env.staging up -d
 #
 # =============================================================================
-
-version: '3.8'
 
 services:
   # ===========================================================================

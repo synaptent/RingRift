@@ -81,6 +81,7 @@ from app.models import (  # type: ignore  # noqa: E402
     AIConfig,
     AIType,
     BoardType,
+    GamePhase,
     GameState,
     GameStatus,
     MoveType,
@@ -135,6 +136,7 @@ class GameRecord:
     status: str
     winner: Optional[int]
     termination_reason: str
+    skipped: bool = False
     invariant_violations_by_type: Dict[str, int] = field(default_factory=dict)
     # Pie-rule diagnostics: how many SWAP_SIDES moves occurred in this game,
     # and whether the pie rule was exercised at least once.
@@ -257,6 +259,42 @@ def _parse_board_type(name: str) -> BoardType:
         f"Unknown board type: {name!r} "
         "(expected square8|square19|hexagonal)"
     )
+
+
+def _canonical_termination_reason(state: GameState, fallback: str) -> str:
+    """
+    Map a completed GameState to a canonical termination reason.
+    """
+    status_str = state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
+    if status_str != "completed":
+        return f"status:{status_str}" if status_str else fallback
+
+    winner = getattr(state, "winner", None)
+    if winner is None:
+        return "status:completed"
+
+    victory_threshold = getattr(state, "victory_threshold", None)
+    territory_threshold = getattr(state, "territory_victory_threshold", None)
+    winner_player = next(
+        (p for p in state.players if getattr(p, "player_number", None) == winner),
+        None,
+    )
+
+    if (
+        victory_threshold is not None
+        and winner_player is not None
+        and getattr(winner_player, "eliminated_rings", 0) >= victory_threshold
+    ):
+        return "status:completed:elimination"
+
+    if (
+        territory_threshold is not None
+        and winner_player is not None
+        and getattr(winner_player, "territory_spaces", 0) >= territory_threshold
+    ):
+        return "status:completed:territory"
+
+    return "status:completed:lps"
 
 
 def _build_mixed_ai_pool(
@@ -656,6 +694,19 @@ def run_self_play_soak(
                     break
 
                 legal_moves = env.legal_moves()
+                if (
+                    state.current_phase == GamePhase.FORCED_ELIMINATION
+                    and any(m.type != MoveType.FORCED_ELIMINATION for m in legal_moves)
+                ):
+                    termination_reason = "illegal_moves_in_forced_elimination"
+                    skipped = True
+                    print(
+                        f"[soak-skip] game {game_idx} surfaced non-FE moves in forced_elimination: "
+                        f"{[m.type.value for m in legal_moves]}",
+                        file=sys.stderr,
+                    )
+                    break
+
                 if not legal_moves:
                     # With strict invariant enabled, this should be impossible
                     # for ACTIVE states; if it happens anyway we record it
@@ -686,6 +737,19 @@ def run_self_play_soak(
                 if not move:
                     termination_reason = "ai_returned_no_move"
                     skipped = True
+                    break
+
+                if (
+                    state.current_phase == GamePhase.FORCED_ELIMINATION
+                    and move.type != MoveType.FORCED_ELIMINATION
+                ):
+                    termination_reason = "ai_move_not_forced_elimination"
+                    skipped = True
+                    print(
+                        f"[soak-skip] game {game_idx} AI proposed {move.type.value} "
+                        "during forced_elimination; skipping game",
+                        file=sys.stderr,
+                    )
                     break
 
                 # Guard against mis-attributed moves: actor must match
@@ -759,7 +823,10 @@ def run_self_play_soak(
                         # ACTIVE, treat it as an env-level cutoff to avoid recording
                         # a partial turn.
                         if state.game_status != GameStatus.ACTIVE:
-                            termination_reason = f"status:{state.game_status.value}"
+                            termination_reason = _canonical_termination_reason(
+                                state,
+                                termination_reason or "status:completed",
+                            )
                             # Completed normally; do not mark skipped.
                         else:
                             termination_reason = "env_done_flag"
@@ -1003,6 +1070,7 @@ def run_self_play_soak(
                 status=state.game_status.value,
                 winner=getattr(state, "winner", None),
                 termination_reason=termination_reason,
+                skipped=skipped,
                 invariant_violations_by_type=per_game_violations,
                 swap_sides_moves=swap_sides_moves_for_game,
                 used_pie_rule=swap_sides_moves_for_game > 0,
@@ -1216,9 +1284,11 @@ def _summarise(
     total = len(records)
     by_status: Dict[str, int] = {}
     by_reason: Dict[str, int] = {}
+    skipped_by_reason: Dict[str, int] = {}
     lengths: List[int] = []
     completed_games = 0
     max_moves_games = 0
+    skipped_games = 0
     violation_counts_by_type: Dict[str, int] = {}
     invariant_violations_by_id: Dict[str, int] = {}
     total_swap_sides_moves = 0
@@ -1231,6 +1301,13 @@ def _summarise(
             0,
         ) + 1
         lengths.append(r.length)
+
+        if getattr(r, "skipped", False):
+            skipped_games += 1
+            skipped_by_reason[r.termination_reason] = skipped_by_reason.get(
+                r.termination_reason,
+                0,
+            ) + 1
 
         if r.termination_reason.startswith("status:"):
             completed_games += 1
@@ -1268,6 +1345,8 @@ def _summarise(
         "avg_length": (sum(lengths) / total) if total else 0.0,
         "completed_games": completed_games,
         "max_moves_games": max_moves_games,
+        "skipped_games": skipped_games,
+        "skipped_by_reason": skipped_by_reason,
         "invariant_violations_total": sum(
             invariant_violations_by_id.values(),
         ),

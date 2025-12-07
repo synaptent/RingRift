@@ -3,14 +3,20 @@ RingRift AI Service - FastAPI Application
 Provides AI move selection and position evaluation endpoints
 """
 
-from fastapi import FastAPI, HTTPException, Response
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, TypedDict, NotRequired
 import logging
 import time
 import os
 from datetime import datetime, timezone
+
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, TypedDict
+
+try:  # Python 3.10 compatibility (NotRequired added in 3.11)
+    from typing import NotRequired  # type: ignore
+except ImportError:
+    from typing_extensions import NotRequired  # type: ignore
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 

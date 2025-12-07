@@ -1478,20 +1478,26 @@ function processPostMovePhases(
       return { victoryResult };
     }
 
-    // Rotate to next player
+    // Rotate to next player without skipping. This matches Python's _end_turn logic
+    // which does NOT skip empty seats - players with no stacks and no rings in hand
+    // must still traverse phases and record no-action/FE moves per RR-CANON-R075/LPS rules.
     const currentState = stateMachine.gameState;
     const players = currentState.players;
     const currentPlayerIndex = players.findIndex(
       (p) => p.playerNumber === currentState.currentPlayer
     );
+
+    // Simply rotate to the next player in turn order (no skipping)
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     const nextPlayer = players[nextPlayerIndex].playerNumber;
-    const nextPhase: GamePhase = 'ring_placement';
 
+    // Always begin the next turn in ring_placement. When no legal placements exist
+    // (including ringsInHand == 0), hosts must emit a NO_PLACEMENT_ACTION bookkeeping
+    // move based on the phase requirements. This matches Python's _end_turn behavior.
     stateMachine.updateGameState({
       ...currentState,
       currentPlayer: nextPlayer,
-      currentPhase: nextPhase,
+      currentPhase: 'ring_placement',
     });
 
     return {};

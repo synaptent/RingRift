@@ -1,0 +1,282 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "RingRift SLO Definitions",
+  "description": "Consolidated Service Level Objectives for load test verification. Derived from PROJECT_GOALS.md, STRATEGIC_ROADMAP.md, and thresholds.json",
+  "version": "1.0.0",
+  "lastUpdated": "2025-12-07",
+
+  "slos": {
+    "availability": {
+      "name": "Service Availability",
+      "target": 99.9,
+      "unit": "percent",
+      "measurement": "successful_requests / total_requests",
+      "window": "monthly",
+      "priority": "critical",
+      "source": "PROJECT_GOALS.md §4.1"
+    },
+
+    "latency_api_p95": {
+      "name": "API Latency (p95)",
+      "target": 500,
+      "unit": "ms",
+      "measurement": "http_req_duration p95",
+      "priority": "high",
+      "source": "PROJECT_GOALS.md §4.1, thresholds.json"
+    },
+
+    "latency_api_p99": {
+      "name": "API Latency (p99)",
+      "target": 2000,
+      "unit": "ms",
+      "measurement": "http_req_duration p99",
+      "priority": "medium",
+      "source": "baseline.json thresholds"
+    },
+
+    "latency_websocket_connect": {
+      "name": "WebSocket Connection Time (p95)",
+      "target": 1000,
+      "unit": "ms",
+      "measurement": "ws_connecting p95",
+      "priority": "high",
+      "source": "baseline.json thresholds"
+    },
+
+    "latency_move_e2e": {
+      "name": "Move End-to-End Latency (p95)",
+      "target": 500,
+      "unit": "ms",
+      "measurement": "move_latency p95",
+      "priority": "high",
+      "source": "baseline.json, thresholds.json websocket_gameplay.move_submission"
+    },
+
+    "latency_move_server": {
+      "name": "Move Server Processing (p95)",
+      "target": 200,
+      "unit": "ms",
+      "measurement": "server_processing_latency p95",
+      "priority": "high",
+      "source": "thresholds.json websocket_gameplay.move_submission.server_processing_p95_ms"
+    },
+
+    "latency_ai_response": {
+      "name": "AI Response Time (p95)",
+      "target": 1000,
+      "unit": "ms",
+      "measurement": "ai_response_time p95",
+      "priority": "high",
+      "source": "PROJECT_GOALS.md §4.1: AI move <1 second p95"
+    },
+
+    "latency_ai_response_p99": {
+      "name": "AI Response Time (p99)",
+      "target": 2000,
+      "unit": "ms",
+      "measurement": "ai_response_time p99",
+      "priority": "medium",
+      "source": "thresholds.json ai_service.cpu_baseline"
+    },
+
+    "latency_game_creation": {
+      "name": "Game Creation Time (p95)",
+      "target": 2000,
+      "unit": "ms",
+      "measurement": "game_creation_time p95",
+      "priority": "medium",
+      "source": "baseline.json thresholds"
+    },
+
+    "error_rate": {
+      "name": "Error Rate",
+      "target": 1,
+      "unit": "percent",
+      "measurement": "http_req_failed rate",
+      "priority": "critical",
+      "source": "baseline.json, thresholds.json"
+    },
+
+    "error_rate_5xx": {
+      "name": "5xx Error Rate",
+      "target": 0.5,
+      "unit": "percent",
+      "measurement": "http_5xx_rate",
+      "priority": "critical",
+      "source": "thresholds.json production http_api"
+    },
+
+    "concurrent_games": {
+      "name": "Concurrent Games Capacity",
+      "target": 100,
+      "unit": "games",
+      "measurement": "concurrent_games",
+      "priority": "high",
+      "source": "PROJECT_GOALS.md §3.4, target-scale.json"
+    },
+
+    "concurrent_players": {
+      "name": "Concurrent Players Capacity",
+      "target": 300,
+      "unit": "players",
+      "measurement": "concurrent_vus",
+      "priority": "high",
+      "source": "PROJECT_GOALS.md §3.4, target-scale.json"
+    },
+
+    "websocket_connection_success": {
+      "name": "WebSocket Connection Success Rate",
+      "target": 99,
+      "unit": "percent",
+      "measurement": "websocket_connection_success_rate",
+      "priority": "high",
+      "source": "thresholds.json websocket_gameplay.connection_stability"
+    },
+
+    "move_stall_rate": {
+      "name": "Move Stall Rate",
+      "target": 0.5,
+      "unit": "percent",
+      "measurement": "stalled_moves / total_moves",
+      "stall_threshold_ms": 2000,
+      "priority": "high",
+      "source": "thresholds.json websocket_gameplay.move_submission.stall_rate_percent"
+    },
+
+    "ai_fallback_rate": {
+      "name": "AI Fallback Rate",
+      "target": 1.0,
+      "unit": "percent",
+      "measurement": "ai_fallback_total / ai_requests_total",
+      "priority": "medium",
+      "source": "thresholds.json ai_service.cpu_baseline.fallback_rate_percent"
+    },
+
+    "contract_failures": {
+      "name": "Contract Failures",
+      "target": 0,
+      "unit": "count",
+      "measurement": "contract_failures_total",
+      "priority": "critical",
+      "source": "thresholds.json load_tests.contract_failures_total"
+    },
+
+    "lifecycle_mismatches": {
+      "name": "ID Lifecycle Mismatches",
+      "target": 0,
+      "unit": "count",
+      "measurement": "id_lifecycle_mismatches_total",
+      "priority": "critical",
+      "source": "thresholds.json load_tests.id_lifecycle_mismatches_total"
+    }
+  },
+
+  "environments": {
+    "staging": {
+      "description": "Staging environment - more permissive thresholds for testing",
+      "overrides": {
+        "concurrent_games": { "target": 20 },
+        "concurrent_players": { "target": 60 },
+        "latency_api_p95": { "target": 800 },
+        "latency_game_creation": { "target": 2000 },
+        "error_rate": { "target": 1.0 },
+        "error_rate_5xx": { "target": 1.0 },
+        "latency_ai_response": { "target": 1500 },
+        "latency_ai_response_p99": { "target": 3000 }
+      }
+    },
+    "production": {
+      "description": "Production environment - strict SLOs for user-facing deployment",
+      "overrides": {
+        "latency_api_p95": { "target": 500 },
+        "latency_game_creation": { "target": 800 },
+        "error_rate": { "target": 0.5 },
+        "error_rate_5xx": { "target": 0.5 },
+        "websocket_connection_success": { "target": 99.5 },
+        "move_stall_rate": { "target": 0.2 },
+        "ai_fallback_rate": { "target": 0.5 }
+      }
+    }
+  },
+
+  "thresholds": {
+    "critical": {
+      "description": "Must never breach. Triggers immediate alerting.",
+      "breach_action": "alert_pagerduty",
+      "acceptable_breach_budget": 0.001,
+      "slos": [
+        "availability",
+        "error_rate",
+        "error_rate_5xx",
+        "contract_failures",
+        "lifecycle_mismatches"
+      ]
+    },
+    "high": {
+      "description": "Important for user experience. Triggers team notification.",
+      "breach_action": "alert_slack",
+      "acceptable_breach_budget": 0.01,
+      "slos": [
+        "latency_api_p95",
+        "latency_websocket_connect",
+        "latency_move_e2e",
+        "latency_ai_response",
+        "concurrent_games",
+        "concurrent_players",
+        "websocket_connection_success",
+        "move_stall_rate",
+        "latency_move_server"
+      ]
+    },
+    "medium": {
+      "description": "Performance optimization target. Logs warning for review.",
+      "breach_action": "log_warning",
+      "acceptable_breach_budget": 0.05,
+      "slos": [
+        "latency_api_p99",
+        "latency_game_creation",
+        "latency_ai_response_p99",
+        "ai_fallback_rate"
+      ]
+    }
+  },
+
+  "metricMappings": {
+    "description": "Maps k6 metrics to SLO measurements",
+    "mappings": {
+      "http_req_duration": ["latency_api_p95", "latency_api_p99"],
+      "http_req_failed": ["error_rate"],
+      "ws_connecting": ["latency_websocket_connect"],
+      "move_latency": ["latency_move_e2e"],
+      "game_creation_time": ["latency_game_creation"],
+      "ai_response_time": ["latency_ai_response", "latency_ai_response_p99"],
+      "vus": ["concurrent_players"],
+      "concurrent_games": ["concurrent_games"],
+      "websocket_connection_success_rate": ["websocket_connection_success"],
+      "stalled_moves": ["move_stall_rate"],
+      "contract_failures_total": ["contract_failures"],
+      "id_lifecycle_mismatches_total": ["lifecycle_mismatches"]
+    }
+  },
+
+  "outputFormats": {
+    "console": {
+      "description": "Human-readable console output",
+      "showPriority": true,
+      "showSource": false
+    },
+    "json": {
+      "description": "Machine-readable JSON report",
+      "includeMetadata": true,
+      "includeRawMetrics": false
+    },
+    "markdown": {
+      "description": "Documentation-friendly markdown table",
+      "tableFormat": "github"
+    },
+    "html": {
+      "description": "Visual dashboard HTML",
+      "includeCharts": false
+    }
+  }
+}

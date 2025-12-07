@@ -324,18 +324,6 @@ class GameEngine:
                 eligible_positions=[],
             )
 
-        elif phase == GamePhase.FORCED_ELIMINATION:
-            # In FE phase, enumerate available FE moves
-            fe_moves = GameEngine._get_forced_elimination_moves(
-                game_state, player_number
-            )
-            eligible = [m.to for m in fe_moves if m.to is not None]
-            return PhaseRequirement(
-                type=PhaseRequirementType.FORCED_ELIMINATION_REQUIRED,
-                player=player_number,
-                eligible_positions=eligible,
-            )
-
         return None
 
     @staticmethod
@@ -406,23 +394,6 @@ class GameEngine:
                 type=MoveType.NO_TERRITORY_ACTION,
                 player=player,
                 to=Position(x=0, y=0),
-                timestamp=datetime.now(),
-                thinkTime=0,
-                moveNumber=move_number,
-            )
-
-        elif requirement.type == PhaseRequirementType.FORCED_ELIMINATION_REQUIRED:
-            if not requirement.eligible_positions:
-                raise ValueError(
-                    "FORCED_ELIMINATION_REQUIRED but no eligible positions"
-                )
-            # Select the first eligible position (host may choose differently)
-            target = requirement.eligible_positions[0]
-            return Move(
-                id=f"forced-elimination-{move_number}",
-                type=MoveType.FORCED_ELIMINATION,
-                player=player,
-                to=target,
                 timestamp=datetime.now(),
                 thinkTime=0,
                 moveNumber=move_number,

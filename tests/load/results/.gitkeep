@@ -1,0 +1,7 @@
+# This directory stores load test results
+# JSON files are generated here by the baseline runner
+
+# To analyze results:
+#   node scripts/analyze-results.js results/baseline_*.json
+
+# Results files are .gitignored but this .gitkeep ensures the directory exists

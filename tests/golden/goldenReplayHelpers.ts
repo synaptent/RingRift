@@ -206,6 +206,8 @@ export function checkPhaseValid(state: GameState, moveIndex: number): InvariantV
     'line_processing',
     'territory_processing',
     'forced_elimination', // 7th phase per RR-CANON-R070
+    // Terminal phase is used only after the final recorded move to mark completion
+    'game_over',
   ];
 
   if (!validPhases.includes(state.currentPhase)) {

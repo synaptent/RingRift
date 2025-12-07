@@ -813,3 +813,210 @@ groups:
             docs/P18.3-1_DECISION_LIFECYCLE_SPEC.md for the canonical session state machine.
           runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/runbooks/GAME_HEALTH.md'
           impact: 'Games may be stalled in waiting/cleanup states even though players are connected.'
+
+  # ===========================================================================
+  # STAGING SLO ALERTS (Production Validation)
+  # ===========================================================================
+  # These alerts are specifically tuned for the staging environment to validate
+  # production SLOs before deployment. Targets from PROJECT_GOALS.md:
+  # - 100 concurrent games, 300 concurrent players
+  # - <500ms p95 latency
+  # - <1% error rate
+  # - >99.9% uptime
+  # ===========================================================================
+  - name: staging-slos
+    interval: 15s
+    rules:
+      # -------------------------------------------------------------------------
+      # Staging P95 Latency SLO (500ms target)
+      # -------------------------------------------------------------------------
+      - alert: StagingHighLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          environment: staging
+          slo: latency
+        annotations:
+          summary: 'Staging p95 latency exceeding 500ms SLO ({{ $value | humanizeDuration }})'
+          description: 'P95 latency is {{ $value | humanizeDuration }}, exceeding the 500ms production SLO target. This would fail production validation.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#high-latency-during-load-tests'
+          impact: 'Production SLO would be breached. Investigate before promoting to production.'
+
+      - alert: StagingCriticalLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 1m
+        labels:
+          severity: critical
+          environment: staging
+          slo: latency
+        annotations:
+          summary: 'Staging p95 latency critically high ({{ $value | humanizeDuration }})'
+          description: 'P95 latency is {{ $value | humanizeDuration }}, double the 500ms production SLO target.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#high-latency-during-load-tests'
+          impact: 'System is not production-ready. Block deployment until resolved.'
+
+      # -------------------------------------------------------------------------
+      # Staging Error Rate SLO (1% target)
+      # -------------------------------------------------------------------------
+      - alert: StagingHighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.01
+        for: 1m
+        labels:
+          severity: critical
+          environment: staging
+          slo: error_rate
+        annotations:
+          summary: 'Staging error rate exceeding 1% SLO ({{ $value | humanizePercentage }})'
+          description: 'Error rate is {{ $value | humanizePercentage }}, exceeding the 1% production SLO target.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#troubleshooting'
+          impact: 'Production SLO would be breached. Investigate errors before promoting.'
+
+      - alert: StagingElevatedErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.005
+        for: 5m
+        labels:
+          severity: warning
+          environment: staging
+          slo: error_rate
+        annotations:
+          summary: 'Staging error rate elevated ({{ $value | humanizePercentage }})'
+          description: 'Error rate is {{ $value | humanizePercentage }}, approaching the 1% production SLO limit.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#troubleshooting'
+          impact: 'System is at risk of breaching SLO under increased load.'
+
+      # -------------------------------------------------------------------------
+      # Staging AI Service SLO (1s move latency, <30% fallback)
+      # -------------------------------------------------------------------------
+      - alert: StagingAILatencyHigh
+        expr: histogram_quantile(0.95, sum(rate(ringrift_ai_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 2m
+        labels:
+          severity: warning
+          environment: staging
+          slo: ai_latency
+        annotations:
+          summary: 'Staging AI move latency exceeding 1s SLO'
+          description: 'AI move p95 latency is {{ $value | humanizeDuration }}, exceeding the 1s production target.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#ai-service-not-responding'
+          impact: 'AI-controlled games would feel sluggish in production.'
+
+      - alert: StagingAIFallbackHigh
+        expr: |
+          (
+            sum(rate(ringrift_ai_fallback_total[5m]))
+            /
+            (sum(rate(ringrift_ai_requests_total[5m])) > 0)
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          environment: staging
+          slo: ai_availability
+        annotations:
+          summary: 'Staging AI fallback rate high ({{ $value | humanizePercentage }})'
+          description: 'More than 30% of AI requests are falling back to local heuristics.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#ai-service-not-responding'
+          impact: 'AI move quality degraded. Investigate AI service capacity.'
+
+      # -------------------------------------------------------------------------
+      # Staging Capacity Alerts (100 games / 300 players target)
+      # -------------------------------------------------------------------------
+      - alert: StagingApproachingGameCapacity
+        expr: ringrift_games_active > 80
+        for: 5m
+        labels:
+          severity: info
+          environment: staging
+          slo: capacity
+        annotations:
+          summary: 'Staging approaching 100 game capacity ({{ $value }} active)'
+          description: 'Active games: {{ $value }}. Approaching the 100 concurrent games target for production validation.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#load-testing'
+          impact: 'Nearing capacity limits. Monitor for performance degradation.'
+
+      - alert: StagingApproachingConnectionCapacity
+        expr: ringrift_websocket_connections > 250
+        for: 5m
+        labels:
+          severity: info
+          environment: staging
+          slo: capacity
+        annotations:
+          summary: 'Staging approaching 300 connection capacity ({{ $value }} connected)'
+          description: 'WebSocket connections: {{ $value }}. Approaching the 300 concurrent players target.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#load-testing'
+          impact: 'Nearing connection limits. Monitor for WebSocket issues.'
+
+      - alert: StagingExceedingCapacity
+        expr: ringrift_games_active > 120 or ringrift_websocket_connections > 350
+        for: 2m
+        labels:
+          severity: warning
+          environment: staging
+          slo: capacity
+        annotations:
+          summary: 'Staging exceeding target capacity'
+          description: 'Games: {{ with query "ringrift_games_active" }}{{ . | first | value }}{{ end }}, Connections: {{ with query "ringrift_websocket_connections" }}{{ . | first | value }}{{ end }}. Exceeding 100 games / 300 players target.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#load-testing'
+          impact: 'Stress testing territory. Monitor for system stability.'
+
+      # -------------------------------------------------------------------------
+      # Staging Resource Alerts
+      # -------------------------------------------------------------------------
+      - alert: StagingHighMemoryUsage
+        expr: sum(container_memory_usage_bytes{name=~".*app.*"}) / 1024 / 1024 / 1024 > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          environment: staging
+        annotations:
+          summary: 'Staging app memory usage high ({{ $value | printf "%.2f" }}GB)'
+          description: 'Application container memory is approaching the 1GB limit.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#troubleshooting'
+          impact: 'Risk of OOM under sustained load.'
+
+      - alert: StagingDatabaseConnectionsHigh
+        expr: pg_stat_activity_count > 150
+        for: 5m
+        labels:
+          severity: warning
+          environment: staging
+        annotations:
+          summary: 'Staging database connections high ({{ $value }}/200)'
+          description: 'PostgreSQL connection count approaching the 200 max_connections limit.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md#troubleshooting'
+          impact: 'Connection pool may be exhausted under higher load.'
+
+      # -------------------------------------------------------------------------
+      # Staging Load Test Progress
+      # -------------------------------------------------------------------------
+      - alert: StagingLoadTestValidationPassed
+        expr: |
+          (
+            histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) < 0.5
+            and
+            (sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))) < 0.01
+            and
+            ringrift_games_active >= 50
+          )
+        for: 10m
+        labels:
+          severity: info
+          environment: staging
+          slo: validation
+        annotations:
+          summary: 'Staging SLOs passing under load'
+          description: 'System is meeting production SLOs with {{ with query "ringrift_games_active" }}{{ . | first | value }}{{ end }} active games. p95 latency and error rate within targets.'
+          runbook_url: 'https://github.com/ringrift/ringrift/blob/main/docs/STAGING_ENVIRONMENT.md'
+          impact: 'Positive signal for production readiness (continue monitoring).'

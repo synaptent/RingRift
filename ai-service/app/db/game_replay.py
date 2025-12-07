@@ -19,7 +19,7 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from app.models import BoardType, GameState, Move
 from app.rules.history_contract import validate_canonical_move
@@ -2101,14 +2101,31 @@ class GameReplayDB:
         # Determine termination reason
         termination_reason = metadata.get("termination_reason")
         if termination_reason is None and final_state.winner is not None:
-            # Infer from final state
-            for player in final_state.players:
-                if player.player_number == final_state.winner:
-                    if player.eliminated_rings > final_state.victory_threshold:
-                        termination_reason = "ring_elimination"
-                    elif player.territory_spaces > final_state.territory_victory_threshold:
-                        termination_reason = "territory"
-                    break
+            # Infer from final state using canonical victory condition ladder:
+            # 1. Ring elimination (victory_threshold reached)
+            # 2. Territory (territory_victory_threshold reached)
+            # 3. LPS - Last Player Standing (lps_exclusive_player_for_completed_round)
+            # 4. Structural (no stacks remaining)
+            winner = final_state.winner
+
+            # Check ring elimination victory
+            elim_rings = final_state.board.eliminated_rings
+            eliminated_for_winner = elim_rings.get(str(winner), 0)
+            if eliminated_for_winner >= final_state.victory_threshold:
+                termination_reason = "ring_elimination"
+            else:
+                # Check territory victory via collapsed_spaces count
+                territory_counts: Dict[int, int] = {}
+                for p_id in final_state.board.collapsed_spaces.values():
+                    territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
+                if territory_counts.get(winner, 0) >= final_state.territory_victory_threshold:
+                    termination_reason = "territory"
+                # Check LPS victory (R172 - sole player with real actions)
+                elif final_state.lps_exclusive_player_for_completed_round == winner:
+                    termination_reason = "last_player_standing"
+                # Structural termination (no stacks remaining)
+                elif not final_state.board.stacks:
+                    termination_reason = "structural"
 
         # Check if game already exists (incremental write case)
         existing = conn.execute(

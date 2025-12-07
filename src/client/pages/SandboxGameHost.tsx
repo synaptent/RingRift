@@ -213,6 +213,45 @@ const QUICK_START_PRESETS: Array<{
       playerTypes: ['human', 'ai', 'ai', 'ai'],
     },
   },
+  {
+    id: 'hex-ai-battle-2p',
+    label: 'Hex AI Battle (2P)',
+    description: 'Watch two AIs on hex board',
+    learnMoreText:
+      'Two AI players compete from an empty hex board. Watch how they develop positions, form lines, and compete for territory using 6-directional movement.',
+    icon: '⬡',
+    config: {
+      boardType: 'hexagonal',
+      numPlayers: 2,
+      playerTypes: ['ai', 'ai', 'human', 'human'],
+    },
+  },
+  {
+    id: 'hex-ai-battle-3p',
+    label: 'Hex AI Battle (3P)',
+    description: 'Three AIs battle on hex',
+    learnMoreText:
+      'Three AI players compete on the hex board. Watch how they balance aggression and defense when facing multiple opponents simultaneously.',
+    icon: '⬡',
+    config: {
+      boardType: 'hexagonal',
+      numPlayers: 3,
+      playerTypes: ['ai', 'ai', 'ai', 'human'],
+    },
+  },
+  {
+    id: 'hex-ai-battle-4p',
+    label: 'Hex AI Battle (4P)',
+    description: 'Four AIs clash on hex',
+    learnMoreText:
+      'Four AI players compete on the hex board. With limited space, watch how AIs handle crowded conditions with frequent captures and territory battles.',
+    icon: '⬡',
+    config: {
+      boardType: 'hexagonal',
+      numPlayers: 4,
+      playerTypes: ['ai', 'ai', 'ai', 'ai'],
+    },
+  },
 ];
 
 const PLAYER_TYPE_META: Record<

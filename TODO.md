@@ -243,10 +243,11 @@ Operational drills completed:
 - [ ] Run parity + canonical history gates on any new/modified DBs:
   - [x] Identify target DB(s) and location(s)
   - [x] Run `ai-service/scripts/run_parity_and_history_gate.py --db <path> [--emit-state-bundles-dir DIR]`
-    - Pass: coverage*selfplay, distributed_soak_20251207/selfplay_square8*{2p,3p,4p}_local, selfplay_{square8,square19,hexagonal}_{2p,3p,4p}, distributed_soak_fetch/selfplay_square19_{2p,3p}_mbp-64gb, distributed_soak_fetch/selfplay_square8__ (mbp/mac-studio), parity_test/_, selfplay_hex_mps_smoke, selfplay.db, canonical_square8.db
+    - Pass: coverage*selfplay, distributed_soak_20251207/selfplay_square8*{2p,3p,4p}_local, selfplay_{square8,square19,hexagonal}_{2p,3p,4p}, distributed_soak_fetch/selfplay_square19_{2p,3p}_mbp-64gb, distributed_soak_fetch/selfplay_square8\_\_ (mbp/mac-studio), parity_test/_, selfplay_hex_mps_smoke, selfplay.db, canonical_square8.db
     - Removed (history fail): fixtures/golden_games/golden_square8_2p.db, legacy_noncanonical/canonical_square19.bad.db
   - [ ] Archive parity/history results alongside DB (or update registry entry)
 - [x] Add and keep a small golden replay pack in CI that replays in TS + Python and fails on any semantic drift
+  - [x] Exported new canonical golden from `canonical_square8_2p.db` -> `tests/fixtures/golden-games/golden_square8_2p_d033.json`
 - [ ] Audit orchestrator/Python `game_engine.py` changes for silent transitions or forced elimination without recorded moves
 - [ ] Audit checklist:
   - [ ] Confirm `turnOrchestrator` never advances phase without move (explicit `no_*` moves present)

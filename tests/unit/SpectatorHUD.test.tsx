@@ -127,9 +127,7 @@ describe('SpectatorHUD', () => {
     });
 
     it('highlights current player', () => {
-      const { container } = render(
-        <SpectatorHUD {...defaultProps} currentPlayerNumber={1} />
-      );
+      const { container } = render(<SpectatorHUD {...defaultProps} currentPlayerNumber={1} />);
 
       // Current player should have specific styling
       const playerCards = container.querySelectorAll('.flex.items-center.justify-between');
@@ -202,11 +200,11 @@ describe('SpectatorHUD', () => {
       render(<SpectatorHUD {...defaultProps} />);
 
       const toggleButton = screen.getByText('Analysis & Insights');
-      
+
       // Hide
       fireEvent.click(toggleButton);
       expect(screen.queryByText('Recent Moves')).not.toBeInTheDocument();
-      
+
       // Show again
       fireEvent.click(toggleButton);
       expect(screen.getByText('Recent Moves')).toBeInTheDocument();
@@ -215,14 +213,9 @@ describe('SpectatorHUD', () => {
 
   describe('Evaluation Graph', () => {
     it('displays evaluation graph when evaluation history exists', () => {
-      const evaluationHistory = [
-        createEvaluationData(1),
-        createEvaluationData(2),
-      ];
+      const evaluationHistory = [createEvaluationData(1), createEvaluationData(2)];
 
-      render(
-        <SpectatorHUD {...defaultProps} evaluationHistory={evaluationHistory} />
-      );
+      render(<SpectatorHUD {...defaultProps} evaluationHistory={evaluationHistory} />);
 
       expect(screen.getByTestId('evaluation-graph')).toBeInTheDocument();
     });
@@ -263,32 +256,25 @@ describe('SpectatorHUD', () => {
       render(<SpectatorHUD {...defaultProps} moveHistory={moveHistory} />);
 
       // Should limit to 5 recent moves
-      const moveButtons = screen.getAllByRole('button').filter(
-        btn => btn.textContent?.includes('#')
-      );
+      const moveButtons = screen
+        .getAllByRole('button')
+        .filter((btn) => btn.textContent?.includes('#'));
       expect(moveButtons.length).toBeLessThanOrEqual(5);
     });
 
     it('calls onMoveSelect when a move is clicked', () => {
       const onMoveSelect = jest.fn();
-      const moveHistory = [
-        createMockMove('ring_placement', 1),
-        createMockMove('movement', 2),
-      ];
+      const moveHistory = [createMockMove('ring_placement', 1), createMockMove('movement', 2)];
 
       render(
-        <SpectatorHUD
-          {...defaultProps}
-          moveHistory={moveHistory}
-          onMoveSelect={onMoveSelect}
-        />
+        <SpectatorHUD {...defaultProps} moveHistory={moveHistory} onMoveSelect={onMoveSelect} />
       );
 
       // Find move buttons (they should contain #)
-      const moveButtons = screen.getAllByRole('button').filter(
-        btn => btn.textContent?.includes('#')
-      );
-      
+      const moveButtons = screen
+        .getAllByRole('button')
+        .filter((btn) => btn.textContent?.includes('#'));
+
       if (moveButtons.length > 0) {
         fireEvent.click(moveButtons[0]);
         expect(onMoveSelect).toHaveBeenCalled();
@@ -296,17 +282,10 @@ describe('SpectatorHUD', () => {
     });
 
     it('highlights selected move', () => {
-      const moveHistory = [
-        createMockMove('ring_placement', 1),
-        createMockMove('movement', 2),
-      ];
+      const moveHistory = [createMockMove('ring_placement', 1), createMockMove('movement', 2)];
 
       const { container } = render(
-        <SpectatorHUD
-          {...defaultProps}
-          moveHistory={moveHistory}
-          selectedMoveIndex={0}
-        />
+        <SpectatorHUD {...defaultProps} moveHistory={moveHistory} selectedMoveIndex={0} />
       );
 
       // Selected move should have specific styling
@@ -378,9 +357,7 @@ describe('SpectatorHUD', () => {
 
   describe('Custom className', () => {
     it('applies custom className', () => {
-      render(
-        <SpectatorHUD {...defaultProps} className="custom-class" />
-      );
+      render(<SpectatorHUD {...defaultProps} className="custom-class" />);
 
       const hud = screen.getByTestId('spectator-hud');
       expect(hud).toHaveClass('custom-class');
@@ -405,6 +382,13 @@ describe('SpectatorHUD', () => {
       // Spectator hint text should be visible
       const phaseSection = screen.getByText(/Movement Phase/).closest('div');
       expect(phaseSection).toBeInTheDocument();
+    });
+
+    it('surfaces spectator hint text for terminal game_over phase', () => {
+      render(<SpectatorHUD {...defaultProps} phase="game_over" />);
+
+      expect(screen.getByText(/Game Over/)).toBeInTheDocument();
+      expect(screen.getByText(/The game has concluded/)).toBeInTheDocument();
     });
   });
 
@@ -448,13 +432,7 @@ describe('SpectatorHUD', () => {
         },
       ];
 
-      render(
-        <SpectatorHUD
-          {...defaultProps}
-          players={players}
-          currentPlayerNumber={1}
-        />
-      );
+      render(<SpectatorHUD {...defaultProps} players={players} currentPlayerNumber={1} />);
 
       // "Player 1" appears in both the current player indicator and the standings
       const player1Elements = screen.getAllByText('Player 1');

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 
 from app.db import GameReplayDB, GameWriter
@@ -331,16 +332,19 @@ def record_completed_game_with_parity_check(
         is_parity_validation_enabled,
         get_parity_mode,
         ParityMode,
+        ParityValidationError,
     )
 
     effective_mode = parity_mode or get_parity_mode()
     if effective_mode == ParityMode.OFF:
         return gid
 
-    # Get the db path from the instance
-    db_path = getattr(db, 'db_path', None) or getattr(db, '_db_path', None)
-    if db_path is None:
+    # Get the db path from the instance and normalise to an absolute path so
+    # TS replay harnesses invoked from the monorepo root can locate the file.
+    raw_db_path = getattr(db, 'db_path', None) or getattr(db, '_db_path', None)
+    if raw_db_path is None:
         return gid
+    db_path = Path(raw_db_path).resolve()
 
     # Run parity validation (will raise on strict mode with divergence)
     try:

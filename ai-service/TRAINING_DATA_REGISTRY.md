@@ -16,12 +16,16 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-| Database                | Board Type | Players | Status                | Gate Summary                           | Notes                                                                                                                                                                                                                                                                           |
-| ----------------------- | ---------- | ------- | --------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_square8.db`  | square8    | 2       | **canonical**         | canonical_square8.db.parity_gate.json  | Parity + canonical phase history passed (20 games, no divergences). See `data/games/canonical_square8.db.parity_gate.json`.                                                                                                                                                     |
-| `canonical_square19.db` | square19   | 2       | **canonical**         | canonical_square19.db.parity_gate.json | Parity + canonical phase history passed (32 games, no divergences). See `data/games/canonical_square19.db.parity_gate.json`.                                                                                                                                                    |
-| `canonical_hex.db`      | hexagonal  | 2       | ⚠️ **DEPRECATED_R10** | N/A                                    | **DEPRECATED 2025-12-06:** Generated with old hex geometry (radius 10, 331 cells, 36 rings). Incompatible with current hex spec (radius 12, 469 cells, 48 rings). **File removed from repo.** See `data/HEX_DATA_DEPRECATION_NOTICE.md` and `docs/HEX_ARTIFACTS_DEPRECATED.md`. |
-| `golden.db`             | mixed      | mixed   | **canonical**         | N/A                                    | Hand-curated golden games (small fixed set, inspected manually)                                                                                                                                                                                                                 |
+_None passing as of the 2025-12-07 re-gate sweep; see the pending table below._
+
+### Pending Re-Gate / Needs Regeneration
+
+| Database                  | Board Type | Players | Status                    | Gate Summary                             | Notes                                                                                                                                                                                                                                                                             |
+| ------------------------- | ---------- | ------- | ------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_square8.db`    | square8    | 2       | **pending_regate**        | canonical_square8.db.parity_gate.json    | `check_canonical_phase_history.py --db ai-service/data/games/canonical_square8.db` flagged bad turn order near the final placements; parity gate (`passed_canonical_parity_gate: false`) shows structural errors. 8 games recorded; 4 replay clean, 4 fail at the last placement. |
+| `canonical_square8_2p.db` | square8    | 2       | **pending_regate**        | canonical_square8_2p.db.parity_gate.json | Single-game DB; parity gate hit a `Not your turn` structural error at move 57 and canonical phase replay reports the same (`check_canonical_phase_history.py`). Needs regeneration before reuse.                                                                                  |
+| `canonical_square19.db`   | square19   | 2       | **pending_regen (empty)** | canonical_square19.db.parity_gate.json   | DB currently has 0 games. Prior parity gate captured a structural replay failure; regenerate via `generate_canonical_selfplay.py` before marking canonical.                                                                                                                       |
+| `canonical_hex.db`        | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**     | N/A                                      | **Removed (radius-10)**. Old geometry; must rebuild a radius-12 canonical hex DB. Track new gate results alongside the planned HexNeuralNet alias/import fix.                                                                                                                     |
 
 ### Legacy / Non-Canonical
 
@@ -48,6 +52,14 @@ These databases were generated **before** the following fixes were applied:
 | `minimal_test.db`           | mixed      | mixed   | **legacy_noncanonical** | Test fixture DB                     |
 | `golden_hexagonal.db`       | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry (golden)         |
 | `selfplay_hex_mps_smoke.db` | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + MPS smoke      |
+
+---
+
+### Gate Notes (2025-12-07)
+
+- Replayed `canonical_square8.db` and `canonical_square8_2p.db` via `check_canonical_phase_history.py`; both hit late-turn `Not your turn` failures (matching the parity gate structural errors). Treat them as pending re-generation.
+- `canonical_square19.db` currently has zero games despite an older parity gate artifact; regenerate and re-gate before use.
+- Hex assets remain deprecated until a radius-12 canonical DB is generated; keep the HexNeuralNet alias/import fix in mind when re-running the parity sweep.
 
 ---
 

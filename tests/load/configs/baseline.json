@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "RingRift Baseline Capacity Test",
+  "description": "Establish current system capacity baseline for production-scale validation",
+  "version": "1.0.0",
+  "lastRun": null,
+  "lastUpdated": "2025-12-07",
+
+  "testPhases": [
+    {
+      "name": "warmup",
+      "duration": "1m",
+      "targetVUs": 10,
+      "description": "Warm up the system and fill caches"
+    },
+    {
+      "name": "rampUp",
+      "duration": "3m",
+      "targetVUs": 50,
+      "description": "Gradually increase load to target capacity"
+    },
+    {
+      "name": "steadyState",
+      "duration": "5m",
+      "targetVUs": 50,
+      "description": "Hold steady load for accurate measurement"
+    },
+    {
+      "name": "rampDown",
+      "duration": "1m",
+      "targetVUs": 0,
+      "description": "Graceful ramp down to avoid connection errors"
+    }
+  ],
+
+  "thresholds": {
+    "http_req_duration": {
+      "p95": 500,
+      "p99": 2000,
+      "description": "HTTP request latency thresholds (ms)"
+    },
+    "http_req_failed": {
+      "rate": 0.01,
+      "description": "Maximum acceptable HTTP error rate (1%)"
+    },
+    "ws_connecting": {
+      "p95": 1000,
+      "description": "WebSocket connection establishment time (ms)"
+    },
+    "game_creation_time": {
+      "p95": 2000,
+      "description": "Time to create a new game (ms)"
+    },
+    "move_latency": {
+      "p95": 500,
+      "description": "End-to-end move submission latency (ms)"
+    }
+  },
+
+  "metrics": {
+    "capacity": {
+      "metrics": ["max_concurrent_games", "max_concurrent_vus", "throughput_rps"],
+      "description": "Core capacity indicators"
+    },
+    "latency": {
+      "percentiles": ["p50", "p95", "p99", "max"],
+      "description": "Latency distribution metrics"
+    },
+    "errors": {
+      "metrics": ["rate", "count", "types"],
+      "description": "Error tracking metrics"
+    },
+    "classification": {
+      "metrics": ["contract_failures", "capacity_failures", "lifecycle_mismatches"],
+      "description": "Failure classification for root cause analysis"
+    }
+  },
+
+  "scenarios": {
+    "concurrent_games": {
+      "enabled": true,
+      "weight": 0.4,
+      "description": "Test concurrent game creation and state management"
+    },
+    "game_lifecycle": {
+      "enabled": true,
+      "weight": 0.3,
+      "description": "Full game lifecycle: create, join, play, complete"
+    },
+    "websocket_stress": {
+      "enabled": true,
+      "weight": 0.2,
+      "description": "WebSocket connection handling under load"
+    },
+    "player_moves": {
+      "enabled": true,
+      "weight": 0.1,
+      "description": "Move submission throughput"
+    }
+  },
+
+  "targets": {
+    "staging": {
+      "min_concurrent_games": 20,
+      "min_concurrent_players": 60,
+      "p95_latency_ms": 500,
+      "max_error_rate_percent": 1.0,
+      "description": "Staging environment targets - more permissive"
+    },
+    "production": {
+      "min_concurrent_games": 100,
+      "min_concurrent_players": 300,
+      "p95_latency_ms": 500,
+      "max_error_rate_percent": 0.5,
+      "description": "Production targets from PROJECT_GOALS.md"
+    }
+  },
+
+  "outputConfig": {
+    "resultsDir": "tests/load/results",
+    "summaryFormat": "json",
+    "includeRawMetrics": true,
+    "archiveResults": true,
+    "timestampFormat": "YYYYMMDD_HHmmss"
+  },
+
+  "integrations": {
+    "prometheus": {
+      "enabled": true,
+      "endpoint": "/metrics",
+      "scrapeInterval": "15s"
+    },
+    "grafana": {
+      "dashboardId": "ringrift-load-test",
+      "annotateRuns": true
+    }
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "timestamp": "2025-12-07T05:46:07.966434",
+  "elapsed_seconds": 19115.889200925827,
+  "games_per_config": 100,
+  "hosts": ["mac-studio", "mbp-64gb", "mbp-16gb"],
+  "total_jobs": 27,
+  "successful_jobs": 2,
+  "failed_jobs": 25,
+  "job_results": [
+    {
+      "job_id": "square8_2p_mbp-16gb_2",
+      "success": false
+    },
+    {
+      "job_id": "square8_3p_mbp-16gb_5",
+      "success": false
+    },
+    {
+      "job_id": "square8_3p_mac-studio_3",
+      "success": false
+    },
+    {
+      "job_id": "square8_4p_mbp-16gb_8",
+      "success": false
+    },
+    {
+      "job_id": "square8_2p_mbp-64gb_1",
+      "success": false
+    },
+    {
+      "job_id": "square8_3p_mbp-64gb_4",
+      "success": false
+    },
+    {
+      "job_id": "square8_4p_mbp-64gb_7",
+      "success": false
+    },
+    {
+      "job_id": "square8_4p_mac-studio_6",
+      "success": false
+    },
+    {
+      "job_id": "square8_2p_mac-studio_0",
+      "success": false
+    },
+    {
+      "job_id": "square19_2p_mbp-16gb_11",
+      "success": true
+    },
+    {
+      "job_id": "square19_2p_mac-studio_9",
+      "success": true
+    },
+    {
+      "job_id": "square19_2p_mbp-64gb_10",
+      "success": false
+    },
+    {
+      "job_id": "square19_4p_mbp-16gb_17",
+      "success": false
+    },
+    {
+      "job_id": "square19_3p_mac-studio_12",
+      "success": false
+    },
+    {
+      "job_id": "square19_3p_mbp-64gb_13",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_2p_mbp-16gb_20",
+      "success": false
+    },
+    {
+      "job_id": "square19_3p_mbp-16gb_14",
+      "success": false
+    },
+    {
+      "job_id": "square19_4p_mac-studio_15",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_2p_mac-studio_18",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_3p_mac-studio_21",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_3p_mbp-16gb_23",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_4p_mbp-16gb_26",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_4p_mac-studio_24",
+      "success": false
+    },
+    {
+      "job_id": "square19_4p_mbp-64gb_16",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_2p_mbp-64gb_19",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_3p_mbp-64gb_22",
+      "success": false
+    },
+    {
+      "job_id": "hexagonal_4p_mbp-64gb_25",
+      "success": false
+    }
+  ]
+}
