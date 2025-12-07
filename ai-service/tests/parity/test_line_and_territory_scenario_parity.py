@@ -118,7 +118,7 @@ def create_base_state(board_type: BoardType) -> GameState:
     BoardType.SQUARE19,
     BoardType.HEXAGONAL,
 ])
-def test_line_and_territory_scenario_parity(board_type: BoardType) -> None:
+def test_line_and_territory_scenario_parity(board_type: BoardType, monkeypatch: pytest.MonkeyPatch) -> None:
     """Python analogue of TS Q7/Q20/Q22 line+territory scenario."""
     state = create_base_state(board_type)
     board = state.board
@@ -175,111 +175,115 @@ def test_line_and_territory_scenario_parity(board_type: BoardType) -> None:
     )
 
     # Monkeypatch BoardManager helpers to isolate semantics, as TS tests do.
-    orig_find_all_lines = BoardManager.find_all_lines
-    orig_find_disconnected_regions = BoardManager.find_disconnected_regions
-    orig_get_border_markers = BoardManager.get_border_marker_positions
+    # Use frozen copies to avoid closure issues with lambdas
+    frozen_line = synthetic_line
+    frozen_region = region_territory
 
-    try:
-        BoardManager.find_all_lines = staticmethod(
-            lambda b, num_players=3: [synthetic_line]
-        )
-        BoardManager.find_disconnected_regions = staticmethod(
-            lambda b, moving_player: [region_territory]
-        )
-        BoardManager.get_border_marker_positions = staticmethod(
-            lambda spaces, b: []
-        )
+    def mock_find_all_lines(board, num_players=3):
+        return [frozen_line]
 
-        # === 1) Line processing (Option 2: min collapse, no elimination) ===
-        line_moves = GameEngine._get_line_processing_moves(state, 1)
+    def mock_find_disconnected_regions(board, moving_player):
+        return [frozen_region]
 
-        # Canonical path: CHOOSE_LINE_REWARD (TS-aligned).
-        # Option 2 = minimum collapse = collapsed_markers length equals required_length.
-        # Legacy path: CHOOSE_LINE_OPTION with placement_count == 2.
-        option_moves = [
-            m
-            for m in line_moves
-            if (
-                (
-                    m.type == MoveType.CHOOSE_LINE_REWARD
-                    and hasattr(m, "collapsed_markers")
-                    and m.collapsed_markers is not None
-                    and len(m.collapsed_markers) == required_length
-                )
-                or (
-                    m.type == MoveType.CHOOSE_LINE_OPTION
-                    and (m.placement_count or 0) == 2
-                )
+    def mock_get_border_markers(spaces, board):
+        return []
+
+    monkeypatch.setattr(BoardManager, "find_all_lines", staticmethod(mock_find_all_lines))
+    monkeypatch.setattr(BoardManager, "find_disconnected_regions", staticmethod(mock_find_disconnected_regions))
+    monkeypatch.setattr(BoardManager, "get_border_marker_positions", staticmethod(mock_get_border_markers))
+
+    # === 1) Line processing (Option 2: min collapse, no elimination) ===
+    line_moves = GameEngine._get_line_processing_moves(state, 1)
+
+    # Canonical path: CHOOSE_LINE_REWARD (TS-aligned).
+    # Option 2 = minimum collapse = collapsed_markers length equals required_length.
+    # Legacy path: CHOOSE_LINE_OPTION with placement_count == 2.
+    option_moves = [
+        m
+        for m in line_moves
+        if (
+            (
+                m.type == MoveType.CHOOSE_LINE_REWARD
+                and hasattr(m, "collapsed_markers")
+                and m.collapsed_markers is not None
+                and len(m.collapsed_markers) == required_length
             )
-        ]
-        assert option_moves, "Expected at least one Option 2/CHOOSE_LINE_REWARD move"
-        line_move = option_moves[0]
-
-        GameEngine._apply_line_formation(state, line_move)
-
-        player1_after_lines = next(
-            p for p in state.players if p.player_number == 1
+            or (
+                m.type == MoveType.CHOOSE_LINE_OPTION
+                and (m.placement_count or 0) == 2
+            )
         )
-        collapsed_for_p1 = [
-            key
-            for key, owner in board.collapsed_spaces.items()
-            if owner == 1
-        ]
-        delta_collapsed = len(collapsed_for_p1) - initial_collapsed_count
+    ]
+    assert option_moves, "Expected at least one Option 2/CHOOSE_LINE_REWARD move"
+    line_move = option_moves[0]
 
-        # Exactly requiredLength markers collapsed, no elimination.
-        assert delta_collapsed == required_length
-        assert player1_after_lines.eliminated_rings == initial_eliminated
-        assert state.total_rings_eliminated == initial_total_eliminated
-        # Line collapse updates board.collapsed_spaces AND credits territory
-        # to the acting player per canonical rule RR-CANON-R041.
-        assert player1_after_lines.territory_spaces == initial_territory + required_length
+    GameEngine._apply_line_formation(state, line_move)
 
-        # === 2) Territory processing for the disconnected region ===
-        territory_moves = GameEngine._get_territory_processing_moves(
-            state, 1
-        )
-        assert territory_moves, "Expected at least one territory move"
-        territory_move = territory_moves[0]
+    player1_after_lines = next(
+        p for p in state.players if p.player_number == 1
+    )
+    collapsed_for_p1 = [
+        key
+        for key, owner in board.collapsed_spaces.items()
+        if owner == 1
+    ]
+    delta_collapsed = len(collapsed_for_p1) - initial_collapsed_count
 
-        GameEngine._apply_territory_claim(state, territory_move)
+    # Exactly requiredLength markers collapsed, no elimination.
+    assert delta_collapsed == required_length
+    assert player1_after_lines.eliminated_rings == initial_eliminated
+    assert state.total_rings_eliminated == initial_total_eliminated
+    # Line collapse updates board.collapsed_spaces AND credits territory
+    # to the acting player per canonical rule RR-CANON-R041.
+    assert player1_after_lines.territory_spaces == initial_territory + required_length
 
-        player1_after_territory = next(
-            p for p in state.players if p.player_number == 1
-        )
+    # === 2) Territory processing for the disconnected region ===
+    territory_moves = GameEngine._get_territory_processing_moves(
+        state, 1
+    )
+    assert territory_moves, "Expected at least one territory move"
+    territory_move = territory_moves[0]
 
-        # Region stack removed and cell collapsed to Player 1.
-        assert board.stacks.get(region_key) is None
-        assert board.collapsed_spaces.get(region_key) == 1
+    GameEngine._apply_territory_claim(state, territory_move)
 
-        # TerritorySpaces: +required_length from line collapse (per RR-CANON-R041)
-        # plus +1 from the processed region.
-        assert (
-            player1_after_territory.territory_spaces
-            == initial_territory + required_length + 1
-        )
+    player1_after_territory = next(
+        p for p in state.players if p.player_number == 1
+    )
 
-        # Elimination accounting: 1 ring from the region (P2 stack) credited
-        # to Player 1. Mandatory self-elimination is now modelled as a separate
-        # explicit ELIMINATE_RINGS_FROM_STACK decision rather than being baked
-        # into PROCESS_TERRITORY_REGION.
-        delta_elim_p1 = (
-            player1_after_territory.eliminated_rings - initial_eliminated
-        )
-        delta_total_elim = (
-            state.total_rings_eliminated - initial_total_eliminated
-        )
-        assert delta_elim_p1 == 1
-        assert delta_total_elim == 1
-        assert board.eliminated_rings.get("1") == 1
+    # Region stack removed and cell collapsed to Player 1.
+    assert board.stacks.get(region_key) is None
+    assert board.collapsed_spaces.get(region_key) == 1
 
-    finally:
-        BoardManager.find_all_lines = orig_find_all_lines
-        BoardManager.find_disconnected_regions = orig_find_disconnected_regions
-        BoardManager.get_border_marker_positions = orig_get_border_markers
+    # TerritorySpaces: +required_length from line collapse (per RR-CANON-R041)
+    # plus +1 from the processed region.
+    assert (
+        player1_after_territory.territory_spaces
+        == initial_territory + required_length + 1
+    )
+
+    # Elimination accounting: 1 ring from the region (P2 stack) credited
+    # to Player 1. Mandatory self-elimination is now modelled as a separate
+    # explicit ELIMINATE_RINGS_FROM_STACK decision rather than being baked
+    # into PROCESS_TERRITORY_REGION.
+    delta_elim_p1 = (
+        player1_after_territory.eliminated_rings - initial_eliminated
+    )
+    delta_total_elim = (
+        state.total_rings_eliminated - initial_total_eliminated
+    )
+    assert delta_elim_p1 == 1
+    assert delta_total_elim == 1
+    assert board.eliminated_rings.get("1") == 1
 
 
-def test_get_valid_moves_line_processing_surfaces_only_line_decisions() -> None:
+@pytest.mark.parametrize("board_type", [
+    BoardType.SQUARE8,
+    BoardType.SQUARE19,
+    BoardType.HEXAGONAL,
+])
+def test_get_valid_moves_line_processing_surfaces_only_line_decisions(
+    board_type: BoardType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Decision-phase parity: LINE_PROCESSING get_valid_moves surface.
 
     For an overlength line, GameEngine.get_valid_moves in LINE_PROCESSING
@@ -287,89 +291,87 @@ def test_get_valid_moves_line_processing_surfaces_only_line_decisions() -> None:
     geometry matches the synthetic line used in this scenario, for all
     supported board types.
     """
-    orig_find_all_lines = BoardManager.find_all_lines
+    # Clear move cache to ensure our mocked find_all_lines is used
+    GameEngine.clear_cache()
+    state = create_base_state(board_type)
+    required_length = REQUIRED_LENGTH_BY_BOARD[board_type]
 
-    try:
-        for board_type in (
-            BoardType.SQUARE8,
-            BoardType.SQUARE19,
-            BoardType.HEXAGONAL,
-        ):
-            state = create_base_state(board_type)
-            required_length = REQUIRED_LENGTH_BY_BOARD[board_type]
+    # Synthetic overlength line for Player 1: length = requiredLength + 1.
+    line_positions = [Position(x=i, y=0) for i in range(required_length + 1)]
+    synthetic_line = LineInfo(
+        positions=line_positions,
+        player=1,
+        length=len(line_positions),
+        direction=Position(x=1, y=0),
+    )
 
-            # Synthetic overlength line for Player 1: length = requiredLength + 1.
-            line_positions = [Position(x=i, y=0) for i in range(required_length + 1)]
-            synthetic_line = LineInfo(
-                positions=line_positions,
-                player=1,
-                length=len(line_positions),
-                direction=Position(x=1, y=0),
-            )
+    # Use frozen copy to avoid closure issues
+    frozen_line = synthetic_line
 
-            BoardManager.find_all_lines = staticmethod(
-                lambda board, num_players=2, sl=synthetic_line: [sl]
-            )
+    def mock_find_all_lines(board, num_players=2):
+        return [frozen_line]
 
-            state.current_phase = GamePhase.LINE_PROCESSING
-            state.current_player = 1
+    monkeypatch.setattr(BoardManager, "find_all_lines", staticmethod(mock_find_all_lines))
 
-            moves = GameEngine.get_valid_moves(state, 1)
-            assert moves, "Expected line-processing moves in LINE_PROCESSING"
+    state.current_phase = GamePhase.LINE_PROCESSING
+    state.current_player = 1
 
-            # Only PROCESS_LINE and CHOOSE_LINE_REWARD should be surfaced.
-            allowed_types = {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD}
-            assert all(m.type in allowed_types for m in moves)
+    moves = GameEngine.get_valid_moves(state, 1)
+    assert moves, "Expected line-processing moves in LINE_PROCESSING"
 
-            process_moves = [m for m in moves if m.type == MoveType.PROCESS_LINE]
-            reward_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_REWARD]
-            assert process_moves, "Expected at least one PROCESS_LINE move"
-            assert reward_moves, "Expected at least one CHOOSE_LINE_REWARD move"
+    # Only PROCESS_LINE and CHOOSE_LINE_REWARD should be surfaced.
+    allowed_types = {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD}
+    assert all(m.type in allowed_types for m in moves)
 
-            # Reward moves must reference the same synthetic line and use either the
-            # full line or required-length segments as collapsed_markers.
-            for m in reward_moves:
-                assert m.formed_lines
-                line = list(m.formed_lines)[0]
-                actual_positions = list(line.positions)
+    process_moves = [m for m in moves if m.type == MoveType.PROCESS_LINE]
+    reward_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_REWARD]
+    assert process_moves, "Expected at least one PROCESS_LINE move"
+    assert reward_moves, "Expected at least one CHOOSE_LINE_REWARD move"
 
-                # All positions must lie on the synthetic overlength line.
-                assert all(pos in line_positions for pos in actual_positions)
+    # Reward moves must reference the same synthetic line and use either the
+    # full line or required-length segments as collapsed_markers.
+    for m in reward_moves:
+        assert m.formed_lines
+        line = list(m.formed_lines)[0]
+        actual_positions = list(line.positions)
 
-                # Length must be either the full synthetic line or a contiguous
-                # required-length segment of it.
-                length = len(actual_positions)
-                assert length in (required_length, len(line_positions))
+        # All positions must lie on the synthetic overlength line.
+        assert all(pos in line_positions for pos in actual_positions)
 
-                xs = sorted(pos.x for pos in actual_positions)
-                ys = {pos.y for pos in actual_positions}
-                # All positions on the same row and contiguous in x.
-                assert len(ys) == 1
-                assert all(xs[i + 1] - xs[i] == 1 for i in range(len(xs) - 1))
+        # Length must be either the full synthetic line or a contiguous
+        # required-length segment of it.
+        length = len(actual_positions)
+        assert length in (required_length, len(line_positions))
 
-                if length == len(line_positions):
-                    # Full-line reward: geometry must match the synthetic line.
-                    assert set(actual_positions) == set(line_positions)
+        xs = sorted(pos.x for pos in actual_positions)
+        ys = {pos.y for pos in actual_positions}
+        # All positions on the same row and contiguous in x.
+        assert len(ys) == 1
+        assert all(xs[i + 1] - xs[i] == 1 for i in range(len(xs) - 1))
 
-                collapsed = getattr(m, "collapsed_markers", None)
-                assert collapsed is not None
-                collapsed_positions = list(collapsed)
-                # Collapsed markers must form a non-empty contiguous subset of the
-                # synthetic overlength line.
-                assert collapsed_positions
-                assert all(pos in line_positions for pos in collapsed_positions)
-                xs_collapsed = sorted(pos.x for pos in collapsed_positions)
-                ys_collapsed = {pos.y for pos in collapsed_positions}
-                assert len(ys_collapsed) == 1
-                assert all(
-                    xs_collapsed[i + 1] - xs_collapsed[i] == 1
-                    for i in range(len(xs_collapsed) - 1)
-                )
-    finally:
-        BoardManager.find_all_lines = orig_find_all_lines
+        if length == len(line_positions):
+            # Full-line reward: geometry must match the synthetic line.
+            assert set(actual_positions) == set(line_positions)
+
+        collapsed = getattr(m, "collapsed_markers", None)
+        assert collapsed is not None
+        collapsed_positions = list(collapsed)
+        # Collapsed markers must form a non-empty contiguous subset of the
+        # synthetic overlength line.
+        assert collapsed_positions
+        assert all(pos in line_positions for pos in collapsed_positions)
+        xs_collapsed = sorted(pos.x for pos in collapsed_positions)
+        ys_collapsed = {pos.y for pos in collapsed_positions}
+        assert len(ys_collapsed) == 1
+        assert all(
+            xs_collapsed[i + 1] - xs_collapsed[i] == 1
+            for i in range(len(xs_collapsed) - 1)
+        )
 
 
-def test_get_valid_moves_territory_processing_pre_elimination() -> None:
+def test_get_valid_moves_territory_processing_pre_elimination(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Decision-phase parity: TERRITORY_PROCESSING pre-elim surface.
 
     When at least one disconnected region is eligible, TERRITORY_PROCESSING
@@ -410,36 +412,39 @@ def test_get_valid_moves_territory_processing_pre_elimination() -> None:
         isDisconnected=True,
     )
 
-    orig_find_disconnected_regions = BoardManager.find_disconnected_regions
+    # Use frozen copy for closure safety
+    frozen_region = region_territory
 
-    try:
-        BoardManager.find_disconnected_regions = staticmethod(
-            lambda board, player_number: [region_territory]
-        )
+    def mock_find_disconnected_regions(board, player_number):
+        return [frozen_region]
 
-        state.current_phase = GamePhase.TERRITORY_PROCESSING
-        state.current_player = 1
+    monkeypatch.setattr(
+        BoardManager, "find_disconnected_regions", staticmethod(mock_find_disconnected_regions)
+    )
 
-        moves = GameEngine.get_valid_moves(state, 1)
-        assert moves, "Expected territory-processing moves"
+    state.current_phase = GamePhase.TERRITORY_PROCESSING
+    state.current_player = 1
 
-        # Only PROCESS_TERRITORY_REGION should be surfaced.
-        assert all(
-            m.type == MoveType.PROCESS_TERRITORY_REGION for m in moves
-        )
+    moves = GameEngine.get_valid_moves(state, 1)
+    assert moves, "Expected territory-processing moves"
 
-        # Each move should carry the disconnected region geometry and point
-        # to one of its spaces.
-        for m in moves:
-            assert m.disconnected_regions
-            region = list(m.disconnected_regions)[0]
-            assert list(region.spaces) == list(region_territory.spaces)
-            assert m.to in region.spaces
-    finally:
-        BoardManager.find_disconnected_regions = orig_find_disconnected_regions
+    # Only PROCESS_TERRITORY_REGION should be surfaced.
+    assert all(
+        m.type == MoveType.PROCESS_TERRITORY_REGION for m in moves
+    )
+
+    # Each move should carry the disconnected region geometry and point
+    # to one of its spaces.
+    for m in moves:
+        assert m.disconnected_regions
+        region = list(m.disconnected_regions)[0]
+        assert list(region.spaces) == list(region_territory.spaces)
+        assert m.to in region.spaces
 
 
-def test_get_valid_moves_territory_processing_self_elimination_only() -> None:
+def test_get_valid_moves_territory_processing_self_elimination_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Decision-phase parity: TERRITORY_PROCESSING elimination surface.
 
     When no disconnected regions are eligible but the player controls stacks,
@@ -468,36 +473,35 @@ def test_get_valid_moves_territory_processing_self_elimination_only() -> None:
     )
 
     # No disconnected regions should be reported for this test.
-    orig_find_disconnected_regions = BoardManager.find_disconnected_regions
-    BoardManager.find_disconnected_regions = staticmethod(
-        lambda board, player_number: []
+    def mock_find_disconnected_regions(board, player_number):
+        return []
+
+    monkeypatch.setattr(
+        BoardManager, "find_disconnected_regions", staticmethod(mock_find_disconnected_regions)
     )
 
-    try:
-        state.current_phase = GamePhase.TERRITORY_PROCESSING
-        state.current_player = 1
+    state.current_phase = GamePhase.TERRITORY_PROCESSING
+    state.current_player = 1
 
-        p1 = next(p for p in state.players if p.player_number == 1)
-        p1.rings_in_hand = 0
+    p1 = next(p for p in state.players if p.player_number == 1)
+    p1.rings_in_hand = 0
 
-        moves = GameEngine.get_valid_moves(state, 1)
-        assert moves, "Expected elimination decisions in TERRITORY_PROCESSING"
+    moves = GameEngine.get_valid_moves(state, 1)
+    assert moves, "Expected elimination decisions in TERRITORY_PROCESSING"
 
-        # Only ELIMINATE_RINGS_FROM_STACK should be surfaced.
-        assert all(
-            m.type == MoveType.ELIMINATE_RINGS_FROM_STACK for m in moves
-        )
+    # Only ELIMINATE_RINGS_FROM_STACK should be surfaced.
+    assert all(
+        m.type == MoveType.ELIMINATE_RINGS_FROM_STACK for m in moves
+    )
 
-        # Candidates must match the player stacks with positive capHeight.
-        expected_keys = {
-            key
-            for key, stack in board.stacks.items()
-            if stack.controlling_player == 1 and stack.cap_height > 0
-        }
-        target_keys = {m.to.to_key() for m in moves if m.to is not None}
-        assert target_keys == expected_keys
-    finally:
-        BoardManager.find_disconnected_regions = orig_find_disconnected_regions
+    # Candidates must match the player stacks with positive capHeight.
+    expected_keys = {
+        key
+        for key, stack in board.stacks.items()
+        if stack.controlling_player == 1 and stack.cap_height > 0
+    }
+    target_keys = {m.to.to_key() for m in moves if m.to is not None}
+    assert target_keys == expected_keys
 
 
 def _multi_phase_vectors_path() -> Path:
@@ -659,6 +663,8 @@ def test_overlength_line_option2_segments_exhaustive(
     GameEngine.get_valid_moves surfaces exactly that set of Option-2 segments
     for all supported board types.
     """
+    # Clear move cache to ensure our mocked find_all_lines is used
+    GameEngine.clear_cache()
     state = create_base_state(board_type)
     required_length = REQUIRED_LENGTH_BY_BOARD[board_type]
 

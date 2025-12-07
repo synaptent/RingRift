@@ -164,15 +164,13 @@ python -m pytest tests/parity/test_hash_parity.py tests/parity/test_chain_captur
 
 ### Latest Test Results (2025-12-07)
 
-| Test Suite                | Passed | Failed | Notes                        |
-| ------------------------- | ------ | ------ | ---------------------------- |
-| Hash parity               | 7      | 0      | ✅ All pass                  |
-| Chain capture parity      | 11     | 0      | ✅ All pass                  |
-| Forced elimination parity | 11     | 0      | ✅ All pass                  |
-| Line & territory parity   | 11     | 3      | ⚠️ Overlength line edge case |
-| **Total**                 | **40** | **3**  | 93% pass rate                |
-
-The 3 failures are related to `test_overlength_line_option2_segments_exhaustive` across all board types - a known edge case being addressed separately.
+| Test Suite                | Passed | Failed | Notes       |
+| ------------------------- | ------ | ------ | ----------- |
+| Hash parity               | 7      | 0      | ✅ All pass |
+| Chain capture parity      | 11     | 0      | ✅ All pass |
+| Forced elimination parity | 11     | 0      | ✅ All pass |
+| Line & territory parity   | 16     | 0      | ✅ All pass |
+| **Total**                 | **45** | **0**  | 100% pass   |
 
 Note: The full fixture regression tests (`test_replay_parity_fixtures_regression.py`) are currently marked as `xfail` because they capture known divergences between TS and Python engines that are being addressed.
 

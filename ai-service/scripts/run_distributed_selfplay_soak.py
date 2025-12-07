@@ -345,6 +345,8 @@ def generate_job_configs(
     output_dir: str,
     base_seed: int = 42,
     host_memory: Optional[Dict[str, int]] = None,
+    allowed_board_types: Optional[List[str]] = None,
+    allowed_num_players: Optional[List[int]] = None,
 ) -> List[JobConfig]:
     """Generate job configurations distributed across hosts based on memory capacity.
 
@@ -359,6 +361,8 @@ def generate_job_configs(
     job_idx = 0
 
     for board_type, player_configs in BOARD_CONFIGS.items():
+        if allowed_board_types and board_type not in allowed_board_types:
+            continue
         # Get hosts eligible for this board type based on memory
         if host_memory:
             eligible_hosts = get_eligible_hosts_for_board(board_type, hosts, host_memory)
@@ -376,6 +380,8 @@ def generate_job_configs(
         remainder = games_per_config % num_hosts
 
         for num_players, max_moves in player_configs.items():
+            if allowed_num_players and num_players not in allowed_num_players:
+                continue
             for host_idx, host in enumerate(eligible_hosts):
                 # Distribute remainder across first hosts
                 host_games = games_per_host + (1 if host_idx < remainder else 0)
@@ -635,6 +641,18 @@ def main():
         help="Number of games per (board_type, num_players) configuration",
     )
     parser.add_argument(
+        "--board-types",
+        type=str,
+        default=None,
+        help="Comma-separated board types to run (default: all)",
+    )
+    parser.add_argument(
+        "--num-players",
+        type=str,
+        default=None,
+        help="Comma-separated player counts to run (default: 2,3,4)",
+    )
+    parser.add_argument(
         "--hosts",
         type=str,
         default="local",
@@ -720,6 +738,14 @@ def main():
         print(f"  {host}: {info.total_gb}GB total, {info.available_gb}GB available -> eligible for: {', '.join(eligible_boards)}")
     print()
 
+    # Parse filters
+    allowed_board_types = None
+    if args.board_types:
+        allowed_board_types = [b.strip() for b in args.board_types.split(",") if b.strip()]
+    allowed_num_players = None
+    if args.num_players:
+        allowed_num_players = [int(p.strip()) for p in args.num_players.split(",") if p.strip()]
+
     # Generate job configurations with memory-aware distribution
     jobs = generate_job_configs(
         games_per_config=args.games_per_config,
@@ -727,6 +753,8 @@ def main():
         output_dir=args.output_dir,
         base_seed=args.base_seed,
         host_memory=host_memory,
+        allowed_board_types=allowed_board_types,
+        allowed_num_players=allowed_num_players,
     )
 
     print(f"\n{'='*60}")

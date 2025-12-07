@@ -31,7 +31,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
@@ -52,7 +52,9 @@ def _run_cmd(cmd: list[str], cwd: Path | None = None, env_overrides: Dict[str, s
     return proc
 
 
-def run_selfplay_soak(board_type: str, num_games: int, db_path: Path, seed: int, max_moves: int) -> Dict[str, Any]:
+def run_selfplay_soak(
+    board_type: str, num_games: int, db_path: Path, seed: int, max_moves: int, num_players: int
+) -> Dict[str, Any]:
     """Run a small Python self-play soak and record games to db_path."""
     logs_dir = AI_SERVICE_ROOT / "logs" / "selfplay"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -70,7 +72,7 @@ def run_selfplay_soak(board_type: str, num_games: int, db_path: Path, seed: int,
         "--engine-mode",
         "mixed",
         "--num-players",
-        "2",
+        str(num_players),
         "--max-moves",
         str(max_moves),
         "--seed",
@@ -132,6 +134,22 @@ def run_parity_check(db_path: Path) -> Dict[str, Any]:
     return summary
 
 
+def run_parity_checks(db_paths: list[Path]) -> Dict[str, Any]:
+    """Run parity on multiple DBs and aggregate results."""
+    summaries: list[Dict[str, Any]] = []
+    all_pass = True
+    for db_path in db_paths:
+        summary = run_parity_check(db_path)
+        summaries.append({"db": str(db_path), "summary": summary})
+        rc = summary.get("returncode", 1)
+        struct = int(summary.get("games_with_structural_issues", 0))
+        sem = int(summary.get("games_with_semantic_divergence", 0))
+        total_checked = int(summary.get("total_games_checked", 0))
+        if rc != 0 or struct > 0 or sem > 0 or total_checked == 0:
+            all_pass = False
+    return {"all_pass": all_pass, "per_db": summaries}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run canonical Python self-play for a board type and gate the resulting GameReplayDB on TS↔Python parity."
@@ -147,6 +165,13 @@ def main() -> None:
         type=int,
         default=20,
         help="Number of self-play games to run for the gate (default: 20).",
+    )
+    parser.add_argument(
+        "--num-players",
+        type=int,
+        choices=[2, 3, 4],
+        default=2,
+        help="Number of players for the self-play soak (default: 2).",
     )
     parser.add_argument(
         "--db",
@@ -167,6 +192,12 @@ def main() -> None:
         help="Maximum moves per game before forced termination (default: 200).",
     )
     parser.add_argument(
+        "--hosts",
+        type=str,
+        default=None,
+        help="Comma-separated hosts for distributed self-play soak; when set, delegates to run_distributed_selfplay_soak for the specified board/num-players. Default: None (local soak).",
+    )
+    parser.add_argument(
         "--summary",
         type=str,
         default=None,
@@ -178,9 +209,56 @@ def main() -> None:
     db_path = Path(args.db).resolve()
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    soak_result = run_selfplay_soak(args.board_type, args.num_games, db_path, args.seed, args.max_moves)
+    parity_summary: Dict[str, Any] | Dict[str, Any]
+    soak_result: Dict[str, Any] = {}
+    dbs_to_check: list[Path] = [db_path]
 
-    parity_summary = run_parity_check(db_path)
+    if args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",") if h.strip()]
+        output_dir = db_path.parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+        # Delegate to distributed soak runner with filters
+        try:
+            output_dir_arg = str(output_dir.relative_to(AI_SERVICE_ROOT))
+        except ValueError:
+            output_dir_arg = str(output_dir)
+
+        cmd = [
+            sys.executable,
+            "scripts/run_distributed_selfplay_soak.py",
+            "--games-per-config",
+            str(args.num_games),
+            "--hosts",
+            ",".join(hosts),
+            "--output-dir",
+            output_dir_arg,
+            "--board-types",
+            args.board_type,
+            "--num-players",
+            str(args.num_players),
+            "--base-seed",
+            str(args.seed),
+            "--max-parallel-per-host",
+            "2",
+        ]
+        proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT)
+        soak_result = {
+            "returncode": proc.returncode,
+            "stdout": proc.stdout,
+            "stderr": proc.stderr,
+            "distributed": True,
+        }
+        # Collect DBs produced for this config
+        dbs_to_check = list(output_dir.glob(f"selfplay_{args.board_type}_{args.num_players}p_*.db"))
+        if not dbs_to_check:
+            parity_summary = {"error": "no_db_produced", "returncode": 1}
+        else:
+            parity_summary = run_parity_checks(dbs_to_check)
+    else:
+        soak_result = run_selfplay_soak(
+            args.board_type, args.num_games, db_path, args.seed, args.max_moves, args.num_players
+        )
+        parity_summary = run_parity_check(db_path)
 
     # Basic gate: soak must succeed and parity must be clean.
     #
@@ -190,22 +268,25 @@ def main() -> None:
     #   - at least one game was parity-checked.
     passed = False
     soak_rc = soak_result.get("returncode")
-    if (
-        soak_rc == 0
-        and "error" not in parity_summary
-        and parity_summary.get("returncode") == 0
-    ):
-        struct = int(parity_summary.get("games_with_structural_issues", 0))
-        sem = int(parity_summary.get("games_with_semantic_divergence", 0))
-        total_checked = int(parity_summary.get("total_games_checked", 0))
-        passed = struct == 0 and sem == 0 and total_checked > 0
+    if soak_rc == 0 and "error" not in parity_summary:
+        if args.hosts:
+            passed = bool(parity_summary.get("all_pass"))
+        else:
+            if parity_summary.get("returncode") == 0:
+                struct = int(parity_summary.get("games_with_structural_issues", 0))
+                sem = int(parity_summary.get("games_with_semantic_divergence", 0))
+                total_checked = int(parity_summary.get("total_games_checked", 0))
+                passed = struct == 0 and sem == 0 and total_checked > 0
 
     gate_summary: Dict[str, Any] = {
         "board_type": args.board_type,
+        "num_players": args.num_players,
         "db_path": str(db_path),
+        "db_paths_checked": [str(p) for p in dbs_to_check],
         "num_games": args.num_games,
         "seed": args.seed,
         "max_moves": args.max_moves,
+        "hosts": args.hosts.split(",") if args.hosts else None,
         "soak_returncode": soak_result.get("returncode"),
         "parity_summary": parity_summary,
         "passed_canonical_parity_gate": bool(passed),

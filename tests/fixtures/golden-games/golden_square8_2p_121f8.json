@@ -899,7 +899,7 @@
     "source": "self_play",
     "tags": [
       "golden_candidate",
-      "db:golden_square8_2p.db",
+      "db:removed_noncanonical",
       "game_id:121f8003-b363-4be1-92f2-3fbb247c0772"
     ]
   }

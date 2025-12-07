@@ -314,29 +314,29 @@ class PreflightChecker:
         """Check neural network components."""
         cat = "Neural Networks"
 
-        # RingRiftCNN instantiation
+        # RingRiftCNN_v2 instantiation
         try:
-            from app.ai.neural_net import RingRiftCNN
-            net = RingRiftCNN(board_size=8)
+            from app.ai.neural_net import RingRiftCNN_v2
+            net = RingRiftCNN_v2(board_size=8)
             self.add_check(cat, CheckResult(
-                name="RingRiftCNN instantiation",
+                name="RingRiftCNN_v2 instantiation",
                 passed=True,
                 message="OK",
             ))
         except Exception as e:
             self.add_check(cat, CheckResult(
-                name="RingRiftCNN instantiation",
+                name="RingRiftCNN_v2 instantiation",
                 passed=False,
                 error=str(e),
-                suggestion="Check app/ai/neural_net.py for RingRiftCNN class",
+                suggestion="Check app/ai/neural_net.py for RingRiftCNN_v2 class",
             ))
 
-        # RingRiftCNN forward pass
+        # RingRiftCNN_v2 forward pass
         try:
             import torch
-            from app.ai.neural_net import RingRiftCNN
+            from app.ai.neural_net import RingRiftCNN_v2
 
-            net = RingRiftCNN(board_size=8)
+            net = RingRiftCNN_v2(board_size=8)
             # Create dummy input: batch=1, channels=40 (10*4), 8x8 board
             # Plus global features (10)
             batch_size = 2
@@ -357,13 +357,13 @@ class PreflightChecker:
             assert not torch.isnan(policy).any(), "Policy contains NaN"
 
             self.add_check(cat, CheckResult(
-                name="RingRiftCNN forward pass",
+                name="RingRiftCNN_v2 forward pass",
                 passed=True,
                 message="OK",
             ))
         except Exception as e:
             self.add_check(cat, CheckResult(
-                name="RingRiftCNN forward pass",
+                name="RingRiftCNN_v2 forward pass",
                 passed=False,
                 error=str(e),
                 suggestion="Check neural network architecture",
@@ -372,9 +372,9 @@ class PreflightChecker:
         # Weight initialization check
         try:
             import torch
-            from app.ai.neural_net import RingRiftCNN
+            from app.ai.neural_net import RingRiftCNN_v2
 
-            net = RingRiftCNN(board_size=8)
+            net = RingRiftCNN_v2(board_size=8)
             has_nan = False
             unreasonable_magnitude = False
 
@@ -678,9 +678,9 @@ class PreflightChecker:
         try:
             import torch
             import torch.nn as nn
-            from app.ai.neural_net import RingRiftCNN
+            from app.ai.neural_net import RingRiftCNN_v2
 
-            net = RingRiftCNN(board_size=8)
+            net = RingRiftCNN_v2(board_size=8)
             optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
             loss_fn = nn.MSELoss()
 

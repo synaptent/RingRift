@@ -206,13 +206,15 @@ class ModelMetadata:
 # These should be imported from neural_net.py after we add them there
 # For now, define defaults here
 
-RINGRIFT_CNN_VERSION = "v1.0.0"
-HEX_NEURAL_NET_VERSION = "v1.0.0"
+RINGRIFT_CNN_V2_VERSION = "v2.0.0"
+HEX_NEURAL_NET_V2_VERSION = "v2.0.0"
 
 # Model class name to version mapping
 MODEL_VERSIONS: Dict[str, str] = {
-    "RingRiftCNN": RINGRIFT_CNN_VERSION,
-    "HexNeuralNet": HEX_NEURAL_NET_VERSION,
+    "RingRiftCNN_v2": RINGRIFT_CNN_V2_VERSION,
+    "RingRiftCNN_v2_Lite": RINGRIFT_CNN_V2_VERSION,
+    "HexNeuralNet_v2": HEX_NEURAL_NET_V2_VERSION,
+    "HexNeuralNet_v2_Lite": HEX_NEURAL_NET_V2_VERSION,
 }
 
 
@@ -239,7 +241,8 @@ def get_model_config(model: nn.Module) -> Dict[str, Any]:
     config: Dict[str, Any] = {}
     class_name = model.__class__.__name__
 
-    if class_name == "RingRiftCNN":
+    if class_name in ("RingRiftCNN_v2", "RingRiftCNN_v2_Lite"):
+        # V2 models use SE residual blocks
         num_filters = 128
         if hasattr(model, "conv1"):
             conv1 = getattr(model, "conv1")
@@ -259,11 +262,11 @@ def get_model_config(model: nn.Module) -> Dict[str, Any]:
             "num_res_blocks": num_res_blocks,
             "policy_size": getattr(model, "policy_size", 55000),
         }
-    elif class_name == "HexNeuralNet":
+    elif class_name in ("HexNeuralNet_v2", "HexNeuralNet_v2_Lite"):
         config = {
-            "in_channels": getattr(model, "in_channels", 40),
-            "global_features": getattr(model, "global_features", 10),
-            "num_res_blocks": getattr(model, "num_res_blocks", 8),
+            "in_channels": getattr(model, "in_channels", 14),
+            "global_features": getattr(model, "global_features", 20),
+            "num_res_blocks": getattr(model, "num_res_blocks", 10),
             "num_filters": getattr(model, "num_filters", 128),
             "board_size": getattr(model, "board_size", 25),  # Radius-12 hex: 25×25 frame
             "policy_size": getattr(model, "policy_size", 91876),  # P_HEX for radius-12

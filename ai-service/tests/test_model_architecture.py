@@ -8,117 +8,154 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 
 from app.ai.neural_net import (
-    RingRiftCNN,
-    HexNeuralNet,
+    RingRiftCNN_v2,
+    RingRiftCNN_v2_Lite,
+    HexNeuralNet_v2,
+    HexNeuralNet_v2_Lite,
     P_HEX,
     POLICY_SIZE_8x8,
 )
 
 
-class TestModelArchitecture(unittest.TestCase):
-    """Architecture sanity checks for the square-board CNN."""
+class TestModelArchitecture_v2(unittest.TestCase):
+    """Architecture sanity checks for the V2 square-board CNN."""
 
     def setUp(self):
-        # Note: With board_size=8, the model now correctly uses POLICY_SIZE_8x8 (7000)
-        # instead of the 19x19 default. This is the intended board-specific behavior.
-        self.model = RingRiftCNN(
+        # V2 models have multi-player value head (outputs 4 values)
+        self.in_channels = 14
+        self.global_features = 20
+        self.history_length = 4
+        self.model = RingRiftCNN_v2(
             board_size=8,
-            in_channels=10,
-            global_features=10,
+            in_channels=self.in_channels,
+            global_features=self.global_features,
             num_res_blocks=2,  # Small for testing
-            num_filters=16,    # Small for testing
-            history_length=3,
+            num_filters=32,    # Small for testing
+            history_length=self.history_length,
         )
 
     def test_forward_pass_shapes(self):
-        """Forward pass produces correct output shapes for square model."""
+        """Forward pass produces correct output shapes for V2 square model."""
         batch_size = 4
-        # Input channels = 10 * (3 + 1) = 40
-        features = torch.randn(batch_size, 40, 8, 8)
-        globals_vec = torch.randn(batch_size, 10)
+        # Input channels = in_channels * (history_length + 1)
+        total_channels = self.in_channels * (self.history_length + 1)
+        features = torch.randn(batch_size, total_channels, 8, 8)
+        globals_vec = torch.randn(batch_size, self.global_features)
 
         value, policy = self.model(features, globals_vec)
 
-        self.assertEqual(value.shape, (batch_size, 1))
-        # 8x8 board now correctly uses POLICY_SIZE_8x8 (7000)
+        # V2 has multi-player value head: (batch, 4)
+        self.assertEqual(value.shape, (batch_size, 4))
         self.assertEqual(policy.shape, (batch_size, POLICY_SIZE_8x8))
 
     def test_value_range(self):
-        """Value output is constrained to [-1, 1] for square model."""
+        """Value output is constrained to [-1, 1] for V2 multi-player model (tanh)."""
         batch_size = 10
-        features = torch.randn(batch_size, 40, 8, 8)
-        globals_vec = torch.randn(batch_size, 10)
+        total_channels = self.in_channels * (self.history_length + 1)
+        features = torch.randn(batch_size, total_channels, 8, 8)
+        globals_vec = torch.randn(batch_size, self.global_features)
 
         value, _ = self.model(features, globals_vec)
 
+        # Multi-player value head uses tanh, so values are in [-1, 1] per player
         self.assertTrue(torch.all(value >= -1.0))
         self.assertTrue(torch.all(value <= 1.0))
 
-    def test_forward_single(self):
-        """The convenience forward_single method returns correct types/shapes."""
-        features = np.random.randn(40, 8, 8).astype(np.float32)
-        globals_vec = np.random.randn(10).astype(np.float32)
 
-        value, policy = self.model.forward_single(features, globals_vec)
-
-        self.assertIsInstance(value, float)
-        self.assertIsInstance(policy, np.ndarray)
-        # 8x8 board now correctly uses POLICY_SIZE_8x8 (7000)
-        self.assertEqual(policy.shape, (POLICY_SIZE_8x8,))
-        self.assertTrue(-1.0 <= value <= 1.0)
-
-
-class TestHexModelArchitecture(unittest.TestCase):
-    """Architecture sanity checks for the hex-specific CNN (HexNeuralNet)."""
+class TestModelArchitecture_v2_Lite(unittest.TestCase):
+    """Architecture sanity checks for the V2 Lite (memory-efficient) square-board CNN."""
 
     def setUp(self):
-        # Use a small number of filters/blocks for test speed while keeping
-        # the topology identical to the production design.
-        self.in_channels = 10  # Example hex feature channels
-        self.global_features = 10
-        self.model = HexNeuralNet(
+        self.in_channels = 12
+        self.global_features = 20
+        self.history_length = 3
+        self.model = RingRiftCNN_v2_Lite(
+            board_size=8,
+            in_channels=self.in_channels,
+            global_features=self.global_features,
+            num_res_blocks=2,  # Small for testing
+            num_filters=32,    # Small for testing
+            history_length=self.history_length,
+        )
+
+    def test_forward_pass_shapes(self):
+        """Forward pass produces correct output shapes for V2 Lite model."""
+        batch_size = 4
+        total_channels = self.in_channels * (self.history_length + 1)
+        features = torch.randn(batch_size, total_channels, 8, 8)
+        globals_vec = torch.randn(batch_size, self.global_features)
+
+        value, policy = self.model(features, globals_vec)
+
+        self.assertEqual(value.shape, (batch_size, 4))
+        self.assertEqual(policy.shape, (batch_size, POLICY_SIZE_8x8))
+
+
+class TestHexModelArchitecture_v2(unittest.TestCase):
+    """Architecture sanity checks for the V2 hex-specific CNN."""
+
+    def setUp(self):
+        self.in_channels = 14
+        self.global_features = 20
+        self.model = HexNeuralNet_v2(
             in_channels=self.in_channels,
             global_features=self.global_features,
             num_res_blocks=2,
-            num_filters=16,
+            num_filters=32,
             board_size=21,
             policy_size=P_HEX,
         )
 
-    def test_hex_forward_pass_shapes_with_mask(self):
-        """Forward pass with a full hex_mask yields correct shapes."""
+    def test_hex_forward_pass_shapes(self):
+        """Forward pass yields correct shapes for V2 hex model."""
         batch_size = 4
         features = torch.randn(batch_size, self.in_channels, 21, 21)
         globals_vec = torch.randn(batch_size, self.global_features)
-        hex_mask = torch.ones(batch_size, 1, 21, 21)
 
-        value, policy = self.model(features, globals_vec, hex_mask=hex_mask)
+        value, policy = self.model(features, globals_vec)
 
-        self.assertEqual(value.shape, (batch_size, 1))
+        # V2 has multi-player value head
+        self.assertEqual(value.shape, (batch_size, 4))
         self.assertEqual(policy.shape, (batch_size, P_HEX))
 
-    def test_hex_forward_pass_shapes_without_mask(self):
-        """Forward pass also works when no hex_mask is provided."""
+    def test_hex_value_range(self):
+        """Value head outputs are in [-1, 1] for V2 hex model (tanh)."""
+        batch_size = 5
+        features = torch.randn(batch_size, self.in_channels, 21, 21)
+        globals_vec = torch.randn(batch_size, self.global_features)
+
+        value, _ = self.model(features, globals_vec)
+
+        # Multi-player value head uses tanh, so values are in [-1, 1] per player
+        self.assertTrue(torch.all(value >= -1.0))
+        self.assertTrue(torch.all(value <= 1.0))
+
+
+class TestHexModelArchitecture_v2_Lite(unittest.TestCase):
+    """Architecture sanity checks for the V2 Lite hex-specific CNN."""
+
+    def setUp(self):
+        self.in_channels = 12
+        self.global_features = 20
+        self.model = HexNeuralNet_v2_Lite(
+            in_channels=self.in_channels,
+            global_features=self.global_features,
+            num_res_blocks=2,
+            num_filters=32,
+            board_size=21,
+            policy_size=P_HEX,
+        )
+
+    def test_hex_forward_pass_shapes(self):
+        """Forward pass yields correct shapes for V2 Lite hex model."""
         batch_size = 3
         features = torch.randn(batch_size, self.in_channels, 21, 21)
         globals_vec = torch.randn(batch_size, self.global_features)
 
         value, policy = self.model(features, globals_vec)
 
-        self.assertEqual(value.shape, (batch_size, 1))
+        self.assertEqual(value.shape, (batch_size, 4))
         self.assertEqual(policy.shape, (batch_size, P_HEX))
-
-    def test_hex_value_range(self):
-        """Value head outputs values constrained to [-1, 1] for hex model."""
-        batch_size = 5
-        features = torch.randn(batch_size, self.in_channels, 21, 21)
-        globals_vec = torch.randn(batch_size, self.global_features)
-        hex_mask = torch.ones(batch_size, 1, 21, 21)
-
-        value, _ = self.model(features, globals_vec, hex_mask=hex_mask)
-
-        self.assertTrue(torch.all(value >= -1.0))
-        self.assertTrue(torch.all(value <= 1.0))
 
 
 if __name__ == "__main__":

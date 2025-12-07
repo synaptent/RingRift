@@ -639,6 +639,7 @@ def run_self_play_soak(
             last_move = None
             per_game_violations: Dict[str, int] = {}
             swap_sides_moves_for_game = 0
+            skipped = False  # track games we drop but continue
 
             # Game recording: capture initial state and collect moves
             initial_state_for_recording = state.model_copy(deep=True) if replay_db else None
@@ -674,6 +675,7 @@ def run_self_play_soak(
                 ai = ai_by_player.get(current_player)
                 if ai is None:
                     termination_reason = "no_ai_for_current_player"
+                    skipped = True
                     break
                 if profile_timing:
                     t_sel_start = time.time()
@@ -683,6 +685,7 @@ def run_self_play_soak(
 
                 if not move:
                     termination_reason = "ai_returned_no_move"
+                    skipped = True
                     break
 
                 # Guard against mis-attributed moves: actor must match
@@ -697,6 +700,7 @@ def run_self_play_soak(
                         per_game_violations,
                         invariant_violation_samples,
                     )
+                    skipped = True
                     break
 
                 if move.type == MoveType.SWAP_SIDES:
@@ -723,6 +727,7 @@ def run_self_play_soak(
                             per_game_violations,
                             invariant_violation_samples,
                         )
+                        skipped = True
                         break
                     # Collect move for game recording.
                     # Also include any bookkeeping moves (e.g., no_territory_action)
@@ -744,6 +749,7 @@ def run_self_play_soak(
                                         per_game_violations,
                                         invariant_violation_samples,
                                     )
+                                    skipped = True
                                     break
                             if termination_reason == "recorded_player_mismatch":
                                 break
@@ -754,14 +760,17 @@ def run_self_play_soak(
                         # a partial turn.
                         if state.game_status != GameStatus.ACTIVE:
                             termination_reason = f"status:{state.game_status.value}"
+                            # Completed normally; do not mark skipped.
                         else:
                             termination_reason = "env_done_flag"
+                            skipped = True
                         break
                 except Exception as exc:  # pragma: no cover - defensive
                     import traceback
                     print(f"[DEBUG] Step exception: {exc}")
                     traceback.print_exc()
                     termination_reason = f"step_exception:{type(exc).__name__}"
+                    skipped = True
                     state = state  # keep last known state
                     break
 
@@ -1004,6 +1013,14 @@ def run_self_play_soak(
             log_f.flush()
             records.append(rec)
 
+            if skipped:
+                print(
+                    f"[soak-skip] game {game_idx} skipped: reason={termination_reason}",
+                    file=sys.stderr,
+                )
+                # Skip recording/metrics; continue to next game
+                continue
+
             # Record full game to database if enabled
             if replay_db and initial_state_for_recording is not None:
                 # Only record completed games; skip any partial/aborted runs.
@@ -1079,6 +1096,9 @@ def run_self_play_soak(
                 moves=move_count,
                 duration_sec=game_duration,
             )
+            if skipped:
+                # Note: skipped games do not increment games_recorded; loop continues
+                continue
 
             if args.verbose and (game_idx + 1) % args.verbose == 0:
                 print(

@@ -9,7 +9,7 @@
  * Usage (from repo root):
  *
  *   TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/export-golden-game-record.ts \
- *     --db ai-service/tests/fixtures/golden_games/golden_square8_2p.db \
+ *     --db <path-to-canonical-db> \
  *     --game-id 121f8003-b363-4be1-92f2-3fbb247c0772 \
  *     --output tests/fixtures/golden-games/golden_square8_2p_121f8.json
  */
@@ -45,7 +45,7 @@ function printUsage(): void {
       '',
       'Example:',
       '  TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/export-golden-game-record.ts \\',
-      '    --db ai-service/tests/fixtures/golden_games/golden_square8_2p.db \\',
+      '    --db <path-to-canonical-db> \\',
       '    --game-id 121f8003-b363-4be1-92f2-3fbb247c0772 \\',
       '    --output tests/fixtures/golden-games/golden_square8_2p_121f8.json',
     ].join('\n')

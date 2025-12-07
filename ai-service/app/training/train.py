@@ -33,9 +33,12 @@ from typing import (
 
 import logging
 from app.ai.neural_net import (
-    RingRiftCNN,
-    RingRiftCNN_MultiPlayer,
-    HexNeuralNet,
+    RingRiftCNN_v2,
+    RingRiftCNN_v2_Lite,
+    HexNeuralNet_v2,
+    HexNeuralNet_v2_Lite,
+    create_model_for_board,
+    get_memory_tier,
     HEX_BOARD_SIZE,
     P_HEX,
     MAX_PLAYERS,

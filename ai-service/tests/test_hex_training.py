@@ -4,7 +4,7 @@ Tests for Hex Board Training Pipeline.
 Tests the complete hex training infrastructure:
 - HexStateEncoder correctness
 - Hex data generation
-- HexNeuralNet training on small samples
+- HexNeuralNet_v2 training on small samples
 - Integration with training infrastructure
 """
 
@@ -14,7 +14,7 @@ import torch
 from datetime import datetime
 
 from app.ai.neural_net import (
-    HexNeuralNet,
+    HexNeuralNet_v2,
     ActionEncoderHex,
     HEX_BOARD_SIZE,
     P_HEX,
@@ -436,13 +436,13 @@ class TestActionEncoderHex:
         assert idx == -1  # INVALID_MOVE_INDEX
 
 
-class TestHexNeuralNet:
-    """Test suite for HexNeuralNet model."""
+class TestHexNeuralNet_v2:
+    """Test suite for HexNeuralNet_v2 model."""
 
     @pytest.fixture
     def model(self):
-        """Create a HexNeuralNet instance."""
-        return HexNeuralNet(
+        """Create a HexNeuralNet_v2 instance."""
+        return HexNeuralNet_v2(
             in_channels=40,  # 10 * (3 history + 1 current)
             global_features=10,
             num_res_blocks=2,  # Smaller for testing
@@ -462,7 +462,8 @@ class TestHexNeuralNet:
 
         value, policy = model(x, globals_vec)
 
-        assert value.shape == (batch_size, 1)
+        # V2 models output multi-player value head: [B, MAX_PLAYERS=4]
+        assert value.shape == (batch_size, 4)
         assert policy.shape == (batch_size, P_HEX)
 
     def test_forward_with_mask(self, model):
@@ -479,7 +480,8 @@ class TestHexNeuralNet:
 
         value, policy = model(x, globals_vec, hex_mask=hex_mask)
 
-        assert value.shape == (batch_size, 1)
+        # V2 models output multi-player value head: [B, MAX_PLAYERS=4]
+        assert value.shape == (batch_size, 4)
         assert policy.shape == (batch_size, P_HEX)
 
     def test_value_in_range(self, model):
@@ -500,8 +502,8 @@ class TestHexNeuralNet:
         x = torch.randn(batch_size, 40, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
         globals_vec = torch.randn(batch_size, 10)
 
-        # Targets
-        value_target = torch.randn(batch_size, 1)
+        # Targets - V2 models use multi-player value head [B, 4]
+        value_target = torch.randn(batch_size, 4)
         policy_target = torch.softmax(torch.randn(batch_size, P_HEX), dim=1)
 
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
@@ -708,7 +710,7 @@ class TestHexTrainingIntegration:
         assert len(augmented) == 12
 
         # Create model
-        model = HexNeuralNet(
+        model = HexNeuralNet_v2(
             in_channels=10,  # Single frame
             global_features=10,
             num_res_blocks=1,

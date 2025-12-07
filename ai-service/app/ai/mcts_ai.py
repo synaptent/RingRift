@@ -26,7 +26,8 @@ from .neural_net import (
     NeuralNetAI,
     INVALID_MOVE_INDEX,
     ActionEncoderHex,
-    HexNeuralNet,
+    HexNeuralNet_v2,
+    get_memory_tier,
 )
 from ..models import GameState, Move, AIConfig, BoardType
 from ..rules.mutable_state import MutableGameState, MoveUndo
@@ -503,15 +504,23 @@ class MCTSAI(HeuristicAI):
 
         # Optional hex-specific encoder and network (used for hex boards).
         self.hex_encoder: Optional[ActionEncoderHex]
-        self.hex_model: Optional[HexNeuralNet]
+        self.hex_model: Optional[HexNeuralNet_v2]
         if self.neural_net is not None:
             try:
-                # in_channels and global_features must match _extract_features.
+                # V2 models use larger input channels for richer features.
                 self.hex_encoder = ActionEncoderHex()
-                self.hex_model = HexNeuralNet(
-                    in_channels=10,
-                    global_features=10,
-                )
+                memory_tier = get_memory_tier()
+                if memory_tier == "low":
+                    from .neural_net import HexNeuralNet_v2_Lite
+                    self.hex_model = HexNeuralNet_v2_Lite(
+                        in_channels=12,
+                        global_features=20,
+                    )
+                else:
+                    self.hex_model = HexNeuralNet_v2(
+                        in_channels=14,
+                        global_features=20,
+                    )
             except Exception:
                 self.hex_encoder = None
                 self.hex_model = None
@@ -918,7 +927,7 @@ class MCTSAI(HeuristicAI):
         tensor_input = torch.FloatTensor(np.array(feature_batches))
         globals_input = torch.FloatTensor(np.array(globals_batches))
 
-        hex_model = cast(HexNeuralNet, self.hex_model)
+        hex_model = cast(HexNeuralNet_v2, self.hex_model)
         with torch.no_grad():
             values_tensor, policy_logits = hex_model(
                 tensor_input, globals_input, hex_mask=None

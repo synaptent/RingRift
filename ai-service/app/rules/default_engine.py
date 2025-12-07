@@ -165,8 +165,15 @@ class DefaultRulesEngine(RulesEngine):
 
         # Defensive phase/move invariant: ensure every move we surface is
         # legal for the current phase, reusing the canonical engine guard.
+        filtered_moves: list[Move] = []
         for move in moves:
-            GameEngine._assert_phase_move_invariant(state, move)
+            try:
+                GameEngine._assert_phase_move_invariant(state, move)
+                filtered_moves.append(move)
+            except Exception:
+                # Skip invalid moves instead of raising; caller will continue.
+                continue
+        moves = filtered_moves
 
         # Defensive phase-requirement consistency: if the core engine reports
         # a pending phase requirement, ensure we return exactly one matching

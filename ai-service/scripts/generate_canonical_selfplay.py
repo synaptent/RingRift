@@ -71,6 +71,8 @@ def run_selfplay_and_parity(
     board_type: str,
     num_games: int,
     db_path: Path,
+    num_players: int,
+    hosts: str | None = None,
 ) -> Dict[str, Any]:
     """
     Delegate to run_canonical_selfplay_parity_gate.py to:
@@ -86,11 +88,15 @@ def run_selfplay_and_parity(
         board_type,
         "--num-games",
         str(num_games),
+        "--num-players",
+        str(num_players),
         "--db",
         str(db_path),
         "--summary",
         str(summary_path),
     ]
+    if hosts:
+        cmd += ["--hosts", hosts]
 
     proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT)
 
@@ -179,6 +185,13 @@ def main(argv: List[str] | None = None) -> int:
         help="Number of self-play games to run (default: 32).",
     )
     parser.add_argument(
+        "--num-players",
+        type=int,
+        choices=[2, 3, 4],
+        default=2,
+        help="Number of players for self-play (default: 2).",
+    )
+    parser.add_argument(
         "--db",
         type=str,
         default=None,
@@ -193,21 +206,29 @@ def main(argv: List[str] | None = None) -> int:
         default=None,
         help="Optional path to write the combined canonical summary JSON.",
     )
+    parser.add_argument(
+        "--hosts",
+        type=str,
+        default=None,
+        help="Comma-separated hosts for distributed self-play soak; when set, delegates to run_distributed_selfplay_soak.",
+    )
 
     args = parser.parse_args(argv)
 
     board_type: str = args.board_type
     num_games: int = args.num_games
+    num_players: int = args.num_players
+    hosts: str | None = args.hosts
 
     if args.db:
         db_path = Path(args.db).resolve()
     else:
-        db_name = f"canonical_{board_type}.db"
+        db_name = f"canonical_{board_type}_{num_players}p.db"
         db_path = (AI_SERVICE_ROOT / "data" / "games" / db_name).resolve()
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    parity_summary = run_selfplay_and_parity(board_type, num_games, db_path)
+    parity_summary = run_selfplay_and_parity(board_type, num_games, db_path, num_players, hosts)
 
     # Determine if the parity gate itself passed.
     passed_gate = bool(parity_summary.get("passed_canonical_parity_gate"))
@@ -224,6 +245,7 @@ def main(argv: List[str] | None = None) -> int:
 
     summary: Dict[str, Any] = {
         "board_type": board_type,
+        "num_players": num_players,
         "db_path": str(db_path),
         "num_games_requested": num_games,
         "parity_gate": parity_summary,
@@ -243,4 +265,3 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
     raise SystemExit(main())
-
