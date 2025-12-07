@@ -67,6 +67,8 @@ describe('RulesMatrix → ClientSandboxEngine territory scenarios (Section 12; F
       const board = state.board;
 
       state.currentPlayer = scenario.movingPlayer;
+      // Per RR-CANON-R073, territory processing moves require territory_processing phase
+      state.currentPhase = 'territory_processing';
 
       const [region] = scenario.regions;
       const interiorCoords: Position[] = region.spaces.map((p) =>

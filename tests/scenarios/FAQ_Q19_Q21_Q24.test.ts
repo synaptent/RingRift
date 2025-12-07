@@ -112,19 +112,21 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
       });
 
       it('should use correct thresholds for 4-player hexagonal (>72 rings)', () => {
+        // Per RR-CANON-R020, hex boards have 48 rings per player
         const players = [
-          createTestPlayer(1, { ringsInHand: 36 }),
-          createTestPlayer(2, { ringsInHand: 36 }),
-          createTestPlayer(3, { ringsInHand: 36 }),
-          createTestPlayer(4, { ringsInHand: 36 }),
+          createTestPlayer(1, { ringsInHand: 48 }),
+          createTestPlayer(2, { ringsInHand: 48 }),
+          createTestPlayer(3, { ringsInHand: 48 }),
+          createTestPlayer(4, { ringsInHand: 48 }),
         ];
 
         const engine = new GameEngine('faq-q19-4p-hex', 'hexagonal', players, timeControl, false);
         const engineAny: any = engine;
         const gameState = engineAny.gameState;
 
-        expect(gameState.victoryThreshold).toBe(73);
-        expect(gameState.totalRingsInPlay).toBe(144);
+        // Total rings: 4 × 48 = 192, Victory threshold = floor(192/2) + 1 = 97
+        expect(gameState.victoryThreshold).toBe(97);
+        expect(gameState.totalRingsInPlay).toBe(192);
       });
     });
   });
@@ -436,9 +438,16 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
       gameState.currentPhase = 'ring_placement';
       gameState.currentPlayer = 1;
 
-      // No valid moves should trigger stalemate resolution
+      // Per RR-CANON-R075/R076, when no interactive moves are possible,
+      // the engine may return bookkeeping moves (no_placement_action, skip_placement)
+      // or an empty array. Either indicates stalemate conditions.
       const moves = engine.getValidMoves(1);
-      expect(moves.length).toBe(0);
+      const hasOnlyBookkeepingMoves =
+        moves.length === 0 ||
+        moves.every((m: any) =>
+          ['no_placement_action', 'skip_placement', 'no_movement_action'].includes(m.type)
+        );
+      expect(hasOnlyBookkeepingMoves).toBe(true);
 
       // Manually trigger stalemate resolution
       const stalemate = engineAny.checkForStalemate?.() ?? false;
