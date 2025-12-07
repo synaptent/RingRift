@@ -136,9 +136,7 @@ describe('RulesMatrix → ClientSandboxEngine victory scenarios (sandbox)', () =
         expect(result!.winner).toBe(1);
         expect(finalState.gameStatus).toBe('completed');
         expect(finalState.winner).toBe(1);
-      } else if (
-        scenario.ref.id === 'Rules_13_3_last_player_standing_3p_unique_actor_square8'
-      ) {
+      } else if (scenario.ref.id === 'Rules_13_3_last_player_standing_3p_unique_actor_square8') {
         const engine = createThreePlayerEngine();
         const engineAny: any = engine;
         const state: GameState = engineAny.gameState as GameState;
@@ -160,6 +158,7 @@ describe('RulesMatrix → ClientSandboxEngine victory scenarios (sandbox)', () =
           return engine.getVictoryResult();
         };
 
+        // Round 1: P1, P2, P3 - only P1 has actions
         let result = startInteractiveTurn(1);
         expect(result).toBeNull();
 
@@ -169,6 +168,17 @@ describe('RulesMatrix → ClientSandboxEngine victory scenarios (sandbox)', () =
         result = startInteractiveTurn(3);
         expect(result).toBeNull();
 
+        // Round 2: P1, P2, P3 - still only P1 has actions (2nd consecutive round)
+        result = startInteractiveTurn(1);
+        expect(result).toBeNull();
+
+        result = startInteractiveTurn(2);
+        expect(result).toBeNull();
+
+        result = startInteractiveTurn(3);
+        expect(result).toBeNull();
+
+        // Round 3 start: P1's turn - after 2 consecutive exclusive rounds, LPS triggers
         result = startInteractiveTurn(1);
 
         expect(result).not.toBeNull();
