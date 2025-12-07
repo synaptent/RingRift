@@ -13,7 +13,7 @@
     "semantic_divergences": [],
     "structural_issues": [],
     "total_databases": 1,
-    "total_games_checked": 1
+    "total_games_checked": 3
   },
   "passed_canonical_parity_gate": false,
   "seed": 42,

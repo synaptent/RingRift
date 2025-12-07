@@ -291,7 +291,84 @@ INFO:app.ai.neural_net:Using MPS device with MPS-compatible architecture
 - MPS Architecture: [`ai-service/app/ai/neural_net.py:325`](../app/ai/neural_net.py:325)
 - Tests: [`ai-service/tests/test_mps_architecture.py`](../tests/test_mps_architecture.py)
 
+## V2 Memory-Tiered Architectures (Recommended)
+
+The v2 architectures provide improved playing strength with memory-aware model selection. Both high and low memory variants are fully MPS and CUDA compatible.
+
+### Memory Tier Selection
+
+Use `RINGRIFT_NN_MEMORY_TIER` environment variable:
+
+```bash
+# High memory (96GB systems) - maximum playing strength
+export RINGRIFT_NN_MEMORY_TIER=high
+
+# Low memory (48GB systems) - memory-efficient
+export RINGRIFT_NN_MEMORY_TIER=low
+
+# Legacy (default) - use v1 architectures
+export RINGRIFT_NN_MEMORY_TIER=legacy
+```
+
+### V2 Architecture Comparison
+
+| Aspect                | High (v2.0.0)    | Low (v2.0.0-lite) |
+| --------------------- | ---------------- | ----------------- |
+| SE Residual Blocks    | 12               | 6                 |
+| Filters               | 192              | 96                |
+| Base Input Channels   | 14               | 12                |
+| Global Features       | 20               | 20                |
+| History Frames        | 4                | 3                 |
+| Policy Intermediate   | 384              | 192               |
+| Value Head            | Multi-player (4) | Multi-player (4)  |
+| Square19 Params       | ~36M (144 MB)    | ~14M (56 MB)      |
+| Hex Params            | ~44M (175 MB)    | ~19M (75 MB)      |
+| Target Memory (2 NNs) | ~35 GB budget    | ~15 GB budget     |
+
+### Key V2 Improvements
+
+1. **Squeeze-and-Excitation (SE) Blocks**: Global pattern recognition via channel attention
+2. **Multi-Player Value Head**: Outputs per-player win probability `[B, 4]`
+3. **Hex Board Masking**: Pre-computed validity mask prevents information bleeding
+4. **Richer Input Features**:
+   - Stack/cap height (normalized)
+   - Collapsed territory
+   - Per-player territory ownership
+5. **Global Features (20)**:
+   - Rings in hand (per player)
+   - Eliminated rings (per player)
+   - Territory/line counts (per player)
+   - Game phase and LPS threat indicators
+
+### V2 Usage Example
+
+```bash
+# Train on 96GB Mac Studio with high-capacity model
+export RINGRIFT_NN_MEMORY_TIER=high
+python scripts/run_selfplay.py --board square19 --ai-type descent
+
+# Train on 48GB system with lite model
+export RINGRIFT_NN_MEMORY_TIER=low
+python scripts/run_selfplay.py --board hexagonal --ai-type descent
+```
+
+### Critical Bug Fix
+
+The original `HexNeuralNet` had a critical bug where the policy head flattened 80,000 spatial features directly, resulting in **7.35 billion parameters** (~29 GB). The v2 architectures fix this by using global average pooling before the policy FC layer, reducing parameters by **167×**.
+
 ## Version History
+
+- **v2.0.0** (2024-12): High-capacity SE architecture for 96GB systems
+  - SE-enhanced residual blocks for global pattern recognition
+  - Multi-player value head (outputs per-player win probability)
+  - Hex board masking via register_buffer
+  - 14 base input channels, 20 global features
+  - Fixed critical HexNeuralNet policy head bug
+
+- **v2.0.0-lite** (2024-12): Memory-efficient SE architecture for 48GB systems
+  - Same SE blocks and multi-player value head
+  - Reduced capacity (6 blocks, 96 filters)
+  - 12 base input channels, 3 history frames
 
 - **v1.0.0-mps** (2024-12): Initial MPS-compatible architecture
   - Global average pooling instead of AdaptiveAvgPool2d

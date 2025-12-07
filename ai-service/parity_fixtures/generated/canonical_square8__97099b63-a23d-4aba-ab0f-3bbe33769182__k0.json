@@ -1,0 +1,24 @@
+{
+  "canonical_move": null,
+  "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8.db",
+  "game_id": "97099b63-a23d-4aba-ab0f-3bbe33769182",
+  "is_match": true,
+  "mismatch_kinds": [],
+  "move_number": 0,
+  "python_summary": {
+    "current_phase": "ring_placement",
+    "current_player": 1,
+    "game_status": "active",
+    "move_index": 0,
+    "state_hash": "8fb582fc40b1f137"
+  },
+  "total_moves_python": 48,
+  "total_moves_ts": 48,
+  "ts_summary": {
+    "current_phase": "ring_placement",
+    "current_player": 1,
+    "game_status": "active",
+    "move_index": 0,
+    "state_hash": "8fb582fc40b1f137"
+  }
+}

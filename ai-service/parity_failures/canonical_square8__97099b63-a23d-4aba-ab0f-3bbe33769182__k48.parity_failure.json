@@ -1,0 +1,1591 @@
+{
+  "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8.db",
+  "diverged_at": 48,
+  "game_id": "97099b63-a23d-4aba-ab0f-3bbe33769182",
+  "mismatch_context": "post_move",
+  "mismatch_kinds": ["current_player", "current_phase", "game_status", "state_hash"],
+  "moves_window": [
+    {
+      "_index": 45,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": null,
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "formedLines": null,
+      "from": {
+        "x": 1,
+        "y": 1,
+        "z": null
+      },
+      "id": "simulated",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 46,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "player": 2,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T03:32:45.401557",
+      "to": {
+        "x": 1,
+        "y": 4,
+        "z": null
+      },
+      "type": "move_stack"
+    },
+    {
+      "_index": 46,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": null,
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "formedLines": null,
+      "from": null,
+      "id": "no-line-action-47",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 47,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "player": 2,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T03:32:55.497923",
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "type": "no_line_action"
+    },
+    {
+      "_index": 47,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": null,
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "count": 3,
+          "player": 2
+        }
+      ],
+      "formedLines": null,
+      "from": null,
+      "id": "eliminate-1,4",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 48,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "player": 2,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T03:32:55.497923",
+      "to": {
+        "x": 1,
+        "y": 4,
+        "z": null
+      },
+      "type": "eliminate_rings_from_stack"
+    }
+  ],
+  "python_states": {
+    "47": {
+      "board": {
+        "collapsedSpaces": {
+          "3,3": 2,
+          "4,3": 2,
+          "5,3": 2,
+          "6,2": 1
+        },
+        "eliminatedRings": {
+          "1": 18,
+          "2": 13
+        },
+        "markers": {
+          "1,0": {
+            "player": 1,
+            "position": {
+              "x": 1,
+              "y": 0
+            }
+          },
+          "1,1": {
+            "player": 2,
+            "position": {
+              "x": 1,
+              "y": 1
+            }
+          },
+          "2,5": {
+            "player": 2,
+            "position": {
+              "x": 2,
+              "y": 5
+            }
+          },
+          "3,4": {
+            "player": 2,
+            "position": {
+              "x": 3,
+              "y": 4
+            }
+          },
+          "4,2": {
+            "player": 2,
+            "position": {
+              "x": 4,
+              "y": 2
+            }
+          }
+        },
+        "size": 8,
+        "stacks": {
+          "1,4": {
+            "capHeight": 3,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 1,
+              "y": 4
+            },
+            "rings": [2, 2, 2],
+            "stackHeight": 3
+          }
+        },
+        "type": "square8"
+      },
+      "currentPhase": "territory_processing",
+      "currentPlayer": 2,
+      "gameId": "self-play",
+      "gameStatus": "active",
+      "moveHistory": [
+        {
+          "id": "simulated",
+          "moveNumber": 1,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:28:07.236936",
+          "to": {
+            "x": 4,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 4,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:28:07.236936",
+          "to": {
+            "x": 0,
+            "y": 7
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-3",
+          "moveNumber": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-0,7",
+          "moveNumber": 4,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 0,
+            "y": 7
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 4,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 3,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 3,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 4,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-7",
+          "moveNumber": 7,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-6,3",
+          "moveNumber": 8,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 9,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 4,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 8,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 4,
+            "y": 6
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-11",
+          "moveNumber": 11,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-4,6",
+          "moveNumber": 12,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 4,
+            "y": 6
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 12,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 0,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 12,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-15",
+          "moveNumber": 15,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-4,2",
+          "moveNumber": 16,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 17,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 6,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 6,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 17,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-19",
+          "moveNumber": 19,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-0,2",
+          "moveNumber": 20,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 20,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 3,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 3,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 20,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 6,
+            "y": 1
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-23",
+          "moveNumber": 23,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-6,1",
+          "moveNumber": 24,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 6,
+            "y": 1
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 25,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 4,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 25,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 7,
+            "y": 2
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-27",
+          "moveNumber": 27,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-7,2",
+          "moveNumber": 28,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 7,
+            "y": 2
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 28,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 5,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 5,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 28,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "process-line-0-3,3",
+          "moveNumber": 31,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 3,
+            "y": 3
+          },
+          "type": "process_line"
+        },
+        {
+          "id": "eliminate-2,0",
+          "moveNumber": 32,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 33,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 32,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 1,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-35",
+          "moveNumber": 35,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-1,0",
+          "moveNumber": 36,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 1,
+            "y": 0
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 36,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 2,
+            "y": 5
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 5
+          },
+          "id": "simulated",
+          "moveNumber": 36,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 0,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-39",
+          "moveNumber": 39,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-0,3",
+          "moveNumber": 40,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 0,
+            "y": 3
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 41,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 1,
+            "y": 0
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 0
+          },
+          "id": "simulated",
+          "moveNumber": 41,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-43",
+          "moveNumber": 43,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-1,4",
+          "moveNumber": 44,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 45,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 1,
+            "y": 1
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 1
+          },
+          "id": "simulated",
+          "moveNumber": 46,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-47",
+          "moveNumber": 47,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:55.497923",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        }
+      ],
+      "players": [
+        {
+          "eliminatedRings": 18,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 0,
+          "territorySpaces": 1
+        },
+        {
+          "eliminatedRings": 13,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 2,
+          "territorySpaces": 3
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 31,
+      "totalRingsInPlay": 36,
+      "turnNumber": 48,
+      "victoryThreshold": 19,
+      "winner": null
+    },
+    "48": {
+      "board": {
+        "collapsedSpaces": {
+          "3,3": 2,
+          "4,3": 2,
+          "5,3": 2,
+          "6,2": 1
+        },
+        "eliminatedRings": {
+          "1": 18,
+          "2": 16
+        },
+        "markers": {
+          "1,0": {
+            "player": 1,
+            "position": {
+              "x": 1,
+              "y": 0
+            }
+          },
+          "1,1": {
+            "player": 2,
+            "position": {
+              "x": 1,
+              "y": 1
+            }
+          },
+          "2,5": {
+            "player": 2,
+            "position": {
+              "x": 2,
+              "y": 5
+            }
+          },
+          "3,4": {
+            "player": 2,
+            "position": {
+              "x": 3,
+              "y": 4
+            }
+          },
+          "4,2": {
+            "player": 2,
+            "position": {
+              "x": 4,
+              "y": 2
+            }
+          }
+        },
+        "size": 8,
+        "stacks": {},
+        "type": "square8"
+      },
+      "currentPhase": "game_over",
+      "currentPlayer": 2,
+      "gameId": "self-play",
+      "gameStatus": "completed",
+      "moveHistory": [
+        {
+          "id": "simulated",
+          "moveNumber": 1,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:28:07.236936",
+          "to": {
+            "x": 4,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 4,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:28:07.236936",
+          "to": {
+            "x": 0,
+            "y": 7
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-3",
+          "moveNumber": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-0,7",
+          "moveNumber": 4,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 0,
+            "y": 7
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 4,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 3,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 3,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 4,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:30:48.325604",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-7",
+          "moveNumber": 7,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-6,3",
+          "moveNumber": 8,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 9,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 4,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 8,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:01.107484",
+          "to": {
+            "x": 4,
+            "y": 6
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-11",
+          "moveNumber": 11,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-4,6",
+          "moveNumber": 12,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 4,
+            "y": 6
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 12,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 0,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 12,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:11.536191",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-15",
+          "moveNumber": 15,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-4,2",
+          "moveNumber": 16,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 17,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 6,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 6,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 17,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:25.259008",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-19",
+          "moveNumber": 19,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-0,2",
+          "moveNumber": 20,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 20,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 3,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 3,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 20,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:35.294046",
+          "to": {
+            "x": 6,
+            "y": 1
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-23",
+          "moveNumber": 23,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-6,1",
+          "moveNumber": 24,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 6,
+            "y": 1
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 25,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 4,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 4,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 25,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:48.504823",
+          "to": {
+            "x": 7,
+            "y": 2
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-27",
+          "moveNumber": 27,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-7,2",
+          "moveNumber": 28,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 7,
+            "y": 2
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 28,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 5,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 5,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 28,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "process-line-0-3,3",
+          "moveNumber": 31,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 3,
+            "y": 3
+          },
+          "type": "process_line"
+        },
+        {
+          "id": "eliminate-2,0",
+          "moveNumber": 32,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 33,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 32,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:31:58.930335",
+          "to": {
+            "x": 1,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-35",
+          "moveNumber": 35,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-1,0",
+          "moveNumber": 36,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 1,
+            "y": 0
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 36,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 2,
+            "y": 5
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 5
+          },
+          "id": "simulated",
+          "moveNumber": 36,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:22.608772",
+          "to": {
+            "x": 0,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-39",
+          "moveNumber": 39,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-0,3",
+          "moveNumber": 40,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 0,
+            "y": 3
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 41,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 1,
+            "y": 0
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 0
+          },
+          "id": "simulated",
+          "moveNumber": 41,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:35.344062",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-43",
+          "moveNumber": 43,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-1,4",
+          "moveNumber": 44,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "eliminate_rings_from_stack"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 45,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 1,
+            "y": 1
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 1
+          },
+          "id": "simulated",
+          "moveNumber": 46,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:45.401557",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-47",
+          "moveNumber": 47,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:55.497923",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "eliminate-1,4",
+          "moveNumber": 48,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T03:32:55.497923",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "eliminate_rings_from_stack"
+        }
+      ],
+      "players": [
+        {
+          "eliminatedRings": 18,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 0,
+          "territorySpaces": 1
+        },
+        {
+          "eliminatedRings": 16,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 2,
+          "territorySpaces": 3
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 34,
+      "totalRingsInPlay": 36,
+      "turnNumber": 49,
+      "victoryThreshold": 19,
+      "winner": 2
+    }
+  },
+  "python_summary": {
+    "current_phase": "game_over",
+    "current_player": 2,
+    "game_status": "completed",
+    "move_index": 47,
+    "state_hash": "ff8b4b842425d557"
+  },
+  "timestamp": "2025-12-07T03:32:58.009262",
+  "total_moves_python": 48,
+  "total_moves_ts": 48,
+  "ts_k_values": [47, 48],
+  "ts_states": {
+    "47": null,
+    "48": null
+  },
+  "ts_summary": {
+    "current_phase": "ring_placement",
+    "current_player": 1,
+    "game_status": "active",
+    "move_index": 48,
+    "state_hash": "9373a43481a1f8ae"
+  }
+}

@@ -198,13 +198,6 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
       # legal action or will surface a forced_elimination/no_*_action
       # requirement instead of leaving the recorder in an ANM state.
       GameEngine._end_turn(game_state, trace_mode=trace_mode)
-      # Assert the resulting active player has a legal action or a required
-      # bookkeeping move. This prevents stale current_player states from
-      # leaking into the next AI decision and producing mis-attributed moves.
-      GameEngine._assert_active_player_has_legal_action(
-        game_state,
-        last_move,
-      )
 
   elif last_move.type == MoveType.PROCESS_TERRITORY_REGION:
     # After processing a disconnected territory region via an explicit

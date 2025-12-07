@@ -98,6 +98,14 @@ import {
   SandboxStateAccessor,
   SandboxDecisionHandler,
 } from './SandboxOrchestratorAdapter';
+import {
+  mapPendingDecisionToPlayerChoice as mapDecisionToChoice,
+  mapPlayerChoiceResponseToMove as mapResponseToMove,
+  buildCaptureDirectionChoice,
+  buildRegionOrderChoice,
+  buildRingEliminationChoice,
+  type DecisionMappingContext,
+} from './sandboxDecisionMapping';
 
 /**
  * Client-local engine harness for the /sandbox route.
@@ -503,146 +511,12 @@ export class ClientSandboxEngine {
    * the sandbox interaction handler.
    */
   private mapPendingDecisionToPlayerChoice(decision: PendingDecision): PlayerChoice {
-    const decisionType = decision.type;
-    const options = decision.options;
-
-    switch (decisionType) {
-      case 'elimination_target': {
-        const eliminationMoves = options.filter(
-          (opt: Move) => opt.type === 'eliminate_rings_from_stack' && opt.to
-        );
-
-        // Use context description if available, otherwise provide a helpful default
-        const eliminationPrompt =
-          decision.context?.description ||
-          'You must eliminate a ring from one of your stacks. This is required to complete a line reward or territory claim.';
-
-        return {
-          id: `sandbox-ring-elimination-${Date.now()}`,
-          gameId: this.gameState.id,
-          playerNumber: decision.player,
-          type: 'ring_elimination',
-          prompt: eliminationPrompt,
-          options: eliminationMoves.map((opt: Move, idx: number) => {
-            const pos = opt.to as Position;
-            const key = positionToString(pos);
-            const stack = this.gameState.board.stacks.get(key);
-
-            const capHeight =
-              (opt.eliminationFromStack && opt.eliminationFromStack.capHeight) ||
-              (stack ? stack.capHeight : 1);
-            const totalHeight =
-              (opt.eliminationFromStack && opt.eliminationFromStack.totalHeight) ||
-              (stack ? stack.stackHeight : capHeight || 1);
-
-            return {
-              stackPosition: pos,
-              capHeight,
-              totalHeight,
-              moveId: opt.id || `move-${idx}`,
-            };
-          }),
-        };
-      }
-
-      case 'line_order':
-        return {
-          id: `sandbox-line-order-${Date.now()}`,
-          gameId: this.gameState.id,
-          playerNumber: decision.player,
-          type: 'line_order',
-          prompt: 'Select which line to process first',
-          options: options.map((opt: Move, idx: number) => ({
-            lineId: `line-${idx}`,
-            markerPositions: opt.formedLines?.[0]?.positions ?? [],
-            moveId: opt.id || `move-${idx}`,
-          })),
-        };
-
-      case 'line_reward':
-        return {
-          id: `sandbox-line-reward-${Date.now()}`,
-          gameId: this.gameState.id,
-          playerNumber: decision.player,
-          type: 'line_reward_option',
-          prompt: 'Choose reward for overlength line',
-          options: options.map((opt: Move) => {
-            const isCollapseAll =
-              opt.collapsedMarkers?.length === opt.formedLines?.[0]?.positions?.length;
-            return isCollapseAll
-              ? ('option_1_collapse_all_and_eliminate' as const)
-              : ('option_2_min_collapse_no_elimination' as const);
-          }),
-          moveIds: options.reduce(
-            (acc, opt: Move, idx: number) => {
-              const isCollapseAll =
-                opt.collapsedMarkers?.length === opt.formedLines?.[0]?.positions?.length;
-              const key = isCollapseAll
-                ? 'option_1_collapse_all_and_eliminate'
-                : 'option_2_min_collapse_no_elimination';
-              acc[key] = opt.id || `move-${idx}`;
-              return acc;
-            },
-            {} as Record<string, string>
-          ),
-        };
-
-      case 'region_order':
-        return {
-          id: `sandbox-region-order-${Date.now()}`,
-          gameId: this.gameState.id,
-          playerNumber: decision.player,
-          type: 'region_order',
-          prompt: 'Select which region to process first',
-          options: options.map((opt: Move, idx: number) => {
-            if (opt.type === 'skip_territory_processing') {
-              return {
-                regionId: 'skip',
-                size: 0,
-                representativePosition: { x: 0, y: 0 },
-                moveId: opt.id || `move-${idx}`,
-              };
-            }
-
-            const region = opt.disconnectedRegions?.[0];
-            return {
-              regionId: `region-${idx}`,
-              size: region?.spaces?.length ?? 0,
-              representativePosition: region?.spaces?.[0] ?? { x: 0, y: 0 },
-              moveId: opt.id || `move-${idx}`,
-            };
-          }),
-        };
-
-      case 'capture_direction': {
-        // Filter to only capture moves for type-safe access to captureTarget
-        const captureMoves = options.filter(isCaptureMove);
-        return {
-          id: `sandbox-capture-${Date.now()}`,
-          gameId: this.gameState.id,
-          playerNumber: decision.player,
-          type: 'capture_direction',
-          prompt: 'Select capture direction',
-          options: captureMoves.map((opt) => ({
-            targetPosition: opt.captureTarget,
-            landingPosition: opt.to,
-            capturedCapHeight:
-              this.gameState.board.stacks.get(positionToString(opt.captureTarget))?.capHeight ?? 0,
-          })),
-        };
-      }
-
-      default:
-        // Generic fallback - use line_order as default
-        return {
-          id: `sandbox-decision-${Date.now()}`,
-          gameId: this.gameState.id,
-          playerNumber: decision.player,
-          type: 'line_order',
-          prompt: String(decision.type),
-          options: [],
-        };
-    }
+    // Delegate to extracted pure function for testability
+    const context: DecisionMappingContext = {
+      gameId: this.gameState.id,
+      board: this.gameState.board,
+    };
+    return mapDecisionToChoice(decision, context);
   }
 
   /**
@@ -655,63 +529,8 @@ export class ClientSandboxEngine {
       selectedRegionIndex?: number;
     }
   ): Move {
-    // Find the matching option from the original decision
-    const options = decision.options;
-
-    // Try to match based on response content
-    if (response.selectedLineIndex !== undefined && options[response.selectedLineIndex]) {
-      return options[response.selectedLineIndex];
-    }
-
-    if (response.selectedRegionIndex !== undefined && options[response.selectedRegionIndex]) {
-      return options[response.selectedRegionIndex];
-    }
-
-    if (response.selectedOption) {
-      // Type-safe extraction of selected option properties
-      const selectedOpt = response.selectedOption as {
-        moveId?: string;
-        stackPosition?: Position;
-        targetPosition?: Position;
-        landingPosition?: Position;
-      };
-
-      // Ring elimination: prefer explicit moveId mapping when available,
-      // falling back to matching by stack position.
-      if (response.choiceType === 'ring_elimination' && selectedOpt.moveId) {
-        const byId = options.find((opt: Move) => opt.id === selectedOpt.moveId);
-        if (byId) {
-          return byId;
-        }
-
-        const selectedPos = selectedOpt.stackPosition;
-        if (selectedPos) {
-          const selectedKey = positionToString(selectedPos);
-          const byPos = options.find((opt: Move) => {
-            if (!opt.to) return false;
-            return positionToString(opt.to as Position) === selectedKey;
-          });
-          if (byPos) {
-            return byPos;
-          }
-        }
-      }
-
-      // Match by position for capture direction
-      const selected = options.filter(isCaptureMove).find((opt) => {
-        if (selectedOpt.targetPosition && selectedOpt.landingPosition) {
-          return (
-            positionToString(opt.captureTarget) === positionToString(selectedOpt.targetPosition) &&
-            positionToString(opt.to) === positionToString(selectedOpt.landingPosition)
-          );
-        }
-        return false;
-      });
-      if (selected) return selected;
-    }
-
-    // Default to first option
-    return options[0];
+    // Delegate to extracted pure function for testability
+    return mapResponseToMove(decision, response);
   }
 
   /**
@@ -2331,30 +2150,22 @@ export class ClientSandboxEngine {
       return captureOptions[0];
     }
 
-    // Filter to typed capture moves for type-safe access
-    const typedCaptures = captureOptions.filter(isCaptureMove);
-    if (typedCaptures.length === 0) {
+    // Use the extracted choice builder for capture direction prompts
+    const choice = buildCaptureDirectionChoice(
+      this.gameState.id,
+      this.gameState.currentPlayer,
+      captureOptions,
+      this.gameState.board
+    );
+
+    if (choice.options.length === 0) {
       return captureOptions[0];
     }
-
-    // Build a properly-typed CaptureDirectionChoice object
-    const choice: import('../../shared/types/game').CaptureDirectionChoice = {
-      id: `sandbox-capture-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      gameId: this.gameState.id,
-      playerNumber: this.gameState.currentPlayer,
-      type: 'capture_direction',
-      prompt: 'Select capture direction',
-      options: typedCaptures.map((move) => ({
-        targetPosition: move.captureTarget,
-        landingPosition: move.to,
-        capturedCapHeight:
-          this.gameState.board.stacks.get(positionToString(move.captureTarget))?.capHeight ?? 0,
-      })),
-    };
 
     const response = await this.interactionHandler.requestChoice(choice);
 
     // Find the matching move based on response
+    const typedCaptures = captureOptions.filter(isCaptureMove);
     const selected = typedCaptures.find((move) => {
       const opt = response.selectedOption;
       return (

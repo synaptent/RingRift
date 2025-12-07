@@ -19,6 +19,7 @@ to release GPU/MPS memory between games or soak batches.
 
 import gc
 import logging
+import os
 
 import torch
 import torch.nn as nn
@@ -325,306 +326,166 @@ class ResidualBlock(nn.Module):
         return out
 
 
-class RingRiftCNN(nn.Module):
+class SEResidualBlock(nn.Module):
+    """Squeeze-and-Excitation enhanced residual block for v2 architectures.
+
+    SE blocks improve global pattern recognition by adaptively recalibrating
+    channel-wise feature responses. This is particularly valuable for RingRift
+    where global dependencies (territory connectivity, line formation) are critical.
+
+    The SE mechanism:
+    1. Squeeze: Global average pooling to get channel descriptors
+    2. Excitation: FC layers to learn channel interdependencies
+    3. Scale: Multiply original features by learned channel weights
+
+    Adds ~1% parameter overhead but significantly improves pattern recognition.
+
+    Reference: Hu et al., "Squeeze-and-Excitation Networks" (CVPR 2018)
     """
-    CNN architecture for RingRift board evaluation.
 
-    This model uses a ResNet-style backbone with adaptive pooling to handle
-    variable board sizes (8x8, 19x19, 25x25 hex).
-
-    For optimal training, use board-specific policy sizes:
-    - 8x8:  policy_size=7000  (POLICY_SIZE_8x8)
-    - 19x19: policy_size=67000 (POLICY_SIZE_19x19)
-    - Hex:   Use HexNeuralNet instead (P_HEX=91876)
-
-    Architecture Version:
-        v1.1.0 - Added configurable policy_size for board-specific optimization.
-                 Models with different policy_size are NOT checkpoint-compatible.
-    """
-
-    # Architecture version for checkpoint compatibility checking
-    ARCHITECTURE_VERSION = "v1.1.0"
-
-    def __init__(
-        self,
-        board_size: int = 8,
-        in_channels: int = 10,
-        global_features: int = 10,
-        num_res_blocks: int = 10,
-        num_filters: int = 128,
-        history_length: int = 3,
-        policy_size: Optional[int] = None,
-    ):
-        super(RingRiftCNN, self).__init__()
-        self.board_size = board_size
-
-        # Input channels = base_channels * (history_length + 1)
-        # Base channels = 10
-        # Default history length = 3 (Current + 3 Previous)
-        #
-        # State Encoding (10 channels):
-        # 0: My stacks (height normalized)
-        # 1: Opponent stacks (height normalized)
-        # 2: My markers
-        # 3: Opponent markers
-        # 4: My collapsed spaces
-        # 5: Opponent collapsed spaces
-        # 6: My liberties
-        # 7: Opponent liberties
-        # 8: My line potential
-        # 9: Opponent line potential
-        self.total_in_channels = in_channels * (history_length + 1)
-
-        # Initial convolution
-        self.conv1 = nn.Conv2d(
-            self.total_in_channels, num_filters, kernel_size=3, padding=1
-        )
-        self.bn1 = nn.BatchNorm2d(num_filters)
+    def __init__(self, channels: int, reduction: int = 16):
+        """
+        Args:
+            channels: Number of input/output channels
+            reduction: Reduction ratio for SE bottleneck (default 16)
+        """
+        super(SEResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(channels)
         self.relu = nn.ReLU()
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(channels)
 
-        # Residual blocks
-        self.res_blocks = nn.ModuleList([
-            ResidualBlock(num_filters) for _ in range(num_res_blocks)
-        ])
+        # Squeeze-and-Excitation layers
+        reduced_channels = max(channels // reduction, 8)  # Minimum 8 channels
+        self.se_fc1 = nn.Linear(channels, reduced_channels)
+        self.se_fc2 = nn.Linear(reduced_channels, channels)
 
-        # Adaptive Pooling to handle variable board sizes (e.g. 8x8, 19x19)
-        # We pool to a fixed 4x4 grid before flattening, ensuring the FC layer
-        # input size is constant.
-        # This allows the same model architecture to process different board
-        # sizes, though retraining/finetuning is recommended for drastic size
-        # changes.
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        residual = x
+        out = self.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
 
-        # Fully connected layers
-        # Input size is now num_filters * 4 * 4 (fixed)
-        conv_out_size = num_filters * 4 * 4
-        self.fc1 = nn.Linear(conv_out_size + global_features, 256)
-        self.dropout = nn.Dropout(0.3)
+        # Squeeze-and-Excitation
+        # Squeeze: Global average pooling [B, C, H, W] -> [B, C]
+        se = torch.mean(out, dim=[-2, -1])
+        # Excitation: FC -> ReLU -> FC -> Sigmoid
+        se = self.relu(self.se_fc1(se))
+        se = torch.sigmoid(self.se_fc2(se))
+        # Scale: Multiply features by channel attention
+        out = out * se.unsqueeze(-1).unsqueeze(-1)
 
-        # Value head
-        self.value_head = nn.Linear(256, 1)
-        self.tanh = nn.Tanh()
-
-        # Policy head - use provided policy_size or infer from board_size
-        if policy_size is not None:
-            self.policy_size = policy_size
-        elif board_size == 8:
-            self.policy_size = POLICY_SIZE_8x8
-        elif board_size == 19:
-            self.policy_size = POLICY_SIZE_19x19
-        else:
-            self.policy_size = POLICY_SIZE  # Default to 19x19 size
-        self.policy_head = nn.Linear(256, self.policy_size)
-
-    def forward(self, x, globals):
-        x = self.relu(self.bn1(self.conv1(x)))
-
-        for block in self.res_blocks:
-            x = block(x)
-
-        # Adaptive pooling to fixed size
-        x = self.adaptive_pool(x)
-
-        x = x.view(x.size(0), -1)  # Flatten
-
-        # Concatenate global features
-        x = torch.cat((x, globals), dim=1)
-
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
-
-        value = self.tanh(self.value_head(x))  # Output between -1 and 1
-        policy = self.policy_head(x)  # Logits for CrossEntropyLoss
-
-        return value, policy
-
-    def forward_single(
-        self, feature: np.ndarray, globals_vec: np.ndarray
-    ) -> tuple[float, np.ndarray]:
-        """
-        Convenience method for single-sample inference.
-        Returns (value, policy_logits).
-        """
-        self.eval()
-        with torch.no_grad():
-            x = torch.from_numpy(feature[None, ...]).float().to(
-                next(self.parameters()).device
-            )
-            g = torch.from_numpy(globals_vec[None, ...]).float().to(
-                next(self.parameters()).device
-            )
-            v, p = self.forward(x, g)
-        return float(v.item()), p.cpu().numpy()[0]
+        out += residual
+        out = self.relu(out)
+        return out
 
 
-class RingRiftCNN_MPS(nn.Module):
+def create_hex_mask(radius: int, bounding_size: int) -> torch.Tensor:
+    """Create a hex board validity mask for the given radius.
+
+    For a hex board embedded in a square bounding box, this creates a mask
+    where valid hex cells are 1.0 and invalid (padding) cells are 0.0.
+
+    Args:
+        radius: Hex board radius (e.g., 12 for 469-cell board)
+        bounding_size: Size of the square bounding box (e.g., 25)
+
+    Returns:
+        Tensor of shape [1, 1, bounding_size, bounding_size] with valid hex cells as 1.0
     """
-    MPS-compatible variant of RingRiftCNN for Apple Silicon.
+    mask = torch.zeros(1, 1, bounding_size, bounding_size)
+    center = bounding_size // 2
 
-    This model uses the same ResNet-style backbone as RingRiftCNN but replaces
-    AdaptiveAvgPool2d (not supported on MPS) with manual global average pooling
-    via torch.mean(). This maintains similar model capacity while ensuring
-    compatibility with PyTorch's MPS backend on macOS.
+    for row in range(bounding_size):
+        for col in range(bounding_size):
+            # Convert to axial coordinates (q, r) centered at origin
+            q = col - center
+            r = row - center
 
-    For optimal training, use board-specific policy sizes:
-    - 8x8:  policy_size=7000  (POLICY_SIZE_8x8)
-    - 19x19: policy_size=67000 (POLICY_SIZE_19x19)
+            # Check if within hex radius using axial distance formula
+            # For axial coords: distance = max(|q|, |r|, |q + r|)
+            if max(abs(q), abs(r), abs(q + r)) <= radius:
+                mask[0, 0, row, col] = 1.0
+
+    return mask
+
+
+# =============================================================================
+# Memory-Tiered Architectures (v2)
+# =============================================================================
+#
+# These architectures are designed for specific memory budgets:
+# - v2 (High Memory): Optimized for 96GB systems with 2 NNs loaded
+# - v2_Lite (Low Memory): Optimized for 48GB systems with 2 NNs loaded
+#
+# All v2 architectures use torch.mean() for global pooling, ensuring
+# compatibility with both CUDA and MPS backends.
+
+
+class RingRiftCNN_v2(nn.Module):
+    """
+    High-capacity CNN for 19x19 square boards (96GB memory target).
+
+    This architecture is designed for maximum playing strength on systems
+    with sufficient memory (96GB+) to run two instances simultaneously
+    for comparison matches with MCTS search overhead.
+
+    Key improvements over RingRiftCNN_MPS:
+    - 12 SE residual blocks with Squeeze-and-Excitation for global patterns
+    - 192 filters for richer representations
+    - 14 base input channels capturing stack/cap/territory mechanics
+    - 20 global features for multi-player state tracking
+    - Multi-player value head (outputs per-player win probability)
+    - 384-dim policy intermediate for better move discrimination
+
+    Input Feature Channels (14 base × 4 frames = 56 total):
+        1-4: Per-player stack presence (binary, one per player)
+        5-8: Per-player marker presence (binary)
+        9: Stack height (normalized 0-1)
+        10: Cap height (normalized)
+        11: Collapsed territory (binary)
+        12-14: Territory ownership channels
+
+    Global Features (20):
+        1-4: Rings in hand (per player)
+        5-8: Eliminated rings (per player)
+        9-12: Territory count (per player)
+        13-16: Line count (per player)
+        17: Current player indicator
+        18: Game phase (early/mid/late)
+        19: Total rings in play
+        20: LPS threat indicator
+
+    Memory profile (FP32):
+    - Model weights: ~150 MB
+    - Per-model with activations: ~350 MB
+    - Two models + MCTS: ~18 GB total
 
     Architecture Version:
-        v1.1.0-mps - Added configurable policy_size for board-specific optimization.
-
-    Key Differences from RingRiftCNN:
-        - Uses torch.mean(dim=[-2, -1]) instead of nn.AdaptiveAvgPool2d((4, 4))
-        - Fully compatible with MPS backend on Apple Silicon
-        - Same parameter count and similar performance characteristics
+        v2.0.0 - High-capacity SE architecture for 96GB systems.
     """
 
-    # Architecture version for checkpoint compatibility checking
-    ARCHITECTURE_VERSION = "v1.1.0-mps"
-
-    def __init__(
-        self,
-        board_size: int = 8,
-        in_channels: int = 10,
-        global_features: int = 10,
-        num_res_blocks: int = 10,
-        num_filters: int = 128,
-        history_length: int = 3,
-        policy_size: Optional[int] = None,
-    ):
-        super(RingRiftCNN_MPS, self).__init__()
-        self.board_size = board_size
-
-        # Input channels = base_channels * (history_length + 1)
-        # Base channels = 10
-        # Default history length = 3 (Current + 3 Previous)
-        #
-        # State Encoding (10 channels):
-        # 0: My stacks (height normalized)
-        # 1: Opponent stacks (height normalized)
-        # 2: My markers
-        # 3: Opponent markers
-        # 4: My collapsed spaces
-        # 5: Opponent collapsed spaces
-        # 6: My liberties
-        # 7: Opponent liberties
-        # 8: My line potential
-        # 9: Opponent line potential
-        self.total_in_channels = in_channels * (history_length + 1)
-
-        # Initial convolution
-        self.conv1 = nn.Conv2d(
-            self.total_in_channels, num_filters, kernel_size=3, padding=1
-        )
-        self.bn1 = nn.BatchNorm2d(num_filters)
-        self.relu = nn.ReLU()
-
-        # Residual blocks
-        self.res_blocks = nn.ModuleList([
-            ResidualBlock(num_filters) for _ in range(num_res_blocks)
-        ])
-
-        # MPS-compatible pooling: We use manual global average pooling
-        # instead of AdaptiveAvgPool2d. This produces a fixed-size output
-        # regardless of input spatial dimensions, allowing the same model
-        # to handle 8x8, 19x19, and 25x25 boards.
-        # The output is num_filters channels (no spatial dimensions).
-
-        # Fully connected layers
-        # Input size is now just num_filters (after global average pooling)
-        conv_out_size = num_filters
-        self.fc1 = nn.Linear(conv_out_size + global_features, 256)
-        self.dropout = nn.Dropout(0.3)
-
-        # Value head
-        self.value_head = nn.Linear(256, 1)
-        self.tanh = nn.Tanh()
-
-        # Policy head - use provided policy_size or infer from board_size
-        if policy_size is not None:
-            self.policy_size = policy_size
-        elif board_size == 8:
-            self.policy_size = POLICY_SIZE_8x8
-        elif board_size == 19:
-            self.policy_size = POLICY_SIZE_19x19
-        else:
-            self.policy_size = POLICY_SIZE  # Default to 19x19 size
-        self.policy_head = nn.Linear(256, self.policy_size)
-
-    def forward(self, x, globals):
-        x = self.relu(self.bn1(self.conv1(x)))
-
-        for block in self.res_blocks:
-            x = block(x)
-
-        # MPS-compatible global average pooling
-        # Shape: [batch, num_filters, H, W] -> [batch, num_filters]
-        x = torch.mean(x, dim=[-2, -1])
-
-        # Concatenate global features
-        x = torch.cat((x, globals), dim=1)
-
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
-
-        value = self.tanh(self.value_head(x))  # Output between -1 and 1
-        policy = self.policy_head(x)  # Logits for CrossEntropyLoss
-
-        return value, policy
-
-    def forward_single(
-        self, feature: np.ndarray, globals_vec: np.ndarray
-    ) -> tuple[float, np.ndarray]:
-        """
-        Convenience method for single-sample inference.
-        Returns (value, policy_logits).
-        """
-        self.eval()
-        with torch.no_grad():
-            x = torch.from_numpy(feature[None, ...]).float().to(
-                next(self.parameters()).device
-            )
-            g = torch.from_numpy(globals_vec[None, ...]).float().to(
-                next(self.parameters()).device
-            )
-            v, p = self.forward(x, g)
-        return float(v.item()), p.cpu().numpy()[0]
-
-
-class RingRiftCNN_MultiPlayer(nn.Module):
-    """
-    CNN architecture for RingRift with per-player value head.
-
-    This model outputs a value vector for all players simultaneously instead
-    of a single scalar value from the current player's perspective. This is
-    more suitable for multiplayer games (3-4 players) where outcomes aren't
-    strictly zero-sum.
-
-    The value head outputs values for each player position (up to MAX_PLAYERS),
-    where each value represents that player's expected outcome in [-1, +1].
-
-    Architecture Version:
-        v2.0.0 - Multi-player value head architecture. Incompatible with v1.x
-                 checkpoints due to value head dimension change.
-    """
-
-    # Architecture version for checkpoint compatibility checking
     ARCHITECTURE_VERSION = "v2.0.0"
 
     def __init__(
         self,
-        board_size: int = 8,
-        in_channels: int = 10,
-        global_features: int = 10,
-        num_res_blocks: int = 10,
-        num_filters: int = 128,
+        board_size: int = 19,
+        in_channels: int = 14,
+        global_features: int = 20,
+        num_res_blocks: int = 12,
+        num_filters: int = 192,
         history_length: int = 3,
-        max_players: int = MAX_PLAYERS,
         policy_size: Optional[int] = None,
+        policy_intermediate: int = 384,
+        value_intermediate: int = 128,
+        num_players: int = 4,
+        se_reduction: int = 16,
     ):
-        super(RingRiftCNN_MultiPlayer, self).__init__()
+        super(RingRiftCNN_v2, self).__init__()
         self.board_size = board_size
-        self.max_players = max_players
+        self.num_filters = num_filters
+        self.num_players = num_players
+        self.global_features = global_features
 
         # Input channels = base_channels * (history_length + 1)
         self.total_in_channels = in_channels * (history_length + 1)
@@ -636,180 +497,19 @@ class RingRiftCNN_MultiPlayer(nn.Module):
         self.bn1 = nn.BatchNorm2d(num_filters)
         self.relu = nn.ReLU()
 
-        # Residual blocks
+        # SE-enhanced residual blocks for global pattern recognition
         self.res_blocks = nn.ModuleList([
-            ResidualBlock(num_filters) for _ in range(num_res_blocks)
+            SEResidualBlock(num_filters, reduction=se_reduction)
+            for _ in range(num_res_blocks)
         ])
 
-        # Adaptive Pooling to handle variable board sizes
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
-
-        # Fully connected layers
-        conv_out_size = num_filters * 4 * 4
-        self.fc1 = nn.Linear(conv_out_size + global_features, 256)
-        self.dropout = nn.Dropout(0.3)
-
-        # Multi-player value head: outputs values for each player position
-        self.value_head = nn.Linear(256, max_players)
+        # Multi-player value head (outputs per-player win probability)
+        self.value_fc1 = nn.Linear(num_filters + global_features, value_intermediate)
+        self.value_fc2 = nn.Linear(value_intermediate, num_players)
         self.tanh = nn.Tanh()
 
-        # Policy head - use provided policy_size or infer from board_size
-        if policy_size is not None:
-            self.policy_size = policy_size
-        elif board_size == 8:
-            self.policy_size = POLICY_SIZE_8x8
-        elif board_size == 19:
-            self.policy_size = POLICY_SIZE_19x19
-        else:
-            self.policy_size = POLICY_SIZE  # Default to 19x19 size
-        self.policy_head = nn.Linear(256, self.policy_size)
-
-    def forward(
-        self, x: torch.Tensor, globals: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass through the network.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Board features tensor of shape (batch, channels, height, width).
-        globals : torch.Tensor
-            Global features tensor of shape (batch, global_features).
-
-        Returns
-        -------
-        Tuple[torch.Tensor, torch.Tensor]
-            - values: Shape (batch, max_players) with values in [-1, +1] for
-              each player position.
-            - policy: Shape (batch, POLICY_SIZE) with policy logits.
-        """
-        x = self.relu(self.bn1(self.conv1(x)))
-
-        for block in self.res_blocks:
-            x = block(x)
-
-        # Adaptive pooling to fixed size
-        x = self.adaptive_pool(x)
-
-        x = x.view(x.size(0), -1)  # Flatten
-
-        # Concatenate global features
-        x = torch.cat((x, globals), dim=1)
-
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
-
-        # Multi-player values: (batch, max_players) with tanh activation
-        values = self.tanh(self.value_head(x))
-
-        # Policy logits unchanged
-        policy = self.policy_head(x)
-
-        return values, policy
-
-    def forward_single(
-        self, feature: np.ndarray, globals_vec: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Convenience method for single-sample inference.
-
-        Returns (values, policy_logits) where values is shape (max_players,).
-        """
-        self.eval()
-        with torch.no_grad():
-            x = torch.from_numpy(feature[None, ...]).float().to(
-                next(self.parameters()).device
-            )
-            g = torch.from_numpy(globals_vec[None, ...]).float().to(
-                next(self.parameters()).device
-            )
-            v, p = self.forward(x, g)
-        return v.cpu().numpy()[0], p.cpu().numpy()[0]
-
-    def get_perspective_value(
-        self, values: torch.Tensor, current_player: int
-    ) -> torch.Tensor:
-        """
-        Extract value from current player's perspective.
-
-        This provides backwards compatibility with code expecting scalar values.
-
-        Parameters
-        ----------
-        values : torch.Tensor
-            Multi-player values of shape (batch, max_players).
-        current_player : int
-            Current player number (1-indexed).
-
-        Returns
-        -------
-        torch.Tensor
-            Values from current player's perspective, shape (batch, 1).
-        """
-        # Player numbers are 1-indexed, convert to 0-indexed for tensor indexing
-        player_idx = current_player - 1
-        return values[:, player_idx:player_idx + 1]
-
-
-class RingRiftCNN_MultiPlayer_MPS(nn.Module):
-    """
-    MPS-compatible multi-player CNN architecture for RingRift.
-
-    This model combines the multi-player value head from RingRiftCNN_MultiPlayer
-    with the MPS-compatible global average pooling from RingRiftCNN_MPS. This
-    ensures the architecture works on Apple Silicon with any board size.
-
-    Key Differences from RingRiftCNN_MultiPlayer:
-        - Uses torch.mean(dim=[-2, -1]) instead of nn.AdaptiveAvgPool2d((4, 4))
-        - Fully compatible with MPS backend on Apple Silicon
-        - Maintains multi-player value output (batch, max_players)
-    """
-
-    ARCHITECTURE_VERSION = "v2.0.0-mps"
-
-    def __init__(
-        self,
-        board_size: int = 8,
-        in_channels: int = 10,
-        global_features: int = 10,
-        num_res_blocks: int = 10,
-        num_filters: int = 128,
-        history_length: int = 3,
-        max_players: int = MAX_PLAYERS,
-        policy_size: Optional[int] = None,
-    ):
-        super(RingRiftCNN_MultiPlayer_MPS, self).__init__()
-        self.board_size = board_size
-        self.max_players = max_players
-
-        self.total_in_channels = in_channels * (history_length + 1)
-
-        # Initial convolution
-        self.conv1 = nn.Conv2d(
-            self.total_in_channels, num_filters, kernel_size=3, padding=1
-        )
-        self.bn1 = nn.BatchNorm2d(num_filters)
-        self.relu = nn.ReLU()
-
-        # Residual blocks
-        self.res_blocks = nn.ModuleList([
-            ResidualBlock(num_filters) for _ in range(num_res_blocks)
-        ])
-
-        # MPS-compatible pooling: global average pooling instead of adaptive
-        # Output is num_filters channels (no spatial dimensions)
-
-        # Fully connected layers - input is just num_filters after global pooling
-        conv_out_size = num_filters
-        self.fc1 = nn.Linear(conv_out_size + global_features, 256)
-        self.dropout = nn.Dropout(0.3)
-
-        # Multi-player value head
-        self.value_head = nn.Linear(256, max_players)
-        self.tanh = nn.Tanh()
-
-        # Policy head
+        # Policy head with larger intermediate
+        self.policy_fc1 = nn.Linear(num_filters + global_features, policy_intermediate)
         if policy_size is not None:
             self.policy_size = policy_size
         elif board_size == 8:
@@ -818,13 +518,12 @@ class RingRiftCNN_MultiPlayer_MPS(nn.Module):
             self.policy_size = POLICY_SIZE_19x19
         else:
             self.policy_size = POLICY_SIZE
-        self.policy_head = nn.Linear(256, self.policy_size)
+        self.policy_fc2 = nn.Linear(policy_intermediate, self.policy_size)
+        self.dropout = nn.Dropout(0.3)
 
-    def forward(
-        self, x: torch.Tensor, globals: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor, globals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Backbone with SE blocks
         x = self.relu(self.bn1(self.conv1(x)))
-
         for block in self.res_blocks:
             x = block(x)
 
@@ -834,17 +533,160 @@ class RingRiftCNN_MultiPlayer_MPS(nn.Module):
         # Concatenate global features
         x = torch.cat((x, globals), dim=1)
 
-        x = self.relu(self.fc1(x))
-        x = self.dropout(x)
+        # Multi-player value head: outputs [batch, num_players]
+        v = self.relu(self.value_fc1(x))
+        v = self.dropout(v)
+        value = self.tanh(self.value_fc2(v))  # [-1, 1] per player
 
-        values = self.tanh(self.value_head(x))
-        policy = self.policy_head(x)
+        # Policy head
+        p = self.relu(self.policy_fc1(x))
+        p = self.dropout(p)
+        policy = self.policy_fc2(p)
 
-        return values, policy
+        return value, policy
 
     def forward_single(
-        self, feature: np.ndarray, globals_vec: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        self, feature: np.ndarray, globals_vec: np.ndarray, player_idx: int = 0
+    ) -> tuple[float, np.ndarray]:
+        """Convenience method for single-sample inference.
+
+        Args:
+            feature: Board features [C, H, W]
+            globals_vec: Global features [G]
+            player_idx: Which player's value to return (default 0)
+
+        Returns:
+            Tuple of (value for player, policy logits)
+        """
+        self.eval()
+        with torch.no_grad():
+            x = torch.from_numpy(feature[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            g = torch.from_numpy(globals_vec[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            v, p = self.forward(x, g)
+        return float(v[0, player_idx].item()), p.cpu().numpy()[0]
+
+
+class RingRiftCNN_v2_Lite(nn.Module):
+    """
+    Memory-efficient CNN for 19x19 square boards (48GB memory target).
+
+    This architecture is designed for systems with limited memory (48GB)
+    while maintaining reasonable playing strength. Suitable for running
+    two instances simultaneously for comparison matches.
+
+    Key trade-offs vs RingRiftCNN_v2:
+    - 6 SE residual blocks (vs 12) - faster but shallower
+    - 96 filters (vs 192) - smaller representations
+    - 192-dim policy intermediate (vs 384)
+    - 12 base input channels (vs 14) - reduced history
+    - 3 history frames (vs 4) - reduced temporal context
+
+    Input Feature Channels (12 base × 3 frames = 36 total):
+        1-4: Per-player stack presence (binary)
+        5-8: Per-player marker presence (binary)
+        9: Stack height (normalized)
+        10: Cap height (normalized)
+        11: Collapsed territory (binary)
+        12: Current player territory
+
+    Global Features (20):
+        Same as RingRiftCNN_v2 for compatibility
+
+    Memory profile (FP32):
+    - Model weights: ~60 MB
+    - Per-model with activations: ~130 MB
+    - Two models + MCTS: ~8 GB total
+
+    Architecture Version:
+        v2.0.0-lite - Memory-efficient SE architecture for 48GB systems.
+    """
+
+    ARCHITECTURE_VERSION = "v2.0.0-lite"
+
+    def __init__(
+        self,
+        board_size: int = 19,
+        in_channels: int = 12,
+        global_features: int = 20,
+        num_res_blocks: int = 6,
+        num_filters: int = 96,
+        history_length: int = 2,
+        policy_size: Optional[int] = None,
+        policy_intermediate: int = 192,
+        value_intermediate: int = 64,
+        num_players: int = 4,
+        se_reduction: int = 16,
+    ):
+        super(RingRiftCNN_v2_Lite, self).__init__()
+        self.board_size = board_size
+        self.num_filters = num_filters
+        self.num_players = num_players
+        self.global_features = global_features
+
+        self.total_in_channels = in_channels * (history_length + 1)
+
+        # Initial convolution
+        self.conv1 = nn.Conv2d(
+            self.total_in_channels, num_filters, kernel_size=3, padding=1
+        )
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+
+        # SE-enhanced residual blocks
+        self.res_blocks = nn.ModuleList([
+            SEResidualBlock(num_filters, reduction=se_reduction)
+            for _ in range(num_res_blocks)
+        ])
+
+        # Multi-player value head
+        self.value_fc1 = nn.Linear(num_filters + global_features, value_intermediate)
+        self.value_fc2 = nn.Linear(value_intermediate, num_players)
+        self.tanh = nn.Tanh()
+
+        # Policy head
+        self.policy_fc1 = nn.Linear(num_filters + global_features, policy_intermediate)
+        if policy_size is not None:
+            self.policy_size = policy_size
+        elif board_size == 8:
+            self.policy_size = POLICY_SIZE_8x8
+        elif board_size == 19:
+            self.policy_size = POLICY_SIZE_19x19
+        else:
+            self.policy_size = POLICY_SIZE
+        self.policy_fc2 = nn.Linear(policy_intermediate, self.policy_size)
+        self.dropout = nn.Dropout(0.3)
+
+    def forward(self, x: torch.Tensor, globals: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Backbone with SE blocks
+        x = self.relu(self.bn1(self.conv1(x)))
+        for block in self.res_blocks:
+            x = block(x)
+
+        # MPS-compatible global average pooling
+        x = torch.mean(x, dim=[-2, -1])
+
+        # Concatenate global features
+        x = torch.cat((x, globals), dim=1)
+
+        # Multi-player value head: outputs [batch, num_players]
+        v = self.relu(self.value_fc1(x))
+        v = self.dropout(v)
+        value = self.tanh(self.value_fc2(v))
+
+        # Policy head
+        p = self.relu(self.policy_fc1(x))
+        p = self.dropout(p)
+        policy = self.policy_fc2(p)
+
+        return value, policy
+
+    def forward_single(
+        self, feature: np.ndarray, globals_vec: np.ndarray, player_idx: int = 0
+    ) -> tuple[float, np.ndarray]:
         """Convenience method for single-sample inference."""
         self.eval()
         with torch.no_grad():
@@ -855,14 +697,7 @@ class RingRiftCNN_MultiPlayer_MPS(nn.Module):
                 next(self.parameters()).device
             )
             v, p = self.forward(x, g)
-        return v.cpu().numpy()[0], p.cpu().numpy()[0]
-
-    def get_perspective_value(
-        self, values: torch.Tensor, current_player: int
-    ) -> torch.Tensor:
-        """Extract value from current player's perspective."""
-        player_idx = current_player - 1
-        return values[:, player_idx:player_idx + 1]
+        return float(v[0, player_idx].item()), p.cpu().numpy()[0]
 
 
 def multi_player_value_loss(
@@ -909,149 +744,162 @@ def multi_player_value_loss(
 # configurations for each board type.
 
 
+def get_memory_tier() -> str:
+    """
+    Get the memory tier configuration from environment variable.
+
+    The memory tier controls which model variant to use:
+    - "high" (default, 96GB target): Full-capacity v2 models for maximum playing strength
+    - "low" (48GB target): Memory-efficient v2-lite models for constrained systems
+
+    Returns
+    -------
+    str
+        One of "high" or "low".
+    """
+    tier = os.environ.get("RINGRIFT_NN_MEMORY_TIER", "high").lower()
+    if tier not in ("high", "low"):
+        logger.warning(f"Unknown memory tier '{tier}', defaulting to 'high'")
+        return "high"
+    return tier
+
+
 def create_model_for_board(
     board_type: BoardType,
-    model_class: str = "RingRiftCNN",
-    use_mps: bool = False,
-    in_channels: int = 10,
-    global_features: int = 10,
-    num_res_blocks: int = 10,
-    num_filters: int = 128,
+    in_channels: int = 14,
+    global_features: int = 20,
+    num_res_blocks: Optional[int] = None,
+    num_filters: Optional[int] = None,
     history_length: int = 3,
-    max_players: int = MAX_PLAYERS,
+    memory_tier: Optional[str] = None,
 ) -> nn.Module:
     """
     Create a neural network model optimized for a specific board type.
 
-    This factory function instantiates the correct model architecture with
+    This factory function instantiates the correct v2 model architecture with
     board-specific policy head sizes to avoid wasting parameters on unused
-    action space.
+    action space. All models are CUDA and MPS compatible.
 
     Parameters
     ----------
     board_type : BoardType
         The board type (SQUARE8, SQUARE19, or HEXAGONAL).
-    model_class : str
-        The model class to use: "RingRiftCNN", "RingRiftCNN_MPS",
-        "RingRiftCNN_MultiPlayer", or "HexNeuralNet".
-    use_mps : bool
-        If True, use MPS-compatible architecture (RingRiftCNN_MPS).
-        Ignored if model_class is explicitly set to a specific class.
     in_channels : int
-        Number of input feature channels (default 10).
+        Number of input feature channels per frame (default 14).
     global_features : int
-        Number of global feature dimensions (default 10).
-    num_res_blocks : int
-        Number of residual blocks in the backbone (default 10).
-    num_filters : int
-        Number of convolutional filters (default 128).
+        Number of global feature dimensions (default 20).
+    num_res_blocks : int, optional
+        Number of residual blocks in the backbone (default depends on tier).
+    num_filters : int, optional
+        Number of convolutional filters (default depends on tier).
     history_length : int
         Number of historical frames to stack (default 3).
-    max_players : int
-        Maximum number of players for MultiPlayer models (default 4).
+    memory_tier : str, optional
+        Memory tier override: "high" (96GB) or "low" (48GB).
+        If None, reads from RINGRIFT_NN_MEMORY_TIER environment variable.
+        Defaults to "high".
 
     Returns
     -------
     nn.Module
         A model instance configured for the specified board type.
 
+    Notes
+    -----
+    Memory tier selection:
+    - "high" (default, 96GB target): Uses v2 models with 12-15 res blocks, 192 filters
+    - "low" (48GB target): Uses v2-lite models with 6-8 res blocks, 96 filters
+
+    All v2 models use torch.mean for global pooling, ensuring CUDA and MPS compatibility.
+
     Examples
     --------
-    >>> # Create 8x8 model
+    >>> # Create 8x8 model (default high tier)
     >>> model_8x8 = create_model_for_board(BoardType.SQUARE8)
-    >>> assert model_8x8.policy_size == POLICY_SIZE_8x8  # 7000
+    >>> assert isinstance(model_8x8, RingRiftCNN_v2)
 
-    >>> # Create 19x19 model
-    >>> model_19x19 = create_model_for_board(BoardType.SQUARE19)
-    >>> assert model_19x19.policy_size == POLICY_SIZE_19x19  # 67000
+    >>> # Create 19x19 model with high memory tier
+    >>> model_19x19 = create_model_for_board(BoardType.SQUARE19, memory_tier="high")
+    >>> assert isinstance(model_19x19, RingRiftCNN_v2)
 
-    >>> # Create hex model
-    >>> model_hex = create_model_for_board(BoardType.HEXAGONAL)
-    >>> assert model_hex.policy_size == P_HEX  # 91876
-
-    >>> # Create multi-player 8x8 model
-    >>> model_mp = create_model_for_board(
-    ...     BoardType.SQUARE8,
-    ...     model_class="RingRiftCNN_MultiPlayer"
-    ... )
-    >>> assert model_mp.policy_size == POLICY_SIZE_8x8
+    >>> # Create hex model with low memory tier
+    >>> model_hex = create_model_for_board(BoardType.HEXAGONAL, memory_tier="low")
+    >>> assert isinstance(model_hex, HexNeuralNet_v2_Lite)
     """
     # Get board-specific parameters
     board_size = get_spatial_size_for_board(board_type)
     policy_size = get_policy_size_for_board(board_type)
 
-    # Hex boards ALWAYS use HexNeuralNet (designed for hexagonal coordinate system)
-    # RingRiftCNN uses rectangular convolutions which are inefficient for hex grids
+    # Determine memory tier
+    tier = memory_tier if memory_tier is not None else get_memory_tier()
+
+    # Create v2 model based on board type and memory tier
     if board_type == BoardType.HEXAGONAL:
-        return HexNeuralNet(
-            in_channels=in_channels * (history_length + 1),
-            global_features=global_features,
-            num_res_blocks=num_res_blocks,
-            num_filters=num_filters,
-            board_size=board_size,
-            policy_size=policy_size,
-        )
-
-    # Select model class
-    if model_class == "RingRiftCNN_MultiPlayer_MPS" or (
-        model_class == "RingRiftCNN_MultiPlayer" and use_mps
-    ):
-        return RingRiftCNN_MultiPlayer_MPS(
-            board_size=board_size,
-            in_channels=in_channels,
-            global_features=global_features,
-            num_res_blocks=num_res_blocks,
-            num_filters=num_filters,
-            history_length=history_length,
-            max_players=max_players,
-            policy_size=policy_size,
-        )
-    elif model_class == "RingRiftCNN_MultiPlayer":
-        return RingRiftCNN_MultiPlayer(
-            board_size=board_size,
-            in_channels=in_channels,
-            global_features=global_features,
-            num_res_blocks=num_res_blocks,
-            num_filters=num_filters,
-            history_length=history_length,
-            max_players=max_players,
-            policy_size=policy_size,
-        )
-    elif model_class == "RingRiftCNN_MPS" or use_mps:
-        return RingRiftCNN_MPS(
-            board_size=board_size,
-            in_channels=in_channels,
-            global_features=global_features,
-            num_res_blocks=num_res_blocks,
-            num_filters=num_filters,
-            history_length=history_length,
-            policy_size=policy_size,
-        )
+        if tier == "high":
+            # HexNeuralNet_v2: 12 res blocks, 192 filters, ~43M params
+            return HexNeuralNet_v2(
+                in_channels=in_channels * (history_length + 1),
+                global_features=global_features,
+                num_res_blocks=num_res_blocks or 12,
+                num_filters=num_filters or 192,
+                board_size=board_size,
+                policy_size=policy_size,
+            )
+        else:  # low tier
+            # HexNeuralNet_v2_Lite: 6 res blocks, 96 filters, ~19M params
+            return HexNeuralNet_v2_Lite(
+                in_channels=in_channels * (history_length + 1),
+                global_features=global_features,
+                num_res_blocks=num_res_blocks or 6,
+                num_filters=num_filters or 96,
+                board_size=board_size,
+                policy_size=policy_size,
+            )
     else:
-        # Default: RingRiftCNN
-        return RingRiftCNN(
-            board_size=board_size,
-            in_channels=in_channels,
-            global_features=global_features,
-            num_res_blocks=num_res_blocks,
-            num_filters=num_filters,
-            history_length=history_length,
-            policy_size=policy_size,
-        )
+        # Square boards (8x8 and 19x19)
+        if tier == "high":
+            # RingRiftCNN_v2: 12 res blocks, 192 filters, ~34M params
+            return RingRiftCNN_v2(
+                board_size=board_size,
+                in_channels=in_channels,
+                global_features=global_features,
+                num_res_blocks=num_res_blocks or 12,
+                num_filters=num_filters or 192,
+                history_length=history_length,
+                policy_size=policy_size,
+            )
+        else:  # low tier
+            # RingRiftCNN_v2_Lite: 6 res blocks, 96 filters, ~14M params
+            return RingRiftCNN_v2_Lite(
+                board_size=board_size,
+                in_channels=in_channels,
+                global_features=global_features,
+                num_res_blocks=num_res_blocks or 6,
+                num_filters=num_filters or 96,
+                history_length=history_length,
+                policy_size=policy_size,
+            )
 
 
-def get_model_config_for_board(board_type: BoardType) -> Dict[str, any]:
+def get_model_config_for_board(
+    board_type: BoardType,
+    memory_tier: Optional[str] = None,
+) -> Dict[str, any]:
     """
     Get recommended model configuration for a specific board type.
 
     Returns a dictionary of hyperparameters optimized for the board type,
     including recommended residual block count and filter count based on
-    the complexity of the action space.
+    the complexity of the action space and memory tier.
 
     Parameters
     ----------
     board_type : BoardType
         The board type to get configuration for.
+    memory_tier : str, optional
+        Memory tier override: "high" (96GB) or "low" (48GB).
+        If None, reads from RINGRIFT_NN_MEMORY_TIER environment variable.
+        Defaults to "high".
 
     Returns
     -------
@@ -1062,44 +910,68 @@ def get_model_config_for_board(board_type: BoardType) -> Dict[str, any]:
         - num_res_blocks: Recommended residual block count
         - num_filters: Recommended filter count
         - recommended_model: Which model class to use
+        - memory_tier: Active memory tier
+        - estimated_params_m: Estimated parameter count in millions
     """
+    tier = memory_tier if memory_tier is not None else get_memory_tier()
+
     config = {
         "board_size": get_spatial_size_for_board(board_type),
         "policy_size": get_policy_size_for_board(board_type),
+        "memory_tier": tier,
     }
 
-    if board_type == BoardType.SQUARE8:
-        # Smaller 8x8 board: fewer parameters needed
-        config.update({
-            "num_res_blocks": 6,
-            "num_filters": 64,
-            "recommended_model": "RingRiftCNN",
-            "description": "Compact model for 8x8 board with 7K policy head",
-        })
-    elif board_type == BoardType.SQUARE19:
-        # Large 19x19 board: full capacity
-        config.update({
-            "num_res_blocks": 10,
-            "num_filters": 128,
-            "recommended_model": "RingRiftCNN",
-            "description": "Full capacity model for 19x19 board with 67K policy head",
-        })
-    elif board_type == BoardType.HEXAGONAL:
-        # Hex board: specialized architecture
-        config.update({
-            "num_res_blocks": 8,
-            "num_filters": 128,
-            "recommended_model": "HexNeuralNet",
-            "description": "Hex-specialized model with masked pooling and 54K policy head",
-        })
-    else:
-        # Unknown board type: use defaults
-        config.update({
-            "num_res_blocks": 10,
-            "num_filters": 128,
-            "recommended_model": "RingRiftCNN",
-            "description": "Default model configuration",
-        })
+    # Memory-tiered v2 models
+    if tier == "high":
+        if board_type == BoardType.HEXAGONAL:
+            config.update({
+                "num_res_blocks": 12,
+                "num_filters": 192,
+                "recommended_model": "HexNeuralNet_v2",
+                "description": "High-capacity hex model for 96GB systems (~43M params)",
+                "estimated_params_m": 43.4,
+            })
+        elif board_type == BoardType.SQUARE19:
+            config.update({
+                "num_res_blocks": 12,
+                "num_filters": 192,
+                "recommended_model": "RingRiftCNN_v2",
+                "description": "High-capacity 19x19 model for 96GB systems (~34M params)",
+                "estimated_params_m": 34.0,
+            })
+        else:  # SQUARE8
+            config.update({
+                "num_res_blocks": 12,
+                "num_filters": 192,
+                "recommended_model": "RingRiftCNN_v2",
+                "description": "High-capacity 8x8 model for 96GB systems (~34M params)",
+                "estimated_params_m": 34.0,
+            })
+    else:  # low tier
+        if board_type == BoardType.HEXAGONAL:
+            config.update({
+                "num_res_blocks": 6,
+                "num_filters": 96,
+                "recommended_model": "HexNeuralNet_v2_Lite",
+                "description": "Memory-efficient hex model for 48GB systems (~19M params)",
+                "estimated_params_m": 18.7,
+            })
+        elif board_type == BoardType.SQUARE19:
+            config.update({
+                "num_res_blocks": 6,
+                "num_filters": 96,
+                "recommended_model": "RingRiftCNN_v2_Lite",
+                "description": "Memory-efficient 19x19 model for 48GB systems (~14M params)",
+                "estimated_params_m": 14.3,
+            })
+        else:  # SQUARE8
+            config.update({
+                "num_res_blocks": 6,
+                "num_filters": 96,
+                "recommended_model": "RingRiftCNN_v2_Lite",
+                "description": "Memory-efficient 8x8 model for 48GB systems (~14M params)",
+                "estimated_params_m": 14.0,
+            })
 
     return config
 
@@ -2674,44 +2546,71 @@ class ActionEncoderHex:
         return None
 
 
-class HexNeuralNet(nn.Module):
-    """Hex-specific CNN for the canonical N=10 hex board.
+class HexNeuralNet_v2(nn.Module):
+    """
+    High-capacity CNN for hexagonal boards (96GB memory target).
 
-    This model mirrors the ResNet-style structure of :class:`RingRiftCNN`
-    but operates on a fixed [C_hex, 21, 21] spatial frame and exposes a
-    hex-only policy head of size :data:`P_HEX`.
+    This architecture fixes the critical bug in HexNeuralNet where the policy
+    head flattened full spatial features (80,000 dims) directly to policy logits,
+    resulting in 7.35 billion parameters. The v2 architecture uses global average
+    pooling before the policy FC layer, reducing parameters by 169×.
+
+    Key improvements over HexNeuralNet:
+    - Policy head uses global avg pool → FC (like RingRiftCNN_MPS)
+    - 12 SE residual blocks with Squeeze-and-Excitation
+    - 192 filters for richer hex representations
+    - 14 base input channels capturing stack/cap/territory mechanics
+    - 20 global features for multi-player state tracking
+    - Multi-player value head with masked pooling for hex grid
+    - 384-dim policy intermediate for better move discrimination
+
+    Hex-specific features:
+    - Automatic hex mask generation and caching
+    - Masked global average pooling for valid cells only
+    - 469 valid cells in 25×25 bounding box (radius 12)
+
+    Input Feature Channels (14 base × 4 frames = 56 total):
+        1-4: Per-player stack presence (binary, one per player)
+        5-8: Per-player marker presence (binary)
+        9: Stack height (normalized 0-1)
+        10: Cap height (normalized)
+        11: Collapsed territory (binary)
+        12-14: Territory ownership channels
+
+    Global Features (20):
+        1-4: Rings in hand (per player)
+        5-8: Eliminated rings (per player)
+        9-12: Territory count (per player)
+        13-16: Line count (per player)
+        17: Current player indicator
+        18: Game phase (early/mid/late)
+        19: Total rings in play
+        20: LPS threat indicator
+
+    Memory profile (FP32):
+    - Model weights: ~180 MB (vs ~29 GB in original!)
+    - Per-model with activations: ~380 MB
+    - Two models + MCTS: ~18 GB total
 
     Architecture Version:
-        v1.0.0 - Initial hex architecture with 8 residual blocks, 128 filters,
-                 masked global average pooling, policy head size P_HEX=91876.
-
-    Design (see AI_ARCHITECTURE.md, HexNeuralNet section):
-
-      * Backbone: initial 3×3 conv → BN → ReLU, followed by ``num_res_blocks``
-        residual blocks with 3×3 convolutions (stride 1, padding 1).
-      * Value head:
-          - 1×1 conv → BN → ReLU producing a single-channel map;
-          - masked global average pooling over the 25×25 hex frame using
-            ``hex_mask`` when provided;
-          - concatenation with the ``global_features`` vector; and
-          - a small MLP + tanh to produce a scalar in [-1, 1].
-      * Policy head:
-          - 1×1 conv → BN → ReLU on the shared backbone features;
-          - flatten over [H, W]; and
-          - a linear layer to :data:`P_HEX` logits.
+        v2.0.0 - Fixed policy head, SE blocks, high-capacity for 96GB systems.
     """
 
-    # Architecture version for checkpoint compatibility checking
-    ARCHITECTURE_VERSION = "v1.0.0"
+    ARCHITECTURE_VERSION = "v2.0.0"
 
     def __init__(
         self,
-        in_channels: int,
-        global_features: int,
-        num_res_blocks: int = 8,
-        num_filters: int = 128,
+        in_channels: int = 56,  # 14 base × 4 frames
+        global_features: int = 20,
+        num_res_blocks: int = 12,
+        num_filters: int = 192,
         board_size: int = HEX_BOARD_SIZE,
         policy_size: int = P_HEX,
+        policy_intermediate: int = 384,
+        value_intermediate: int = 128,
+        num_players: int = 4,
+        se_reduction: int = 16,
+        hex_radius: int = 12,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -2719,54 +2618,49 @@ class HexNeuralNet(nn.Module):
         self.num_res_blocks = num_res_blocks
         self.num_filters = num_filters
         self.board_size = board_size
-        # Hex-only policy dimension (P_HEX).
         self.policy_size = policy_size
+        self.num_players = num_players
 
-        # Shared backbone (spatial conv trunk + residual blocks).
-        self.conv1 = nn.Conv2d(
-            in_channels, num_filters, kernel_size=3, padding=1
+        # Pre-compute hex validity mask
+        self.register_buffer(
+            "hex_mask", create_hex_mask(hex_radius, board_size)
         )
+
+        # Shared backbone with SE blocks
+        self.conv1 = nn.Conv2d(in_channels, num_filters, kernel_size=3, padding=1)
         self.bn1 = nn.BatchNorm2d(num_filters)
         self.relu = nn.ReLU()
-        self.res_blocks = nn.ModuleList(
-            [ResidualBlock(num_filters) for _ in range(num_res_blocks)]
-        )
+        self.res_blocks = nn.ModuleList([
+            SEResidualBlock(num_filters, reduction=se_reduction)
+            for _ in range(num_res_blocks)
+        ])
 
-        # Value head: 1×1 conv → BN → ReLU → masked global avg pool → MLP.
+        # Multi-player value head with masked pooling
         self.value_conv = nn.Conv2d(num_filters, 1, kernel_size=1)
         self.value_bn = nn.BatchNorm2d(1)
-        # Pooled value features (1) + global_features.
-        self.value_fc1 = nn.Linear(1 + global_features, 64)
-        self.value_fc2 = nn.Linear(64, 1)
+        self.value_fc1 = nn.Linear(1 + global_features, value_intermediate)
+        self.value_fc2 = nn.Linear(value_intermediate, num_players)
         self.tanh = nn.Tanh()
 
-        # Policy head: 1×1 conv → BN → ReLU → flatten → linear to P_HEX.
+        # Policy head: 1×1 conv → global avg pool → FC (FIXED!)
         self.policy_conv = nn.Conv2d(num_filters, num_filters, kernel_size=1)
         self.policy_bn = nn.BatchNorm2d(num_filters)
-        self.policy_fc = nn.Linear(
-            num_filters * board_size * board_size, self.policy_size
-        )
+        self.policy_fc1 = nn.Linear(num_filters + global_features, policy_intermediate)
+        self.policy_fc2 = nn.Linear(policy_intermediate, policy_size)
+        self.dropout = nn.Dropout(0.3)
 
     def _masked_global_avg_pool(
         self,
         x: torch.Tensor,
-        hex_mask: Optional[torch.Tensor],
+        hex_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Perform masked global average pooling over [H, W].
-
-        Args:
-          x: [B, 1, H, W] tensor from the value head conv.
-          hex_mask: optional [B, 1, H, W] mask (1 = valid hex cell,
-            0 = padding). If None, falls back to unmasked mean.
-        """
-        if hex_mask is None:
-            return x.mean(dim=(2, 3))  # [B, 1]
-
-        # Ensure mask is float and on the same device.
-        mask = hex_mask.to(dtype=x.dtype, device=x.device)
+        """Perform masked global average pooling over [H, W] for hex grid."""
+        mask = hex_mask if hex_mask is not None else self.hex_mask
+        if mask is None:
+            return x.mean(dim=(2, 3))
+        mask = mask.to(dtype=x.dtype, device=x.device)
         masked = x * mask
-        # Sum over spatial dims.
-        num = masked.sum(dim=(2, 3))  # [B, 1]
+        num = masked.sum(dim=(2, 3))
         denom = mask.sum(dim=(2, 3)).clamp_min(1.0)
         return num / denom
 
@@ -2776,38 +2670,180 @@ class HexNeuralNet(nn.Module):
         globals: torch.Tensor,
         hex_mask: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass.
+        # Apply hex mask to input to prevent information bleeding
+        if hex_mask is not None:
+            x = x * hex_mask.to(dtype=x.dtype, device=x.device)
+        elif self.hex_mask is not None:
+            x = x * self.hex_mask.to(dtype=x.dtype, device=x.device)
 
-        Args:
-          x: [B, C_hex, H, W] feature tensor on the hex bounding box.
-          globals: [B, global_features] dense global features.
-          hex_mask: optional [B, 1, H, W] mask (1 = real hex cell,
-            0 = padding) for masked pooling in the value head.
-
-        Returns:
-          (value, policy_logits):
-            - value: [B, 1] tensor in [-1, 1].
-            - policy_logits: [B, P_HEX] unnormalised logits.
-        """
-        # Backbone trunk.
+        # Backbone with SE blocks
         out = self.relu(self.bn1(self.conv1(x)))
         for block in self.res_blocks:
             out = block(out)
 
-        # Value head.
+        # Multi-player value head with masked pooling
         v = self.value_conv(out)
         v = self.relu(self.value_bn(v))
-        v_pooled = self._masked_global_avg_pool(v, hex_mask)  # [B, 1]
-        # Concatenate pooled value features with globals.
+        v_pooled = self._masked_global_avg_pool(v, hex_mask)
         v_cat = torch.cat([v_pooled, globals], dim=1)
         v_hidden = self.relu(self.value_fc1(v_cat))
-        v_out = self.tanh(self.value_fc2(v_hidden))  # [B, 1]
+        v_hidden = self.dropout(v_hidden)
+        v_out = self.tanh(self.value_fc2(v_hidden))  # [B, num_players]
 
-        # Policy head.
+        # Policy head with masked global avg pool
         p = self.policy_conv(out)
         p = self.relu(self.policy_bn(p))
-        batch_size = p.shape[0]
-        p_flat = p.view(batch_size, -1)
-        p_logits = self.policy_fc(p_flat)  # [B, P_HEX]
+        p_pooled = self._masked_global_avg_pool(p, hex_mask)
+        p_cat = torch.cat([p_pooled, globals], dim=1)
+        p_hidden = self.relu(self.policy_fc1(p_cat))
+        p_hidden = self.dropout(p_hidden)
+        p_logits = self.policy_fc2(p_hidden)
+
+        return v_out, p_logits
+
+
+class HexNeuralNet_v2_Lite(nn.Module):
+    """
+    Memory-efficient CNN for hexagonal boards (48GB memory target).
+
+    This architecture provides the same bug fix as HexNeuralNet_v2 but with
+    reduced capacity for systems with limited memory (48GB). Suitable for
+    running two instances simultaneously for comparison matches.
+
+    Key trade-offs vs HexNeuralNet_v2:
+    - 6 SE residual blocks (vs 12) - faster but shallower
+    - 96 filters (vs 192) - smaller representations
+    - 192-dim policy intermediate (vs 384)
+    - 12 base input channels (vs 14) - reduced history
+    - 3 history frames (vs 4) - reduced temporal context
+
+    Hex-specific features:
+    - Automatic hex mask generation and caching
+    - Masked global average pooling for valid cells only
+    - Input masking to prevent information bleeding
+    - 469 valid cells in 25×25 bounding box (radius 12)
+
+    Input Feature Channels (12 base × 3 frames = 36 total):
+        1-4: Per-player stack presence (binary)
+        5-8: Per-player marker presence (binary)
+        9: Stack height (normalized)
+        10: Cap height (normalized)
+        11: Collapsed territory (binary)
+        12: Current player territory
+
+    Global Features (20):
+        Same as HexNeuralNet_v2 for compatibility
+
+    Memory profile (FP32):
+    - Model weights: ~75 MB
+    - Per-model with activations: ~150 MB
+    - Two models + MCTS: ~10 GB total
+
+    Architecture Version:
+        v2.0.0-lite - SE blocks, hex masking, memory-efficient for 48GB.
+    """
+
+    ARCHITECTURE_VERSION = "v2.0.0-lite"
+
+    def __init__(
+        self,
+        in_channels: int = 36,  # 12 base × 3 frames
+        global_features: int = 20,
+        num_res_blocks: int = 6,
+        num_filters: int = 96,
+        board_size: int = HEX_BOARD_SIZE,
+        policy_size: int = P_HEX,
+        policy_intermediate: int = 192,
+        value_intermediate: int = 64,
+        num_players: int = 4,
+        se_reduction: int = 16,
+        hex_radius: int = 12,
+    ) -> None:
+        super().__init__()
+        self.in_channels = in_channels
+        self.global_features = global_features
+        self.num_res_blocks = num_res_blocks
+        self.num_filters = num_filters
+        self.board_size = board_size
+        self.policy_size = policy_size
+        self.num_players = num_players
+
+        # Pre-compute hex validity mask
+        self.register_buffer(
+            "hex_mask", create_hex_mask(hex_radius, board_size)
+        )
+
+        # Shared backbone with SE blocks
+        self.conv1 = nn.Conv2d(in_channels, num_filters, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+        self.res_blocks = nn.ModuleList([
+            SEResidualBlock(num_filters, reduction=se_reduction)
+            for _ in range(num_res_blocks)
+        ])
+
+        # Multi-player value head with masked pooling
+        self.value_conv = nn.Conv2d(num_filters, 1, kernel_size=1)
+        self.value_bn = nn.BatchNorm2d(1)
+        self.value_fc1 = nn.Linear(1 + global_features, value_intermediate)
+        self.value_fc2 = nn.Linear(value_intermediate, num_players)
+        self.tanh = nn.Tanh()
+
+        # Policy head: 1×1 conv → masked global avg pool → FC (FIXED!)
+        self.policy_conv = nn.Conv2d(num_filters, num_filters, kernel_size=1)
+        self.policy_bn = nn.BatchNorm2d(num_filters)
+        self.policy_fc1 = nn.Linear(num_filters + global_features, policy_intermediate)
+        self.policy_fc2 = nn.Linear(policy_intermediate, policy_size)
+        self.dropout = nn.Dropout(0.3)
+
+    def _masked_global_avg_pool(
+        self,
+        x: torch.Tensor,
+        hex_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """Perform masked global average pooling over [H, W] for hex grid."""
+        mask = hex_mask if hex_mask is not None else self.hex_mask
+        if mask is None:
+            return x.mean(dim=(2, 3))
+        mask = mask.to(dtype=x.dtype, device=x.device)
+        masked = x * mask
+        num = masked.sum(dim=(2, 3))
+        denom = mask.sum(dim=(2, 3)).clamp_min(1.0)
+        return num / denom
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        globals: torch.Tensor,
+        hex_mask: Optional[torch.Tensor] = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Apply hex mask to input to prevent information bleeding
+        if hex_mask is not None:
+            x = x * hex_mask.to(dtype=x.dtype, device=x.device)
+        elif self.hex_mask is not None:
+            x = x * self.hex_mask.to(dtype=x.dtype, device=x.device)
+
+        # Backbone with SE blocks
+        out = self.relu(self.bn1(self.conv1(x)))
+        for block in self.res_blocks:
+            out = block(out)
+
+        # Multi-player value head with masked pooling
+        v = self.value_conv(out)
+        v = self.relu(self.value_bn(v))
+        v_pooled = self._masked_global_avg_pool(v, hex_mask)
+        v_cat = torch.cat([v_pooled, globals], dim=1)
+        v_hidden = self.relu(self.value_fc1(v_cat))
+        v_hidden = self.dropout(v_hidden)
+        v_out = self.tanh(self.value_fc2(v_hidden))  # [B, num_players]
+
+        # Policy head with masked global avg pool
+        p = self.policy_conv(out)
+        p = self.relu(self.policy_bn(p))
+        p_pooled = self._masked_global_avg_pool(p, hex_mask)
+        p_cat = torch.cat([p_pooled, globals], dim=1)
+        p_hidden = self.relu(self.policy_fc1(p_cat))
+        p_hidden = self.dropout(p_hidden)
+        p_logits = self.policy_fc2(p_hidden)
 
         return v_out, p_logits

@@ -1,0 +1,369 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * Sandbox Decision Mapping
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Pure functions to map between PendingDecision (orchestrator) and
+ * PlayerChoice (UI) formats. Extracted from ClientSandboxEngine to reduce
+ * file size and improve testability.
+ *
+ * These functions are stateless and only need read access to game state.
+ */
+
+import type { BoardState, Move, PendingDecision, Position } from '../../shared/engine';
+import { positionToString, isCaptureMove } from '../../shared/engine';
+import type {
+  PlayerChoice,
+  PlayerChoiceResponse,
+  RingEliminationChoice,
+  LineOrderChoice,
+  LineRewardChoice,
+  RegionOrderChoice,
+  CaptureDirectionChoice,
+} from '../../shared/types/game';
+
+/**
+ * Context needed for decision mapping - minimal subset of GameState.
+ */
+export interface DecisionMappingContext {
+  gameId: string;
+  board: BoardState;
+}
+
+/**
+ * Generate a unique ID for a player choice.
+ */
+function generateChoiceId(prefix: string): string {
+  return `sandbox-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * Map a PendingDecision from the orchestrator to a PlayerChoice for the UI.
+ *
+ * This is a pure function that converts orchestrator decision format to the
+ * UI-facing PlayerChoice format used by the interaction handler.
+ */
+export function mapPendingDecisionToPlayerChoice(
+  decision: PendingDecision,
+  context: DecisionMappingContext
+): PlayerChoice {
+  const decisionType = decision.type;
+  const options = decision.options;
+
+  switch (decisionType) {
+    case 'elimination_target': {
+      const eliminationMoves = options.filter(
+        (opt: Move) => opt.type === 'eliminate_rings_from_stack' && opt.to
+      );
+
+      // Use context description if available, otherwise provide a helpful default
+      const eliminationPrompt =
+        decision.context?.description ||
+        'You must eliminate a ring from one of your stacks. This is required to complete a line reward or territory claim.';
+
+      const choice: RingEliminationChoice = {
+        id: generateChoiceId('ring-elimination'),
+        gameId: context.gameId,
+        playerNumber: decision.player,
+        type: 'ring_elimination',
+        prompt: eliminationPrompt,
+        options: eliminationMoves.map((opt: Move, idx: number) => {
+          const pos = opt.to as Position;
+          const key = positionToString(pos);
+          const stack = context.board.stacks.get(key);
+
+          const capHeight =
+            (opt.eliminationFromStack && opt.eliminationFromStack.capHeight) ||
+            (stack ? stack.capHeight : 1);
+          const totalHeight =
+            (opt.eliminationFromStack && opt.eliminationFromStack.totalHeight) ||
+            (stack ? stack.stackHeight : capHeight || 1);
+
+          return {
+            stackPosition: pos,
+            capHeight,
+            totalHeight,
+            moveId: opt.id || `move-${idx}`,
+          };
+        }),
+      };
+      return choice;
+    }
+
+    case 'line_order': {
+      const choice: LineOrderChoice = {
+        id: generateChoiceId('line-order'),
+        gameId: context.gameId,
+        playerNumber: decision.player,
+        type: 'line_order',
+        prompt: 'Select which line to process first',
+        options: options.map((opt: Move, idx: number) => ({
+          lineId: `line-${idx}`,
+          markerPositions: opt.formedLines?.[0]?.positions ?? [],
+          moveId: opt.id || `move-${idx}`,
+        })),
+      };
+      return choice;
+    }
+
+    case 'line_reward': {
+      const choice: LineRewardChoice = {
+        id: generateChoiceId('line-reward'),
+        gameId: context.gameId,
+        playerNumber: decision.player,
+        type: 'line_reward_option',
+        prompt: 'Choose reward for overlength line',
+        options: options.map((opt: Move) => {
+          const isCollapseAll =
+            opt.collapsedMarkers?.length === opt.formedLines?.[0]?.positions?.length;
+          return isCollapseAll
+            ? ('option_1_collapse_all_and_eliminate' as const)
+            : ('option_2_min_collapse_no_elimination' as const);
+        }),
+        moveIds: options.reduce(
+          (acc, opt: Move, idx: number) => {
+            const isCollapseAll =
+              opt.collapsedMarkers?.length === opt.formedLines?.[0]?.positions?.length;
+            const key = isCollapseAll
+              ? 'option_1_collapse_all_and_eliminate'
+              : 'option_2_min_collapse_no_elimination';
+            acc[key] = opt.id || `move-${idx}`;
+            return acc;
+          },
+          {} as Record<string, string>
+        ),
+      };
+      return choice;
+    }
+
+    case 'region_order': {
+      const choice: RegionOrderChoice = {
+        id: generateChoiceId('region-order'),
+        gameId: context.gameId,
+        playerNumber: decision.player,
+        type: 'region_order',
+        prompt: 'Select which region to process first',
+        options: options.map((opt: Move, idx: number) => {
+          if (opt.type === 'skip_territory_processing') {
+            return {
+              regionId: 'skip',
+              size: 0,
+              representativePosition: { x: 0, y: 0 },
+              moveId: opt.id || `move-${idx}`,
+            };
+          }
+
+          const region = opt.disconnectedRegions?.[0];
+          return {
+            regionId: `region-${idx}`,
+            size: region?.spaces?.length ?? 0,
+            representativePosition: region?.spaces?.[0] ?? { x: 0, y: 0 },
+            moveId: opt.id || `move-${idx}`,
+          };
+        }),
+      };
+      return choice;
+    }
+
+    case 'capture_direction': {
+      // Filter to only capture moves for type-safe access to captureTarget
+      const captureMoves = options.filter(isCaptureMove);
+      const choice: CaptureDirectionChoice = {
+        id: generateChoiceId('capture'),
+        gameId: context.gameId,
+        playerNumber: decision.player,
+        type: 'capture_direction',
+        prompt: 'Select capture direction',
+        options: captureMoves.map((opt) => ({
+          targetPosition: opt.captureTarget,
+          landingPosition: opt.to,
+          capturedCapHeight:
+            context.board.stacks.get(positionToString(opt.captureTarget))?.capHeight ?? 0,
+        })),
+      };
+      return choice;
+    }
+
+    default:
+      // Generic fallback - use line_order as default
+      return {
+        id: generateChoiceId('decision'),
+        gameId: context.gameId,
+        playerNumber: decision.player,
+        type: 'line_order',
+        prompt: String(decision.type),
+        options: [],
+      };
+  }
+}
+
+/**
+ * Extended response type for mapping back to moves.
+ */
+export interface ExtendedPlayerChoiceResponse extends PlayerChoiceResponse<unknown> {
+  selectedLineIndex?: number;
+  selectedRegionIndex?: number;
+}
+
+/**
+ * Map a PlayerChoice response back to the corresponding Move.
+ *
+ * This function finds the matching move from the original decision options
+ * based on the user's selection.
+ */
+export function mapPlayerChoiceResponseToMove(
+  decision: PendingDecision,
+  response: ExtendedPlayerChoiceResponse
+): Move {
+  const options = decision.options;
+
+  // Try to match based on response content
+  if (response.selectedLineIndex !== undefined && options[response.selectedLineIndex]) {
+    return options[response.selectedLineIndex];
+  }
+
+  if (response.selectedRegionIndex !== undefined && options[response.selectedRegionIndex]) {
+    return options[response.selectedRegionIndex];
+  }
+
+  if (response.selectedOption) {
+    // Type-safe extraction of selected option properties
+    const selectedOpt = response.selectedOption as {
+      moveId?: string;
+      stackPosition?: Position;
+      targetPosition?: Position;
+      landingPosition?: Position;
+    };
+
+    // Ring elimination: prefer explicit moveId mapping when available,
+    // falling back to matching by stack position.
+    if (response.choiceType === 'ring_elimination' && selectedOpt.moveId) {
+      const byId = options.find((opt: Move) => opt.id === selectedOpt.moveId);
+      if (byId) {
+        return byId;
+      }
+
+      const selectedPos = selectedOpt.stackPosition;
+      if (selectedPos) {
+        const selectedKey = positionToString(selectedPos);
+        const byPos = options.find((opt: Move) => {
+          if (!opt.to) return false;
+          return positionToString(opt.to as Position) === selectedKey;
+        });
+        if (byPos) {
+          return byPos;
+        }
+      }
+    }
+
+    // Match by position for capture direction
+    const selected = options.filter(isCaptureMove).find((opt) => {
+      if (selectedOpt.targetPosition && selectedOpt.landingPosition) {
+        return (
+          positionToString(opt.captureTarget) === positionToString(selectedOpt.targetPosition) &&
+          positionToString(opt.to) === positionToString(selectedOpt.landingPosition)
+        );
+      }
+      return false;
+    });
+    if (selected) return selected;
+  }
+
+  // Default to first option
+  return options[0];
+}
+
+/**
+ * Build a capture direction choice for chain capture prompts.
+ */
+export function buildCaptureDirectionChoice(
+  gameId: string,
+  playerNumber: number,
+  captureMoves: Move[],
+  board: BoardState
+): CaptureDirectionChoice {
+  const typedCaptures = captureMoves.filter(isCaptureMove);
+
+  return {
+    id: generateChoiceId('capture'),
+    gameId,
+    playerNumber,
+    type: 'capture_direction',
+    prompt: 'Select capture direction',
+    options: typedCaptures.map((move) => ({
+      targetPosition: move.captureTarget,
+      landingPosition: move.to,
+      capturedCapHeight: board.stacks.get(positionToString(move.captureTarget))?.capHeight ?? 0,
+    })),
+  };
+}
+
+/**
+ * Build a region order choice for territory processing prompts.
+ */
+export function buildRegionOrderChoice(
+  gameId: string,
+  playerNumber: number,
+  regionMoves: Move[],
+  prompt: string = 'Territory claimed – choose area to process'
+): RegionOrderChoice {
+  return {
+    id: generateChoiceId('region'),
+    gameId,
+    playerNumber,
+    type: 'region_order',
+    prompt,
+    options: regionMoves.map((opt, index) => {
+      const region = opt.disconnectedRegions?.[0];
+      const representative = region?.spaces?.[0];
+      const regionKey = representative
+        ? `${representative.x},${representative.y}`
+        : `region-${index}`;
+
+      return {
+        regionId: String(index),
+        size: region?.spaces?.length ?? 0,
+        representativePosition: representative ?? { x: 0, y: 0 },
+        moveId: opt.id || `process-region-${index}-${regionKey}`,
+      };
+    }),
+  };
+}
+
+/**
+ * Build a ring elimination choice for territory self-elimination prompts.
+ */
+export function buildRingEliminationChoice(
+  gameId: string,
+  playerNumber: number,
+  eliminationMoves: Move[],
+  board: BoardState,
+  prompt: string
+): RingEliminationChoice {
+  return {
+    id: generateChoiceId('territory-elim'),
+    gameId,
+    playerNumber,
+    type: 'ring_elimination',
+    prompt,
+    options: eliminationMoves.map((opt: Move) => {
+      const pos = opt.to as Position;
+      const key = positionToString(pos);
+      const stack = board.stacks.get(key);
+
+      const capHeight =
+        (opt.eliminationFromStack && opt.eliminationFromStack.capHeight) ||
+        (stack ? stack.capHeight : 1);
+      const totalHeight =
+        (opt.eliminationFromStack && opt.eliminationFromStack.totalHeight) ||
+        (stack ? stack.stackHeight : capHeight || 1);
+
+      return {
+        stackPosition: pos,
+        capHeight,
+        totalHeight,
+        moveId: opt.id || key,
+      };
+    }),
+  };
+}

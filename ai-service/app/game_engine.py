@@ -1181,13 +1181,17 @@ class GameEngine:
         behaviour:
 
         - Rotate to the next player in table order.
-        - Skip players who have no stacks and no rings in hand (they cannot
-          perform any further actions).
-        - For the first player with material:
-          * If they have any rings in hand, start in RING_PLACEMENT
-            (placement may be mandatory or optional depending on stacks).
-          * Otherwise, start directly in MOVEMENT, unless forced elimination
-            must be applied first.
+        - **Do NOT skip empty seats** (no stacks, no rings in hand); they must
+          still traverse phases and record no-action/FE moves per RR-CANON-R075/
+          LPS rules. Only skip players when applying ANM rotation to find the
+          next seat that must move (forced elimination) or record a no-op.
+        - For the next seat:
+          * If they have any rings in hand, start in RING_PLACEMENT (placement
+            may be mandatory or optional depending on stacks).
+          * If they have no rings in hand, still start in RING_PLACEMENT; hosts
+            must emit NO_PLACEMENT_ACTION if no placements are legal.
+          * If they control stacks but have no legal actions, enter
+            FORCED_ELIMINATION (except in trace_mode, where FE must be explicit).
         - If no players have any material at all, leave current_player
           unchanged and allow _check_victory to resolve global stalemate via
           tie-breakers.
@@ -1218,81 +1222,58 @@ class GameEngine:
                 current_index = i
                 break
 
-        max_skips = num_players
-        skips = 0
         idx = (current_index + 1) % num_players
+        candidate = players[idx]
 
-        while skips < max_skips:
-            candidate = players[idx]
-            stacks_for_candidate = BoardManager.get_player_stacks(
-                game_state.board,
-                candidate.player_number,
-            )
-            has_stacks = bool(stacks_for_candidate)
-            has_rings_in_hand = candidate.rings_in_hand > 0
+        stacks_for_candidate = BoardManager.get_player_stacks(
+            game_state.board,
+            candidate.player_number,
+        )
+        has_stacks = bool(stacks_for_candidate)
+        has_rings_in_hand = candidate.rings_in_hand > 0
 
-            # Do not skip fully-eliminated players; even seats with no stacks
-            # and no rings in hand must still traverse all phases and record
-            # no-action moves. Forced elimination only applies when the player
-            # controls stacks.
-
-            # Forced-elimination gating (RR-CANON-R070/R072/R100/R204):
-            #
-            # If this player controls at least one stack but has NO legal
-            # placement, movement, or capture action, their next interaction
-            # must be a canonical forced_elimination decision in the dedicated
-            # `forced_elimination` phase (7th phase in RR-CANON-R070).
-            #
-            # In trace_mode, we do not auto-enter forced_elimination here:
-            # replays are expected to contain an explicit `forced_elimination`
-            # move (or to surface the ANM shape as an invariant failure).
-            if has_stacks and not GameEngine._has_valid_actions(
-                game_state,
-                candidate.player_number,
-            ):
-                if trace_mode:
-                    # Leave ANM handling to the replay/parity caller; do not
-                    # change player/phase silently in trace_mode.
-                    skips += 1
-                    idx = (idx + 1) % num_players
-                    continue
-
-                # Enter the explicit forced_elimination phase for this player.
-                # get_valid_moves will then surface `FORCED_ELIMINATION` moves
-                # via _get_forced_elimination_moves, and hosts must record a
-                # concrete Move in the canonical history (RR-CANON-R075).
-                game_state.current_player = candidate.player_number
-                game_state.current_phase = GamePhase.FORCED_ELIMINATION
-                game_state.must_move_from_stack_key = None
-                GameEngine._update_lps_round_tracking_for_current_player(
-                    game_state,
-                )
+        # Forced-elimination gating (RR-CANON-R070/R072/R100/R204):
+        #
+        # If this player controls at least one stack but has NO legal
+        # placement, movement, or capture action, their next interaction
+        # must be a canonical forced_elimination decision in the dedicated
+        # `forced_elimination` phase (7th phase in RR-CANON-R070).
+        #
+        # In trace_mode, we do not auto-enter forced_elimination here:
+        # replays are expected to contain an explicit `forced_elimination`
+        # move (or to surface the ANM shape as an invariant failure).
+        if has_stacks and not GameEngine._has_valid_actions(
+            game_state,
+            candidate.player_number,
+        ):
+            if trace_mode:
+                # Leave ANM handling to the replay/parity caller; do not
+                # change player/phase silently in trace_mode.
                 return
 
-            # Found the next active player with some material and, if needed,
-            # a pending no-action or forced-elimination requirement that hosts
-            # must resolve via explicit moves.
+            # Enter the explicit forced_elimination phase for this player.
             game_state.current_player = candidate.player_number
+            game_state.current_phase = GamePhase.FORCED_ELIMINATION
             game_state.must_move_from_stack_key = None
-
-            # Always begin the next turn in RING_PLACEMENT. When no legal
-            # placements exist (including rings_in_hand == 0), hosts must
-            # emit a NO_PLACEMENT_ACTION bookkeeping move based on the phase
-            # requirements rather than relying on get_valid_moves to
-            # synthesize it.
-            game_state.current_phase = GamePhase.RING_PLACEMENT
-
             GameEngine._update_lps_round_tracking_for_current_player(
                 game_state,
             )
             return
 
-        # If we exhaust all players without finding any with material, then
-        # no-one can act any longer. Leave current_player unchanged and keep
-        # the phase in RING_PLACEMENT; _check_victory will detect the global
-        # stalemate (no stacks) and apply the tie-breaking rules.
-        game_state.current_phase = GamePhase.RING_PLACEMENT
+        # Found the next seat (even if empty). They must still traverse phases
+        # and record any required no-action/FE bookkeeping move.
+        game_state.current_player = candidate.player_number
         game_state.must_move_from_stack_key = None
+
+        # Always begin the next turn in RING_PLACEMENT. When no legal
+        # placements exist (including rings_in_hand == 0), hosts must
+        # emit a NO_PLACEMENT_ACTION bookkeeping move based on the phase
+        # requirements rather than relying on get_valid_moves to synthesize it.
+        game_state.current_phase = GamePhase.RING_PLACEMENT
+
+        GameEngine._update_lps_round_tracking_for_current_player(
+            game_state,
+        )
 
     @staticmethod
     def _assert_active_player_has_legal_action(
@@ -1307,9 +1288,9 @@ class GameEngine:
         defensive rotation used for fully-eliminated players.
 
         Concretely:
-        - Fully eliminated players (no stacks and no rings in hand) are
-          rotated away via ``_end_turn`` before we consider the state a
-          violation (INV-ANM-TURN-MATERIAL-SKIP).
+        - Fully eliminated players (no stacks and no rings in hand) are **not**
+          skipped; they still take turns and must record no-action/FE moves.
+          The ANM invariant is checked on the current_player as-is.
         - For the resulting ``current_player``, if
           ``GameEngine.get_valid_moves(game_state, current_player)`` returns
           at least one move, the invariant holds.
