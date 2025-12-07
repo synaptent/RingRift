@@ -1,6 +1,6 @@
 # RingRift Task Tracker
 
-**Last Updated:** 2025-12-06
+**Last Updated:** 2025-12-07
 **Project Health:** GREEN
 **Purpose:** Canonical task tracker for near- and mid-term work
 
@@ -269,11 +269,11 @@ Operational drills completed:
   - [ ] Archive parity/history results alongside DB (or update registry entry)
 - [x] Add and keep a small golden replay pack in CI that replays in TS + Python and fails on any semantic drift
   - [x] Exported new canonical golden from `canonical_square8_2p.db` -> `tests/fixtures/golden-games/golden_square8_2p_d033.json`
-- [ ] Audit orchestrator/Python `game_engine.py` changes for silent transitions or forced elimination without recorded moves
-- [ ] Audit checklist:
-  - [ ] Confirm `turnOrchestrator` never advances phase without move (explicit `no_*` moves present)
-  - [ ] Confirm Python `game_engine.py` mirrors forced_elimination and no-op phases
-  - [ ] Spot-check replay logs for silent forced_elimination or skipped phases
+- [x] Audit orchestrator/Python `game_engine.py` changes for silent transitions or forced elimination without recorded moves
+- [x] Audit checklist (completed Dec 2025):
+  - [x] Confirm `turnOrchestrator` never advances phase without move (explicit `no_*` moves present) – **VERIFIED**: `assertPhaseMoveInvariant()` enforces phase→MoveType mapping at lines 1480-1541
+  - [x] Confirm Python `game_engine.py` mirrors forced_elimination and no-op phases – **VERIFIED**: `_assert_phase_move_invariant()` mirrors TS, `get_phase_requirement()` surfaces bookkeeping move needs
+  - [x] Spot-check replay logs for silent forced_elimination or skipped phases – **VERIFIED**: selfplay.db shows all bookkeeping moves (`no_line_action`, `no_territory_action`, `eliminate_rings_from_stack`, `process_line`) properly recorded
 
 #### Orchestrator & Territory Branch Coverage Hardening
 

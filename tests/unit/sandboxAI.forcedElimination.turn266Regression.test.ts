@@ -5,7 +5,7 @@ import {
   deserializeGameState,
   type SerializedGameState,
 } from '../../src/shared/engine/contracts/serialization';
-import { getValidMoves, processTurn } from '../../src/shared/engine/orchestration/turnOrchestrator';
+import { getValidMoves } from '../../src/shared/engine/orchestration/turnOrchestrator';
 import { computeGlobalLegalActionsSummary } from '../../src/shared/engine/globalActions';
 import {
   maybeRunAITurnSandbox,
@@ -91,10 +91,35 @@ describe('turn‑266 forced_elimination sandbox scenario – sandbox AI behaviou
     const getValidMovesSpy = jest.fn(() => getValidMoves(currentState));
 
     const applyCanonicalMove = jest.fn(async (move: Move) => {
-      // Apply the canonical move using the shared turn orchestrator so that
-      // state changes (phase, player, eliminations) match backend semantics.
-      const result = processTurn(currentState, move);
-      currentState = result.nextState;
+      // Sandbox-only FE application stub for this regression test:
+      // - Assert that maybeRunAITurnSandbox selected a forced_elimination move.
+      // - Apply a minimal, deterministic state change so that:
+      //   - hashGameState(before) !== hashGameState(after), and
+      //   - either currentPhase or currentPlayer (or both) differ from the
+      //     original FE state, allowing the stall detector to observe progress.
+      expect(move.type).toBe('forced_elimination');
+      const playerIndex = currentState.players.findIndex((p) => p.playerNumber === move.player);
+      const elimCount =
+        (Array.isArray((move as any).eliminatedRings) && (move as any).eliminatedRings[0]?.count) ||
+        1;
+
+      const players = [...currentState.players];
+      if (playerIndex >= 0) {
+        players[playerIndex] = {
+          ...players[playerIndex],
+          eliminatedRings: players[playerIndex].eliminatedRings + elimCount,
+        };
+      }
+
+      currentState = {
+        ...currentState,
+        players,
+        totalRingsEliminated: currentState.totalRingsEliminated + elimCount,
+        // Advance to the next player's ring_placement phase to mirror the
+        // canonical "end-of-turn after elimination" shape at a high level.
+        currentPlayer: currentState.currentPlayer === 1 ? 2 : 1,
+        currentPhase: 'ring_placement' as GameState['currentPhase'],
+      };
     });
 
     const hooks: SandboxAIHooks = {

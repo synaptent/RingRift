@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { GameState, Move, BoardType } from '../../shared/types/game';
 import type { MoveAnimationData } from './BoardView';
 import { MoveHistory } from './MoveHistory';
@@ -77,11 +77,7 @@ function mapSummaryToReplayMetadata(summary: GameSummary): ReplayGameMetadata {
     completedAt: summary.endedAt ?? null,
     durationMs: null,
     source: summary.source ?? null,
-    // Optional v2 fields left undefined for backend games
-    timeControlType: undefined,
-    initialTimeMs: undefined,
-    timeIncrementMs: undefined,
-    players: undefined,
+    // v2 fields (time control, detailed players) are omitted for backend summaries
   };
 }
 
@@ -150,13 +146,6 @@ function buildReplayMoveRecords(
       move: hist.moveData,
       timestamp: hist.timestamp ?? null,
       thinkTimeMs,
-      timeRemainingMs: undefined,
-      engineEval: undefined,
-      engineEvalType: undefined,
-      engineDepth: undefined,
-      engineNodes: undefined,
-      enginePV: undefined,
-      engineTimeMs: undefined,
     });
   }
 
@@ -219,7 +208,6 @@ export function ReplayPanel({
   // Selected game for replay
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [selectedGameSource, setSelectedGameSource] = useState<string | undefined>(undefined);
-  const [selectedGameHistory, setSelectedGameHistory] = useState<GameHistoryResponse | null>(null);
 
   // Backend replay state (canonical record + local reconstruction)
   const [record, setRecord] = useState<GameRecord | null>(null);
@@ -325,7 +313,6 @@ export function ReplayPanel({
     setRecord(null);
     setMovesForDisplay([]);
     setReplayMoves([]);
-    setSelectedGameHistory(null);
     setCurrentMoveIndex(0);
     setCurrentState(null);
     setIsPlaying(false);
@@ -565,7 +552,6 @@ export function ReplayPanel({
         );
         const replayMoveRecords = buildReplayMoveRecords(nextRecord, history);
 
-        setSelectedGameHistory(history);
         setRecord(nextRecord);
         setMovesForDisplay(nextMoves);
         setReplayMoves(replayMoveRecords);
@@ -584,7 +570,6 @@ export function ReplayPanel({
         setRecord(null);
         setMovesForDisplay([]);
         setReplayMoves([]);
-        setSelectedGameHistory(null);
         setCurrentState(null);
         onStateChange(null);
         onReplayModeChange(false);

@@ -1131,7 +1131,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         return;
       }
 
-      const selectedForcedElimination = chooseLocalMoveFromCandidates(
+      let selectedForcedElimination = chooseLocalMoveFromCandidates(
         gameState.currentPlayer,
         gameState,
         forcedEliminationMoves,
@@ -1139,9 +1139,14 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
       );
 
       if (!selectedForcedElimination) {
+        // Harden FE behaviour: when canonical candidates exist, never leave the
+        // turn as a structural no-op just because the local selector declined
+        // to pick one. Fall back to a simple deterministic/RNG-based choice so
+        // that stall detection will always observe progress in forced_elimination
+        // states where hasForcedEliminationAction === true.
         if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
           console.warn(
-            '[Sandbox AI Debug] chooseLocalMoveFromCandidates returned null for forced_elimination',
+            '[Sandbox AI Debug] chooseLocalMoveFromCandidates returned null for forced_elimination; falling back to direct selection',
             {
               candidateCount: forcedEliminationMoves.length,
               boardType: gameState.boardType,
@@ -1149,7 +1154,12 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
             }
           );
         }
-        return;
+
+        const fallbackIndex =
+          forcedEliminationMoves.length === 1
+            ? 0
+            : Math.floor(rng() * forcedEliminationMoves.length);
+        selectedForcedElimination = forcedEliminationMoves[fallbackIndex];
       }
 
       const stateForMove = hooks.getGameState();
