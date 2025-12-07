@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -48,32 +47,31 @@ def test_run_nn_training_baseline_demo_writes_report(tmp_path) -> None:
     assert report["mode"] == "demo"
     assert isinstance(report.get("model_id"), str)
 
-    env_cfg = report["env"]
-    assert env_cfg["board_type"] == "SQUARE8"
-    assert env_cfg["num_players"] == 2
-    assert env_cfg["reward_mode"] == "terminal"
-
+    # Check training_params structure (new format)
     training_params = report["training_params"]
-    assert training_params["mode"] == "demo"
     assert training_params["board_type"] == "SQUARE8"
-    assert training_params["model_id"] == report["model_id"]
-    assert training_params["epochs"] == 1
-    assert training_params["iterations"] == 1
+    assert training_params["epochs_per_iter"] == 1
+    assert training_params["seed"] == 123
 
-    # Demo run should generate a tiny synthetic dataset in the run directory.
-    data_path = Path(training_params["data_path"])
-    assert data_path.exists()
-    assert data_path.parent == run_dir
+    # Demo run should specify a data_path (dummy file that triggers synthetic data)
+    assert "data_path" in report
+    assert isinstance(report["data_path"], str)
 
-    # Metrics should at least record a non-zero training_steps count.
+    # Metrics should record epochs run
     metrics = report["metrics"]
-    assert metrics["training_steps"] == 1
+    assert metrics["train_epochs_run"] == 1
 
 
 @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
+@pytest.mark.skip(reason="Stub mode removed - script now requires --demo or --data-path")
 def test_run_nn_training_baseline_stub_mode(tmp_path) -> None:
     """Non-demo mode should write a stub config without running heavy
-    training."""
+    training.
+
+    NOTE: This test is obsolete. The script was changed to require either
+    --demo (for CI testing with dummy data) or --data-path (for real training).
+    The implicit "stub mode" (no args) was removed. Consider deleting this test.
+    """
     run_dir = tmp_path / "nn_stub"
     argv = [
         "--board",

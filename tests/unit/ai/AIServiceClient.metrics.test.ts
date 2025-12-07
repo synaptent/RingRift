@@ -138,6 +138,23 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
   });
 
+  it('records timeout metrics and surfaces AI_SERVICE_TIMEOUT code on timeout errors', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    const timeoutError = Object.assign(new Error('ECONNABORTED'), { aiErrorType: 'timeout' });
+    mockAxiosPost.mockRejectedValue(timeoutError);
+
+    await expect(client.getAIMove(baseGameState, 1, 5)).rejects.toMatchObject({
+      code: 'AI_SERVICE_TIMEOUT',
+      statusCode: 503,
+    });
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('error');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '5', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
+    expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+  });
+
   it('records error and timeout metrics when AI move request times out', async () => {
     const client = new AIServiceClient('http://ai.test');
 

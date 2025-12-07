@@ -1,8 +1,8 @@
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { VictoryModal } from '../../src/client/components/VictoryModal';
 import type { GameResult, Player, GameState, BoardState } from '../../src/shared/types/game';
+import type { GameEndExplanation } from '../../src/shared/engine/gameEndExplanation';
 import * as rulesUxTelemetry from '../../src/client/utils/rulesUxTelemetry';
 
 jest.mock('../../src/client/utils/rulesUxTelemetry', () => {
@@ -23,7 +23,6 @@ const mockLogRulesUxEvent = rulesUxTelemetry.logRulesUxEvent as jest.MockedFunct
 
 function createGameResult(reason: GameResult['reason']): GameResult {
   return {
-    winner: undefined,
     reason,
     finalScore: {
       ringsEliminated: { 1: 10, 2: 10 },
@@ -100,6 +99,83 @@ describe('VictoryModal rules-UX telemetry for weird states', () => {
 
   beforeEach(() => {
     mockLogRulesUxEvent.mockReset();
+  });
+
+  it('uses GameEndExplanation weird-state context (ANM/FE) for telemetry and emits once', async () => {
+    const players = createPlayers();
+    const gameResult: GameResult = {
+      reason: 'last_player_standing',
+      winner: 1,
+      finalScore: {
+        ringsEliminated: { 1: 12, 2: 12 },
+        territorySpaces: { 1: 16, 2: 16 },
+        ringsRemaining: { 1: 0, 2: 0 },
+      },
+    };
+    const gameState = createGameState(players);
+    const explanation: GameEndExplanation = {
+      boardType: 'square8',
+      numPlayers: players.length,
+      winnerPlayerId: 'user1',
+      outcomeType: 'last_player_standing',
+      victoryReasonCode: 'victory_last_player_standing',
+      uxCopy: { shortSummaryKey: 'game_end.lps.with_anm_fe' },
+      weirdStateContext: {
+        // Prefer forced-elimination tagging over the fallback LPS mapping
+        reasonCodes: ['FE_SEQUENCE_CURRENT_PLAYER', 'ANM_MOVEMENT_FE_BLOCKED'],
+        primaryReasonCode: 'FE_SEQUENCE_CURRENT_PLAYER',
+        rulesContextTags: ['anm_forced_elimination'],
+      },
+    };
+
+    render(
+      <VictoryModal
+        isOpen
+        gameResult={gameResult}
+        players={players}
+        gameState={gameState}
+        gameEndExplanation={explanation}
+        onClose={noop}
+        onReturnToLobby={noop}
+        isSandbox={false}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mockLogRulesUxEvent).toHaveBeenCalledTimes(1);
+    });
+
+    const [event] = mockLogRulesUxEvent.mock.calls[0] as any[];
+    expect(event).toMatchObject({
+      type: 'weird_state_banner_impression',
+      rulesContext: 'anm_forced_elimination',
+      reasonCode: 'FE_SEQUENCE_CURRENT_PLAYER',
+      weirdStateType: 'active-no-moves-movement',
+      boardType: 'square8',
+      numPlayers: players.length,
+      isSandbox: false,
+      isRanked: true,
+    });
+  });
+
+  it('does not emit weird-state telemetry for standard ring elimination victories', () => {
+    const players = createPlayers();
+    const gameResult = createGameResult('ring_elimination');
+    const gameState = createGameState(players);
+
+    render(
+      <VictoryModal
+        isOpen
+        gameResult={gameResult}
+        players={players}
+        gameState={gameState}
+        onClose={noop}
+        onReturnToLobby={noop}
+        isSandbox={false}
+      />
+    );
+
+    expect(mockLogRulesUxEvent).not.toHaveBeenCalled();
   });
 
   it('emits weird_state_banner_impression for structural-stalemate (game_completed) results', async () => {

@@ -1,7 +1,10 @@
 import unittest
 from datetime import datetime
 
+import pytest
+
 from app.ai.heuristic_ai import HeuristicAI
+from app.ai.move_cache import clear_move_cache
 from app.models import (
     GameState,
     AIConfig,
@@ -99,6 +102,13 @@ class TestHeuristicAI(unittest.TestCase):
         )
 
     def test_evaluate_line_connectivity(self):
+        """Test line connectivity evaluator with CMA-ES tuned weights.
+
+        CMA-ES optimization determined that gaps (markers at distance 2 with
+        no adjacent marker) are strategically weak and should be penalized.
+        This test verifies the evaluator produces a non-zero score that
+        reflects the tuned gap penalty.
+        """
         # Setup: Two markers with a gap of 1
         self.game_state.board.markers["3,3"] = MarkerInfo(
             player=1,
@@ -113,8 +123,11 @@ class TestHeuristicAI(unittest.TestCase):
 
         score = self.ai._evaluate_line_connectivity(self.game_state)
 
-        # Should have some positive score
-        self.assertGreater(score, 0)
+        # CMA-ES tuned WEIGHT_GAP_POTENTIAL to be negative (-0.43),
+        # indicating gaps are penalized. The score should be negative.
+        # WEIGHT_LINE_CONNECTIVITY (5.67) amplifies this.
+        self.assertNotEqual(score, 0)
+        self.assertLess(score, 0, "Gap potential is penalized by CMA-ES tuned weights")
 
     def test_evaluate_territory_safety(self):
         # Setup: My marker near opponent stack
@@ -1004,6 +1017,9 @@ class TestHeuristicAIMoveSelectionDeterminism(unittest.TestCase):
     """Tests for HeuristicAI.move selection determinism and preferences."""
 
     def setUp(self):
+        # Clear move cache to avoid interference from previous tests
+        clear_move_cache()
+
         self.config = AIConfig(
             difficulty=5,
             randomness=0.0,

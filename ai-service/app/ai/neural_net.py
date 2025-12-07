@@ -1525,8 +1525,15 @@ class NeuralNetAI(BaseAI):
             )
 
             # Find best move
-            best_idx = int(np.argmax(values))
-            selected = moves_list[best_idx]
+            if not values or not moves_list:
+                # Defensive fallback if evaluation fails
+                selected = valid_moves[0] if valid_moves else None
+            else:
+                best_idx = int(np.argmax(values))
+                if best_idx >= len(moves_list):
+                    # Defensive fallback if index is out of range
+                    best_idx = 0
+                selected = moves_list[best_idx]
 
         return selected
 

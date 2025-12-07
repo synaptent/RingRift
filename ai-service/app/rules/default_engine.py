@@ -3,7 +3,9 @@ from __future__ import annotations
 import os
 from typing import List, Mapping
 
-from app.models import GameState, GameStatus, Move, MoveType
+from app.game_engine import PhaseRequirementType
+
+from app.models import GameState, GameStatus, GamePhase, Move, MoveType
 
 from .interfaces import RulesEngine, Validator, Mutator
 from .validators.placement import PlacementValidator
@@ -118,6 +120,14 @@ class DefaultRulesEngine(RulesEngine):
                 "on",
             }
 
+        # Host-side bookkeeping enforcement (mirrors TS host behaviour).
+        # When enabled we will auto-apply required no_* bookkeeping moves for
+        # the **current actor** in line/territory phases immediately after the
+        # interactive move, so turn rotation cannot skip required phase visits.
+        self._force_bookkeeping_moves = os.getenv(
+            "RINGRIFT_FORCE_BOOKKEEPING_MOVES", ""
+        ).lower() in {"1", "true", "yes", "on"}
+
     def get_valid_moves(self, state: GameState, player: int) -> List[Move]:
         """Return all legal moves for ``player`` in ``state``.
 
@@ -140,6 +150,87 @@ class DefaultRulesEngine(RulesEngine):
 
         # Interactive moves from the core engine (no bookkeeping moves).
         moves = GameEngine.get_valid_moves(state, player)
+
+        # If forced bookkeeping is enabled, and we're in a decision phase with
+        # no interactive moves (or an explicit requirement), return exactly the
+        # synthesized no_* bookkeeping move for the current actor. Do NOT
+        # auto-apply it; the host must record it explicitly. Also, never surface
+        # other move types in these phases when forced bookkeeping is on.
+        # If we detect ANM (no moves, no requirement) for the current actor in
+        # these phases, synthesize the required no_* action to keep the turn
+        # canonical rather than aborting.
+        if self._force_bookkeeping_moves:
+            if (
+                state.current_player == player
+                and state.game_status == GameStatus.ACTIVE
+                and state.current_phase
+                in (GamePhase.LINE_PROCESSING, GamePhase.TERRITORY_PROCESSING)
+            ):
+                requirement = GameEngine.get_phase_requirement(state, player)
+                bookkeeping_move = None
+                if requirement and requirement.type in (
+                    PhaseRequirementType.NO_LINE_ACTION_REQUIRED,
+                    PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
+                ):
+                    bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
+                        requirement,
+                        state,
+                    )
+                elif not moves:
+                    req_type = (
+                        PhaseRequirementType.NO_LINE_ACTION_REQUIRED
+                        if state.current_phase == GamePhase.LINE_PROCESSING
+                        else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
+                    )
+                    req = GameEngine.PhaseRequirement(  # type: ignore[attr-defined]
+                        type=req_type,
+                        player=player,
+                        eligible_positions=[],
+                    )
+                    bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
+                        req,
+                        state,
+                    )
+                # ANM fallback: no moves and no explicit requirement from core,
+                # but forced bookkeeping is on — synthesize a no_* action to
+                # keep the turn canonical instead of aborting.
+                if bookkeeping_move is None and not moves:
+                    req_type = (
+                        PhaseRequirementType.NO_LINE_ACTION_REQUIRED
+                        if state.current_phase == GamePhase.LINE_PROCESSING
+                        else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
+                    )
+                    req = GameEngine.PhaseRequirement(  # type: ignore[attr-defined]
+                        type=req_type,
+                        player=player,
+                        eligible_positions=[],
+                    )
+                    bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
+                        req,
+                        state,
+                    )
+                if bookkeeping_move is not None:
+                    return [bookkeeping_move]
+                # If interactive decisions exist in these phases, keep them; but
+                # block anything else (e.g., elimination/placement) from leaking in.
+                moves = [
+                    m
+                    for m in moves
+                    if (
+                        state.current_phase == GamePhase.LINE_PROCESSING
+                        and m.type in {MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD}
+                    )
+                    or (
+                        state.current_phase == GamePhase.TERRITORY_PROCESSING
+                        and m.type
+                        in {
+                            MoveType.PROCESS_TERRITORY_REGION,
+                            MoveType.CHOOSE_TERRITORY_OPTION,
+                            MoveType.SKIP_TERRITORY_PROCESSING,
+                        }
+                    )
+                ]
+
         if not moves:
             # No interactive moves – only attempt to synthesize bookkeeping
             # moves when this player is actually on turn in an ACTIVE game.
@@ -436,8 +527,72 @@ class DefaultRulesEngine(RulesEngine):
         """
         from app.game_engine import GameEngine
 
+        actor_player = state.current_player
+
+        def _force_bookkeeping_for_actor(st: GameState) -> GameState:
+            """
+            Apply required bookkeeping moves (no_line_action / no_territory_action)
+            for the current actor while in line/territory phases. Returns the
+            updated state (may be unchanged if nothing to do).
+            """
+            cur = st
+            while (
+                cur.game_status == GameStatus.ACTIVE
+                and cur.current_player == actor_player
+                and cur.current_phase
+                in (
+                    GamePhase.LINE_PROCESSING,
+                    GamePhase.TERRITORY_PROCESSING,
+                )
+            ):
+                req = GameEngine.get_phase_requirement(cur, actor_player)
+                forced_move = None
+                if req and req.type in (
+                    PhaseRequirementType.NO_LINE_ACTION_REQUIRED,
+                    PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
+                ):
+                    forced_move = GameEngine.synthesize_bookkeeping_move(req, cur)
+                else:
+                    candidates = GameEngine.get_valid_moves(cur, actor_player)
+                    if not candidates:
+                        req_type = (
+                            PhaseRequirementType.NO_LINE_ACTION_REQUIRED
+                            if cur.current_phase == GamePhase.LINE_PROCESSING
+                            else PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED
+                        )
+                        req = GameEngine.PhaseRequirement(  # type: ignore[attr-defined]
+                            type=req_type,
+                            player=actor_player,
+                            eligible_positions=[],
+                        )
+                        forced_move = GameEngine.synthesize_bookkeeping_move(
+                            req,
+                            cur,
+                        )
+                    elif (
+                        len(candidates) == 1
+                        and candidates[0].type
+                        in (
+                            MoveType.NO_LINE_ACTION,
+                            MoveType.NO_TERRITORY_ACTION,
+                        )
+                    ):
+                        forced_move = candidates[0]
+
+                if forced_move is None:
+                    break
+
+                cur = GameEngine.apply_move(cur, forced_move)
+            return cur
+
         # Canonical result: always computed via GameEngine.apply_move.
         next_via_engine = GameEngine.apply_move(state, move)
+
+        # NOTE: Post-move bookkeeping (no_line_action, no_territory_action) is
+        # intentionally NOT applied here. That's the host's responsibility
+        # (e.g., RingRiftEnv.step() handles it and records the moves). Doing
+        # it here would silently advance the phase without recording the moves,
+        # breaking trace replay parity.
 
         # Fast path: skip shadow contracts for training/benchmarking.
         # Shadow contracts add ~60-80% overhead due to deep copies.

@@ -200,7 +200,11 @@ echo "__BACKUP_FILE__=${backupHostPath}"
     backupPath = match[1].trim();
   }
 
-  return { ...result, backupPath };
+  if (backupPath !== undefined) {
+    return { ...result, backupPath };
+  }
+
+  return result;
 }
 
 /**
@@ -337,7 +341,22 @@ export function parseArgs(argv: string[]): ParsedCliArgs {
     (args.restoreDatabaseUrl as string | undefined) ??
     (args['restore-database-url'] as string | undefined);
 
-  return { env, operator, output, sourceDatabaseUrl, restoreDatabaseUrl };
+  const result: ParsedCliArgs = { env };
+
+  if (operator !== undefined) {
+    result.operator = operator;
+  }
+  if (output !== undefined) {
+    result.output = output;
+  }
+  if (sourceDatabaseUrl !== undefined) {
+    result.sourceDatabaseUrl = sourceDatabaseUrl;
+  }
+  if (restoreDatabaseUrl !== undefined) {
+    result.restoreDatabaseUrl = restoreDatabaseUrl;
+  }
+
+  return result;
 }
 
 /**
@@ -436,14 +455,16 @@ export async function runDbBackupRestoreDrill(
   const runTimestamp = now.toISOString();
   const overallPass = checks.every((check) => check.status === 'pass');
 
+  const targetDatabase = effectiveRestoreUrl ?? effectiveSourceUrl;
+
   const report: DbBackupRestoreDrillReport = {
     drillType: 'db_backup_restore',
     environment: env,
-    operator,
-    targetDatabase: effectiveRestoreUrl ?? effectiveSourceUrl,
     runTimestamp,
     checks,
     overallPass,
+    ...(targetDatabase !== undefined ? { targetDatabase } : {}),
+    ...(operator !== undefined ? { operator } : {}),
   };
 
   const defaultOutputPath = path.join(
@@ -469,13 +490,28 @@ async function main(): Promise<void> {
       process.argv
     );
 
-    const { report, outputPath } = await runDbBackupRestoreDrill({
+    const options: DbBackupRestoreDrillOptions = {
       env,
-      operator,
-      outputPath: output,
-      sourceDatabaseUrl: sourceDatabaseUrl ?? process.env.DATABASE_URL,
-      restoreDatabaseUrl: restoreDatabaseUrl ?? process.env.DATABASE_URL_RESTORE,
-    });
+    };
+
+    if (operator !== undefined) {
+      options.operator = operator;
+    }
+    if (output !== undefined) {
+      options.outputPath = output;
+    }
+
+    const effectiveSourceUrl = sourceDatabaseUrl ?? process.env.DATABASE_URL;
+    const effectiveRestoreUrl = restoreDatabaseUrl ?? process.env.DATABASE_URL_RESTORE;
+
+    if (effectiveSourceUrl !== undefined) {
+      options.sourceDatabaseUrl = effectiveSourceUrl;
+    }
+    if (effectiveRestoreUrl !== undefined) {
+      options.restoreDatabaseUrl = effectiveRestoreUrl;
+    }
+
+    const { report, outputPath } = await runDbBackupRestoreDrill(options);
 
     console.log(
       `DB backup/restore drill (env=${report.environment}): ${report.overallPass ? 'PASS' : 'FAIL'}`

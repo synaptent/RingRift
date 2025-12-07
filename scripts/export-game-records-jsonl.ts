@@ -156,7 +156,27 @@ export function parseArgs(argv: string[]): CliArgs | null {
     }
   }
 
-  return { output, boardType, limit, ratedOnly, since, until };
+  const args: CliArgs = {
+    ratedOnly,
+  };
+
+  if (output !== undefined) {
+    args.output = output;
+  }
+  if (boardType !== undefined) {
+    args.boardType = boardType;
+  }
+  if (limit !== undefined) {
+    args.limit = limit;
+  }
+  if (since !== undefined) {
+    args.since = since;
+  }
+  if (until !== undefined) {
+    args.until = until;
+  }
+
+  return args;
 }
 
 function buildDefaultOutputPath(): string {

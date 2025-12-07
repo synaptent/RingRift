@@ -7,25 +7,43 @@ Thank you for your interest in contributing to RingRift! This document provides 
 - [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) - Factual, code-verified status snapshot
 - [TODO.md](./TODO.md) - Task tracking and detailed implementation checklist
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) - Specific bugs and issues
-- [ARCHITECTURE_ASSESSMENT.md](./ARCHITECTURE_ASSESSMENT.md) - Architecture and refactoring axes
-- [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) - Phased strategic plan and milestones
-- [archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md](./archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md) - Historical end-to-end playable lifecycle plan (lobby → game → AI → victory); for current, code-verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `ARCHITECTURE_ASSESSMENT.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
-- [archive/CODEBASE_EVALUATION.md](./archive/CODEBASE_EVALUATION.md) - Historical code-level evaluation (superseded by `ARCHITECTURE_ASSESSMENT.md` and `CURRENT_STATE_ASSESSMENT.md`)
+- [RULES_ENGINE_ARCHITECTURE.md](./RULES_ENGINE_ARCHITECTURE.md) - Canonical engine architecture and SSOT boundaries
+- [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) - Phased strategic plan, milestones, and SLOs
+- [docs/archive/plans/ARCHITECTURE_ASSESSMENT.md](./docs/archive/plans/ARCHITECTURE_ASSESSMENT.md) - Historical architecture analysis (archived)
+- [docs/architecture/CANONICAL_ENGINE_API.md](./docs/architecture/CANONICAL_ENGINE_API.md) - Lifecycle and API reference
 
 ---
 
 ## 🚦 Development Status
 
-**Current State:** Stable beta with consolidated rules engine – **orchestrator at 100% rollout**
-**Test Status:** 2,987 tests passing (CI-gated suites), comprehensive coverage across all rule domains
-**Priority Focus:** Production hardening, UX polish, and AI improvements
+**Last Updated:** 2025-12-07
+
+**Current State:** Stable beta – **all 14 development waves complete**, orchestrator at 100%
+
+### Key Metrics
+
+| Metric                      | Value                      |
+| --------------------------- | -------------------------- |
+| TypeScript tests (CI-gated) | 2,987 passing              |
+| Python tests                | 836 passing                |
+| Contract vectors            | 54 (100% TS↔Python parity) |
+| Line coverage               | ~69%                       |
+| Canonical phases            | 8                          |
+| Development waves complete  | 14/14                      |
+
+### Priority Focus
+
+1. **Client component test coverage** – Main gap (~0% React component coverage)
+2. **Production validation** – Load testing at production scale
+3. **Mobile UX polish** – Responsive design improvements
+4. **AI improvements** – Neural network integration, weight optimization
 
 Before contributing, please review:
 
 1. **[TODO.md](./TODO.md)** – Active task tracker (canonical priorities)
 2. **[CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md)** – Verified implementation status
 3. **[ringrift_complete_rules.md](./ringrift_complete_rules.md)** – Comprehensive game rules
-4. **[docs/ORCHESTRATOR_ROLLOUT_PLAN.md](./docs/ORCHESTRATOR_ROLLOUT_PLAN.md)** – Production rollout status
+4. **[RULES_ENGINE_ARCHITECTURE.md](./RULES_ENGINE_ARCHITECTURE.md)** – Engine architecture
 
 ---
 
@@ -33,16 +51,31 @@ Before contributing, please review:
 
 **Current priorities are tracked in [TODO.md](./TODO.md).** Key areas include:
 
-### Active Work (see TODO.md for details)
+### Completed Waves (All ✅)
 
-| Area                      | Status                                                | Priority |
-| ------------------------- | ----------------------------------------------------- | -------- |
-| **Orchestrator Rollout**  | ✅ Complete (100% in all environments)                | P0       |
-| **Rules Parity**          | ✅ All tests passing                                  | P0       |
-| **Backend/Sandbox Hosts** | ✅ Using TurnEngineAdapter/SandboxOrchestratorAdapter | P0       |
-| **Legacy Cleanup**        | In progress (Wave 5.4)                                | P1       |
-| **UX Polish**             | Ongoing                                               | P1       |
-| **AI Improvements**       | Backlog                                               | P2       |
+| Wave | Name                            | Status      |
+| ---- | ------------------------------- | ----------- |
+| 1-4  | Core Engine & Architecture      | ✅ Complete |
+| 5    | Orchestrator Production         | ✅ Complete |
+| 6    | Observability & Monitoring      | ✅ Complete |
+| 7    | Production Validation           | ✅ Complete |
+| 8    | Player Experience & UX          | ✅ Complete |
+| 9    | AI Strength & Optimization      | ✅ Complete |
+| 10   | Game Records & Training Data    | ✅ Complete |
+| 11   | Test Hardening & Golden Replays | ✅ Complete |
+| 12   | Matchmaking & Ratings           | ✅ Complete |
+| 13   | Multi-Player (3-4 Players)      | ✅ Complete |
+| 14   | Accessibility & Code Quality    | ✅ Complete |
+
+### Active Work (P0-P2)
+
+| Area                          | Status                              | Priority |
+| ----------------------------- | ----------------------------------- | -------- |
+| **Client Test Coverage**      | Main gap (~0%)                      | P0       |
+| **Production Scale Testing**  | Load test framework ready           | P0       |
+| **Security Hardening Review** | Threat model exists, review pending | P1       |
+| **Mobile UX**                 | Desktop-first, mobile needs polish  | P1       |
+| **ML-backed AI**              | Scaffolding exists, not integrated  | P2       |
 
 ### Architecture Overview
 
@@ -95,231 +128,39 @@ For UI-only or documentation-only changes, you can usually rely on the lighter `
 ---
 
 <details>
-<summary>📜 Historical Development Phases (November 2025 - Completed)</summary>
-
-### **PHASE 1: Core Game Logic** (COMPLETED)
-
-**Goal:** Make the game engine correctly implement RingRift rules
-
-**Status:** ✅ All core rules implemented in shared TypeScript engine
-
-**Key completed tasks:**
-
-#### 1.1 Fix BoardState Data Structure (CRITICAL)
-
-**Estimated Time:** 1-2 days  
-**Files:** `src/shared/types/game.ts`, `src/server/game/BoardManager.ts`
-
-- [ ] Update `BoardState` interface to separately track stacks, markers, and collapsed spaces
-- [ ] Add collapsed space representation (Map<string, number>)
-- [ ] Update all methods in BoardManager to use new structure
-- [ ] Ensure backward compatibility with existing code
-
-**Why First:** All other fixes depend on proper state management
-
-#### 1.2 Implement Marker System (CRITICAL)
-
-**Estimated Time:** 2-3 days  
-**Files:** `src/server/game/GameEngine.ts`, `src/server/game/BoardManager.ts`
-
-- [ ] Add marker placement when rings move
-- [ ] Implement marker flipping (opponent markers → your color)
-- [ ] Implement marker collapsing (your markers → claimed Territory)
-- [ ] Add same-color marker removal on landing
-- [ ] Write tests for marker interactions
-
-**Reference:** Section 8.3 of rules document
-
-#### 1.3 Fix Movement Validation (CRITICAL)
-
-**Estimated Time:** 2-3 days
-**Files:** `src/server/game/RuleEngine.ts`
-
-- [ ] Enforce minimum distance = stack height
-- [ ] Implement landing on any valid space beyond markers
-- [ ] Add path validation (no collapsed spaces, no rings)
-- [ ] Validate marker interactions during movement
-- [ ] Write tests for all movement scenarios
-
-**Reference:** Section 8.2, FAQ Q2
-
-#### 1.4 Fix Game Phase Transitions (HIGH)
-
-**Estimated Time:** 1-2 days
-**Files:** `src/shared/types/game.ts`, `src/server/game/GameEngine.ts`
-
-- [ ] Remove `main_game` phase, add `line_processing` phase
-- [ ] Implement correct phase flow
-- [ ] Update `advanceGame()` method
-- [ ] Ensure phases match rules exactly
-
-**Reference:** Section 4, Section 15.2
-
-#### 1.5 Complete Capture System (HIGH)
-
-**Estimated Time:** 3-4 days
-**Files:** `src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`
-
-- [ ] Distinguish overtaking vs elimination captures
-- [ ] Implement chain capture enforcement (mandatory once started)
-- [ ] Add flexible landing during captures
-- [ ] Fix cap height comparison logic
-- [ ] Implement proper stack merging
-- [ ] Write tests for capture sequences
-
-**Reference:** Sections 9-10
-
-#### 1.6 Implement Line Formation (HIGH)
-
-**Estimated Time:** 3-4 days
-**Files:** `src/server/game/GameEngine.ts`, `src/server/game/BoardManager.ts`
-
-- [ ] Fix line detection (4+ for 8x8, 5+ for 19x19/hex)
-- [ ] Implement graduated rewards (Option 1 vs Option 2)
-- [ ] Add player choice mechanism for longer lines
-- [ ] Implement ring elimination on line collapse
-- [ ] Handle multiple line processing order
-- [ ] Write tests for line scenarios
-
-**Reference:** Section 11
-
-#### 1.7 Implement Territory Disconnection (HIGH)
-
-**Estimated Time:** 4-5 days
-**Files:** `src/server/game/RuleEngine.ts`, `src/server/game/BoardManager.ts`
-
-- [ ] Implement `findDisconnectedRegions()` with Von Neumann adjacency
-- [ ] Add representation checking
-- [ ] Implement self-elimination prerequisite validation
-- [ ] Add border marker collapse
-- [ ] Handle chain reactions
-- [ ] Write tests for disconnection scenarios
-
-**Reference:** Section 12, FAQ Q15
-
-#### 1.8 Add Forced Elimination (MEDIUM)
-
-**Estimated Time:** 1 day
-**Files:** `src/server/game/GameEngine.ts`, `src/server/game/RuleEngine.ts`
-
-- [ ] Detect when player has no valid moves but controls stacks
-- [ ] Force cap elimination
-- [ ] Update player state
-
-**Reference:** Section 4.4, FAQ Q24
-
-#### 1.9 Fix Player State Updates (MEDIUM)
-
-**Estimated Time:** 1 day
-**Files:** `src/server/game/GameEngine.ts`
-
-- [ ] Update `ringsInHand` on placement
-- [ ] Update `eliminatedRings` on elimination
-- [ ] Update `territorySpaces` on collapse
-- [ ] Ensure counts match actual game state
-
-**Phase 1 Total Estimated Time:** 18-27 days (3-5 weeks)
-
----
-
-### **PHASE 2: Testing & Validation** (After Phase 1)
-
-**Goal:** Ensure correctness through comprehensive testing
-
-**Tasks:**
-
-#### 2.1 Unit Tests
-
-**Estimated Time:** 1 week
-
-- [ ] Test BoardManager position utilities
-- [ ] Test BoardManager adjacency calculations
-- [ ] Test BoardManager line detection
-- [ ] Test RuleEngine movement validation
-- [ ] Test RuleEngine capture validation
-- [ ] Test RuleEngine line formation
-- [ ] Test RuleEngine Territory disconnection
-- [ ] Test GameEngine state transitions
-
-#### 2.2 Integration Tests
-
-**Estimated Time:** 3-5 days
-
-- [ ] Test complete turn sequence
-- [ ] Test ring placement → movement → capture flow
-- [ ] Test line formation → ring elimination
-- [ ] Test Territory disconnection → ring elimination
-- [ ] Test chain capture sequences
-- [ ] Test forced elimination scenarios
-
-#### 2.3 Scenario Tests
-
-**Estimated Time:** 3-5 days
-
-- [ ] Test 180° reversal capture pattern (FAQ example)
-- [ ] Test cyclic capture pattern (FAQ example)
-- [ ] Test Territory disconnection example (Section 16.8.6)
-- [ ] Test graduated line rewards
-- [ ] Test victory conditions
-- [ ] Test edge cases from FAQ (Q1-Q24)
-
-**Phase 2 Total Estimated Time:** 2-3 weeks
-
----
-
-### **PHASE 3: Frontend Implementation** (After Phase 2)
-
-**Goal:** Build playable user interface
-
-**Tasks:**
-
-#### 3.1 Board Rendering
-
-- [ ] Square board (8x8 and 19x19)
-- [ ] Hexagonal board
-- [ ] Cell/space components
-- [ ] Coordinate overlay
-- [ ] Responsive sizing
-
-#### 3.2 Game Pieces
-
-- [ ] Ring stack visualization
-- [ ] Marker display
-- [ ] Collapsed space display
-- [ ] Player color coding
-- [ ] Stack height indicators
-
-#### 3.3 Controls & Interaction
-
-- [ ] Ring placement interface
-- [ ] Move selection (click source/destination)
-- [ ] Valid move highlighting
-- [ ] Move confirmation
-- [ ] Undo/redo (if supported)
-
-#### 3.4 Game State Display
-
-- [ ] Current player indicator
-- [ ] Ring counts display
-- [ ] Territory statistics
-- [ ] Move history
-- [ ] Timer display
-
-**Phase 3 Total Estimated Time:** 3-4 weeks
-
----
-
-### **PHASE 4: Advanced Features** (After Phase 3)
-
-**Tasks:**
-
-- AI implementation (difficulty levels 1-10)
-- WebSocket event completion
-- Database integration
-- Spectator mode
-- Replay system
-
-**Phase 4 Total Estimated Time:** 4-6 weeks
+<summary>📜 Historical Development Phases (November 2025 - All Completed)</summary>
+
+All historical development phases have been completed. For detailed historical context, see the archived documents:
+
+- `docs/archive/plans/ARCHITECTURE_ASSESSMENT.md` - Original architecture analysis
+- `docs/archive/plans/ARCHITECTURE_REMEDIATION_PLAN.md` - Remediation plan (completed Nov 2025)
+- `archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Original implementation plan
+
+### Phase Summary
+
+| Phase | Name                     | Completed |
+| ----- | ------------------------ | --------- |
+| 1     | Core Game Logic          | Nov 2025  |
+| 2     | Testing & Validation     | Nov 2025  |
+| 3     | Frontend Implementation  | Nov 2025  |
+| 4     | Advanced Features        | Nov 2025  |
+| 1.5   | Architecture Remediation | Nov 2025  |
+
+### Key Milestones Achieved
+
+- ✅ All core rules implemented in shared TypeScript engine
+- ✅ Canonical turn orchestrator (`processTurn`, `processTurnAsync`)
+- ✅ 6 domain aggregates (Placement, Movement, Capture, Line, Territory, Victory)
+- ✅ Backend adapter (`TurnEngineAdapter.ts`, 326 lines)
+- ✅ Sandbox adapter (`SandboxOrchestratorAdapter.ts`, 476 lines)
+- ✅ Python contract tests with 100% parity on 54 vectors
+- ✅ ~1,176 lines legacy code removed (PASS20)
+- ✅ AI difficulty ladder (1-10) with service-backed choices
+- ✅ 3 Grafana dashboards with 22 monitoring panels
+- ✅ k6 load testing framework with 4 production scenarios
+- ✅ ELO rating system and leaderboards
+- ✅ 3-4 player multiplayer support
+- ✅ Comprehensive accessibility features (WCAG compliance)
 
 </details>
 
@@ -513,7 +354,7 @@ Relates to #issue-number
 
 ### CI & PR policy (S-05.F.1)
 
-> **Status (2025-11-27): Active (documentation/policy only, non-semantics)** \
+> **Status (2025-12-07): Active (documentation/policy only, non-semantics)** \
 > Implements S-05.F.1 from `docs/SUPPLY_CHAIN_AND_CI_SECURITY.md`. This section does **not** define game rules or lifecycle semantics. Those remain in:
 >
 > - `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `ringrift_compact_rules.md` (rules semantics SSoT)
@@ -617,15 +458,21 @@ Description of how to fix
 
 1. `ringrift_complete_rules.md` - Complete game rules
 2. `CURRENT_STATE_ASSESSMENT.md` - Current, code-verified state analysis
-3. `KNOWN_ISSUES.md` - Specific bugs and gaps to fix
+3. `TODO.md` - Active task tracking and priorities
+4. `KNOWN_ISSUES.md` - Specific bugs and gaps to fix
 
-**Architecture & Planning Reference:**
+**Architecture & Technical Reference:**
 
-1. `ARCHITECTURE_ASSESSMENT.md` - Current architecture, refactoring axes, and deep improvement plan
-2. `STRATEGIC_ROADMAP.md` - Phased roadmap from core logic to UI, AI, and multiplayer
-3. `archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Historical practical plan for a fully playable experience (lobby → game → AI → victory); for current, code-verified status and tasks, defer to `CURRENT_STATE_ASSESSMENT.md`, `ARCHITECTURE_ASSESSMENT.md`, `KNOWN_ISSUES.md`, and `TODO.md`.
-4. `src/shared/types/game.ts` - Shared game type definitions
-5. `archive/ringrift_architecture_plan.md` and `archive/TECHNICAL_ARCHITECTURE_ANALYSIS.md` - Historical design docs (preserved for context, but superseded by the files above)
+1. `RULES_ENGINE_ARCHITECTURE.md` - Canonical engine architecture, SSOT boundaries, and host integration
+2. `docs/architecture/CANONICAL_ENGINE_API.md` - Lifecycle and API reference
+3. `STRATEGIC_ROADMAP.md` - Phased roadmap, milestones, and SLOs
+4. `AI_ARCHITECTURE.md` - AI system architecture, difficulty ladder, and training
+5. `src/shared/types/game.ts` - Shared game type definitions
+
+**Historical Reference (archived):**
+
+- `docs/archive/plans/ARCHITECTURE_ASSESSMENT.md` - Original architecture analysis
+- `archive/PLAYABLE_GAME_IMPLEMENTATION_PLAN.md` - Original implementation plan
 
 ### Understanding the Game
 
@@ -878,8 +725,9 @@ useGlobalGameShortcuts({
 ### Questions?
 
 - **Game rules:** Check `ringrift_complete_rules.md` (especially the FAQ section)
-- **Architecture & refactoring axes:** See `ARCHITECTURE_ASSESSMENT.md`
-- **Roadmap & priorities:** See `STRATEGIC_ROADMAP.md` and `TODO.md`
+- **Engine architecture:** See `RULES_ENGINE_ARCHITECTURE.md` and `docs/architecture/CANONICAL_ENGINE_API.md`
+- **AI system:** See `AI_ARCHITECTURE.md` and `ai-service/README.md`
+- **Roadmap & priorities:** See `TODO.md` and `STRATEGIC_ROADMAP.md`
 - **Current bugs:** Check `KNOWN_ISSUES.md`
 - **Current implementation state:** Review `CURRENT_STATE_ASSESSMENT.md`
 
@@ -891,44 +739,36 @@ useGlobalGameShortcuts({
 
 ---
 
-## 📅 Milestones
+## 📅 Current Milestones
 
-### Milestone 1: Core Logic Complete
+### ✅ Completed Milestones
 
-**Target:** 4-6 weeks from start  
-**Criteria:**
+| Milestone           | Status | Completed |
+| ------------------- | ------ | --------- |
+| Core Logic Complete | ✅     | Nov 2025  |
+| Tested & Validated  | ✅     | Nov 2025  |
+| Playable Game       | ✅     | Nov 2025  |
+| Feature Complete    | ✅     | Dec 2025  |
+| Waves 5-14          | ✅     | Dec 2025  |
 
-- All Phase 1 tasks completed
-- Unit tests for all game rules
-- No critical bugs (P0 issues resolved)
+### 🎯 v1.0 Release Criteria (In Progress)
 
-### Milestone 2: Tested & Validated
+**Target:** TBD
 
-**Target:** 8-10 weeks from start  
-**Criteria:**
+**Remaining Criteria:**
 
-- All Phase 2 tasks completed
-- 80%+ test coverage
-- All scenario tests passing
+1. **Client Test Coverage** – Achieve meaningful React component test coverage (currently ~0%)
+2. **Production Scale Testing** – Complete load testing at production scale
+3. **Security Review** – Complete security hardening review per threat model
+4. **Mobile UX** – Responsive design for mobile devices
 
-### Milestone 3: Playable Game
+**Quality Gates:**
 
-**Target:** 12-15 weeks from start  
-**Criteria:**
-
-- All Phase 3 tasks completed
-- Functional UI for all board types
-- Multiplayer working
-
-### Milestone 4: Feature Complete
-
-**Target:** 18-24 weeks from start  
-**Criteria:**
-
-- All phases completed
-- AI opponents working
-- Database integration complete
-- Ready for beta testing
+- All 2,987+ TypeScript tests passing
+- All 836+ Python tests passing
+- 54 contract vectors at 100% parity
+- No P0 bugs open
+- Load test SLOs met with headroom
 
 ---
 
@@ -946,6 +786,6 @@ Your contributions help make RingRift a reality. Whether you fix a small bug or 
 
 ---
 
-**Document Version:** 1.2
-**Last Updated:** November 27, 2025
+**Document Version:** 2.0
+**Last Updated:** December 7, 2025
 **Maintainer:** Development Team

@@ -14,6 +14,7 @@ import {
   evaluateSkipPlacementEligibility as evaluateSkipPlacementEligibilityAggregate,
   isANMState,
   computeGlobalLegalActionsSummary,
+  evaluateVictory,
 } from '../../shared/engine';
 import {
   isSandboxAiCaptureDebugEnabled,
@@ -49,6 +50,68 @@ const MAX_SANDBOX_TRACE_ENTRIES = 2000;
  * aiSimulationPolicy without reaching into internal constants.
  */
 export const SANDBOX_STALL_WINDOW_STEPS = SANDBOX_NOOP_STALL_THRESHOLD;
+
+/**
+ * Apply the stalemate ladder tie-breaker to determine a winner when the AI
+ * stalls but evaluateVictory() returns isGameOver=false. This mirrors the
+ * ladder logic from victoryLogic.ts but is used as a fallback for sandbox
+ * stall detection when standard victory conditions haven't been met.
+ *
+ * Tie-break order:
+ * 1. Territory spaces (most wins)
+ * 2. Eliminated rings (most wins)
+ * 3. Markers on board (most wins)
+ * 4. Last actor (player who moved before current player)
+ */
+function applyStalemateLadder(state: GameState): number | undefined {
+  const players = state.players;
+  if (!players || players.length === 0) {
+    return undefined;
+  }
+
+  // 1. Territory spaces
+  const maxTerritory = Math.max(...players.map((p) => p.territorySpaces));
+  const territoryLeaders = players.filter((p) => p.territorySpaces === maxTerritory);
+  if (territoryLeaders.length === 1 && maxTerritory > 0) {
+    return territoryLeaders[0].playerNumber;
+  }
+
+  // 2. Eliminated rings
+  const maxEliminated = Math.max(...players.map((p) => p.eliminatedRings));
+  const eliminationLeaders = players.filter((p) => p.eliminatedRings === maxEliminated);
+  if (eliminationLeaders.length === 1 && maxEliminated > 0) {
+    return eliminationLeaders[0].playerNumber;
+  }
+
+  // 3. Markers on board
+  const markerCountsByPlayer: { [player: number]: number } = {};
+  for (const p of players) {
+    markerCountsByPlayer[p.playerNumber] = 0;
+  }
+  for (const marker of state.board.markers.values()) {
+    const owner = marker.player;
+    if (markerCountsByPlayer[owner] !== undefined) {
+      markerCountsByPlayer[owner] += 1;
+    }
+  }
+  const maxMarkers = Math.max(...players.map((p) => markerCountsByPlayer[p.playerNumber] ?? 0));
+  const markerLeaders = players.filter(
+    (p) => (markerCountsByPlayer[p.playerNumber] ?? 0) === maxMarkers
+  );
+  if (markerLeaders.length === 1 && maxMarkers > 0) {
+    return markerLeaders[0].playerNumber;
+  }
+
+  // 4. Last actor (player immediately preceding currentPlayer in turn order)
+  const currentIdx = players.findIndex((p) => p.playerNumber === state.currentPlayer);
+  if (currentIdx !== -1) {
+    const lastIdx = (currentIdx - 1 + players.length) % players.length;
+    return players[lastIdx].playerNumber;
+  }
+
+  // Fallback: first player
+  return players[0]?.playerNumber;
+}
 
 // Module-level counter tracking consecutive AI turns that leave the
 // sandbox GameState hash unchanged while the same AI player remains
@@ -508,70 +571,34 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
           // Forced elimination did not apply (player has legal moves from stacks).
           // The player is in ring_placement with ringsInHand=0 but has stacks.
           //
-          // The backend's getValidMoves has a resolveBlockedStateForCurrentPlayerForTesting
-          // fallback that changes the phase to movement when the current player has
-          // movement/capture moves but no rings. We need to do the same here.
+          // IMPORTANT: The orchestrator's getValidMoves() returns [] when
+          // ringsInHand=0 in ring_placement phase (per RR-CANON-R076). Hosts
+          // must construct an explicit no_placement_action move and apply it
+          // to advance to movement phase.
           //
-          // Check if current player has any movement or capture moves available.
+          // Check if current player has any movement or capture moves available
+          // by directly enumerating them (bypassing the phase-locked getValidMoves).
           const playerStacks = hooks.getPlayerStacks(current.playerNumber, afterElimState.board);
           if (playerStacks.length > 0) {
-            // Player has stacks - get valid moves from the shared orchestrator.
-            // The orchestrator returns no_placement_action when the player has 0 rings
-            // in ring_placement phase - we need to apply it to advance to movement phase.
-            const validMoves = hooks.getValidMovesForCurrentPlayer();
+            // First, construct and apply a no_placement_action move to advance
+            // to movement phase. This is the canonical way to handle players
+            // with 0 rings in ring_placement who have stacks on the board.
+            const moveNumber = afterElimState.history.length + 1;
+            const noPlacementMove: Move = {
+              type: 'no_placement_action',
+              player: current.playerNumber,
+              id: `no-placement-action-${moveNumber}`,
+              moveNumber,
+              timestamp: new Date(),
+              thinkTime: 0,
+            } as Move;
 
-            // First, check for no_placement_action - this is how the orchestrator
-            // signals that ring_placement should be skipped for players with 0 rings.
-            const noPlacementMove = validMoves.find((m) => m.type === 'no_placement_action');
-            if (noPlacementMove) {
-              const moveNumber = afterElimState.history.length + 1;
-              const moveToApply: Move = {
-                ...noPlacementMove,
-                id: `no-placement-action-${moveNumber}`,
-                moveNumber,
-                timestamp: new Date(),
-                thinkTime: 0,
-              } as Move;
-
-              await hooks.applyCanonicalMove(moveToApply);
-              lastAIMove = moveToApply;
-              hooks.setLastAIMove(lastAIMove);
-              return;
-            }
-
-            // Otherwise, look for movement/capture moves
-            const movementMoves = validMoves.filter(
-              (m) =>
-                m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'overtaking_capture'
-            );
-
-            if (movementMoves.length > 0) {
-              // Player has movement moves - select one and apply it
-              const selectedMove = chooseLocalMoveFromCandidates(
-                current.playerNumber,
-                afterElimState,
-                movementMoves,
-                rng
-              );
-
-              if (selectedMove) {
-                const moveNumber = afterElimState.history.length + 1;
-                const moveToApply: Move = {
-                  ...selectedMove,
-                  id: '',
-                  moveNumber,
-                  timestamp: new Date(),
-                  thinkTime: 0,
-                } as Move;
-
-                await hooks.applyCanonicalMove(moveToApply);
-                lastAIMove = moveToApply;
-                hooks.setLastAIMove(lastAIMove);
-              }
-              return;
-            }
+            await hooks.applyCanonicalMove(noPlacementMove);
+            lastAIMove = noPlacementMove;
+            hooks.setLastAIMove(lastAIMove);
+            return;
           }
-          // No movement moves available - fall through to let rest of function handle it
+          // No stacks on board either - fall through to let rest of function handle it
           return;
         } else {
           // Elimination was applied or game ended - return and let next iteration handle it
@@ -1083,6 +1110,68 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
       return;
     }
 
+    // === Forced elimination phase: canonical forced_elimination decision ===
+    if (gameState.currentPhase === 'forced_elimination') {
+      const allMoves = hooks.getValidMovesForCurrentPlayer();
+      const forcedEliminationMoves = Array.isArray(allMoves)
+        ? allMoves.filter((m) => m.type === 'forced_elimination')
+        : [];
+
+      if (forcedEliminationMoves.length === 0) {
+        if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+          console.warn(
+            '[Sandbox AI Debug] forced_elimination phase but no forced_elimination moves',
+            {
+              boardType: gameState.boardType,
+              currentPlayer: gameState.currentPlayer,
+              currentPhase: gameState.currentPhase,
+            }
+          );
+        }
+        return;
+      }
+
+      const selectedForcedElimination = chooseLocalMoveFromCandidates(
+        gameState.currentPlayer,
+        gameState,
+        forcedEliminationMoves,
+        rng
+      );
+
+      if (!selectedForcedElimination) {
+        if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
+          console.warn(
+            '[Sandbox AI Debug] chooseLocalMoveFromCandidates returned null for forced_elimination',
+            {
+              candidateCount: forcedEliminationMoves.length,
+              boardType: gameState.boardType,
+              currentPlayer: gameState.currentPlayer,
+            }
+          );
+        }
+        return;
+      }
+
+      const stateForMove = hooks.getGameState();
+      const moveNumber = stateForMove.history.length + 1;
+
+      const forcedEliminationMove: Move = {
+        ...selectedForcedElimination,
+        id: '',
+        moveNumber,
+        timestamp: new Date(),
+      } as Move;
+
+      debugForcedEliminationAttempted = true;
+      debugForcedEliminationEliminated = true;
+
+      await hooks.applyCanonicalMove(forcedEliminationMove);
+
+      lastAIMove = forcedEliminationMove;
+      hooks.setLastAIMove(lastAIMove);
+      return;
+    }
+
     // === Movement / capture phase: canonical capture + movement candidates ===
     if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'capture') {
       return;
@@ -1363,42 +1452,68 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         afterStateForHistory.players.length > 0 &&
         afterStateForHistory.players.every((p) => p.type === 'ai');
 
-      if (allPlayersAI || isActiveNoMoves) {
-        // Genuine AI-only stall (fuzz harness / self-play) or a true
-        // ACTIVE_NO_MOVES plateau: treat as a structural end state for
-        // the sandbox to avoid infinite AI loops. This preserves existing
-        // seed-based AI stall regression behaviour while ensuring we
-        // also gate on RR-CANON ANM when humans are present.
-        const stalled: GameState = {
-          ...afterStateForHistory,
-          gameStatus: 'completed',
-          // Normalise terminal phase and clear capture-specific cursor
-          // state so completed sandbox games do not present as if they
-          // were still mid-capture or awaiting a mandatory continuation.
-          currentPhase: 'ring_placement',
-          chainCapturePosition: undefined,
-          mustMoveFromStackKey: undefined,
-        };
-        hooks.setGameState(stalled);
-        sandboxStallLoggingSuppressed = true;
+      if (isActiveNoMoves) {
+        // True ACTIVE_NO_MOVES state: the current player has no legal actions.
+        // Run victory evaluation to determine if the game is actually over.
+        const victoryResult = evaluateVictory(afterStateForHistory);
+
+        // CRITICAL: Only mark game as completed if evaluateVictory confirms
+        // the game is actually over. isANMState only checks the current player,
+        // but another player may still have legal moves.
+        if (victoryResult.isGameOver) {
+          // Game is truly over - determine winner and mark completed
+          const winner =
+            victoryResult.winner !== undefined
+              ? victoryResult.winner
+              : applyStalemateLadder(afterStateForHistory);
+
+          const stalled: GameState = {
+            ...afterStateForHistory,
+            gameStatus: 'completed',
+            // Set terminal phase to 'game_over' and clear capture-specific
+            // cursor state so completed sandbox games do not present as if
+            // they were still mid-capture or awaiting a mandatory continuation.
+            currentPhase: 'game_over',
+            chainCapturePosition: undefined,
+            mustMoveFromStackKey: undefined,
+            winner,
+          };
+          hooks.setGameState(stalled);
+          sandboxStallLoggingSuppressed = true;
+        } else if (!sandboxStallLoggingSuppressed && SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED) {
+          // ANM for current player but victory says game isn't over - another
+          // player still has legal moves. Log this case but do NOT force
+          // completion; let the turn/phase machinery advance to the next player.
+          console.warn(
+            '[Sandbox AI Stall Detector] isANMState=true but evaluateVictory.isGameOver=false; ' +
+              'current player has no moves but game should continue',
+            {
+              boardType: afterStateForHistory.boardType,
+              currentPlayer: afterStateForHistory.currentPlayer,
+              currentPhase: afterStateForHistory.currentPhase,
+              consecutiveNoopAITurns: sandboxConsecutiveNoopAITurns,
+            }
+          );
+          // Suppress further logging for this stall situation but don't end game
+        }
       } else if (!sandboxStallLoggingSuppressed && SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED) {
-        // Hash-based stall window was reached in a game with at least one
-        // human player, but ANM(state) is false: the active player still
-        // has some legal action according to the global action summary.
-        // This indicates an internal AI or host wiring bug; leave the
-        // game ACTIVE and emit a detailed warning instead of force-
-        // completing a rich mid-game sandbox game.
+        // Hash-based stall window was reached but ANM(state) is false:
+        // the active player still has some legal action according to
+        // the global action summary. This indicates an internal AI or
+        // host wiring bug; leave the game ACTIVE and emit a detailed
+        // warning instead of force-completing a valid game.
         const summary = computeGlobalLegalActionsSummary(
           afterStateForHistory,
           afterStateForHistory.currentPlayer
         );
         console.warn(
-          '[Sandbox AI Stall Detector] No-op window reached with human present but ANM=false; game left active',
+          '[Sandbox AI Stall Detector] No-op window reached but ANM=false (valid moves exist); game left active',
           {
             boardType: afterStateForHistory.boardType,
             currentPlayer: afterStateForHistory.currentPlayer,
             currentPhase: afterStateForHistory.currentPhase,
             consecutiveNoopAITurns: sandboxConsecutiveNoopAITurns,
+            allPlayersAI,
             globalActionsSummary: summary,
           }
         );

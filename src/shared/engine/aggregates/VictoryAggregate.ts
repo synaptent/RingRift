@@ -339,45 +339,137 @@ export function evaluateVictory(state: GameState): VictoryResult {
     // Check if any player with material can still make progress
     let somePlayerCanAct = false;
 
+    // DEBUG: Log the gameStatus and key state facts for stalemate diagnosis
+    const debugTrappedStalemate = process.env.RINGRIFT_DEBUG_STALEMATE === 'true';
+    if (debugTrappedStalemate) {
+      console.log('[VictoryAggregate] Trapped stalemate check:', {
+        gameStatus: state.gameStatus,
+        stackCount: state.board.stacks.size,
+        currentPlayer: state.currentPlayer,
+        currentPhase: state.currentPhase,
+      });
+    }
+
     for (const p of players) {
       // Check if player has any stacks
       let playerHasStacks = false;
+      const playerStackPositions: string[] = [];
       for (const stack of state.board.stacks.values()) {
         if (stack.controllingPlayer === p.playerNumber) {
           playerHasStacks = true;
-          break;
+          playerStackPositions.push(positionToString(stack.position));
         }
       }
 
       // Check if player has material (stacks or rings in hand)
       const hasMaterial = playerHasStacks || p.ringsInHand > 0;
       if (!hasMaterial) {
+        if (debugTrappedStalemate) {
+          console.log(`[VictoryAggregate] Player ${p.playerNumber} has no material - skipping`);
+        }
         continue; // Player eliminated, skip
       }
 
+      if (debugTrappedStalemate) {
+        console.log(`[VictoryAggregate] Player ${p.playerNumber} has material:`, {
+          hasStacks: playerHasStacks,
+          stackCount: playerStackPositions.length,
+          stackPositions: playerStackPositions,
+          ringsInHand: p.ringsInHand,
+        });
+      }
+
       // Check if player can place a ring
-      if (hasGlobalPlacementAction(state, p.playerNumber)) {
+      const canPlace = hasGlobalPlacementAction(state, p.playerNumber);
+      if (canPlace) {
+        if (debugTrappedStalemate) {
+          console.log(`[VictoryAggregate] Player ${p.playerNumber} can place - game not over`);
+        }
         somePlayerCanAct = true;
         break;
       }
 
-      // If player has stacks, check if they can move/capture
-      // hasForcedEliminationAction returns true only if player has stacks AND cannot place AND cannot move
-      // Since we already checked placement and it's false, if hasForcedEliminationAction is false,
-      // that means they can move/capture
-      if (playerHasStacks && !hasForcedEliminationAction(state, p.playerNumber)) {
-        somePlayerCanAct = true;
-        break;
+      // If player has stacks, check if they can move/capture DIRECTLY
+      // NOTE: hasForcedEliminationAction has an early exit when gameStatus !== 'active'
+      // So we need to check movement capability directly using hasAnyLegalMoveOrCaptureFromOnBoard
+      if (playerHasStacks) {
+        const forcedElimResult = hasForcedEliminationAction(state, p.playerNumber);
+
+        // Direct movement check that doesn't depend on gameStatus
+        const boardType = state.board.type;
+        const view: MovementBoardView = {
+          isValidPosition: (pos) => isValidBoardPosition(boardType, state.board.size, pos),
+          isCollapsedSpace: (pos) => state.board.collapsedSpaces.has(positionToString(pos)),
+          getStackAt: (pos) => {
+            const key = positionToString(pos);
+            const stack = state.board.stacks.get(key);
+            if (!stack) return undefined;
+            return {
+              controllingPlayer: stack.controllingPlayer,
+              capHeight: stack.capHeight,
+              stackHeight: stack.stackHeight,
+            };
+          },
+          getMarkerOwner: (pos) => {
+            const key = positionToString(pos);
+            const marker = state.board.markers.get(key);
+            return marker?.player;
+          },
+        };
+
+        // Check if ANY of this player's stacks can move
+        let directMovementCheck = false;
+        let movableStackPos: string | null = null;
+        for (const stack of state.board.stacks.values()) {
+          if (stack.controllingPlayer === p.playerNumber && stack.stackHeight > 0) {
+            if (debugTrappedStalemate) {
+              console.log(
+                `[VictoryAggregate] Checking stack at ${positionToString(stack.position)} height=${stack.stackHeight}`
+              );
+            }
+            if (
+              hasAnyLegalMoveOrCaptureFromOnBoard(boardType, stack.position, p.playerNumber, view, {
+                debug: debugTrappedStalemate,
+              })
+            ) {
+              directMovementCheck = true;
+              movableStackPos = positionToString(stack.position);
+              break;
+            }
+          }
+        }
+
+        if (debugTrappedStalemate) {
+          console.log(`[VictoryAggregate] Player ${p.playerNumber} movement check:`, {
+            hasForcedEliminationAction: forcedElimResult,
+            directMovementCheck,
+            movableStackPos,
+            gameStatus: state.gameStatus,
+            collapsedSpacesCount: state.board.collapsedSpaces.size,
+          });
+        }
+
+        // Use the direct check instead of relying on hasForcedEliminationAction
+        if (directMovementCheck) {
+          somePlayerCanAct = true;
+          break;
+        }
       }
 
-      // If playerHasStacks && hasForcedEliminationAction is true: player is trapped
+      // If playerHasStacks && no movement possible: player is trapped
       // If !playerHasStacks && cannot place: player has rings but nowhere to place = trapped
     }
 
     if (somePlayerCanAct) {
+      if (debugTrappedStalemate) {
+        console.log('[VictoryAggregate] Some player can act - game not over');
+      }
       return { isGameOver: false };
     }
 
+    if (debugTrappedStalemate) {
+      console.log('[VictoryAggregate] All players trapped - proceeding to stalemate tiebreaker');
+    }
     // All players with material are trapped - fall through to stalemate ladder below
   }
 

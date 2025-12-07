@@ -2,29 +2,46 @@
 
 <!-- CI Status Badge -->
 
-![RingRift CI/CD](https://github.com/OWNER/ringrift/actions/workflows/ci.yml/badge.svg)
-![Python Tests](https://github.com/OWNER/ringrift/actions/workflows/ci.yml/badge.svg?branch=main)
+![RingRift CI/CD](https://github.com/an0mium/RingRift/actions/workflows/ci.yml/badge.svg)
+![Parity CI Gate](https://github.com/an0mium/RingRift/actions/workflows/parity-ci.yml/badge.svg)
 
-> **Note:** Replace `OWNER` above with your GitHub username or organization name once the repository is hosted on GitHub.
-
-**Doc Status (2025-12-06): Active (project overview & navigation)**
+**Doc Status (2025-12-07): Active (project overview & navigation)**
 
 - High-level project overview, setup, and API surface.
 - Not a rules or lifecycle SSoT. For rules semantics, defer to `RULES_CANONICAL_SPEC.md` plus the shared TypeScript rules engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts + v2 contract vectors). For lifecycle semantics (move/decision/WebSocket), defer to `docs/architecture/CANONICAL_ENGINE_API.md` plus shared TS/WebSocket types and schemas.
 
-⚠️ **PROJECT STATUS: STABLE BETA – BACKEND & RULES ENGINE ROBUST; FRONTEND UX POLISH IN PROGRESS** ⚠️
+⚠️ **PROJECT STATUS: STABLE BETA – ENGINE COMPLETE, PRODUCTION VALIDATION IN PROGRESS** ⚠️
 
-> **Important:** The core game engine and backend are now stable and feature-complete (Orchestrator at 100% rollout). The current focus is on **Frontend UX Polish** (sandbox scenario picker, spectator UI, and additional refinements building on existing keyboard navigation and move history) and **Test Suite Maintenance** (cleanup of skipped tests). See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) for code‑verified status.
+> **Important:** The canonical turn orchestrator is 100% rolled out with 54 contract vectors at 100% TS↔Python parity. All 14 development waves are complete. Current focus is on **production validation**, **scaling tests**, and **client component test coverage** (the main remaining gap per [COMPREHENSIVE_PROJECT_ASSESSMENT.md](./COMPREHENSIVE_PROJECT_ASSESSMENT.md)). See [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) for code‑verified status.
 
 A web-based multiplayer implementation of the RingRift strategy game supporting 2-4 players with flexible human/AI combinations across multiple board configurations.
 
 ## 📋 Current Status
 
-**Last checked:** 2025-12-06 (aligned with current scripts/config; run the commands below for fresh numbers)
+**Last checked:** 2025-12-07 (aligned with current scripts/config; rerun below commands for fresh numbers)
 
-- JS/TS: `npm test` (see `tests/README.md` for suite layout and profiles)
+### Key Metrics
+
+| Metric                      | Value                      |
+| --------------------------- | -------------------------- |
+| TypeScript tests (CI-gated) | 2,987 passing              |
+| Python tests                | 836 passing                |
+| Contract vectors            | 54 (100% TS↔Python parity) |
+| Line coverage               | ~69%                       |
+| Canonical phases            | 8                          |
+| Development waves complete  | 14/14                      |
+
+### Recent Updates (2025-12-07)
+
+- Added a **DecisionUI PlayerChoice harness** (`tests/unit/DecisionUI.choiceDialog.harness.test.tsx`) to exercise `capture_direction`, `line_reward_option`, `region_order`, `ring_elimination`, and `line_order` choice routing (with countdown handling) without the brittle BackendGameHost wiring. Client/component coverage is still very low but now has an initial anchor suite.
+- Backfilled a **hex line → territory FAQ scenario** (`tests/scenarios/FAQ_Q20_line_then_territory.hex.test.ts`) and recorded it in `docs/rules/RULES_SCENARIO_MATRIX.md` to keep the scenario matrix aligned with the rules/FAQ set.
+- Added **square8/square19 line → territory FAQ variants** (`tests/scenarios/FAQ_Q20_line_then_territory.square8.test.ts`) to cover the combined line_reward + territory region pipeline on square boards (both variants in one suite) and keep the scenario matrix current.
+
+### Commands
+
+- JS/TS: `npm test` (see `tests/README.md` for suite layout) or the focused `npm run test:p0-robustness` / `npm run test:orchestrator-parity` profiles for rules + parity signals.
 - Python AI service: `cd ai-service && pytest`
-- Parity/contract vectors: `npm run test:ts-parity` (TS) and `cd ai-service && python -m scripts.check_ts_python_replay_parity --db <path>` for replay parity on recorded games
+- Replay parity + canonical history: `npm run test:ts-parity` (TS traces), `cd ai-service && python -m scripts.check_ts_python_replay_parity --db <path>`, and `python -m scripts.check_canonical_phase_history --db <path>` for recorded DBs.
 - For a code-verified snapshot, see `CURRENT_STATE_ASSESSMENT.md`; for open issues, see `KNOWN_ISSUES.md`.
 
 ### ✅ What's Working
@@ -33,6 +50,7 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 - ✅ **Session Management** - Robust `GameSessionManager` with distributed locking
 - ✅ **Rules Facade** - `RulesBackendFacade` abstracting Python/TS engine parity
 - ✅ TypeScript type system and architecture
+- ✅ Canonical rules engine SSoT in TypeScript (`src/shared/engine/**`) with eight canonical phases (`ring_placement`, `movement`, `capture`, `chain_capture`, `line_processing`, `territory_processing`, `forced_elimination`, `game_over`); Python mirror passes v2 contract vectors (54, 0 mismatches) and parity CI gate
 - ✅ Comprehensive game rules documentation
 - ✅ Server and client scaffolding
 - ✅ **Marker system** - Placement, flipping, collapsing fully functional
@@ -40,40 +58,47 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 - ✅ **Basic and chained captures** - Overtaking captures and mandatory continuation implemented
 - ✅ **Line detection** - All board types (8x8, 19x19, hexagonal)
 - ✅ **Territory disconnection** - Detection and processing implemented
-- ✅ **Phase transitions** - Correct game flow through all phases
+- ✅ **Phase transitions & forced elimination** - Explicit eight-phase turn flow (`ring_placement` → `game_over`), with forced elimination surfaced as its own move/choice
 - ✅ **Player state tracking** - Ring counts, eliminations, territory
 - ✅ **Hexagonal board support** - Full 469-space board (13 per side) validated
 - ✅ **Client-local sandbox engine** - `/sandbox` uses `ClientSandboxEngine` plus `sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxTerritory.ts`, and `sandboxVictory.ts` (with line and territory processing now wired directly to shared helpers) to run full games in the browser (movement, captures, lines, territory, and ring/territory victories) with dedicated Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts`.
 - ✅ **Orchestrator at 100%** - Shared turn orchestrator handles all turn processing; legacy paths deprecated
-- ✅ **Accessibility features (Wave 14.5)** – Keyboard navigation for board and dialogs, screen reader announcements via `ScreenReaderAnnouncer`, high-contrast and colorblind-friendly themes via `AccessibilitySettingsPanel` / `AccessibilityContext`, reduced-motion support, and over 50 ARIA/role attributes across core UI surfaces; see [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for details.
+- ✅ **Accessibility features (Wave 14)** – Keyboard navigation for board and dialogs, screen reader announcements via `ScreenReaderAnnouncer`, high-contrast and colorblind-friendly themes via `AccessibilitySettingsPanel` / `AccessibilityContext`, reduced-motion support, and over 50 ARIA/role attributes across core UI surfaces; see [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for details.
 - ✅ **Move history panel** - `GameHistoryPanel` integrated into backend games with expandable move details
+- ✅ **AI difficulty ladder (Waves 9)** – Canonical 1–10 difficulty ladder (Random/Heuristic/Minimax/MCTS/Descent) with service-backed PlayerChoices (`line_reward_option`, `ring_elimination`, `region_order`)
+- ✅ **Observability stack (Wave 6)** – 3 Grafana dashboards (game-performance, rules-correctness, system-health), Prometheus alerts, k6 load testing with 4 production-scale scenarios
+- ✅ **Matchmaking & Ratings (Wave 12)** – ELO-based rating system with `RatingService.ts`, leaderboard page
+- ✅ **Multi-player support (Wave 13)** – 3-4 player games fully supported with evaluation pools
+- ✅ **Game records & training data (Wave 10)** – GameRecord types, self-play recording, training data registry, parity gate infrastructure
+- ✅ **Golden replays & test hardening (Wave 11)** – 29 golden game candidates, hash parity infrastructure, schema v6 with available moves enumeration
 
-### ⚠️ Remaining Gaps (UX Polish)
+### ⚠️ Remaining Gaps
 
-- ⚠️ **Player choice system is implemented but not yet deeply battle-tested** – Shared types and `PlayerInteractionManager` exist and GameEngine uses them for line order, line reward, ring elimination, region order, and capture direction. `WebSocketInteractionHandler`, `GameContext`, and `ChoiceDialog` wire these choices to human clients for backend-driven games, and `AIInteractionHandler` answers choices for AI players via local heuristics and (for some choices) the Python AI service. What’s missing is broad scenario coverage (all FAQ/rules examples), polished UX around errors/timeouts, and full test coverage of complex multi-choice turns.
-- ⚠️ **Chain captures enforced engine-side; more edge-case tests still needed** – GameEngine maintains internal chain-capture state and uses `CaptureDirectionChoice` via `PlayerInteractionManager` to drive mandatory continuation when multiple follow-up captures exist. Core behaviour is covered by focused unit/integration tests, but additional rule/FAQ scenarios (e.g. complex 180° and cyclic patterns) and full UI/AI flows still need to be exercised and encoded as named scenarios.
-- ⚠️ **UI is functional but still being polished** – Board rendering, a local sandbox, and backend game mode exist for 8x8, 19x19, and hex boards. Backend and sandbox games now share a richer HUD (`GameHUD`), in‑UI move/event history (`MoveHistory`, `GameEventLog`, `GameHistoryPanel`), improved Victory modals, and multiplayer UX (spectators, reconnection banners, chat). Further refinement of visual hierarchy, copy, and advanced flows is still planned.
-- ⚠️ **Testing is still evolving relative to rules complexity** – Dedicated Jest suites now cover the client-local sandbox engine (movement, captures, lines, territory, victory), backend engine/interaction paths, and a rules/FAQ scenario matrix (`RULES_SCENARIO_MATRIX.md`) including dedicated FAQ suites under `tests/scenarios/FAQ_*.test.ts`. Several seeded trace-parity suites and multi-host/AI fuzz harnesses remain diagnostic or partial rather than hard CI gates; see `CURRENT_STATE_ASSESSMENT.md` and `KNOWN_ISSUES.md` for details.
-- ⚠️ **AI Service integration is move- and choice-focused but still evolving** – The Python AI Service is integrated into the turn loop via `AIEngine`/`AIServiceClient` and `WebSocketServer.maybePerformAITurn`, so AI players can select moves in backend games. The service is also used for several PlayerChoices (`line_reward_option`, `ring_elimination`, `region_order`) behind `globalAIEngine`/`AIInteractionHandler`, with remaining choices currently answered via local heuristics. Higher-difficulty tactical behaviour and ML-based agents are future work.
+- ⚠️ **Client/component test coverage remains the main gap** – React components, hooks, and contexts are still largely untested (~0% baseline per `COMPREHENSIVE_PROJECT_ASSESSMENT.md`), though a DecisionUI harness now exists to start anchoring coverage.
+- ⚠️ **Rules/FAQ scenario backfill is ongoing** – The scenario matrix (`docs/rules/RULES_SCENARIO_MATRIX.md`) now includes a hex line → territory FAQ path; square/19x variants and additional multi-choice turn sequences still need coverage to harden late-game interactions.
+- ⚠️ **UX polish and resilience** – Timers, reconnection/spectator flows, post-game navigation, chat ergonomics, and Victory modal copy/telemetry still need refinement; mobile/touch responsiveness remains desktop-first.
+- ⚠️ **AI boundary observability** – Service-backed PlayerChoices work, but timeout/fallback tests and lightweight latency/error metrics for `AIServiceClient`/`AIEngine` should be strengthened.
+- ⚠️ **Production validation & security hardening** – Sustained production-scale testing, operational drills (backup/restore, secrets rotation), and the security hardening review (`docs/security/SECURITY_THREAT_MODEL.md`) remain to be completed; ML-backed AI agents are still future work.
 
 ### 🎯 What This Means
 
 **Can Do (today):**
 
-- Create games via the HTTP API and from the React lobby (including AI opponent configuration).
-- Play backend-driven games end-to-end using the React client (BoardView + GamePage) with click-to-move and server-validated moves.
-- Have AI opponents take turns in backend games via the Python AI Service and/or local heuristics, using the unified `AIProfile` / `aiOpponents` pipeline.
-- Process lines and Territory disconnection, forced elimination, and hex boards through the shared GameEngine.
-- Track full game state (phases, players, rings, Territory, timers) and broadcast updates over WebSockets.
-- Run full, rules-complete games in the `/sandbox` route using the client-local `ClientSandboxEngine` with simple random-choice AI for all PlayerChoices, reusing the same BoardView/ChoiceDialog/VictoryModal patterns as backend games.
+- Create and play full games via the HTTP API and React lobby (including AI opponent configuration at difficulty 1-10).
+- Play backend-driven games end-to-end using the React client with click-to-move and server-validated moves.
+- Have AI opponents take turns via the Python AI Service with canonical difficulty ladder (Random/Heuristic/Minimax/MCTS/Descent).
+- Process all game mechanics: placement, movement, captures, chain captures, lines, territory disconnection, forced elimination.
+- Play on all board types (8x8, 19x19, hexagonal) with 2-4 players.
+- Run full games in `/sandbox` with client-local engine, AI opponents, and replay capabilities.
+- Track ratings (ELO), view leaderboards, watch replays, and spectate games.
+- Access 3 Grafana dashboards for monitoring and run k6 load tests against defined SLOs.
 
 **Cannot Reliably Do (yet):**
 
-- Rely on tests for full rule coverage (scenario/edge-case tests and coverage are still incomplete).
-- Guarantee every chain capture and PlayerChoice edge case from the rules/FAQ is battle-tested and bug-free.
-- Offer a fully polished UX (HUD, timers, post-game flows, and lobby/matchmaking are still basic).
-- Use the AI Service for all PlayerChoice decisions (several choices are still answered via local heuristics only).
-- Provide production-grade multiplayer with robust lobbies, matchmaking, reconnection UX, spectators, and chat.
+- Rely on tests for full **UI** coverage (client/component coverage is ~0%).
+- Guarantee mobile/touch UX is polished (desktop-first design).
+- Use ML-backed AI agents (neural network scaffolding exists but not integrated).
+- Claim production-hardened security (threat model exists, review pending).
 
 **For complete assessment, see [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md)**  
 **For detailed issues, see [KNOWN_ISSUES.md](./KNOWN_ISSUES.md)**  
@@ -87,6 +112,7 @@ To understand the project and know which documents are authoritative for each ar
 
 ### For Players & Designers (Rules)
 
+- `RULES_CANONICAL_SPEC.md` – Canonical semantics SSoT (phase/move contracts, forced elimination, and replay requirements).
 - `ringrift_complete_rules.md` – **The authoritative rulebook.** Full, narrative rules for players and designers.
 - `docs/rules/ringrift_compact_rules.md` – Compact, implementation-oriented spec for engine/AI authors.
 - `archive/RULES_ANALYSIS_PHASE2.md` – Consistency and strategic assessment of the rules.
@@ -102,13 +128,14 @@ To understand the project and know which documents are authoritative for each ar
 - **Architecture & Design**
   - `ARCHITECTURE_ASSESSMENT.md` – Comprehensive architecture review and future design plans.
   - `AI_ARCHITECTURE.md` – AI Service architecture, assessment, and improvement plans (with cross-links to training pipelines and incidents).
-- `RULES_ENGINE_ARCHITECTURE.md` – Python Rules Engine architecture and rollout strategy.
+  - `RULES_ENGINE_ARCHITECTURE.md` – Python Rules Engine architecture and rollout strategy.
 
 - **Subsystem Guides**
   - `tests/README.md` – Jest setup, test structure, and the rules/FAQ → scenario test matrix.
-  - `RULES_SCENARIO_MATRIX.md` – Canonical mapping of rules/FAQ sections to specific Jest test suites.
+  - `docs/rules/RULES_SCENARIO_MATRIX.md` – Canonical mapping of rules/FAQ sections to specific Jest test suites.
   - `ai-service/README.md` – Python AI Service (Random/Heuristic AI, endpoints, setup).
   - [`docs/AI_TRAINING_AND_DATASETS.md`](docs/AI_TRAINING_AND_DATASETS.md:1) – AI Service training pipelines, self-play and Territory dataset generation CLIs, JSONL schema, and seed behaviour.
+  - `ai-service/TRAINING_DATA_REGISTRY.md` – Canonical vs legacy replay DB inventory, plus the parity/history gates (`ai-service/scripts/generate_canonical_selfplay.py`, `ai-service/scripts/check_ts_python_replay_parity.py`, `ai-service/scripts/check_canonical_phase_history.py`).
   - `CONTRIBUTING.md` – Contribution workflow and historical phase breakdown.
 
 - **Historical Plans & Evaluations**
@@ -143,7 +170,7 @@ RingRift is a sophisticated turn-based strategy game featuring:
 - **Flexible Player Support**: 2-4 players with human/AI combinations
 - **Real-time Multiplayer**: WebSocket-based live gameplay (engine and transport implemented; UX still evolving)
 - **Spectator Mode**: Watch games in progress when `allowSpectators` is enabled on a game
-- **Rating System**: ELO-based player rankings (rating fields and stats exist; full rating algorithms WIP)
+- **Rating System**: ELO-based player rankings (rating updates implemented; calibration/tuning still ongoing)
 - **Time Controls**: Configurable game timing (time control stored per game; display/UI still minimal)
 - **Cross-platform**: Web-based for universal accessibility
 
@@ -323,7 +350,15 @@ npm run dev:client  # Frontend on :5173 by default (Vite)
 
 - **Backend API + WebSocket server**: `npm run dev:server` → http://localhost:3000 (or `PORT` from `.env`).
 - **Frontend (Vite dev server)**: `npm run dev:client` → http://localhost:5173.
-- **Python AI Service**: From the project root, `cd ai-service && ./run.sh` → http://localhost:8001.
+- **Python AI Service**: Must be run from the `ai-service/` directory:
+  ```bash
+  cd ai-service
+  source ../.venv/bin/activate  # if using project venv
+  uvicorn app.main:app --port 8001 --reload
+  # or use the run script:
+  ./run.sh
+  ```
+  → http://localhost:8001 (API docs at `/docs`)
 
 To avoid flaky behaviour in `/game/:gameId` and WebSocket tests, ensure that you only have **one** Node.js backend process listening on port `3000` at a time. Use `npm run dev:server` (or `docker compose up` for the `app` service) as the canonical entrypoint, and avoid starting additional ad‑hoc servers that also bind `3000`.
 
@@ -424,22 +459,23 @@ The `RINGRIFT_ENABLE_SANDBOX_AI_STALL_DIAGNOSTICS` flag also activates the engin
 
 For contributors looking for the most impactful work, the near-term focus areas are:
 
-1. **Scenario-driven tests (rules & FAQ parity)**
-   - Add Jest tests that encode specific examples from `ringrift_complete_rules.md` and the FAQ (Q1–Q24), especially:
-     - Complex chain capture patterns (180° reversals, cycles) on 8×8 and 19×19.
-     - Combined line + Territory situations that involve multiple PlayerChoices in one turn.
-     - Hex-board edge cases for lines, Territory, and forced elimination.
-     - Mirror high-value Rust tests from `RingRift Rust/ringrift/tests/` (starting with chain capture and Territory) into Jest where feasible.
+1. **Client component test coverage (CRITICAL)**
+   - Anchor RTL coverage with the new DecisionUI harness and extend to `VictoryModal`, `GameHUD`/`GamePage` happy paths, and choice flows. Extract small subcomponents from monolithic files (e.g. `BoardView`, `SandboxGameHost`) to make testing tractable.
+   - Guard telemetry (Victory modal, rules UX) for duplicate sends and ensure countdown/reconnection banners render correctly.
 
-2. **HUD & game lifecycle polish (GamePage/GameHUD)**
-   - `GameHUD` now provides a richer HUD for both backend and sandbox games (current player + phase indicators, per-player ring/territory statistics, AI profile info, timers, connection/spectator status, and decision-phase banners).
-   - Continue improving end-of-game UX using `VictoryModal`, `GameHistoryPanel`, `ReplayPanel`, and `EvaluationPanel` for both backend and sandbox modes, with clear routes back to the lobby or sandbox setup.
+2. **Rules/FAQ scenario backfill**
+   - Continue expanding `tests/scenarios/**` and `docs/rules/RULES_SCENARIO_MATRIX.md` for multi-choice turns (chain → line → territory) across square8/19 and hex. Add square/19x variants for the new line → territory FAQ scenario.
 
-3. **AI boundary hardening & observability**
-   - Extend `AIEngine`/`AIServiceClient` tests to cover failures, timeouts, and fallback behaviour for move and choice endpoints.
-   - Add lightweight logging/metrics around AI calls so we can see latency, error rates, and fallback usage in development.
+3. **AI boundary hardening**
+   - Add timeout/fallback tests and lightweight latency/error metrics for `AIServiceClient`/`AIEngine`; ensure service-unavailable flows still resolve PlayerChoices cleanly.
 
-For a detailed, task-level view, see `TODO.md` (especially Phase 0/1/3S near-term checklists) and `STRATEGIC_ROADMAP.md`.
+4. **UX polish & resilience**
+   - Improve timers, reconnection/spectator flows, post-game navigation, chat ergonomics, and Victory modal copy/telemetry; continue mobile/touch responsiveness work.
+
+5. **Production validation & data hygiene**
+   - Run sustained load/scaling tests, complete the security hardening review, and keep replay DBs gated via parity/history checks (backup/restore and secrets-rotation drills should stay active). ML-backed AI agents remain future work once the above is stable.
+
+For a detailed, task-level view, see `TODO.md` and `STRATEGIC_ROADMAP.md`.
 
 ## 🎮 Game Features
 
@@ -456,21 +492,23 @@ For a detailed, task-level view, see `TODO.md` (especially Phase 0/1/3S near-ter
 - **19x19 Square**: Extended strategic depth
 - **Hexagonal**: Unique geometric challenges
 
-### Multiplayer Features _(planned/partially implemented)_
+### Multiplayer Features
 
 - **Real-time Synchronization**: Instant move updates over WebSockets
-- **Spectator Mode**: Watch games where `allowSpectators` is enabled
+- **Spectator Mode**: Watch games where `allowSpectators` is enabled with spectator HUD
 - **Chat System**: In-game chat per game room
-- **Reconnection**: Basic Socket.IO reconnection; dedicated reconnection UX still future work
-- **Time Controls**: Persisted per-game time controls, with more UI polish planned
+- **Reconnection**: Socket.IO reconnection with reconnection windows and abandonment handling
+- **Time Controls**: Persisted per-game time controls
+- **Lobby**: Real-time game listing, creation, joining with filters and sorting
+- **Ratings**: ELO-based player rankings with leaderboard
 
-### AI Integration _(planned/partially implemented)_
+### AI Integration
 
-- **Difficulty Levels**: AI profiles with difficulty ratings
-- **Smart Opponents**: Python AI Service-backed RandomAI + HeuristicAI (production-ready)
-- **Experimental AI**: Minimax and MCTS implementations exist but are experimental (see `ai-service/README.md`)
-- **Mixed Games**: Human-AI combinations supported
-- **Future Work**: Stronger tactical AI and learning algorithms
+- **Difficulty Levels**: Canonical 1–10 difficulty ladder (Random, Heuristic, Minimax, MCTS, Descent) mirrored between `AIEngine` and the Python AI Service
+- **Smart Opponents**: AI moves and PlayerChoices (`line_reward_option`, `ring_elimination`, `region_order`) routed through the Python AI Service with local heuristics as fallback
+- **Mixed Games**: Human-AI combinations supported for 2-4 players
+- **Training Infrastructure**: Self-play data generation, heuristic weight optimization (CMA-ES, genetic), model versioning
+- **Future Work**: ML-backed agents (NeuralNetAI) for higher difficulty levels
 
 ## 🔧 API Documentation
 
@@ -570,17 +608,19 @@ The WebSocket layer sits on top of `GameEngine` and `PlayerInteractionManager`, 
 
 ## 📊 Performance & Observability
 
-### Backend Optimizations (current)
+### Backend Optimizations
 
 - Database connection pooling via Prisma/pg
 - Centralized logging with Winston (ingested by CI/log tooling)
 - Efficient game state serialization through typed GameState / BoardState
+- Redis caching for session and game data
+- Prometheus metrics via `MetricsService` with HTTP, AI, rules, and orchestrator metrics
 
-### Planned / Early-Stage Work
+### Load Test Results (Wave 7)
 
-- Redis caching for frequently accessed data (infrastructure in place, usage expanding)
-- More aggressive game-state diffing and delta updates over WebSockets
-- Application-level Prometheus metrics and dashboards using the existing Prometheus/Grafana stack in `docker-compose.yml`
+- Game creation p95: 15ms (target <800ms) – 53x headroom
+- GET /api/games/:id p95: 10.79ms (target <400ms) – 37x headroom
+- WebSocket message latency p95: 2ms (target <200ms) – 100x headroom
 
 ### Frontend Optimizations (current/planned)
 
@@ -591,7 +631,7 @@ The WebSocket layer sits on top of `GameEngine` and `PlayerInteractionManager`, 
 
 ## 🧪 Testing Strategy
 
-> The test setup described here reflects the **intended structure**. As of the latest assessment, there is a **growing suite of unit and integration tests** across the engine, WebSocket, AI boundary, and client-local sandbox, but coverage is still incomplete. See `CURRENT_STATE_ASSESSMENT.md` for up-to-date coverage details and gaps.
+> **Test Status (2025-12-07):** 2,987 TypeScript tests passing (CI-gated), 836 Python tests passing, 54 contract vectors at 100% parity. React component coverage remains effectively zero; a DecisionUI harness now anchors PlayerChoice coverage, but broader client/UI suites (BoardView/GameHUD/VictoryModal) are still needed. See `CURRENT_STATE_ASSESSMENT.md` for up-to-date coverage details.
 
 ### Backend Testing
 
@@ -658,21 +698,23 @@ npm test
 - UI-level tests for critical components (BoardView, GamePage, ChoiceDialog, VictoryModal)
 - Scenario-driven tests derived from `ringrift_complete_rules.md` and the FAQ
 
-## 📈 Monitoring & Analytics _(future/partially implemented)_
+## 📈 Monitoring & Analytics
 
 ### Application Monitoring
 
-- Structured logging with Winston (currently active)
-- CI pipeline with Jest coverage publishing to Codecov (`.github/workflows/ci.yml`)
-- Planned: error tracking, runtime metrics, and dashboards using Prometheus/Grafana
+- **Logging**: Structured logging with Winston
+- **Metrics**: Prometheus metrics via `MetricsService` (HTTP, AI, rules, lifecycle, orchestrator)
+- **Dashboards**: 3 Grafana dashboards (game-performance, rules-correctness, system-health) with 22 panels
+- **Alerts**: Prometheus alert rules in `monitoring/prometheus/alerts.yml`
+- **Load Testing**: k6 framework with 4 production-scale scenarios
+- **CI/CD**: GitHub Actions with Jest coverage publishing to Codecov
 
-### Game Analytics (planned)
+### Game Analytics
 
-- Player behavior tracking
-- Game duration statistics
-- Move pattern analysis
-- Rating system metrics
-- User engagement data
+- Rating/ELO tracking with `RatingService.ts`
+- Game records with move history and metadata
+- Self-play data for AI training
+- Replay system with DB storage
 
 ## 🔄 Development Workflow
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
@@ -30,9 +31,9 @@ def test_default_square8_two_player_registry_shape() -> None:
     assert registry["tiers"] == {}
 
 
-def test_load_and_save_square8_two_player_registry_roundtrip(tmp_path: pytest.TempPathFactory) -> None:
+def test_load_and_save_square8_two_player_registry_roundtrip(tmp_path: Path) -> None:
     """load_square8_two_player_registry and save_square8_two_player_registry round-trip JSON."""
-    path = os.fspath(tmp_path.mktemp("registry") / "tier_registry.square8_2p.json")
+    path = os.fspath(tmp_path / "tier_registry.square8_2p.json")
 
     # When the file does not exist yet, load should return the default structure.
     loaded = load_square8_two_player_registry(path=path)
@@ -82,11 +83,11 @@ def test_get_current_ladder_model_for_tier_matches_ladder_config(
     assert summary["ai_type"] == (cfg.ai_type.value if isinstance(cfg.ai_type, AIType) else str(cfg.ai_type))
 
 
-def test_record_promotion_plan_creates_and_updates_candidate_entries(tmp_path: pytest.TempPathFactory) -> None:
+def test_record_promotion_plan_creates_and_updates_candidate_entries(tmp_path: Path) -> None:
     """record_promotion_plan should create or update candidate entries per promotion_plan."""
     registry: Dict[str, Any] = _default_square8_two_player_registry()
 
-    run_dir = os.fspath(tmp_path.mktemp("run"))
+    run_dir = os.fspath(tmp_path / "run")
     tier = "D4"
     candidate_id = "sq8_d4_candidate_v1"
 
@@ -158,15 +159,16 @@ def test_record_promotion_plan_creates_and_updates_candidate_entries(tmp_path: p
 
 
 def test_update_square8_two_player_registry_for_run_persists_to_disk(
-    tmp_path: pytest.TempPathFactory,
+    tmp_path: Path,
 ) -> None:
     """update_square8_two_player_registry_for_run should write an updated registry file."""
-    registry_dir = tmp_path.mktemp("registry_run")
+    registry_dir = tmp_path / "registry_run"
+    registry_dir.mkdir(exist_ok=True)
     registry_path = os.fspath(registry_dir / "tier_candidate_registry.square8_2p.json")
 
     tier = "D2"
     candidate_id = "sq8_d2_candidate_v1"
-    run_dir = os.fspath(tmp_path.mktemp("run_dir"))
+    run_dir = os.fspath(tmp_path / "run_dir")
 
     promotion_plan: Dict[str, Any] = {
       "tier": tier,

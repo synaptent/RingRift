@@ -1,8 +1,16 @@
+import os
+
+import pytest
+
 from app.game_engine import GameEngine
 from app.models.core import Move, MoveType, Position
 from app.training.env import RingRiftEnv
 
 
+@pytest.mark.skipif(
+    os.environ.get("RINGRIFT_SKIP_PHASE_INVARIANT", "0") in {"1", "true", "yes", "on"},
+    reason="Test requires phase/player invariant enforcement to be enabled",
+)
 def test_apply_move_rejects_wrong_player():
     """Ensure apply_move enforces move.player == current_player."""
     env = RingRiftEnv(board_type="square8", num_players=2)

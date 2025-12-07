@@ -92,6 +92,9 @@ def run_selfplay_soak(
         # This prevents non-canonical games (e.g., actor mismatches) from entering
         # the canonical DB in the first place.
         "RINGRIFT_PARITY_VALIDATION": "strict",
+        # Ensure host applies required bookkeeping/no-op moves for the same actor
+        # in line/territory phases, matching TS orchestration.
+        "RINGRIFT_FORCE_BOOKKEEPING_MOVES": "1",
         "PYTHONPATH": str(AI_SERVICE_ROOT),
         # Keep OpenMP usage conservative for long-running soaks and
         # avoid environment-specific SHM issues on some platforms.

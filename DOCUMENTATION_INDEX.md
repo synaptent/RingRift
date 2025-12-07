@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-06
+> **Last Updated:** 2025-12-07
 > **Organization:** Core docs in root (~16 files), detailed docs in `/docs/` subdirectories
 
 This index catalogs all project documentation organized by topic and location. For a lightweight landing page, see `docs/INDEX.md`.

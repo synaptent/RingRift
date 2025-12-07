@@ -261,6 +261,59 @@ describe('GameHUD – view-model props', () => {
     expect(chip).toHaveClass('bg-amber-500');
   });
 
+  it('renders reconnection status with warning styling and no stale hint', () => {
+    const viewModel: HUDViewModel = {
+      ...createHUDViewModel(),
+      connectionStatus: 'reconnecting',
+      isConnectionStale: false,
+    };
+
+    render(
+      <GameHUD
+        viewModel={viewModel}
+        timeControl={{ type: 'rapid', initialTime: 600, increment: 0 }}
+      />
+    );
+
+    const connection = screen.getByText(/Connection: Reconnecting/i);
+    expect(connection).toBeInTheDocument();
+    expect(connection).toHaveClass('text-amber-300');
+    expect(screen.queryByText(/\(no recent updates from server\)/i)).toBeNull();
+  });
+
+  it('shows decision time-pressure badge with warning severity for local actor', () => {
+    const viewModel: HUDViewModel = {
+      ...createHUDViewModel(),
+      decisionPhase: {
+        isActive: true,
+        actingPlayerNumber: 1,
+        actingPlayerName: 'Alice',
+        isLocalActor: true,
+        label: 'Your decision: Capture direction',
+        description: 'Choose direction',
+        shortLabel: 'Capture direction',
+        timeRemainingMs: 9_000,
+        showCountdown: true,
+        warningThresholdMs: 10_000,
+        isServerCapped: false,
+        spectatorLabel: 'Waiting for Alice',
+      },
+    };
+
+    render(
+      <GameHUD
+        viewModel={viewModel}
+        timeControl={{ type: 'rapid', initialTime: 600, increment: 0 }}
+      />
+    );
+
+    const badge = screen.getByTestId('hud-decision-time-pressure');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveAttribute('data-severity', 'warning');
+    expect(badge).toHaveTextContent('Your decision timer:');
+    expect(badge).toHaveTextContent('0:09');
+  });
+
   it('renders skip hint badge when decisionPhase.canSkip is true', () => {
     const baseVm = createHUDViewModel();
     const viewModel: HUDViewModel = {

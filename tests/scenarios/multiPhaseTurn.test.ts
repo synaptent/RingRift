@@ -255,6 +255,71 @@ describe('Multi-phase turn scenarios', () => {
     expect(finalState.gameStatus).toBe('active');
   });
 
+  it('observes movement → capture/chain → line → territory order for full-sequence fixture', async () => {
+    const fixture = createFullSequenceTurnFixture();
+    const engine = createSandboxEngineForTest();
+    const adapter = getSandboxAdapter(engine);
+
+    seedEngineFromFixture(engine, fixture);
+
+    const observed: GamePhase[] = [];
+    const pushPhase = (phase: GamePhase) => {
+      if (observed[observed.length - 1] !== phase) {
+        observed.push(phase);
+      }
+    };
+
+    pushPhase(engine.getGameState().currentPhase);
+
+    // Apply the triggering action
+    expect(adapter.validateMove(fixture.triggeringAction).valid).toBe(true);
+    await engine.applyCanonicalMove(fixture.triggeringAction);
+    pushPhase(engine.getGameState().currentPhase);
+
+    // Continue until turn ends or a phase repeats excessively
+    const MAX_STEPS = 24;
+    const startPlayer = engine.getGameState().currentPlayer;
+    for (let step = 0; step < MAX_STEPS; step++) {
+      const state = engine.getGameState();
+      // If player rotated, turn ended
+      if (state.currentPlayer !== startPlayer) break;
+
+      const moves = adapter.getValidMoves();
+      if (moves.length === 0) break;
+
+      // Prefer non-skip moves to exercise processing; fall back to first move
+      const next =
+        moves.find((m: Move) => m.type !== 'skip_capture' && m.type !== 'no_line_action') ??
+        moves[0];
+
+      expect(adapter.validateMove(next).valid).toBe(true);
+      await engine.applyCanonicalMove(next);
+      pushPhase(engine.getGameState().currentPhase);
+    }
+
+    // Ensure we saw the critical processing phases in order
+    const order = [
+      'movement',
+      'capture',
+      'chain_capture',
+      'line_processing',
+      'territory_processing',
+    ] as GamePhase[];
+    const indices: number[] = [];
+    for (const phase of order) {
+      const idx = observed.indexOf(phase);
+      indices.push(idx);
+    }
+
+    expect(indices[0]).toBe(0); // movement starts
+    // capture or chain_capture may be skipped; ensure at least one present
+    expect(Math.max(indices[1], indices[2])).toBeGreaterThan(0);
+    const lineIdx = indices[3];
+    const territoryIdx = indices[4];
+    expect(lineIdx).toBeGreaterThan(0);
+    expect(territoryIdx).toBeGreaterThan(lineIdx);
+  });
+
   /**
    * Test placement to movement phase transition.
    */

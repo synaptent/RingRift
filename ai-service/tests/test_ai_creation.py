@@ -17,13 +17,14 @@ TEST_TIMEOUT_SECONDS = 30
 
 @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
 def test_select_ai_type():
-    # Canonical mapping:
-    #   1→Random, 2→Heuristic, 3–6→Minimax, 7–8→MCTS, 9–10→Descent
+    # Canonical mapping (updated 2025):
+    #   1→Random, 2→Heuristic, 3–4→Minimax, 5–8→MCTS, 9–10→Descent
     assert _select_ai_type(1) == AIType.RANDOM
     assert _select_ai_type(2) == AIType.HEURISTIC
     assert _select_ai_type(3) == AIType.MINIMAX
     assert _select_ai_type(4) == AIType.MINIMAX
-    assert _select_ai_type(6) == AIType.MINIMAX
+    assert _select_ai_type(5) == AIType.MCTS
+    assert _select_ai_type(6) == AIType.MCTS
     assert _select_ai_type(7) == AIType.MCTS
     assert _select_ai_type(8) == AIType.MCTS
     assert _select_ai_type(9) == AIType.DESCENT
@@ -32,16 +33,16 @@ def test_select_ai_type():
 
 @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
 def test_difficulty_profile_mapping():
-    """Canonical ladder profiles for difficulties 1–10."""
+    """Canonical ladder profiles for difficulties 1–10 (updated 2025)."""
     profiles = {
         1: (AIType.RANDOM, 0.5, 150, "v1-random-1"),
         2: (AIType.HEURISTIC, 0.3, 200, "v1-heuristic-2"),
-        3: (AIType.MINIMAX, 0.2, 1250, "v1-minimax-3"),
-        4: (AIType.MINIMAX, 0.1, 2100, "v1-minimax-4"),
-        5: (AIType.MINIMAX, 0.05, 3500, "v1-minimax-5"),
-        6: (AIType.MINIMAX, 0.02, 4800, "v1-minimax-6"),
-        7: (AIType.MCTS, 0.0, 7000, "v1-mcts-7"),
-        8: (AIType.MCTS, 0.0, 9600, "v1-mcts-8"),
+        3: (AIType.MINIMAX, 0.15, 1800, "v1-minimax-3"),
+        4: (AIType.MINIMAX, 0.08, 2800, "v1-minimax-4-nnue"),
+        5: (AIType.MCTS, 0.05, 4000, "v1-mcts-5"),
+        6: (AIType.MCTS, 0.02, 5500, "v1-mcts-6-neural"),
+        7: (AIType.MCTS, 0.0, 7500, "v1-mcts-7-neural"),
+        8: (AIType.MCTS, 0.0, 9600, "v1-mcts-8-neural"),
         9: (AIType.DESCENT, 0.0, 12600, "v1-descent-9"),
         10: (AIType.DESCENT, 0.0, 16000, "v1-descent-10"),
     }
@@ -94,11 +95,11 @@ def test_create_ai_instance(monkeypatch):
     ai = _create_ai_instance(AIType.MCTS, 1, config)
     assert isinstance(ai, MCTSAI)
 
-    # Patch HexNeuralNet used by DescentAI to a lightweight stub so that
+    # Patch NeuralNetAI used by DescentAI to a lightweight stub so that
     # constructing a DescentAI instance does not allocate large tensors.
     import app.ai.descent_ai as descent_mod
 
-    class DummyHexNet:
+    class DummyNeuralNetAI:
         def __init__(self, *args, **kwargs):
             self.args = args
             self.kwargs = kwargs
@@ -108,8 +109,8 @@ def test_create_ai_instance(monkeypatch):
 
     monkeypatch.setattr(
         descent_mod,
-        "HexNeuralNet",
-        DummyHexNet,
+        "NeuralNetAI",
+        DummyNeuralNetAI,
         raising=True,
     )
 

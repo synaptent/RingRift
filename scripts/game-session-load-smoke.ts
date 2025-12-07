@@ -34,7 +34,7 @@
  *     npm run test:orchestrator:s-invariant
  */
 
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 import { performance } from 'perf_hooks';
 import { io, Socket } from 'socket.io-client';
 import type { CreateGameRequest } from '../src/shared/types/game';
@@ -122,12 +122,17 @@ function parseArgs(argv: string[]): LoadArgs {
 }
 
 function getApiClient(baseUrl: string, accessToken?: string) {
-  return axios.create({
+  const config: AxiosRequestConfig = {
     baseURL: `${baseUrl.replace(/\/$/, '')}/api`,
     timeout: 20_000,
     validateStatus: () => true,
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-  });
+  };
+
+  if (accessToken) {
+    config.headers = { Authorization: `Bearer ${accessToken}` };
+  }
+
+  return axios.create(config);
 }
 
 async function registerUser(baseUrl: string, index: number): Promise<User> {

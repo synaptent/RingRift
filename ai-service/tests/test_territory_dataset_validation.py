@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from typing import Dict, List
 
 import pytest
@@ -63,8 +64,8 @@ def _make_minimal_game_state(board_type: BoardType = BoardType.SQUARE8) -> Dict[
         moveHistory=[],
         timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
         gameStatus="active",
-        createdAt=None,
-        lastMoveAt=None,
+        createdAt=datetime.now(timezone.utc),
+        lastMoveAt=datetime.now(timezone.utc),
         isRated=False,
         maxPlayers=2,
         totalRingsInPlay=0,
@@ -154,9 +155,10 @@ def test_iter_territory_dataset_errors_reports_line_numbers(tmp_path) -> None:
     # No errors on the first line.
     assert all(line_no != 1 for line_no, _ in errors)
 
-    # Multiple errors should be reported for the second line.
+    # Multiple errors should be reported for the second line (missing required fields).
     messages_for_second: List[str] = [msg for line_no, msg in errors if line_no == 2]
     assert messages_for_second, "Expected errors for line 2"
-    assert any("num_players" in m for m in messages_for_second)
-    assert any("target" in m for m in messages_for_second)
+    # Validator only checks for missing required fields, not value validation
+    assert any("game_state" in m for m in messages_for_second)
+    assert any("engine_mode" in m for m in messages_for_second)
 

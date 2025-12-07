@@ -922,6 +922,8 @@ class RingRiftDataset(Dataset):
             # Generate dummy data in memory for testing
             # Ensure all dummy samples have non-empty policies
             dummy_count = 100
+            # Use board-appropriate policy size instead of hardcoded value
+            dummy_policy_size = get_policy_size_for_board(self.board_type)
             self.data = {
                 'features': np.random.rand(
                     dummy_count, 40, 8, 8
@@ -932,7 +934,7 @@ class RingRiftDataset(Dataset):
                     size=dummy_count,
                 ).astype(np.float32),
                 'policy_indices': np.array([
-                    np.random.choice(55000, 5, replace=False).astype(np.int32)
+                    np.random.choice(dummy_policy_size, 5, replace=False).astype(np.int32)
                     for _ in range(dummy_count)
                 ], dtype=object),
                 'policy_values': np.array([
@@ -940,8 +942,8 @@ class RingRiftDataset(Dataset):
                     for _ in range(dummy_count)
                 ], dtype=object),
             }
-            # Dummy data uses a conservative large policy size
-            self.policy_size = 55000
+            # Use board-appropriate policy size
+            self.policy_size = dummy_policy_size
             self.valid_indices = list(range(dummy_count))
             self.length = dummy_count
             self.spatial_shape = (8, 8)
@@ -1452,8 +1454,8 @@ def train_model(
                 f"Using RingRiftCNN_MultiPlayer with max_players={MAX_PLAYERS}"
             )
     else:
-        # RingRiftCNN for square boards
-        model = RingRiftCNN(
+        # RingRiftCNN_v2 for square boards
+        model = RingRiftCNN_v2(
             board_size=board_size,
             in_channels=10,
             global_features=10,

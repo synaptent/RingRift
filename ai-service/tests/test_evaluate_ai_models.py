@@ -402,6 +402,7 @@ class TestMatchExecution:
             board_type=BoardType.SQUARE8,
             seed=42,
             checkpoint_path=None,
+            checkpoint_path2=None,
             cmaes_weights_path=None,
             minimax_depth=3,
             max_moves_per_game=50,  # Short games for speed
@@ -427,6 +428,7 @@ class TestMatchExecution:
             board_type=BoardType.SQUARE8,
             seed=123,
             checkpoint_path=None,
+            checkpoint_path2=None,
             cmaes_weights_path=None,
             minimax_depth=3,
             max_moves_per_game=100,
@@ -455,6 +457,7 @@ class TestMatchExecution:
             board_type=BoardType.SQUARE8,
             seed=42,
             checkpoint_path=None,
+            checkpoint_path2=None,
             cmaes_weights_path=None,
             minimax_depth=3,
             max_moves_per_game=50,

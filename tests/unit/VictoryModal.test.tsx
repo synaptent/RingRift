@@ -1,4 +1,3 @@
-import React from 'react';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { VictoryModal } from '../../src/client/components/VictoryModal';
@@ -7,8 +6,7 @@ import { GameResult, Player, GameState, BoardState } from '../../src/shared/type
 
 // Helper to create test game result
 function createGameResult(winner: number | undefined, reason: GameResult['reason']): GameResult {
-  return {
-    winner,
+  const base: GameResult = {
     reason,
     finalScore: {
       ringsEliminated: { 1: 15, 2: 8 },
@@ -16,6 +14,8 @@ function createGameResult(winner: number | undefined, reason: GameResult['reason
       ringsRemaining: { 1: 3, 2: 10 },
     },
   };
+
+  return winner === undefined ? base : { ...base, winner };
 }
 
 // Helper to create test players

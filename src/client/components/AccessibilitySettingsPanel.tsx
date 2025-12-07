@@ -8,7 +8,6 @@
  * - Large text mode
  */
 
-import React from 'react';
 import { useAccessibility, type ColorVisionMode } from '../contexts/AccessibilityContext';
 
 // ---------------------------------------------------------------------------
@@ -94,6 +93,9 @@ interface ColorPreviewProps {
 
 function ColorPreview({ mode }: ColorPreviewProps) {
   const { getPlayerColor } = useAccessibility();
+  // The preview currently uses the global accessibility state; keep the mode
+  // prop for future per-mode previews and mark it as used for type-checking.
+  void mode;
 
   return (
     <div className="flex gap-2 mt-2">

@@ -1,5 +1,6 @@
 import { BoardState, BoardType, GameState, Position, positionToString } from '../types/game';
 import { MovementBoardView, hasAnyLegalMoveOrCaptureFromOnBoard } from './core';
+import { hasGlobalPlacementAction, hasForcedEliminationAction } from './globalActions';
 
 export type VictoryReason =
   | 'ring_elimination'
@@ -73,11 +74,68 @@ export function evaluateVictory(state: GameState): VictoryResult {
     };
   }
 
-  // 3) Bare-board structural terminality & global stalemate.
-  const noStacksLeft = state.board.stacks.size === 0;
-  if (!noStacksLeft) {
-    return { isGameOver: false };
+  // 3) Early Last-Player-Standing (R172): if exactly one player has stacks
+  // on the board AND all other players have neither stacks nor rings in hand,
+  // that player wins immediately.
+  const playersWithStacks = new Set<number>();
+  for (const stack of state.board.stacks.values()) {
+    playersWithStacks.add(stack.controllingPlayer);
   }
+
+  if (playersWithStacks.size === 1) {
+    const stackOwner = Array.from(playersWithStacks)[0];
+    const othersHaveMaterial = players.some(
+      (p) =>
+        p.playerNumber !== stackOwner &&
+        (playersWithStacks.has(p.playerNumber) || p.ringsInHand > 0)
+    );
+    if (!othersHaveMaterial) {
+      return {
+        isGameOver: true,
+        winner: stackOwner,
+        reason: 'last_player_standing',
+        handCountsAsEliminated: false,
+      };
+    }
+  }
+
+  // 4) Trapped position stalemate: All active players have stacks but no legal actions.
+  // This handles AI vs AI games that stall when both players are blocked.
+  if (state.board.stacks.size > 0) {
+    let somePlayerCanAct = false;
+
+    for (const p of players) {
+      let playerHasStacks = false;
+      for (const stack of state.board.stacks.values()) {
+        if (stack.controllingPlayer === p.playerNumber) {
+          playerHasStacks = true;
+          break;
+        }
+      }
+
+      const hasMaterial = playerHasStacks || p.ringsInHand > 0;
+      if (!hasMaterial) {
+        continue;
+      }
+
+      if (hasGlobalPlacementAction(state, p.playerNumber)) {
+        somePlayerCanAct = true;
+        break;
+      }
+
+      if (playerHasStacks && !hasForcedEliminationAction(state, p.playerNumber)) {
+        somePlayerCanAct = true;
+        break;
+      }
+    }
+
+    if (somePlayerCanAct) {
+      return { isGameOver: false };
+    }
+  }
+
+  // 5) Bare-board structural terminality & global stalemate.
+  const noStacksLeft = state.board.stacks.size === 0;
 
   const anyRingsInHand = players.some((p) => p.ringsInHand > 0);
   let treatHandAsEliminated = false;

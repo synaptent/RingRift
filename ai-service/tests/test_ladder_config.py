@@ -21,7 +21,7 @@ def test_square8_two_player_ladder_entries_exist() -> None:
     expected = {
         2: AIType.HEURISTIC,
         4: AIType.MINIMAX,
-        6: AIType.MINIMAX,
+        6: AIType.MCTS,
         8: AIType.MCTS,
     }
 

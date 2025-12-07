@@ -157,7 +157,22 @@ export function parseArgs(argv: string[]): ParsedCliArgs {
     (args['expected-topology'] as string | undefined);
   const baseUrl = (args.baseUrl as string | undefined) ?? (args['base-url'] as string | undefined);
 
-  return { env, operator, output, expectedTopology, baseUrl };
+  const result: ParsedCliArgs = { env };
+
+  if (operator !== undefined) {
+    result.operator = operator;
+  }
+  if (output !== undefined) {
+    result.output = output;
+  }
+  if (expectedTopology !== undefined) {
+    result.expectedTopology = expectedTopology;
+  }
+  if (baseUrl !== undefined) {
+    result.baseUrl = baseUrl;
+  }
+
+  return result;
 }
 
 // -----------------------------------------------------------------------------
@@ -366,7 +381,6 @@ export async function runProdPreviewGoNoGo(
   const report: ProdPreviewGoNoGoReport = {
     drillType: 'prod_preview_go_no_go',
     environment: env,
-    operator,
     runTimestamp,
     topologySummary: {
       appTopology,
@@ -375,6 +389,7 @@ export async function runProdPreviewGoNoGo(
     },
     checks,
     overallPass,
+    ...(operator !== undefined ? { operator } : {}),
   };
 
   const defaultOutputPath = path.join(
@@ -399,13 +414,24 @@ async function main(): Promise<void> {
   try {
     const { env, operator, output, expectedTopology, baseUrl } = parseArgs(process.argv);
 
-    const { report, outputPath } = await runProdPreviewGoNoGo({
+    const options: ProdPreviewGoNoGoOptions = {
       env,
-      operator,
-      outputPath: output,
-      expectedTopology,
-      baseUrl,
-    });
+    };
+
+    if (operator !== undefined) {
+      options.operator = operator;
+    }
+    if (output !== undefined) {
+      options.outputPath = output;
+    }
+    if (expectedTopology !== undefined) {
+      options.expectedTopology = expectedTopology;
+    }
+    if (baseUrl !== undefined) {
+      options.baseUrl = baseUrl;
+    }
+
+    const { report, outputPath } = await runProdPreviewGoNoGo(options);
 
     // eslint-disable-next-line no-console
     console.log(

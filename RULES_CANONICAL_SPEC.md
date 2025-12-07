@@ -322,12 +322,12 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - A legal **forced-elimination** action for P under RR-CANON-R100 (see RR-CANON-R205).
   - Global legal actions are defined uniformly for all supported board types (`square8`, `square19`, `hexagonal`) and for all supported player counts (2–4 players).
 
-- **[RR-CANON-R201] Turn-material and fully eliminated players.**
+- **[RR-CANON-R201] Turn-material and temporarily eliminated players.**
   - A player P has **turn-material** in a state if and only if either:
     - P controls at least one stack (there exists a stack whose top ring has P's colour); or
     - `ringsInHand[P] > 0`.
-  - A player P is **fully eliminated for turn rotation** in a state if P has no turn-material (no controlled stacks and `ringsInHand[P] == 0`), regardless of whether P still owns buried rings of their colour inside other players' stacks.
-  - In any state with `gameStatus == ACTIVE`, `currentPlayer` must always be chosen from players who have turn-material. Fully eliminated players must be skipped when rotating the turn order, except transiently inside the evaluation of victory or stalemate conditions that immediately terminate the game (RR-CANON-R170–R173).
+  - A player P is **temporarily eliminated for turn rotation** in a state if P has no turn-material (no controlled stacks and `ringsInHand[P] == 0`), regardless of whether P still owns buried rings of their colour inside other players' stacks.
+  - In any state with `gameStatus == ACTIVE`, `currentPlayer` must always be chosen from players who have turn-material. Temporarily eliminated players must not be skipped when rotating the turn order, and should pass through the evaluation of victory or stalemate conditions that immediately terminate the game (RR-CANON-R170–R173).
 
 - **[RR-CANON-R202] Active-no-moves (ANM) state.**
   - Given a valid `GameState` with `gameStatus == ACTIVE` and `currentPlayer = P`, define the predicate `ANM(state, P)` ("active-no-moves for P") as:
@@ -722,7 +722,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - non-capture movement (RR-CANON-R090–R092), or
     - overtaking capture segment or chain (RR-CANON-R100–R103),
       and **does not** include pure forced-elimination actions from RR-CANON-R100.
-  - A **full round of turns** is one contiguous cycle of turns in player order in which each non-eliminated player receives exactly one turn.
+  - A **full round of turns** is one contiguous cycle of turns in player order in which each player receives exactly one turn.
   - A player P wins by last-player-standing if all of the following hold:
     - **First round:** There exists at least one full round of turns such that:
       - On P's turn in that round, P has at least one legal real action available at the start of their action **and takes at least one such action**; and

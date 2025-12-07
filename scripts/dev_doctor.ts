@@ -150,7 +150,7 @@ async function checkRedis(): Promise<CheckResult> {
   }
 }
 
-async function checkAiModels(): Promise[CheckResult] {
+async function checkAiModels(): Promise<CheckResult> {
   // Basic existence check for the primary AI model file used by the Python service.
   const repoRoot = path.resolve(__dirname, '..');
   const aiServiceModelsDir = path.join(repoRoot, 'ai-service', 'models');

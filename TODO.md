@@ -198,6 +198,27 @@ Operational drills completed:
 - Multiplayer evaluation pools
 - Territory/line processing for >2 players
 
+---
+
+## 3. New Work Items (Dec 2025)
+
+**P1 – Client coverage & UX polish**
+
+- Add RTL/Jest coverage for VictoryModal, GameHUD/GamePage, and ChoiceDialog flows (line_reward_option, ring_elimination/forced_elimination, capture_direction, region_order); extract testable subcomponents from BoardView/GameHUD.
+- Expand VictoryModal telemetry coverage for weird-state flows (structural stalemate, ANM/FE, territory edge cases) and guard against duplicate sends; ensure game-end explanations are exercised for ring vs territory vs LPS endings across square/hex.
+
+**P1 – Rules/FAQ scenario backfill**
+
+- Add multi-choice turn scenarios (chain → line → territory) across square8/19 and hex; update `RULES_SCENARIO_MATRIX.md` for any new FAQ mappings.
+
+**P1 – AI boundary & observability**
+
+- Add AIServiceClient/AIEngine tests for timeout/fallback behaviour and choice routing; emit lightweight latency/error metrics for service calls.
+
+**P2 – Telemetry tooling hardening**
+
+- Add CLI smoke test/dry-run fixture for `scripts/analyze_rules_ux_telemetry.ts` that validates aggregate shape, top-K selection, and min-events gating; document expected inputs/outputs inline.
+
 ### 1.11 Accessibility (Wave 14) ✅
 
 **Completed December 2025**

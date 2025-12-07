@@ -21,13 +21,8 @@
  */
 
 import { execSync } from 'child_process';
-import * as path from 'path';
 
-import {
-  PROTECTED_CATEGORIES,
-  getAffectedCategories,
-  type ProtectedCategory,
-} from './protected-artefacts.config';
+import { getAffectedCategories, type ProtectedCategory } from './protected-artefacts.config';
 
 interface CheckOptions {
   staged: boolean;

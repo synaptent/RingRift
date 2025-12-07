@@ -95,6 +95,8 @@ from app.training.env import (  # type: ignore  # noqa: E402
 from app.game_engine import (  # type: ignore  # noqa: E402
     GameEngine,
     STRICT_NO_MOVE_INVARIANT,
+    PhaseRequirementType,
+    PhaseRequirement,
 )
 from app.metrics import (  # type: ignore  # noqa: E402
     PYTHON_INVARIANT_VIOLATIONS,
@@ -629,6 +631,18 @@ def run_self_play_soak(
         context_label=f"{board_type.value}_{engine_mode}_{num_players}p",
     )
 
+    # Host-level flag: when enabled we must synthesize and apply required
+    # bookkeeping moves (no_*_action) instead of treating ANM states as fatal.
+    force_bookkeeping_moves = os.getenv(
+        "RINGRIFT_FORCE_BOOKKEEPING_MOVES",
+        "",
+    ).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
     with open(args.log_jsonl, "w", encoding="utf-8") as log_f:
         for game_idx in range(num_games):
             game_start_time = time.time()
@@ -693,6 +707,7 @@ def run_self_play_soak(
                     termination_reason = f"status:{state.game_status.value}"
                     break
 
+                current_player = state.current_player
                 legal_moves = env.legal_moves()
                 if (
                     state.current_phase == GamePhase.FORCED_ELIMINATION
@@ -707,37 +722,76 @@ def run_self_play_soak(
                     )
                     break
 
+                move = None
+
                 if not legal_moves:
+                    # No legal moves surfaced. If forced bookkeeping is on, try to
+                    # synthesize the required no_* action for this actor to keep
+                    # the trace canonical instead of aborting.
+                    requirement = GameEngine.get_phase_requirement(
+                        state,
+                        current_player,
+                    )
+                    if (
+                        requirement is None
+                        and force_bookkeeping_moves
+                        and state.current_phase
+                        in (
+                            GamePhase.RING_PLACEMENT,
+                            GamePhase.MOVEMENT,
+                            GamePhase.LINE_PROCESSING,
+                            GamePhase.TERRITORY_PROCESSING,
+                        )
+                    ):
+                        fallback_req_type = {
+                            GamePhase.RING_PLACEMENT: PhaseRequirementType.NO_PLACEMENT_ACTION_REQUIRED,
+                            GamePhase.MOVEMENT: PhaseRequirementType.NO_MOVEMENT_ACTION_REQUIRED,
+                            GamePhase.LINE_PROCESSING: PhaseRequirementType.NO_LINE_ACTION_REQUIRED,
+                            GamePhase.TERRITORY_PROCESSING: PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
+                        }.get(state.current_phase)
+                        if fallback_req_type is not None:
+                            requirement = PhaseRequirement(  # type: ignore[attr-defined]
+                                type=fallback_req_type,
+                                player=current_player,
+                                eligible_positions=[],
+                            )
+
+                    if requirement is not None:
+                        move = GameEngine.synthesize_bookkeeping_move(
+                            requirement,
+                            state,
+                        )
+
                     # With strict invariant enabled, this should be impossible
                     # for ACTIVE states; if it happens anyway we record it
                     # explicitly as an ACTIVE-no-moves violation.
-                    _record_invariant_violation(
-                        "ACTIVE_NO_MOVES",
-                        state,
-                        game_idx,
-                        move_count,
-                        per_game_violations,
-                        invariant_violation_samples,
-                    )
-                    termination_reason = "no_legal_moves_for_current_player"
-                    break
+                    if move is None:
+                        _record_invariant_violation(
+                            "ACTIVE_NO_MOVES",
+                            state,
+                            game_idx,
+                            move_count,
+                            per_game_violations,
+                            invariant_violation_samples,
+                        )
+                        termination_reason = "no_legal_moves_for_current_player"
+                        break
+                else:
+                    ai = ai_by_player.get(current_player)
+                    if ai is None:
+                        termination_reason = "no_ai_for_current_player"
+                        skipped = True
+                        break
+                    if profile_timing:
+                        t_sel_start = time.time()
+                    move = ai.select_move(state)
+                    if profile_timing:
+                        timing_totals["move_select"] += time.time() - t_sel_start
 
-                current_player = state.current_player
-                ai = ai_by_player.get(current_player)
-                if ai is None:
-                    termination_reason = "no_ai_for_current_player"
-                    skipped = True
-                    break
-                if profile_timing:
-                    t_sel_start = time.time()
-                move = ai.select_move(state)
-                if profile_timing:
-                    timing_totals["move_select"] += time.time() - t_sel_start
-
-                if not move:
-                    termination_reason = "ai_returned_no_move"
-                    skipped = True
-                    break
+                    if not move:
+                        termination_reason = "ai_returned_no_move"
+                        skipped = True
+                        break
 
                 if (
                     state.current_phase == GamePhase.FORCED_ELIMINATION
@@ -1006,11 +1060,17 @@ def run_self_play_soak(
 
             # For problematic terminations, capture a minimal snapshot of the
             # final GameState + last Move so they can be turned into explicit
-            # regression fixtures.
-            if termination_reason in (
-                "no_legal_moves_for_current_player",
-            ) or termination_reason.startswith(
-                "step_exception:RuntimeError",
+            # regression fixtures. This now includes env_done_flag skips and
+            # other skipped cases so we can inspect phase requirements and
+            # legal moves when the host failed to synthesize bookkeeping.
+            if (
+                termination_reason
+                in (
+                    "no_legal_moves_for_current_player",
+                    "env_done_flag",
+                )
+                or termination_reason.startswith("step_exception:RuntimeError")
+                or skipped
             ):
                 try:
                     failure_dir = os.path.join(
@@ -1037,6 +1097,34 @@ def run_self_play_soak(
                     except Exception:
                         last_move_payload = None
 
+                    # Include phase requirement and legal moves for the active player
+                    # to aid bookkeeping debugging without touching core rules.
+                    requirement_payload = None
+                    legal_moves_payload = []
+                    try:
+                        requirement = GameEngine.get_phase_requirement(
+                            state,
+                            getattr(state, "current_player", None),
+                        )
+                        if requirement is not None:
+                            requirement_payload = {
+                                "type": requirement.type.value,
+                                "player": requirement.player,
+                                "eligible_positions": requirement.eligible_positions,
+                            }
+                        legal_moves_payload = [
+                            {
+                                "type": mv.type.value,
+                                "player": mv.player,
+                            }
+                            for mv in GameEngine.get_valid_moves(  # type: ignore[arg-type]
+                                state,
+                                getattr(state, "current_player", None),
+                            )
+                        ]
+                    except Exception:
+                        pass
+
                     failure_path = os.path.join(
                         failure_dir,
                         f"failure_{game_idx}_"
@@ -1053,6 +1141,8 @@ def run_self_play_soak(
                                 "termination_reason": termination_reason,
                                 "state": state_payload,
                                 "last_move": last_move_payload,
+                                "phase_requirement": requirement_payload,
+                                "legal_moves": legal_moves_payload,
                             },
                             failure_f,
                         )
@@ -1107,6 +1197,59 @@ def run_self_play_soak(
                     game_moves_for_recording,
                 )
                 if not ok:
+                    dump_dir = os.getenv("RINGRIFT_SOAK_FAILURE_DIR")
+                    if dump_dir:
+                        try:
+                            os.makedirs(dump_dir, exist_ok=True)
+                            dump_path = os.path.join(
+                                dump_dir,
+                                f"trace_failure_game_{game_idx}.json",
+                            )
+
+                            # Build a replay trace with phases/players to aid debugging.
+                            replay_trace = []
+                            replay_error = None
+                            try:
+                                state = initial_state_for_recording
+                                for idx, mv in enumerate(game_moves_for_recording):
+                                    replay_trace.append(
+                                        {
+                                            "idx": idx,
+                                            "move_number": getattr(mv, "move_number", None),
+                                            "type": mv.type.value,
+                                            "player": mv.player,
+                                            "phase_before": getattr(state, "current_phase", None).value
+                                            if state and getattr(state, "current_phase", None)
+                                            else None,
+                                            "current_player": getattr(state, "current_player", None),
+                                        }
+                                    )
+                                    state = GameEngine.apply_move(state, mv, trace_mode=True)  # type: ignore[arg-type]
+                            except Exception as rexc:  # pragma: no cover - defensive
+                                replay_error = f"{type(rexc).__name__}:{rexc}"
+
+                            with open(dump_path, "w", encoding="utf-8") as f:
+                                json.dump(
+                                    {
+                                        "error": err,
+                                        "game_index": game_idx,
+                                        "moves": [
+                                            m.model_dump(mode="json")  # type: ignore[attr-defined]
+                                            for m in game_moves_for_recording
+                                        ],
+                                        "initial_state": initial_state_for_recording.model_dump(  # type: ignore[attr-defined]
+                                            mode="json"
+                                        )
+                                        if initial_state_for_recording
+                                        else None,
+                                        "replay_trace": replay_trace,
+                                        "replay_error": replay_error,
+                                    },
+                                    f,
+                                )
+                        except Exception:
+                            # Best-effort only.
+                            pass
                     print(
                         f"[record-db] Skipping game {game_idx} due to trace replay failure: {err}",
                         file=sys.stderr,

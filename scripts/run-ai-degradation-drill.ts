@@ -281,7 +281,22 @@ export function parseArgs(argv: string[]): ParsedCliArgs {
   const aiServiceUrl =
     (args.aiServiceUrl as string | undefined) ?? (args['ai-service-url'] as string | undefined);
 
-  return { env, operator, phase, output, baseUrl, aiServiceUrl };
+  const result: ParsedCliArgs = { env, phase };
+
+  if (operator !== undefined) {
+    result.operator = operator;
+  }
+  if (output !== undefined) {
+    result.output = output;
+  }
+  if (baseUrl !== undefined) {
+    result.baseUrl = baseUrl;
+  }
+  if (aiServiceUrl !== undefined) {
+    result.aiServiceUrl = aiServiceUrl;
+  }
+
+  return result;
 }
 
 /**
@@ -355,11 +370,11 @@ export async function runAiDegradationDrill(
   const report: AiDegradationDrillReport = {
     drillType: 'ai_service_degradation',
     environment: env,
-    operator,
     runTimestamp,
     phase,
     checks,
     overallPass,
+    ...(operator !== undefined ? { operator } : {}),
   };
 
   const defaultOutputPath = path.join(
@@ -383,14 +398,25 @@ async function main(): Promise<void> {
   try {
     const { env, operator, phase, output, baseUrl, aiServiceUrl } = parseArgs(process.argv);
 
-    const { report, outputPath } = await runAiDegradationDrill({
+    const options: AiDegradationDrillOptions = {
       env,
-      operator,
       phase,
-      outputPath: output,
-      baseUrl,
-      aiServiceUrl,
-    });
+    };
+
+    if (operator !== undefined) {
+      options.operator = operator;
+    }
+    if (output !== undefined) {
+      options.outputPath = output;
+    }
+    if (baseUrl !== undefined) {
+      options.baseUrl = baseUrl;
+    }
+    if (aiServiceUrl !== undefined) {
+      options.aiServiceUrl = aiServiceUrl;
+    }
+
+    const { report, outputPath } = await runAiDegradationDrill(options);
 
     console.log(
       `AI degradation drill (env=${report.environment}, phase=${report.phase}): ${

@@ -1099,8 +1099,17 @@ export function processTurn(
     move.type === 'process_line' ||
     move.type === 'choose_line_reward';
 
+  // For turn-ending territory moves, the turn is complete - no post-move processing needed.
+  // The applyMoveWithChainInfo handler already rotates to the next player.
+  const isTurnEndingTerritoryMove =
+    move.type === 'no_territory_action' || move.type === 'skip_territory_processing';
+
   let result: { pendingDecision?: PendingDecision; victoryResult?: VictoryState } = {};
-  if (!isPlacementMove && (moveActuallyChangedState || !isDecisionMove)) {
+  if (
+    !isPlacementMove &&
+    !isTurnEndingTerritoryMove &&
+    (moveActuallyChangedState || !isDecisionMove)
+  ) {
     // Process post-move phases only for movement/capture moves, or for decision moves
     // that actually changed state.
     result = processPostMovePhases(stateMachine, options);
@@ -1327,6 +1336,18 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       return { nextState: outcome.nextState };
     }
 
+    case 'no_line_action': {
+      // Explicit no-op in line_processing phase when no lines exist for the
+      // current player (RR-CANON-R075). State is unchanged; advance to
+      // territory_processing so that the rest of the turn can proceed.
+      return {
+        nextState: {
+          ...state,
+          currentPhase: 'territory_processing' as GamePhase,
+        },
+      };
+    }
+
     case 'process_territory_region': {
       const outcome = applyProcessTerritoryRegionDecision(state, move);
       return { nextState: outcome.nextState };
@@ -1335,6 +1356,42 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
     case 'eliminate_rings_from_stack': {
       const outcome = applyEliminateRingsFromStackDecision(state, move);
       return { nextState: outcome.nextState };
+    }
+
+    case 'no_territory_action': {
+      // Explicit no-op in territory_processing phase when no regions exist
+      // for the current player (RR-CANON-R075). Rotate to next player and
+      // start their turn in ring_placement phase.
+      const players = state.players;
+      const currentPlayerIndex = players.findIndex((p) => p.playerNumber === state.currentPlayer);
+      const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+      const nextPlayer = players[nextPlayerIndex].playerNumber;
+
+      return {
+        nextState: {
+          ...state,
+          currentPlayer: nextPlayer,
+          currentPhase: 'ring_placement' as GamePhase,
+        },
+      };
+    }
+
+    case 'skip_territory_processing': {
+      // Explicit skip in territory_processing phase when player opts out of
+      // processing available regions. Rotate to next player and start their
+      // turn in ring_placement phase.
+      const players = state.players;
+      const currentPlayerIndex = players.findIndex((p) => p.playerNumber === state.currentPlayer);
+      const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+      const nextPlayer = players[nextPlayerIndex].playerNumber;
+
+      return {
+        nextState: {
+          ...state,
+          currentPlayer: nextPlayer,
+          currentPhase: 'ring_placement' as GamePhase,
+        },
+      };
     }
 
     case 'forced_elimination': {
@@ -1955,7 +2012,11 @@ export function getValidMoves(state: GameState): Move[] {
     }
 
     case 'line_processing': {
-      return enumerateProcessLineMoves(state, player);
+      // Use 'detect_now' to ensure fresh line detection. The default
+      // 'use_board_cache' mode may return no moves when board.formedLines
+      // is empty or stale, causing a mismatch with hasPhaseLocalInteractiveMove
+      // which always uses fresh detection.
+      return enumerateProcessLineMoves(state, player, { detectionMode: 'detect_now' });
     }
 
     case 'territory_processing': {

@@ -987,14 +987,23 @@ function LegacyPlayerCard({
 export function GameHUD(props: GameHUDProps) {
   // Use view model props if available
   if (isViewModelProps(props)) {
+    const {
+      viewModel,
+      timeControl,
+      onShowBoardControls,
+      hideVictoryConditions,
+      isLocalSandboxOnly,
+      rulesUxContext,
+    } = props;
+
     return (
       <GameHUDFromViewModel
-        viewModel={props.viewModel}
-        timeControl={props.timeControl}
-        onShowBoardControls={props.onShowBoardControls}
-        hideVictoryConditions={props.hideVictoryConditions}
-        isLocalSandboxOnly={props.isLocalSandboxOnly}
-        rulesUxContext={props.rulesUxContext}
+        viewModel={viewModel}
+        {...(timeControl !== undefined ? { timeControl } : {})}
+        {...(onShowBoardControls ? { onShowBoardControls } : {})}
+        {...(hideVictoryConditions !== undefined ? { hideVictoryConditions } : {})}
+        {...(isLocalSandboxOnly !== undefined ? { isLocalSandboxOnly } : {})}
+        {...(rulesUxContext ? { rulesUxContext } : {})}
       />
     );
   }
@@ -1325,16 +1334,15 @@ function GameHUDFromViewModel({
     const newCount = (counts[key] ?? 0) + 1;
     counts[key] = newCount;
 
-    const baseEvent = {
+    const legacyBaseEvent = {
       boardType: rulesUxBoardType,
       numPlayers: rulesUxNumPlayers,
-      aiDifficulty: rulesUxAiDifficulty,
-      topic: currentTopic,
-      rulesConcept: rulesUxRulesConcept,
-      scenarioId: rulesUxScenarioId,
+      ...(rulesUxAiDifficulty !== undefined ? { aiDifficulty: rulesUxAiDifficulty } : {}),
+      ...(rulesUxRulesConcept ? { rulesConcept: rulesUxRulesConcept } : {}),
+      ...(currentTopic ? { topic: currentTopic } : {}),
+      ...(rulesUxScenarioId ? { scenarioId: rulesUxScenarioId } : {}),
     } as const;
 
-    // Ensure we have a correlation id for this help session.
     if (!helpSessionIdRef.current) {
       helpSessionIdRef.current = newHelpSessionId();
     }
@@ -1342,35 +1350,22 @@ function GameHUDFromViewModel({
 
     // Spec-aligned help_open event for rules telemetry dashboards.
     void logHelpOpenEvent({
-      boardType: rulesUxBoardType,
-      numPlayers: rulesUxNumPlayers,
-      aiDifficulty: rulesUxAiDifficulty,
-      difficulty: undefined,
-      rulesContext: undefined,
-      rulesConcept: rulesUxRulesConcept,
-      topic: currentTopic,
-      scenarioId: rulesUxScenarioId,
+      ...legacyBaseEvent,
       source: 'hud',
       entrypoint: 'hud_help_chip',
-      gameId: undefined,
-      isRanked: undefined,
-      isCalibrationGame: undefined,
-      isSandbox: undefined,
-      seatIndex: undefined,
-      perspectivePlayerCount: undefined,
       helpSessionId,
     });
 
     // Legacy metrics events kept for backwards compatibility.
     void sendRulesUxEvent({
       type: 'rules_help_open',
-      ...baseEvent,
+      ...legacyBaseEvent,
     });
 
     if (newCount >= 2) {
       void sendRulesUxEvent({
         type: 'rules_help_repeat',
-        ...baseEvent,
+        ...legacyBaseEvent,
         repeatCount: newCount,
       });
     }
@@ -1383,7 +1378,6 @@ function GameHUDFromViewModel({
     rulesUxRulesConcept,
     rulesUxScenarioId,
   ]);
-
   // Auto-open curated TeachingOverlay topics for selected onboarding / rules
   // scenarios the first time their key phase becomes active. This uses the
   // same TeachingOverlay surface as the explicit help chips but avoids
@@ -1434,7 +1428,6 @@ function GameHUDFromViewModel({
       type: 'weird_state_banner_impression',
       boardType: rulesUxBoardType,
       numPlayers: rulesUxNumPlayers,
-      aiDifficulty: rulesUxAiDifficulty,
       rulesContext,
       source: 'hud',
       weirdStateType,
@@ -1442,6 +1435,7 @@ function GameHUDFromViewModel({
       rulesConcept: rulesUxRulesConcept,
       scenarioId: rulesUxScenarioId,
       overlaySessionId,
+      ...(rulesUxAiDifficulty !== undefined ? { aiDifficulty: rulesUxAiDifficulty } : {}),
     });
   }, [
     weirdState,
@@ -1496,7 +1490,6 @@ function GameHUDFromViewModel({
       type: 'weird_state_details_open',
       boardType: rulesUxBoardType,
       numPlayers: rulesUxNumPlayers,
-      aiDifficulty: rulesUxAiDifficulty,
       rulesContext,
       source: 'hud',
       weirdStateType,
@@ -1505,6 +1498,7 @@ function GameHUDFromViewModel({
       scenarioId: rulesUxScenarioId,
       overlaySessionId,
       topic,
+      ...(rulesUxAiDifficulty !== undefined ? { aiDifficulty: rulesUxAiDifficulty } : {}),
     });
 
     // Legacy event kept for backwards-compatible metrics.
@@ -1512,11 +1506,11 @@ function GameHUDFromViewModel({
       type: 'rules_weird_state_help',
       boardType: rulesUxBoardType,
       numPlayers: rulesUxNumPlayers,
-      aiDifficulty: rulesUxAiDifficulty,
       weirdStateType,
       topic,
       rulesConcept: rulesUxRulesConcept,
       scenarioId: rulesUxScenarioId,
+      ...(rulesUxAiDifficulty !== undefined ? { aiDifficulty: rulesUxAiDifficulty } : {}),
     });
 
     // Provide a narrow weird-state context for TeachingOverlay so it can emit
@@ -1527,8 +1521,7 @@ function GameHUDFromViewModel({
       weirdStateType,
       boardType: rulesUxBoardType,
       numPlayers: rulesUxNumPlayers,
-      isRanked: undefined,
-      isSandbox: isLocalSandboxOnly ? true : undefined,
+      ...(isLocalSandboxOnly ? { isSandbox: true } : {}),
       overlaySessionId,
     };
   }, [

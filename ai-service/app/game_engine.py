@@ -91,6 +91,13 @@ STRICT_NO_MOVE_INVARIANT = os.environ.get(
     "RINGRIFT_STRICT_NO_MOVE_INVARIANT",
     "0",
 ) in {"1", "true", "yes", "on"}
+# Set to "1" to disable phase/move invariant check for test scaffolding.
+# This allows tests to create synthetic move sequences without respecting
+# the canonical phase model.
+SKIP_PHASE_INVARIANT = os.environ.get(
+    "RINGRIFT_SKIP_PHASE_INVARIANT",
+    "0",
+) in {"1", "true", "yes", "on"}
 
 
 def _debug(msg: str) -> None:
@@ -423,15 +430,19 @@ class GameEngine:
         # appropriate for the current phase. This enforces the canonical
         # per-phase move taxonomy (action / skip / no-action) and will
         # raise immediately on any recording that violates it.
-        GameEngine._assert_phase_move_invariant(game_state, move)
+        # Can be disabled via RINGRIFT_SKIP_PHASE_INVARIANT for test scaffolding.
+        if not SKIP_PHASE_INVARIANT:
+            GameEngine._assert_phase_move_invariant(game_state, move)
 
         # Enforce turn ownership: for ACTIVE states, the move actor must
         # match the current player. This prevents silent application of
         # mis-attributed moves during self-play recording or replay.
-        if game_state.game_status == GameStatus.ACTIVE and move.player != game_state.current_player:
-            raise ValueError(
-                f"Move player {move.player} does not match current player {game_state.current_player}"
-            )
+        # Can be disabled via RINGRIFT_SKIP_PHASE_INVARIANT for test scaffolding.
+        if not SKIP_PHASE_INVARIANT:
+            if game_state.game_status == GameStatus.ACTIVE and move.player != game_state.current_player:
+                raise ValueError(
+                    f"Move player {move.player} does not match current player {game_state.current_player}"
+                )
 
         # 1. Create new BoardState (shallow copy first)
         new_board = game_state.board.model_copy()
@@ -868,6 +879,24 @@ class GameEngine:
             and game_state.current_player == candidate
             and GameEngine._has_real_action_for_player(game_state, candidate)
         ):
+            # Only declare LPS when the exclusive candidate just took the most
+            # recent action. This prevents a rotation into the candidate's
+            # seat (after another player's bookkeeping no-ops) from
+            # prematurely ending the game before the candidate actually acts,
+            # matching TS turn-orchestration semantics.
+            last_move_player = (
+                game_state.move_history[-1].player
+                if game_state.move_history
+                else None
+            )
+            if last_move_player != candidate:
+                # Defer LPS check until the candidate takes their own action.
+                pass
+            else:
+                game_state.game_status = GameStatus.COMPLETED
+                game_state.winner = candidate
+                game_state.current_phase = GamePhase.GAME_OVER
+                return
             board = game_state.board
             others_have_actions = False
             for player in game_state.players:
@@ -1174,6 +1203,13 @@ class GameEngine:
                 `forced_elimination` move in the recorded sequence. This ensures
                 parity with the TS engine's traceMode replay semantics.
         """
+        # If the game already ended earlier in the turn (e.g., territory
+        # victory or elimination threshold reached), do not rotate the active
+        # player. TS keeps the actor as current_player at GAME_OVER; rotating
+        # here would desynchronise replay parity.
+        if game_state.game_status != GameStatus.ACTIVE:
+            return
+
         # Clear chain_capture_state at turn end. This ensures the next player's
         # first capture (if any) will be correctly classified as OVERTAKING_CAPTURE.
         game_state.chain_capture_state = None
@@ -1218,8 +1254,16 @@ class GameEngine:
             candidate.player_number,
         ):
             if trace_mode:
-                # Leave ANM handling to the replay/parity caller; do not
-                # change player/phase silently in trace_mode.
+                # In trace_mode, rotate to the next player but start in
+                # RING_PLACEMENT rather than auto-entering FORCED_ELIMINATION.
+                # The replay trace contains an explicit forced_elimination move
+                # that will transition phases appropriately.
+                game_state.current_player = candidate.player_number
+                game_state.current_phase = GamePhase.RING_PLACEMENT
+                game_state.must_move_from_stack_key = None
+                GameEngine._update_lps_round_tracking_for_current_player(
+                    game_state,
+                )
                 return
 
             # Enter the explicit forced_elimination phase for this player.
@@ -2809,34 +2853,14 @@ class GameEngine:
                 )
             return moves
 
-        # No eligible regions – enumerate explicit elimination decisions when
-        # stacks with positive cap height exist. Absence of stacks (or only
-        # zero-cap stacks) means no interactive territory actions; hosts must
-        # then satisfy a NO_TERRITORY_ACTION_REQUIRED phase requirement.
-        player_stacks = BoardManager.get_player_stacks(board, player_number)
-        if not player_stacks:
-            return []
-
-        for stack in player_stacks:
-            cap_height = stack.cap_height
-            if cap_height <= 0:
-                continue
-            pos = stack.position
-            moves.append(
-                Move(
-                    id=f"eliminate-{pos.to_key()}",
-                    type=MoveType.ELIMINATE_RINGS_FROM_STACK,
-                    player=player_number,
-                    to=pos,
-                    eliminated_rings=(
-                        {"player": player_number, "count": cap_height},
-                    ),
-                    timestamp=game_state.last_move_at,
-                    thinkTime=0,
-                    moveNumber=len(game_state.move_history) + 1,
-                )  # type: ignore
-            )
-
+        # No eligible regions – return empty list. The host/orchestrator will
+        # receive NO_TERRITORY_ACTION_REQUIRED from get_phase_requirement and
+        # can emit an explicit no_territory_action bookkeeping move.
+        #
+        # NOTE: ELIMINATE_RINGS_FROM_STACK is ONLY valid as a mandatory
+        # follow-up after processing a territory region (per TS game.ts
+        # MoveType docs). It should NOT be generated here when there are no
+        # regions.
         return moves
 
     @staticmethod

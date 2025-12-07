@@ -1,20 +1,23 @@
 /**
  * Victory Modal Logic Tests
- * 
+ *
  * Tests the core victory detection and statistics logic used by VictoryModal.
  * Note: Full React component testing would require @testing-library/react installation.
  */
 
-import { GameResult, Player, GameState, BoardState, RingStack, Position } from '../../src/shared/types/game';
+import {
+  GameResult,
+  Player,
+  GameState,
+  BoardState,
+  RingStack,
+  Position,
+} from '../../src/shared/types/game';
 
 describe('VictoryModal Logic', () => {
   // Helper to create test game result
-  function createGameResult(
-    winner: number | undefined,
-    reason: GameResult['reason']
-  ): GameResult {
-    return {
-      winner,
+  function createGameResult(winner: number | undefined, reason: GameResult['reason']): GameResult {
+    const base: GameResult = {
       reason,
       finalScore: {
         ringsEliminated: { 1: 15, 2: 8 },
@@ -22,6 +25,8 @@ describe('VictoryModal Logic', () => {
         ringsRemaining: { 1: 3, 2: 10 },
       },
     };
+
+    return winner === undefined ? base : { ...base, winner };
   }
 
   // Helper to create test players
@@ -53,9 +58,12 @@ describe('VictoryModal Logic', () => {
   }
 
   // Helper to create game state with stacks
-  function createGameStateWithStacks(players: Player[], stacks: Array<{ pos: Position; rings: number[] }>): GameState {
+  function createGameStateWithStacks(
+    players: Player[],
+    stacks: Array<{ pos: Position; rings: number[] }>
+  ): GameState {
     const boardStacks = new Map<string, RingStack>();
-    
+
     for (const { pos, rings } of stacks) {
       const key = `${pos.x},${pos.y}${pos.z !== undefined ? `,${pos.z}` : ''}`;
       const controllingPlayer = rings[rings.length - 1];
@@ -67,7 +75,7 @@ describe('VictoryModal Logic', () => {
           break;
         }
       }
-      
+
       boardStacks.set(key, {
         position: pos,
         rings,
@@ -160,15 +168,7 @@ describe('VictoryModal Logic', () => {
     });
 
     it('should identify draw condition', () => {
-      const gameResult: GameResult = {
-        winner: undefined,
-        reason: 'draw',
-        finalScore: {
-          ringsEliminated: { 1: 12, 2: 12 },
-          territorySpaces: { 1: 20, 2: 20 },
-          ringsRemaining: { 1: 6, 2: 6 },
-        },
-      };
+      const gameResult = createGameResult(undefined, 'draw');
 
       expect(gameResult.reason).toBe('draw');
       expect(gameResult.winner).toBeUndefined();
@@ -180,14 +180,14 @@ describe('VictoryModal Logic', () => {
       const players = createTestPlayers();
       const gameState = createGameStateWithStacks(players, [
         { pos: { x: 0, y: 0 }, rings: [1, 2, 1] }, // 2 red, 1 blue
-        { pos: { x: 1, y: 1 }, rings: [2, 2] },     // 2 blue
-        { pos: { x: 2, y: 2 }, rings: [1] },        // 1 red
+        { pos: { x: 1, y: 1 }, rings: [2, 2] }, // 2 blue
+        { pos: { x: 2, y: 2 }, rings: [1] }, // 1 red
       ]);
 
       // Count rings for each player
       let player1Count = 0;
       let player2Count = 0;
-      
+
       for (const stack of gameState.board.stacks.values()) {
         for (const ring of stack.rings) {
           if (ring === 1) player1Count++;
@@ -202,7 +202,7 @@ describe('VictoryModal Logic', () => {
     it('should count moves from history', () => {
       const players = createTestPlayers();
       const gameState = createGameStateWithStacks(players, []);
-      
+
       gameState.history = [
         { moveNumber: 1, actor: 1 } as any,
         { moveNumber: 2, actor: 2 } as any,
@@ -211,8 +211,8 @@ describe('VictoryModal Logic', () => {
         { moveNumber: 5, actor: 2 } as any,
       ];
 
-      const player1Moves = gameState.history.filter(e => e.actor === 1).length;
-      const player2Moves = gameState.history.filter(e => e.actor === 2).length;
+      const player1Moves = gameState.history.filter((e) => e.actor === 1).length;
+      const player2Moves = gameState.history.filter((e) => e.actor === 2).length;
 
       expect(player1Moves).toBe(3);
       expect(player2Moves).toBe(2);
@@ -221,16 +221,12 @@ describe('VictoryModal Logic', () => {
     it('should fall back to moveHistory when history not available', () => {
       const players = createTestPlayers();
       const gameState = createGameStateWithStacks(players, []);
-      
-      gameState.history = [];
-      gameState.moveHistory = [
-        { player: 1 } as any,
-        { player: 2 } as any,
-        { player: 1 } as any,
-      ];
 
-      const player1Moves = gameState.moveHistory.filter(m => m.player === 1).length;
-      const player2Moves = gameState.moveHistory.filter(m => m.player === 2).length;
+      gameState.history = [];
+      gameState.moveHistory = [{ player: 1 } as any, { player: 2 } as any, { player: 1 } as any];
+
+      const player1Moves = gameState.moveHistory.filter((m) => m.player === 1).length;
+      const player2Moves = gameState.moveHistory.filter((m) => m.player === 2).length;
 
       expect(player1Moves).toBe(2);
       expect(player2Moves).toBe(1);
@@ -296,7 +292,7 @@ describe('VictoryModal Logic', () => {
       const gameResult = createGameResult(1, 'ring_elimination');
       const currentUserId = 'user1';
 
-      const winner = players.find(p => p.playerNumber === gameResult.winner);
+      const winner = players.find((p) => p.playerNumber === gameResult.winner);
       const userWon = winner?.id === currentUserId;
 
       expect(userWon).toBe(true);
@@ -307,7 +303,7 @@ describe('VictoryModal Logic', () => {
       const gameResult = createGameResult(1, 'ring_elimination');
       const currentUserId = 'user2';
 
-      const winner = players.find(p => p.playerNumber === gameResult.winner);
+      const winner = players.find((p) => p.playerNumber === gameResult.winner);
       const userLost = gameResult.winner !== undefined && winner?.id !== currentUserId;
 
       expect(userLost).toBe(true);
@@ -318,8 +314,9 @@ describe('VictoryModal Logic', () => {
       const gameResult = createGameResult(undefined, 'draw');
       const currentUserId = 'user1';
 
-      const userWon = false;
-      const userLost = false;
+      const winner = players.find((p) => p.playerNumber === gameResult.winner);
+      const userWon = winner?.id === currentUserId;
+      const userLost = gameResult.winner !== undefined && winner?.id !== currentUserId;
 
       expect(userWon).toBe(false);
       expect(userLost).toBe(false);
@@ -409,11 +406,11 @@ describe('VictoryModal Logic', () => {
 
     it('should work with different board types', () => {
       const boardTypes = ['square8', 'square19', 'hexagonal'] as const;
-      
-      boardTypes.forEach(boardType => {
+
+      boardTypes.forEach((boardType) => {
         const gameState = createGameStateWithStacks(createTestPlayers(), []);
         gameState.boardType = boardType;
-        
+
         expect(['square8', 'square19', 'hexagonal']).toContain(gameState.boardType);
       });
     });
@@ -445,9 +442,9 @@ describe('VictoryModal Logic', () => {
         },
       };
 
-      const winner = players.find(p => p.playerNumber === gameResult.winner);
+      const winner = players.find((p) => p.playerNumber === gameResult.winner);
       const displayName = winner?.username || `Player ${winner?.playerNumber}`;
-      
+
       expect(displayName).toBe('Player 1');
     });
 
@@ -457,16 +454,16 @@ describe('VictoryModal Logic', () => {
       gameState.moveHistory = [];
 
       const totalTurns = gameState.history?.length || gameState.moveHistory?.length || 0;
-      
+
       expect(totalTurns).toBe(0);
     });
 
     it('should handle rated game flag', () => {
       const gameState = createGameStateWithStacks(createTestPlayers(), []);
-      
+
       gameState.isRated = false;
       expect(gameState.isRated).toBe(false);
-      
+
       gameState.isRated = true;
       expect(gameState.isRated).toBe(true);
     });
@@ -481,7 +478,7 @@ describe('VictoryModal Logic', () => {
       ];
 
       const winnerNumber = 1;
-      
+
       const sorted = [...stats].sort((a, b) => {
         if (a.player.playerNumber === winnerNumber) return -1;
         if (b.player.playerNumber === winnerNumber) return 1;

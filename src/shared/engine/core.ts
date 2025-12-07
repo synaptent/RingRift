@@ -435,10 +435,16 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
     maxNonCaptureDistance?: number;
     /** Optional cap on how far beyond the target to search for capture landings. */
     maxCaptureLandingDistance?: number;
+    /** Enable detailed debug logging for this check */
+    debug?: boolean;
   }
 ): boolean {
+  const debug = options?.debug || process.env.RINGRIFT_DEBUG_MOVEMENT === 'true';
   const stack = board.getStackAt(from);
   if (!stack || stack.controllingPlayer !== player) {
+    if (debug) {
+      debugLog(debug, '[hasAnyLegalMove] No stack or wrong player at', from, 'player:', player);
+    }
     return false;
   }
 
@@ -446,6 +452,22 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
 
   const defaultMaxNonCapture = options?.maxNonCaptureDistance ?? stack.stackHeight + 5;
   const defaultMaxCaptureLanding = options?.maxCaptureLandingDistance ?? stack.stackHeight + 5;
+
+  if (debug) {
+    debugLog(
+      debug,
+      '[hasAnyLegalMove] Checking stack at',
+      positionToString(from),
+      'height:',
+      stack.stackHeight,
+      'boardType:',
+      boardType,
+      'directions:',
+      directions.length,
+      'maxDist:',
+      defaultMaxNonCapture
+    );
+  }
 
   // === Non-capture movement ===
   for (const dir of directions) {
@@ -492,6 +514,17 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
       if (!landingStack || landingStack.stackHeight === 0) {
         // Empty space or marker - landing on any marker (own or opponent) is legal
         // per RR-CANON-R091/R092 (uniform marker landing rule).
+        if (debug) {
+          debugLog(
+            debug,
+            '[hasAnyLegalMove] FOUND non-capture move from',
+            positionToString(from),
+            'to',
+            positionToString(target),
+            'distance:',
+            distance
+          );
+        }
         return true;
       } else {
         // Landing on a stack is NOT allowed - stacks block the ray.
@@ -572,11 +605,25 @@ export function hasAnyLegalMoveOrCaptureFromOnBoard(
       };
 
       if (validateCaptureSegmentOnBoard(boardType, from, targetPos, landing, player, view)) {
+        if (debug) {
+          debugLog(
+            debug,
+            '[hasAnyLegalMove] FOUND capture from',
+            positionToString(from),
+            'over',
+            positionToString(targetPos),
+            'to',
+            positionToString(landing)
+          );
+        }
         return true;
       }
     }
   }
 
+  if (debug) {
+    debugLog(debug, '[hasAnyLegalMove] NO legal moves found from', positionToString(from));
+  }
   return false;
 }
 

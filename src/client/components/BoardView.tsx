@@ -578,10 +578,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
       for (const h of viewModel.decisionHighlights.highlights) {
         const existing = map.get(h.positionKey);
         if (!existing) {
-          map.set(h.positionKey, {
+          const next: HighlightMeta = {
             intensity: h.intensity,
-            groupIds: h.groupId ? [h.groupId] : undefined,
-          });
+          };
+          if (h.groupId) {
+            next.groupIds = [h.groupId];
+          }
+          map.set(h.positionKey, next);
           continue;
         }
 
@@ -593,10 +596,14 @@ export const BoardView: React.FC<BoardViewProps> = ({
           nextGroupIds.push(h.groupId);
         }
 
-        map.set(h.positionKey, {
+        const next: HighlightMeta = {
           intensity: nextIntensity,
-          groupIds: nextGroupIds.length > 0 ? nextGroupIds : undefined,
-        });
+        };
+        if (nextGroupIds.length > 0) {
+          next.groupIds = nextGroupIds;
+        }
+
+        map.set(h.positionKey, next);
       }
     }
     return map;

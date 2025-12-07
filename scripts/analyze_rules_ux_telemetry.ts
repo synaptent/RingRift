@@ -126,7 +126,9 @@ export function parseArgs(argv: string[]): CliOptions {
       }
       case '--output-json': {
         // Empty string is treated as "use default name".
-        partial.outputJsonPath = value && value.length > 0 ? value : undefined;
+        if (value && value.length > 0) {
+          partial.outputJsonPath = value;
+        }
         break;
       }
       case '--output-md': {
@@ -166,13 +168,22 @@ export function parseArgs(argv: string[]): CliOptions {
     throw new Error('Missing required --input PATH argument');
   }
 
-  return {
-    inputPath: partial.inputPath,
-    outputJsonPath: partial.outputJsonPath,
-    outputMdPath: partial.outputMdPath ?? undefined,
+  const inputPath = partial.inputPath;
+
+  const options: CliOptions = {
+    inputPath,
     minEvents: partial.minEvents ?? 20,
     topK: partial.topK ?? 5,
   };
+
+  if (partial.outputJsonPath !== undefined) {
+    options.outputJsonPath = partial.outputJsonPath;
+  }
+  if (partial.outputMdPath !== undefined) {
+    options.outputMdPath = partial.outputMdPath;
+  }
+
+  return options;
 }
 
 /**

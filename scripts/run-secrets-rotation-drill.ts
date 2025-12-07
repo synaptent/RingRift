@@ -212,7 +212,19 @@ export function parseArgs(argv: string[]): ParsedCliArgs {
   const output = (args.output as string | undefined) ?? (args.o as string | undefined);
   const baseUrl = (args.baseUrl as string | undefined) ?? (args['base-url'] as string | undefined);
 
-  return { env, operator, output, baseUrl };
+  const result: ParsedCliArgs = { env };
+
+  if (operator !== undefined) {
+    result.operator = operator;
+  }
+  if (output !== undefined) {
+    result.output = output;
+  }
+  if (baseUrl !== undefined) {
+    result.baseUrl = baseUrl;
+  }
+
+  return result;
 }
 
 /**
@@ -277,11 +289,14 @@ export async function runSecretsRotationDrill(
   const report: SecretsRotationDrillReport = {
     drillType: 'secrets_rotation',
     environment: env,
-    operator,
     runTimestamp,
     checks,
     overallPass,
   };
+
+  if (operator !== undefined) {
+    report.operator = operator;
+  }
 
   const defaultOutputPath = path.join(
     'results',
@@ -304,12 +319,21 @@ async function main(): Promise<void> {
   try {
     const { env, operator, output, baseUrl } = parseArgs(process.argv);
 
-    const { report, outputPath } = await runSecretsRotationDrill({
+    const options: SecretsRotationDrillOptions = {
       env,
-      operator,
-      outputPath: output,
-      baseUrl,
-    });
+    };
+
+    if (operator !== undefined) {
+      options.operator = operator;
+    }
+    if (output !== undefined) {
+      options.outputPath = output;
+    }
+    if (baseUrl !== undefined) {
+      options.baseUrl = baseUrl;
+    }
+
+    const { report, outputPath } = await runSecretsRotationDrill(options);
 
     // eslint-disable-next-line no-console
     console.log(

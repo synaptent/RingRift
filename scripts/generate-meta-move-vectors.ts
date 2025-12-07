@@ -14,6 +14,7 @@ import type { BoardType, TimeControl, Player, GameState, Move } from '../src/sha
 import {
   createContractTestVector,
   exportVectorBundle,
+  type ContractTestVector,
 } from '../src/shared/engine/contracts/testVectorGenerator';
 import { GameEngine } from '../src/server/game/GameEngine';
 
