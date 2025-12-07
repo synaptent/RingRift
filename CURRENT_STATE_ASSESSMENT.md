@@ -260,11 +260,11 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 
   **Phase 3 Complete (2025-12-01):** Orchestrator migration through Phase 3 is COMPLETE:
   - [x] Flip staging to the Phase 1 preset from `ORCHESTRATOR_ROLLOUT_PLAN.md` Table 4 and keep it there as the steady state.
-        **Completed:** `.env.staging` is configured with `ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`, `RINGRIFT_RULES_MODE=ts`, and circuit breaker enabled.
+        **Completed:** `.env.staging` uses the hardcoded orchestrator adapter (`ORCHESTRATOR_ADAPTER_ENABLED` coerced to `true`), `RINGRIFT_RULES_MODE=ts`, and circuit breaker enabled. The rollout-percentage flag was removed during Phase 3.
   - [x] Exercise the Phase 1 → 2 → 3 **phase completion checklist** in `ORCHESTRATOR_ROLLOUT_PLAN.md` §8.7.
         **Completed:** P18.4-\* orchestrator rollout phases validated via staging soak and extended vector soak (P18.5-3).
   - [x] Enable orchestrator for 100% of traffic in all environments.
-        **Completed:** `.env` files updated with `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100` across dev, staging, and CI.
+        **Completed:** `.env` files rely on the hardcoded adapter (no rollout flag) across dev, staging, and CI.
   - [x] Remove legacy rules code paths in backend and sandbox hosts.
         **Completed (P20.7-\*):** ~1,118 lines of legacy code removed. See [`docs/archive/assessments/PASS20_COMPLETION_SUMMARY.md`](docs/archive/assessments/PASS20_COMPLETION_SUMMARY.md).
   - [ ] Phase 4 (Tier 2 sandbox cleanup) deferred to post-MVP.
@@ -272,12 +272,11 @@ A reasonable label for the current state is: **stable beta with consolidated arc
 - **Environment rollout posture & presets (repo-level):**
   - **CI defaults (orchestrator‑ON, TS authoritative):** All primary TS CI jobs (`test`, `ts-rules-engine`, `ts-orchestrator-parity`, `ts-parity`, `ts-integration`, `orchestrator-soak-smoke`) run with:
     - `RINGRIFT_RULES_MODE=ts`
-    - `ORCHESTRATOR_ADAPTER_ENABLED=true`
-    - `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`
+    - `ORCHESTRATOR_ADAPTER_ENABLED` hardwired to `true` by `EnvSchema` (runtime ignores env overrides)
     - `ORCHESTRATOR_SHADOW_MODE_ENABLED=false`  
       as defined in `.github/workflows/ci.yml`. This matches the **Phase 1 – orchestrator‑only** preset in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` Table 4 for test/CI environments.
   - **Shadow‑mode profile (diagnostic only):** A standard manual profile for TS‑authoritative + Python shadow parity runs is documented in `tests/README.md` and `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` (for example:
-    `RINGRIFT_RULES_MODE=shadow`, `ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=0`, `ORCHESTRATOR_SHADOW_MODE_ENABLED=true`). This profile is not wired as a dedicated CI job; it is intended for ad‑hoc parity investigations and pre‑production shadow checks.
+    `RINGRIFT_RULES_MODE=shadow`, `ORCHESTRATOR_ADAPTER_ENABLED=true` (hardcoded), `ORCHESTRATOR_SHADOW_MODE_ENABLED=true`). This profile is not wired as a dedicated CI job; it is intended for ad‑hoc parity investigations and pre‑production shadow checks.
   - **Staging / production posture (out of repo scope):** This repository encodes the **intended** rollout phases and presets for staging and production in `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` §8, but does not track actual live environment state. Whether a given staging or production stack is currently running in Phase 0/1/2/3/4 is an operational concern outside this codebase and must be validated against deployment config and observability (SLOs, alerts, dashboards).
 
 ### P0 – Engine Parity & Rules Coverage

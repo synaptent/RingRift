@@ -163,6 +163,7 @@ function resolveANMForCurrentPlayer(state: GameState): {
           ...workingState,
           gameStatus: 'completed',
           winner: victory.winner,
+          currentPhase: 'game_over',
         };
         return { nextState: terminalState, victoryResult: victory };
       }
@@ -180,6 +181,7 @@ function resolveANMForCurrentPlayer(state: GameState): {
         ...workingState,
         gameStatus: 'completed',
         winner: victoryAfter.winner,
+        currentPhase: 'game_over',
       };
       return { nextState: terminalState, victoryResult: victoryAfter };
     }

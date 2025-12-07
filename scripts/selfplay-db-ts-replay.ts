@@ -47,7 +47,11 @@ import type {
   Player,
   TimeControl,
 } from '../src/shared/types/game';
-import { hashGameStateSHA256, getEffectiveLineLengthThreshold } from '../src/shared/engine';
+import {
+  hashGameStateSHA256,
+  getEffectiveLineLengthThreshold,
+  evaluateVictory,
+} from '../src/shared/engine';
 import { createInitialGameState } from '../src/shared/engine/initialState';
 import { serializeGameState } from '../src/shared/engine/contracts/serialization';
 import { connectDatabase, disconnectDatabase } from '../src/server/database/connection';
@@ -506,7 +510,32 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
     );
   }
 
-  const finalState = engine.getGameState();
+  // Recompute terminal victory per canonical rules, regardless of any
+  // terminal metadata that may have been recorded in the DB. This ensures
+  // bare-board stalemate tie-breakers (territory → eliminated → markers →
+  // last actor) are applied even when legacy logs omit a winner, and keeps
+  // parity with the shared VictoryAggregate semantics.
+  const verdict = evaluateVictory(engine.getGameState() as any);
+  let finalState = engine.getGameState();
+  if (verdict.isGameOver) {
+    finalState = {
+      ...finalState,
+      gameStatus: 'completed',
+      winner: verdict.winner,
+    };
+
+    // Normalise terminal states out of decision phases for stability with
+    // parity tooling and UI (mirrors sandbox checkAndApplyVictory).
+    if (
+      finalState.currentPhase === 'territory_processing' ||
+      finalState.currentPhase === 'line_processing'
+    ) {
+      finalState = {
+        ...finalState,
+        currentPhase: 'ring_placement',
+      };
+    }
+  }
   // eslint-disable-next-line no-console
   console.log(
     JSON.stringify({

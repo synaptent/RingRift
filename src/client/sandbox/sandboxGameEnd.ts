@@ -133,6 +133,8 @@ export function checkAndApplyVictorySandbox(
     ...afterStalemate,
     gameStatus: 'completed',
     winner: result.winner,
+    // Set terminal phase for semantic clarity and TS↔Python parity
+    currentPhase: 'game_over',
   };
 
   return { state: nextState, result };

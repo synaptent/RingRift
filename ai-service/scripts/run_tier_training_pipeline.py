@@ -135,7 +135,13 @@ def _build_env_summary(
     num_players: int,
     seed: int | None,
 ) -> Dict[str, Any]:
-    """Return a JSON-serialisable snapshot of TrainingEnvConfig."""
+    """Return a JSON-serialisable snapshot of TrainingEnvConfig.
+
+    The snapshot is intentionally normalised to use the Enum *name* for
+    ``board_type`` (for example ``"SQUARE8"``) so that tests and tooling
+    can rely on a stable, uppercase identifier independent of the enum's
+    internal ``.value`` representation.
+    """
     # For now we only support Square-8 2-player; keep env canonical.
     board_enum = BoardType.SQUARE8
     env_cfg = TrainingEnvConfig(
@@ -146,8 +152,8 @@ def _build_env_summary(
         seed=seed,
     )
     data = asdict(env_cfg)
-    # Convert enum to its public string representation.
-    data["board_type"] = env_cfg.board_type.value
+    # Normalise board_type to the Enum name (e.g. "SQUARE8") for reporting.
+    data["board_type"] = env_cfg.board_type.name
     return data
 
 
@@ -251,7 +257,11 @@ def _run_neural_tier_training(
     training_params: Dict[str, Any] = {
         "mode": "neural_demo" if args.demo else "neural_full",
         "train_config": {
-            "board_type": base_config.board_type.value,
+            # Normalise to Enum name (e.g. "SQUARE8") for consistency with
+            # env snapshots and tests that assert on the uppercase identifier.
+            "board_type": base_config.board_type.name
+            if hasattr(base_config.board_type, "name")
+            else str(base_config.board_type),
             "model_id": base_config.model_id,
             "batch_size": base_config.batch_size,
             "epochs_per_iter": base_config.epochs_per_iter,

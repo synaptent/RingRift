@@ -171,7 +171,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - `ringsInHand`.
       - `eliminatedRings` (credited to that player).
       - `territorySpaces`.
-    - Turn/phase: `currentPlayer`, `currentPhase` ∈ { `ring_placement`, `movement`, `capture`, `chain_capture`, `line_processing`, `territory_processing`, `forced_elimination` }.
+    - Turn/phase: `currentPlayer`, `currentPhase` ∈ { `ring_placement`, `movement`, `capture`, `chain_capture`, `line_processing`, `territory_processing`, `forced_elimination`, `game_over` }.
     - Victory metadata: `totalRingsInPlay`, `totalRingsEliminated`, `victoryThreshold`, `territoryVictoryThreshold`.
     - History: `moveHistory` (implementation-defined structure).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §2, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4, 13, 15.2.

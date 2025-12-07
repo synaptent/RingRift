@@ -665,9 +665,10 @@ export function fingerprintGameState(state: GameState): string {
   // metadata and not semantically meaningful. Canonicalise them so
   // that engines which differ only in their choice of terminal
   // phase/player still produce identical fingerprints.
+  // Note: 'game_over' is the canonical terminal phase as of RR-PARITY-FIX-2024-12.
   const isTerminal = canonicalStatus === 'completed' || canonicalStatus === 'abandoned';
   const metaPlayer = isTerminal ? 0 : state.currentPlayer;
-  const metaPhase: GamePhase = isTerminal ? 'movement' : state.currentPhase;
+  const metaPhase: GamePhase = isTerminal ? 'game_over' : state.currentPhase;
 
   const meta = `${metaPlayer}:${metaPhase}:${canonicalStatus}`;
 

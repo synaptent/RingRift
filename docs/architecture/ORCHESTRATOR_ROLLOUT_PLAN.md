@@ -1,10 +1,11 @@
-> **Doc Status (2025-11-30): Active (derived)**
+> **Doc Status (2025-12-06): Active (derived, post-rollout)**
 > **Role:** Orchestrator-first rollout and legacy rules shutdown plan for Track A.
 >
-> **Rollout Status (2025-11-30):** **Phase 4 – Orchestrator Authoritative (100% rollout)**.
-> All environments (dev, staging, CI) are configured with `ORCHESTRATOR_ADAPTER_ENABLED=true`
-> and `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`. Soak tests show zero invariant violations
-> across all board types. Production deployment follows same configuration.
+> **Rollout Status (2025-12-06):** **Phase 4 – Orchestrator Authoritative (hard-ON)**.
+> `ORCHESTRATOR_ADAPTER_ENABLED` is now hardcoded to `true` in `EnvSchema`, and the
+> former `ORCHESTRATOR_ROLLOUT_PERCENTAGE` flag was removed during the Phase 3 cleanup
+> (adapter is always 100%). Soak tests show zero invariant violations across all board
+> types. Production deployment follows the same configuration.
 >
 > **SSoT alignment:** This document is a derived architectural and rollout plan over:
 >
@@ -38,9 +39,11 @@ At runtime, orchestrator selection and rollout are controlled by a small set of
 environment flags:
 
 - `ORCHESTRATOR_ADAPTER_ENABLED` – master switch to enable/disable orchestrator adapters for new sessions.
-- `ORCHESTRATOR_ROLLOUT_PERCENTAGE` – percentage of eligible sessions that should use orchestrator; used for gradual rollout where supported.
+- `ORCHESTRATOR_ROLLOUT_PERCENTAGE` – **removed in Phase 3**; historically controlled gradual rollout (adapter is now always 100%).
 - `ORCHESTRATOR_SHADOW_MODE_ENABLED` – toggles shadow runs where the orchestrator computes moves in parallel with legacy paths for comparison.
 - `RINGRIFT_RULES_MODE` – high‑level rules mode selector (allowed values: `ts`, `python`, `shadow` as per `src/server/config/env.ts`), used by hosts and diagnostics jobs to determine which rules engine implementation is authoritative.
+
+> **Post-Phase 3 note:** `ORCHESTRATOR_ROLLOUT_PERCENTAGE` is no longer honoured by the codebase. The phased percentage tables and rollback steps below are preserved for historical context; current environments run with the adapter hardwired on and should not attempt percentage-based routing.
 
 **During incidents:**
 
@@ -51,7 +54,7 @@ environment flags:
     - `docs/runbooks/AI_FALLBACK.md`
     - `docs/runbooks/AI_SERVICE_DOWN.md`
     - `docs/runbooks/HIGH_LATENCY.md`, `docs/runbooks/SERVICE_DEGRADATION.md`
-  - Only adjust `ORCHESTRATOR_ADAPTER_ENABLED` / `ORCHESTRATOR_ROLLOUT_PERCENTAGE` / `RINGRIFT_RULES_MODE` when there is strong evidence of a **rules‑engine or orchestrator defect** (e.g. canonical contract tests failing, `.shared` suites red, or explicit violation of `RULES_CANONICAL_SPEC.md`), and then follow the Safe rollback flow in this document.
+  - Only adjust `ORCHESTRATOR_ADAPTER_ENABLED` (hardcoded to `true`), `ORCHESTRATOR_SHADOW_MODE_ENABLED`, or `RINGRIFT_RULES_MODE` when there is strong evidence of a **rules‑engine or orchestrator defect** (e.g. canonical contract tests failing, `.shared` suites red, or explicit violation of `RULES_CANONICAL_SPEC.md`), and then follow the Safe rollback flow in this document. The former `ORCHESTRATOR_ROLLOUT_PERCENTAGE` flag is no longer available.
 - See `AI_ARCHITECTURE.md` §0 (AI Incident Overview) for a quick “rules vs AI vs infra” classification, and use that to choose between **this plan** (rules/orchestrator rollback) and the AI/infra runbooks above.
 
 ## 2. Canonical SSOT and Ownership Boundaries

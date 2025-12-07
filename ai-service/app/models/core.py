@@ -17,7 +17,7 @@ class BoardType(str, Enum):
 
 
 class GamePhase(str, Enum):
-    """Game phase enumeration - 7 canonical phases per RR-CANON-R070."""
+    """Game phase enumeration - 8 phases per RR-CANON-R070 + terminal phase."""
     RING_PLACEMENT = "ring_placement"
     MOVEMENT = "movement"
     CAPTURE = "capture"
@@ -28,6 +28,10 @@ class GamePhase(str, Enum):
     # but still controls stacks. Records forced_elimination move then advances
     # to next player. See RR-CANON-R100, RR-CANON-R204.
     FORCED_ELIMINATION = "forced_elimination"
+    # Terminal phase: entered when the game ends (victory detected).
+    # This provides semantic clarity that the game is over without relying
+    # solely on gameStatus, and ensures TS↔Python phase parity at game end.
+    GAME_OVER = "game_over"
 
 
 class GameStatus(str, Enum):

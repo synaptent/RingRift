@@ -104,6 +104,10 @@ The following documents define the canonical contracts for rules UX copy, teleme
 - [`UX_RULES_CONCEPTS_INDEX.md`](../UX_RULES_CONCEPTS_INDEX.md:1) – High-risk rules concepts index (semantic/navigation map).
 - This audit (current file) – Findings and status for documentation + UX alignment.
 - **New (W5):** The concordance table in §4 below – **concept → rules docs → in-app copy → docs** mapping.
+- **New (W6):** Numbered iteration logs under `docs/ux/rules_iterations/` – see:
+  - [`UX_RULES_IMPROVEMENT_ITERATION_0001.md`](../ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0001.md:1) for the initial hotspot-oriented plan,
+  - [`UX_RULES_IMPROVEMENT_ITERATION_0002.md`](../ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0002.md:1) for backfilled ANM/FE + structural stalemate + mini-region game-end explanation work (W1–W5),
+  - [`UX_RULES_IMPROVEMENT_ITERATION_0003.md`](../ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0003.md:1) for backfilled mini-region and capture-chain teaching flows (W1–W5).
 
 Future UX and documentation remediation work referenced in this audit should treat these specs as the contract for concrete copy, telemetry, and teaching changes.
 

@@ -859,6 +859,7 @@ class GameEngine:
             if p.eliminated_rings >= game_state.victory_threshold:
                 game_state.game_status = GameStatus.COMPLETED
                 game_state.winner = p.player_number
+                game_state.current_phase = GamePhase.GAME_OVER
                 return
 
         # 2. Territory Victory
@@ -872,6 +873,7 @@ class GameEngine:
             if count >= game_state.territory_victory_threshold:
                 game_state.game_status = GameStatus.COMPLETED
                 game_state.winner = p_id
+                game_state.current_phase = GamePhase.GAME_OVER
                 return
 
         # 3. Early last-player-standing victory (R172).
@@ -917,6 +919,7 @@ class GameEngine:
             if not others_have_actions:
                 game_state.game_status = GameStatus.COMPLETED
                 game_state.winner = candidate
+                game_state.current_phase = GamePhase.GAME_OVER
                 return
 
             # Candidate condition failed; require fresh qualifying rounds.
@@ -1016,6 +1019,7 @@ class GameEngine:
             )
 
             game_state.winner = sorted_players[0].player_number
+            game_state.current_phase = GamePhase.GAME_OVER
             return
 
         # 4. No legal moves for ANY player (Global Stalemate with stacks)

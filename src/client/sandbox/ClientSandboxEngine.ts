@@ -1588,8 +1588,8 @@ export class ClientSandboxEngine {
       ...state,
       gameStatus: 'completed',
       winner,
-      // Normalise terminal phase away from decision phases for UI/parity.
-      currentPhase: 'ring_placement',
+      // Set terminal phase for semantic clarity and TS↔Python parity
+      currentPhase: 'game_over',
     };
     this.victoryResult = result;
 
@@ -3121,22 +3121,6 @@ export class ClientSandboxEngine {
     }
 
     this.gameState = state;
-
-    // Normalise terminal states so that completed games are never left in
-    // the dedicated line/territory decision phases. This mirrors the backend
-    // GameEngine.applyDecisionMove elimination handling and keeps both
-    // parity traces and UI-facing games in a stable 'ring_placement' phase
-    // after victory.
-    if (
-      this.gameState.gameStatus !== 'active' &&
-      (this.gameState.currentPhase === 'territory_processing' ||
-        this.gameState.currentPhase === 'line_processing')
-    ) {
-      this.gameState = {
-        ...this.gameState,
-        currentPhase: 'ring_placement',
-      };
-    }
 
     if (!result) {
       return;

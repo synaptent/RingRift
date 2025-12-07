@@ -34,6 +34,16 @@ Code‑mode tasks are expected to:
 
 ---
 
+## 0. Iteration Log & Improvement History
+
+This spec is part of the rules‑UX improvement loop described in [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/UX_RULES_IMPROVEMENT_LOOP.md:24). Concrete changes to weird‑state reason codes, HUD/VictoryModal copy, and TeachingOverlay routing are recorded in numbered iteration files under `docs/ux/rules_iterations/`:
+
+- [`UX_RULES_IMPROVEMENT_ITERATION_0001.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0001.md:1) – Initial hotspot‑oriented plan for ANM/FE loops, structural stalemate, and mini‑regions.
+- [`UX_RULES_IMPROVEMENT_ITERATION_0002.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0002.md:1) – Backfilled record for W1–W5 work that aligned game‑end explanations (HUD + VictoryModal + TeachingOverlay) and telemetry with ANM/FE, structural stalemate, and territory mini‑regions.
+- [`UX_RULES_IMPROVEMENT_ITERATION_0003.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0003.md:1) – Backfilled record for W1–W5 work on territory mini‑regions (Q23) and capture‑chain teaching flows.
+
+Future rules‑UX iterations SHOULD continue this numbering (0004, 0005, …) and update both this spec and the iteration files together when introducing or refining weird‑state reason codes, copy, or telemetry mapping.
+
 ## 1. Inventory of Weird / Complex States
 
 The following states are considered “weird” or high‑confusion from a UX perspective:

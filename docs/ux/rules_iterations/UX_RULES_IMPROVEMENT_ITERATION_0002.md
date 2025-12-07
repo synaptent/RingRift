@@ -3,7 +3,7 @@
 - **Iteration id:** 0002
 - **Axis:** `rules-ux`
 - **Mode:** Architect spec → Code implementation
-- **Status:** Draft iteration spec, scoped for a single implementation wave
+- **Status:** **Backfilled iteration record for work delivered in waves W1–W5** (routing, teaching flows, game‑end explanations, copy alignment). Metrics and time windows described below are **illustrative / synthetic** rather than live telemetry.
 
 ## 1. Introduction and framing
 
@@ -258,10 +258,43 @@ The following are **proposed implementation tasks** to be tracked as separate Co
    - Verify that snapshots consumed by [`scripts/analyze_rules_ux_telemetry.ts`](scripts/analyze_rules_ux_telemetry.ts:425) can distinguish the three targeted contexts via `rulesContext` alone.
 
 5. **Add or extend regression tests for representative scenarios**
-   - For each concept, add tests or extend existing ones so that they assert:
-     - the produced [`GameEndExplanation`](docs/UX_RULES_EXPLANATION_MODEL_SPEC.md:129) matches this spec for the scenario (concept id, rules contexts, weird‑state reason codes, score/tiebreak structure);
-     - HUD and VictoryModal render the expected concept‑aligned explanation keys for those payloads;
-     - TeachingOverlay entrypoints and telemetry are correctly wired.
+
+## 7. Outcome summary (backfilled for W1–W5)
+
+Because this document is being written after substantial W1–W5 work has already landed, this section records how those waves map onto the Iteration 0002 plan. Future iterations (0004, 0005, …) should treat this as the **pre‑iteration baseline** for game‑end explanations.
+
+- **ANM/FE (`anm_fe_core` / `anm_forced_elimination`):**
+  - Weird‑state reason codes and copy for ANM/FE were defined in [`UX_RULES_WEIRD_STATES_SPEC.md`](docs/UX_RULES_WEIRD_STATES_SPEC.md:82) (RWS‑001, RWS‑004) and wired into HUD banners and TeachingOverlay topics (`teaching.active_no_moves`, `teaching.forced_elimination`) as part of W1/W2.
+  - Rules‑UX copy baselines for ANM/FE, including the distinction between **real moves** and forced elimination, were consolidated in [`UX_RULES_COPY_SPEC.md` §2–3, §10](docs/UX_RULES_COPY_SPEC.md:23).
+  - ANM/FE teaching flows (`fe_loop_intro`) were specified in [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:141) and integrated into TeachingOverlay and sandbox presets in W2/W3.
+
+- **Structural stalemate (`structural_stalemate`):**
+  - Canonical stalemate semantics and tiebreak ladder were clarified in [`ringrift_complete_rules.md` §13.4](ringrift_complete_rules.md:1410) and [`RULES_CANONICAL_SPEC.md` R173](RULES_CANONICAL_SPEC.md:619).
+  - UX copy and weird‑state reason codes for structural stalemate (`STRUCTURAL_STALEMATE_TIEBREAK`) were defined in [`UX_RULES_WEIRD_STATES_SPEC.md` §3.1–3.2](docs/UX_RULES_WEIRD_STATES_SPEC.md:185) and wired into HUD/Victory surfaces in W2/W4.
+  - Teaching flows for stalemate (`structural_stalemate_intro`) were added to [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:423), with TeachingOverlay routing updated in W3/W4.
+
+- **Territory mini‑regions (`territory_mini_regions` / `territory_mini_region`):**
+  - Q23 mini‑region semantics were tightened and cross‑referenced across the rulebook, canonical spec, and edge‑case docs (`RULES_CONSISTENCY_EDGE_CASES`, `RULES_DYNAMIC_VERIFICATION`).
+  - The `territory_mini_region` concept row in the concordance table in [`RULES_DOCS_UX_AUDIT.md` §4](docs/supplementary/RULES_DOCS_UX_AUDIT.md:142) now ties together rules docs, HUD copy, TeachingOverlay topics, and curated scenarios.
+  - A dedicated `mini_region_intro` teaching flow was authored in [`UX_RULES_TEACHING_SCENARIOS.md`](docs/UX_RULES_TEACHING_SCENARIOS.md:204) and surfaced via TeachingOverlay and sandbox presets during W2/W3.
+
+- **Game‑end explanations and structured model:**
+  - The `GameEndExplanation` model and builder pipeline were designed and implemented in W4, as documented in [`UX_RULES_EXPLANATION_MODEL_SPEC.md`](docs/UX_RULES_EXPLANATION_MODEL_SPEC.md:129) and validated via tests (`GameEndExplanation.*.test.ts` in `tests/unit`).
+  - HUD and VictoryModal now consume structured explanations for complex endings (ANM/FE‑heavy elimination, LPS, structural stalemate, mini‑region territory outcomes), rather than ad‑hoc string construction, bringing behaviour in line with the intent of §4 in this iteration.
+
+- **Telemetry and hotspot analysis:**
+  - The rules‑UX telemetry envelope and metrics were formalised in [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:1).
+  - The hotspot analyzer CLI [`scripts/analyze_rules_ux_telemetry.ts`](scripts/analyze_rules_ux_telemetry.ts:33) and its tests (`analyze_rules_ux_telemetry.test.ts`) were implemented as part of W3, providing the concrete mechanism that future runs of Iteration 0002 will use to confirm whether ANM/FE, structural stalemate, and territory mini‑regions remain top hotspots.
+
+In other words, while Iteration 0002 is framed as a hotspot‑driven plan, the core structural changes it describes (weird‑state reason codes, teaching flows, game‑end explanations, and telemetry wiring) have already been implemented in W1–W5. Future telemetry‑backed executions of this iteration should treat:
+
+- the current `GameEndExplanation` builder and UX wiring as the starting point;
+- this document’s acceptance criteria and metrics (§5) as the checklist for validating that behaviour; and
+- the concordance table in [`RULES_DOCS_UX_AUDIT.md`](docs/supplementary/RULES_DOCS_UX_AUDIT.md:124) as the single reference for ensuring any further copy tweaks remain aligned with canonical rules.
+  - For each concept, add tests or extend existing ones so that they assert:
+    - the produced [`GameEndExplanation`](docs/UX_RULES_EXPLANATION_MODEL_SPEC.md:129) matches this spec for the scenario (concept id, rules contexts, weird‑state reason codes, score/tiebreak structure);
+    - HUD and VictoryModal render the expected concept‑aligned explanation keys for those payloads;
+    - TeachingOverlay entrypoints and telemetry are correctly wired.
 
 6. **Document iteration outcomes in future iteration notes**
    - After implementation and a stabilisation period, capture before/after hotspot metrics for the three targeted concepts (help opens per 100 games, help reopen rates, resign‑after‑weird‑state ratios) and summarise them in a follow‑up iteration note, referencing this document as the scope authority.

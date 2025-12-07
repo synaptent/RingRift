@@ -60,7 +60,11 @@ export type GamePhase =
   // Final phase: entered only when player had no actions in all prior phases
   // but still controls stacks. Records forced_elimination move then advances
   // to next player. See RR-CANON-R070, RR-CANON-R100, RR-CANON-R204.
-  | 'forced_elimination';
+  | 'forced_elimination'
+  // Terminal phase: entered when the game ends (victory detected).
+  // This provides semantic clarity that the game is over without relying
+  // solely on gameStatus, and ensures TS↔Python phase parity at game end.
+  | 'game_over';
 export type GameStatus = 'waiting' | 'active' | 'finished' | 'paused' | 'abandoned' | 'completed';
 export type MarkerType = 'regular' | 'collapsed';
 /**

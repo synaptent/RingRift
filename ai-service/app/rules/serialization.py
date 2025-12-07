@@ -333,6 +333,9 @@ def serialize_game_state(state: GameState) -> Dict[str, Any]:
         "gameStatus": state.game_status.value,
         "victoryThreshold": state.victory_threshold,
         "territoryVictoryThreshold": state.territory_victory_threshold,
+        # Preserve elimination accounting for parity/state bundle inspection.
+        "totalRingsEliminated": state.total_rings_eliminated,
+        "totalRingsInPlay": state.total_rings_in_play,
         "winner": state.winner,
     }
 
@@ -410,8 +413,8 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=36,  # Default for 2-player square8
-        totalRingsEliminated=0,
+        totalRingsInPlay=data.get("totalRingsInPlay", 36),  # Default for 2-player square8
+        totalRingsEliminated=data.get("totalRingsEliminated", 0),
         victoryThreshold=data.get("victoryThreshold", 19),
         territoryVictoryThreshold=data.get("territoryVictoryThreshold", 33),
         chainCaptureState=None,

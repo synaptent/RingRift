@@ -33,27 +33,25 @@ The orchestrator migration is **COMPLETE through Phase 3**. All critical legacy 
 
 ### 1.1 Orchestrator Rollout Status
 
-| Metric                             | Value                                |
-| ---------------------------------- | ------------------------------------ |
-| `ORCHESTRATOR_ADAPTER_ENABLED`     | `true` (default)                     |
-| `ORCHESTRATOR_ROLLOUT_PERCENTAGE`  | `100` (default)                      |
-| `ORCHESTRATOR_SHADOW_MODE_ENABLED` | `false` (default)                    |
-| `RINGRIFT_RULES_MODE`              | `ts`                                 |
-| Environment Phase                  | Phase 4 – Orchestrator Authoritative |
+| Metric                             | Value / Notes                                   |
+| ---------------------------------- | ----------------------------------------------- |
+| `ORCHESTRATOR_ADAPTER_ENABLED`     | `true` (hardcoded in `EnvSchema`)               |
+| `ORCHESTRATOR_ROLLOUT_PERCENTAGE`  | **Removed** in Phase 3 cleanup (forced to 100%) |
+| `ORCHESTRATOR_SHADOW_MODE_ENABLED` | `false` (default)                               |
+| `RINGRIFT_RULES_MODE`              | `ts`                                            |
+| Environment Phase                  | Phase 4 – Orchestrator Authoritative            |
 
 **Reference:** [`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`](./ORCHESTRATOR_ROLLOUT_PLAN.md) lines 1-8
 
 ### 1.2 Feature Flag Configuration
 
-From [`src/server/config/env.ts`](../src/server/config/env.ts:319-342):
+From [`src/server/config/env.ts`](../src/server/config/env.ts):
 
 ```typescript
 ORCHESTRATOR_ADAPTER_ENABLED: z
-  .string()
-  .default('true')  // ← Default ON
-  .transform((val) => val === 'true' || val === '1'),
-
-ORCHESTRATOR_ROLLOUT_PERCENTAGE: z.coerce.number().int().min(0).max(100).default(100),
+  .any()
+  .transform((): true => true)
+  .default(true),
 
 ORCHESTRATOR_SHADOW_MODE_ENABLED: z
   .string()
@@ -180,8 +178,8 @@ ORCHESTRATOR_SHADOW_MODE_ENABLED: z
 **Objective:** Confirm orchestrator is stable and parity is verified
 
 1. **Confirm orchestrator status:**
-   - Verify `ORCHESTRATOR_ADAPTER_ENABLED=true` in all environments
-   - Verify `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`
+   - Verify `ORCHESTRATOR_ADAPTER_ENABLED=true` (hardcoded in env schema)
+   - Confirm `ORCHESTRATOR_ROLLOUT_PERCENTAGE` is no longer referenced in env/config (flag removed)
    - Check soak test results for zero invariant violations
 
 2. **Run extended parity verification:**

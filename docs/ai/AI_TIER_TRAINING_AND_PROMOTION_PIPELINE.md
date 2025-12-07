@@ -607,6 +607,73 @@ Within each `--run-dir`, it is useful to maintain a small status JSON, for examp
 
 This status file can be updated incrementally by the orchestration scripts and consumed by CI or dashboards.
 
+### 8.4 Running the tier training pipeline (Square-8 2-player)
+
+This section shows a concrete end-to-end invocation for a mid-tier on Square-8 2-player using the D4 minimax tier as an example. The same pattern applies to D2, D6, and D8 by changing the `--tier` argument.
+
+#### 8.4.1 Demo / smoke run (no heavy training or evaluation)
+
+From `ai-service/`, run the training orchestrator in demo mode:
+
+```bash
+cd ai-service
+PYTHONPATH=. python scripts/run_tier_training_pipeline.py \
+  --tier D4 \
+  --board square8 \
+  --num-players 2 \
+  --run-dir logs/tier_gate/D4_demo \
+  --demo \
+  --seed 123
+```
+
+This:
+
+- Writes `training_report.json` and `status.json` into `logs/tier_gate/D4_demo`.
+- Records a `candidate_id` (for example `sq8_2p_d4_demo_YYYYMMDD_HHMMSS`) and a snapshot of the env + tier-specific training parameters.
+- Uses only stubbed, demo-friendly training logic (no long self-play or neural training); this is the safe path for CI and local smoke tests.
+
+Next, run the combined tier gate + perf wrapper (also in demo mode) for the same run directory:
+
+```bash
+cd ai-service
+PYTHONPATH=. python scripts/run_full_tier_gating.py \
+  --tier D4 \
+  --candidate-id "<CANDIDATE_ID_FROM_TRAINING_REPORT>" \
+  --run-dir logs/tier_gate/D4_demo \
+  --demo
+```
+
+You obtain:
+
+- `tier_eval_result.json` – difficulty-tier evaluation summary for D4.
+- `promotion_plan.json` – promotion descriptor (`tier`, `current_model_id`, `candidate_model_id`, `decision`, `reason`).
+- `tier_perf_report.json` – perf benchmark metrics and budget evaluation for D4 (since a `TierPerfBudget` exists).
+- `gate_report.json` – combined summary with `final_decision`, referenced from `status.json` as described in §8.3.
+
+This pair of commands exercises the full tier training + gating pipeline for a mid-tier (D4 on Square-8 2-player) in a way that is fast enough for automated tests.
+
+#### 8.4.2 Full pipeline run (when canonical data is available)
+
+When canonical Square-8 2-player replay DBs exist and have passed the unified gate in [`TRAINING_DATA_REGISTRY.md`](ai-service/TRAINING_DATA_REGISTRY.md:18):
+
+1. Run [`run_tier_training_pipeline.py`](ai-service/scripts/run_tier_training_pipeline.py:1) **without** `--demo` so that it can:
+   - Generate or select training datasets derived **only** from DBs marked `canonical` in the registry.
+   - Invoke the appropriate heuristic / neural training loops for the tier (for example via [`python.train_model`](ai-service/app/training/train.py:1171) for D6/D8).
+   - Emit a richer `training_report.json` with explicit data-source and hyperparameter fields alongside training metrics.
+
+2. Run [`run_full_tier_gating.py`](ai-service/scripts/run_full_tier_gating.py:1) **without** `--demo` (and without `--no-perf`) so that it:
+   - Plays the full number of games from the tier’s [`TierEvaluationConfig`](ai-service/app/training/tier_eval_config.py:37).
+   - Enforces the relevant [`TierPerfBudget`](ai-service/app/config/perf_budgets.py:20) for D4/D6/D8.
+   - Produces a `gate_report.json` whose `final_decision` drives promotion proposals and ladder updates as described in §5.3.
+
+In both cases you should keep each candidate’s artefacts under a dedicated `--run-dir` such as `logs/tier_gate/D4_candidate_YYYYMMDD` so that `training_report.json`, `gate_report.json`, and `status.json` can be archived together.
+
+#### 8.4.3 Canonical data and compute constraints
+
+- **Canonical-only training data:** Real training runs for D4/D6/D8 must be wired so that all self-play or replay-derived datasets are generated from DBs whose status is `canonical` in [`TRAINING_DATA_REGISTRY.md`](ai-service/TRAINING_DATA_REGISTRY.md:18). DBs marked `legacy_noncanonical`, `pending_gate`, or `DEPRECATED_R10` must not be used for new ladder training.
+- **Default to demo in CI:** CI and quick local checks should use the `--demo` pipeline described above; heavy training runs are reserved for dedicated training environments with explicit operator sign-off.
+- **Alignment with tier config JSON:** The small JSON descriptor [`tier_training_pipeline.square8_2p.json`](ai-service/config/tier_training_pipeline.square8_2p.json:1) mirrors the demo defaults (seeds, gating overrides) and is used by tests as a shape contract. Future Code-mode work can thread this config through the orchestrators to centralise per-tier settings.
+
 ---
 
 ## 9. Tier-by-tier summary

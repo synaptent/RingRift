@@ -253,8 +253,12 @@ def _update_status_json(
     # Automated gate block: mark as completed and record artefact paths.
     auto_gate = status.get("automated_gate") or {}
     auto_gate["status"] = "completed"
-    auto_gate.setdefault("eval_json", TIER_EVAL_FILENAME)
-    auto_gate.setdefault("promotion_plan", PROMOTION_PLAN_FILENAME)
+    # Always record canonical filenames for tier eval and promotion plan once
+    # gating has run, even if earlier steps initialised these fields to None.
+    # Tests and downstream tooling rely on these being concrete strings after a
+    # successful automated gate.
+    auto_gate["eval_json"] = TIER_EVAL_FILENAME
+    auto_gate["promotion_plan"] = PROMOTION_PLAN_FILENAME
     status["automated_gate"] = auto_gate
 
     # Perf block: mark as completed if a perf report exists in the run dir.
@@ -262,7 +266,9 @@ def _update_status_json(
     perf_path = os.path.join(run_dir, TIER_PERF_FILENAME)
     if os.path.exists(perf_path):
         perf["status"] = "completed"
-        perf.setdefault("perf_json", TIER_PERF_FILENAME)
+        # As with automated_gate, overwrite any placeholder/None value with the
+        # actual perf report filename once it exists.
+        perf["perf_json"] = TIER_PERF_FILENAME
     else:
         perf.setdefault("status", "not_started")
         perf.setdefault("perf_json", None)

@@ -580,7 +580,7 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 1. Check orchestrator error logs and recent deploys (backend `GameEngine` / turn adapter changes).
 2. Verify Python rules and AI services are healthy to rule out dependency cascades.
 3. Follow `docs/runbooks/ORCHESTRATOR_ROLLOUT_RUNBOOK.md`:
-   - Freeze rollout (do not increase `ORCHESTRATOR_ROLLOUT_PERCENTAGE`).
+   - Rollout percentage is fixed at 100% (flag removed); focus on shadow mode and circuit breaker posture.
    - Investigate and fix the underlying error pattern.
    - Manually reset the circuit breaker via the admin APIs or config once resolved.
 
@@ -601,7 +601,7 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 1. Check `/metrics` and logs for specific orchestrator failure types (validation errors, timeouts, invariant violations).
 2. Correlate with recent code changes or rollout percentage changes.
-3. If errors are increasing, pre‑emptively pause rollout and reduce `ORCHESTRATOR_ROLLOUT_PERCENTAGE` in staging/production as per the rollout runbook.
+3. If errors are increasing, keep rollout at the hardcoded 100% (percentage flag removed) and use shadow mode/circuit-breaker levers per the rollout runbook while triaging.
 
 ---
 
@@ -658,7 +658,7 @@ These alerts track orchestrator-specific health, rollout posture, and invariants
 
 **Response**:
 
-1. Immediately freeze orchestrator rollout and consider reducing `ORCHESTRATOR_ROLLOUT_PERCENTAGE` or disabling the adapter per the rollout runbook.
+1. Rollout percentage is fixed at 100% (flag removed); keep the adapter on and use shadow mode or the circuit breaker per the rollout runbook while triaging.
 2. Triage the violation using logs and, if available, invariant soak results against the production image.
 3. Add or update regression tests and only resume rollout once the issue is fully understood and fixed.
 

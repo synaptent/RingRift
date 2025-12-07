@@ -262,12 +262,13 @@ def hash_game_state(state: GameState) -> str:
     # metadata and not semantically meaningful. Canonicalise them so
     # that engines which differ only in their choice of terminal
     # phase/player still produce identical fingerprints.
+    # Note: 'game_over' is the canonical terminal phase as of RR-PARITY-FIX-2024-12.
     is_terminal = game_status in {
         GameStatus.COMPLETED.value,
         GameStatus.ABANDONED.value,
     }
     meta_player = 0 if is_terminal else state.current_player
-    meta_phase = "movement" if is_terminal else current_phase
+    meta_phase = "game_over" if is_terminal else current_phase
 
     meta = f"{meta_player}:{meta_phase}:{game_status}"
 

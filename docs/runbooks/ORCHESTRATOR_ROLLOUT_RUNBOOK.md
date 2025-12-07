@@ -3,6 +3,8 @@
 > **Audience:** On-call engineers and backend maintainers  
 > **Scope:** Managing rollout, shadow mode, and incident response for the shared turn orchestrator
 
+> **Post-Phase 3 note:** `ORCHESTRATOR_ADAPTER_ENABLED` is hardcoded to `true` in `EnvSchema` and the rollout-percentage flag was removed. Treat this runbook as guidance for shadow-mode, circuit-breaker, and diagnostics flows; percentage-based rollout controls are historical only.
+
 ---
 
 ## 1. Quick Status Checklist
@@ -24,7 +26,7 @@ When investigating an orchestrator-related page or alert, check:
 
 Use `/metrics` plus the admin API to decide whether to:
 
-- Increase / pause / roll back rollout percentage.
+- Investigate shadow-mode posture or circuit-breaker state (rollout percentage is fixed at 100%).
 - Enable / disable shadow mode.
 - Trip or reset the circuit breaker.
 

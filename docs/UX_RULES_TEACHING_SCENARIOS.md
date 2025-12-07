@@ -30,7 +30,21 @@ Code‑mode tasks will:
 
 ## Teaching topics referenced from the game-end explanation model are defined in this document; see [`UX_RULES_EXPLANATION_MODEL_SPEC.md`](docs/UX_RULES_EXPLANATION_MODEL_SPEC.md:1) for how they are used.
 
-## 1. Prioritized Rules Concepts for Teaching
+## 0. Iteration Log & Improvement History
+
+This spec is part of the broader rules‑UX improvement loop described in [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/UX_RULES_IMPROVEMENT_LOOP.md:24). Concrete changes to teaching flows and their surrounding UX are tracked in numbered iteration records under `docs/ux/rules_iterations/`:
+
+- [`UX_RULES_IMPROVEMENT_ITERATION_0001.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0001.md:1) – Initial hotspot‑oriented plan for ANM/FE loops, structural stalemate, and mini‑regions (pre‑implementation design sketch).
+- [`UX_RULES_IMPROVEMENT_ITERATION_0002.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0002.md:1) – Backfilled record for W1–W5 work aligning game‑end explanations (HUD + VictoryModal + TeachingOverlay) with ANM/FE, structural stalemate, and territory mini‑regions, and wiring them into telemetry.
+- [`UX_RULES_IMPROVEMENT_ITERATION_0003.md`](docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0003.md:1) – Backfilled record for W1–W5 work on territory mini‑regions (Q23) and capture‑chain teaching flows, including curated scenarios and concordance updates.
+
+Future runs of the rules‑UX loop SHOULD:
+
+- Continue this numbering (0004, 0005, …) using the same template.
+- Store iteration notes under `docs/ux/rules_iterations/`.
+- Reference the relevant teaching flows and `rulesConcept` ids from this spec when scoping new work.
+
+## 1. Prioritized Rules Concepts
 
 Based on audits in [`docs/supplementary/RULES_DOCS_UX_AUDIT.md`](docs/supplementary/RULES_DOCS_UX_AUDIT.md:23), edge‑case report [`RULES_CONSISTENCY_EDGE_CASES.md`](docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md:361), and the mini‑region / line / territory helpers tests, the following concepts are highest priority:
 

@@ -213,7 +213,6 @@ shared engine as authoritative:
 ```env
 RINGRIFT_RULES_MODE=ts
 ORCHESTRATOR_ADAPTER_ENABLED=true
-ORCHESTRATOR_ROLLOUT_PERCENTAGE=100
 ORCHESTRATOR_SHADOW_MODE_ENABLED=false
 ```
 
@@ -221,9 +220,10 @@ Notes:
 
 - `RINGRIFT_RULES_MODE=ts` ensures all rules traffic uses the shared TS engine
   rather than any legacy paths.
-- `ORCHESTRATOR_ADAPTER_ENABLED=true` and
-  `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100` keep `GameEngine.makeMove()` on the
-  `TurnEngineAdapter` path for live games.
+- `ORCHESTRATOR_ADAPTER_ENABLED=true` is hardcoded by `EnvSchema` to keep
+  `GameEngine.makeMove()` on the `TurnEngineAdapter` path for live games.
+- `ORCHESTRATOR_ROLLOUT_PERCENTAGE` was removed in the Phase 3 cleanup; rollout
+  is permanently 100%.
 - Shadow/legacy modes are reserved for **diagnostic/non-production** use and
   should not be enabled in production without an explicit incident playbook.
 

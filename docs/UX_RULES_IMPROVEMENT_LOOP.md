@@ -69,6 +69,7 @@ Each iteration uses four classes of inputs:
 4. **Rules concepts index**
    - Consolidated high‑risk concepts in [`UX_RULES_CONCEPTS_INDEX.md`](docs/UX_RULES_CONCEPTS_INDEX.md:1), aligning rules semantics, UX surfaces, teaching flows, and telemetry/tests.
    - When selecting targets for each iteration, consult this index to focus work on the most fragile rules concepts and to reuse existing mappings instead of rediscovering them ad‑hoc.
+   - Use the rules‑UX concordance table in [`RULES_DOCS_UX_AUDIT.md` §4](docs/supplementary/RULES_DOCS_UX_AUDIT.md:124) as the primary map from concept ids to rules docs, in‑app copy, and player‑facing docs when deciding where to change or validate wording.
 
 ---
 
@@ -105,7 +106,7 @@ Activities:
 
 **Goal:** Identify which rules contexts and surfaces are currently most confusing or fragile.
 
-Using PromQL/pipeline queries derived from [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:262):
+Using PromQL/pipeline queries derived from [`UX_RULES_TELEMETRY_SPEC.md`](docs/UX_RULES_TELEMETRY_SPEC.md:262), or by running the hotspot analyzer CLI [`scripts/analyze_rules_ux_telemetry.ts`](scripts/analyze_rules_ux_telemetry.ts:1) against a pre‑aggregated `RulesUxAggregatesRoot` JSON snapshot (see [`analyze_rules_ux_telemetry.test.ts`](tests/unit/analyze_rules_ux_telemetry.test.ts:27) for the expected heuristics and severity classification):
 
 1. **Top help‑opens per 100 games by `rules_context`**
    - Focus on contexts that exceed a minimum volume threshold (e.g. > 100 `help_open` events in the period).
