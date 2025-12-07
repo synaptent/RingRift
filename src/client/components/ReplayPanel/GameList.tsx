@@ -2,7 +2,6 @@
  * GameList - Paginated table of games from the replay database.
  */
 
-import React from 'react';
 import type { ReplayGameMetadata } from '../../types/replay';
 
 export interface GameListProps {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GameResult, Player, GameState } from '../../shared/types/game';
 import {
   toVictoryViewModel,
@@ -542,7 +542,7 @@ export function VictoryModal({
       source: 'victory_modal',
       weirdStateType,
       reasonCode,
-      isRanked: gameState?.isRated,
+      isRanked: gameState?.isRated ?? false,
       isSandbox: isSandbox ?? false,
       overlaySessionId,
     });
@@ -646,10 +646,12 @@ export function VictoryModal({
       ? {
           reasonCode: weirdStateInfo.reasonCode,
           rulesContext: weirdStateInfo.rulesContext,
-          weirdStateType: weirdStateInfo.weirdStateType,
+          ...(weirdStateInfo.weirdStateType !== undefined
+            ? { weirdStateType: weirdStateInfo.weirdStateType }
+            : {}),
           boardType: gameSummary.boardType,
           numPlayers: gameSummary.playerCount,
-          isRanked: gameState?.isRated,
+          isRanked: gameState?.isRated ?? false,
           isSandbox: isSandbox ?? false,
           overlaySessionId: overlaySessionIdRef.current,
         }
@@ -662,7 +664,7 @@ export function VictoryModal({
   };
 
   const handleWeirdStateHelpClick = () => {
-    if (!weirdStateInfo || !weirdStateTeachingTopic) {
+    if (!weirdStateInfo || !weirdStateTeachingTopic || !weirdStateInfo.rulesContext) {
       return;
     }
 
@@ -674,6 +676,10 @@ export function VictoryModal({
       overlaySessionIdRef.current = overlaySessionId;
     }
 
+    if (!weirdStateInfo.weirdStateType) {
+      return;
+    }
+
     void logRulesUxEvent({
       type: 'weird_state_details_open',
       boardType: gameSummary.boardType,
@@ -682,7 +688,7 @@ export function VictoryModal({
       source: 'victory_modal',
       weirdStateType: weirdStateInfo.weirdStateType,
       reasonCode: weirdStateInfo.reasonCode,
-      isRanked: gameState?.isRated,
+      isRanked: gameState?.isRated ?? false,
       isSandbox: isSandbox ?? false,
       overlaySessionId,
       topic: weirdStateTeachingTopic,

@@ -595,14 +595,55 @@ export class ClientSandboxEngine {
       ) {
         return 'ring_placement';
       }
+      // Replay tolerance for placement family moves arriving after decision phases.
+      if (
+        stateBefore.gameStatus === 'active' &&
+        stateBefore.currentPhase !== 'ring_placement' &&
+        (move.type === 'place_ring' ||
+          move.type === 'skip_placement' ||
+          move.type === 'no_placement_action')
+      ) {
+        return 'ring_placement';
+      }
       return null;
     })();
 
+    const placementFamily =
+      move.type === 'place_ring' || move.type === 'skip_placement' || move.type === 'no_placement_action';
+
     if (coercedPhase) {
-      this.stateAccessor.updateGameState({
-        ...this.stateAccessor.getGameState(),
+      const current = this.getGameState();
+      const updated = {
+        ...current,
         currentPhase: coercedPhase,
-      });
+        currentPlayer: placementFamily ? move.player : current.currentPlayer,
+      };
+      this.gameState = updated;
+      if (this.stateAccessor?.updateGameState) {
+        this.stateAccessor.updateGameState(updated);
+      }
+    } else {
+      // Even without phase coercion, align player for placement-family moves in replay
+      if (this.gameState.gameStatus === 'active' && placementFamily && this.gameState.currentPlayer !== move.player) {
+        const updated = { ...this.getGameState(), currentPlayer: move.player };
+        this.gameState = updated;
+        if (this.stateAccessor?.updateGameState) {
+          this.stateAccessor.updateGameState(updated);
+        }
+      }
+    }
+
+    // If the recorded move is a forced-elimination no-op (no_placement_action)
+    // arriving during forced_elimination, treat it as history-only: align the
+    // phase/player for bookkeeping but do not send it to the orchestrator. This
+    // preserves canonical FE semantics (explicit forced_elimination moves only).
+    if (
+      this.gameState.gameStatus === 'active' &&
+      this.gameState.currentPhase === 'forced_elimination' &&
+      move.type === 'no_placement_action'
+    ) {
+      this.appendHistoryEntry(this.getGameState(), move);
+      return true;
     }
 
     const result = await adapter.processMove(move);
@@ -3647,8 +3688,32 @@ export class ClientSandboxEngine {
       // without any lookahead-based phase advancement. The state after move N
       // should reflect what the engine produces, not what's needed for move N+1.
       // This ensures TS state snapshots match Python's at each move index.
-      if (nextMove && this.gameState.gameStatus === 'active' && !this.traceMode) {
-        await this.autoResolvePendingDecisionPhasesForReplay(nextMove);
+      if (nextMove && this.gameState.gameStatus === 'active') {
+        if (!this.traceMode) {
+          await this.autoResolvePendingDecisionPhasesForReplay(nextMove);
+        } else {
+          // In traceMode, only resolve decision phases when the next move is a
+          // turn-start move and we're still sitting in a decision phase. This
+          // keeps replay tolerant to recorded placement/movement moves that
+          // arrive after territory/line phases without introducing extra
+          // automatic processing.
+          const turnStartMoves: Move['type'][] = [
+            'place_ring',
+            'skip_placement',
+            'move_stack',
+            'move_ring',
+            'overtaking_capture',
+            'continue_capture_segment',
+            'swap_sides',
+            'eliminate_rings_from_stack',
+          ];
+          const inTurnStartPhase =
+            this.gameState.currentPhase === 'ring_placement' ||
+            this.gameState.currentPhase === 'movement';
+          if (!inTurnStartPhase && turnStartMoves.includes(nextMove.type)) {
+            await this.autoResolvePendingDecisionPhasesForReplay(nextMove);
+          }
+        }
       }
 
       // End-game phase completion: when this is the LAST move (no nextMove),

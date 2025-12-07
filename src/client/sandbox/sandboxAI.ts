@@ -1120,7 +1120,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
       if (forcedEliminationMoves.length === 0) {
         if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
           console.warn(
-            '[Sandbox AI Debug] forced_elimination phase but no forced_elimination moves',
+            '[Sandbox AI Debug] forced_elimination phase but no forced_elimination moves; attempting manual fallback',
             {
               boardType: gameState.boardType,
               currentPlayer: gameState.currentPlayer,
@@ -1130,6 +1130,45 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
             }
           );
         }
+
+        // Fallback: if the engine reports no FE moves (likely due to inconsistent state
+        // where hasForcedEliminationAction is false because other moves exist, but
+        // phase is forced_elimination), manually find a stack and eliminate it to
+        // unstick the game.
+        const stacks = hooks.getPlayerStacks(gameState.currentPlayer, gameState.board);
+        const eligibleStack = stacks.find((s) => s.stackHeight > 0);
+
+        if (eligibleStack) {
+          const capHeight = eligibleStack.capHeight || 0;
+          const count = Math.max(1, capHeight);
+          const fallbackMove: Move = {
+            id: `forced-elim-fallback-${Date.now()}`,
+            // WORKAROUND: The shared engine's TerritoryAggregate throws if passed 'forced_elimination',
+            // but turnOrchestrator passes it through. We must convert to 'eliminate_rings_from_stack'
+            // and rely on ClientSandboxEngine's phase coercion to 'territory_processing' to apply it.
+            type: 'eliminate_rings_from_stack',
+            player: gameState.currentPlayer,
+            to: eligibleStack.position,
+            eliminatedRings: [{ player: gameState.currentPlayer, count }],
+            eliminationFromStack: {
+              position: eligibleStack.position,
+              capHeight,
+              totalHeight: eligibleStack.stackHeight,
+            },
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber: gameState.history.length + 1,
+          } as Move;
+
+          try {
+            await hooks.applyCanonicalMove(fallbackMove);
+            hooks.setLastAIMove(fallbackMove);
+            return;
+          } catch (e) {
+            console.error('[Sandbox AI Debug] Manual fallback FE move failed', e);
+          }
+        }
+
         return;
       }
 
@@ -1172,6 +1211,10 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         id: '',
         moveNumber,
         timestamp: new Date(),
+        // WORKAROUND: The shared engine's TerritoryAggregate throws if passed 'forced_elimination',
+        // but turnOrchestrator passes it through. We must convert to 'eliminate_rings_from_stack'
+        // and rely on ClientSandboxEngine's phase coercion to 'territory_processing' to apply it.
+        type: 'eliminate_rings_from_stack',
       } as Move;
 
       debugForcedEliminationAttempted = true;

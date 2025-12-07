@@ -521,7 +521,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         player: partialMove.player,
         ...(partialMove.from !== undefined ? { from: partialMove.from } : {}),
         to: partialMove.to,
-        captureTarget: moveWithCapture.captureTarget,
+        ...(moveWithCapture.captureTarget !== undefined
+          ? { captureTarget: moveWithCapture.captureTarget }
+          : {}),
         timestamp: new Date(),
         thinkTime: 0,
         moveNumber: (gameState?.moveHistory.length ?? 0) + 1,

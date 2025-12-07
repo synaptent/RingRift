@@ -564,10 +564,10 @@ export function useGameStateAnnouncements(options: GameStateAnnouncementOptions)
     announce,
   } = options;
 
-  const prevTurnRef = useRef<boolean | undefined>();
-  const prevPhaseRef = useRef<string | undefined>();
+  const prevTurnRef = useRef<boolean | undefined>(undefined);
+  const prevPhaseRef = useRef<string | undefined>(undefined);
   const prevTimeWarningRef = useRef<number | null>(null);
-  const prevGameOverRef = useRef<boolean | undefined>();
+  const prevGameOverRef = useRef<boolean | undefined>(undefined);
 
   // Announce turn changes
   useEffect(() => {

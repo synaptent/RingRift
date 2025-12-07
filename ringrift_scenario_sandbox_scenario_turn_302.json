@@ -1,0 +1,6192 @@
+{
+  "id": "custom_1765144498839_zs65eoj",
+  "name": "Sandbox Scenario - Turn 302",
+  "description": "Saved at turn 302, forced_elimination phase",
+  "category": "custom",
+  "tags": [
+    "saved",
+    "forced_elimination"
+  ],
+  "boardType": "hexagonal",
+  "playerCount": 2,
+  "createdAt": "2025-12-07T21:54:58.839Z",
+  "source": "custom",
+  "state": {
+    "gameId": "sandbox-local",
+    "board": {
+      "type": "hexagonal",
+      "size": 13,
+      "stacks": {
+        "-3,-9,12": {
+          "position": {
+            "x": -3,
+            "y": -9,
+            "z": 12
+          },
+          "rings": [
+            1,
+            2,
+            1,
+            2,
+            2,
+            2
+          ],
+          "stackHeight": 6,
+          "capHeight": 1,
+          "controllingPlayer": 1
+        },
+        "-5,3,2": {
+          "position": {
+            "x": -5,
+            "y": 3,
+            "z": 2
+          },
+          "rings": [
+            2,
+            2,
+            1,
+            1,
+            1,
+            1,
+            2
+          ],
+          "stackHeight": 7,
+          "capHeight": 2,
+          "controllingPlayer": 2
+        },
+        "-6,-3,9": {
+          "position": {
+            "x": -6,
+            "y": -3,
+            "z": 9
+          },
+          "rings": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2,
+            1,
+            1,
+            1,
+            2,
+            2
+          ],
+          "stackHeight": 12,
+          "capHeight": 5,
+          "controllingPlayer": 1
+        },
+        "1,1,-2": {
+          "position": {
+            "x": 1,
+            "y": 1,
+            "z": -2
+          },
+          "rings": [
+            2,
+            1,
+            2,
+            1,
+            1
+          ],
+          "stackHeight": 5,
+          "capHeight": 1,
+          "controllingPlayer": 2
+        },
+        "-2,-1,3": {
+          "position": {
+            "x": -2,
+            "y": -1,
+            "z": 3
+          },
+          "rings": [
+            1,
+            2,
+            1,
+            1,
+            1,
+            1,
+            2
+          ],
+          "stackHeight": 7,
+          "capHeight": 1,
+          "controllingPlayer": 1
+        },
+        "11,-11,0": {
+          "position": {
+            "x": 11,
+            "y": -11,
+            "z": 0
+          },
+          "rings": [
+            1,
+            1,
+            1,
+            2,
+            1
+          ],
+          "stackHeight": 5,
+          "capHeight": 3,
+          "controllingPlayer": 1
+        },
+        "-4,3,1": {
+          "position": {
+            "x": -4,
+            "y": 3,
+            "z": 1
+          },
+          "rings": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            2,
+            2
+          ],
+          "stackHeight": 7,
+          "capHeight": 5,
+          "controllingPlayer": 1
+        },
+        "9,-5,-4": {
+          "position": {
+            "x": 9,
+            "y": -5,
+            "z": -4
+          },
+          "rings": [
+            1
+          ],
+          "stackHeight": 1,
+          "capHeight": 1,
+          "controllingPlayer": 1
+        },
+        "7,-8,1": {
+          "position": {
+            "x": 7,
+            "y": -8,
+            "z": 1
+          },
+          "rings": [
+            1,
+            2,
+            2
+          ],
+          "stackHeight": 3,
+          "capHeight": 1,
+          "controllingPlayer": 1
+        }
+      },
+      "markers": {
+        "12,-2,-10": {
+          "position": {
+            "x": 12,
+            "y": -2,
+            "z": -10
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "12,-8,-4": {
+          "position": {
+            "x": 12,
+            "y": -8,
+            "z": -4
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "12,-9,-3": {
+          "position": {
+            "x": 12,
+            "y": -9,
+            "z": -3
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "10,0,-10": {
+          "position": {
+            "x": 10,
+            "y": 0,
+            "z": -10
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "2,8,-10": {
+          "position": {
+            "x": 2,
+            "y": 8,
+            "z": -10
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "2,6,-8": {
+          "position": {
+            "x": 2,
+            "y": 6,
+            "z": -8
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "3,7,-10": {
+          "position": {
+            "x": 3,
+            "y": 7,
+            "z": -10
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-8,11,-3": {
+          "position": {
+            "x": -8,
+            "y": 11,
+            "z": -3
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-7,3,4": {
+          "position": {
+            "x": -7,
+            "y": 3,
+            "z": 4
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-12,7,5": {
+          "position": {
+            "x": -12,
+            "y": 7,
+            "z": 5
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "11,-7,-4": {
+          "position": {
+            "x": 11,
+            "y": -7,
+            "z": -4
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "12,-7,-5": {
+          "position": {
+            "x": 12,
+            "y": -7,
+            "z": -5
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-9,-3,12": {
+          "position": {
+            "x": -9,
+            "y": -3,
+            "z": 12
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "3,6,-9": {
+          "position": {
+            "x": 3,
+            "y": 6,
+            "z": -9
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "11,-9,-2": {
+          "position": {
+            "x": 11,
+            "y": -9,
+            "z": -2
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "3,-12,9": {
+          "position": {
+            "x": 3,
+            "y": -12,
+            "z": 9
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "3,5,-8": {
+          "position": {
+            "x": 3,
+            "y": 5,
+            "z": -8
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-10,7,3": {
+          "position": {
+            "x": -10,
+            "y": 7,
+            "z": 3
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-12,9,3": {
+          "position": {
+            "x": -12,
+            "y": 9,
+            "z": 3
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "9,1,-10": {
+          "position": {
+            "x": 9,
+            "y": 1,
+            "z": -10
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-12,11,1": {
+          "position": {
+            "x": -12,
+            "y": 11,
+            "z": 1
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "6,-12,6": {
+          "position": {
+            "x": 6,
+            "y": -12,
+            "z": 6
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-2,12,-10": {
+          "position": {
+            "x": -2,
+            "y": 12,
+            "z": -10
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "2,9,-11": {
+          "position": {
+            "x": 2,
+            "y": 9,
+            "z": -11
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-11,9,2": {
+          "position": {
+            "x": -11,
+            "y": 9,
+            "z": 2
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-6,4,2": {
+          "position": {
+            "x": -6,
+            "y": 4,
+            "z": 2
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "9,-4,-5": {
+          "position": {
+            "x": 9,
+            "y": -4,
+            "z": -5
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-3,5,-2": {
+          "position": {
+            "x": -3,
+            "y": 5,
+            "z": -2
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "5,-9,4": {
+          "position": {
+            "x": 5,
+            "y": -9,
+            "z": 4
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "7,-5,-2": {
+          "position": {
+            "x": 7,
+            "y": -5,
+            "z": -2
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "5,7,-12": {
+          "position": {
+            "x": 5,
+            "y": 7,
+            "z": -12
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-12,12,0": {
+          "position": {
+            "x": -12,
+            "y": 12,
+            "z": 0
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "5,-8,3": {
+          "position": {
+            "x": 5,
+            "y": -8,
+            "z": 3
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-12,6,6": {
+          "position": {
+            "x": -12,
+            "y": 6,
+            "z": 6
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-12,0,12": {
+          "position": {
+            "x": -12,
+            "y": 0,
+            "z": 12
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-5,0,5": {
+          "position": {
+            "x": -5,
+            "y": 0,
+            "z": 5
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-9,-1,10": {
+          "position": {
+            "x": -9,
+            "y": -1,
+            "z": 10
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "5,3,-8": {
+          "position": {
+            "x": 5,
+            "y": 3,
+            "z": -8
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-5,8,-3": {
+          "position": {
+            "x": -5,
+            "y": 8,
+            "z": -3
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-3,-7,10": {
+          "position": {
+            "x": -3,
+            "y": -7,
+            "z": 10
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-9,4,5": {
+          "position": {
+            "x": -9,
+            "y": 4,
+            "z": 5
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "1,11,-12": {
+          "position": {
+            "x": 1,
+            "y": 11,
+            "z": -12
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-2,-2,4": {
+          "position": {
+            "x": -2,
+            "y": -2,
+            "z": 4
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "6,0,-6": {
+          "position": {
+            "x": 6,
+            "y": 0,
+            "z": -6
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "4,-12,8": {
+          "position": {
+            "x": 4,
+            "y": -12,
+            "z": 8
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-10,9,1": {
+          "position": {
+            "x": -10,
+            "y": 9,
+            "z": 1
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-3,7,-4": {
+          "position": {
+            "x": -3,
+            "y": 7,
+            "z": -4
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-2,-7,9": {
+          "position": {
+            "x": -2,
+            "y": -7,
+            "z": 9
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "0,-12,12": {
+          "position": {
+            "x": 0,
+            "y": -12,
+            "z": 12
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "10,-3,-7": {
+          "position": {
+            "x": 10,
+            "y": -3,
+            "z": -7
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-4,12,-8": {
+          "position": {
+            "x": -4,
+            "y": 12,
+            "z": -8
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-1,-11,12": {
+          "position": {
+            "x": -1,
+            "y": -11,
+            "z": 12
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "12,-11,-1": {
+          "position": {
+            "x": 12,
+            "y": -11,
+            "z": -1
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "3,-11,8": {
+          "position": {
+            "x": 3,
+            "y": -11,
+            "z": 8
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "7,0,-7": {
+          "position": {
+            "x": 7,
+            "y": 0,
+            "z": -7
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-7,-5,12": {
+          "position": {
+            "x": -7,
+            "y": -5,
+            "z": 12
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "2,-5,3": {
+          "position": {
+            "x": 2,
+            "y": -5,
+            "z": 3
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-1,-10,11": {
+          "position": {
+            "x": -1,
+            "y": -10,
+            "z": 11
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "11,1,-12": {
+          "position": {
+            "x": 11,
+            "y": 1,
+            "z": -12
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-4,-7,11": {
+          "position": {
+            "x": -4,
+            "y": -7,
+            "z": 11
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-8,-1,9": {
+          "position": {
+            "x": -8,
+            "y": -1,
+            "z": 9
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "12,-6,-6": {
+          "position": {
+            "x": 12,
+            "y": -6,
+            "z": -6
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-1,8,-7": {
+          "position": {
+            "x": -1,
+            "y": 8,
+            "z": -7
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-12,1,11": {
+          "position": {
+            "x": -12,
+            "y": 1,
+            "z": 11
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "12,-1,-11": {
+          "position": {
+            "x": 12,
+            "y": -1,
+            "z": -11
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-8,8,0": {
+          "position": {
+            "x": -8,
+            "y": 8,
+            "z": 0
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-10,1,9": {
+          "position": {
+            "x": -10,
+            "y": 1,
+            "z": 9
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-2,8,-6": {
+          "position": {
+            "x": -2,
+            "y": 8,
+            "z": -6
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-7,0,7": {
+          "position": {
+            "x": -7,
+            "y": 0,
+            "z": 7
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "11,-2,-9": {
+          "position": {
+            "x": 11,
+            "y": -2,
+            "z": -9
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "1,-8,7": {
+          "position": {
+            "x": 1,
+            "y": -8,
+            "z": 7
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-8,0,8": {
+          "position": {
+            "x": -8,
+            "y": 0,
+            "z": 8
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "8,-3,-5": {
+          "position": {
+            "x": 8,
+            "y": -3,
+            "z": -5
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "-1,-7,8": {
+          "position": {
+            "x": -1,
+            "y": -7,
+            "z": 8
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-7,-1,8": {
+          "position": {
+            "x": -7,
+            "y": -1,
+            "z": 8
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "8,4,-12": {
+          "position": {
+            "x": 8,
+            "y": 4,
+            "z": -12
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "1,10,-11": {
+          "position": {
+            "x": 1,
+            "y": 10,
+            "z": -11
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "0,12,-12": {
+          "position": {
+            "x": 0,
+            "y": 12,
+            "z": -12
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "1,-1,0": {
+          "position": {
+            "x": 1,
+            "y": -1,
+            "z": 0
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "-7,10,-3": {
+          "position": {
+            "x": -7,
+            "y": 10,
+            "z": -3
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "12,-12,0": {
+          "position": {
+            "x": 12,
+            "y": -12,
+            "z": 0
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "4,-1,-3": {
+          "position": {
+            "x": 4,
+            "y": -1,
+            "z": -3
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "5,-5,0": {
+          "position": {
+            "x": 5,
+            "y": -5,
+            "z": 0
+          },
+          "player": 1,
+          "type": "regular"
+        },
+        "0,6,-6": {
+          "position": {
+            "x": 0,
+            "y": 6,
+            "z": -6
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "9,-1,-8": {
+          "position": {
+            "x": 9,
+            "y": -1,
+            "z": -8
+          },
+          "player": 2,
+          "type": "regular"
+        },
+        "0,-1,1": {
+          "position": {
+            "x": 0,
+            "y": -1,
+            "z": 1
+          },
+          "player": 1,
+          "type": "regular"
+        }
+      },
+      "collapsedSpaces": {
+        "2,-12,10": 1,
+        "-9,6,3": 1,
+        "-12,8,4": 2,
+        "-11,4,7": 1,
+        "2,-7,5": 1,
+        "-8,-4,12": 1,
+        "6,-4,-2": 2,
+        "4,-8,4": 1,
+        "8,-9,1": 2,
+        "10,-8,-2": 2,
+        "-10,3,7": 2,
+        "2,-8,6": 2,
+        "-2,9,-7": 2,
+        "-5,9,-4": 2,
+        "-7,9,-2": 2,
+        "-10,8,2": 2,
+        "0,-2,2": 2,
+        "-7,4,3": 1,
+        "6,-5,-1": 2,
+        "4,1,-5": 1,
+        "1,4,-5": 1,
+        "-3,-6,9": 1,
+        "1,-9,8": 1,
+        "-5,-7,12": 2,
+        "-5,-4,9": 2,
+        "-6,3,3": 1,
+        "-12,4,8": 2,
+        "-10,0,10": 2,
+        "-6,0,6": 2,
+        "-5,6,-1": 2,
+        "-7,-3,10": 1,
+        "-1,3,-2": 1,
+        "-1,1,0": 1,
+        "-9,0,9": 2,
+        "9,3,-12": 1,
+        "5,-12,7": 1,
+        "9,-12,3": 1,
+        "-5,4,1": 2,
+        "0,-3,3": 1,
+        "-2,-3,5": 1,
+        "-4,-2,6": 2,
+        "1,-11,10": 1,
+        "9,-11,2": 1,
+        "6,-11,5": 1,
+        "3,-5,2": 1,
+        "9,-6,-3": 2,
+        "-6,-5,11": 2,
+        "-9,-2,11": 2,
+        "-3,8,-5": 1,
+        "3,-1,-2": 1,
+        "-3,1,2": 2,
+        "0,-7,7": 2,
+        "6,-2,-4": 1,
+        "1,-6,5": 2,
+        "1,-3,2": 2,
+        "-2,-6,8": 1,
+        "-4,-1,5": 1,
+        "-1,10,-9": 1,
+        "-2,1,1": 1,
+        "3,-4,1": 1
+      },
+      "eliminatedRings": {
+        "1": 15,
+        "2": 28
+      },
+      "formedLines": []
+    },
+    "players": [
+      {
+        "playerNumber": 1,
+        "ringsInHand": 0,
+        "eliminatedRings": 15,
+        "territorySpaces": 15,
+        "isActive": true
+      },
+      {
+        "playerNumber": 2,
+        "ringsInHand": 0,
+        "eliminatedRings": 28,
+        "territorySpaces": 6,
+        "isActive": true
+      }
+    ],
+    "currentPlayer": 2,
+    "currentPhase": "forced_elimination",
+    "turnNumber": 302,
+    "moveHistory": [
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -2,
+          "y": 9,
+          "z": -7
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:45.063Z",
+        "thinkTime": 0,
+        "moveNumber": 1
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -2,
+          "y": 9,
+          "z": -7
+        },
+        "to": {
+          "x": 2,
+          "y": 5,
+          "z": -7
+        },
+        "moveNumber": 2,
+        "timestamp": "2025-12-07T21:54:45.186Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 12,
+          "y": -2,
+          "z": -10
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:45.208Z",
+        "thinkTime": 0,
+        "moveNumber": 3
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 12,
+          "y": -2,
+          "z": -10
+        },
+        "to": {
+          "x": 12,
+          "y": -9,
+          "z": -3
+        },
+        "moveNumber": 4,
+        "timestamp": "2025-12-07T21:54:45.309Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 12,
+          "y": -8,
+          "z": -4
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:45.331Z",
+        "thinkTime": 0,
+        "moveNumber": 5
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 12,
+          "y": -8,
+          "z": -4
+        },
+        "to": {
+          "x": 4,
+          "y": -8,
+          "z": 4
+        },
+        "moveNumber": 6,
+        "timestamp": "2025-12-07T21:54:45.336Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 6,
+          "y": -4,
+          "z": -2
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:45.435Z",
+        "thinkTime": 0,
+        "moveNumber": 7
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 12,
+          "y": -9,
+          "z": -3
+        },
+        "to": {
+          "x": 8,
+          "y": -9,
+          "z": 1
+        },
+        "moveNumber": 8,
+        "timestamp": "2025-12-07T21:54:45.471Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 3,
+          "y": 7,
+          "z": -10
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:45.475Z",
+        "thinkTime": 0,
+        "moveNumber": 9
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 4,
+          "y": -8,
+          "z": 4
+        },
+        "to": {
+          "x": -9,
+          "y": 5,
+          "z": 4
+        },
+        "moveNumber": 10,
+        "timestamp": "2025-12-07T21:54:45.557Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -2,
+          "y": -3,
+          "z": 5
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:45.600Z",
+        "thinkTime": 0,
+        "moveNumber": 11
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 8,
+          "y": -9,
+          "z": 1
+        },
+        "to": {
+          "x": 11,
+          "y": -12,
+          "z": 1
+        },
+        "moveNumber": 12,
+        "timestamp": "2025-12-07T21:54:45.601Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 10,
+          "y": 0,
+          "z": -10
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:45.681Z",
+        "thinkTime": 0,
+        "moveNumber": 13
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": 10,
+          "y": 0,
+          "z": -10
+        },
+        "captureTarget": {
+          "x": 3,
+          "y": 7,
+          "z": -10
+        },
+        "to": {
+          "x": 2,
+          "y": 8,
+          "z": -10
+        },
+        "timestamp": "2025-12-07T21:54:45.745Z",
+        "thinkTime": 0,
+        "moveNumber": 14
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 2,
+          "y": 8,
+          "z": -10
+        },
+        "captureTarget": {
+          "x": 2,
+          "y": 5,
+          "z": -7
+        },
+        "to": {
+          "x": 2,
+          "y": -12,
+          "z": 10
+        },
+        "timestamp": "2025-12-07T21:54:45.746Z",
+        "thinkTime": 0,
+        "moveNumber": 15
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 2,
+          "y": -12,
+          "z": 10
+        },
+        "captureTarget": {
+          "x": 2,
+          "y": 5,
+          "z": -7
+        },
+        "to": {
+          "x": 2,
+          "y": 6,
+          "z": -8
+        },
+        "timestamp": "2025-12-07T21:54:45.746Z",
+        "thinkTime": 0,
+        "moveNumber": 16
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 2,
+          "y": 6,
+          "z": -8
+        },
+        "captureTarget": {
+          "x": 2,
+          "y": 5,
+          "z": -7
+        },
+        "to": {
+          "x": 2,
+          "y": -12,
+          "z": 10
+        },
+        "timestamp": "2025-12-07T21:54:45.747Z",
+        "thinkTime": 0,
+        "moveNumber": 17
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 2,
+          "y": -12,
+          "z": 10
+        },
+        "captureTarget": {
+          "x": 11,
+          "y": -12,
+          "z": 1
+        },
+        "to": {
+          "x": 12,
+          "y": -12,
+          "z": 0
+        },
+        "timestamp": "2025-12-07T21:54:45.747Z",
+        "thinkTime": 0,
+        "moveNumber": 18
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 12,
+          "y": -12,
+          "z": 0
+        },
+        "captureTarget": {
+          "x": 11,
+          "y": -12,
+          "z": 1
+        },
+        "to": {
+          "x": 0,
+          "y": -12,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:45.747Z",
+        "thinkTime": 0,
+        "moveNumber": 19
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 8,
+          "y": -11,
+          "z": 3
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:45.752Z",
+        "thinkTime": 0,
+        "moveNumber": 20
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -2,
+          "y": -3,
+          "z": 5
+        },
+        "to": {
+          "x": -8,
+          "y": 3,
+          "z": 5
+        },
+        "moveNumber": 21,
+        "timestamp": "2025-12-07T21:54:45.809Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 10,
+          "y": -7,
+          "z": -3
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:45.880Z",
+        "thinkTime": 0,
+        "moveNumber": 22
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": 7,
+          "z": -10
+        },
+        "to": {
+          "x": 3,
+          "y": 0,
+          "z": -3
+        },
+        "moveNumber": 23,
+        "timestamp": "2025-12-07T21:54:45.882Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 9,
+          "y": -6,
+          "z": -3
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:45.942Z",
+        "thinkTime": 0,
+        "moveNumber": 24
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 9,
+          "y": -6,
+          "z": -3
+        },
+        "captureTarget": {
+          "x": 3,
+          "y": 0,
+          "z": -3
+        },
+        "to": {
+          "x": -8,
+          "y": 11,
+          "z": -3
+        },
+        "timestamp": "2025-12-07T21:54:46.013Z",
+        "thinkTime": 0,
+        "moveNumber": 25
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -8,
+          "y": 11,
+          "z": -3
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 3,
+          "z": 5
+        },
+        "to": {
+          "x": -8,
+          "y": -4,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.013Z",
+        "thinkTime": 0,
+        "moveNumber": 26
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -8,
+          "y": -4,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 3,
+          "z": 5
+        },
+        "to": {
+          "x": -8,
+          "y": 4,
+          "z": 4
+        },
+        "timestamp": "2025-12-07T21:54:46.014Z",
+        "thinkTime": 0,
+        "moveNumber": 27
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -9,
+          "y": -1,
+          "z": 10
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:46.022Z",
+        "thinkTime": 0,
+        "moveNumber": 28
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -9,
+          "y": -1,
+          "z": 10
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": 5,
+          "z": 4
+        },
+        "to": {
+          "x": -9,
+          "y": 6,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:46.081Z",
+        "thinkTime": 0,
+        "moveNumber": 29
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -9,
+          "y": 6,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": 8,
+          "y": -11,
+          "z": 3
+        },
+        "to": {
+          "x": 9,
+          "y": -12,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:46.081Z",
+        "thinkTime": 0,
+        "moveNumber": 30
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 9,
+          "y": -12,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": 8,
+          "y": -11,
+          "z": 3
+        },
+        "to": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:46.081Z",
+        "thinkTime": 0,
+        "moveNumber": 31
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -7,
+          "y": 3,
+          "z": 4
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:46.146Z",
+        "thinkTime": 0,
+        "moveNumber": 32
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -7,
+          "y": 3,
+          "z": 4
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 4,
+          "z": 4
+        },
+        "to": {
+          "x": -12,
+          "y": 8,
+          "z": 4
+        },
+        "timestamp": "2025-12-07T21:54:46.163Z",
+        "thinkTime": 0,
+        "moveNumber": 33
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 8,
+          "z": 4
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "to": {
+          "x": -12,
+          "y": 12,
+          "z": 0
+        },
+        "timestamp": "2025-12-07T21:54:46.163Z",
+        "thinkTime": 0,
+        "moveNumber": 34
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 12,
+          "z": 0
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "to": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.163Z",
+        "thinkTime": 0,
+        "moveNumber": 35
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 1,
+          "y": 4,
+          "z": -5
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:46.237Z",
+        "thinkTime": 0,
+        "moveNumber": 36
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": 1,
+          "y": 4,
+          "z": -5
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 4,
+          "z": 4
+        },
+        "to": {
+          "x": -11,
+          "y": 4,
+          "z": 7
+        },
+        "timestamp": "2025-12-07T21:54:46.275Z",
+        "thinkTime": 0,
+        "moveNumber": 37
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -11,
+          "y": 4,
+          "z": 7
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 4,
+          "z": 4
+        },
+        "to": {
+          "x": -7,
+          "y": 4,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:46.276Z",
+        "thinkTime": 0,
+        "moveNumber": 38
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -7,
+          "y": 4,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 4,
+          "z": 4
+        },
+        "to": {
+          "x": -12,
+          "y": 4,
+          "z": 8
+        },
+        "timestamp": "2025-12-07T21:54:46.276Z",
+        "thinkTime": 0,
+        "moveNumber": 39
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -1,
+          "y": -4,
+          "z": 5
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:46.292Z",
+        "thinkTime": 0,
+        "moveNumber": 40
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 4,
+          "z": 8
+        },
+        "to": {
+          "x": -12,
+          "y": 7,
+          "z": 5
+        },
+        "timestamp": "2025-12-07T21:54:46.363Z",
+        "thinkTime": 0,
+        "moveNumber": 41
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 7,
+          "z": 5
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 4,
+          "z": 8
+        },
+        "to": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.364Z",
+        "thinkTime": 0,
+        "moveNumber": 42
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 4,
+          "z": 8
+        },
+        "to": {
+          "x": -12,
+          "y": 7,
+          "z": 5
+        },
+        "timestamp": "2025-12-07T21:54:46.364Z",
+        "thinkTime": 0,
+        "moveNumber": 43
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 7,
+          "z": 5
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 4,
+          "z": 8
+        },
+        "to": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.364Z",
+        "thinkTime": 0,
+        "moveNumber": 44
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 4,
+          "z": 8
+        },
+        "to": {
+          "x": -12,
+          "y": 7,
+          "z": 5
+        },
+        "timestamp": "2025-12-07T21:54:46.365Z",
+        "thinkTime": 0,
+        "moveNumber": 45
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -8,
+          "y": 10,
+          "z": -2
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:46.408Z",
+        "thinkTime": 0,
+        "moveNumber": 46
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -12,
+          "y": 7,
+          "z": 5
+        },
+        "captureTarget": {
+          "x": -1,
+          "y": -4,
+          "z": 5
+        },
+        "to": {
+          "x": 2,
+          "y": -7,
+          "z": 5
+        },
+        "timestamp": "2025-12-07T21:54:46.423Z",
+        "thinkTime": 0,
+        "moveNumber": 47
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 2,
+          "y": -7,
+          "z": 5
+        },
+        "captureTarget": {
+          "x": 10,
+          "y": -7,
+          "z": -3
+        },
+        "to": {
+          "x": 11,
+          "y": -7,
+          "z": -4
+        },
+        "timestamp": "2025-12-07T21:54:46.423Z",
+        "thinkTime": 0,
+        "moveNumber": 48
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 11,
+          "y": -7,
+          "z": -4
+        },
+        "captureTarget": {
+          "x": 10,
+          "y": -7,
+          "z": -3
+        },
+        "to": {
+          "x": -5,
+          "y": -7,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.423Z",
+        "thinkTime": 0,
+        "moveNumber": 49
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 12,
+          "y": -7,
+          "z": -5
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:46.500Z",
+        "thinkTime": 0,
+        "moveNumber": 50
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 12,
+          "y": -7,
+          "z": -5
+        },
+        "captureTarget": {
+          "x": 10,
+          "y": -7,
+          "z": -3
+        },
+        "to": {
+          "x": 9,
+          "y": -7,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:46.536Z",
+        "thinkTime": 0,
+        "moveNumber": 51
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -5,
+          "y": 8,
+          "z": -3
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:46.552Z",
+        "thinkTime": 0,
+        "moveNumber": 52
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": 0,
+          "y": -12,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": -7,
+          "z": 12
+        },
+        "to": {
+          "x": -9,
+          "y": -3,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.622Z",
+        "thinkTime": 0,
+        "moveNumber": 53
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -9,
+          "y": -3,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": -7,
+          "z": 12
+        },
+        "to": {
+          "x": 0,
+          "y": -12,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.622Z",
+        "thinkTime": 0,
+        "moveNumber": 54
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 10,
+          "y": -12,
+          "z": 2
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:46.668Z",
+        "thinkTime": 0,
+        "moveNumber": 55
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 6,
+          "y": -4,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": 9,
+          "y": -7,
+          "z": -2
+        },
+        "to": {
+          "x": 10,
+          "y": -8,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:46.697Z",
+        "thinkTime": 0,
+        "moveNumber": 56
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 10,
+          "y": -8,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": 9,
+          "y": -7,
+          "z": -2
+        },
+        "to": {
+          "x": -7,
+          "y": 9,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:46.698Z",
+        "thinkTime": 0,
+        "moveNumber": 57
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 3,
+          "y": 6,
+          "z": -9
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:46.767Z",
+        "thinkTime": 0,
+        "moveNumber": 58
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -5,
+          "y": -7,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 8,
+          "z": -3
+        },
+        "to": {
+          "x": -5,
+          "y": 9,
+          "z": -4
+        },
+        "timestamp": "2025-12-07T21:54:46.802Z",
+        "thinkTime": 0,
+        "moveNumber": 59
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -5,
+          "y": 9,
+          "z": -4
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 8,
+          "z": -3
+        },
+        "to": {
+          "x": -5,
+          "y": -7,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:46.803Z",
+        "thinkTime": 0,
+        "moveNumber": 60
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 4,
+          "y": 1,
+          "z": -5
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:46.841Z",
+        "thinkTime": 0,
+        "moveNumber": 61
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 10,
+          "y": -12,
+          "z": 2
+        },
+        "to": {
+          "x": -12,
+          "y": 10,
+          "z": 2
+        },
+        "moveNumber": 62,
+        "timestamp": "2025-12-07T21:54:46.904Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 10,
+          "z": 2
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 10,
+          "z": -2
+        },
+        "to": {
+          "x": -7,
+          "y": 10,
+          "z": -3
+        },
+        "timestamp": "2025-12-07T21:54:46.956Z",
+        "thinkTime": 0,
+        "moveNumber": 63
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -7,
+          "y": 10,
+          "z": -3
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 10,
+          "z": -2
+        },
+        "to": {
+          "x": -12,
+          "y": 10,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:46.956Z",
+        "thinkTime": 0,
+        "moveNumber": 64
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 4,
+          "y": 1,
+          "z": -5
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:46.977Z",
+        "thinkTime": 0,
+        "moveNumber": 65
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 4,
+          "y": 1,
+          "z": -5
+        },
+        "to": {
+          "x": 4,
+          "y": -9,
+          "z": 5
+        },
+        "moveNumber": 66,
+        "timestamp": "2025-12-07T21:54:47.050Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -11,
+          "y": 8,
+          "z": 3
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:47.094Z",
+        "thinkTime": 0,
+        "moveNumber": 67
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": -11,
+          "y": 8,
+          "z": 3
+        },
+        "to": {
+          "x": -10,
+          "y": 7,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:47.117Z",
+        "thinkTime": 0,
+        "moveNumber": 68
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -2,
+          "y": 12,
+          "z": -10
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:47.182Z",
+        "thinkTime": 0,
+        "moveNumber": 69
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": 6,
+          "z": -9
+        },
+        "to": {
+          "x": 3,
+          "y": -12,
+          "z": 9
+        },
+        "moveNumber": 70,
+        "timestamp": "2025-12-07T21:54:47.218Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:47.252Z",
+        "thinkTime": 0,
+        "moveNumber": 71
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 4,
+          "z": 8
+        },
+        "to": {
+          "x": 1,
+          "y": -9,
+          "z": 8
+        },
+        "moveNumber": 72,
+        "timestamp": "2025-12-07T21:54:47.311Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 1,
+          "y": -9,
+          "z": 8
+        },
+        "captureTarget": {
+          "x": 4,
+          "y": -9,
+          "z": 5
+        },
+        "to": {
+          "x": 11,
+          "y": -9,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:47.349Z",
+        "thinkTime": 0,
+        "moveNumber": 73
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 11,
+          "y": -9,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": 9,
+          "y": -7,
+          "z": -2
+        },
+        "to": {
+          "x": 7,
+          "y": -5,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:47.349Z",
+        "thinkTime": 0,
+        "moveNumber": 74
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -1,
+          "y": -2,
+          "z": 3
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:47.399Z",
+        "thinkTime": 0,
+        "moveNumber": 75
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": -12,
+          "z": 9
+        },
+        "to": {
+          "x": 3,
+          "y": 5,
+          "z": -8
+        },
+        "moveNumber": 76,
+        "timestamp": "2025-12-07T21:54:47.433Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -10,
+          "y": 1,
+          "z": 9
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:47.488Z",
+        "thinkTime": 0,
+        "moveNumber": 77
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -10,
+          "y": 1,
+          "z": 9
+        },
+        "to": {
+          "x": -10,
+          "y": 3,
+          "z": 7
+        },
+        "timestamp": "2025-12-07T21:54:47.523Z",
+        "thinkTime": 0,
+        "moveNumber": 78
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": 3,
+          "z": 7
+        },
+        "captureTarget": {
+          "x": -10,
+          "y": 7,
+          "z": 3
+        },
+        "to": {
+          "x": -10,
+          "y": 8,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:47.523Z",
+        "thinkTime": 0,
+        "moveNumber": 79
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": 8,
+          "z": 2
+        },
+        "captureTarget": {
+          "x": -10,
+          "y": 7,
+          "z": 3
+        },
+        "to": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:47.523Z",
+        "thinkTime": 0,
+        "moveNumber": 80
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -1,
+          "y": -2,
+          "z": 3
+        },
+        "to": {
+          "x": 0,
+          "y": -2,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:47.524Z",
+        "thinkTime": 0,
+        "moveNumber": 81
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 0,
+          "y": -2,
+          "z": 2
+        },
+        "captureTarget": {
+          "x": -1,
+          "y": -2,
+          "z": 3
+        },
+        "to": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:47.524Z",
+        "thinkTime": 0,
+        "moveNumber": 82
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 9,
+          "y": 1,
+          "z": -10
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:47.562Z",
+        "thinkTime": 0,
+        "moveNumber": 83
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": 5,
+          "z": -8
+        },
+        "to": {
+          "x": 9,
+          "y": -1,
+          "z": -8
+        },
+        "moveNumber": 84,
+        "timestamp": "2025-12-07T21:54:47.624Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 2,
+          "y": -8,
+          "z": 6
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:47.649Z",
+        "thinkTime": 0,
+        "moveNumber": 85
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": 7,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": -11,
+          "y": 8,
+          "z": 3
+        },
+        "to": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:47.688Z",
+        "thinkTime": 0,
+        "moveNumber": 86
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 10,
+          "z": 2
+        },
+        "to": {
+          "x": -12,
+          "y": 11,
+          "z": 1
+        },
+        "timestamp": "2025-12-07T21:54:47.689Z",
+        "thinkTime": 0,
+        "moveNumber": 87
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 11,
+          "z": 1
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 10,
+          "z": 2
+        },
+        "to": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:47.689Z",
+        "thinkTime": 0,
+        "moveNumber": 88
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 9,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 10,
+          "z": 2
+        },
+        "to": {
+          "x": -12,
+          "y": 11,
+          "z": 1
+        },
+        "timestamp": "2025-12-07T21:54:47.689Z",
+        "thinkTime": 0,
+        "moveNumber": 89
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -3,
+          "y": 9,
+          "z": -6
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:47.757Z",
+        "thinkTime": 0,
+        "moveNumber": 90
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": 9,
+          "y": 1,
+          "z": -10
+        },
+        "captureTarget": {
+          "x": 9,
+          "y": -1,
+          "z": -8
+        },
+        "to": {
+          "x": 9,
+          "y": -4,
+          "z": -5
+        },
+        "timestamp": "2025-12-07T21:54:47.787Z",
+        "thinkTime": 0,
+        "moveNumber": 91
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 5,
+          "y": -11,
+          "z": 6
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:47.826Z",
+        "thinkTime": 0,
+        "moveNumber": 92
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -7,
+          "y": 9,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": 9,
+          "z": -6
+        },
+        "to": {
+          "x": 2,
+          "y": 9,
+          "z": -11
+        },
+        "timestamp": "2025-12-07T21:54:47.889Z",
+        "thinkTime": 0,
+        "moveNumber": 93
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -9,
+          "y": 9,
+          "z": 0
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:47.914Z",
+        "thinkTime": 0,
+        "moveNumber": 94
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -12,
+          "y": 11,
+          "z": 1
+        },
+        "to": {
+          "x": 1,
+          "y": 11,
+          "z": -12
+        },
+        "moveNumber": 95,
+        "timestamp": "2025-12-07T21:54:47.959Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 8,
+          "y": -10,
+          "z": 2
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:48.031Z",
+        "thinkTime": 0,
+        "moveNumber": 96
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 2,
+          "y": -8,
+          "z": 6
+        },
+        "captureTarget": {
+          "x": 5,
+          "y": -11,
+          "z": 6
+        },
+        "to": {
+          "x": 6,
+          "y": -12,
+          "z": 6
+        },
+        "timestamp": "2025-12-07T21:54:48.048Z",
+        "thinkTime": 0,
+        "moveNumber": 97
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 6,
+          "y": -12,
+          "z": 6
+        },
+        "captureTarget": {
+          "x": 5,
+          "y": -11,
+          "z": 6
+        },
+        "to": {
+          "x": -12,
+          "y": 6,
+          "z": 6
+        },
+        "timestamp": "2025-12-07T21:54:48.048Z",
+        "thinkTime": 0,
+        "moveNumber": 98
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -4,
+          "y": -6,
+          "z": 10
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:48.095Z",
+        "thinkTime": 0,
+        "moveNumber": 99
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -2,
+          "y": 12,
+          "z": -10
+        },
+        "to": {
+          "x": -5,
+          "y": 12,
+          "z": -7
+        },
+        "moveNumber": 100,
+        "timestamp": "2025-12-07T21:54:48.158Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -10,
+          "y": 0,
+          "z": 10
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:48.184Z",
+        "thinkTime": 0,
+        "moveNumber": 101
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": 0,
+          "z": 10
+        },
+        "captureTarget": {
+          "x": -4,
+          "y": -6,
+          "z": 10
+        },
+        "to": {
+          "x": -3,
+          "y": -7,
+          "z": 10
+        },
+        "timestamp": "2025-12-07T21:54:48.228Z",
+        "thinkTime": 0,
+        "moveNumber": 102
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 6,
+          "y": 0,
+          "z": -6
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:48.297Z",
+        "thinkTime": 0,
+        "moveNumber": 103
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -5,
+          "y": -7,
+          "z": 12
+        },
+        "to": {
+          "x": -5,
+          "y": 4,
+          "z": 1
+        },
+        "moveNumber": 104,
+        "timestamp": "2025-12-07T21:54:48.325Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 5,
+          "y": 7,
+          "z": -12
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:48.367Z",
+        "thinkTime": 0,
+        "moveNumber": 105
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 2,
+          "y": 9,
+          "z": -11
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": 9,
+          "z": 0
+        },
+        "to": {
+          "x": -11,
+          "y": 9,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:48.426Z",
+        "thinkTime": 0,
+        "moveNumber": 106
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -11,
+          "y": 9,
+          "z": 2
+        },
+        "captureTarget": {
+          "x": 8,
+          "y": -10,
+          "z": 2
+        },
+        "to": {
+          "x": 9,
+          "y": -11,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:48.427Z",
+        "thinkTime": 0,
+        "moveNumber": 107
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 9,
+          "y": -11,
+          "z": 2
+        },
+        "captureTarget": {
+          "x": 8,
+          "y": -10,
+          "z": 2
+        },
+        "to": {
+          "x": 1,
+          "y": -3,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:48.427Z",
+        "thinkTime": 0,
+        "moveNumber": 108
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -9,
+          "y": 4,
+          "z": 5
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:48.466Z",
+        "thinkTime": 0,
+        "moveNumber": 109
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -9,
+          "y": 4,
+          "z": 5
+        },
+        "captureTarget": {
+          "x": -8,
+          "y": 4,
+          "z": 4
+        },
+        "to": {
+          "x": -6,
+          "y": 4,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:48.511Z",
+        "thinkTime": 0,
+        "moveNumber": 110
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -6,
+          "y": 4,
+          "z": 2
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 4,
+          "z": 1
+        },
+        "to": {
+          "x": -3,
+          "y": 4,
+          "z": -1
+        },
+        "timestamp": "2025-12-07T21:54:48.511Z",
+        "thinkTime": 0,
+        "moveNumber": 111
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 6,
+          "y": -5,
+          "z": -1
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:48.560Z",
+        "thinkTime": 0,
+        "moveNumber": 112
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 6,
+          "y": -5,
+          "z": -1
+        },
+        "captureTarget": {
+          "x": 7,
+          "y": -5,
+          "z": -2
+        },
+        "to": {
+          "x": 9,
+          "y": -5,
+          "z": -4
+        },
+        "timestamp": "2025-12-07T21:54:48.596Z",
+        "thinkTime": 0,
+        "moveNumber": 113
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 9,
+          "y": -5,
+          "z": -4
+        },
+        "captureTarget": {
+          "x": 7,
+          "y": -5,
+          "z": -2
+        },
+        "to": {
+          "x": -7,
+          "y": -5,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:48.596Z",
+        "thinkTime": 0,
+        "moveNumber": 114
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 5,
+          "y": -12,
+          "z": 7
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:48.665Z",
+        "thinkTime": 0,
+        "moveNumber": 115
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 9,
+          "y": -4,
+          "z": -5
+        },
+        "to": {
+          "x": -3,
+          "y": 8,
+          "z": -5
+        },
+        "moveNumber": 116,
+        "timestamp": "2025-12-07T21:54:48.688Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": 8,
+          "z": -5
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": 4,
+          "z": -1
+        },
+        "to": {
+          "x": -3,
+          "y": -6,
+          "z": 9
+        },
+        "timestamp": "2025-12-07T21:54:48.742Z",
+        "thinkTime": 0,
+        "moveNumber": 117
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": -6,
+          "z": 9
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": 4,
+          "z": -1
+        },
+        "to": {
+          "x": -3,
+          "y": 5,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:48.742Z",
+        "thinkTime": 0,
+        "moveNumber": 118
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": 5,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": 4,
+          "z": -1
+        },
+        "to": {
+          "x": -3,
+          "y": -6,
+          "z": 9
+        },
+        "timestamp": "2025-12-07T21:54:48.743Z",
+        "thinkTime": 0,
+        "moveNumber": 119
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": -6,
+          "z": 9
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": 4,
+          "z": -1
+        },
+        "to": {
+          "x": -3,
+          "y": 5,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:48.743Z",
+        "thinkTime": 0,
+        "moveNumber": 120
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": 5,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": -7,
+          "z": 10
+        },
+        "to": {
+          "x": -3,
+          "y": -9,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:48.743Z",
+        "thinkTime": 0,
+        "moveNumber": 121
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": -9,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": 4,
+          "y": -9,
+          "z": 5
+        },
+        "to": {
+          "x": 5,
+          "y": -9,
+          "z": 4
+        },
+        "timestamp": "2025-12-07T21:54:48.743Z",
+        "thinkTime": 0,
+        "moveNumber": 122
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 5,
+          "y": -9,
+          "z": 4
+        },
+        "captureTarget": {
+          "x": 4,
+          "y": -9,
+          "z": 5
+        },
+        "to": {
+          "x": -3,
+          "y": -9,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:48.744Z",
+        "thinkTime": 0,
+        "moveNumber": 123
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:48.803Z",
+        "thinkTime": 0,
+        "moveNumber": 124
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -7,
+          "y": -5,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": -9,
+          "z": 12
+        },
+        "to": {
+          "x": -1,
+          "y": -11,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:48.836Z",
+        "thinkTime": 0,
+        "moveNumber": 125
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -1,
+          "y": -11,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": -9,
+          "z": 12
+        },
+        "to": {
+          "x": -7,
+          "y": -5,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:48.836Z",
+        "thinkTime": 0,
+        "moveNumber": 126
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -1,
+          "y": 6,
+          "z": -5
+        },
+        "placementCount": 1,
+        "timestamp": "2025-12-07T21:54:48.877Z",
+        "thinkTime": 0,
+        "moveNumber": 127
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 5,
+          "y": -12,
+          "z": 7
+        },
+        "to": {
+          "x": 4,
+          "y": -12,
+          "z": 8
+        },
+        "moveNumber": 128,
+        "timestamp": "2025-12-07T21:54:48.941Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": -5,
+          "y": -4,
+          "z": 9
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:48.967Z",
+        "thinkTime": 0,
+        "moveNumber": 129
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -5,
+          "y": -4,
+          "z": 9
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 4,
+          "z": 1
+        },
+        "to": {
+          "x": -5,
+          "y": 6,
+          "z": -1
+        },
+        "timestamp": "2025-12-07T21:54:49.023Z",
+        "thinkTime": 0,
+        "moveNumber": 130
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -5,
+          "y": 6,
+          "z": -1
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 4,
+          "z": 1
+        },
+        "to": {
+          "x": -5,
+          "y": -6,
+          "z": 11
+        },
+        "timestamp": "2025-12-07T21:54:49.023Z",
+        "thinkTime": 0,
+        "moveNumber": 131
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 3,
+          "y": -2,
+          "z": -1
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:49.078Z",
+        "thinkTime": 0,
+        "moveNumber": 132
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 7,
+          "y": -5,
+          "z": -2
+        },
+        "to": {
+          "x": 8,
+          "y": -6,
+          "z": -2
+        },
+        "moveNumber": 133,
+        "timestamp": "2025-12-07T21:54:49.100Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 2,
+        "to": {
+          "x": 2,
+          "y": 3,
+          "z": -5
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:49.154Z",
+        "thinkTime": 0,
+        "moveNumber": 134
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": -6,
+          "z": 11
+        },
+        "to": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "timestamp": "2025-12-07T21:54:49.212Z",
+        "thinkTime": 0,
+        "moveNumber": 135
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": -6,
+          "z": 11
+        },
+        "to": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "timestamp": "2025-12-07T21:54:49.213Z",
+        "thinkTime": 0,
+        "moveNumber": 136
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": -6,
+          "z": 11
+        },
+        "to": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "timestamp": "2025-12-07T21:54:49.213Z",
+        "thinkTime": 0,
+        "moveNumber": 137
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": -6,
+          "z": 11
+        },
+        "to": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "timestamp": "2025-12-07T21:54:49.213Z",
+        "thinkTime": 0,
+        "moveNumber": 138
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 3,
+          "y": -1,
+          "z": -2
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:49.252Z",
+        "thinkTime": 0,
+        "moveNumber": 139
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": -1,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": 3,
+          "y": -2,
+          "z": -1
+        },
+        "to": {
+          "x": 3,
+          "y": -5,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:49.303Z",
+        "thinkTime": 0,
+        "moveNumber": 140
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": -5,
+          "z": 2
+        },
+        "captureTarget": {
+          "x": 3,
+          "y": -2,
+          "z": -1
+        },
+        "to": {
+          "x": 3,
+          "y": -1,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:49.304Z",
+        "thinkTime": 0,
+        "moveNumber": 141
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-142",
+        "moveNumber": 142,
+        "timestamp": "2025-12-07T21:54:49.379Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 5,
+          "y": 7,
+          "z": -12
+        },
+        "captureTarget": {
+          "x": 1,
+          "y": 11,
+          "z": -12
+        },
+        "to": {
+          "x": 0,
+          "y": 12,
+          "z": -12
+        },
+        "timestamp": "2025-12-07T21:54:49.430Z",
+        "thinkTime": 0,
+        "moveNumber": 143
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 0,
+          "y": 12,
+          "z": -12
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 12,
+          "z": -7
+        },
+        "to": {
+          "x": -12,
+          "y": 12,
+          "z": 0
+        },
+        "timestamp": "2025-12-07T21:54:49.431Z",
+        "thinkTime": 0,
+        "moveNumber": 144
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 12,
+          "z": 0
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 12,
+          "z": -7
+        },
+        "to": {
+          "x": -4,
+          "y": 12,
+          "z": -8
+        },
+        "timestamp": "2025-12-07T21:54:49.431Z",
+        "thinkTime": 0,
+        "moveNumber": 145
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": 5,
+          "y": -8,
+          "z": 3
+        },
+        "placementCount": 3,
+        "timestamp": "2025-12-07T21:54:49.506Z",
+        "thinkTime": 0,
+        "moveNumber": 146
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 5,
+          "y": -8,
+          "z": 3
+        },
+        "to": {
+          "x": -6,
+          "y": 3,
+          "z": 3
+        },
+        "moveNumber": 147,
+        "timestamp": "2025-12-07T21:54:49.560Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -6,
+          "y": 3,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": 2,
+          "y": 3,
+          "z": -5
+        },
+        "to": {
+          "x": 9,
+          "y": 3,
+          "z": -12
+        },
+        "timestamp": "2025-12-07T21:54:49.682Z",
+        "thinkTime": 0,
+        "moveNumber": 148
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 9,
+          "y": 3,
+          "z": -12
+        },
+        "captureTarget": {
+          "x": 2,
+          "y": 3,
+          "z": -5
+        },
+        "to": {
+          "x": -9,
+          "y": 3,
+          "z": 6
+        },
+        "timestamp": "2025-12-07T21:54:49.682Z",
+        "thinkTime": 0,
+        "moveNumber": 149
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-150",
+        "moveNumber": 150,
+        "timestamp": "2025-12-07T21:54:49.782Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 6,
+          "z": 6
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": 3,
+          "z": 6
+        },
+        "to": {
+          "x": -6,
+          "y": 0,
+          "z": 6
+        },
+        "timestamp": "2025-12-07T21:54:49.818Z",
+        "thinkTime": 0,
+        "moveNumber": 151
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -6,
+          "y": 0,
+          "z": 6
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": 3,
+          "z": 6
+        },
+        "to": {
+          "x": -12,
+          "y": 6,
+          "z": 6
+        },
+        "timestamp": "2025-12-07T21:54:49.818Z",
+        "thinkTime": 0,
+        "moveNumber": 152
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 6,
+          "z": 6
+        },
+        "captureTarget": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "to": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:49.819Z",
+        "thinkTime": 0,
+        "moveNumber": 153
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 0,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": 6,
+          "y": 0,
+          "z": -6
+        },
+        "to": {
+          "x": 7,
+          "y": 0,
+          "z": -7
+        },
+        "timestamp": "2025-12-07T21:54:49.819Z",
+        "thinkTime": 0,
+        "moveNumber": 154
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 7,
+          "y": 0,
+          "z": -7
+        },
+        "captureTarget": {
+          "x": 6,
+          "y": 0,
+          "z": -6
+        },
+        "to": {
+          "x": -5,
+          "y": 0,
+          "z": 5
+        },
+        "timestamp": "2025-12-07T21:54:49.819Z",
+        "thinkTime": 0,
+        "moveNumber": 155
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -5,
+          "y": 0,
+          "z": 5
+        },
+        "captureTarget": {
+          "x": -5,
+          "y": 4,
+          "z": 1
+        },
+        "to": {
+          "x": -5,
+          "y": 8,
+          "z": -3
+        },
+        "timestamp": "2025-12-07T21:54:49.819Z",
+        "thinkTime": 0,
+        "moveNumber": 156
+      },
+      {
+        "id": "",
+        "type": "place_ring",
+        "player": 1,
+        "to": {
+          "x": -7,
+          "y": -3,
+          "z": 10
+        },
+        "placementCount": 2,
+        "timestamp": "2025-12-07T21:54:49.855Z",
+        "thinkTime": 0,
+        "moveNumber": 157
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -7,
+          "y": -3,
+          "z": 10
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": -7,
+          "z": 10
+        },
+        "to": {
+          "x": 1,
+          "y": -11,
+          "z": 10
+        },
+        "timestamp": "2025-12-07T21:54:49.909Z",
+        "thinkTime": 0,
+        "moveNumber": 158
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 1,
+          "y": -11,
+          "z": 10
+        },
+        "captureTarget": {
+          "x": -3,
+          "y": -7,
+          "z": 10
+        },
+        "to": {
+          "x": -9,
+          "y": -1,
+          "z": 10
+        },
+        "timestamp": "2025-12-07T21:54:49.909Z",
+        "thinkTime": 0,
+        "moveNumber": 159
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -9,
+          "y": -1,
+          "z": 10
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": 3,
+          "z": 6
+        },
+        "to": {
+          "x": -9,
+          "y": 4,
+          "z": 5
+        },
+        "timestamp": "2025-12-07T21:54:49.910Z",
+        "thinkTime": 0,
+        "moveNumber": 160
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-161",
+        "moveNumber": 161,
+        "timestamp": "2025-12-07T21:54:49.949Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -9,
+          "y": 4,
+          "z": 5
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": 3,
+          "z": 6
+        },
+        "to": {
+          "x": -9,
+          "y": 0,
+          "z": 9
+        },
+        "timestamp": "2025-12-07T21:54:49.983Z",
+        "thinkTime": 0,
+        "moveNumber": 162
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -9,
+          "y": 0,
+          "z": 9
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": 3,
+          "z": 6
+        },
+        "to": {
+          "x": -9,
+          "y": 4,
+          "z": 5
+        },
+        "timestamp": "2025-12-07T21:54:49.983Z",
+        "thinkTime": 0,
+        "moveNumber": 163
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-164",
+        "moveNumber": 164,
+        "timestamp": "2025-12-07T21:54:50.037Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "to": {
+          "x": -1,
+          "y": 1,
+          "z": 0
+        },
+        "moveNumber": 165,
+        "timestamp": "2025-12-07T21:54:50.070Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -1,
+          "y": 1,
+          "z": 0
+        },
+        "captureTarget": {
+          "x": -1,
+          "y": 6,
+          "z": -5
+        },
+        "to": {
+          "x": -1,
+          "y": 9,
+          "z": -8
+        },
+        "timestamp": "2025-12-07T21:54:50.107Z",
+        "thinkTime": 0,
+        "moveNumber": 166
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-167",
+        "moveNumber": 167,
+        "timestamp": "2025-12-07T21:54:50.172Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -4,
+          "y": 12,
+          "z": -8
+        },
+        "captureTarget": {
+          "x": -1,
+          "y": 9,
+          "z": -8
+        },
+        "to": {
+          "x": 5,
+          "y": 3,
+          "z": -8
+        },
+        "timestamp": "2025-12-07T21:54:50.208Z",
+        "thinkTime": 0,
+        "moveNumber": 168
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": 5,
+          "y": 3,
+          "z": -8
+        },
+        "captureTarget": {
+          "x": 2,
+          "y": 3,
+          "z": -5
+        },
+        "to": {
+          "x": -5,
+          "y": 3,
+          "z": 2
+        },
+        "timestamp": "2025-12-07T21:54:50.208Z",
+        "thinkTime": 0,
+        "moveNumber": 169
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-170",
+        "moveNumber": 170,
+        "timestamp": "2025-12-07T21:54:50.251Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": -1,
+          "z": -2
+        },
+        "to": {
+          "x": -1,
+          "y": 3,
+          "z": -2
+        },
+        "moveNumber": 171,
+        "timestamp": "2025-12-07T21:54:50.306Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -1,
+          "y": 3,
+          "z": -2
+        },
+        "captureTarget": {
+          "x": -1,
+          "y": 9,
+          "z": -8
+        },
+        "to": {
+          "x": -1,
+          "y": 10,
+          "z": -9
+        },
+        "timestamp": "2025-12-07T21:54:50.349Z",
+        "thinkTime": 0,
+        "moveNumber": 172
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": -1,
+          "y": 10,
+          "z": -9
+        },
+        "captureTarget": {
+          "x": -1,
+          "y": 9,
+          "z": -8
+        },
+        "to": {
+          "x": -1,
+          "y": -11,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:50.350Z",
+        "thinkTime": 0,
+        "moveNumber": 173
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-174",
+        "moveNumber": 174,
+        "timestamp": "2025-12-07T21:54:50.374Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -5,
+          "y": 8,
+          "z": -3
+        },
+        "to": {
+          "x": 9,
+          "y": -6,
+          "z": -3
+        },
+        "moveNumber": 175,
+        "timestamp": "2025-12-07T21:54:50.427Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 9,
+          "y": -6,
+          "z": -3
+        },
+        "captureTarget": {
+          "x": 8,
+          "y": -6,
+          "z": -2
+        },
+        "to": {
+          "x": -2,
+          "y": -6,
+          "z": 8
+        },
+        "timestamp": "2025-12-07T21:54:50.486Z",
+        "thinkTime": 0,
+        "moveNumber": 176
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-177",
+        "moveNumber": 177,
+        "timestamp": "2025-12-07T21:54:50.506Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": -7,
+          "z": 10
+        },
+        "to": {
+          "x": -2,
+          "y": -7,
+          "z": 9
+        },
+        "moveNumber": 178,
+        "timestamp": "2025-12-07T21:54:50.558Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-179",
+        "moveNumber": 179,
+        "timestamp": "2025-12-07T21:54:50.611Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -9,
+          "y": 4,
+          "z": 5
+        },
+        "to": {
+          "x": -9,
+          "y": -2,
+          "z": 11
+        },
+        "moveNumber": 180,
+        "timestamp": "2025-12-07T21:54:50.631Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-181",
+        "moveNumber": 181,
+        "timestamp": "2025-12-07T21:54:50.694Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 1,
+          "y": 11,
+          "z": -12
+        },
+        "to": {
+          "x": 11,
+          "y": 1,
+          "z": -12
+        },
+        "moveNumber": 182,
+        "timestamp": "2025-12-07T21:54:50.745Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-183",
+        "moveNumber": 183,
+        "timestamp": "2025-12-07T21:54:50.774Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": -2,
+          "z": 11
+        },
+        "to": {
+          "x": -2,
+          "y": -2,
+          "z": 4
+        },
+        "timestamp": "2025-12-07T21:54:50.816Z",
+        "thinkTime": 0,
+        "moveNumber": 184
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -2,
+          "y": -2,
+          "z": 4
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": -2,
+          "z": 11
+        },
+        "to": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "timestamp": "2025-12-07T21:54:50.817Z",
+        "thinkTime": 0,
+        "moveNumber": 185
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": -9,
+          "y": -2,
+          "z": 11
+        },
+        "to": {
+          "x": -4,
+          "y": -2,
+          "z": 6
+        },
+        "timestamp": "2025-12-07T21:54:50.817Z",
+        "thinkTime": 0,
+        "moveNumber": 186
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-187",
+        "moveNumber": 187,
+        "timestamp": "2025-12-07T21:54:50.878Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 6,
+          "y": 0,
+          "z": -6
+        },
+        "to": {
+          "x": 6,
+          "y": -2,
+          "z": -4
+        },
+        "moveNumber": 188,
+        "timestamp": "2025-12-07T21:54:50.896Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-189",
+        "moveNumber": 189,
+        "timestamp": "2025-12-07T21:54:50.953Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -5,
+          "y": 4,
+          "z": 1
+        },
+        "to": {
+          "x": -10,
+          "y": 9,
+          "z": 1
+        },
+        "moveNumber": 190,
+        "timestamp": "2025-12-07T21:54:51.014Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-191",
+        "moveNumber": 191,
+        "timestamp": "2025-12-07T21:54:51.057Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 4,
+          "y": -12,
+          "z": 8
+        },
+        "to": {
+          "x": 10,
+          "y": -12,
+          "z": 2
+        },
+        "moveNumber": 192,
+        "timestamp": "2025-12-07T21:54:51.091Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-193",
+        "moveNumber": 193,
+        "timestamp": "2025-12-07T21:54:51.144Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": 9,
+          "z": 1
+        },
+        "to": {
+          "x": 7,
+          "y": -8,
+          "z": 1
+        },
+        "moveNumber": 194,
+        "timestamp": "2025-12-07T21:54:51.184Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-195",
+        "moveNumber": 195,
+        "timestamp": "2025-12-07T21:54:51.232Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 6,
+          "y": -2,
+          "z": -4
+        },
+        "to": {
+          "x": -3,
+          "y": 7,
+          "z": -4
+        },
+        "moveNumber": 196,
+        "timestamp": "2025-12-07T21:54:51.273Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-197",
+        "moveNumber": 197,
+        "timestamp": "2025-12-07T21:54:51.318Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -9,
+          "y": -2,
+          "z": 11
+        },
+        "to": {
+          "x": -10,
+          "y": -2,
+          "z": 12
+        },
+        "moveNumber": 198,
+        "timestamp": "2025-12-07T21:54:51.356Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-199",
+        "moveNumber": 199,
+        "timestamp": "2025-12-07T21:54:51.404Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -3,
+          "y": 7,
+          "z": -4
+        },
+        "to": {
+          "x": -4,
+          "y": 8,
+          "z": -4
+        },
+        "moveNumber": 200,
+        "timestamp": "2025-12-07T21:54:51.440Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-201",
+        "moveNumber": 201,
+        "timestamp": "2025-12-07T21:54:51.507Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -4,
+          "y": -2,
+          "z": 6
+        },
+        "captureTarget": {
+          "x": -4,
+          "y": 8,
+          "z": -4
+        },
+        "to": {
+          "x": -4,
+          "y": 12,
+          "z": -8
+        },
+        "timestamp": "2025-12-07T21:54:51.526Z",
+        "thinkTime": 0,
+        "moveNumber": 202
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-203",
+        "moveNumber": 203,
+        "timestamp": "2025-12-07T21:54:51.565Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -2,
+          "y": -7,
+          "z": 9
+        },
+        "to": {
+          "x": 0,
+          "y": -9,
+          "z": 9
+        },
+        "moveNumber": 204,
+        "timestamp": "2025-12-07T21:54:51.628Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-205",
+        "moveNumber": 205,
+        "timestamp": "2025-12-07T21:54:51.654Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 7,
+          "y": -8,
+          "z": 1
+        },
+        "to": {
+          "x": 7,
+          "y": 0,
+          "z": -7
+        },
+        "moveNumber": 206,
+        "timestamp": "2025-12-07T21:54:51.695Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-207",
+        "moveNumber": 207,
+        "timestamp": "2025-12-07T21:54:51.759Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": 0,
+          "y": -12,
+          "z": 12
+        },
+        "captureTarget": {
+          "x": 0,
+          "y": -9,
+          "z": 9
+        },
+        "to": {
+          "x": 0,
+          "y": -3,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:51.777Z",
+        "thinkTime": 0,
+        "moveNumber": 208
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 0,
+          "y": -3,
+          "z": 3
+        },
+        "captureTarget": {
+          "x": 1,
+          "y": -3,
+          "z": 2
+        },
+        "to": {
+          "x": 10,
+          "y": -3,
+          "z": -7
+        },
+        "timestamp": "2025-12-07T21:54:51.777Z",
+        "thinkTime": 0,
+        "moveNumber": 209
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 10,
+          "y": -3,
+          "z": -7
+        },
+        "captureTarget": {
+          "x": 1,
+          "y": -3,
+          "z": 2
+        },
+        "to": {
+          "x": -6,
+          "y": -3,
+          "z": 9
+        },
+        "timestamp": "2025-12-07T21:54:51.777Z",
+        "thinkTime": 0,
+        "moveNumber": 210
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-211",
+        "moveNumber": 211,
+        "timestamp": "2025-12-07T21:54:51.827Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -4,
+          "y": 12,
+          "z": -8
+        },
+        "to": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "moveNumber": 212,
+        "timestamp": "2025-12-07T21:54:51.882Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-213",
+        "moveNumber": 213,
+        "timestamp": "2025-12-07T21:54:51.909Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -1,
+          "y": -11,
+          "z": 12
+        },
+        "to": {
+          "x": 6,
+          "y": -11,
+          "z": 5
+        },
+        "moveNumber": 214,
+        "timestamp": "2025-12-07T21:54:51.954Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-215",
+        "moveNumber": 215,
+        "timestamp": "2025-12-07T21:54:52.018Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -2,
+          "y": -6,
+          "z": 8
+        },
+        "to": {
+          "x": 9,
+          "y": -6,
+          "z": -3
+        },
+        "moveNumber": 216,
+        "timestamp": "2025-12-07T21:54:52.035Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-217",
+        "moveNumber": 217,
+        "timestamp": "2025-12-07T21:54:52.088Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 6,
+          "y": -11,
+          "z": 5
+        },
+        "to": {
+          "x": 12,
+          "y": -11,
+          "z": -1
+        },
+        "moveNumber": 218,
+        "timestamp": "2025-12-07T21:54:52.150Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-219",
+        "moveNumber": 219,
+        "timestamp": "2025-12-07T21:54:52.169Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 1,
+          "y": -3,
+          "z": 2
+        },
+        "to": {
+          "x": 8,
+          "y": -3,
+          "z": -5
+        },
+        "moveNumber": 220,
+        "timestamp": "2025-12-07T21:54:52.217Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-221",
+        "moveNumber": 221,
+        "timestamp": "2025-12-07T21:54:52.280Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 12,
+          "y": -11,
+          "z": -1
+        },
+        "to": {
+          "x": 3,
+          "y": -11,
+          "z": 8
+        },
+        "moveNumber": 222,
+        "timestamp": "2025-12-07T21:54:52.299Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-223",
+        "moveNumber": 223,
+        "timestamp": "2025-12-07T21:54:52.343Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 9,
+          "y": -6,
+          "z": -3
+        },
+        "to": {
+          "x": 1,
+          "y": -6,
+          "z": 5
+        },
+        "moveNumber": 224,
+        "timestamp": "2025-12-07T21:54:52.405Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-225",
+        "moveNumber": 225,
+        "timestamp": "2025-12-07T21:54:52.424Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": -11,
+          "z": 8
+        },
+        "to": {
+          "x": 3,
+          "y": -1,
+          "z": -2
+        },
+        "moveNumber": 226,
+        "timestamp": "2025-12-07T21:54:52.474Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-227",
+        "moveNumber": 227,
+        "timestamp": "2025-12-07T21:54:52.534Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 1,
+          "y": -6,
+          "z": 5
+        },
+        "to": {
+          "x": 12,
+          "y": -6,
+          "z": -6
+        },
+        "moveNumber": 228,
+        "timestamp": "2025-12-07T21:54:52.557Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-229",
+        "moveNumber": 229,
+        "timestamp": "2025-12-07T21:54:52.603Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 7,
+          "y": 0,
+          "z": -7
+        },
+        "to": {
+          "x": -1,
+          "y": 8,
+          "z": -7
+        },
+        "moveNumber": 230,
+        "timestamp": "2025-12-07T21:54:52.667Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-231",
+        "moveNumber": 231,
+        "timestamp": "2025-12-07T21:54:52.686Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -7,
+          "y": -5,
+          "z": 12
+        },
+        "to": {
+          "x": 2,
+          "y": -5,
+          "z": 3
+        },
+        "moveNumber": 232,
+        "timestamp": "2025-12-07T21:54:52.737Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-233",
+        "moveNumber": 233,
+        "timestamp": "2025-12-07T21:54:52.828Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": -1,
+          "z": -2
+        },
+        "to": {
+          "x": -8,
+          "y": -1,
+          "z": 9
+        },
+        "moveNumber": 234,
+        "timestamp": "2025-12-07T21:54:52.829Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-235",
+        "moveNumber": 235,
+        "timestamp": "2025-12-07T21:54:52.886Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 2,
+          "y": -5,
+          "z": 3
+        },
+        "to": {
+          "x": -6,
+          "y": -5,
+          "z": 11
+        },
+        "moveNumber": 236,
+        "timestamp": "2025-12-07T21:54:52.950Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": -6,
+          "y": -5,
+          "z": 11
+        },
+        "captureTarget": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "to": {
+          "x": -1,
+          "y": -10,
+          "z": 11
+        },
+        "timestamp": "2025-12-07T21:54:52.951Z",
+        "thinkTime": 0,
+        "moveNumber": 237
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 2,
+        "from": {
+          "x": -1,
+          "y": -10,
+          "z": 11
+        },
+        "captureTarget": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "to": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "timestamp": "2025-12-07T21:54:52.951Z",
+        "thinkTime": 0,
+        "moveNumber": 238
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-239",
+        "moveNumber": 239,
+        "timestamp": "2025-12-07T21:54:53.013Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 11,
+          "y": 1,
+          "z": -12
+        },
+        "to": {
+          "x": 11,
+          "y": -2,
+          "z": -9
+        },
+        "moveNumber": 240,
+        "timestamp": "2025-12-07T21:54:53.071Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-241",
+        "moveNumber": 241,
+        "timestamp": "2025-12-07T21:54:53.074Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -4,
+          "y": -7,
+          "z": 11
+        },
+        "to": {
+          "x": 0,
+          "y": -7,
+          "z": 7
+        },
+        "moveNumber": 242,
+        "timestamp": "2025-12-07T21:54:53.098Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-243",
+        "moveNumber": 243,
+        "timestamp": "2025-12-07T21:54:53.151Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -8,
+          "y": -1,
+          "z": 9
+        },
+        "to": {
+          "x": -4,
+          "y": -1,
+          "z": 5
+        },
+        "moveNumber": 244,
+        "timestamp": "2025-12-07T21:54:53.196Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-245",
+        "moveNumber": 245,
+        "timestamp": "2025-12-07T21:54:53.198Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 12,
+          "y": -6,
+          "z": -6
+        },
+        "to": {
+          "x": -2,
+          "y": 8,
+          "z": -6
+        },
+        "moveNumber": 246,
+        "timestamp": "2025-12-07T21:54:53.223Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-247",
+        "moveNumber": 247,
+        "timestamp": "2025-12-07T21:54:53.273Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -1,
+          "y": 8,
+          "z": -7
+        },
+        "captureTarget": {
+          "x": -2,
+          "y": 8,
+          "z": -6
+        },
+        "to": {
+          "x": -8,
+          "y": 8,
+          "z": 0
+        },
+        "timestamp": "2025-12-07T21:54:53.335Z",
+        "thinkTime": 0,
+        "moveNumber": 248
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-249",
+        "moveNumber": 249,
+        "timestamp": "2025-12-07T21:54:53.337Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -12,
+          "y": 1,
+          "z": 11
+        },
+        "to": {
+          "x": -3,
+          "y": 1,
+          "z": 2
+        },
+        "moveNumber": 250,
+        "timestamp": "2025-12-07T21:54:53.358Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-251",
+        "moveNumber": 251,
+        "timestamp": "2025-12-07T21:54:53.411Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -4,
+          "y": -1,
+          "z": 5
+        },
+        "to": {
+          "x": 12,
+          "y": -1,
+          "z": -11
+        },
+        "moveNumber": 252,
+        "timestamp": "2025-12-07T21:54:53.476Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-253",
+        "moveNumber": 253,
+        "timestamp": "2025-12-07T21:54:53.478Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -3,
+          "y": 1,
+          "z": 2
+        },
+        "to": {
+          "x": -10,
+          "y": 1,
+          "z": 9
+        },
+        "moveNumber": 254,
+        "timestamp": "2025-12-07T21:54:53.498Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-255",
+        "moveNumber": 255,
+        "timestamp": "2025-12-07T21:54:53.534Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 12,
+          "y": -1,
+          "z": -11
+        },
+        "to": {
+          "x": 1,
+          "y": 10,
+          "z": -11
+        },
+        "moveNumber": 256,
+        "timestamp": "2025-12-07T21:54:53.598Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-257",
+        "moveNumber": 257,
+        "timestamp": "2025-12-07T21:54:53.600Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 0,
+          "y": -7,
+          "z": 7
+        },
+        "to": {
+          "x": -7,
+          "y": 0,
+          "z": 7
+        },
+        "moveNumber": 258,
+        "timestamp": "2025-12-07T21:54:53.620Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-259",
+        "moveNumber": 259,
+        "timestamp": "2025-12-07T21:54:53.672Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -8,
+          "y": 8,
+          "z": 0
+        },
+        "to": {
+          "x": -8,
+          "y": 0,
+          "z": 8
+        },
+        "moveNumber": 260,
+        "timestamp": "2025-12-07T21:54:53.729Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-261",
+        "moveNumber": 261,
+        "timestamp": "2025-12-07T21:54:53.759Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -10,
+          "y": 1,
+          "z": 9
+        },
+        "to": {
+          "x": -2,
+          "y": 1,
+          "z": 1
+        },
+        "moveNumber": 262,
+        "timestamp": "2025-12-07T21:54:53.809Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-263",
+        "moveNumber": 263,
+        "timestamp": "2025-12-07T21:54:53.863Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -2,
+          "y": 8,
+          "z": -6
+        },
+        "captureTarget": {
+          "x": -2,
+          "y": 1,
+          "z": 1
+        },
+        "to": {
+          "x": -2,
+          "y": -1,
+          "z": 3
+        },
+        "timestamp": "2025-12-07T21:54:53.901Z",
+        "thinkTime": 0,
+        "moveNumber": 264
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-265",
+        "moveNumber": 265,
+        "timestamp": "2025-12-07T21:54:53.950Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -7,
+          "y": 0,
+          "z": 7
+        },
+        "to": {
+          "x": 1,
+          "y": -8,
+          "z": 7
+        },
+        "moveNumber": 266,
+        "timestamp": "2025-12-07T21:54:53.950Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-267",
+        "moveNumber": 267,
+        "timestamp": "2025-12-07T21:54:54.027Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 11,
+          "y": -2,
+          "z": -9
+        },
+        "to": {
+          "x": 1,
+          "y": -2,
+          "z": 1
+        },
+        "moveNumber": 268,
+        "timestamp": "2025-12-07T21:54:54.078Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-269",
+        "moveNumber": 269,
+        "timestamp": "2025-12-07T21:54:54.150Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 2,
+        "from": {
+          "x": 1,
+          "y": -8,
+          "z": 7
+        },
+        "captureTarget": {
+          "x": 1,
+          "y": -2,
+          "z": 1
+        },
+        "to": {
+          "x": 1,
+          "y": 1,
+          "z": -2
+        },
+        "timestamp": "2025-12-07T21:54:54.213Z",
+        "thinkTime": 0,
+        "moveNumber": 270
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-271",
+        "moveNumber": 271,
+        "timestamp": "2025-12-07T21:54:54.236Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -8,
+          "y": 0,
+          "z": 8
+        },
+        "to": {
+          "x": -1,
+          "y": -7,
+          "z": 8
+        },
+        "moveNumber": 272,
+        "timestamp": "2025-12-07T21:54:54.274Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-273",
+        "moveNumber": 273,
+        "timestamp": "2025-12-07T21:54:54.298Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 8,
+          "y": -3,
+          "z": -5
+        },
+        "to": {
+          "x": 8,
+          "y": 4,
+          "z": -12
+        },
+        "moveNumber": 274,
+        "timestamp": "2025-12-07T21:54:54.346Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-275",
+        "moveNumber": 275,
+        "timestamp": "2025-12-07T21:54:54.369Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": -1,
+          "y": -7,
+          "z": 8
+        },
+        "to": {
+          "x": -7,
+          "y": -1,
+          "z": 8
+        },
+        "moveNumber": 276,
+        "timestamp": "2025-12-07T21:54:54.402Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -7,
+          "y": -1,
+          "z": 8
+        },
+        "captureTarget": {
+          "x": -2,
+          "y": -1,
+          "z": 3
+        },
+        "to": {
+          "x": 1,
+          "y": -1,
+          "z": 0
+        },
+        "timestamp": "2025-12-07T21:54:54.425Z",
+        "thinkTime": 0,
+        "moveNumber": 277
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-278",
+        "moveNumber": 278,
+        "timestamp": "2025-12-07T21:54:54.487Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 8,
+          "y": 4,
+          "z": -12
+        },
+        "to": {
+          "x": 0,
+          "y": 12,
+          "z": -12
+        },
+        "moveNumber": 279,
+        "timestamp": "2025-12-07T21:54:54.505Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-280",
+        "moveNumber": 280,
+        "timestamp": "2025-12-07T21:54:54.534Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 1,
+          "y": 10,
+          "z": -11
+        },
+        "to": {
+          "x": -7,
+          "y": 10,
+          "z": -3
+        },
+        "moveNumber": 281,
+        "timestamp": "2025-12-07T21:54:54.553Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-282",
+        "moveNumber": 282,
+        "timestamp": "2025-12-07T21:54:54.610Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 0,
+          "y": 12,
+          "z": -12
+        },
+        "to": {
+          "x": 0,
+          "y": 6,
+          "z": -6
+        },
+        "moveNumber": 283,
+        "timestamp": "2025-12-07T21:54:54.636Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-284",
+        "moveNumber": 284,
+        "timestamp": "2025-12-07T21:54:54.663Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 1,
+          "y": -1,
+          "z": 0
+        },
+        "to": {
+          "x": 12,
+          "y": -12,
+          "z": 0
+        },
+        "moveNumber": 285,
+        "timestamp": "2025-12-07T21:54:54.689Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-286",
+        "moveNumber": 286,
+        "timestamp": "2025-12-07T21:54:54.747Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": -7,
+          "y": 10,
+          "z": -3
+        },
+        "to": {
+          "x": 4,
+          "y": -1,
+          "z": -3
+        },
+        "moveNumber": 287,
+        "timestamp": "2025-12-07T21:54:54.774Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-288",
+        "moveNumber": 288,
+        "timestamp": "2025-12-07T21:54:54.799Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 12,
+          "y": -12,
+          "z": 0
+        },
+        "to": {
+          "x": 5,
+          "y": -5,
+          "z": 0
+        },
+        "moveNumber": 289,
+        "timestamp": "2025-12-07T21:54:54.831Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-290",
+        "moveNumber": 290,
+        "timestamp": "2025-12-07T21:54:54.879Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 4,
+          "y": -1,
+          "z": -3
+        },
+        "to": {
+          "x": 9,
+          "y": -1,
+          "z": -8
+        },
+        "moveNumber": 291,
+        "timestamp": "2025-12-07T21:54:54.900Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-292",
+        "moveNumber": 292,
+        "timestamp": "2025-12-07T21:54:54.931Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 1,
+        "from": {
+          "x": 5,
+          "y": -5,
+          "z": 0
+        },
+        "to": {
+          "x": 11,
+          "y": -11,
+          "z": 0
+        },
+        "moveNumber": 293,
+        "timestamp": "2025-12-07T21:54:54.961Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-294",
+        "moveNumber": 294,
+        "timestamp": "2025-12-07T21:54:55.009Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 0,
+          "y": 6,
+          "z": -6
+        },
+        "to": {
+          "x": 0,
+          "y": -1,
+          "z": 1
+        },
+        "moveNumber": 295,
+        "timestamp": "2025-12-07T21:54:55.027Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-296",
+        "moveNumber": 296,
+        "timestamp": "2025-12-07T21:54:55.062Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "overtaking_capture",
+        "player": 1,
+        "from": {
+          "x": -2,
+          "y": 1,
+          "z": 1
+        },
+        "captureTarget": {
+          "x": 0,
+          "y": -1,
+          "z": 1
+        },
+        "to": {
+          "x": 3,
+          "y": -4,
+          "z": 1
+        },
+        "timestamp": "2025-12-07T21:54:55.090Z",
+        "thinkTime": 0,
+        "moveNumber": 297
+      },
+      {
+        "id": "",
+        "type": "continue_capture_segment",
+        "player": 1,
+        "from": {
+          "x": 3,
+          "y": -4,
+          "z": 1
+        },
+        "captureTarget": {
+          "x": 0,
+          "y": -1,
+          "z": 1
+        },
+        "to": {
+          "x": -4,
+          "y": 3,
+          "z": 1
+        },
+        "timestamp": "2025-12-07T21:54:55.090Z",
+        "thinkTime": 0,
+        "moveNumber": 298
+      },
+      {
+        "type": "no_placement_action",
+        "player": 2,
+        "id": "no-placement-action-299",
+        "moveNumber": 299,
+        "timestamp": "2025-12-07T21:54:55.147Z",
+        "thinkTime": 0
+      },
+      {
+        "id": "",
+        "type": "move_stack",
+        "player": 2,
+        "from": {
+          "x": 9,
+          "y": -1,
+          "z": -8
+        },
+        "to": {
+          "x": 9,
+          "y": -5,
+          "z": -4
+        },
+        "moveNumber": 300,
+        "timestamp": "2025-12-07T21:54:55.169Z",
+        "thinkTime": 0
+      },
+      {
+        "type": "no_placement_action",
+        "player": 1,
+        "id": "no-placement-action-301",
+        "moveNumber": 301,
+        "timestamp": "2025-12-07T21:54:55.204Z",
+        "thinkTime": 0
+      }
+    ],
+    "gameStatus": "active",
+    "victoryThreshold": 49,
+    "territoryVictoryThreshold": 235,
+    "totalRingsEliminated": 43,
+    "chainCapturePosition": {
+      "x": 3,
+      "y": -4,
+      "z": 1
+    }
+  }
+}

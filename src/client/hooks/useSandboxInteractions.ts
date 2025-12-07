@@ -287,9 +287,6 @@ export function useSandboxInteractions({
     const board = stateBefore.board;
 
     if (phaseBefore === 'ring_placement') {
-      const key = positionToString(pos);
-      const existingStack = board.stacks.get(key);
-
       // 1) Selected stack + click on a valid landing → synthesize skip_placement + movement
       if (selected) {
         const selectedKey = positionToString(selected);

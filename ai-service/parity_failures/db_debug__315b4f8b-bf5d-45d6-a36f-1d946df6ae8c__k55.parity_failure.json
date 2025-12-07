@@ -1,0 +1,2318 @@
+{
+  "db_path": "/private/tmp/db_debug.db",
+  "diverged_at": 55,
+  "game_id": "315b4f8b-bf5d-45d6-a36f-1d946df6ae8c",
+  "mismatch_context": "post_move",
+  "mismatch_kinds": [
+    "current_player",
+    "current_phase",
+    "state_hash"
+  ],
+  "moves_window": [
+    {
+      "_index": 52,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": null,
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "formedLines": null,
+      "from": {
+        "x": 2,
+        "y": 7,
+        "z": null
+      },
+      "id": "simulated",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 53,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "player": 2,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T17:18:25.324595",
+      "to": {
+        "x": 6,
+        "y": 3,
+        "z": null
+      },
+      "type": "move_stack"
+    },
+    {
+      "_index": 53,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": null,
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "formedLines": [
+        {
+          "direction": {
+            "x": 0,
+            "y": 1,
+            "z": null
+          },
+          "length": 3,
+          "player": 2,
+          "positions": [
+            {
+              "x": 2,
+              "y": 5,
+              "z": null
+            },
+            {
+              "x": 2,
+              "y": 6,
+              "z": null
+            },
+            {
+              "x": 2,
+              "y": 7,
+              "z": null
+            }
+          ]
+        }
+      ],
+      "from": null,
+      "id": "process-line-0-2,5",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 54,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "player": 2,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T17:18:25.324595",
+      "to": {
+        "x": 2,
+        "y": 5,
+        "z": null
+      },
+      "type": "process_line"
+    },
+    {
+      "_index": 54,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": null,
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": [
+        {
+          "controllingPlayer": 0,
+          "isDisconnected": true,
+          "spaces": [
+            {
+              "x": 0,
+              "y": 5,
+              "z": null
+            },
+            {
+              "x": 1,
+              "y": 5,
+              "z": null
+            },
+            {
+              "x": 0,
+              "y": 6,
+              "z": null
+            },
+            {
+              "x": 1,
+              "y": 6,
+              "z": null
+            },
+            {
+              "x": 0,
+              "y": 7,
+              "z": null
+            },
+            {
+              "x": 1,
+              "y": 7,
+              "z": null
+            }
+          ]
+        }
+      ],
+      "eliminatedRings": null,
+      "formedLines": null,
+      "from": null,
+      "id": "process-region-0-0,5",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 55,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "player": 2,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T17:18:25.324595",
+      "to": {
+        "x": 0,
+        "y": 5,
+        "z": null
+      },
+      "type": "process_territory_region"
+    },
+    {
+      "_index": 55,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": null,
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "formedLines": null,
+      "from": null,
+      "id": "simulated",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 56,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 3,
+      "player": 1,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T17:18:25.324595",
+      "to": {
+        "x": 6,
+        "y": 4,
+        "z": null
+      },
+      "type": "place_ring"
+    },
+    {
+      "_index": 56,
+      "actualDistance": null,
+      "captureChain": null,
+      "captureTarget": {
+        "x": 3,
+        "y": 1,
+        "z": null
+      },
+      "capturedStacks": null,
+      "claimedTerritory": null,
+      "collapsedMarkers": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "formedLines": null,
+      "from": {
+        "x": 6,
+        "y": 4,
+        "z": null
+      },
+      "id": "capture-6,4-3,1-2,0-57",
+      "markerLeft": null,
+      "minimumDistance": null,
+      "moveNumber": 57,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "player": 1,
+      "stackMoved": null,
+      "thinkTime": 0,
+      "timestamp": "2025-12-07T17:18:25.324595",
+      "to": {
+        "x": 2,
+        "y": 0,
+        "z": null
+      },
+      "type": "overtaking_capture"
+    }
+  ],
+  "python_states": {
+    "54": {
+      "board": {
+        "collapsedSpaces": {
+          "2,3": 2,
+          "2,5": 2,
+          "2,6": 2,
+          "2,7": 2,
+          "4,4": 2
+        },
+        "eliminatedRings": {
+          "1": 1,
+          "2": 1
+        },
+        "markers": {
+          "0,0": {
+            "player": 1,
+            "position": {
+              "x": 0,
+              "y": 0
+            }
+          },
+          "0,2": {
+            "player": 1,
+            "position": {
+              "x": 0,
+              "y": 2
+            }
+          },
+          "0,4": {
+            "player": 2,
+            "position": {
+              "x": 0,
+              "y": 4
+            }
+          },
+          "1,2": {
+            "player": 1,
+            "position": {
+              "x": 1,
+              "y": 2
+            }
+          },
+          "1,4": {
+            "player": 2,
+            "position": {
+              "x": 1,
+              "y": 4
+            }
+          },
+          "3,0": {
+            "player": 1,
+            "position": {
+              "x": 3,
+              "y": 0
+            }
+          },
+          "4,0": {
+            "player": 2,
+            "position": {
+              "x": 4,
+              "y": 0
+            }
+          },
+          "5,7": {
+            "player": 1,
+            "position": {
+              "x": 5,
+              "y": 7
+            }
+          },
+          "6,1": {
+            "player": 2,
+            "position": {
+              "x": 6,
+              "y": 1
+            }
+          },
+          "6,2": {
+            "player": 2,
+            "position": {
+              "x": 6,
+              "y": 2
+            }
+          },
+          "7,2": {
+            "player": 2,
+            "position": {
+              "x": 7,
+              "y": 2
+            }
+          },
+          "7,7": {
+            "player": 2,
+            "position": {
+              "x": 7,
+              "y": 7
+            }
+          }
+        },
+        "size": 8,
+        "stacks": {
+          "0,7": {
+            "capHeight": 1,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 0,
+              "y": 7
+            },
+            "rings": [
+              1
+            ],
+            "stackHeight": 1
+          },
+          "2,4": {
+            "capHeight": 5,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 2,
+              "y": 4
+            },
+            "rings": [
+              2,
+              2,
+              2,
+              2,
+              2
+            ],
+            "stackHeight": 5
+          },
+          "3,1": {
+            "capHeight": 2,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 3,
+              "y": 1
+            },
+            "rings": [
+              1,
+              1,
+              2,
+              2
+            ],
+            "stackHeight": 4
+          },
+          "3,3": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 3,
+              "y": 3
+            },
+            "rings": [
+              2,
+              1,
+              1,
+              1
+            ],
+            "stackHeight": 4
+          },
+          "6,3": {
+            "capHeight": 2,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 3
+            },
+            "rings": [
+              1,
+              1
+            ],
+            "stackHeight": 2
+          },
+          "6,6": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 6
+            },
+            "rings": [
+              1,
+              1,
+              1
+            ],
+            "stackHeight": 3
+          },
+          "6,7": {
+            "capHeight": 3,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 6,
+              "y": 7
+            },
+            "rings": [
+              1,
+              2,
+              2,
+              2
+            ],
+            "stackHeight": 4
+          },
+          "7,4": {
+            "capHeight": 1,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 7,
+              "y": 4
+            },
+            "rings": [
+              2
+            ],
+            "stackHeight": 1
+          }
+        },
+        "type": "square8"
+      },
+      "currentPhase": "territory_processing",
+      "currentPlayer": 2,
+      "gameId": "self-play",
+      "gameStatus": "active",
+      "moveHistory": [
+        {
+          "id": "simulated",
+          "moveNumber": 1,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:14:55.075669",
+          "to": {
+            "x": 6,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 6,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:14:55.075669",
+          "to": {
+            "x": 6,
+            "y": 6
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-3",
+          "moveNumber": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554864",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-4",
+          "moveNumber": 4,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 5,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 6,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 4,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "captureTarget": {
+            "x": 6,
+            "y": 6
+          },
+          "from": {
+            "x": 4,
+            "y": 4
+          },
+          "id": "capture-4,4-6,6-7,7-7",
+          "moveNumber": 7,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 7,
+            "y": 7
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 6,
+            "y": 6
+          },
+          "from": {
+            "x": 7,
+            "y": 7
+          },
+          "id": "capture-7,7-6,6-2,2-8",
+          "moveNumber": 8,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 2,
+            "y": 2
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-9",
+          "moveNumber": 9,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.479687",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-10",
+          "moveNumber": 10,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.480994",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 8,
+          "placedOnStack": false,
+          "placementCount": 1,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 2,
+            "y": 5
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 5
+          },
+          "id": "simulated",
+          "moveNumber": 8,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 0,
+            "y": 7
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-13",
+          "moveNumber": 13,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.493137",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-14",
+          "moveNumber": 14,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 15,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 6
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 6
+          },
+          "id": "simulated",
+          "moveNumber": 16,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 2,
+            "y": 3
+          },
+          "id": "capture-2,3-2,2-2,0-17",
+          "moveNumber": 17,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 2,
+            "y": 0
+          },
+          "id": "capture-2,0-2,2-2,4-18",
+          "moveNumber": 18,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 4
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-19",
+          "moveNumber": 19,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.377790",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-20",
+          "moveNumber": 20,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.379073",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 21,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.379073",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 0,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 22,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.379073",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-23",
+          "moveNumber": 23,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.395309",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-24",
+          "moveNumber": 24,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 25,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 6,
+            "y": 1
+          },
+          "type": "place_ring"
+        },
+        {
+          "captureTarget": {
+            "x": 6,
+            "y": 6
+          },
+          "from": {
+            "x": 6,
+            "y": 1
+          },
+          "id": "capture-6,1-6,6-6,7-26",
+          "moveNumber": 26,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 6,
+            "y": 7
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "id": "no-line-action-27",
+          "moveNumber": 27,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.028445",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-28",
+          "moveNumber": 28,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.029730",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 26,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 1,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 30,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 3,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 0
+          },
+          "from": {
+            "x": 3,
+            "y": 0
+          },
+          "id": "capture-3,0-2,0-0,0-31",
+          "moveNumber": 31,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 0,
+            "y": 0
+          },
+          "id": "capture-0,0-2,2-3,3-32",
+          "moveNumber": 32,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 3,
+            "y": 3
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-33",
+          "moveNumber": 33,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.053480",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-34",
+          "moveNumber": 34,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 35,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 4,
+            "y": 0
+          },
+          "type": "place_ring"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 4,
+            "y": 0
+          },
+          "id": "capture-4,0-2,2-0,4-36",
+          "moveNumber": 36,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 0,
+            "y": 4
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 0,
+            "y": 4
+          },
+          "id": "capture-0,4-2,2-3,1-37",
+          "moveNumber": 37,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 3,
+            "y": 1
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-38",
+          "moveNumber": 38,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.909813",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-39",
+          "moveNumber": 39,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.911126",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 37,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 5,
+            "y": 7
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 5,
+            "y": 7
+          },
+          "id": "simulated",
+          "moveNumber": 41,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 2,
+            "y": 7
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-42",
+          "moveNumber": 42,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.924414",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-43",
+          "moveNumber": 43,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.925696",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 44,
+          "placedOnStack": false,
+          "placementCount": 1,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.925696",
+          "to": {
+            "x": 7,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 7,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 45,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.925696",
+          "to": {
+            "x": 7,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-46",
+          "moveNumber": 46,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.305045",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-47",
+          "moveNumber": 47,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.306360",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 48,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.306360",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 6,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 49,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.306360",
+          "to": {
+            "x": 6,
+            "y": 6
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-50",
+          "moveNumber": 50,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.323315",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-51",
+          "moveNumber": 51,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 52,
+          "placedOnStack": true,
+          "placementCount": 1,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 2,
+            "y": 7
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 7
+          },
+          "id": "simulated",
+          "moveNumber": 53,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "process-line-0-2,5",
+          "moveNumber": 54,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 2,
+            "y": 5
+          },
+          "type": "process_line"
+        }
+      ],
+      "players": [
+        {
+          "eliminatedRings": 1,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 5,
+          "territorySpaces": 0
+        },
+        {
+          "eliminatedRings": 1,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 5,
+          "territorySpaces": 3
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 2,
+      "totalRingsInPlay": 36,
+      "turnNumber": 55,
+      "victoryThreshold": 19,
+      "winner": null
+    },
+    "55": {
+      "board": {
+        "collapsedSpaces": {
+          "0,4": 2,
+          "0,5": 2,
+          "0,6": 2,
+          "0,7": 2,
+          "1,4": 2,
+          "1,5": 2,
+          "1,6": 2,
+          "1,7": 2,
+          "2,3": 2,
+          "2,5": 2,
+          "2,6": 2,
+          "2,7": 2,
+          "4,4": 2
+        },
+        "eliminatedRings": {
+          "1": 1,
+          "2": 2
+        },
+        "markers": {
+          "0,0": {
+            "player": 1,
+            "position": {
+              "x": 0,
+              "y": 0
+            }
+          },
+          "0,2": {
+            "player": 1,
+            "position": {
+              "x": 0,
+              "y": 2
+            }
+          },
+          "1,2": {
+            "player": 1,
+            "position": {
+              "x": 1,
+              "y": 2
+            }
+          },
+          "3,0": {
+            "player": 1,
+            "position": {
+              "x": 3,
+              "y": 0
+            }
+          },
+          "4,0": {
+            "player": 2,
+            "position": {
+              "x": 4,
+              "y": 0
+            }
+          },
+          "5,7": {
+            "player": 1,
+            "position": {
+              "x": 5,
+              "y": 7
+            }
+          },
+          "6,1": {
+            "player": 2,
+            "position": {
+              "x": 6,
+              "y": 1
+            }
+          },
+          "6,2": {
+            "player": 2,
+            "position": {
+              "x": 6,
+              "y": 2
+            }
+          },
+          "7,2": {
+            "player": 2,
+            "position": {
+              "x": 7,
+              "y": 2
+            }
+          },
+          "7,7": {
+            "player": 2,
+            "position": {
+              "x": 7,
+              "y": 7
+            }
+          }
+        },
+        "size": 8,
+        "stacks": {
+          "2,4": {
+            "capHeight": 5,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 2,
+              "y": 4
+            },
+            "rings": [
+              2,
+              2,
+              2,
+              2,
+              2
+            ],
+            "stackHeight": 5
+          },
+          "3,1": {
+            "capHeight": 2,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 3,
+              "y": 1
+            },
+            "rings": [
+              1,
+              1,
+              2,
+              2
+            ],
+            "stackHeight": 4
+          },
+          "3,3": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 3,
+              "y": 3
+            },
+            "rings": [
+              2,
+              1,
+              1,
+              1
+            ],
+            "stackHeight": 4
+          },
+          "6,3": {
+            "capHeight": 2,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 3
+            },
+            "rings": [
+              1,
+              1
+            ],
+            "stackHeight": 2
+          },
+          "6,6": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 6
+            },
+            "rings": [
+              1,
+              1,
+              1
+            ],
+            "stackHeight": 3
+          },
+          "6,7": {
+            "capHeight": 3,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 6,
+              "y": 7
+            },
+            "rings": [
+              1,
+              2,
+              2,
+              2
+            ],
+            "stackHeight": 4
+          },
+          "7,4": {
+            "capHeight": 1,
+            "controllingPlayer": 2,
+            "position": {
+              "x": 7,
+              "y": 4
+            },
+            "rings": [
+              2
+            ],
+            "stackHeight": 1
+          }
+        },
+        "type": "square8"
+      },
+      "currentPhase": "ring_placement",
+      "currentPlayer": 1,
+      "gameId": "self-play",
+      "gameStatus": "active",
+      "moveHistory": [
+        {
+          "id": "simulated",
+          "moveNumber": 1,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:14:55.075669",
+          "to": {
+            "x": 6,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 6,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:14:55.075669",
+          "to": {
+            "x": 6,
+            "y": 6
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-3",
+          "moveNumber": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554864",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-4",
+          "moveNumber": 4,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 5,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 1,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 6,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 4,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "captureTarget": {
+            "x": 6,
+            "y": 6
+          },
+          "from": {
+            "x": 4,
+            "y": 4
+          },
+          "id": "capture-4,4-6,6-7,7-7",
+          "moveNumber": 7,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 7,
+            "y": 7
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 6,
+            "y": 6
+          },
+          "from": {
+            "x": 7,
+            "y": 7
+          },
+          "id": "capture-7,7-6,6-2,2-8",
+          "moveNumber": 8,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 2,
+            "y": 2
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-9",
+          "moveNumber": 9,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.479687",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-10",
+          "moveNumber": 10,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.480994",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 8,
+          "placedOnStack": false,
+          "placementCount": 1,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 2,
+            "y": 5
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 5
+          },
+          "id": "simulated",
+          "moveNumber": 8,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:11.554942",
+          "to": {
+            "x": 0,
+            "y": 7
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-13",
+          "moveNumber": 13,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.493137",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-14",
+          "moveNumber": 14,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 15,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 6
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 6
+          },
+          "id": "simulated",
+          "moveNumber": 16,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 2,
+            "y": 3
+          },
+          "id": "capture-2,3-2,2-2,0-17",
+          "moveNumber": 17,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 2,
+            "y": 0
+          },
+          "id": "capture-2,0-2,2-2,4-18",
+          "moveNumber": 18,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:15.494415",
+          "to": {
+            "x": 2,
+            "y": 4
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-19",
+          "moveNumber": 19,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.377790",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-20",
+          "moveNumber": 20,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.379073",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 21,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.379073",
+          "to": {
+            "x": 0,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 0,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 22,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.379073",
+          "to": {
+            "x": 2,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-23",
+          "moveNumber": 23,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.395309",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-24",
+          "moveNumber": 24,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 25,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 6,
+            "y": 1
+          },
+          "type": "place_ring"
+        },
+        {
+          "captureTarget": {
+            "x": 6,
+            "y": 6
+          },
+          "from": {
+            "x": 6,
+            "y": 1
+          },
+          "id": "capture-6,1-6,6-6,7-26",
+          "moveNumber": 26,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 6,
+            "y": 7
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "id": "no-line-action-27",
+          "moveNumber": 27,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.028445",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-28",
+          "moveNumber": 28,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.029730",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 26,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 1,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 1,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 30,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 3,
+            "y": 0
+          },
+          "type": "move_stack"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 0
+          },
+          "from": {
+            "x": 3,
+            "y": 0
+          },
+          "id": "capture-3,0-2,0-0,0-31",
+          "moveNumber": 31,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 0,
+            "y": 0
+          },
+          "id": "capture-0,0-2,2-3,3-32",
+          "moveNumber": 32,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:19.396600",
+          "to": {
+            "x": 3,
+            "y": 3
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-33",
+          "moveNumber": 33,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.053480",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-34",
+          "moveNumber": 34,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 35,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 4,
+            "y": 0
+          },
+          "type": "place_ring"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 4,
+            "y": 0
+          },
+          "id": "capture-4,0-2,2-0,4-36",
+          "moveNumber": 36,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 0,
+            "y": 4
+          },
+          "type": "overtaking_capture"
+        },
+        {
+          "captureTarget": {
+            "x": 2,
+            "y": 2
+          },
+          "from": {
+            "x": 0,
+            "y": 4
+          },
+          "id": "capture-0,4-2,2-3,1-37",
+          "moveNumber": 37,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 3,
+            "y": 1
+          },
+          "type": "continue_capture_segment"
+        },
+        {
+          "id": "no-line-action-38",
+          "moveNumber": 38,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.909813",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-39",
+          "moveNumber": 39,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.911126",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 37,
+          "placedOnStack": false,
+          "placementCount": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 5,
+            "y": 7
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 5,
+            "y": 7
+          },
+          "id": "simulated",
+          "moveNumber": 41,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:22.054728",
+          "to": {
+            "x": 2,
+            "y": 7
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-42",
+          "moveNumber": 42,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.924414",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-43",
+          "moveNumber": 43,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.925696",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 44,
+          "placedOnStack": false,
+          "placementCount": 1,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.925696",
+          "to": {
+            "x": 7,
+            "y": 2
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 7,
+            "y": 2
+          },
+          "id": "simulated",
+          "moveNumber": 45,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:23.925696",
+          "to": {
+            "x": 7,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-46",
+          "moveNumber": 46,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.305045",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-47",
+          "moveNumber": 47,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.306360",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 48,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.306360",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 6,
+            "y": 3
+          },
+          "id": "simulated",
+          "moveNumber": 49,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.306360",
+          "to": {
+            "x": 6,
+            "y": 6
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-50",
+          "moveNumber": 50,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.323315",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        },
+        {
+          "id": "no-territory-action-51",
+          "moveNumber": 51,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_territory_action"
+        },
+        {
+          "id": "simulated",
+          "moveNumber": 52,
+          "placedOnStack": true,
+          "placementCount": 1,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 2,
+            "y": 7
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 2,
+            "y": 7
+          },
+          "id": "simulated",
+          "moveNumber": 53,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 6,
+            "y": 3
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "process-line-0-2,5",
+          "moveNumber": 54,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 2,
+            "y": 5
+          },
+          "type": "process_line"
+        },
+        {
+          "id": "process-region-0-0,5",
+          "moveNumber": 55,
+          "player": 2,
+          "thinkTime": 0,
+          "timestamp": "2025-12-07T17:18:25.324595",
+          "to": {
+            "x": 0,
+            "y": 5
+          },
+          "type": "process_territory_region"
+        }
+      ],
+      "players": [
+        {
+          "eliminatedRings": 1,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 5,
+          "territorySpaces": 0
+        },
+        {
+          "eliminatedRings": 2,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 5,
+          "territorySpaces": 11
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 3,
+      "totalRingsInPlay": 36,
+      "turnNumber": 56,
+      "victoryThreshold": 19,
+      "winner": null
+    }
+  },
+  "python_summary": {
+    "current_phase": "ring_placement",
+    "current_player": 1,
+    "game_status": "active",
+    "move_index": 54,
+    "state_hash": "739133fef3a5e4a6"
+  },
+  "timestamp": "2025-12-07T17:18:35.206241",
+  "total_moves_python": 121,
+  "total_moves_ts": 121,
+  "ts_k_values": [
+    54,
+    55
+  ],
+  "ts_states": {
+    "54": null,
+    "55": null
+  },
+  "ts_summary": {
+    "current_phase": "territory_processing",
+    "current_player": 2,
+    "game_status": "active",
+    "move_index": 55,
+    "state_hash": "0c904b276883eae8"
+  }
+}

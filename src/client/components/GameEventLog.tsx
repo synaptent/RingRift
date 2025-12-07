@@ -1,5 +1,4 @@
-import React from 'react';
-import { GameHistoryEntry, GameResult } from '../../shared/types/game';
+import type { GameHistoryEntry, GameResult } from '../../shared/types/game';
 import { toEventLogViewModel, type EventLogViewModel } from '../adapters/gameViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════

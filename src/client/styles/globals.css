@@ -1064,3 +1064,186 @@ kbd {
   border-radius: 4px;
   box-shadow: 0 2px 0 #1e293b, inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
+
+/* ==========================================================================
+   Mobile Viewport Handling (W3-12)
+   ========================================================================== */
+
+/* Board scroll container for mobile viewports.
+   - Square8: 8×44px cells + 7×2px gaps = 366px fits in 375px viewport
+   - Square19: 19×44px cells + 18×2px gaps = 872px requires horizontal scroll
+   - Hexagonal: varies, may need scroll on mobile */
+.board-scroll-container {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+  /* Prevent pull-to-refresh on mobile */
+  overscroll-behavior-x: contain;
+  /* Hide scrollbar for cleaner look but keep functionality */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+.board-scroll-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.board-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.board-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 3px;
+}
+
+.board-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+}
+
+/* Mobile-only horizontal scroll indicator */
+@media (max-width: 639px) {
+  .board-scroll-container.needs-scroll::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    background: linear-gradient(
+      to left,
+      rgba(15, 23, 42, 0.8),
+      transparent
+    );
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+  }
+
+  .board-scroll-container.scrolled-right::after {
+    opacity: 0;
+  }
+}
+
+/* Touch-friendly tap targets - minimum 44px (WCAG 2.1 AAA) */
+@media (max-width: 767px) {
+  /* Ensure board cells meet touch target requirements */
+  [role="gridcell"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Increase tap area for interactive elements */
+  .interactive-piece {
+    /* Extend hit area without changing visual size */
+    position: relative;
+  }
+
+  .interactive-piece::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    z-index: -1;
+  }
+}
+
+/* Viewport height handling for mobile browsers (address bar) */
+@supports (height: 100dvh) {
+  .game-container-mobile {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+/* Fallback for browsers without dvh support */
+@supports not (height: 100dvh) {
+  .game-container-mobile {
+    height: 100vh;
+    max-height: -webkit-fill-available;
+  }
+}
+
+/* Prevent text selection during drag on mobile */
+.board-container {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Mobile landscape orientation adjustments */
+@media (max-width: 767px) and (orientation: landscape) {
+  .game-layout-mobile {
+    flex-direction: row;
+  }
+
+  .board-scroll-container {
+    max-height: calc(100dvh - 60px);
+  }
+}
+
+/* ==========================================================================
+   Touch Interaction Enhancements (W3-13)
+   ========================================================================== */
+
+/* Touch-friendly tap feedback for board cells */
+@media (pointer: coarse) {
+  /* Active state feedback for touch */
+  [role="gridcell"]:active {
+    transform: scale(0.95);
+    transition: transform 0.1s ease-out;
+  }
+
+  /* Prevent double-tap zoom on interactive elements */
+  [role="gridcell"],
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+
+  /* Improve tap highlight for stack interactions */
+  .interactive-piece:active {
+    transform: scale(0.92);
+    transition: transform 0.1s ease-out;
+  }
+
+  /* Visual feedback ring on touch */
+  [role="gridcell"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.2) 0%, transparent 70%);
+    transition: opacity 0.15s ease-out;
+  }
+
+  [role="gridcell"]:active::after {
+    opacity: 1;
+  }
+}
+
+/* Disable hover states on touch devices to avoid sticky hover */
+@media (hover: none) and (pointer: coarse) {
+  .interactive-piece:hover {
+    transform: none;
+  }
+
+  button:hover {
+    /* Reset hover states on mobile */
+  }
+}
+
+/* Ensure touch targets have proper spacing */
+@media (max-width: 767px) {
+  /* Add gap between tappable player rows */
+  .space-y-1 > button {
+    margin-bottom: 8px;
+  }
+
+  /* Increase touch area for small buttons */
+  button[class*="rounded-full"] {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

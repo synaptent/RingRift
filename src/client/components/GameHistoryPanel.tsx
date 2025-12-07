@@ -1,10 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import {
-  gameApi,
-  GameHistoryResponse,
-  GameHistoryMove,
-  GameDetailsResponse,
-} from '../services/api';
+import { useState, useEffect } from 'react';
+import { gameApi, type GameHistoryResponse, type GameHistoryMove } from '../services/api';
 import { Badge } from './ui/Badge';
 import { formatVictoryReason } from '../adapters/gameViewModels';
 import { BoardView } from './BoardView';
@@ -12,21 +7,8 @@ import { MoveHistory } from './MoveHistory';
 import { HistoryPlaybackPanel } from './HistoryPlaybackPanel';
 import { reconstructStateAtMove } from '../../shared/engine/replayHelpers';
 import { adaptHistoryToGameRecord } from '../services/ReplayService';
-import type {
-  GameRecord,
-  MoveRecord,
-  GameOutcome,
-  FinalScore,
-  PlayerRecordInfo,
-} from '../../shared/types/gameRecord';
-import type {
-  GameState,
-  Move,
-  Position,
-  BoardType,
-  LineInfo,
-  Territory,
-} from '../../shared/types/game';
+import type { GameRecord } from '../../shared/types/gameRecord';
+import type { GameState, Move } from '../../shared/types/game';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types

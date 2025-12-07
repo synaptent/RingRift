@@ -202,28 +202,27 @@ function deriveMovePositionsFromBoards(
   const addedKeys: string[] = [];
 
   // Detect stacks that disappeared or appeared between states.
-  prevBoard.stacks.forEach((stack, key) => {
+  for (const key of prevBoard.stacks.keys()) {
     if (!nextBoard.stacks.has(key)) {
       removedKeys.push(key);
     }
-  });
+  }
 
-  nextBoard.stacks.forEach((stack, key) => {
+  for (const key of nextBoard.stacks.keys()) {
     if (!prevBoard.stacks.has(key)) {
       addedKeys.push(key);
     }
-  });
+  }
 
-  let from: Position | undefined;
-  let to: Position | undefined;
+  const result: { from?: Position; to?: Position } = {};
 
   if (removedKeys.length === 1) {
-    from = stringToPosition(removedKeys[0]);
+    result.from = stringToPosition(removedKeys[0]);
   }
 
   if (addedKeys.length === 1) {
-    to = stringToPosition(addedKeys[0]);
+    result.to = stringToPosition(addedKeys[0]);
   }
 
-  return { from, to };
+  return result;
 }

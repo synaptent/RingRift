@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import type { Player } from '../../shared/types/game';
 import { PLAYER_COLORS } from '../adapters/gameViewModels';
@@ -96,7 +96,7 @@ export function EvaluationGraph({
       .map((pn) => {
         const pathPoints = points
           .filter((p) => p.perPlayer[pn] !== undefined)
-          .map((p, _idx) => {
+          .map((p) => {
             const x = scaleX(p.moveNumber);
             const y = scaleY(p.perPlayer[pn]?.totalEval ?? 0);
             return `${x},${y}`;
@@ -180,7 +180,7 @@ export function EvaluationGraph({
 
           {/* Clickable points */}
           {onMoveClick &&
-            points.map((p, idx) => (
+            points.map((p) => (
               <rect
                 key={p.moveNumber}
                 x={scaleX(p.moveNumber) - 2}

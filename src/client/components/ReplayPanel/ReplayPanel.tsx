@@ -11,7 +11,7 @@
  * See: docs/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { GameFilters } from './GameFilters';
 import { GameList } from './GameList';
 import { PlaybackControls } from './PlaybackControls';

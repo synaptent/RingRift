@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { BoardType, GamePhase, Move } from '../../shared/types/game';
 import type { RulesUxContext, RulesUxWeirdStateType } from '../../shared/telemetry/rulesUxEvents';
 import type { RulesWeirdStateReasonCode } from '../../shared/engine/weirdStateReasons';
@@ -269,7 +269,7 @@ export function TeachingOverlay({
 }: TeachingOverlayProps) {
   const content = TEACHING_CONTENT[topic];
 
-  const relatedScenarios: TeachingScenarioMetadata[] = React.useMemo(() => {
+  const relatedScenarios: TeachingScenarioMetadata[] = useMemo(() => {
     const concepts = TOPIC_RULES_CONCEPTS[topic];
     if (!concepts || concepts.length === 0) {
       return [];
@@ -283,13 +283,13 @@ export function TeachingOverlay({
   const [currentFlowId, setCurrentFlowId] = useState<string | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [teachingFlowId, setTeachingFlowId] = useState<string | null>(null);
+ 
+  const lastWeirdStateContextRef = useRef<WeirdStateOverlayContext | null>(null);
+  const hasShownForSessionRef = useRef<string | null>(null);
+  const hasDismissedForSessionRef = useRef<string | null>(null);
+  const prevIsOpenRef = useRef(false);
 
-  const lastWeirdStateContextRef = React.useRef<WeirdStateOverlayContext | null>(null);
-  const hasShownForSessionRef = React.useRef<string | null>(null);
-  const hasDismissedForSessionRef = React.useRef<string | null>(null);
-  const prevIsOpenRef = React.useRef(false);
-
-  const selectedScenario: TeachingScenarioMetadata | undefined = React.useMemo(() => {
+  const selectedScenario: TeachingScenarioMetadata | undefined = useMemo(() => {
     if (!currentFlowId || currentStepIndex == null) {
       return undefined;
     }
@@ -335,10 +335,10 @@ export function TeachingOverlay({
         numPlayers: ctx.numPlayers,
         rulesContext: ctx.rulesContext,
         source: 'teaching_overlay',
-        weirdStateType: ctx.weirdStateType,
+        ...(ctx.weirdStateType !== undefined ? { weirdStateType: ctx.weirdStateType } : {}),
         reasonCode: ctx.reasonCode,
-        isRanked: ctx.isRanked,
-        isSandbox: ctx.isSandbox,
+        ...(ctx.isRanked !== undefined ? { isRanked: ctx.isRanked } : {}),
+        ...(ctx.isSandbox !== undefined ? { isSandbox: ctx.isSandbox } : {}),
         overlaySessionId: ctx.overlaySessionId,
       });
     }
@@ -351,10 +351,10 @@ export function TeachingOverlay({
         numPlayers: ctx.numPlayers,
         rulesContext: ctx.rulesContext,
         source: 'teaching_overlay',
-        weirdStateType: ctx.weirdStateType,
+        ...(ctx.weirdStateType !== undefined ? { weirdStateType: ctx.weirdStateType } : {}),
         reasonCode: ctx.reasonCode,
-        isRanked: ctx.isRanked,
-        isSandbox: ctx.isSandbox,
+        ...(ctx.isRanked !== undefined ? { isRanked: ctx.isRanked } : {}),
+        ...(ctx.isSandbox !== undefined ? { isSandbox: ctx.isSandbox } : {}),
         overlaySessionId: ctx.overlaySessionId,
       });
     }
@@ -417,11 +417,13 @@ export function TeachingOverlay({
       source: 'teaching_overlay',
       boardType: scenario.recommendedBoardType,
       numPlayers: scenario.recommendedNumPlayers,
-      rulesContext,
+      ...(rulesContext ? { rulesContext } : {}),
       rulesConcept: scenario.rulesConcept,
       scenarioId: scenario.scenarioId,
       teachingFlowId: flowId,
-      overlaySessionId: ctxForTeaching?.overlaySessionId,
+      ...(ctxForTeaching?.overlaySessionId
+        ? { overlaySessionId: ctxForTeaching.overlaySessionId }
+        : {}),
       payload: {
         flowId: scenario.flowId,
         stepIndex: scenario.stepIndex,
@@ -450,11 +452,13 @@ export function TeachingOverlay({
       source: 'teaching_overlay',
       boardType: selectedScenario.recommendedBoardType,
       numPlayers: selectedScenario.recommendedNumPlayers,
-      rulesContext,
+      ...(rulesContext ? { rulesContext } : {}),
       rulesConcept: selectedScenario.rulesConcept,
       scenarioId: selectedScenario.scenarioId,
       teachingFlowId: flowId,
-      overlaySessionId: ctxForTeaching?.overlaySessionId,
+      ...(ctxForTeaching?.overlaySessionId
+        ? { overlaySessionId: ctxForTeaching.overlaySessionId }
+        : {}),
       payload: {
         flowId: selectedScenario.flowId,
         stepIndex: selectedScenario.stepIndex,

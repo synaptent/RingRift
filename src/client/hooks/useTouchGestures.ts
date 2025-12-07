@@ -212,9 +212,9 @@ export function useCellTouchGestures(
 ): TouchGestureHandlers {
   return useTouchGestures<void>(
     {
-      onTap: onTap ? () => onTap() : undefined,
-      onDoubleTap: onDoubleTap ? () => onDoubleTap() : undefined,
-      onLongPress: onLongPress ? () => onLongPress() : undefined,
+      onTap: onTap ? (_data: void) => onTap() : undefined,
+      onDoubleTap: onDoubleTap ? (_data: void) => onDoubleTap() : undefined,
+      onLongPress: onLongPress ? (_data: void) => onLongPress() : undefined,
     },
     undefined,
     { disabled }

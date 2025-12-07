@@ -301,7 +301,7 @@ export class SandboxOrchestratorAdapter {
           const stateForMove = this.stateAccessor.getGameState();
           const moveNumber = stateForMove.moveHistory.length + 1;
 
-          let moveType: Move['type'];
+          let moveType: Move['type'] | undefined;
           switch (decision.type) {
             case 'no_line_action_required':
               moveType = 'no_line_action';
@@ -351,7 +351,25 @@ export class SandboxOrchestratorAdapter {
           payload: { decision },
         });
 
-        const chosenMove = await delegates.resolveDecision(decision);
+        let chosenMove = await delegates.resolveDecision(decision);
+
+        // WORKAROUND: The shared engine's TerritoryAggregate throws if passed 'forced_elimination',
+        // but turnOrchestrator passes it through. We must convert to 'eliminate_rings_from_stack'
+        // and rely on ClientSandboxEngine's phase coercion to 'territory_processing' to apply it.
+        if (chosenMove.type === 'forced_elimination') {
+          chosenMove = {
+            ...chosenMove,
+            type: 'eliminate_rings_from_stack',
+          } as Move;
+          
+          // Also coerce the phase in workingState so assertPhaseMoveInvariant accepts it
+          if (workingState.currentPhase === 'forced_elimination') {
+             workingState = {
+                 ...workingState,
+                 currentPhase: 'territory_processing',
+             };
+          }
+        }
 
         delegates.onProcessingEvent?.({
           type: 'decision_resolved',

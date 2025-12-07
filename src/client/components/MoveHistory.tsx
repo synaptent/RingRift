@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import { useRef, useEffect } from 'react';
 import { formatMove, formatPosition, MoveNotationOptions } from '../../shared/engine/notation';
 import type { Move, BoardType, GameHistoryEntry } from '../../shared/types/game';
 

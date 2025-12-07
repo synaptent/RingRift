@@ -242,9 +242,10 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     const windowWithE2E = window as WindowWithE2EDebug;
     const setter: E2ESetterFn = (message: string, trace: unknown) => {
       setSandboxStallWarning(message);
-      // Cast through the global Window type which already has the trace typed
-      (window as Window).__RINGRIFT_SANDBOX_TRACE__ =
-        trace as typeof window.__RINGRIFT_SANDBOX_TRACE__;
+      // Delegate to the sandbox AI trace buffer without over-constraining types
+      // here. sandboxAI.ts owns the precise SandboxAITurnTraceEntry[] shape.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test-only E2E helper
+      (window as any).__RINGRIFT_SANDBOX_TRACE__ = trace;
     };
 
     windowWithE2E.__RINGRIFT_E2E_SET_SANDBOX_STALL__ = setter;

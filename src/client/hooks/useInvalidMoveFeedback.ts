@@ -25,7 +25,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import type { Position, GameState, BoardState } from '../../shared/types/game';
+import type { Position, GameState } from '../../shared/types/game';
 import { positionToString } from '../../shared/types/game';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -237,7 +237,7 @@ export function analyzeInvalidMove(
 export function useInvalidMoveFeedback(
   config: InvalidMoveFeedbackConfig = {}
 ): InvalidMoveFeedbackResult {
-  const { shakeDurationMs = 400, showToast = true, announceToScreenReader = true } = config;
+  const { shakeDurationMs = 400, showToast = true } = config;
 
   const [shakingCellKey, setShakingCellKey] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

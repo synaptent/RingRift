@@ -6,7 +6,7 @@
  * this works with locally-loaded games that have a move history.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 export interface HistoryPlaybackPanelProps {
   /** Total number of moves in the history */
@@ -62,14 +62,14 @@ export function HistoryPlaybackPanel({
       playIntervalRef.current = window.setInterval(() => {
         onMoveIndexChange(currentMoveIndex + 1);
       }, intervalMs);
-
-      return () => {
-        if (playIntervalRef.current) {
-          window.clearInterval(playIntervalRef.current);
-          playIntervalRef.current = null;
-        }
-      };
     }
+  
+    return () => {
+      if (playIntervalRef.current !== null) {
+        window.clearInterval(playIntervalRef.current);
+        playIntervalRef.current = null;
+      }
+    };
   }, [isPlaying, isViewingHistory, currentMoveIndex, playbackSpeed, onMoveIndexChange]);
 
   // Stop playback when exiting history view
@@ -123,7 +123,7 @@ export function HistoryPlaybackPanel({
   }, [totalMoves, currentMoveIndex, onMoveIndexChange, onExitHistoryView]);
 
   const handleScrubberChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    (e: ChangeEvent<HTMLInputElement>) => {
       const newIndex = parseInt(e.target.value, 10);
       if (!isViewingHistory) {
         onEnterHistoryView();

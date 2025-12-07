@@ -5,7 +5,7 @@
  * Can be opened via the gear icon in the navbar or keyboard shortcut.
  */
 
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { AccessibilitySettingsPanel } from './AccessibilitySettingsPanel';
 
 interface SettingsModalProps {

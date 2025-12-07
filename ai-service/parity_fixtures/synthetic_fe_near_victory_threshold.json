@@ -1,0 +1,47 @@
+{
+  "canonical_move": {
+    "id": "fe-near_victory_threshold",
+    "type": "forced_elimination",
+    "player": 1,
+    "from": null,
+    "to": {
+      "x": 3,
+      "y": 3,
+      "z": null
+    },
+    "captureTarget": null,
+    "capturedStacks": null,
+    "captureChain": null,
+    "overtakenRings": null,
+    "placedOnStack": null,
+    "placementCount": null,
+    "stackMoved": null,
+    "minimumDistance": null,
+    "actualDistance": null,
+    "markerLeft": null,
+    "formedLines": null,
+    "collapsedMarkers": null,
+    "claimedTerritory": null,
+    "disconnectedRegions": null,
+    "eliminatedRings": null,
+    "timestamp": "2025-12-07T16:10:53.680061",
+    "thinkTime": 0,
+    "moveNumber": 1
+  },
+  "canonical_move_index": 0,
+  "fixture_id": "synthetic_fe_near_victory_threshold",
+  "source": "synthetic",
+  "move_type": "forced_elimination",
+  "python_summary": {
+    "move_index": 0,
+    "current_player": 1,
+    "current_phase": "movement",
+    "game_status": "active",
+    "state_hash": "82041ad5c8e14eae"
+  },
+  "generated_at": "2025-12-07T16:10:53.680065",
+  "purpose": "forced_elimination_coverage",
+  "description": "FE that pushes player near victory threshold",
+  "board_type": "square8",
+  "num_players": 2
+}

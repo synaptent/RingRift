@@ -108,7 +108,7 @@ function MobileWeirdStateBanner({
         <button
           type="button"
           onClick={onShowHelp}
-          className="ml-1 mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full border border-current/60 text-[10px] font-semibold"
+          className="ml-1 mt-0.5 inline-flex h-11 w-11 items-center justify-center rounded-full border border-current/60 text-sm font-semibold touch-manipulation"
           aria-label="Learn more about this situation"
           data-testid="mobile-weird-state-help"
         >
@@ -560,11 +560,11 @@ export function MobileGameHUD({
           <button
             type="button"
             onClick={() => showTopic(phaseHelpTopic)}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-slate-600 bg-slate-900/80 text-[10px] text-slate-100"
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-full border border-slate-600 bg-slate-900/80 text-xs text-slate-100 touch-manipulation active:bg-slate-800"
             aria-label="Phase rules help"
             data-testid={`mobile-phase-help-${phase.phaseKey}`}
           >
-            <span className="text-xs">?</span>
+            <span className="text-sm">?</span>
             <span>Phase rules</span>
           </button>
         </div>
@@ -617,11 +617,11 @@ export function MobileGameHUD({
           <button
             type="button"
             onClick={() => showTopic('territory')}
-            className="mt-1 inline-flex items-center gap-1 px-2 py-1 rounded-full border border-slate-600 bg-slate-900/80 text-[10px] text-slate-100"
+            className="mt-1 inline-flex items-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-full border border-slate-600 bg-slate-900/80 text-xs text-slate-100 touch-manipulation active:bg-slate-800"
             aria-label="Territory rules help"
             data-testid="mobile-territory-help"
           >
-            <span className="text-xs">?</span>
+            <span className="text-sm">?</span>
             <span>Territory rules</span>
           </button>
         </div>
@@ -655,7 +655,7 @@ export function MobileGameHUD({
           {onShowBoardControls && (
             <button
               onClick={onShowBoardControls}
-              className="px-2 py-1 rounded border border-slate-600 bg-slate-900/70 hover:border-slate-400 transition-colors"
+              className="px-3 py-2.5 min-h-[44px] rounded-lg border border-slate-600 bg-slate-900/70 hover:border-slate-400 transition-colors touch-manipulation active:bg-slate-800 text-xs"
               aria-label="Board controls"
               data-testid="mobile-controls-button"
             >

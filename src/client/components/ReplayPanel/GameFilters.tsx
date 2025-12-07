@@ -4,7 +4,6 @@
  * Provides board type, player count, outcome, and source filters.
  */
 
-import React from 'react';
 import type { ReplayGameQueryParams } from '../../types/replay';
 
 export interface GameFiltersProps {

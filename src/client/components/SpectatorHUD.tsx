@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import type { GamePhase, Move } from '../../shared/types/game';
+import type { GamePhase, Move, Player } from '../../shared/types/game';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
-import { PLAYER_COLORS, PHASE_INFO, type PlayerViewModel } from '../adapters/gameViewModels';
+import { PLAYER_COLORS, PHASE_INFO } from '../adapters/gameViewModels';
 import { EvaluationGraph } from './EvaluationGraph';
 import { MoveAnalysisPanel, type MoveAnalysis } from './MoveAnalysisPanel';
 
 export interface SpectatorHUDProps {
   /** Current game phase */
   phase: GamePhase;
-  /** All players in the game (view-model projection) */
-  players: PlayerViewModel[];
+  /** All players in the game */
+  players: Player[];
   /** Current player number (whose turn it is) */
   currentPlayerNumber: number;
   /** Current turn number */
@@ -116,23 +116,33 @@ export function SpectatorHUD({
   const phaseDisplay = getPhaseDisplay(phase);
   const phaseInfo = PHASE_INFO[phase];
 
-  // Get recent moves for annotation display
-  const recentMoves = moveHistory.slice(-5);
-
-  // Build analysis for selected move
-  const selectedAnalysis: MoveAnalysis | null =
-    selectedMoveIndex !== undefined && moveHistory[selectedMoveIndex]
-      ? {
-          move: moveHistory[selectedMoveIndex],
-          moveNumber: selectedMoveIndex + 1,
-          playerNumber: moveHistory[selectedMoveIndex].player,
-          evaluation: evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex + 1),
-          prevEvaluation:
-            selectedMoveIndex > 0
-              ? evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex)
-              : undefined,
-        }
-      : null;
+   // Get recent moves for annotation display
+   const recentMoves = moveHistory.slice(-5);
+  
+   // Build analysis for selected move
+   const hasSelectedMove =
+     selectedMoveIndex !== undefined && !!moveHistory[selectedMoveIndex];
+  
+   const evaluationForSelected =
+     hasSelectedMove && selectedMoveIndex !== undefined
+       ? evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex + 1)
+       : undefined;
+  
+   const prevEvaluationForSelected =
+     hasSelectedMove && selectedMoveIndex !== undefined && selectedMoveIndex > 0
+       ? evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex)
+       : undefined;
+  
+   const selectedAnalysis: MoveAnalysis | null =
+     hasSelectedMove && selectedMoveIndex !== undefined
+       ? {
+           move: moveHistory[selectedMoveIndex],
+           moveNumber: selectedMoveIndex + 1,
+           playerNumber: moveHistory[selectedMoveIndex].player,
+           ...(evaluationForSelected ? { evaluation: evaluationForSelected } : {}),
+           ...(prevEvaluationForSelected ? { prevEvaluation: prevEvaluationForSelected } : {}),
+         }
+       : null;
 
   return (
     <div className={`space-y-3 ${className}`} data-testid="spectator-hud">
@@ -202,7 +212,9 @@ export function SpectatorHUD({
               ring: 'bg-slate-300',
               hex: '#64748b',
             };
-            const ringsOnBoard = player.ringStats.onBoard;
+            const ringsInHand = player.ringsInHand ?? 0;
+            const eliminated = player.eliminatedRings ?? 0;
+            const territory = player.territorySpaces ?? 0;
 
             return (
               <div
@@ -225,13 +237,13 @@ export function SpectatorHUD({
                   )}
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-slate-400">
-                  <span title="Rings on board">{ringsOnBoard} board</span>
-                  <span title="Rings captured" className="text-red-400/70">
-                    {player.ringStats.eliminated} cap
+                  <span title="Rings in hand">{ringsInHand} hand</span>
+                  <span title="Rings eliminated" className="text-red-400/70">
+                    {eliminated} cap
                   </span>
-                  {player.territorySpaces > 0 && (
+                  {territory > 0 && (
                     <span title="Territory spaces" className="text-emerald-400/70">
-                      {player.territorySpaces} terr
+                      {territory} terr
                     </span>
                   )}
                 </div>
@@ -266,8 +278,8 @@ export function SpectatorHUD({
             <EvaluationGraph
               evaluationHistory={evaluationHistory}
               players={players}
-              currentMoveIndex={selectedMoveIndex}
-              onMoveClick={onMoveSelect}
+              {...(selectedMoveIndex !== undefined ? { currentMoveIndex: selectedMoveIndex } : {})}
+              {...(onMoveSelect ? { onMoveClick: onMoveSelect } : {})}
             />
           )}
 
