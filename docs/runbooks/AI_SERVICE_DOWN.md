@@ -18,7 +18,7 @@
 ### Orchestrator posture & rules semantics
 
 - The **shared TypeScript rules engine + orchestrator** (`src/shared/engine/**`, contract vectors, and orchestrator adapters) is the single source of truth for rules semantics; backend, sandbox, and Python AI-service are adapters over this SSoT.
-- Key runtime flags for rules selection are: `ORCHESTRATOR_ADAPTER_ENABLED`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE`, `ORCHESTRATOR_SHADOW_MODE_ENABLED`, and `RINGRIFT_RULES_MODE`. When the remote AI service is down, these should normally stay in the **orchestrator‑ON** posture; legacy / SHADOW modes are for diagnostics only.
+- Key runtime flags for rules selection are: `ORCHESTRATOR_ADAPTER_ENABLED` (hardcoded to `true`), `ORCHESTRATOR_SHADOW_MODE_ENABLED`, and `RINGRIFT_RULES_MODE`. The former `ORCHESTRATOR_ROLLOUT_PERCENTAGE` flag was removed; the adapter is always 100%. When the remote AI service is down, these should normally stay in the **orchestrator‑ON** posture; legacy / SHADOW modes are for diagnostics only.
 - **Losing the remote AI service should not change game rules.** Node should route AI turns through documented fallback paths (local heuristics, simplified evaluation, or explicit “no‑AI” modes) that still apply moves via the shared TS rules engine.
 - If symptoms look like **rules-engine issues** rather than “remote AI is unavailable”, escalate via `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` (Safe rollback checklist) instead of altering rules or switching to legacy engines in response to AI outages.
 

@@ -48,6 +48,16 @@ from app.ai.heuristic_weights import (
 logger = logging.getLogger(__name__)
 
 
+# Memory requirements per board type (in GB)
+# Must be kept in sync with cluster_worker.py BOARD_MEMORY_REQUIREMENTS
+BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
+    "square8": 8,      # 8GB minimum for 8x8 games
+    "square19": 48,    # 48GB minimum for 19x19 games
+    "hexagonal": 48,   # 48GB minimum for hex games
+    "hex": 48,         # Alias for hexagonal
+}
+
+
 @dataclass
 class TaskResult:
     """Result from a worker evaluation task."""
@@ -157,6 +167,46 @@ class WorkerClient:
         """Check if worker is healthy."""
         result = self.health_check()
         return result.get("status") == "healthy"
+
+    def get_memory_info(self) -> Dict[str, Any]:
+        """
+        Get worker memory information.
+
+        Returns dict with:
+            - total_gb: Total RAM in GB
+            - available_gb: Available RAM in GB
+            - eligible_boards: List of board types worker can handle
+        """
+        health = self.health_check()
+        if health.get("status") != "healthy":
+            return {"total_gb": 0, "available_gb": 0, "eligible_boards": []}
+        return health.get("memory", {"total_gb": 0, "available_gb": 0, "eligible_boards": []})
+
+    def can_handle_board(self, board_type: str) -> bool:
+        """
+        Check if worker has enough memory to handle the given board type.
+
+        Parameters
+        ----------
+        board_type : str
+            Board type to check (e.g., "square8", "square19", "hex")
+
+        Returns
+        -------
+        bool
+            True if worker can handle the board type
+        """
+        memory_info = self.get_memory_info()
+        eligible = memory_info.get("eligible_boards", [])
+
+        # Check if board type is in eligible list
+        if board_type in eligible:
+            return True
+
+        # Fall back to direct memory check
+        total_gb = memory_info.get("total_gb", 0)
+        required_gb = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
+        return total_gb >= required_gb
 
     def get_stats(self) -> Dict[str, Any]:
         """Get detailed worker statistics."""
@@ -348,21 +398,65 @@ class DistributedEvaluator:
         self._healthy_workers: List[str] = []
         self._worker_task_idx = 0
 
-    def verify_workers(self) -> List[str]:
+    def verify_workers(self, check_memory: bool = True) -> List[str]:
         """
-        Verify which workers are healthy.
+        Verify which workers are healthy and can handle the configured board type.
 
-        Returns list of healthy worker URLs.
+        Parameters
+        ----------
+        check_memory : bool
+            If True, also verify workers have enough RAM for the board type
+
+        Returns list of healthy worker URLs that can handle the workload.
         """
         healthy = []
+        eligible = []
+        ineligible = []
+
         for url, client in self._clients.items():
-            if client.is_healthy():
-                healthy.append(url)
-                logger.info(f"Worker {url} is healthy")
-            else:
+            if not client.is_healthy():
                 logger.warning(f"Worker {url} is not healthy")
-        self._healthy_workers = healthy
-        return healthy
+                continue
+
+            healthy.append(url)
+
+            if check_memory:
+                memory_info = client.get_memory_info()
+                total_gb = memory_info.get("total_gb", 0)
+                eligible_boards = memory_info.get("eligible_boards", [])
+
+                can_handle = (
+                    self.board_type in eligible_boards or
+                    total_gb >= BOARD_MEMORY_REQUIREMENTS.get(self.board_type, 8)
+                )
+
+                if can_handle:
+                    eligible.append(url)
+                    logger.info(
+                        f"Worker {url} is healthy and eligible for {self.board_type} "
+                        f"({total_gb}GB RAM, eligible: {eligible_boards})"
+                    )
+                else:
+                    ineligible.append(url)
+                    logger.warning(
+                        f"Worker {url} is healthy but cannot handle {self.board_type} "
+                        f"(has {total_gb}GB RAM, needs {BOARD_MEMORY_REQUIREMENTS.get(self.board_type, 8)}GB)"
+                    )
+            else:
+                eligible.append(url)
+                logger.info(f"Worker {url} is healthy")
+
+        if check_memory:
+            self._healthy_workers = eligible
+            if ineligible:
+                logger.info(
+                    f"Memory-aware filtering: {len(eligible)} workers eligible, "
+                    f"{len(ineligible)} excluded for {self.board_type}"
+                )
+        else:
+            self._healthy_workers = healthy
+
+        return self._healthy_workers
 
     def preload_pools(self) -> Dict[str, Any]:
         """

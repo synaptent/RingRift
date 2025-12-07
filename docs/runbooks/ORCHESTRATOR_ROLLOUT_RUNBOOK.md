@@ -45,7 +45,7 @@ Response shape (summary):
   "data": {
     "config": {
       "adapterEnabled": true,
-      "rolloutPercentage": 50,
+      "rolloutPercentage": 50, // Telemetry-only; flag removed, adapter always 100%
       "shadowModeEnabled": false,
       "allowlistUsers": ["staff-1"],
       "denylistUsers": [],
@@ -91,6 +91,8 @@ If any of these are true, stop rollout increases and follow the incident steps b
 ### 3.1 Increasing Rollout Percentage
 
 **Goal:** Gradually move traffic from legacy to orchestrator.
+
+> **Historical only:** `ORCHESTRATOR_ROLLOUT_PERCENTAGE` no longer affects the code path (adapter is hardcoded ON). Keep this section for archival reference; do not run these commands on current environments.
 
 1. Confirm error and mismatch rates are low:
    - `ringrift_orchestrator_error_rate < 0.02`

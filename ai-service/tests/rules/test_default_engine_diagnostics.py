@@ -9,12 +9,20 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT not in sys.path:
     sys.path.append(ROOT)
 
-from app.models import Move, MoveType, Position, RingStack  # noqa: E402
+from app.models import GamePhase, Move, MoveType, Position, RingStack  # noqa: E402
 from app.game_engine import GameEngine  # noqa: E402
 from app.rules.default_engine import DefaultRulesEngine  # noqa: E402
 from tests.rules.helpers import _make_base_game_state  # noqa: E402
 
 
+# Skip shadow contract tests when RINGRIFT_SKIP_SHADOW_CONTRACTS is set.
+_skip_if_shadow_contracts_disabled = pytest.mark.skipif(
+    os.environ.get("RINGRIFT_SKIP_SHADOW_CONTRACTS") == "true",
+    reason="Shadow contracts disabled via RINGRIFT_SKIP_SHADOW_CONTRACTS",
+)
+
+
+@_skip_if_shadow_contracts_disabled
 def test_capture_mutator_shadow_contract_uses_diff_mapping_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -58,6 +66,9 @@ def test_capture_mutator_shadow_contract_uses_diff_mapping_keys(
     # Construct the same minimal overtaking-capture scenario used in the
     # equivalence tests to guarantee a valid capture move for player 1.
     base_state = _make_base_game_state()
+
+    # Capture operations require MOVEMENT phase.
+    base_state.current_phase = GamePhase.MOVEMENT
 
     attacker_pos = Position(x=0, y=0)
     attacker_key = attacker_pos.to_key()
@@ -119,6 +130,7 @@ def test_capture_mutator_shadow_contract_uses_diff_mapping_keys(
     assert "TEST-DETAILS-FROM-DIFF" in message
 
 
+@_skip_if_shadow_contracts_disabled
 def test_territory_mutator_shadow_contract_uses_diff_mapping_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

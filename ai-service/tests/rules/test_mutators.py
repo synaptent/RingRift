@@ -182,6 +182,10 @@ def test_movement_mutator_matches_game_engine_for_move_stack_board_and_players(
     base_state = _make_base_game_state()
     mutator_state = _make_base_game_state()
 
+    # Move/capture operations require MOVEMENT phase.
+    base_state.current_phase = GamePhase.MOVEMENT
+    mutator_state.current_phase = GamePhase.MOVEMENT
+
     from_pos = Position(x=0, y=0)
     from_key = from_pos.to_key()
 
@@ -240,6 +244,9 @@ def test_capture_mutator_matches_game_engine_for_overtaking_capture(
     identical starting states yields the same board + player side-effects.
     """
     base_state = _make_base_game_state()
+
+    # Capture operations require MOVEMENT phase.
+    base_state.current_phase = GamePhase.MOVEMENT
 
     attacker_pos = Position(x=0, y=0)
     attacker_key = attacker_pos.to_key()

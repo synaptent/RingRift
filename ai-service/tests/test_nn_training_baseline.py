@@ -21,7 +21,8 @@ TEST_TIMEOUT_SECONDS = 60
 
 @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
 def test_run_nn_training_baseline_demo_writes_report(tmp_path) -> None:
-    """Smoke test that the baseline NN script writes a demo report and artefacts."""
+    """Smoke test that the baseline NN script writes a demo report and
+    artefacts."""
     run_dir = tmp_path / "nn_demo"
     argv = [
         "--board",
@@ -71,7 +72,8 @@ def test_run_nn_training_baseline_demo_writes_report(tmp_path) -> None:
 
 @pytest.mark.timeout(TEST_TIMEOUT_SECONDS)
 def test_run_nn_training_baseline_stub_mode(tmp_path) -> None:
-    """Non-demo mode should write a stub config without running heavy training."""
+    """Non-demo mode should write a stub config without running heavy
+    training."""
     run_dir = tmp_path / "nn_stub"
     argv = [
         "--board",

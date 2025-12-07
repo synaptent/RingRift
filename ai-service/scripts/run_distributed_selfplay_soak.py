@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
@@ -50,6 +51,17 @@ BOARD_CONFIGS: Dict[str, Dict[int, int]] = {
     "square8": {2: 200, 3: 250, 4: 300},
     "square19": {2: 1200, 3: 1400, 4: 1600},
     "hexagonal": {2: 1200, 3: 1400, 4: 1600},
+}
+
+# Memory requirements per board type (in GB)
+# Based on empirical testing:
+# - 16GB machine: only 8x8 works reliably
+# - 64GB machine: can run 19x19/hex with memory pressure
+# - 96GB machine: runs everything comfortably
+BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
+    "square8": 8,      # 8GB minimum for 8x8 games
+    "square19": 48,    # 48GB minimum for 19x19 games (64GB machine has pressure)
+    "hexagonal": 48,   # 48GB minimum for hex games
 }
 
 # Default config file paths (relative to ai-service/)
@@ -111,6 +123,208 @@ def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, Dict]:
 REMOTE_HOSTS: Dict[str, Dict] = {}
 
 
+def get_local_memory_gb() -> Tuple[int, int]:
+    """Get total and available physical memory on local machine in GB.
+
+    Returns:
+        Tuple of (total_gb, available_gb)
+    """
+    total_gb = 8
+    available_gb = 8
+
+    try:
+        # macOS: use sysctl for total
+        result = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            bytes_total = int(result.stdout.strip())
+            total_gb = bytes_total // (1024 ** 3)
+
+        # macOS: use vm_stat for available (free + inactive pages)
+        result = subprocess.run(
+            ["vm_stat"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            # Parse vm_stat output for page size and free/inactive pages
+            page_size = 4096  # Default
+            free_pages = 0
+            inactive_pages = 0
+
+            for line in result.stdout.split('\n'):
+                if 'page size of' in line:
+                    # Extract page size from first line
+                    match = re.search(r'page size of (\d+)', line)
+                    if match:
+                        page_size = int(match.group(1))
+                elif 'Pages free:' in line:
+                    free_pages = int(line.split(':')[1].strip().rstrip('.'))
+                elif 'Pages inactive:' in line:
+                    inactive_pages = int(line.split(':')[1].strip().rstrip('.'))
+
+            # Available = free + inactive (can be reclaimed)
+            available_bytes = (free_pages + inactive_pages) * page_size
+            available_gb = available_bytes // (1024 ** 3)
+
+        return total_gb, available_gb
+
+    except Exception:
+        pass
+
+    try:
+        # Linux: read /proc/meminfo
+        with open("/proc/meminfo", "r") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    kb = int(line.split()[1])
+                    total_gb = kb // (1024 * 1024)
+                elif line.startswith("MemAvailable:"):
+                    kb = int(line.split()[1])
+                    available_gb = kb // (1024 * 1024)
+        return total_gb, available_gb
+    except Exception:
+        pass
+
+    # Fallback: assume 8GB total, 4GB available
+    print("Warning: Could not detect local memory, assuming 8GB total, 4GB available")
+    return 8, 4
+
+
+def get_remote_memory_gb(host_name: str, host_config: Dict) -> Tuple[int, int]:
+    """Get total and available physical memory on remote host in GB via SSH.
+
+    Returns:
+        Tuple of (total_gb, available_gb)
+    """
+    ssh_host = host_config["ssh_host"]
+    ssh_key = host_config.get("ssh_key")
+
+    # First check if memory_gb is in config (for total)
+    if "memory_gb" in host_config:
+        config_total = host_config["memory_gb"]
+        # Still detect available if possible, but use config for total
+    else:
+        config_total = None
+
+    ssh_cmd_base = ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+    if ssh_key:
+        ssh_cmd_base.extend(["-i", os.path.expanduser(ssh_key)])
+
+    total_gb = 8
+    available_gb = 4
+
+    try:
+        # Get total memory
+        if config_total:
+            total_gb = config_total
+        else:
+            ssh_cmd = ssh_cmd_base + [ssh_host, "sysctl -n hw.memsize 2>/dev/null || grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2 * 1024}'"]
+            result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
+            if result.returncode == 0 and result.stdout.strip():
+                bytes_total = int(result.stdout.strip())
+                total_gb = bytes_total // (1024 ** 3)
+
+        # Get available memory (free + inactive) via vm_stat on macOS
+        # Script to extract free and inactive pages and calculate available GB
+        vm_stat_script = '''
+pagesize=$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)
+free=$(vm_stat 2>/dev/null | grep "Pages free:" | awk -F: '{gsub(/[^0-9]/,"",$2); print $2}')
+inactive=$(vm_stat 2>/dev/null | grep "Pages inactive:" | awk -F: '{gsub(/[^0-9]/,"",$2); print $2}')
+if [ -n "$free" ] && [ -n "$inactive" ]; then
+    echo $(( (free + inactive) * pagesize / 1073741824 ))
+elif [ -f /proc/meminfo ]; then
+    grep MemAvailable /proc/meminfo | awk '{print int($2/1048576)}'
+else
+    echo 4
+fi
+'''
+        ssh_cmd = ssh_cmd_base + [ssh_host, vm_stat_script]
+        result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0 and result.stdout.strip():
+            available_gb = int(result.stdout.strip())
+
+        return total_gb, available_gb
+
+    except Exception as e:
+        print(f"Warning: Could not detect memory for {host_name}: {e}")
+
+    # Fallback
+    if config_total:
+        return config_total, config_total // 2
+    print(f"Warning: Could not detect memory for {host_name}, assuming 8GB total, 4GB available")
+    return 8, 4
+
+
+@dataclass
+class HostMemoryInfo:
+    """Memory information for a host."""
+    total_gb: int
+    available_gb: int
+
+    def __str__(self) -> str:
+        return f"{self.total_gb}GB total, {self.available_gb}GB available"
+
+
+# Cached host memory info (keyed by host name)
+HOST_MEMORY_INFO_CACHE: Dict[str, HostMemoryInfo] = {}
+
+
+def detect_all_host_memory(hosts: List[str]) -> Tuple[Dict[str, int], Dict[str, HostMemoryInfo]]:
+    """Detect memory for all specified hosts.
+
+    Returns:
+        Tuple of:
+        - Dict[host_name, total_memory_gb] for job assignment compatibility
+        - Dict[host_name, HostMemoryInfo] for detailed reporting
+    """
+    global HOST_MEMORY_INFO_CACHE
+
+    totals = {}
+    details = {}
+
+    for host in hosts:
+        if host in HOST_MEMORY_INFO_CACHE:
+            info = HOST_MEMORY_INFO_CACHE[host]
+        else:
+            if host == "local":
+                total_gb, available_gb = get_local_memory_gb()
+            elif host in REMOTE_HOSTS:
+                total_gb, available_gb = get_remote_memory_gb(host, REMOTE_HOSTS[host])
+            else:
+                total_gb, available_gb = 8, 4  # Unknown host, assume minimal
+
+            info = HostMemoryInfo(total_gb=total_gb, available_gb=available_gb)
+            HOST_MEMORY_INFO_CACHE[host] = info
+
+        totals[host] = info.total_gb
+        details[host] = info
+
+    return totals, details
+
+
+def get_eligible_hosts_for_board(
+    board_type: str,
+    hosts: List[str],
+    host_memory: Dict[str, int],
+) -> List[str]:
+    """Return list of hosts that have enough memory for the given board type."""
+    required_memory = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
+    eligible = []
+
+    for host in hosts:
+        host_mem = host_memory.get(host, 8)
+        if host_mem >= required_memory:
+            eligible.append(host)
+
+    return eligible
+
+
 @dataclass
 class JobConfig:
     """Configuration for a single self-play job."""
@@ -130,19 +344,39 @@ def generate_job_configs(
     hosts: List[str],
     output_dir: str,
     base_seed: int = 42,
+    host_memory: Optional[Dict[str, int]] = None,
 ) -> List[JobConfig]:
-    """Generate job configurations distributed across hosts."""
+    """Generate job configurations distributed across hosts based on memory capacity.
+
+    Jobs are assigned only to hosts with sufficient memory for the board type.
+    Memory requirements:
+    - square8: 8GB minimum (runs on all machines)
+    - square19/hexagonal: 48GB minimum (skips low-memory machines)
+
+    If host_memory is not provided, all hosts are assumed to have sufficient memory.
+    """
     jobs = []
     job_idx = 0
 
-    # Calculate games per host per config
-    num_hosts = len(hosts)
-    games_per_host = games_per_config // num_hosts
-    remainder = games_per_config % num_hosts
-
     for board_type, player_configs in BOARD_CONFIGS.items():
+        # Get hosts eligible for this board type based on memory
+        if host_memory:
+            eligible_hosts = get_eligible_hosts_for_board(board_type, hosts, host_memory)
+            if not eligible_hosts:
+                required = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
+                print(f"Warning: No hosts have enough memory ({required}GB) for {board_type}")
+                print(f"  Skipping {board_type} configurations")
+                continue
+        else:
+            eligible_hosts = hosts
+
+        # Calculate games per host for this board type
+        num_hosts = len(eligible_hosts)
+        games_per_host = games_per_config // num_hosts
+        remainder = games_per_config % num_hosts
+
         for num_players, max_moves in player_configs.items():
-            for host_idx, host in enumerate(hosts):
+            for host_idx, host in enumerate(eligible_hosts):
                 # Distribute remainder across first hosts
                 host_games = games_per_host + (1 if host_idx < remainder else 0)
                 if host_games == 0:
@@ -289,12 +523,19 @@ def run_job(job: JobConfig, ringrift_ai_dir: str) -> Tuple[str, bool, str]:
         return job.job_id, False, f"Unknown host: {job.host}"
 
 
-def fetch_remote_results(jobs: List[JobConfig], output_dir: str) -> None:
-    """Fetch database files from remote hosts."""
+def fetch_remote_results(jobs: List[JobConfig], output_dir: str) -> List[str]:
+    """Fetch database files from remote hosts.
+
+    Returns:
+        List of successfully fetched local database paths.
+    """
+    fetched_dbs = []
+
     for job in jobs:
         if job.host != "local" and job.host in REMOTE_HOSTS:
             host_config = REMOTE_HOSTS[job.host]
             ssh_host = host_config["ssh_host"]
+            ssh_key = host_config.get("ssh_key")
             ringrift_path = host_config["ringrift_path"]
 
             remote_db = f"{ringrift_path}/ai-service/{job.output_db}"
@@ -302,18 +543,85 @@ def fetch_remote_results(jobs: List[JobConfig], output_dir: str) -> None:
 
             print(f"Fetching {remote_db} from {ssh_host}...")
 
+            scp_cmd = ["scp"]
+            if ssh_key:
+                scp_cmd.extend(["-i", os.path.expanduser(ssh_key)])
+            scp_cmd.extend([f"{ssh_host}:{remote_db}", local_db])
+
             try:
                 subprocess.run(
-                    ["scp", f"{ssh_host}:{remote_db}", local_db],
+                    scp_cmd,
                     check=True,
                     capture_output=True,
                     timeout=300,
                 )
                 print(f"  -> Saved to {local_db}")
+                fetched_dbs.append(local_db)
             except subprocess.CalledProcessError as e:
                 print(f"  -> Failed to fetch: {e}")
             except subprocess.TimeoutExpired:
                 print(f"  -> Fetch timed out")
+        elif job.host == "local":
+            # Local jobs already have their DB in the output dir
+            local_db = os.path.join(output_dir, os.path.basename(job.output_db))
+            if os.path.exists(local_db):
+                fetched_dbs.append(local_db)
+
+    return fetched_dbs
+
+
+def run_parity_checks(db_paths: List[str], ringrift_ai_dir: str) -> Tuple[int, int]:
+    """Run parity checks on the given databases.
+
+    Returns:
+        Tuple of (passed_count, failed_count)
+    """
+    passed = 0
+    failed = 0
+
+    print("\nRunning parity checks on generated databases...")
+    print("=" * 60)
+
+    for db_path in db_paths:
+        db_name = os.path.basename(db_path)
+        print(f"\nChecking {db_name}...")
+
+        try:
+            result = subprocess.run(
+                [
+                    "python", "scripts/check_ts_python_replay_parity.py",
+                    "--db", db_path,
+                ],
+                cwd=ringrift_ai_dir,
+                capture_output=True,
+                text=True,
+                timeout=600,  # 10 min timeout per DB
+                env={**os.environ, "PYTHONPATH": ".", "RINGRIFT_SKIP_SHADOW_CONTRACTS": "true"},
+            )
+
+            if result.returncode == 0:
+                print(f"  ✓ PASSED")
+                passed += 1
+            else:
+                print(f"  ✗ FAILED")
+                # Print last few lines of error
+                error_lines = result.stderr.strip().split('\n')[-5:]
+                for line in error_lines:
+                    print(f"    {line}")
+                failed += 1
+
+        except subprocess.TimeoutExpired:
+            print(f"  ✗ TIMEOUT (exceeded 10 minutes)")
+            failed += 1
+        except Exception as e:
+            print(f"  ✗ ERROR: {e}")
+            failed += 1
+
+    print()
+    print("=" * 60)
+    print(f"Parity check results: {passed} passed, {failed} failed")
+
+    return passed, failed
 
 
 def main():
@@ -361,6 +669,11 @@ def main():
         help="Skip fetching results from remote hosts",
     )
     parser.add_argument(
+        "--run-parity",
+        action="store_true",
+        help="Run parity checks on all databases after fetching",
+    )
+    parser.add_argument(
         "--config",
         type=str,
         default=None,
@@ -394,12 +707,26 @@ def main():
     output_dir = os.path.join(ringrift_ai_dir, args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Generate job configurations
+    # Detect memory on all hosts
+    print("\nDetecting host memory...")
+    host_memory, host_memory_details = detect_all_host_memory(hosts)
+    print("Host memory configuration:")
+    for host, mem_gb in sorted(host_memory.items(), key=lambda x: -x[1]):
+        info = host_memory_details[host]
+        eligible_boards = [
+            board for board, req in BOARD_MEMORY_REQUIREMENTS.items()
+            if mem_gb >= req
+        ]
+        print(f"  {host}: {info.total_gb}GB total, {info.available_gb}GB available -> eligible for: {', '.join(eligible_boards)}")
+    print()
+
+    # Generate job configurations with memory-aware distribution
     jobs = generate_job_configs(
         games_per_config=args.games_per_config,
         hosts=hosts,
         output_dir=args.output_dir,
         base_seed=args.base_seed,
+        host_memory=host_memory,
     )
 
     print(f"\n{'='*60}")
@@ -476,10 +803,18 @@ def main():
                 print(f"  - {job_id}")
 
     # Fetch results from remote hosts
-    if not args.skip_fetch and any(j.host != "local" for j in jobs):
+    fetched_dbs = []
+    if not args.skip_fetch:
         print()
         print("Fetching results from remote hosts...")
-        fetch_remote_results(jobs, output_dir)
+        fetched_dbs = fetch_remote_results(jobs, output_dir)
+        print(f"Fetched {len(fetched_dbs)} database(s) to {output_dir}")
+
+    # Run parity checks if requested
+    parity_passed = 0
+    parity_failed = 0
+    if args.run_parity and fetched_dbs:
+        parity_passed, parity_failed = run_parity_checks(fetched_dbs, ringrift_ai_dir)
 
     # Write summary
     summary_path = os.path.join(output_dir, "distributed_soak_summary.json")
@@ -491,23 +826,43 @@ def main():
         "total_jobs": len(jobs),
         "successful_jobs": successful,
         "failed_jobs": failed,
+        "fetched_dbs": len(fetched_dbs),
         "job_results": [
             {"job_id": jid, "success": s}
             for jid, s, _ in results
         ],
     }
+
+    if args.run_parity:
+        summary["parity_passed"] = parity_passed
+        summary["parity_failed"] = parity_failed
+
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"\nSummary written to: {summary_path}")
 
     print()
-    print("Next steps:")
-    print("  1. Run parity checks on generated databases:")
-    print(f"     cd ai-service && python scripts/check_ts_python_replay_parity.py \\")
-    print(f"         --db {args.output_dir}/*.db")
+    if args.run_parity:
+        if parity_failed > 0:
+            print(f"WARNING: {parity_failed} database(s) failed parity checks!")
+        else:
+            print(f"All {parity_passed} database(s) passed parity checks.")
+    else:
+        print("Next steps:")
+        print("  1. Run parity checks on generated databases:")
+        print(f"     cd ai-service && python scripts/check_ts_python_replay_parity.py \\")
+        print(f"         --db {args.output_dir}/*.db")
+        print()
+        print("  Or re-run with --run-parity to check automatically.")
     print()
 
-    sys.exit(0 if failed == 0 else 1)
+    # Exit with error if jobs failed or parity checks failed
+    exit_code = 0
+    if failed > 0:
+        exit_code = 1
+    if args.run_parity and parity_failed > 0:
+        exit_code = 1
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":

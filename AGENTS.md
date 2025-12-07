@@ -72,9 +72,9 @@ The rules semantics SSoT is:
 
 ## 3. Canonical Phases, Forced Elimination, and Move Semantics
 
-### 3.1 Seven Canonical Phases
+### 3.1 Seven Canonical Phases (+ Terminal)
 
-The canonical `currentPhase` values are:
+The canonical **turn** `currentPhase` values are:
 
 1. `ring_placement`
 2. `movement`
@@ -83,6 +83,8 @@ The canonical `currentPhase` values are:
 5. `line_processing`
 6. `territory_processing`
 7. `forced_elimination`
+
+A terminal `game_over` phase is used when the game ends (victory/stalemate). It is not a turn phase and must not be used for move recording.
 
 Locations:
 

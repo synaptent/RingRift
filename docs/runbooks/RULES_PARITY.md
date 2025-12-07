@@ -18,6 +18,8 @@
 > - This runbook explains **how to investigate and remediate** divergence. If it conflicts with code/config/tests, **code + configs + tests win** and this document should be updated.
 >
 > For a high-level “rules vs AI vs infra” classification, see `AI_ARCHITECTURE.md` §0 (AI Incident Overview). For suite‑by‑suite details of which tests are canonical vs diagnostic, see `tests/README.md` and `tests/TEST_SUITE_PARITY_PLAN.md`.
+>
+> Runtime rules flags: `ORCHESTRATOR_ADAPTER_ENABLED` is hardcoded to `true`; `ORCHESTRATOR_SHADOW_MODE_ENABLED` and `RINGRIFT_RULES_MODE` control shadow/authoritative posture. The legacy `ORCHESTRATOR_ROLLOUT_PERCENTAGE` flag was removed; rollout is always 100%.
 
 ---
 

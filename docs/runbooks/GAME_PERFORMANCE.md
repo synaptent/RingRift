@@ -19,11 +19,11 @@
 
 - The **shared TypeScript rules engine + orchestrator** is the single source of truth for game semantics; backend, sandbox, and Python AI-service are adapters over this SSoT.
 - Runtime rules selection is controlled by:
-  - `ORCHESTRATOR_ADAPTER_ENABLED`
-  - `ORCHESTRATOR_ROLLOUT_PERCENTAGE`
+  - `ORCHESTRATOR_ADAPTER_ENABLED` (hardcoded to `true`)
   - `ORCHESTRATOR_SHADOW_MODE_ENABLED`
   - `RINGRIFT_RULES_MODE`
-- As of PASS20, production/staging environments run with the orchestrator adapter **fully enabled** (`ORCHESTRATOR_ADAPTER_ENABLED=true`, `ORCHESTRATOR_ROLLOUT_PERCENTAGE=100`). For game‑performance issues (slow moves, spikes in move latency), keep orchestrator‑ON by default and treat these flags as **emergency rules‑engine levers**, not first‑line mitigations. Adjust them only when shared‑engine/contract tests indicate a true rules defect and follow `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` for any rollback.
+  - Legacy `ORCHESTRATOR_ROLLOUT_PERCENTAGE` flag **removed**; adapter is always 100%.
+- As of PASS20/Phase 3, production/staging environments run with the orchestrator adapter **fully enabled** (hardcoded). For game‑performance issues (slow moves, spikes in move latency), keep orchestrator‑ON by default and treat shadow mode and the circuit breaker as the only levers; do not attempt percentage rollbacks. Adjust flags only when shared‑engine/contract tests indicate a true rules defect and follow `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` for any rollback.
 - Key metrics to consult alongside `HighGameMoveLatency`:
   - Game and move latency:
     - `ringrift_game_move_latency_seconds_bucket` / derived `game_move_latency_ms` (move latency)
@@ -32,7 +32,7 @@
     - `ringrift_orchestrator_error_rate`
     - `ringrift_orchestrator_shadow_mismatch_rate`
     - `ringrift_orchestrator_circuit_breaker_state`
-    - `ringrift_orchestrator_rollout_percentage`
+    - `ringrift_orchestrator_rollout_percentage` (telemetry-only; remains 100% with the flag removed)
   - Rules correctness and engine health (PASS22 metrics):
     - `ringrift_parity_checks_total` (TS ↔ Python parity checks; success vs failure)
     - `ringrift_contract_tests_passing` / `ringrift_contract_tests_total` (contract vector coverage)

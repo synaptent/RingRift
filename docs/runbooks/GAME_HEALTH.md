@@ -19,10 +19,10 @@
 
 - The **shared TypeScript rules engine + orchestrator** is the single source of truth for game semantics; backend, sandbox, and Python AI-service are adapters over this SSoT.
 - Runtime rules selection is controlled by:
-  - `ORCHESTRATOR_ADAPTER_ENABLED`
-  - `ORCHESTRATOR_ROLLOUT_PERCENTAGE`
+  - `ORCHESTRATOR_ADAPTER_ENABLED` (hardcoded to `true`)
   - `ORCHESTRATOR_SHADOW_MODE_ENABLED`
   - `RINGRIFT_RULES_MODE`
+  - Legacy `ORCHESTRATOR_ROLLOUT_PERCENTAGE` flag **removed**; adapter is always 100%.
 - For generic **game-health** issues (long games, stalls, abnormal completion rates), keep orchestrator‑ON by default and treat these flags as **rules‑engine levers**, not first-line mitigations. Adjust them only when shared‑engine/.shared/contract tests indicate a true rules defect and follow `docs/ORCHESTRATOR_ROLLOUT_PLAN.md` for any rollback.
 - Key metrics to consult alongside `LongRunningGames`:
   - Game latency and progress:

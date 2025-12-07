@@ -33,6 +33,8 @@ The goals of this plan are to:
 4. Specify gating tests, metrics, and rollback levers per phase.
 5. Provide a concise overview consumable by Track A implementation tasks (P16.6.\*, P16.7, P16.8).
 
+> **Historical reference:** The rollout tables and percentage-based steps below are preserved for context but are no longer executable as written. `ORCHESTRATOR_ROLLOUT_PERCENTAGE` was removed in Phase 3 and the adapter is always on; treat the percentage columns as historical log, not an operational lever.
+
 ### 1.1 Orchestrator flags and incident posture
 
 At runtime, orchestrator selection and rollout are controlled by a small set of

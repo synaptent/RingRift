@@ -1,4 +1,4 @@
-"""Offline training script for HeuristicAI weight profiles.
+r"""Offline training script for HeuristicAI weight profiles.
 
 This script provides a first-pass pipeline for fitting the scalar weight
 profiles used by :class:`app.ai.heuristic_ai.HeuristicAI` from labelled

@@ -52,7 +52,7 @@ Each reconstructed move step is validated against six structural invariants (see
 ### INV-PHASE-VALID
 
 - `currentPhase` is one of the canonical `GamePhase` values from `src/shared/types/game.ts`:
-  - `ring_placement`, `movement`, `capture`, `chain_capture`, `line_processing`, `territory_processing`, `forced_elimination`.
+  - `ring_placement`, `movement`, `capture`, `chain_capture`, `line_processing`, `territory_processing`, `forced_elimination`, `game_over`.
 - Higher‑level multi‑phase sequencing (movement → capture → chain_capture → line_processing → territory_processing → forced_elimination) is validated by contract vectors and snapshot parity tests rather than this structural check.
 
 ### INV-ACTIVE-PLAYER

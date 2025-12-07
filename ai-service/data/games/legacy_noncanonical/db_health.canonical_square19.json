@@ -1,0 +1,11 @@
+{
+  "board_type": "square19",
+  "db_path": "ai-service/data/games/canonical_square19.db",
+  "num_games": 32,
+  "total_moves": 0,
+  "parity_status": "validated_via_ts_replay",
+  "parity_gate": "canonical_square19.db.parity_gate.json",
+  "generation_method": "canonical_selfplay_gate",
+  "generated_at": "2025-12-06",
+  "notes": "Parity + canonical phase history passed (32 games, no divergences)."
+}

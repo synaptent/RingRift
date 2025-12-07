@@ -114,7 +114,7 @@ The AI system operates as a dedicated microservice (`ai-service`) built with Pyt
 - **Resilience:** Multi-tier fallback system ensures games never get stuck due to AI failures.
 - **UI Integration:** Full lobby and game UI support for AI opponent configuration and visualization.
 
-> **Note (PASS20 - December 2025):** As of PASS20 completion, `ORCHESTRATOR_ADAPTER_ENABLED` is hardcoded to `true` and `ORCHESTRATOR_ROLLOUT_PERCENTAGE` to `100`. The orchestrator is the only production code path. Legacy and shadow modes remain available only for diagnostics and debugging.
+> **Note (PASS20 - December 2025):** As of PASS20 completion, `ORCHESTRATOR_ADAPTER_ENABLED` is hardcoded to `true` and the former `ORCHESTRATOR_ROLLOUT_PERCENTAGE` flag was removed. The orchestrator is the only production code path. Legacy and shadow modes remain available only for diagnostics and debugging.
 
 ### Rules, shared engine, and training topology
 

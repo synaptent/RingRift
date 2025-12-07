@@ -47,6 +47,42 @@ This is the canonical high-level task/backlog tracker. For rules semantics, defe
 
 ## 1. Completed Work Summary
 
+## 2. Documentation Audit Plan (Dec 2025)
+
+**Slice 1 – Landing/entry docs**
+
+- [x] README.md – date/status labels, current status section matches scripts/env; flag removal reflected.
+- [x] DOCUMENTATION_INDEX.md – update last-updated date and any stale links.
+- [x] docs/INDEX.md – ensure quick index matches current canonical docs and dates.
+- [x] QUICKSTART.md – verify setup commands/env vars vs `package.json` scripts and `src/server/config/env.ts`.
+
+**Slice 2 – Architecture/APIs**
+
+- [x] docs/architecture/CANONICAL_ENGINE_API.md – orchestrator hardcoded-on posture, endpoints current.
+- [x] RULES_ENGINE_ARCHITECTURE.md – remove/mark legacy rollout flags; align entrypoints with `turnOrchestrator`.
+- [x] AI_ARCHITECTURE.md – ensure orchestrator posture/env flags reflect hardcoding; note current AI endpoints.
+
+**Slice 3 – Testing/parity**
+
+- [x] docs/testing/TEST_CATEGORIES.md – CI vs diagnostic commands match `package.json`.
+- [x] docs/testing/GOLDEN_REPLAYS.md – instructions match current replay/parity harnesses.
+- [x] docs/rules parity/runbook docs – update any legacy flag references; align to current contract/parity scripts.
+
+**Slice 4 – AI training stack**
+
+- [x] docs/ai/AI_TRAINING_AND_DATASETS.md – current generators/flags; canonical datasets.
+- [x] AI_TIER_TRAINING_AND_PROMOTION_PIPELINE.md – runnable vs WIP callouts (NN demo scripts/tests).
+- [x] Scripts/tests alignment – `run_nn_training_baseline.py`, `test_nn_training_baseline_demo.py`, `test_neural_net_ai_demo.py`: reflected in docs.
+
+**Slice 5 – Ops/runbooks**
+
+- [x] Sweep remaining ops/runbooks for legacy rollout percentage; mark historical where needed.
+- [x] Ensure shadow/circuit-breaker guidance is current and consistent.
+
+**Slice 6 – Rules canon cross-check**
+
+- [x] Spot-check `RULES_CANONICAL_SPEC.md` vs `src/shared/engine/**` for forced elimination + explicit no-op moves; note gaps (no speculative edits).
+
 ### 1.1 Architecture Remediation (Phase 1.5) ✅
 
 **Completed November 2025**

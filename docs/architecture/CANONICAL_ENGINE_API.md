@@ -131,7 +131,7 @@ integrating with the engine:
 
 ```text
 GamePhase:
-  'ring_placement' | 'movement' | 'capture' | 'chain_capture' | 'line_processing' | 'territory_processing' | 'forced_elimination'
+  'ring_placement' | 'movement' | 'capture' | 'chain_capture' | 'line_processing' | 'territory_processing' | 'forced_elimination' | 'game_over'
 
 MoveType:
   'place_ring' | 'move_ring' | 'build_stack' | 'move_stack' |

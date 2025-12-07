@@ -1316,7 +1316,7 @@ replay/parity case.
 
 ## Deprecated Variables
 
-These variables were removed during project evolution. They are listed here for historical reference.
+These variables were removed during project evolution. They are listed here for historical reference; setting them today has no effect.
 
 ### `ORCHESTRATOR_ROLLOUT_PERCENTAGE`
 

@@ -5,6 +5,12 @@
 
 This document specifies a concrete, repeatable pipeline for training, evaluating, and promoting AI models for the Square-8 2-player difficulty ladder tiers D2, D4, D6, and D8.
 
+### Current runnable pieces (2025-12-06)
+
+- **Tier gate path:** `ai-service/scripts/run_tier_gate.py` + `app/training/tier_eval_config.py` remain the canonical promotion gate for D2/D4/D6/D8 (Square-8 2p). Use `--output-json` and `--promotion-plan-out` for artefacts.
+- **NN baseline demos:** `ai-service/scripts/run_nn_training_baseline.py` with accompanying smokes `ai-service/tests/test_nn_training_baseline_demo.py` and `ai-service/tests/test_neural_net_ai_demo.py` run today but are **demo-scale only** (not production checkpoints). Treat outputs as experimental candidates until slotted into the gate.
+- **Distributed self-play soak:** `ai-service/scripts/run_distributed_selfplay_soak.py` is wired for Square-8 2p distributed self-play; use it for dataset generation ahead of tier gates. Promotion criteria below still apply.
+
 The design is constrained to existing infrastructure:
 
 - Ladder definitions in [`python.LadderTierConfig`](ai-service/app/config/ladder_config.py:26) and [`python.get_ladder_tier_config`](ai-service/app/config/ladder_config.py:279).
@@ -252,6 +258,43 @@ Rules:
   - Ladder D6 `model_id` set to `sq8_d6_vN`.
 - For pure-minimax D6:
   - Persona tag `v2-minimax-6` as `model_id`, possibly with D6-specific `heuristic_profile_id`.
+
+**Baseline NN demo experiment (A2, non-production)**
+
+- For a cheap, smoke-testable Square-8 NN baseline, use the dedicated
+  Python CLI:
+
+  ```bash
+  cd ai-service
+  PYTHONPATH=. python scripts/run_nn_training_baseline.py \
+    --board square8 \
+    --num-players 2 \
+    --run-dir /tmp/nn_baseline_demo \
+    --demo \
+    --seed 123
+  ```
+
+- This runs a tiny training loop on a synthetic dummy dataset (no real
+  self-play data) and writes `nn_training_report.json` into `--run-dir`
+  with:
+  - `board = "square8"`, `num_players = 2`
+  - `mode = "demo"`
+  - `model_id` (logical NN id)
+  - a small `training_params` block and stubbed `metrics`.
+
+- The demo run is intended only for wiring and CI smoke tests; it is
+  **not** a production training path and must not be used to update
+  ladder tiers or canonical models.
+
+- For sandbox evaluation, callers can route traffic to the experimental
+  `AIType.NEURAL_DEMO` engine in the Python AI service:
+  - Set `AI_ENGINE_NEURAL_DEMO_ENABLED=1` in the AI service environment.
+  - Construct `AIConfig` with `ai_type=NEURAL_DEMO` and an appropriate
+    `nn_model_id` (for example the `model_id` emitted by the baseline
+    script).
+  - The canonical difficulty ladder (D2–D8) does **not** select
+    `NEURAL_DEMO`; this path is reserved for private queues and
+    experiments.
 
 ### 4.5 D8 – strong / near-expert tier
 

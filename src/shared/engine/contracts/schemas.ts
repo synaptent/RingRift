@@ -193,6 +193,7 @@ export const GamePhaseSchema = {
     'line_processing',
     'territory_processing',
     'forced_elimination',
+    'game_over',
   ],
 } as const;
 

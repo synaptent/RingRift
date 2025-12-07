@@ -31,7 +31,9 @@ import json
 import logging
 import os
 import platform
+import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -39,7 +41,7 @@ import traceback
 from dataclasses import dataclass, field
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # Allow imports from app/
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -64,6 +66,103 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Memory Detection & Requirements
+# ---------------------------------------------------------------------------
+
+# Memory requirements per board type (in GB)
+# Based on empirical testing:
+# - 16GB machine: only 8x8 works reliably
+# - 64GB machine: can run 19x19/hex with memory pressure
+# - 96GB machine: runs everything comfortably
+BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
+    "square8": 8,      # 8GB minimum for 8x8 games
+    "square19": 48,    # 48GB minimum for 19x19 games
+    "hexagonal": 48,   # 48GB minimum for hex games
+    "hex": 48,         # Alias for hexagonal
+}
+
+
+def get_memory_info() -> Dict[str, Any]:
+    """Get memory information for this machine.
+
+    Returns dict with:
+        - total_gb: Total physical RAM in GB
+        - available_gb: Available RAM in GB (free + inactive/reclaimable)
+        - eligible_boards: List of board types this worker can handle
+    """
+    total_gb = 8
+    available_gb = 4
+
+    try:
+        # macOS: use sysctl for total
+        result = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            bytes_total = int(result.stdout.strip())
+            total_gb = bytes_total // (1024 ** 3)
+
+        # macOS: use vm_stat for available (free + inactive pages)
+        result = subprocess.run(
+            ["vm_stat"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            page_size = 4096  # Default
+            free_pages = 0
+            inactive_pages = 0
+
+            for line in result.stdout.split('\n'):
+                if 'page size of' in line:
+                    match = re.search(r'page size of (\d+)', line)
+                    if match:
+                        page_size = int(match.group(1))
+                elif 'Pages free:' in line:
+                    free_pages = int(line.split(':')[1].strip().rstrip('.'))
+                elif 'Pages inactive:' in line:
+                    inactive_pages = int(line.split(':')[1].strip().rstrip('.'))
+
+            available_bytes = (free_pages + inactive_pages) * page_size
+            available_gb = available_bytes // (1024 ** 3)
+    except Exception:
+        pass
+
+    # Fallback: try Linux /proc/meminfo
+    if total_gb == 8:
+        try:
+            with open("/proc/meminfo", "r") as f:
+                for line in f:
+                    if line.startswith("MemTotal:"):
+                        kb = int(line.split()[1])
+                        total_gb = kb // (1024 * 1024)
+                    elif line.startswith("MemAvailable:"):
+                        kb = int(line.split()[1])
+                        available_gb = kb // (1024 * 1024)
+        except Exception:
+            pass
+
+    # Determine eligible boards based on total RAM
+    eligible_boards = []
+    for board_type, required_gb in BOARD_MEMORY_REQUIREMENTS.items():
+        if total_gb >= required_gb:
+            eligible_boards.append(board_type)
+
+    # Deduplicate (hex/hexagonal)
+    eligible_boards = list(set(eligible_boards))
+
+    return {
+        "total_gb": total_gb,
+        "available_gb": available_gb,
+        "eligible_boards": sorted(eligible_boards),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +413,8 @@ class WorkerRequestHandler(BaseHTTPRequestHandler):
             self.send_json_response(404, {"error": "Not found"})
 
     def _handle_health(self) -> None:
-        """Health check endpoint."""
+        """Health check endpoint with memory info for capacity-aware routing."""
+        memory_info = get_memory_info()
         self.send_json_response(
             200,
             {
@@ -324,6 +424,12 @@ class WorkerRequestHandler(BaseHTTPRequestHandler):
                 "platform": platform.platform(),
                 "python_version": platform.python_version(),
                 "tasks_completed": WORKER_STATS.tasks_completed,
+                # Memory info for capacity-aware job routing
+                "memory": {
+                    "total_gb": memory_info["total_gb"],
+                    "available_gb": memory_info["available_gb"],
+                    "eligible_boards": memory_info["eligible_boards"],
+                },
             },
         )
 
