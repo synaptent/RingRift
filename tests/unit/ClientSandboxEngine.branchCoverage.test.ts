@@ -180,8 +180,10 @@ describe('ClientSandboxEngine branch coverage', () => {
         interactionHandler: new MockInteractionHandler(),
         traceMode: true,
       });
-      // traceMode is internal, just verify engine was created
-      expect(engine.getGameState()).toBeDefined();
+      // traceMode is internal, just verify engine was created with active state
+      const state = engine.getGameState();
+      expect(state.gameStatus).toBe('active');
+      expect(state.currentPhase).toBe('ring_placement');
     });
 
     it('2-player games have swapRuleEnabled', () => {
@@ -246,10 +248,10 @@ describe('ClientSandboxEngine branch coverage', () => {
       expect(state.history).toHaveLength(0);
     });
 
-    it('has rngSeed defined', () => {
+    it('has rngSeed as a number', () => {
       const state = engine.getGameState();
-      expect(state.rngSeed).toBeDefined();
       expect(typeof state.rngSeed).toBe('number');
+      expect(state.rngSeed).toBeGreaterThanOrEqual(0);
     });
   });
 
@@ -302,7 +304,11 @@ describe('ClientSandboxEngine branch coverage', () => {
     it('placement moves target valid positions', () => {
       const moves = engine.getValidMoves(1);
       moves.forEach((move) => {
-        expect(move.to).toBeDefined();
+        expect(move.to).not.toBeNull();
+        expect(move.to).toMatchObject({
+          x: expect.any(Number),
+          y: expect.any(Number),
+        });
         expect(move.to!.x).toBeGreaterThanOrEqual(0);
         expect(move.to!.y).toBeGreaterThanOrEqual(0);
         expect(move.to!.x).toBeLessThan(8);
@@ -338,9 +344,12 @@ describe('ClientSandboxEngine branch coverage', () => {
       const state = engine.getGameState();
       const stack = state.board.stacks.get('4,4');
 
-      expect(stack).toBeDefined();
-      expect(stack!.controllingPlayer).toBe(1);
-      expect(stack!.stackHeight).toBe(1);
+      expect(stack).not.toBeNull();
+      expect(stack).toMatchObject({
+        controllingPlayer: 1,
+        stackHeight: 1,
+        position: { x: 4, y: 4 },
+      });
     });
 
     it('rejects placement on occupied space', async () => {
@@ -547,10 +556,12 @@ describe('ClientSandboxEngine branch coverage', () => {
       });
     });
 
-    it('getSerializedState returns an object', () => {
+    it('getSerializedState returns a serializable state object', () => {
       const serialized = engine.getSerializedState();
-      expect(serialized).toBeDefined();
       expect(typeof serialized).toBe('object');
+      expect(serialized).not.toBeNull();
+      // Verify essential state properties are included
+      expect(serialized).toHaveProperty('gameState');
     });
 
     it('can initialize from serialized state with player kinds', () => {
@@ -571,7 +582,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       // Should be able to JSON stringify/parse
       const json = JSON.stringify(serialized);
       const parsed = JSON.parse(json);
-      expect(parsed).toBeDefined();
+      expect(typeof parsed).toBe('object');
+      expect(parsed).toHaveProperty('gameState');
     });
   });
 
@@ -670,7 +682,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       // Click in ring placement should trigger placement
       const state = engine.getGameState();
       // Either placement happened or engine state is consistent
-      expect(state).toBeDefined();
+      expect(state.gameStatus).toBe('active');
+      expect(typeof state.currentPlayer).toBe('number');
     });
   });
 
@@ -699,8 +712,11 @@ describe('ClientSandboxEngine branch coverage', () => {
       });
       const state = engine.getGameState();
 
-      expect(state.board).toBeDefined();
-      expect(state.board.stacks).toBeDefined();
+      expect(state.board).toMatchObject({
+        type: 'square8',
+        size: 8,
+      });
+      expect(state.board.stacks).toBeInstanceOf(Map);
     });
   });
 
@@ -815,7 +831,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       await engine.handleHumanCellClick({ x: 2, y: 0 });
 
       const state = engine.getGameState();
-      expect(state).toBeDefined();
+      expect(state.gameStatus).toBe('active');
+      expect(typeof state.currentPlayer).toBe('number');
     });
 
     it('handles click on same cell twice', async () => {
@@ -828,7 +845,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       await engine.handleHumanCellClick({ x: 0, y: 0 });
 
       const state = engine.getGameState();
-      expect(state).toBeDefined();
+      expect(state.gameStatus).toBe('active');
+      expect(typeof state.currentPlayer).toBe('number');
     });
   });
 
@@ -864,8 +882,9 @@ describe('ClientSandboxEngine branch coverage', () => {
       });
 
       const serialized = engine.getSerializedState();
-      expect(serialized).toBeDefined();
       expect(typeof serialized).toBe('object');
+      expect(serialized).not.toBeNull();
+      expect(serialized).toHaveProperty('gameState');
     });
 
     it('serialized state can be stringified', () => {
@@ -876,7 +895,8 @@ describe('ClientSandboxEngine branch coverage', () => {
 
       const serialized = engine.getSerializedState();
       const jsonString = JSON.stringify(serialized);
-      expect(jsonString).toBeTruthy();
+      expect(typeof jsonString).toBe('string');
+      expect(jsonString.length).toBeGreaterThan(0);
     });
   });
 
@@ -909,8 +929,13 @@ describe('ClientSandboxEngine branch coverage', () => {
       });
 
       const state = engine.getStateAtMoveIndex(1000);
-      // Function clamps to valid range and returns initial state
-      expect(state).toBeDefined();
+      // Function clamps to valid range and returns initial state or null
+      if (state !== null) {
+        expect(state.gameStatus).toBe('active');
+        expect(typeof state.currentPlayer).toBe('number');
+      } else {
+        expect(state).toBeNull();
+      }
     });
   });
 
@@ -948,7 +973,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       engine.clearSelection();
       // Should not throw
       const state = engine.getGameState();
-      expect(state).toBeDefined();
+      expect(state.gameStatus).toBe('active');
+      expect(state.currentPhase).toBe('ring_placement');
     });
 
     it('can be called multiple times safely', () => {
@@ -962,7 +988,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       engine.clearSelection();
 
       const state = engine.getGameState();
-      expect(state).toBeDefined();
+      expect(state.gameStatus).toBe('active');
+      expect(state.currentPhase).toBe('ring_placement');
     });
   });
 

@@ -1069,6 +1069,24 @@ def main() -> None:
             "Optional maximum TS k to include in --trace-game output (0 = all steps)."
         ),
     )
+    parser.add_argument(
+        "--fail-on-divergence",
+        action="store_true",
+        help=(
+            "If set, exit with non-zero status (exit code 1) when any semantic "
+            "divergences are detected. Intended for CI gates. Structural issues "
+            "and end-of-game-only divergences are logged but do not trigger failure."
+        ),
+    )
+    parser.add_argument(
+        "--summary-json",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to write the parity summary JSON. Directories are "
+            "created if needed. Useful for archiving CI results."
+        ),
+    )
     args = parser.parse_args()
 
     # Handle JSON input mode: import to temp DB and check single game
@@ -1291,10 +1309,26 @@ def main() -> None:
     }
     print(json.dumps(summary, indent=2, sort_keys=True))
 
+    # Optionally write summary to a file (for CI artifact archiving)
+    if args.summary_json:
+        summary_dir = os.path.dirname(args.summary_json)
+        if summary_dir:
+            os.makedirs(summary_dir, exist_ok=True)
+        with open(args.summary_json, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, sort_keys=True)
+
     # Cleanup temp DB if we created one
     if temp_db_path is not None:
         import shutil
         shutil.rmtree(temp_db_path.parent, ignore_errors=True)
+
+    # CI gate: exit with non-zero status if semantic divergences were found
+    if args.fail_on_divergence and total_semantic_divergent > 0:
+        print(
+            f"\n[FAIL] {total_semantic_divergent} game(s) with semantic divergence detected.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":

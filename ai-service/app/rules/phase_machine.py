@@ -191,10 +191,13 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
       game_state.current_phase = GamePhase.TERRITORY_PROCESSING
       game_state.must_move_from_stack_key = None
     else:
-      # Non-terminal case: rotate to next active player, skipping
-      # players who have no material (no stacks and no rings in hand).
-      # This mirrors TS turnLogic.advanceTurnAndPhase behaviour.
-      GameEngine._rotate_to_next_active_player(game_state)
+      # Non-terminal case: perform a full turn end with ANM/FE gating.
+      # This mirrors TS turnLogic.advanceTurnAndPhase (which applies
+      # forced_elimination/no-action requirements rather than silently
+      # rotating). Using _end_turn ensures the next seat either has a
+      # legal action or will surface a forced_elimination/no_*_action
+      # requirement instead of leaving the recorder in an ANM state.
+      GameEngine._end_turn(game_state, trace_mode=trace_mode)
 
   elif last_move.type == MoveType.PROCESS_TERRITORY_REGION:
     # After processing a disconnected territory region via an explicit
@@ -221,4 +224,3 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
     # Territory option choices are phase-preserving; explicit turn
     # rotation is driven by PROCESS_TERRITORY_REGION / elimination.
     pass
-

@@ -319,7 +319,7 @@ describe('MovementAggregate - Branch Coverage', () => {
       };
 
       const result = validateMovement(state, action);
-      expect(result).toBeDefined();
+      expect(typeof result.valid).toBe('boolean');
     });
   });
 
@@ -681,7 +681,8 @@ describe('MovementAggregate - Branch Coverage', () => {
       const result = applyMovement(state, move);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.newState).toBeDefined();
+        expect(result.newState.board.stacks.has(positionToString(pos(6, 3)))).toBe(true);
+        expect(result.newState.board.markers.has(positionToString(pos(3, 3)))).toBe(true);
       }
     });
 

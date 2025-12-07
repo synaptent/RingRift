@@ -329,7 +329,8 @@ describe('VictoryAggregate branch coverage', () => {
 
         expect(result.isGameOver).toBe(true);
         // Last actor is determined from players array when currentPlayer not found
-        expect(result.winner).toBeDefined();
+        expect(typeof result.winner).toBe('number');
+        expect([1, 2]).toContain(result.winner);
       });
     });
   });
@@ -611,7 +612,7 @@ describe('VictoryAggregate branch coverage', () => {
 
       const result = evaluateVictoryDetailed(state);
 
-      expect(result.standings).toBeDefined();
+      expect(result.standings).toHaveLength(2);
       expect(result.standings![0].playerNumber).toBe(2); // More territory
       expect(result.standings![1].playerNumber).toBe(1);
     });
@@ -631,7 +632,10 @@ describe('VictoryAggregate branch coverage', () => {
 
       const result = evaluateVictoryDetailed(state);
 
-      expect(result.scores).toBeDefined();
+      expect(result.scores).toMatchObject({
+        1: { eliminatedRings: 3, territorySpaces: 5, markerCount: 2 },
+        2: { eliminatedRings: 1, territorySpaces: 2, markerCount: 1 },
+      });
       expect(result.scores![1].eliminatedRings).toBe(3);
       expect(result.scores![1].territorySpaces).toBe(5);
       expect(result.scores![1].markerCount).toBe(2);
@@ -736,7 +740,8 @@ describe('VictoryAggregate branch coverage', () => {
 
       // Should not crash when iterating hex positions
       const result = evaluateVictory(state);
-      expect(result).toBeDefined();
+      expect(result).toMatchObject({ isGameOver: expect.any(Boolean) });
+      expect(typeof result.handCountsAsEliminated).toBe('boolean');
     });
   });
 
@@ -751,7 +756,7 @@ describe('VictoryAggregate branch coverage', () => {
 
       // Check victory when a non-existent player is referenced internally
       const result = evaluateVictory(state);
-      expect(result).toBeDefined();
+      expect(result).toMatchObject({ isGameOver: expect.any(Boolean), handCountsAsEliminated: expect.any(Boolean) });
     });
 
     it('handles player with zero rings in hand', () => {
@@ -765,7 +770,7 @@ describe('VictoryAggregate branch coverage', () => {
 
       // Both players have no rings to place
       const result = evaluateVictory(state);
-      expect(result).toBeDefined();
+      expect(result).toMatchObject({ isGameOver: true, handCountsAsEliminated: true });
     });
   });
 
@@ -792,7 +797,8 @@ describe('VictoryAggregate branch coverage', () => {
       });
 
       const result = evaluateVictory(state);
-      expect(result).toBeDefined();
+      expect(result.isGameOver).toBe(false);
+      expect(result.handCountsAsEliminated).toBe(false);
     });
 
     it('handles stack lookup returning undefined', () => {
@@ -805,7 +811,7 @@ describe('VictoryAggregate branch coverage', () => {
 
       // Empty board - stack lookups should return undefined
       const result = evaluateVictory(state);
-      expect(result).toBeDefined();
+      expect(result.isGameOver).toBe(false);
     });
   });
 
@@ -835,8 +841,10 @@ describe('VictoryAggregate branch coverage', () => {
 
       const result = checkLastPlayerStanding(state);
       // Player 2 has no material (no stacks, no rings in hand)
-      // This may trigger last_player_standing condition
-      expect(result).toBeDefined();
+      // This triggers last_player_standing condition - player 1 wins
+      expect(result).not.toBeNull();
+      expect(result!.winner).toBe(1);
+      expect(result!.reason).toBe('last_player_standing');
     });
 
     it('no victory when multiple players have material', () => {
@@ -948,11 +956,10 @@ describe('VictoryAggregate branch coverage', () => {
       });
 
       const result = evaluateVictoryDetailed(state);
-      expect(result).toBeDefined();
-      if (result.standings) {
-        // Player 1 has more eliminated rings, should rank higher in tie-breaker
-        expect(result.standings[0].playerNumber).toBe(1);
-      }
+      expect(result.standings).toHaveLength(2);
+      // Player 1 has more eliminated rings, should rank higher in tie-breaker
+      expect(result.standings![0].playerNumber).toBe(1);
+      expect(result.standings![1].playerNumber).toBe(2);
     });
 
     it('breaks ties by marker count when territory and eliminated rings equal', () => {
@@ -985,11 +992,10 @@ describe('VictoryAggregate branch coverage', () => {
       });
 
       const result = evaluateVictoryDetailed(state);
-      expect(result).toBeDefined();
-      if (result.standings) {
-        // Player 1 has more markers (3 vs 1), should rank higher
-        expect(result.standings[0].playerNumber).toBe(1);
-      }
+      expect(result.standings).toHaveLength(2);
+      // Player 1 has more markers (3 vs 1), should rank higher
+      expect(result.standings![0].playerNumber).toBe(1);
+      expect(result.standings![1].playerNumber).toBe(2);
     });
 
     it('handles equal scores across all tie-breakers', () => {
@@ -1006,8 +1012,8 @@ describe('VictoryAggregate branch coverage', () => {
 
       // Both players equal in everything
       const result = evaluateVictoryDetailed(state);
-      expect(result).toBeDefined();
-      expect(result.standings).toBeDefined();
+      expect(result.standings).toHaveLength(2);
+      expect(result.standings![0]).toMatchObject({ playerNumber: expect.any(Number) });
     });
   });
 
@@ -1037,7 +1043,9 @@ describe('VictoryAggregate branch coverage', () => {
       });
 
       const result = evaluateVictory(state);
-      expect(result).toBeDefined();
+      expect(result.isGameOver).toBe(true);
+      expect(result.winner).toBe(1);
+      expect(result.reason).toBe('last_player_standing');
     });
 
     it('handles 4-player game standings', () => {
@@ -1055,8 +1063,9 @@ describe('VictoryAggregate branch coverage', () => {
       });
 
       const result = evaluateVictoryDetailed(state);
-      expect(result).toBeDefined();
-      expect(result.standings?.length).toBe(4);
+      expect(result.standings).toHaveLength(4);
+      // Player 1 has most territory, should be first
+      expect(result.standings![0].playerNumber).toBe(1);
     });
   });
 });

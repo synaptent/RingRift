@@ -240,10 +240,16 @@ Operational drills completed:
 #### Canonical Move/Phase Fidelity & Replay Gate
 
 - [x] Enforce phase ↔ move whitelist in both TS and Python (`validate_canonical_move`, `phase_move_contract`) when adding phases/move types
-- [ ] Run parity + canonical history gates on any new/modified DBs (`ai-service/scripts/check_ts_python_replay_parity.py --emit-state-bundles-dir`, `ai-service/scripts/check_canonical_phase_history.py`)
-- [ ] Shortcut wrapper: `ai-service/scripts/run_parity_and_history_gate.py --db <path> [--emit-state-bundles-dir DIR]`
+- [ ] Run parity + canonical history gates on any new/modified DBs:
+  - [ ] Identify target DB(s) and location(s)
+  - [ ] Run `ai-service/scripts/run_parity_and_history_gate.py --db <path> [--emit-state-bundles-dir DIR]`
+  - [ ] Archive parity/history results alongside DB (or update registry entry)
 - [x] Add and keep a small golden replay pack in CI that replays in TS + Python and fails on any semantic drift
 - [ ] Audit orchestrator/Python `game_engine.py` changes for silent transitions or forced elimination without recorded moves
+- [ ] Audit checklist:
+  - [ ] Confirm `turnOrchestrator` never advances phase without move (explicit `no_*` moves present)
+  - [ ] Confirm Python `game_engine.py` mirrors forced_elimination and no-op phases
+  - [ ] Spot-check replay logs for silent forced_elimination or skipped phases
 
 #### Orchestrator & Territory Branch Coverage Hardening
 

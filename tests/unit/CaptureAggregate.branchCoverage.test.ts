@@ -466,9 +466,11 @@ describe('CaptureAggregate branch coverage', () => {
 
       const result = validateCapture(state, action);
       // The result depends on hex board validation which may or may not allow this
-      // Just ensure it doesn't crash
-      expect(result).toBeDefined();
+      // Ensure it returns a proper validation result structure
       expect(typeof result.valid).toBe('boolean');
+      if (!result.valid) {
+        expect(typeof result.code).toBe('string');
+      }
     });
   });
 
@@ -615,8 +617,7 @@ describe('CaptureAggregate branch coverage', () => {
 
       // Origin should now have a marker
       const originMarker = newState.board.markers.get('2,2');
-      expect(originMarker).toBeDefined();
-      expect(originMarker?.player).toBe(1);
+      expect(originMarker).toMatchObject({ player: 1 });
     });
 
     it('flips opponent marker in capture path', () => {
@@ -690,9 +691,11 @@ describe('CaptureAggregate branch coverage', () => {
 
       // Target should still exist with 2 rings
       const targetStack = newState.board.stacks.get('4,2');
-      expect(targetStack).toBeDefined();
-      expect(targetStack?.stackHeight).toBe(2);
-      expect(targetStack?.rings).toEqual([1, 2]); // P2 ring captured, P1 now on top
+      expect(targetStack).toMatchObject({
+        stackHeight: 2,
+        rings: [1, 2], // P2 ring captured, P1 now on top
+        controllingPlayer: 1,
+      });
     });
 
     it('removes target entirely when single ring', () => {
@@ -817,12 +820,12 @@ describe('CaptureAggregate branch coverage', () => {
 
       const result = updateChainCaptureStateAfterCapture(undefined, move, 1);
 
-      expect(result).toBeDefined();
-      expect(result?.playerNumber).toBe(1);
-      expect(result?.startPosition).toEqual(pos(2, 2));
-      expect(result?.currentPosition).toEqual(pos(6, 2));
-      expect(result?.segments).toHaveLength(1);
-      expect(result?.visitedPositions.has('2,2')).toBe(true);
+      expect(result).not.toBeUndefined();
+      expect(result!.playerNumber).toBe(1);
+      expect(result!.startPosition).toEqual(pos(2, 2));
+      expect(result!.currentPosition).toEqual(pos(6, 2));
+      expect(result!.segments).toHaveLength(1);
+      expect(result!.visitedPositions.has('2,2')).toBe(true);
     });
 
     it('updates existing chain state on subsequent capture', () => {
@@ -851,10 +854,10 @@ describe('CaptureAggregate branch coverage', () => {
 
       const result = updateChainCaptureStateAfterCapture(initialState, move, 1);
 
-      expect(result).toBeDefined();
-      expect(result?.currentPosition).toEqual(pos(6, 6));
-      expect(result?.segments).toHaveLength(2);
-      expect(result?.visitedPositions.has('6,2')).toBe(true);
+      expect(result).not.toBeUndefined();
+      expect(result!.currentPosition).toEqual(pos(6, 6));
+      expect(result!.segments).toHaveLength(2);
+      expect(result!.visitedPositions.has('6,2')).toBe(true);
     });
 
     it('returns undefined state when move has no from', () => {
@@ -982,8 +985,8 @@ describe('CaptureAggregate branch coverage', () => {
       const result = applyCapture(state, move);
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.newState).toBeDefined();
-        expect(result.chainCaptures).toBeDefined();
+        expect(result.newState.board.stacks.has('6,2')).toBe(true);
+        expect(Array.isArray(result.chainCaptures)).toBe(true);
       }
     });
 
@@ -1045,7 +1048,7 @@ describe('CaptureAggregate branch coverage', () => {
         player: 1,
       });
 
-      expect(outcome.nextState).toBeDefined();
+      expect(outcome.nextState.board.stacks.has('6,2')).toBe(true);
       expect(outcome.ringsTransferred).toBe(1);
       expect(typeof outcome.chainContinuationRequired).toBe('boolean');
     });
@@ -1066,7 +1069,8 @@ describe('CaptureAggregate branch coverage', () => {
 
       // After capturing, the stack lands at (6,2) with cap height 4
       // It may be able to capture the stack at (6,4)
-      expect(outcome.nextState).toBeDefined();
+      expect(outcome.nextState.board.stacks.has('6,2')).toBe(true);
+      expect(outcome.ringsTransferred).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -1277,9 +1281,10 @@ describe('CaptureAggregate branch coverage', () => {
       if (result.success && result.chainCaptures.length > 0) {
         // Each position in chainCaptures should be a valid landing position
         for (const chainPos of result.chainCaptures) {
-          expect(chainPos).toBeDefined();
-          expect(typeof chainPos.x).toBe('number');
-          expect(typeof chainPos.y).toBe('number');
+          expect(chainPos).toMatchObject({
+            x: expect.any(Number),
+            y: expect.any(Number),
+          });
         }
       }
     });

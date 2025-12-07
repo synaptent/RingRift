@@ -638,7 +638,8 @@ describe('PlacementAggregate branch coverage', () => {
         expect(positions.length).toBeGreaterThan(0);
         // Hex positions should have x, y, z
         positions.forEach((p) => {
-          expect(p.z).toBeDefined();
+          expect(typeof p.z).toBe('number');
+          expect(p.x + p.y + p.z).toBe(0); // Hex coordinates should sum to 0
         });
       });
     });
@@ -847,7 +848,7 @@ describe('PlacementAggregate branch coverage', () => {
         };
 
         const newState = mutatePlacement(state, action) as GameState & { lastMoveAt: Date };
-        expect(newState.lastMoveAt).toBeDefined();
+        expect(newState.lastMoveAt).toBeInstanceOf(Date);
         expect(newState.lastMoveAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
       });
     });

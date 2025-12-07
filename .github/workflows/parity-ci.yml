@@ -1,0 +1,158 @@
+# Parity CI Gate - TS↔Python Replay Parity
+#
+# This workflow runs TS↔Python replay parity checks on PRs that affect engine
+# code. It ensures that changes to the rules engine don't introduce semantic
+# divergences between the TypeScript and Python implementations.
+#
+# The check uses canonical_square8.db (a small, pre-verified database) for
+# fast feedback. The full parity healthcheck (contract vectors, plateau
+# snapshots) runs as part of the existing python-parity-healthcheck job in
+# ci.yml.
+#
+# Related documentation:
+#   - docs/PARITY_VERIFICATION_RUNBOOK.md
+#   - ai-service/TRAINING_DATA_REGISTRY.md
+#   - AGENTS.md (section 4)
+#
+# Exit codes:
+#   0 = All games pass parity
+#   1 = Semantic divergences detected (build fails)
+#
+# Implementation: PA-6 (Automate Parity CI Gate)
+
+name: Parity CI Gate
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      # TypeScript engine paths
+      - 'src/shared/engine/**'
+      - 'src/client/sandbox/**'
+      - 'scripts/selfplay-db-ts-replay.ts'
+      # Python engine paths
+      - 'ai-service/app/game_engine.py'
+      - 'ai-service/app/rules/**'
+      - 'ai-service/app/db/game_replay.py'
+      - 'ai-service/app/models/core.py'
+      # Parity scripts themselves
+      - 'ai-service/scripts/check_ts_python_replay_parity.py'
+      - 'ai-service/scripts/run_parity_healthcheck.py'
+      # Canonical databases
+      - 'ai-service/data/games/canonical_*.db'
+      # This workflow
+      - '.github/workflows/parity-ci.yml'
+  # Allow manual triggering for debugging
+  workflow_dispatch: {}
+
+jobs:
+  replay-parity-check:
+    name: TS↔Python Replay Parity
+    runs-on: ubuntu-latest
+    # CI Safety: Parity check with TS subprocess should complete within 15 minutes
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # TS replay requires Node.js and npm dependencies
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      # Python for the parity checker
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Run the replay parity check on canonical_square8.db
+      # This is the fastest canonical DB (~2MB, ~12 games)
+      - name: Run TS↔Python replay parity check
+        working-directory: ai-service
+        env:
+          PYTHONPATH: '.'
+          # Use server tsconfig for ts-node
+          TS_NODE_PROJECT: '../tsconfig.server.json'
+        run: |
+          python scripts/check_ts_python_replay_parity.py \
+            --db data/games/canonical_square8.db \
+            --fail-on-divergence \
+            --summary-json results/parity_ci_summary.json
+
+      # Upload summary artifact for debugging failed builds
+      - name: Upload parity check summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-ci-summary
+          path: ai-service/results/parity_ci_summary.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Optional: Run against additional canonical DBs if they exist
+  # This job is allowed to fail and won't block the PR
+  extended-parity-check:
+    name: Extended Parity Check (Non-Blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # This job runs in parallel but doesn't block PRs
+    continue-on-error: true
+    # Only run on main branch to save CI time on feature branches
+    if: github.base_ref == 'main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        working-directory: ai-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Run parity check on all available DBs (scan mode)
+      - name: Run extended parity check
+        working-directory: ai-service
+        env:
+          PYTHONPATH: '.'
+          TS_NODE_PROJECT: '../tsconfig.server.json'
+        run: |
+          python scripts/check_ts_python_replay_parity.py \
+            --limit-games-per-db 5 \
+            --summary-json results/parity_extended_summary.json
+
+      - name: Upload extended parity summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-extended-summary
+          path: ai-service/results/parity_extended_summary.json
+          retention-days: 14
+          if-no-files-found: ignore

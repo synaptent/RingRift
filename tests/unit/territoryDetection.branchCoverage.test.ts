@@ -103,8 +103,8 @@ describe('territoryDetection branch coverage', () => {
       const regions = findDisconnectedRegions(board);
 
       // The function should work correctly, skipping collapsed spaces
-      // The exact result depends on the board setup
-      expect(regions).toBeDefined();
+      // Result should be array regardless of content
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('handles board with collapsed spaces scattered among markers', () => {
@@ -122,7 +122,7 @@ describe('territoryDetection branch coverage', () => {
       const regions = findDisconnectedRegions(board);
 
       // Should handle the mix of markers and collapsed spaces
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
   });
 
@@ -142,7 +142,7 @@ describe('territoryDetection branch coverage', () => {
       // isRegionBorderedByCollapsedOnly should return false (line 144)
       const regions = findDisconnectedRegions(board);
 
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
   });
 
@@ -165,7 +165,7 @@ describe('territoryDetection branch coverage', () => {
       const regions = findDisconnectedRegions(board);
 
       // The region detection should handle markers in border calculation
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('returns false when neighbor is open space (line 263)', () => {
@@ -182,7 +182,7 @@ describe('territoryDetection branch coverage', () => {
       const regions = findDisconnectedRegions(board);
 
       // Any region found will border open spaces, triggering line 263
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('handles region bordered by mix of collapsed and markers', () => {
@@ -199,7 +199,7 @@ describe('territoryDetection branch coverage', () => {
 
       const regions = findDisconnectedRegions(board);
 
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
   });
 
@@ -226,7 +226,7 @@ describe('territoryDetection branch coverage', () => {
 
       // The algorithm still checks marker borders even with single player
       // Regions without the active player are considered disconnected
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('detects disconnected region when one player is isolated by markers', () => {
@@ -266,7 +266,7 @@ describe('territoryDetection branch coverage', () => {
 
       const regions = findDisconnectedRegions(board);
 
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
   });
 
@@ -284,7 +284,7 @@ describe('territoryDetection branch coverage', () => {
       const regions = findDisconnectedRegions(board);
 
       // Should work with hex coordinates
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('handles collapsed spaces on hex board', () => {
@@ -298,7 +298,7 @@ describe('territoryDetection branch coverage', () => {
 
       const regions = findDisconnectedRegions(board);
 
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
   });
 
@@ -318,7 +318,7 @@ describe('territoryDetection branch coverage', () => {
       const regions = findDisconnectedRegions(board);
 
       // Should check disconnection for both marker colors
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('handles board corner positions', () => {
@@ -334,7 +334,7 @@ describe('territoryDetection branch coverage', () => {
 
       const regions = findDisconnectedRegions(board);
 
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('handles full row of collapsed spaces', () => {
@@ -350,7 +350,7 @@ describe('territoryDetection branch coverage', () => {
 
       const regions = findDisconnectedRegions(board);
 
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
 
     it('handles all spaces having markers', () => {
@@ -372,7 +372,7 @@ describe('territoryDetection branch coverage', () => {
 
       const regions = findDisconnectedRegions(board);
 
-      expect(regions).toBeDefined();
+      expect(Array.isArray(regions)).toBe(true);
     });
   });
 });

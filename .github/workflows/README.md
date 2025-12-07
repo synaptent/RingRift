@@ -358,6 +358,49 @@ View build status:
 - Filter by branch, status, or workflow
 - Download logs for debugging
 
+## Parity CI Gate (`parity-ci.yml`)
+
+### Purpose
+
+Automatically verifies TS↔Python engine parity on PRs that modify rules/engine code. Blocks merges when semantic divergences are detected.
+
+### What Gets Verified
+
+1. **Replay Parity**: Games from `canonical_square8.db` are replayed through both TS and Python engines
+2. **State Comparison**: At each move, compares `currentPlayer`, `currentPhase`, `gameStatus`, and `stateHash`
+3. **Divergence Detection**: Any mismatch is reported and causes the workflow to fail
+
+### Trigger Conditions
+
+The workflow runs when PRs modify:
+- `src/shared/engine/**` - TypeScript engine
+- `src/client/sandbox/**` - TypeScript sandbox adapter
+- `ai-service/app/rules/**` - Python rules implementation
+- `ai-service/app/game_engine.py` - Python GameEngine
+- `ai-service/app/db/game_replay.py` - Python replay DB
+- Parity scripts and canonical databases
+
+### Running Locally
+
+```bash
+# Replay parity check (CI-equivalent)
+cd ai-service
+PYTHONPATH=. python scripts/check_ts_python_replay_parity.py \
+  --db data/games/canonical_square8.db \
+  --fail-on-divergence
+
+# Contract vectors + plateau snapshots
+PYTHONPATH=. python scripts/run_parity_healthcheck.py --fail-on-mismatch
+```
+
+### Related Documentation
+
+- [`docs/PARITY_VERIFICATION_RUNBOOK.md`](../../docs/PARITY_VERIFICATION_RUNBOOK.md) - Full parity verification documentation
+- [`ai-service/TRAINING_DATA_REGISTRY.md`](../../ai-service/TRAINING_DATA_REGISTRY.md) - Canonical data inventory
+- [`AGENTS.md`](../../AGENTS.md) - Section 4 (TS↔Python Parity)
+
+---
+
 ## Future Enhancements
 
 Planned CI/CD improvements:

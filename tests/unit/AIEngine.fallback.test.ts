@@ -163,8 +163,9 @@ describe('AIEngine Fallback Handling', () => {
       const move = await aiEngine.getAIMove(2, mockGameState);
 
       // Should return a valid move despite service failure
-      expect(move).toBeDefined();
       expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
+      expect(move?.player).toBe(2);
 
       // Should have logged the fallback
       expect(logger.warn).toHaveBeenCalledWith(
@@ -190,7 +191,8 @@ describe('AIEngine Fallback Handling', () => {
 
       const move = await aiEngine.getAIMove(2, mockGameState);
 
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('falling back'),
         expect.any(Object)
@@ -211,8 +213,8 @@ describe('AIEngine Fallback Handling', () => {
 
       const move = await aiEngine.getAIMove(2, mockGameState);
 
-      expect(move).toBeDefined();
       expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
     });
 
     it('should handle circuit breaker open state', async () => {
@@ -230,7 +232,8 @@ describe('AIEngine Fallback Handling', () => {
 
       const move = await aiEngine.getAIMove(2, mockGameState);
 
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
       expect(logger.warn).toHaveBeenCalled();
     });
   });
@@ -263,7 +266,8 @@ describe('AIEngine Fallback Handling', () => {
       const move = await aiEngine.getAIMove(2, mockGameState);
 
       // Should fall back to local heuristic
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('invalid move'),
         expect.any(Object)
@@ -295,7 +299,7 @@ describe('AIEngine Fallback Handling', () => {
 
       const move = await aiEngine.getAIMove(2, mockGameState);
 
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
       expect(move?.type).toBe('place_ring');
       expect(move?.to).toEqual({ x: 0, y: 0 });
     });
@@ -312,8 +316,8 @@ describe('AIEngine Fallback Handling', () => {
       // Multiple attempts should all succeed (falling back to random)
       for (let i = 0; i < 5; i++) {
         const move = await aiEngine.getAIMove(2, mockGameState);
-        expect(move).toBeDefined();
         expect(move).not.toBeNull();
+        expect(typeof move?.type).toBe('string');
       }
     });
 
@@ -327,7 +331,7 @@ describe('AIEngine Fallback Handling', () => {
       const move = await aiEngine.getAIMove(2, mockGameState);
 
       // Should not even call the service when there's only one valid move.
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
       expect(move).toEqual(mockValidMoves[0]);
       expect(mockAIServiceClient.getAIMove).not.toHaveBeenCalled();
       expect(logger.info).toHaveBeenCalledWith(
@@ -365,7 +369,8 @@ describe('AIEngine Fallback Handling', () => {
       expect(mockAIServiceClient.getAIMove).not.toHaveBeenCalled();
 
       // Should have used local heuristics
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('local heuristics'),
         expect.any(Object)
@@ -402,7 +407,7 @@ describe('AIEngine Fallback Handling', () => {
       await aiEngine.getAIMove(2, mockGameState);
 
       const after = aiEngine.getDiagnostics(2);
-      expect(after).toBeDefined();
+      expect(typeof after).toBe('object');
       expect(after!.serviceFailureCount).toBe(1);
       expect(after!.localFallbackCount).toBeGreaterThan(0);
     });
@@ -422,7 +427,8 @@ describe('AIEngine Fallback Handling', () => {
       // Even when the AI service is overloaded, AIEngine should still
       // produce a move via local heuristic/random fallback instead of
       // propagating the error.
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
 
       const diagnostics = aiEngine.getDiagnostics(2);
       expect(diagnostics?.serviceFailureCount).toBe(1);
@@ -495,7 +501,8 @@ describe('AIEngine Fallback Handling', () => {
 
       const move = await aiEngine.getAIMove(2, gameStateWithMoves);
 
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
     });
 
     it('should handle hexagonal coordinates in move comparison', async () => {
@@ -528,7 +535,8 @@ describe('AIEngine Fallback Handling', () => {
 
       const move = await aiEngine.getAIMove(2, hexGameState);
 
-      expect(move).toBeDefined();
+      expect(move).not.toBeNull();
+      expect(typeof move?.type).toBe('string');
     });
   });
 
@@ -622,8 +630,8 @@ describe('AIEngine Fallback Handling', () => {
 
       // With the same RNG stream, we should pick the same candidate move
       // (up to non-deterministic metadata such as timestamp).
-      expect(move1).toBeDefined();
-      expect(move2).toBeDefined();
+      expect(move1).not.toBeNull();
+      expect(move2).not.toBeNull();
       expect(move1!.type).toBe(move2!.type);
       expect(move1!.to).toEqual(move2!.to);
       expect(move1!.placementCount).toBe(move2!.placementCount);

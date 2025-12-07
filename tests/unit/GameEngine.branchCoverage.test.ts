@@ -748,7 +748,7 @@ describe('GameEngine branch coverage', () => {
     it('tracks eliminatedRings in board state', () => {
       const engine = new GameEngine('test-elim-track', 'square8', createPlayers(), timeControl);
       const state = engine.getGameState();
-      expect(state.board.eliminatedRings).toBeDefined();
+      expect(state.board.eliminatedRings).toEqual({});
     });
 
     it('totalRingsEliminated starts at 0', () => {
@@ -864,7 +864,7 @@ describe('GameEngine branch coverage', () => {
       engine.startGame();
 
       const currentPlayer = engine.getGameState().currentPlayer;
-      expect(currentPlayer).toBeDefined();
+      expect(currentPlayer).toBe(1);
     });
   });
 
@@ -1066,7 +1066,10 @@ describe('GameEngine branch coverage', () => {
 
       const result = await engine.makeMove(move);
       // Either succeeds or fails with a specific validation error
-      expect(result.gameState).toBeDefined();
+      expect(result.gameState).toMatchObject({
+        gameStatus: expect.any(String),
+        currentPlayer: expect.any(Number),
+      });
     });
 
     it('handles swap_sides move type', async () => {
@@ -1090,7 +1093,9 @@ describe('GameEngine branch coverage', () => {
 
       const result = await engine.makeMove(move);
       // Swap might fail if conditions aren't met, but function should be callable
-      expect(result).toBeDefined();
+      expect(result).toMatchObject({
+        success: expect.any(Boolean),
+      });
     });
   });
 
@@ -1258,15 +1263,17 @@ describe('GameEngine branch coverage', () => {
       const engine = new GameEngine('test-board1', 'square8', createPlayers(), timeControl);
       const state = engine.getGameState();
 
-      expect(state.board).toBeDefined();
-      expect(state.board.size).toBe(8);
+      expect(state.board).toMatchObject({
+        type: 'square8',
+        size: 8,
+      });
     });
 
     it('game state includes empty stacks initially', () => {
       const engine = new GameEngine('test-board2', 'square8', createPlayers(), timeControl);
       const state = engine.getGameState();
 
-      expect(state.board.stacks).toBeDefined();
+      expect(state.board.stacks).toBeInstanceOf(Map);
       expect(state.board.stacks.size).toBe(0);
     });
 
@@ -1274,7 +1281,7 @@ describe('GameEngine branch coverage', () => {
       const engine = new GameEngine('test-board3', 'square8', createPlayers(), timeControl);
       const state = engine.getGameState();
 
-      expect(state.board.markers).toBeDefined();
+      expect(state.board.markers).toBeInstanceOf(Map);
       expect(state.board.markers.size).toBe(0);
     });
   });

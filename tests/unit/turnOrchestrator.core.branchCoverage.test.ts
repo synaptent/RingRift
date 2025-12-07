@@ -100,8 +100,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
-        expect(result.status).toBeDefined();
+        expect(result.nextState.currentPhase).toBe('movement');
+        expect(['complete', 'awaiting_decision']).toContain(result.status);
       });
 
       it('transitions to movement phase after placement', () => {
@@ -129,7 +129,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(result.nextState.currentPhase).toBe('movement');
+        expect(result.nextState.board.stacks.has('3,3')).toBe(true);
       });
     });
 
@@ -181,7 +182,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(result.nextState.board.stacks.has('4,3')).toBe(true);
+        expect(result.nextState.board.stacks.has('3,3')).toBe(false);
       });
 
       it('throws error when from is missing for move_stack', () => {
@@ -206,7 +208,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(result.nextState.board.stacks.has('4,3')).toBe(true);
+        expect(result.nextState.board.stacks.get('4,3')?.controllingPlayer).toBe(1);
       });
     });
 
@@ -240,7 +243,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(result.nextState.currentPhase).not.toBe('capture');
+        expect(['complete', 'awaiting_decision']).toContain(result.status);
       });
 
       it('throws error when from or captureTarget is missing', () => {
@@ -302,7 +306,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(['complete', 'awaiting_decision']).toContain(result.status);
+        expect(result.nextState.gameStatus).toBe('active');
       });
     });
 
@@ -333,7 +338,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(['complete', 'awaiting_decision']).toContain(result.status);
+        expect(result.nextState.gameStatus).toBe('active');
       });
     });
 
@@ -351,7 +357,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(['complete', 'awaiting_decision']).toContain(result.status);
+        expect(result.nextState.gameStatus).toBe('active');
       });
     });
 
@@ -376,7 +383,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(['complete', 'awaiting_decision']).toContain(result.status);
+        expect(result.nextState.gameStatus).toBe('active');
       });
     });
 
@@ -406,7 +414,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(['complete', 'awaiting_decision']).toContain(result.status);
+        expect(result.nextState.gameStatus).toBe('active');
       });
     });
 
@@ -417,7 +426,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.nextState).toBeDefined();
+        expect(result.nextState.currentPhase).toBe('ring_placement');
+        expect(result.nextState.currentPlayer).toBe(2);
       });
     });
 
@@ -439,11 +449,12 @@ describe('TurnOrchestrator core branch coverage', () => {
 
         const result = processTurn(state, move);
 
-        expect(result.metadata).toBeDefined();
-        expect(result.metadata?.processedMove).toBe(move);
-        expect(typeof result.metadata?.durationMs).toBe('number');
-        expect(typeof result.metadata?.sInvariantBefore).toBe('number');
-        expect(typeof result.metadata?.sInvariantAfter).toBe('number');
+        expect(result.metadata).toMatchObject({
+          processedMove: move,
+          durationMs: expect.any(Number),
+          sInvariantBefore: expect.any(Number),
+          sInvariantAfter: expect.any(Number),
+        });
       });
     });
 
@@ -506,7 +517,8 @@ describe('TurnOrchestrator core branch coverage', () => {
         const result = validateMove(state, move);
 
         expect(result.valid).toBe(false);
-        expect(result.reason).toBeDefined();
+        expect(typeof result.reason).toBe('string');
+        expect(result.reason!.length).toBeGreaterThan(0);
       });
     });
 
@@ -913,7 +925,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
       const result = await processTurnAsync(state, move, delegates);
 
-      expect(result.nextState).toBeDefined();
+      expect(result.nextState.currentPhase).toBe('movement');
+      expect(result.nextState.gameStatus).toBe('active');
     });
 
     // DELETED 2025-12-06: 'handles chain capture decision by returning without auto-resolve'
@@ -978,9 +991,9 @@ describe('TurnOrchestrator core branch coverage', () => {
 
       const result = processTurn(state, move);
 
-      // After move, should eventually rotate to player 2
-      // (exact phase depends on post-move processing)
-      expect(result.nextState).toBeDefined();
+      // After move, stack should be at new position
+      expect(result.nextState.board.stacks.has('4,3')).toBe(true);
+      expect(result.nextState.gameStatus).toBe('active');
     });
 
     it('wraps player rotation in 2-player game', () => {
@@ -1013,10 +1026,10 @@ describe('TurnOrchestrator core branch coverage', () => {
 
       const result = processTurn(state, move);
 
-      expect(result.metadata?.sInvariantBefore).toBeDefined();
-      expect(result.metadata?.sInvariantAfter).toBeDefined();
       expect(typeof result.metadata?.sInvariantBefore).toBe('number');
       expect(typeof result.metadata?.sInvariantAfter).toBe('number');
+      expect(result.metadata!.sInvariantBefore).toBeGreaterThanOrEqual(0);
+      expect(result.metadata!.sInvariantAfter).toBeGreaterThanOrEqual(0);
     });
 
     it('S-invariant is non-negative', () => {
@@ -1047,7 +1060,7 @@ describe('TurnOrchestrator core branch coverage', () => {
       const result = processTurn(state, move);
 
       // May or may not be game over depending on victory evaluation
-      expect(result.nextState.gameStatus).toBeDefined();
+      expect(['active', 'completed']).toContain(result.nextState.gameStatus);
     });
   });
 
@@ -1082,7 +1095,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
       const result = processTurn(state, move);
 
-      expect(result.nextState).toBeDefined();
+      expect(result.nextState.gameStatus).toBe('active');
+      expect(['complete', 'awaiting_decision']).toContain(result.status);
     });
 
     it('handles decision move that does not change state', () => {
@@ -1099,7 +1113,8 @@ describe('TurnOrchestrator core branch coverage', () => {
       const result = processTurn(state, move);
 
       // Should complete without error
-      expect(result.nextState).toBeDefined();
+      expect(result.nextState.gameStatus).toBe('active');
+      expect(['complete', 'awaiting_decision']).toContain(result.status);
     });
   });
 
@@ -1195,7 +1210,8 @@ describe('TurnOrchestrator core branch coverage', () => {
 
       const result = processTurn(state, move);
 
-      expect(result.nextState).toBeDefined();
+      expect(result.nextState.currentPhase).toBe('movement');
+      expect(result.nextState.board.stacks.has('3,3')).toBe(true);
     });
 
     it('surfaces no_line_action_required when entering line_processing with no lines', () => {
