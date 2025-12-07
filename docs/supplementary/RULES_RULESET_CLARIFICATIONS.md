@@ -64,63 +64,35 @@ RR-CANON-R090 defines movement availability in terms of stacks that "satisfy RR-
 - **Type:** Cross-document contradiction / design decision
 - **Status:** Resolved (binding semantics chosen)
 - **Priority:** High
-- **Resolution:** Resolved as a binding Last-Player-Standing victory with a one-full-round exclusive real-action condition, as encoded in RR-CANON-R172 and mirrored in the Complete and Compact rules.
+- **Resolution:** Resolved as a binding Last-Player-Standing victory with a **two-full-round** exclusive real-action condition, as encoded in RR-CANON-R172 and mirrored in the Complete and Simple rules. Player P wins by LPS if: (1) for one complete round P has at least one real action and takes at least one, while all other players have no real actions; (2) after the first round completes, P remains the only player with real actions through a second complete round; (3) after the second round completes, P is declared the winner.
 
 **Sources**
 
-- [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:425) – RR-CANON-R172 Last-player-standing victory: defines an explicit early victory condition when exactly one player has any legal action on their next turn and all others have none.
-- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1228) §13.3 Last Player Standing – narrative description and examples of last-player-standing as a primary victory path alongside elimination and territory.
-- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1897) §16.6 and [`ringrift_complete_rules.md`](ringrift_complete_rules.md:2101) §16.9.4.5 – summaries that restate last-player-standing as a distinct victory path.
-- [`RULES_IMPLEMENTATION_MAPPING.md`](../../RULES_IMPLEMENTATION_MAPPING.md:381) §3.8 – notes that victory logic encodes elimination, territory, last-player-standing, and stalemate in `victoryLogic.evaluateVictory()`.
-- [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](RULES_CONSISTENCY_EDGE_CASES.md:316) CCE-006 – explicitly calls out that RR-CANON-R172 is **not** fully implemented; engines effectively play to completion and rely on elimination, territory, or bare-board stalemate.
+- [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:700) – RR-CANON-R172 Last-player-standing victory: defines an explicit early victory condition when exactly one player has real actions for two consecutive full rounds and all others with material have none.
+- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1376) §13.3 Last Player Standing – narrative description and examples of last-player-standing as a primary victory path alongside elimination and territory.
+- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1867) §16.6 and [`ringrift_complete_rules.md`](ringrift_complete_rules.md:2156) §16.9.4.5 – summaries that restate last-player-standing as a distinct victory path.
+- [`RULES_IMPLEMENTATION_MAPPING.md`](../../RULES_IMPLEMENTATION_MAPPING.md:381) §3.8 – notes that victory logic encodes elimination, territory, last-player-standing, and stalemate via the shared `VictoryAggregate` and LPS helpers.
+- [`docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:170) ANM-SCEN-07 – documents how early LPS interacts with ANM and forced elimination.
 
 **Problem description**
 
-All three rule documents (Complete, Compact, Canonical) agree that **Last Player Standing** is a distinct, third path to victory: a player should win immediately when, after a full turn, they are the only player who has any legal action on their next turn while all others have none, even if ring-elimination and territory thresholds have not yet been reached.
+All rule documents (Complete, Simple, Canonical) agree that **Last Player Standing** is a distinct, third path to victory: a player wins when they are the only player with any legal real action for **two consecutive full rounds**, even if ring-elimination and territory thresholds have not yet been reached.
 
-However, the current engines (TypeScript backend, sandbox, and Python) effectively implement the following behaviour:
+The current engines (TypeScript backend, sandbox, and Python) now implement the literal RR-CANON-R172 behaviour:
 
-- Games terminate only via:
-  - Ring-elimination victory (RR-CANON-R170), or
-  - Territory-control victory (RR-CANON-R171), or
-  - Global stalemate and tiebreakers on a **bare board** with no stacks (RR-CANON-R173).
-- Non-bare-board positions where a single player is the only one with legal actions are **not** treated as immediate wins; play continues until one of the other conditions is met.
+- They maintain explicit LPS round-tracking state (who had real actions in each full round) via shared helpers.
+- At the start of each interactive turn they evaluate R172 and can terminate the game early with a Last Player Standing victory when:
+  - exactly one player had real actions throughout a completed round, and
+  - that same player is still the only one with real actions at the start of their turn in the following round.
 
-This is consistent and terminating, but diverges from the literal reading of RR-CANON-R172 and the Complete Rules text, and creates a latent risk for:
+This resolves the earlier ambiguity where engines played to completion and relied only on elimination, territory, or bare-board stalemate; LPS is now a first-class, early termination rule consistent with the canonical rules text.
 
-- Rules lawyers and competitive players who may expect strict R172 early termination.
-- Future engine ports (e.g., alternative languages or mobile clients) that might choose to implement R172 literally and thus diverge from the current TS/Python behaviour.
+**Clarification outcome**
 
-**Candidate interpretations**
-
-- **Interpretation A (rules-text literal):** RR-CANON-R172 defines a **binding early termination rule**. As soon as the R172 condition holds after a full turn (exactly one player has any legal action on their next turn, all others have none), the game **must end immediately** with a Last Player Standing victory, even if elimination or territory thresholds have not yet been reached.
-- **Interpretation B (current engine behaviour):** Last-player-standing is **conceptual only**, describing one way a player tends to win via elimination/territory in practice, but there is **no separate early-termination rule**. The only official victory triggers are elimination, territory, and bare-board stalemate; last-player-standing is effectively subsumed by these conditions.
-- **Interpretation C (compromise variant):**
-  - Keep R172 as a formal rule, but **constrain its scope**, for example:
-    - Only apply last-player-standing when:
-      - No further ring placements are possible for any player, and
-      - Any additional forced-elimination steps would not change which players have legal actions, or
-      - The R172 condition holds for **k** consecutive full rounds of turns.
-  - This would make last-player-standing harder to trigger and closer to a pre-stalemate condition while still being a distinct rule.
-
-**Current implementation behaviour**
-
-- [`TypeScript.victoryLogic.evaluateVictory`](src/shared/engine/victoryLogic.ts:45) checks for:
-  - Ring-elimination and territory thresholds, and
-  - Global stalemate only once **no stacks remain**, at which point rings in hand are converted to eliminated rings and the tie-break ladder runs (territory → eliminated rings → markers → last actor).
-- There is **no explicit check** implementing RR-CANON-R172 as written; instead, the system relies on continued play, forced elimination (RR-CANON-R100), and eventual stalemate or threshold victories.
-- Python `GameEngine` mirrors this behaviour; strict invariants focus on "no active player without a move or forced elimination" rather than early last-player-standing victories, as described in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:873) §3.3 and [`archive/RULES_DYNAMIC_VERIFICATION.md`](../../archive/RULES_DYNAMIC_VERIFICATION.md:665) §4.1.
-
-**Recommended clarification / questions for rules author**
-
-- **Design decision (engine vs rules text):**
-  - "Should Last Player Standing (RR-CANON-R172) remain a **distinct, early termination condition** in the official rules, or should the canonical rules be updated to match the existing engines (elimination / territory / bare-board stalemate only)?"
-- **If Interpretation A is chosen (keep R172 as binding):**
-  - "Do you want engines to:
-    - (i) Implement an explicit RR-CANON-R172 check in `victoryLogic.evaluateVictory()` and Python `GameEngine`, and
-    - (ii) Define a clear **priority order** among victory conditions (Elimination → Territory → Last Player Standing → Stalemate) to remove any residual ambiguity?"
-- **If Interpretation B is chosen (deprecate R172 as a separate rule):**
-  - "Can we update RR-CANON-R172 and the corresponding sections in `ringrift_complete_rules.md` and `ringrift_compact_rules.md` to describe last-player-standing **only as an emergent pattern** of elimination/territory play, and to state explicitly that the only formal victory triggers are RR-CANON-R170, R171, and R173?"
+- The rules text (Complete, Simple, Canonical) and the engines are now aligned on **Interpretation A**:
+  - RR-CANON-R172 is a binding early termination rule.
+  - As soon as the R172 condition holds after **two consecutive full rounds** (exactly one player has real actions during both rounds, all others with material have none), the game ends immediately with a Last Player Standing victory, even if elimination or territory thresholds have not yet been reached.
+- `VictoryAggregate.evaluateVictory` in the shared TS engine and `GameEngine._check_victory` in Python both consult the shared LPS tracking state to implement this behaviour.
 
 ---
 
@@ -135,8 +107,8 @@ This is consistent and terminating, but diverges from the literal reading of RR-
 **Sources**
 
 - [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61) – RR-CANON-R020 rings per player; [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:218) RR-CANON-R081 and [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:225) RR-CANON-R082 reference a per-player `ringsPerPlayer` maximum when placing.
-- [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1 version table – defines `ringsPerPlayer` = 18 (square8) or 36 (square19/hexagonal).
-- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:342) §3.2.1 – states "Each player has 36 rings (for 19x19 and Hexagonal versions; 18 for 8x8)".
+- [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1 version table – defines `ringsPerPlayer` = 18 (square8), 36 (square19), or 48 (hexagonal radius 12).
+- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:342) §3.2.1 – states "Each player has 48 rings for hexagonal (radius 12), 36 for 19x19, 18 for 8x8".
 - [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755) §2.3.3 – describes the current implementation approximation: per-player ring cap counts **all rings in stacks controlled by a player**, including captured rings of other colours, when deciding whether further placements are allowed (CCE-002).
 - [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](RULES_CONSISTENCY_EDGE_CASES.md:365) CCE-002 – classifies this as an "implementation compromise" and recommends either canonising or tightening it.
 

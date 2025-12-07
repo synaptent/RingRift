@@ -285,7 +285,7 @@ Fresh parity-gated DBs:
 
 - `canonical_square8.db` (gate: `parity_gate.square8.json`)
 - `canonical_square19.db` (gate: `parity_gate.square19.json`)
-- `canonical_hex.db` (gate: `parity_gate.hexagonal.json`)
+- `canonical_hex.db` — **removed (old radius-10 geometry)**; regenerate for radius-12 hex before gating.
 
 **Action Items:**
 
@@ -960,13 +960,13 @@ Territory Choice: 361 * 8 * 4 = 11,552
 Total: 66,430 → 67,000 (with padding)
 ```
 
-**Policy Layout for Hex (N=10):**
+**Policy Layout for Hex (N=12):**
 
 ```
-Placements:       21 × 21 × 3 = 1,323
-Movement/capture: 21 × 21 × 6 × 20 = 52,920
+Placements:       25 × 25 × 3 = 1,875
+Movement/capture: 25 × 25 × 6 × 24 = 90,000
 Special:          1 (skip_placement)
-Total: P_HEX = 54,244
+Total: P_HEX = 91,876
 ```
 
 ### 8.3 Model Classes and Factory Functions
@@ -1028,7 +1028,7 @@ config_19x19 = get_training_config_for_board(BoardType.SQUARE19)
 # config_19x19.model_id = "ringrift_19x19_v1"
 
 config_hex = get_training_config_for_board(BoardType.HEXAGONAL)
-# config_hex.policy_size = 54244
+# config_hex.policy_size = 91876
 # config_hex.num_res_blocks = 8
 # config_hex.num_filters = 128
 # config_hex.model_id = "ringrift_hex_v1"

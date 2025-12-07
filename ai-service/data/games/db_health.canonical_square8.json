@@ -1,0 +1,10 @@
+{
+  "board_type": "square8",
+  "db_path": "ai-service/data/games/canonical_square8.db",
+  "num_games": 20,
+  "total_moves": 1458,
+  "parity_status": "validated_via_ts_replay",
+  "generation_method": "descent_only_minimal_selfplay",
+  "generated_at": "2025-12-06",
+  "notes": "Generated via run_minimal_selfplay.py with descent-only mode. All 20 games completed successfully."
+}

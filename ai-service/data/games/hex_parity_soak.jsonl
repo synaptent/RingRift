@@ -1,0 +1,1 @@
+{"index": 0, "num_players": 2, "board_type": "hexagonal", "engine_mode": "mixed", "seed": null, "length": 152, "status": "completed", "winner": 1, "termination_reason": "env_done_flag", "invariant_violations_by_type": {}, "swap_sides_moves": 0, "used_pie_rule": false}

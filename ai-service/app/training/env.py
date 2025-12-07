@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 #   Much larger board, longer games expected
 #   Conservative estimate: 400 moves for 2p, +100 per additional player
 #
-# - Hexagonal: 331 cells (radius 11), 36 rings/player (2p) = 72 total rings
+# - Hexagonal: 469 cells (radius 12), 48 rings/player (2p) = 96 total rings
 #   Similar to Square19
 #   Conservative estimate: 400 moves for 2p, +100 per additional player
 #
@@ -40,14 +40,14 @@ THEORETICAL_MAX_MOVES: Dict[BoardType, Dict[int, int]] = {
         4: 250,
     },
     BoardType.SQUARE19: {
-        2: 400,
-        3: 500,
-        4: 600,
+        2: 1000,
+        3: 1200,
+        4: 1400,
     },
     BoardType.HEXAGONAL: {
-        2: 400,
-        3: 500,
-        4: 600,
+        2: 1000,
+        3: 1200,
+        4: 1400,
     },
 }
 
@@ -429,7 +429,7 @@ class RingRiftEnv:
         instances and matches the behaviour of the TypeScript shared
         engine for the same state.
         """
-        # Get interactive moves from the core rules layer
+        # Get interactive moves from the core rules layer.
         if self._rules_engine is not None:
             moves = self._rules_engine.get_valid_moves(
                 self.state,
@@ -454,6 +454,36 @@ class RingRiftEnv:
                     self.state,
                 )
                 moves = [bookkeeping_move]
+
+        # Defensive phase/move invariant: every move returned by this
+        # host-level surface must be legal for the current phase.
+        for move in moves:
+            GameEngine._assert_phase_move_invariant(self.state, move)
+
+        # Defensive phase-requirement consistency check: if the core
+        # engine reports a pending phase requirement, ensure we surfaced
+        # exactly one corresponding bookkeeping move.
+        requirement = GameEngine.get_phase_requirement(
+            self.state,
+            self.state.current_player,
+        )
+        if requirement is not None:
+            expected = GameEngine.synthesize_bookkeeping_move(
+                requirement,
+                self.state,
+            )
+            if not moves:
+                raise RuntimeError(
+                    "RingRiftEnv.legal_moves: phase requirement exists "
+                    f"({requirement.type.value}) but no legal moves were "
+                    "returned"
+                )
+            if len(moves) != 1 or moves[0].type != expected.type:
+                raise RuntimeError(
+                    "RingRiftEnv.legal_moves: inconsistent bookkeeping move "
+                    f"for requirement {requirement.type.value}: "
+                    f"got {moves[0].type.value}, expected {expected.type.value}"
+                )
 
         return moves
 
@@ -514,8 +544,24 @@ class RingRiftEnv:
             A dictionary with episode metadata; see class docstring for
             the stable fields.
         """
-        # Track move_history length to detect auto-generated moves (e.g.,
-        # no_territory_action) that apply_move appends internally.
+        # Enforce canonical phase→MoveType mapping at the host boundary
+        # before delegating to the underlying rules engine. This mirrors
+        # the guard in GameEngine.apply_move and ensures that any client
+        # attempting to apply an illegal move/phase combination fails
+        # early during training and self-play.
+        GameEngine._assert_phase_move_invariant(self.state, move)
+
+        # Enforce turn ownership at the host boundary. This prevents
+        # mis-attributed moves (wrong player) from being applied or
+        # recorded during self-play and training.
+        if self.state.game_status == GameStatus.ACTIVE and move.player != self.state.current_player:
+            raise ValueError(
+                f"Move player {move.player} does not match current player {self.state.current_player}"
+            )
+
+        # Track move_history length to detect any additional bookkeeping
+        # moves (e.g., no_territory_action) that may be appended by the
+        # surrounding host/rules stack.
         prev_history_len = len(self._state.move_history) if self._state.move_history else 0
 
         # Apply move via the canonical Python rules engine.
@@ -526,10 +572,11 @@ class RingRiftEnv:
 
         self._move_count += 1
 
-        # Detect any auto-generated moves appended by apply_move beyond the
-        # caller's move. These are moves like no_territory_action that the
-        # engine generates internally per RR-CANON-R075 but are not explicitly
-        # chosen by the AI. Callers recording games should include these.
+        # Detect any bookkeeping moves appended beyond the caller's move.
+        # These are moves like no_territory_action / no_line_action that
+        # hosts synthesize based on phase requirements (RR-CANON-R075/R076)
+        # rather than being explicitly chosen by the AI. Callers recording
+        # games should include these so that canonical histories are complete.
         auto_generated_moves = []
         if self._state.move_history:
             new_history_len = len(self._state.move_history)

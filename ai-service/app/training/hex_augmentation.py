@@ -5,8 +5,8 @@ Implements the dihedral group D6: 12 transformations
 (6 rotations + 6 reflections) for hexagonal boards
 using axial coordinates (q, r).
 
-The canonical hex board has radius N=10 (331 cells)
-embedded in a 21x21 bounding box.
+The canonical hex board has radius N=12 (469 cells)
+embedded in a 25x25 bounding box.
 
 Rotation formulas (clockwise, axial coordinates):
 - 0°: (q, r) -> (q, r) [identity]
@@ -28,21 +28,21 @@ import numpy as np
 from typing import List, Tuple, Optional
 
 # Hex board constants (match neural_net.py)
-HEX_BOARD_SIZE = 21
-HEX_RADIUS = 10
+HEX_BOARD_SIZE = 25
+HEX_RADIUS = 12
 
 # Number of hex directions for movement encoding
 NUM_HEX_DIRS = 6
-HEX_MAX_DIST = 20
+HEX_MAX_DIST = 24
 
 # Policy layout constants (from neural_net.py)
-HEX_PLACEMENT_SPAN = HEX_BOARD_SIZE * HEX_BOARD_SIZE * 3  # 1323
+HEX_PLACEMENT_SPAN = HEX_BOARD_SIZE * HEX_BOARD_SIZE * 3  # 1875
 HEX_MOVEMENT_BASE = HEX_PLACEMENT_SPAN
 HEX_MOVEMENT_SPAN = (
     HEX_BOARD_SIZE * HEX_BOARD_SIZE * NUM_HEX_DIRS * HEX_MAX_DIST
-)  # 52920
-HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + HEX_MOVEMENT_SPAN  # 54243
-P_HEX = HEX_SPECIAL_BASE + 1  # 54244
+)  # 90000
+HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + HEX_MOVEMENT_SPAN  # 91875
+P_HEX = HEX_SPECIAL_BASE + 1  # 91876
 
 # Hex directions in canonical (dq, dr) form (matching neural_net.HEX_DIRS)
 HEX_DIRS = [
@@ -69,7 +69,7 @@ class HexSymmetryTransform:
 
     def __init__(self, board_size: int = HEX_BOARD_SIZE):
         self.board_size = board_size
-        self.radius = (board_size - 1) // 2  # For 21x21, radius = 10
+        self.radius = (board_size - 1) // 2  # For 25x25, radius = 12
 
         # Precompute transformation index mappings for efficiency
         self._build_index_maps()
@@ -248,7 +248,7 @@ class HexSymmetryTransform:
         Transform a policy probability/logit vector.
 
         Args:
-            policy: Policy vector of length P_HEX (54244)
+            policy: Policy vector of length P_HEX (91876)
             transform_id: Transformation index 0-11
 
         Returns:

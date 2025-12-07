@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { TeachingOverlay } from '../../src/client/components/TeachingOverlay';
 import * as rulesUxTelemetry from '../../src/client/utils/rulesUxTelemetry';
+import { TEACHING_TOPICS_COPY } from '../../src/client/utils/rulesUxTelemetry';
 
 jest.mock('../../src/client/utils/rulesUxTelemetry', () => {
   const actual = jest.requireActual('../../src/client/utils/rulesUxTelemetry');
@@ -20,6 +21,30 @@ const mockLogRulesUxEvent = rulesUxTelemetry.logRulesUxEvent as jest.MockedFunct
 describe('TeachingOverlay teaching flows – step navigation & telemetry', () => {
   beforeEach(() => {
     mockLogRulesUxEvent.mockReset();
+  });
+
+  it('renders canonical headings for key weird-state topics', () => {
+    const cases: Array<{ topic: any; expectedHeading: string }> = [
+      { topic: 'active_no_moves', expectedHeading: TEACHING_TOPICS_COPY.active_no_moves.heading },
+      {
+        topic: 'forced_elimination',
+        expectedHeading: TEACHING_TOPICS_COPY.forced_elimination.heading,
+      },
+      {
+        topic: 'victory_stalemate',
+        expectedHeading: TEACHING_TOPICS_COPY.victory_stalemate.heading,
+      },
+      { topic: 'territory', expectedHeading: TEACHING_TOPICS_COPY.territory.heading },
+    ];
+
+    for (const { topic, expectedHeading } of cases) {
+      render(<TeachingOverlay topic={topic} isOpen={true} onClose={() => {}} position="center" />);
+      expect(
+        screen.getByRole('heading', {
+          name: expectedHeading,
+        })
+      ).toBeInTheDocument();
+    }
   });
 
   it('emits teaching_step_started when a related teaching step is selected', async () => {
@@ -106,7 +131,6 @@ describe('TeachingOverlay teaching flows – step navigation & telemetry', () =>
       })
     );
   });
-
   it('auto-selects a step when opened with a matching weird-state context and emits teaching_step_started', async () => {
     const weirdStateOverlayContext = {
       reasonCode: 'ANM_MOVEMENT_FE_BLOCKED',
@@ -140,10 +164,146 @@ describe('TeachingOverlay teaching flows – step navigation & telemetry', () =>
       .map(([arg]) => arg as any)
       .filter((e) => e.type === 'teaching_step_started');
     const event = events[events.length - 1];
+    expect(event.overlaySessionId).toBe(weirdStateOverlayContext.overlaySessionId);
     expect(event.payload).toEqual(
       expect.objectContaining({
         startedAutomatically: true,
         topic: 'active_no_moves',
+      })
+    );
+  });
+
+  it('auto-selects a structural stalemate teaching step for STRUCTURAL_STALEMATE_TIEBREAK weird-state context', async () => {
+    const weirdStateOverlayContext = {
+      reasonCode: 'STRUCTURAL_STALEMATE_TIEBREAK',
+      rulesContext: 'structural_stalemate',
+      weirdStateType: 'victory-structural-stalemate',
+      boardType: 'square8',
+      numPlayers: 2,
+      isRanked: false,
+      isSandbox: true,
+      overlaySessionId: 'overlay-session-structural-stalemate',
+    } as const;
+
+    render(
+      <TeachingOverlay
+        topic="victory_stalemate"
+        isOpen={true}
+        onClose={() => {}}
+        position="center"
+        weirdStateOverlayContext={weirdStateOverlayContext as any}
+      />
+    );
+
+    await waitFor(() => {
+      const events = mockLogRulesUxEvent.mock.calls
+        .map(([arg]) => arg as any)
+        .filter((e) => e.type === 'teaching_step_started');
+      expect(events.length).toBeGreaterThanOrEqual(1);
+    });
+
+    const events = mockLogRulesUxEvent.mock.calls
+      .map(([arg]) => arg as any)
+      .filter((e) => e.type === 'teaching_step_started');
+    const event = events[events.length - 1];
+
+    expect(event.rulesConcept).toBe('structural_stalemate');
+    expect(event.scenarioId).toMatch(/^teaching\.structural_stalemate\.step_/);
+    expect(event.overlaySessionId).toBe(weirdStateOverlayContext.overlaySessionId);
+    expect(event.payload).toEqual(
+      expect.objectContaining({
+        startedAutomatically: true,
+        topic: 'victory_stalemate',
+      })
+    );
+  });
+
+  it('auto-selects a Last Player Standing teaching step for LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS weird-state context', async () => {
+    const weirdStateOverlayContext = {
+      reasonCode: 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS',
+      rulesContext: 'last_player_standing',
+      weirdStateType: 'victory-last-player-standing',
+      boardType: 'square8',
+      numPlayers: 3,
+      isRanked: false,
+      isSandbox: true,
+      overlaySessionId: 'overlay-session-lps',
+    } as const;
+
+    render(
+      <TeachingOverlay
+        topic="victory_stalemate"
+        isOpen={true}
+        onClose={() => {}}
+        position="center"
+        weirdStateOverlayContext={weirdStateOverlayContext as any}
+      />
+    );
+
+    await waitFor(() => {
+      const events = mockLogRulesUxEvent.mock.calls
+        .map(([arg]) => arg as any)
+        .filter((e) => e.type === 'teaching_step_started');
+      expect(events.length).toBeGreaterThanOrEqual(1);
+    });
+
+    const events = mockLogRulesUxEvent.mock.calls
+      .map(([arg]) => arg as any)
+      .filter((e) => e.type === 'teaching_step_started');
+    const event = events[events.length - 1];
+
+    expect(event.rulesConcept).toBe('last_player_standing');
+    expect(event.scenarioId).toMatch(/^teaching\.lps\.step_/);
+    expect(event.overlaySessionId).toBe(weirdStateOverlayContext.overlaySessionId);
+    expect(event.payload).toEqual(
+      expect.objectContaining({
+        startedAutomatically: true,
+        topic: 'victory_stalemate',
+      })
+    );
+  });
+
+  it('auto-selects a territory mini-region teaching step for ANM_TERRITORY_NO_ACTIONS weird-state context', async () => {
+    const weirdStateOverlayContext = {
+      reasonCode: 'ANM_TERRITORY_NO_ACTIONS',
+      rulesContext: 'territory_mini_region',
+      weirdStateType: 'territory-no-actions-mini-region',
+      boardType: 'square8',
+      numPlayers: 2,
+      isRanked: false,
+      isSandbox: true,
+      overlaySessionId: 'overlay-session-territory-anm',
+    } as const;
+
+    render(
+      <TeachingOverlay
+        topic="territory"
+        isOpen={true}
+        onClose={() => {}}
+        position="center"
+        weirdStateOverlayContext={weirdStateOverlayContext as any}
+      />
+    );
+
+    await waitFor(() => {
+      const events = mockLogRulesUxEvent.mock.calls
+        .map(([arg]) => arg as any)
+        .filter((e) => e.type === 'teaching_step_started');
+      expect(events.length).toBeGreaterThanOrEqual(1);
+    });
+
+    const events = mockLogRulesUxEvent.mock.calls
+      .map(([arg]) => arg as any)
+      .filter((e) => e.type === 'teaching_step_started');
+    const event = events[events.length - 1];
+
+    expect(event.rulesConcept).toBe('territory_mini_region');
+    expect(event.scenarioId).toMatch(/^teaching\.mini_region\.step_/);
+    expect(event.overlaySessionId).toBe(weirdStateOverlayContext.overlaySessionId);
+    expect(event.payload).toEqual(
+      expect.objectContaining({
+        startedAutomatically: true,
+        topic: 'territory',
       })
     );
   });

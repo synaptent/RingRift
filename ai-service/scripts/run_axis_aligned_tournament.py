@@ -136,8 +136,8 @@ def _create_game_state(
         size = 19
         rings_per_player = 36
     elif board_type == BoardType.HEXAGONAL:
-        size = 11
-        rings_per_player = 36
+        size = 13  # Canonical hex: size=13, radius=12
+        rings_per_player = 48
     else:
         size = 8
         rings_per_player = 18

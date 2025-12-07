@@ -265,8 +265,8 @@ def get_model_config(model: nn.Module) -> Dict[str, Any]:
             "global_features": getattr(model, "global_features", 10),
             "num_res_blocks": getattr(model, "num_res_blocks", 8),
             "num_filters": getattr(model, "num_filters", 128),
-            "board_size": getattr(model, "board_size", 21),
-            "policy_size": getattr(model, "policy_size", 54244),
+            "board_size": getattr(model, "board_size", 25),  # Radius-12 hex: 25×25 frame
+            "policy_size": getattr(model, "policy_size", 91876),  # P_HEX for radius-12
         }
     else:
         # Generic extraction for unknown models

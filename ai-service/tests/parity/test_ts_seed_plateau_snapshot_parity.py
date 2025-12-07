@@ -64,10 +64,10 @@ def _build_board_from_snapshot(snapshot: Dict[str, Any]) -> BoardState:
     elif board_type == BoardType.SQUARE19:
         size = 19
     elif board_type == BoardType.HEXAGONAL:
-        # Mirror TS BOARD_CONFIGS for hexagonal boards (size = 11).
-        # The underlying axial coordinates use a radius of 10; BoardState.size
+        # Mirror TS BOARD_CONFIGS for hexagonal boards (size = 13).
+        # The underlying axial coordinates use a radius of 12; BoardState.size
         # reflects the backing array dimensions rather than radius.
-        size = 11
+        size = 13
     else:
         raise AssertionError(f"Unsupported boardType for plateau snapshot: {board_type}")
 

@@ -837,9 +837,9 @@ The fixed evaluation pools used by the preset live under `data/eval_pools/**` an
   - `POOL_PATHS` maps `(BoardType, pool_id)` to JSONL paths:
     - `(Square8, "v1") -> data/eval_pools/square8/pool_v1.jsonl`
     - `(Square19, "v1") -> data/eval_pools/square19/pool_v1.jsonl`
-    - `(Hexagonal, "v1") -> data/eval_pools/hex/pool_v1.jsonl`
+    - Hex `"v1"` was generated on the old radius-10 geometry and has been removed; regenerate for radius-12 before adding it back.
   - The `"v1"` pools are explicitly documented as **mid/late-game heavy** for 2-player evaluation.
-  - Multi-player pools use explicit ids (e.g. `"square19_3p_pool_v1"`, `"hex_4p_pool_v1"`) so 2-player optimisation never accidentally mixes 3p/4p states.
+  - Multi-player pools use explicit ids (e.g. `"square19_3p_pool_v1"`; the legacy `"hex_4p_pool_v1"` was removed) so 2-player optimisation never accidentally mixes 3p/4p states.
 
 Pools are generated or refreshed via the long self-play soak harness:
 
@@ -944,24 +944,25 @@ python scripts/run_self_play_soak.py \
   --square19-state-pool-sampling-interval 4
 ```
 
-**4-player Hex pool:**
+**4-player Hex pool (legacy example only):** the old `hex_4p` pool was generated on the radius-10 geometry and has been removed. Regenerate with the radius-12 geometry before re-adding commands like:
 
 ```bash
-cd ai-service
-mkdir -p data/eval_pools/hex_4p
-
-python scripts/run_self_play_soak.py \
-  --num-games 200 \
-  --board-type hexagonal \
-  --engine-mode mixed \
-  --num-players 4 \
-  --max-moves 250 \
-  --seed 23456 \
-  --log-jsonl logs/selfplay/soak.hex_4p.mixed.jsonl \
-  --summary-json logs/selfplay/soak.hex_4p.mixed.summary.json \
-  --hex-state-pool-output data/eval_pools/hex_4p/pool_v1.jsonl \
-  --hex-state-pool-max-states 500 \
-  --hex-state-pool-sampling-interval 4
+# Historical example; do not reuse without updating for radius-12 hex.
+# cd ai-service
+# mkdir -p data/eval_pools/hex_4p
+#
+# python scripts/run_self_play_soak.py \
+#   --num-games 200 \
+#   --board-type hexagonal \
+#   --engine-mode mixed \
+#   --num-players 4 \
+#   --max-moves 250 \
+#   --seed 23456 \
+#   --log-jsonl logs/selfplay/soak.hex_4p.mixed.jsonl \
+#   --summary-json logs/selfplay/soak.hex_4p.mixed.summary.json \
+#   --hex-state-pool-output data/eval_pools/hex_4p/pool_v1.jsonl \
+#   --hex-state-pool-max-states 500 \
+#   --hex-state-pool-sampling-interval 4
 ```
 
 **Note on MPS/GPU compatibility:** If running on macOS with Apple Silicon and encountering MPS adaptive pooling errors, you may need to force CPU device via environment variable or use `--engine-mode descent-only` to avoid Neural Net inference.
@@ -999,12 +1000,12 @@ python scripts/run_cmaes_optimization.py \
   --population-size 8 \
   --games-per-eval 4 \
   --sigma 0.5 \
-  --output logs/cmaes/multiplayer_hex_4p_smoke_01/best_weights.json \
+  --output logs/cmaes/multiplayer_hex_4p_smoke_01/best_weights.json \  # legacy example; hex pools removed
   --baseline logs/cmaes/runs/v2_balanced_preset_smoke_02/baseline_weights.json \
   --board hex \
   --eval-boards hex \
   --eval-mode multi-start \
-  --state-pool-id 4p_v1 \
+  --state-pool-id 4p_v1 \  # requires regenerated radius-12 hex pool
   --num-players 4 \
   --max-moves 200 \
   --seed 23456
@@ -1035,18 +1036,18 @@ python scripts/probe_plateau_diagnostics.py \
   --output logs/plateau_probe/square19_3p_diagnostics.json
 ```
 
-**4-player diagnostics:**
+**4-player diagnostics (legacy example only; hex pool removed):**
 
 ```bash
 cd ai-service
-python scripts/probe_plateau_diagnostics.py \
-  --boards hex \
-  --games-per-eval 8 \
-  --eval-mode multi-start \
-  --state-pool-id 4p_v1 \
-  --eval-randomness 0.02 \
-  --num-players 4 \
-  --output logs/plateau_probe/hex_4p_diagnostics.json
+# python scripts/probe_plateau_diagnostics.py \
+#   --boards hex \
+#   --games-per-eval 8 \
+#   --eval-mode multi-start \
+#   --state-pool-id 4p_v1 \
+#   --eval-randomness 0.02 \
+#   --num-players 4 \
+#   --output logs/plateau_probe/hex_4p_diagnostics.json
 ```
 
 The diagnostic script evaluates baseline, zero, scaled, and near-baseline weight profiles and reports fitness spread across the specified boards, helping identify whether the multi-player fitness landscape exhibits useful gradients for optimization.

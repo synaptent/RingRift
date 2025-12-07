@@ -125,7 +125,7 @@ Each reason code is intended to be stable across hosts (backend, sandbox, Python
 
 #### RWS‑006 LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS
 
-- **Description:** **Last‑Player‑Standing** victory: after at least one full round of turns, exactly one player has real actions (placements, moves, captures) at the start of their turns, and all others have none (only FE or nothing). The game ends with that player winning by LPS.
+- **Description:** **Last‑Player‑Standing** victory: requires **two consecutive complete rounds** where exactly one player has real actions (placements, moves, captures) and all others have none (only FE or nothing). In the first round, the exclusive player must have and take at least one real action. After the second round completes with the same condition, that player wins by LPS.
 - **Rules references:**
   - [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:603) (Last‑Player‑Standing).
   - ANM‑SCEN‑07 in [`ACTIVE_NO_MOVES_BEHAVIOUR.md`](docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md:160).
@@ -195,12 +195,12 @@ Used when the local player has seen multiple successive FE events in a short per
 Displayed when the game ends by LPS (once engines fully implement [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:603)).
 
 - **HUD badge label:** `"Last Player Standing"`
-- **HUD title (winner local):**  
+- **HUD title (winner local):**
   `"You are the last player with real moves"`
-- **HUD title (winner other):**  
+- **HUD title (winner other):**
   `"<Name> is the last player with real moves"`
-- **HUD body:**  
-  `"For a full round of turns, only one player had any real moves left (placements, movements, or captures). All others were stuck or could only perform forced eliminations, so the game ends by Last Player Standing."`
+- **HUD body:**
+  `"For TWO consecutive complete rounds, only one player had any real moves available (placements, movements, or captures). In the first round they took at least one real action while all others had none; in the second round the condition persisted. The game ends by Last Player Standing."`
 
 ---
 
@@ -226,9 +226,9 @@ Typically used as a **sub‑section** within a longer VictoryModal explanation w
 
 #### RWS‑006 LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS (Terminal reason)
 
-- **Title:** `"Last Player Standing – only one player had real moves"`
-- **Body:**  
-  `"The game ended by Last Player Standing. For at least one full round of turns, only one player had any real actions available at the start of their turns – real actions meaning placements, non-capture movements, or overtaking captures. All other players either had no actions or could only perform forced eliminations. Because this situation persisted across a full round and still held when the turn returned, the remaining active player won by Last Player Standing."`
+- **Title:** `"Last Player Standing – only one player had real moves for two rounds"`
+- **Body:**
+  `"The game ended by Last Player Standing. For TWO consecutive complete rounds, only one player had any real actions available at the start of their turns – real actions meaning placements, non-capture movements, or overtaking captures. In the first round, this player had and took at least one real action while all others had none. In the second round, the same condition persisted. After the second round completed, the remaining active player won by Last Player Standing."`
 - **Doc anchor:** [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1360) §13.3 _Last Player Standing_; [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:603) R172.
 
 ---

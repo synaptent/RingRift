@@ -22,6 +22,7 @@ os.environ.setdefault("MKL_NUM_THREADS", "1")
 
 from app.training.env import TrainingEnvConfig, make_env
 from app.ai.random_ai import RandomAI
+from app.ai.neural_net import clear_model_cache
 from app.models import AIConfig, BoardType
 from app.db import get_or_create_db, record_completed_game_with_parity_check, ParityValidationError
 
@@ -134,8 +135,9 @@ def main():
 
         # Record to database if enabled
         # Use final_state.move_history instead of the AI-selected moves list
-        # because move_history includes auto-generated no-action moves
-        # (NO_LINE_ACTION, NO_TERRITORY_ACTION) that satisfy RR-CANON-R075.
+        # because move_history includes host-generated no-action moves
+        # (NO_LINE_ACTION, NO_TERRITORY_ACTION) inserted to satisfy
+        # RR-CANON-R075/R076 for canonical phase coverage.
         if replay_db:
             try:
                 game_id = record_completed_game_with_parity_check(
@@ -156,7 +158,8 @@ def main():
             except Exception as e:
                 print(f"    Recording failed: {e}", file=sys.stderr)
 
-        # Force garbage collection between games
+        # Force garbage collection and clear model cache between games
+        clear_model_cache()
         gc.collect()
 
     print(f"\nSummary: {stats}")

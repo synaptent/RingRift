@@ -1,9 +1,9 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-05
+> **Last Updated:** 2025-12-06
 > **Organization:** Core docs in root (~16 files), detailed docs in `/docs/` subdirectories
 
-This index catalogs all project documentation organized by topic and location.
+This index catalogs all project documentation organized by topic and location. For a lightweight landing page, see `docs/INDEX.md`.
 
 ---
 
@@ -35,7 +35,7 @@ This index catalogs all project documentation organized by topic and location.
 - [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md) - Authoritative rules specification
 - [ringrift_complete_rules.md](ringrift_complete_rules.md) - Full rulebook
 - [ringrift_simple_human_rules.md](ringrift_simple_human_rules.md) - Human-readable rules
-- [ringrift_compact_rules.md](ringrift_compact_rules.md) - Implementation-focused summary
+- [docs/rules/ringrift_compact_rules.md](docs/rules/ringrift_compact_rules.md) - Implementation-focused summary
 
 ### Architecture
 

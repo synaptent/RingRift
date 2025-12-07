@@ -707,7 +707,7 @@ describe('PlacementValidator branch coverage', () => {
 
   describe('edge cases', () => {
     it('handles hexagonal board type', () => {
-      const board = makeBoardState({ type: 'hexagonal', size: 11 });
+      const board = makeBoardState({ type: 'hexagonal', size: 13 }); // radius=12
       const ctx = makeContext({ boardType: 'hexagonal', ringsInHand: 10 });
 
       const result = validatePlacementOnBoard(board, pos(0, 0), 1, ctx);

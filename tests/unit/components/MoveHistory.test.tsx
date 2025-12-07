@@ -226,6 +226,122 @@ describe('MoveHistory', () => {
     });
   });
 
+  describe('notation options', () => {
+    describe('square rank orientation', () => {
+      it('uses canonical top-origin ranks by default', () => {
+        // Canonical: square8 with y=7 (bottom visual row) → rank 8
+        const moves = [
+          createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 7 } }), // a8 in canonical
+        ];
+
+        const { container } = render(<MoveHistory moves={moves} boardType="square8" />);
+
+        // Should display "a8" (y=7 → rank 8 in canonical top-origin)
+        expect(container.textContent).toContain('a8');
+      });
+
+      it('uses bottom-origin ranks when squareRankFromBottom is enabled', () => {
+        // Bottom-origin: square8 with y=7 (bottom visual row) → rank 1
+        const moves = [
+          createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 7 } }), // a1 in bottom-origin
+        ];
+
+        const { container } = render(
+          <MoveHistory
+            moves={moves}
+            boardType="square8"
+            notationOptions={{
+              boardType: 'square8',
+              boardSizeOverride: 8,
+              squareRankFromBottom: true,
+            }}
+          />
+        );
+
+        // Should display "a1" (y=7 → rank 1 when bottom-origin)
+        expect(container.textContent).toContain('a1');
+      });
+
+      it('applies bottom-origin to square19 boards', () => {
+        // square19 with y=18 (bottom visual row) → rank 1 when bottom-origin
+        const moves = [createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 18 } })];
+
+        const { container } = render(
+          <MoveHistory
+            moves={moves}
+            boardType="square19"
+            notationOptions={{
+              boardType: 'square19',
+              boardSizeOverride: 19,
+              squareRankFromBottom: true,
+            }}
+          />
+        );
+
+        // Should display "a1" (y=18 → rank 1 when bottom-origin on size 19)
+        expect(container.textContent).toContain('a1');
+      });
+
+      it('preserves canonical square19 ranks without the option', () => {
+        // square19 with y=18 (bottom visual row) → rank 19 in canonical
+        const moves = [createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 18 } })];
+
+        const { container } = render(<MoveHistory moves={moves} boardType="square19" />);
+
+        // Should display "a19" (y=18 → rank 19 in canonical top-origin)
+        expect(container.textContent).toContain('a19');
+      });
+
+      it('formats movement notation with bottom-origin ranks', () => {
+        const moves = [
+          createTestMove(0, 'move_stack', 1, {
+            from: { x: 0, y: 0 }, // a8 canonical → a1 bottom-origin (for size 8)
+            to: { x: 1, y: 0 }, // b8 canonical → b1 bottom-origin
+          }),
+        ];
+
+        const { container } = render(
+          <MoveHistory
+            moves={moves}
+            boardType="square8"
+            notationOptions={{
+              boardType: 'square8',
+              boardSizeOverride: 8,
+              squareRankFromBottom: true,
+            }}
+          />
+        );
+
+        // With bottom-origin on square8, y=0 becomes rank 8 (not rank 1)
+        // Wait, let me recalculate:
+        // - Canonical: y=0 → rank 1 (top visual)
+        // - Bottom-origin: y=0 → rank 8 (because size - y = 8 - 0 = 8)
+        // Actually for y=0 with size=8: bottomOrigin gives size - y = 8 - 0 = 8
+        // So from a8 to b8 in bottom-origin mode
+        expect(container.textContent).toMatch(/a8.*→.*b8/);
+      });
+
+      it('has no effect on hex board notation', () => {
+        // Hex boards use cube coordinates; squareRankFromBottom should be ignored
+        const moves = [createTestMove(0, 'place_ring', 1, { to: { x: 0, y: 0, z: 0 } })];
+
+        const { container } = render(
+          <MoveHistory
+            moves={moves}
+            boardType="hexagonal"
+            notationOptions={{
+              boardType: 'hexagonal',
+              squareRankFromBottom: true, // should be ignored
+            }}
+          />
+        );
+
+        // Hex notation should be unaffected
+        expect(screen.getByTestId('move-history')).toBeInTheDocument();
+      });
+    });
+  });
+
   describe('accessibility', () => {
     it('should have list role', () => {
       const moves = [createTestMove(0, 'place_ring', 1)];

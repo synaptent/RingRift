@@ -30,9 +30,9 @@ BOARD_CONFIGS: Dict[BoardType, BoardConfig] = {
         line_length=4,
     ),
     BoardType.HEXAGONAL: BoardConfig(
-        size=11,
-        total_spaces=331,
-        rings_per_player=36,
+        size=13,
+        total_spaces=469,
+        rings_per_player=48,
         line_length=4,
     ),
 }

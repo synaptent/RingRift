@@ -15,8 +15,18 @@ import time
 from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
 from .zobrist import ZobristHash
-from ..models import GameState, Move, AIConfig
+from ..models import GameState, Move, AIConfig, GamePhase
 from ..rules.mutable_state import MutableGameState
+
+# Interactive phases where player actions (and thus quiescence search) are valid.
+# Non-interactive phases (LINE_PROCESSING, TERRITORY_PROCESSING, FORCED_ELIMINATION)
+# are bookkeeping phases where get_valid_moves would return inappropriate move types.
+_INTERACTIVE_PHASES = frozenset({
+    GamePhase.RING_PLACEMENT,
+    GamePhase.MOVEMENT,
+    GamePhase.CAPTURE,
+    GamePhase.CHAIN_CAPTURE,
+})
 
 
 class MinimaxAI(HeuristicAI):
@@ -689,6 +699,11 @@ class MinimaxAI(HeuristicAI):
                 beta = stand_pat
 
         if depth <= 0:
+            return stand_pat
+
+        # Non-interactive phases (line_processing, territory_processing, etc.)
+        # have no valid player moves - return static evaluation.
+        if state.current_phase not in _INTERACTIVE_PHASES:
             return stand_pat
 
         # Get noisy moves

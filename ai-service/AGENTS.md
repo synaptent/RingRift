@@ -33,7 +33,7 @@ must conform to them and to the TS engine, not vice versa.
   - Canonical DBs are named `canonical_<board>.db`, e.g.:
     - `canonical_square8.db`
     - `canonical_square19.db`
-    - `canonical_hex.db`
+    - `canonical_hex.db` (removed; old radius-10 geometry — regenerate for radius-12 before use)
   - Their status and provenance are documented in:
     - `ai-service/TRAINING_DATA_REGISTRY.md`
     - Gate summaries like `db_health.canonical_<board>.json`

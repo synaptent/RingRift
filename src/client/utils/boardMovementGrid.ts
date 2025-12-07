@@ -80,7 +80,7 @@ function computeSquareMovementGrid(board: BoardState): MovementGrid {
     { dx: 1, dy: 1 },
     { dx: 1, dy: -1 },
     { dx: -1, dy: 1 },
-    { dx: -1, dy: -1 }
+    { dx: -1, dy: -1 },
   ];
 
   for (const center of centers) {
@@ -103,7 +103,7 @@ function computeSquareMovementGrid(board: BoardState): MovementGrid {
 }
 
 function computeHexMovementGrid(board: BoardState): MovementGrid {
-  const radius = board.size - 1; // size is the hex radius (e.g. 11 => radius 10)
+  const radius = board.size - 1; // size is the hex radius (e.g. 13 => radius 12)
 
   interface RawCenter {
     key: string;
@@ -176,7 +176,7 @@ function computeHexMovementGrid(board: BoardState): MovementGrid {
   const spanX = maxX - minX || 1;
   const spanY = maxY - minY || 1;
 
-  const centers: MovementGridCellCenter[] = rawCenters.map(c => {
+  const centers: MovementGridCellCenter[] = rawCenters.map((c) => {
     const baseCx = (c.px - minX) / spanX;
     const baseCy = (c.py - minY) / spanY;
     const { cx, cy } = adjustHexCenter(baseCx, baseCy);
@@ -185,10 +185,9 @@ function computeHexMovementGrid(board: BoardState): MovementGrid {
       key: c.key,
       position: c.position,
       cx,
-      cy
+      cy,
     };
   });
-
 
   const edges: MovementGridEdge[] = [];
 
@@ -198,7 +197,7 @@ function computeHexMovementGrid(board: BoardState): MovementGrid {
     { dx: 0, dy: 1, dz: -1 },
     { dx: -1, dy: 1, dz: 0 },
     { dx: -1, dy: 0, dz: 1 },
-    { dx: 0, dy: -1, dz: 1 }
+    { dx: 0, dy: -1, dz: 1 },
   ];
 
   for (const center of centers) {
@@ -230,7 +229,11 @@ function computeHexMovementGrid(board: BoardState): MovementGrid {
  * These are intentionally tiny (single‑percent scale and a slight vertical
  * offset) and can be tuned in the future if the Tailwind layout changes.
  */
-function adjustSquareCenter(baseCx: number, baseCy: number, _size: number): { cx: number; cy: number } {
+function adjustSquareCenter(
+  baseCx: number,
+  baseCy: number,
+  _size: number
+): { cx: number; cy: number } {
   // The BoardView now derives final movement-grid centers directly from
   // DOM cell positions for alignment, so we keep the logical geometry
   // here as a simple identity transform. This avoids layering additional

@@ -1,9 +1,10 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { GameHUD } from '../../../src/client/components/GameHUD';
 import type { GameState, Player } from '../../../src/shared/types/game';
 import type { HUDViewModel } from '../../../src/client/adapters/gameViewModels';
+import { TEACHING_TOPICS_COPY } from '../../../src/client/utils/rulesUxTelemetry';
 
 function createPlayers(): Player[] {
   return [
@@ -386,11 +387,11 @@ describe('GameHUD – view-model props', () => {
     );
 
     const helpButton = screen.getByTestId('hud-weird-state-help');
-    helpButton.click();
+    fireEvent.click(helpButton);
 
     // Wait for the TeachingOverlay to render after state update
     await waitFor(() => {
-      expect(screen.getByText('Forced Elimination (FE)')).toBeInTheDocument();
+      expect(screen.getByText(TEACHING_TOPICS_COPY.forced_elimination.heading)).toBeInTheDocument();
     });
   });
 
@@ -434,10 +435,12 @@ describe('GameHUD – view-model props', () => {
     const helpButton = screen.getByTestId('hud-territory-help');
     expect(helpButton).toBeInTheDocument();
 
-    helpButton.click();
+    fireEvent.click(helpButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Territory Control')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: TEACHING_TOPICS_COPY.territory.heading })
+      ).toBeInTheDocument();
     });
   });
 
@@ -463,10 +466,10 @@ describe('GameHUD – view-model props', () => {
     const helpButton = screen.getByTestId('hud-phase-help-line_processing');
     expect(helpButton).toBeInTheDocument();
 
-    helpButton.click();
+    fireEvent.click(helpButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Line Bonus')).toBeInTheDocument();
+      expect(screen.getByText(TEACHING_TOPICS_COPY.line_bonus.heading)).toBeInTheDocument();
     });
   });
 
@@ -492,10 +495,12 @@ describe('GameHUD – view-model props', () => {
     const helpButton = screen.getByTestId('hud-phase-help-chain_capture');
     expect(helpButton).toBeInTheDocument();
 
-    helpButton.click();
+    fireEvent.click(helpButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Chain Capture')).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: TEACHING_TOPICS_COPY.chain_capture.heading })
+      ).toBeInTheDocument();
     });
   });
 });

@@ -60,10 +60,10 @@ There are three standard boards:
   - Territory victory: **>180** spaces.
   - Lines: **4+** markers in a row.
 
-- **Hexagonal** (radius 10; 11 cells per side)
-  - 331 spaces.
-  - **36 rings** per player.
-  - Territory victory: **>165** spaces.
+- **Hexagonal** (radius 12; 13 cells per side)
+  - 469 spaces.
+  - **48 rings** per player.
+  - Territory victory: **>234** spaces.
   - Lines: **4+** markers along hex directions.
 
 These parameters (size, rings per player, line length, adjacency) come from
@@ -283,10 +283,14 @@ Thresholds (from the rulebook):
   - 2 players: >18 rings eliminated.
   - 3 players: >27.
   - 4 players: >36.
-- 19×19 / Hex:
+- 19×19:
   - 2 players: >36.
   - 3 players: >54.
   - 4 players: >72.
+- Hex (469 cells, 48 rings/player):
+  - 2 players: >48.
+  - 3 players: >72.
+  - 4 players: >96.
 
 Your eliminated‑rings total includes:
 
@@ -313,7 +317,7 @@ Thresholds:
 
 - 8×8: >32 collapsed spaces.
 - 19×19: >180.
-- Hex: >165.
+- Hex: >234.
 
 Again, because each threshold is more than half the board, only one player
 can satisfy this at a time.
@@ -339,20 +343,47 @@ real action for LPS purposes.
 
 Player P wins by Last Player Standing if all of the following hold:
 
-1. Over **at least one complete round** of turns (each non‑eliminated player
-   taking exactly one turn in order):
-   - On each of P’s turns in that round, P has **at least one real action**
-     available at the start of their turn.
-   - On every other player’s turns that round, those players have **no real
+1. **First round:** Over one complete round of turns (each non‑eliminated
+   player taking exactly one turn in order):
+   - On P's turn in that round, P has **at least one real action** available
+     and **takes at least one such action**.
+   - On every other player's turns that round, those players have **no real
      actions** at the start of their turn (they may have only forced
      eliminations or no actions at all).
 
-2. Immediately after that round completes and **P’s next turn begins**:
-   - P is **still the only player** who has any real action available.
+2. **Second round:** After the first round completes (including all
+   post-movement processing), on the following round:
+   - P remains the **only player** who has taken any legal real action.
 
-If another player regains a real action (for example by gaining control of a
-stack) before the condition is fully satisfied, the LPS “candidate” reset
-and must be re‑established over a fresh round.
+3. **Victory declared:** After the second round completes (including all
+   post-movement processing), P is declared the winner by Last Player
+   Standing. This applies regardless of relative territory or rings eliminated.
+
+#### 5.3.3 Temporarily inactive players and recovery
+
+Some players may still have rings on the board but be **temporarily inactive**
+for LPS purposes:
+
+- They control no stacks and have no legal placements (no rings in hand, or
+  every placement would be illegal), or
+- They do control stacks but have **no** legal placements, no legal non‑capture
+  moves, and no legal overtaking captures, so their only possible turn action
+  is forced elimination.
+
+These players do **not** count as having real actions during their turns, but
+their rings may still be buried in mixed‑colour stacks and can become active
+again later.
+
+A temporarily inactive player can return to full activity if they regain a real
+action, for example:
+
+- Gaining control of a multi‑colour stack when its top ring becomes their
+  colour; or
+- Reducing the height of a stack they control so that it can move again.
+
+If any temporarily inactive player regains a real action before **both
+rounds** in the LPS condition have been completed, the LPS condition is not
+met and must be re‑established over fresh rounds.
 
 ### 5.4 Global stalemate and tiebreakers
 

@@ -30,9 +30,9 @@ import type {
  * The analyzer is resilient to additional keys and will ignore them.
  */
 
-type HotspotSeverity = 'HIGH' | 'MEDIUM' | 'LOW';
+export type HotspotSeverity = 'HIGH' | 'MEDIUM' | 'LOW';
 
-interface CliOptions {
+export interface CliOptions {
   inputPath: string;
   outputJsonPath?: string;
   outputMdPath?: string | null;
@@ -40,7 +40,7 @@ interface CliOptions {
   topK: number;
 }
 
-interface SourceHotspotMetrics {
+export interface SourceHotspotMetrics {
   source: string;
   helpOpens: number;
   helpReopens: number;
@@ -53,7 +53,7 @@ interface SourceHotspotMetrics {
   sampleOk: boolean;
 }
 
-interface ContextHotspotSummary {
+export interface ContextHotspotSummary {
   rulesContext: string;
   sumHelpOpens: number;
   helpOpensPer100Games: number;
@@ -63,7 +63,7 @@ interface ContextHotspotSummary {
   sources: SourceHotspotMetrics[];
 }
 
-interface HotspotSummaryJson {
+export interface HotspotSummaryJson {
   board: string;
   num_players: number;
   window: {
@@ -90,7 +90,7 @@ interface HotspotSummaryJson {
  *   --min-events N        (optional; default 20)
  *   --top-k N             (optional; default 5)
  */
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const args = argv.slice(2);
   const partial: Partial<CliOptions> = {
     minEvents: 20,
@@ -180,7 +180,7 @@ function parseArgs(argv: string[]): CliOptions {
  * Ensures the analyzer only operates on square8 2‑player snapshots
  * with at least one context entry.
  */
-function validateAggregatesRoot(raw: unknown): RulesUxAggregatesRoot {
+export function validateAggregatesRoot(raw: unknown): RulesUxAggregatesRoot {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Input JSON is not an object');
   }
@@ -220,7 +220,7 @@ function validateAggregatesRoot(raw: unknown): RulesUxAggregatesRoot {
   return root;
 }
 
-function computeWindowLabel(start: string, end: string): string {
+export function computeWindowLabel(start: string, end: string): string {
   const fromStart = /^(\d{4}-\d{2})/.exec(start);
   if (fromStart) {
     return fromStart[1];
@@ -234,15 +234,15 @@ function computeWindowLabel(start: string, end: string): string {
   return 'unknown';
 }
 
-function safeNumber(value: unknown): number {
+export function safeNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
-function sumEventCounts(events: RulesUxSourceAggregate['events']): number {
+export function sumEventCounts(events: RulesUxSourceAggregate['events']): number {
   return Object.values(events).reduce((acc, v) => acc + safeNumber(v), 0);
 }
 
-function computeSourceMetrics(
+export function computeSourceMetrics(
   sourceAgg: RulesUxSourceAggregate,
   gamesCompleted: number,
   minEvents: number
@@ -285,7 +285,7 @@ function computeSourceMetrics(
   };
 }
 
-function computeContextSummary(
+export function computeContextSummary(
   contextAgg: RulesUxContextAggregate,
   gamesCompleted: number,
   minEvents: number
@@ -317,7 +317,7 @@ function computeContextSummary(
   };
 }
 
-function classifyHotspotSeverity(
+export function classifyHotspotSeverity(
   ctx: ContextHotspotSummary,
   isInTopKByHelpOpens: boolean
 ): HotspotSeverity {
@@ -332,19 +332,20 @@ function classifyHotspotSeverity(
     return 'HIGH';
   }
 
-  // MEDIUM severity: elevated help opens or moderate churn, regardless of rank.
-  if (helpOpensPer100Games >= 0.5 || maxHelpReopenRate >= 0.25 || maxResignAfterWeirdRate >= 0.1) {
+  // MEDIUM severity: elevated help opens (at least ~1 per 100 games) or moderate churn,
+  // regardless of rank.
+  if (helpOpensPer100Games >= 1 || maxHelpReopenRate >= 0.25 || maxResignAfterWeirdRate >= 0.1) {
     return 'MEDIUM';
   }
 
   return 'LOW';
 }
 
-function formatRate(value: number, decimals = 2): string {
+export function formatRate(value: number, decimals = 2): string {
   return Number.isFinite(value) ? value.toFixed(decimals) : '0.00';
 }
 
-function buildMarkdownReport(summary: HotspotSummaryJson): string {
+export function buildMarkdownReport(summary: HotspotSummaryJson): string {
   const lines: string[] = [];
 
   lines.push(

@@ -58,8 +58,8 @@ def create_base_state(board_type: BoardType) -> GameState:
     elif board_type == BoardType.SQUARE19:
         size = 19
     else:
-        # Mirror TS BOARD_CONFIGS for hexagonal boards (size = 11, radius 10)
-        size = 11
+        # Mirror TS BOARD_CONFIGS for hexagonal boards (size = 13, radius 12)
+        size = 13
 
     return GameState(
         id="line-territory-scenario",
@@ -637,14 +637,13 @@ def test_line_and_territory_multi_region_ts_snapshot_parity() -> None:
     assert _normalise_for_comparison(py_snapshot) == _normalise_for_comparison(ts_snapshot)
 
 
-@pytest.mark.skip(
-    reason="Test isolation issue: requires running in isolation due to mock cleanup"
-)
 @pytest.mark.parametrize(
     "board_type",
     [BoardType.SQUARE8, BoardType.SQUARE19, BoardType.HEXAGONAL],
 )
-def test_overlength_line_option2_segments_exhaustive(board_type: BoardType) -> None:
+def test_overlength_line_option2_segments_exhaustive(
+    board_type: BoardType, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Ensure CHOOSE_LINE_REWARD enumerates all TS-legal Option-2 segments.
 
     For an overlength line of length L > requiredLength, TS semantics expose:
@@ -669,79 +668,76 @@ def test_overlength_line_option2_segments_exhaustive(board_type: BoardType) -> N
         direction=Position(x=1, y=0),
     )
 
-    orig_find_all_lines = BoardManager.find_all_lines
-    try:
-        # Force the board to report exactly our synthetic overlength line.
-        # Make a fresh copy of positions to avoid any mutation issues.
-        frozen_line = LineInfo(
-            positions=[Position(x=p.x, y=p.y) for p in synthetic_line.positions],
-            player=synthetic_line.player,
-            length=synthetic_line.length,
-            direction=Position(x=synthetic_line.direction.x, y=synthetic_line.direction.y),
-        )
+    # Force the board to report exactly our synthetic overlength line.
+    # Make a fresh copy of positions to avoid any mutation issues.
+    frozen_line = LineInfo(
+        positions=[Position(x=p.x, y=p.y) for p in synthetic_line.positions],
+        player=synthetic_line.player,
+        length=synthetic_line.length,
+        direction=Position(x=synthetic_line.direction.x, y=synthetic_line.direction.y),
+    )
 
-        # Create a closure function to avoid lambda issues
-        def mock_find_all_lines(board, num_players=3):
-            return [frozen_line]
+    # Create a closure function to avoid lambda issues
+    def mock_find_all_lines(board, num_players=3):
+        return [frozen_line]
 
-        BoardManager.find_all_lines = staticmethod(mock_find_all_lines)
+    # Use monkeypatch for proper test isolation and automatic cleanup
+    monkeypatch.setattr(BoardManager, "find_all_lines", staticmethod(mock_find_all_lines))
 
-        # Verify the mock works
-        test_result = BoardManager.find_all_lines(state.board, 2)
-        assert len(test_result) == 1, f"Mock should return 1 line, got {len(test_result)}"
-        assert test_result[0].length == frozen_line.length, (
-            f"Mock line length mismatch: expected {frozen_line.length}, "
-            f"got {test_result[0].length}"
-        )
+    # Verify the mock works
+    test_result = BoardManager.find_all_lines(state.board, 2)
+    assert len(test_result) == 1, f"Mock should return 1 line, got {len(test_result)}"
+    assert test_result[0].length == frozen_line.length, (
+        f"Mock line length mismatch: expected {frozen_line.length}, "
+        f"got {test_result[0].length}"
+    )
 
-        state.current_phase = GamePhase.LINE_PROCESSING
-        state.current_player = 1
+    state.current_phase = GamePhase.LINE_PROCESSING
+    state.current_player = 1
 
-        moves = GameEngine.get_valid_moves(state, 1)
-        assert moves, "Expected line-processing moves in LINE_PROCESSING"
+    moves = GameEngine.get_valid_moves(state, 1)
+    assert moves, "Expected line-processing moves in LINE_PROCESSING"
 
-        reward_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_REWARD]
-        assert reward_moves, "Expected CHOOSE_LINE_REWARD moves for overlength line"
+    reward_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_REWARD]
+    assert reward_moves, "Expected CHOOSE_LINE_REWARD moves for overlength line"
 
-        line_len = len(line_positions)
-        # Option‑1: collapse‑all reward, identified by the canonical "-all" suffix
-        # used by GameEngine._get_line_processing_moves.
-        option1_moves = [
-            m for m in reward_moves
-            if m.id.endswith("-all")
-        ]
-        # Option‑2: minimum‑collapse segments of exactly required_length markers.
-        option2_moves = [
-            m for m in reward_moves
-            if m.collapsed_markers is not None
-            and len(m.collapsed_markers) == required_length
-        ]
+    line_len = len(line_positions)
+    # Option‑1: collapse‑all reward, identified by the canonical "-all" suffix
+    # used by GameEngine._get_line_processing_moves.
+    option1_moves = [
+        m for m in reward_moves
+        if m.id.endswith("-all")
+    ]
+    # Option‑2: minimum‑collapse segments of exactly required_length markers.
+    option2_moves = [
+        m for m in reward_moves
+        if m.collapsed_markers is not None
+        and len(m.collapsed_markers) == required_length
+    ]
 
-        # Exactly one collapse-all reward and the TS-expected number of
-        # minimum-collapse segments.
-        expected_option2_count = line_len - required_length + 1
+    # Exactly one collapse-all reward and the TS-expected number of
+    # minimum-collapse segments.
+    expected_option2_count = line_len - required_length + 1
 
-        # Python CHOOSE_LINE_REWARD enumeration must now exactly match the TS
-        # decision surface for this overlength line:
-        # - 1 collapse-all (Option-1) reward; and
-        # - (L - required_length + 1) distinct contiguous Option-2 segments.
-        assert len(option1_moves) == 1
-        assert len(option2_moves) == expected_option2_count
+    # Python CHOOSE_LINE_REWARD enumeration must now exactly match the TS
+    # decision surface for this overlength line:
+    # - 1 collapse-all (Option-1) reward; and
+    # - (L - required_length + 1) distinct contiguous Option-2 segments.
+    assert len(option1_moves) == 1
+    assert len(option2_moves) == expected_option2_count
 
-        def _segment_key(segment: list[Position]) -> tuple[tuple[int, int, int | None], ...]:
-            return tuple((p.x, p.y, getattr(p, "z", None)) for p in segment)
+    def _segment_key(segment: list[Position]) -> tuple[tuple[int, int, int | None], ...]:
+        return tuple((p.x, p.y, getattr(p, "z", None)) for p in segment)
 
-        expected_segments = {
-            _segment_key(line_positions[start : start + required_length])
-            for start in range(expected_option2_count)
-        }
-        actual_segments = {
-            _segment_key(list(m.collapsed_markers or ()))
-            for m in option2_moves
-        }
+    expected_segments = {
+        _segment_key(line_positions[start : start + required_length])
+        for start in range(expected_option2_count)
+    }
+    actual_segments = {
+        _segment_key(list(m.collapsed_markers or ()))
+        for m in option2_moves
+    }
 
-        # Full parity: Python's Option-2 choices must equal the TS-legal set of
-        # contiguous required-length windows of the overlength line.
-        assert actual_segments == expected_segments
-    finally:
-        BoardManager.find_all_lines = orig_find_all_lines
+    # Full parity: Python's Option-2 choices must equal the TS-legal set of
+    # contiguous required-length windows of the overlength line.
+    assert actual_segments == expected_segments

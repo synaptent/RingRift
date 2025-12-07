@@ -179,7 +179,7 @@ describe('turnDelegateHelpers branch coverage', () => {
       it('finds placement on hexagonal board', () => {
         const state = makeGameState();
         state.board.type = 'hexagonal';
-        state.board.size = 11; // Typical hex board radius
+        state.board.size = 13; // Hex: size=13, radius=12
         const result = hasAnyPlacementForPlayer(state, 1);
         expect(result).toBe(true);
       });

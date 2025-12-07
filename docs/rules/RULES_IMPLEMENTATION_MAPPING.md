@@ -7,6 +7,8 @@
 > - **Precedence:** Backend (`GameEngine` + `TurnEngineAdapter` over the shared orchestrator, with `BoardManager`), client sandbox (`ClientSandboxEngine` + `SandboxOrchestratorAdapter`), and Python rules/AI engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. Legacy backend helpers in `RuleEngine.ts` are treated as **diagnostics-only** orchestration wrappers and must not be considered canonical execution paths. If this document ever contradicts the rules spec, shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this mapping must be updated to match.
 >
 > This file is for traceability (rules ↔ implementation/tests), not a standalone semantics SSoT.
+>
+> **Interpretation note:** Validator/Mutator names used here are semantic anchors, not necessarily literal TS filenames; the shared engine expresses many responsibilities via helpers/aggregates/orchestrator.
 
 **Doc Status (2025-11-26): Active**
 
@@ -17,6 +19,14 @@
 This document maps the canonical RingRift rules in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md) to the current implementation and tests, and provides the inverse view from implementation components back to canonical rules.
 
 Canonical rule IDs of the form `RR-CANON-RXXX` always refer to entries in [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md). The original narrative rules in [`ringrift_complete_rules.md`](ringrift_complete_rules.md) and the compact spec in [`ringrift_compact_rules.md`](ringrift_compact_rules.md) are treated as commentary and traceability sources only.
+
+### Quick map (top surfaces)
+
+| Area                     | Primary TS surface                                                            | Key tests                                                                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Turn/phase orchestration | `src/shared/engine/orchestration/turnOrchestrator.ts`, `phaseStateMachine.ts` | `tests/contracts/contractVectorRunner.test.ts`, `tests/unit/TraceFixtures.sharedEngineParity.test.ts`                                                   |
+| Lines & territory        | `src/shared/engine/lines.ts`, `territory.ts`, aggregates                      | `tests/unit/GameEngine.lines.scenarios.test.ts`, `tests/unit/GameEngine.territoryDisconnection.test.ts`                                                 |
+| Forced elimination / ANM | `src/shared/engine/forcedElimination.ts`, `turnOrchestrator` guards           | `tests/unit/GameEngine.gameEndExplanation.shared.test.ts`, `ai-service/tests/invariants/test_active_no_moves_movement_forced_elimination_regression.py` |
 
 ---
 

@@ -446,7 +446,7 @@ describe('VictoryModal – weird state teaching link', () => {
       />
     );
 
-    const helpLink = screen.getByRole('button', { name: /What happened\?/i });
+    const helpLink = await screen.findByRole('button', { name: /What happened\?/i });
     expect(helpLink).toBeInTheDocument();
   });
 
@@ -485,6 +485,53 @@ describe('VictoryModal – weird state teaching link', () => {
 
     const helpLink = screen.getByRole('button', { name: /What happened\?/i });
     expect(helpLink).toBeInTheDocument();
+  });
+
+  it('shows "What happened?" link for territory mini-region explanation', async () => {
+    const players = createPlayers();
+    const gameState = createGameState(players);
+    const gameResult = createGameResult(1, 'territory_control');
+    const explanation: GameEndExplanation = {
+      outcomeType: 'territory_control',
+      victoryReasonCode: 'victory_territory_majority',
+      primaryConceptId: 'territory_mini_regions',
+      uxCopy: {
+        shortSummaryKey: 'game_end.territory_mini_region.short',
+        detailedSummaryKey: 'game_end.territory_mini_region.detailed',
+      },
+      weirdStateContext: {
+        reasonCodes: ['ANM_TERRITORY_NO_ACTIONS'],
+        primaryReasonCode: 'ANM_TERRITORY_NO_ACTIONS',
+        rulesContextTags: ['territory_mini_region'],
+      },
+      boardType: 'square8',
+      numPlayers: 2,
+      winnerPlayerId: 'p1',
+    };
+
+    render(
+      <VictoryModal
+        isOpen={true}
+        gameResult={gameResult}
+        players={players}
+        gameState={gameState}
+        gameEndExplanation={explanation}
+        onClose={jest.fn()}
+        onReturnToLobby={jest.fn()}
+      />
+    );
+
+    const helpLink = await screen.findByRole('button', { name: /What happened\?/i });
+    expect(helpLink).toBeInTheDocument();
+
+    await userEvent.click(helpLink);
+
+    await waitFor(() => {
+      // TeachingOverlay for the territory topic should be open with a
+      // heading matching the canonical "Territory" teaching topic.
+      const territoryHeading = screen.getByRole('heading', { name: /Territory$/i });
+      expect(territoryHeading).toBeInTheDocument();
+    });
   });
 });
 

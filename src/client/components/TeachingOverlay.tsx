@@ -20,6 +20,7 @@ export type TeachingTopic =
   | 'capturing'
   | 'chain_capture'
   | 'line_bonus'
+  | 'line_territory_order'
   | 'territory'
   | 'active_no_moves'
   | 'forced_elimination'
@@ -78,9 +79,11 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
     // UX_RULES_COPY_SPEC.md §5 – Chain Capture description
     description: TEACHING_TOPICS_COPY.chain_capture.body,
     tips: [
-      'Plan chain captures to traverse multiple enemy stacks in a single turn',
-      'You choose which capture to take when several are available, but you cannot stop early while any capture remains',
-      'The chain ends only when no legal capture segments remain',
+      // GAP-CHAIN-04: Strengthened mandatory continuation wording
+      'Starting a capture is OPTIONAL – you can choose to move without capturing. But once you make ANY capture, you MUST continue the chain until no legal captures remain.',
+      'You CANNOT stop a chain capture early. Plan your first capture carefully – if it leads to an unfavorable chain, you must follow through.',
+      'When multiple capture targets are available, YOU choose which direction to continue. The mandatory rule is about continuation, not direction.',
+      'Chain captures can include 180° reversals – you may jump back the way you came if the position allows it.',
     ],
     relatedPhases: ['chain_capture'],
   },
@@ -90,11 +93,30 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
     // UX_RULES_COPY_SPEC.md §6 – Lines description
     description: TEACHING_TOPICS_COPY.line_bonus.body,
     tips: [
+      // GAP-LINE-01: When lines form
+      'WHEN LINES FORM: A line forms when 5+ same-colored markers align orthogonally (horizontally, vertically, or diagonally). On hex boards, you need 6+ markers.',
       'Lines are formed from markers, not rings – horizontal, vertical, and diagonal lines all count.',
       'Exact-length lines always collapse fully into Territory and usually require you to eliminate a ring from one of your stacks.',
       'Overlength lines can trade safety for value: you may collapse a shorter scoring segment with no elimination, or collapse the full line and pay the ring cost.',
     ],
     relatedPhases: ['line_processing'],
+  },
+  // GAP-LINE-02, GAP-LINE-03: Line vs Territory processing order teaching
+  line_territory_order: {
+    title: 'Line & Territory Order',
+    icon: '📊',
+    description:
+      'Lines and territories are processed in a specific order after movement. Understanding this sequence is crucial for strategic planning.',
+    tips: [
+      // GAP-LINE-02: Processing order
+      'PROCESSING ORDER: Lines are ALWAYS processed BEFORE territories. When a move creates both, lines collapse first, then territory regions are evaluated.',
+      'A single turn can trigger: movement → capture chain → line processing → territory processing. Each phase must complete before the next begins.',
+      // GAP-LINE-03: Multi-line and options
+      'MULTIPLE LINES: If multiple lines form, each is processed separately. You may need to make choices for each overlength line.',
+      'OPTION 1 vs OPTION 2: For overlength lines (6+ on square, 7+ on hex), you choose: collapse ALL markers (costs a ring) or collapse MINIMUM length (free but less territory).',
+      'Line collapse affects what territory regions form. Choosing Option 1 (full collapse) may create more territory but costs a ring; Option 2 (minimum) is safely free.',
+    ],
+    relatedPhases: ['line_processing', 'territory_processing'],
   },
   territory: {
     title: TEACHING_TOPICS_COPY.territory.heading,
@@ -105,6 +127,12 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
       'Territory comes from collapsing marker lines and resolving disconnected regions.',
       'Once a space becomes Territory it cannot be captured back or undone.',
       'Crossing the territory threshold ends the game immediately, even if other wins were possible.',
+      // GAP-TERR-04: Self-elimination cost explanation (FAQ Q23)
+      'WHY DID I LOSE MY OWN RING? Processing a disconnected region eliminates all interior rings (scoring for you), but you MUST also eliminate one cap from a stack OUTSIDE the region.',
+      // GAP-TERR-03: Eligibility indicator
+      "CAN'T PROCESS A REGION? You must have a stack OUTSIDE the pending region to pay the elimination cost. If all your stacks are inside or on the border, you cannot process.",
+      // Explicit rules/FAQ reference for mini-regions
+      'For the canonical mini-region pattern and numeric example, see FAQ Q23 "What happens if I cannot eliminate any rings when processing a disconnected region?" in ringrift_complete_rules §12.2.',
     ],
     relatedPhases: ['territory_processing'],
   },
@@ -117,6 +145,12 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
       'Active–No–Moves only looks at real moves: placements, movements, and captures. Forced elimination and automatic line/territory processing do not count as real moves for Last Player Standing.',
       'If you still control stacks but have no placements or movements, the game applies forced elimination caps until a real move becomes available or your stacks are exhausted.',
       'On some boards a full plateau can occur where no player has real moves or forced eliminations; in that case the game ends and the final score comes from territory and eliminated rings, not further play.',
+      // GAP-ANM-01: First-occurrence context
+      'FIRST TIME SEEING THIS? When you have no legal moves, you enter an "Active-No-Moves" state. This is different from being eliminated – you are still in the game!',
+      // GAP-ANM-03: Recovery guidance
+      'HOW TO RECOVER FROM ANM: Your opponents might open up movement options for you by moving their stacks, collapsing lines, or processing territories. Stay alert – you can become active again!',
+      // Explicit rules/FAQ reference for ANM/FE behaviour
+      'For full timing diagrams and examples, see "Active–No–Moves & Forced Elimination" in ringrift_complete_rules §10.4 together with ACTIVE_NO_MOVES_BEHAVIOUR.md (ANM-SCEN-01).',
     ],
     relatedPhases: ['movement', 'line_processing', 'territory_processing'],
   },
@@ -129,6 +163,8 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
       'Rings removed by forced elimination are permanently eliminated and count toward global Ring Elimination victory, just like eliminations from movement onto markers, line rewards, or territory processing.',
       'Forced elimination does not count as a “real move” for Last Player Standing, even though each step is recorded as a forced_elimination move in its own phase.',
       'You cannot skip forced elimination when its conditions are met; the rules may let you choose the stack, but some legal forced_elimination move must be recorded.',
+      // Explicit rules reference for FE triggers
+      'Formal FE triggers and guarantees are defined in ringrift_complete_rules §4.4 "Forced elimination when blocked" and in RULES_RULESET_CLARIFICATIONS under the FE invariants.',
     ],
     relatedPhases: ['movement', 'territory_processing', 'forced_elimination'],
   },
@@ -160,9 +196,20 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
     // UX_RULES_COPY_SPEC.md §3.3 – TeachingOverlay victory topic – stalemate / LPS
     description: TEACHING_TOPICS_COPY.victory_stalemate.body,
     tips: [
-      'Real moves are placements, movements, and captures; forced eliminations do not count.',
-      'Opponents who are out of real moves for a full round are considered out for LPS.',
-      'Structural stalemate is different: it happens when no players have real moves or forced eliminations available.',
+      // === Last Player Standing (LPS) ===
+      'LAST PLAYER STANDING: You win if you are the only player who can make real moves (placements, movements, or captures) for TWO consecutive complete rounds.',
+      // Two-round requirement emphasis
+      'LPS requires TWO rounds: First round, you must have and take at least one real action while all others have none. Second round, you remain the only player with real actions. Victory is declared after the second round completes.',
+      // GAP-LPS-03: Emphasize FE ≠ real action
+      'Forced elimination is NOT a real action: even if you are forced to eliminate caps, that does not count as a move for LPS purposes. If your opponent has real moves and you only have forced eliminations, they have not lost yet.',
+      // === Structural Stalemate ===
+      'STRUCTURAL STALEMATE: This happens when NO player has ANY real moves or forced eliminations available – the game is truly stuck.',
+      // GAP-STALE-04: Distinction between single-player ANM and global stalemate
+      'ANM vs Stalemate: When only YOU have no moves, the game continues – other players can still play. A structural stalemate only occurs when NOBODY can move at all.',
+      // Tiebreak ladder
+      'TIEBREAK LADDER: In a stalemate, the winner is determined by: 1) Territory spaces, 2) Eliminated rings (including rings in hand), 3) Markers on board, 4) Who made the last real action.',
+      // Explicit rules reference for LPS + structural stalemate ladder
+      'See ringrift_complete_rules §13.3 "Last Player Standing" and §13.4 "Structural stalemate and tiebreak ladder" for the full formal definitions and worked examples.',
     ],
   },
 };
@@ -176,6 +223,9 @@ const TOPIC_RULES_CONCEPTS: Partial<Record<TeachingTopic, RulesConcept[]>> = {
   active_no_moves: ['anm_forced_elimination'],
   forced_elimination: ['anm_forced_elimination'],
   territory: ['territory_mini_region'],
+  chain_capture: ['capture_chain_mandatory'],
+  line_bonus: ['line_vs_territory_multi_phase'],
+  line_territory_order: ['line_vs_territory_multi_phase'],
   victory_stalemate: ['structural_stalemate', 'last_player_standing'],
 };
 
@@ -311,21 +361,38 @@ export function TeachingOverlay({
   }, [isOpen, weirdStateOverlayContext]);
 
   // When opened from a weird-state surface, auto-select the first related
-  // teaching step (preferring exact reason-code matches) and emit
-  // teaching_step_started for that step.
+  // teaching step, preferring:
+  //   1) An exact uxWeirdStateReasonCode match, then
+  //   2) A rules-concept match for the provided rulesContext, then
+  //   3) The first related scenario as a generic fallback.
+  // In all cases we emit teaching_step_started for the chosen step.
   useEffect(() => {
     if (!isOpen) return;
     if (!weirdStateOverlayContext) return;
     if (currentFlowId || currentStepIndex != null) return;
     if (relatedScenarios.length === 0) return;
 
-    const preferred =
-      relatedScenarios.find(
-        (scenario) => scenario.uxWeirdStateReasonCode === weirdStateOverlayContext.reasonCode
-      ) ?? relatedScenarios[0];
+    const ctx = weirdStateOverlayContext;
 
-    handleScenarioSelect(preferred, { isAuto: true });
-  }, [isOpen, weirdStateOverlayContext, relatedScenarios]);
+    // 1) Prefer an exact reason-code match when available.
+    let preferred: TeachingScenarioMetadata | undefined =
+      relatedScenarios.find((scenario) => scenario.uxWeirdStateReasonCode === ctx.reasonCode) ??
+      undefined;
+
+    // 2) Otherwise fall back to a rules-context match derived from the
+    //    scenario's rulesConcept (e.g. structural_stalemate, territory_mini_region).
+    if (!preferred && ctx.rulesContext) {
+      preferred = relatedScenarios.find(
+        (scenario) => getRulesUxContextForTeachingScenario(scenario) === ctx.rulesContext
+      );
+    }
+
+    // 3) Generic fallback: first related scenario for the topic.
+    const fallback = preferred ?? relatedScenarios[0];
+    if (!fallback) return;
+
+    handleScenarioSelect(fallback, { isAuto: true });
+  }, [isOpen, weirdStateOverlayContext, relatedScenarios, currentFlowId, currentStepIndex]);
 
   function handleScenarioSelect(
     scenario: TeachingScenarioMetadata,
@@ -343,6 +410,7 @@ export function TeachingOverlay({
     }
 
     const rulesContext = getRulesUxContextForTeachingScenario(scenario);
+    const ctxForTeaching = weirdStateOverlayContext ?? lastWeirdStateContextRef.current;
 
     void logRulesUxEvent({
       type: 'teaching_step_started',
@@ -353,6 +421,7 @@ export function TeachingOverlay({
       rulesConcept: scenario.rulesConcept,
       scenarioId: scenario.scenarioId,
       teachingFlowId: flowId,
+      overlaySessionId: ctxForTeaching?.overlaySessionId,
       payload: {
         flowId: scenario.flowId,
         stepIndex: scenario.stepIndex,
@@ -374,6 +443,7 @@ export function TeachingOverlay({
     }
 
     const rulesContext = getRulesUxContextForTeachingScenario(selectedScenario);
+    const ctxForTeaching = weirdStateOverlayContext ?? lastWeirdStateContextRef.current;
 
     void logRulesUxEvent({
       type: 'teaching_step_completed',
@@ -384,6 +454,7 @@ export function TeachingOverlay({
       rulesConcept: selectedScenario.rulesConcept,
       scenarioId: selectedScenario.scenarioId,
       teachingFlowId: flowId,
+      overlaySessionId: ctxForTeaching?.overlaySessionId,
       payload: {
         flowId: selectedScenario.flowId,
         stepIndex: selectedScenario.stepIndex,
@@ -631,6 +702,7 @@ export function TeachingTopicButtons({
     { topic: 'capturing', label: 'Capture', icon: '×' },
     { topic: 'chain_capture', label: 'Chain', icon: '⇉' },
     { topic: 'line_bonus', label: 'Lines', icon: '═' },
+    { topic: 'line_territory_order', label: 'Phase Order', icon: '📊' },
     { topic: 'territory', label: 'Territory', icon: '▣' },
   ];
 

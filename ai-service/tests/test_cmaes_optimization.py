@@ -159,7 +159,7 @@ class TestGameStateCreation:
         state = create_game_state(BoardType.HEXAGONAL)
 
         assert state.board_type == BoardType.HEXAGONAL
-        assert state.board.size == 11
+        assert state.board.size == 13
 
 
 class TestHeuristicAICreation:

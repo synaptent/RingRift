@@ -1,0 +1,1 @@
+{"index": 0, "num_players": 2, "board_type": "hexagonal", "engine_mode": "descent-only", "seed": null, "length": 100, "status": "active", "winner": null, "termination_reason": "max_moves_reached", "invariant_violations_by_type": {}, "swap_sides_moves": 0, "used_pie_rule": false}

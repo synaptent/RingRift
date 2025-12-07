@@ -38,7 +38,7 @@ class TestDescentAIHex(unittest.TestCase):
 
         board = BoardState(
             type=BoardType.HEXAGONAL,
-            size=11,  # canonical radius-10 hex (2N+1 = 21 frame)
+            size=13,  # canonical radius-12 hex (2N+1 = 25 frame)
             stacks={},
             markers={},
             collapsedSpaces={},

@@ -24,18 +24,5 @@ def test_load_square19_3p_pool():
 
 
 def test_load_hex_4p_pool():
-    """Verify that the 4-player Hex pool can be loaded and has correct player counts."""
-    pool_id = "4p_v1"
-    board_type = BoardType.HEXAGONAL
-    
-    # Ensure the file exists (skip test if pool hasn't been generated yet)
-    path = POOL_PATHS.get((board_type, pool_id))
-    if not path or not os.path.exists(path):
-        pytest.skip(f"Pool file not found: {path}. Run generation command in data/eval_pools/hex_4p/README.md")
-
-    states = load_state_pool(board_type, pool_id=pool_id, num_players=4)
-    assert len(states) > 0, "Pool should contain at least one state"
-    
-    for state in states:
-        assert state.board_type == board_type, f"Expected {board_type}, got {state.board_type}"
-        assert len(state.players) == 4, f"Expected 4 players, got {len(state.players)}"
+    """Hex 4p eval pool was removed (old geometry); regenerate before enabling."""
+    pytest.skip("Hex 4p eval pool deleted (old radius-10 geometry). Regenerate for radius-12 hex before enabling this test.")

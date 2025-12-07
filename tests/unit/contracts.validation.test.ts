@@ -388,7 +388,7 @@ describe('Contract Validation', () => {
       const result = validateSerializedBoardState({
         ...validBoardState,
         type: 'hexagonal',
-        size: 11,
+        size: 13, // radius=12
       });
       expect(result.success).toBe(true);
     });

@@ -28,7 +28,7 @@ This analysis evaluates difficulty across six standard AI-complexity axes:
 
 RingRift's state is defined by:
 
-- A large board (64 / 331 / 361 cells depending on version; Compact Spec §1.1)
+- A large board (64 / 469 / 361 cells depending on version; Compact Spec §1.1)
 - Each cell can be: empty, marker, collapsed territory, or a stack of arbitrary height and composition (Canon R020–R023)
 - Stacks can contain rings of any player, in any order, with dynamic changing control
 
@@ -84,7 +84,7 @@ Chain captures create a branching factor within a single turn that can reach ast
 - After capturing a stack, the capturing player may continue capturing with any portion of the combined stack
 - Each continuation point creates new branching possibilities
 - The chain can reverse direction, fork across multiple targets, and recurse
-- On full-size hex (331 cells) or 19×19 square boards (361 cells), a single chain capture sequence can have **hundreds of thousands of distinct valid continuations**
+- On full-size hex (469 cells) or 19×19 square boards (361 cells), a single chain capture sequence can have **hundreds of thousands of distinct valid continuations**
 
 This means that enumerating legal "moves" for a single turn can require evaluating a combinatorial tree of capture sequences that rivals the depth of entire games in simpler abstracts.
 

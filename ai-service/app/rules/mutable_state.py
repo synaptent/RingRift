@@ -276,7 +276,10 @@ class MoveUndo:
     # === LPS Tracking (for victory detection) ===
     prev_lps_round_index: int = 0
     prev_lps_actor_mask: Dict[int, bool] = field(default_factory=dict)
+    prev_lps_current_round_first_player: Optional[int] = None
     prev_lps_exclusive_player: Optional[int] = None
+    prev_lps_consecutive_exclusive_rounds: int = 0
+    prev_lps_consecutive_exclusive_player: Optional[int] = None
 
     # === Optional for chain captures ===
     chain_capture_stack: Optional[List["MoveUndo"]] = None
@@ -329,7 +332,10 @@ class MutableGameState:
         # LPS tracking for victory detection
         self._lps_round_index: int = 0
         self._lps_current_round_actor_mask: Dict[int, bool] = {}
+        self._lps_current_round_first_player: Optional[int] = None
         self._lps_exclusive_player_for_completed_round: Optional[int] = None
+        self._lps_consecutive_exclusive_rounds: int = 0
+        self._lps_consecutive_exclusive_player: Optional[int] = None
 
         # Immutable reference fields (for context and conversion back)
         self._id: str = ""
@@ -393,8 +399,17 @@ class MutableGameState:
         mutable._lps_round_index = state.lps_round_index
         mask = state.lps_current_round_actor_mask
         mutable._lps_current_round_actor_mask = dict(mask)
+        mutable._lps_current_round_first_player = (
+            state.lps_current_round_first_player
+        )
         mutable._lps_exclusive_player_for_completed_round = (
             state.lps_exclusive_player_for_completed_round
+        )
+        mutable._lps_consecutive_exclusive_rounds = (
+            state.lps_consecutive_exclusive_rounds
+        )
+        mutable._lps_consecutive_exclusive_player = (
+            state.lps_consecutive_exclusive_player
         )
 
         # Copy immutable reference fields
@@ -498,7 +513,10 @@ class MutableGameState:
             zobristHash=self._zobrist_hash,
             lpsRoundIndex=self._lps_round_index,
             lpsCurrentRoundActorMask=dict(self._lps_current_round_actor_mask),
+            lpsCurrentRoundFirstPlayer=self._lps_current_round_first_player,
             lpsExclusivePlayerForCompletedRound=lps_exclusive,
+            lpsConsecutiveExclusiveRounds=self._lps_consecutive_exclusive_rounds,
+            lpsConsecutiveExclusivePlayer=self._lps_consecutive_exclusive_player,
         )
 
     def _compute_zobrist_hash(self) -> int:
@@ -672,8 +690,17 @@ class MutableGameState:
         # Capture LPS state
         undo.prev_lps_round_index = self._lps_round_index
         undo.prev_lps_actor_mask = dict(self._lps_current_round_actor_mask)
+        undo.prev_lps_current_round_first_player = (
+            self._lps_current_round_first_player
+        )
         lps_excl = self._lps_exclusive_player_for_completed_round
         undo.prev_lps_exclusive_player = lps_excl
+        undo.prev_lps_consecutive_exclusive_rounds = (
+            self._lps_consecutive_exclusive_rounds
+        )
+        undo.prev_lps_consecutive_exclusive_player = (
+            self._lps_consecutive_exclusive_player
+        )
 
         # Remove phase/player from hash before changes
         player_hash = self._zobrist.get_player_hash(self._active_player)
@@ -805,8 +832,17 @@ class MutableGameState:
         # Restore LPS state
         self._lps_round_index = undo.prev_lps_round_index
         self._lps_current_round_actor_mask = dict(undo.prev_lps_actor_mask)
+        self._lps_current_round_first_player = (
+            undo.prev_lps_current_round_first_player
+        )
         lps_excl = undo.prev_lps_exclusive_player
         self._lps_exclusive_player_for_completed_round = lps_excl
+        self._lps_consecutive_exclusive_rounds = (
+            undo.prev_lps_consecutive_exclusive_rounds
+        )
+        self._lps_consecutive_exclusive_player = (
+            undo.prev_lps_consecutive_exclusive_player
+        )
 
     # =========================================================================
     # Move-Type-Specific Make Methods

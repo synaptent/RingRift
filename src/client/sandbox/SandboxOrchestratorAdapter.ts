@@ -546,7 +546,45 @@ export class SandboxOrchestratorAdapter {
       return this.chainCaptureOptions;
     }
 
-    return getValidMoves(state);
+    // Delegate to the core orchestrator for interactive moves.
+    const interactiveMoves = getValidMoves(state);
+
+    // Per RR-CANON-R076, the core rules layer no longer fabricates
+    // no_*_action bookkeeping moves for placement/movement. For
+    // sandbox UX, we preserve the historical behaviour at the
+    // adapter/host layer by synthesising those moves when there are
+    // no interactive options in the corresponding phase.
+    if (interactiveMoves.length === 0 && state.gameStatus === 'active') {
+      const moveNumber = state.moveHistory.length + 1;
+
+      if (state.currentPhase === 'ring_placement') {
+        const noPlacement: Move = {
+          id: `no-placement-action-${moveNumber}`,
+          type: 'no_placement_action',
+          player: state.currentPlayer,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber,
+        };
+        return [noPlacement];
+      }
+
+      if (state.currentPhase === 'movement') {
+        const noMovement: Move = {
+          id: `no-movement-action-${moveNumber}`,
+          type: 'no_movement_action',
+          player: state.currentPlayer,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber,
+        };
+        return [noMovement];
+      }
+    }
+
+    return interactiveMoves;
   }
 
   /**

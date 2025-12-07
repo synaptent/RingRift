@@ -755,13 +755,13 @@ export class ClientSandboxEngine {
     }
 
     if (!result.success) {
-      if (isTestEnvironment()) {
-        console.error('[processMoveViaAdapter] Move FAILED:', {
-          moveType: move.type,
-          error: result.error,
-        });
-      }
-      return false;
+      const message = result.error || 'Orchestrator processMove failed';
+      // Surface orchestrator errors as hard failures so that canonical
+      // replay / parity harnesses treat mis-phased or otherwise invalid
+      // moves as structural issues, matching Python’s strict semantics.
+      throw new Error(
+        `[SandboxOrchestratorAdapter] processMove failed for move type '${move.type}': ${message}`
+      );
     }
 
     // Update victory result if game ended
@@ -1016,6 +1016,19 @@ export class ClientSandboxEngine {
         currentPhase: 'ring_placement',
         chainCapturePosition: undefined,
         ...(hasLegacyMustMoveCursor ? { mustMoveFromStackKey: undefined } : {}),
+      } as GameState;
+    }
+
+    // 1b. Clear stale chainCapturePosition for active games when not in chain_capture phase.
+    // Saved states may have inconsistent chainCapturePosition values that were never cleared.
+    if (
+      gameState.gameStatus === 'active' &&
+      gameState.currentPhase !== 'chain_capture' &&
+      gameState.chainCapturePosition !== undefined
+    ) {
+      gameState = {
+        ...gameState,
+        chainCapturePosition: undefined,
       } as GameState;
     }
 
@@ -1297,8 +1310,15 @@ export class ClientSandboxEngine {
     // 2. Enumerate simple (non-capturing) movement options from this stack
     // only during the core movement phase. In capture/chain_capture phases,
     // rules semantics allow only capture segments.
+    //
+    // EXCEPTION: In ring_placement, we also enumerate movement options to
+    // support the "skip placement + move" interaction where selecting a stack
+    // highlights its potential moves.
     let simpleLandings: Position[] = [];
-    if (this.gameState.currentPhase === 'movement') {
+    if (
+      this.gameState.currentPhase === 'movement' ||
+      this.gameState.currentPhase === 'ring_placement'
+    ) {
       const simpleMoves = this.enumerateSimpleMovementLandings(playerNumber).filter(
         (m) => m.fromKey === fromKey
       );
@@ -3435,33 +3455,6 @@ export class ClientSandboxEngine {
       return true;
     }
 
-    // Fallback for canonical replay / traceMode:
-    //
-    // Some legacy self-play databases were recorded under older orchestrator
-    // semantics. When re-running them under the current shared orchestrator
-    // in traceMode, certain historical placement moves may be treated as
-    // no-ops (e.g., due to stricter gating), even though Python's canonical
-    // GameEngine still applies them and the recording expects their effects.
-    //
-    // To preserve TS↔Python parity for canonical replays while keeping live
-    // gameplay fully orchestrator-driven, we fall back to the shared
-    // PlacementAggregate when:
-    //   - traceMode is enabled,
-    //   - the adapter reported no effective state change, and
-    //   - the move is a recorded place_ring.
-    //
-    // This mirrors Python's _apply_place_ring semantics and ensures that
-    // every explicit place_ring in a canonical recording actually mutates
-    // state during sandbox replay.
-    if (this.traceMode && move.type === 'place_ring') {
-      const placementOutcome = applyPlacementMoveAggregate(beforeState, move);
-      const placementHash = hashGameState(placementOutcome.nextState);
-      if (placementHash !== beforeHash) {
-        this.gameState = placementOutcome.nextState;
-        return true;
-      }
-    }
-
     return false;
   }
 
@@ -3521,6 +3514,11 @@ export class ClientSandboxEngine {
       // Handled by the shared orchestrator which skips territory processing
       // when it detects this move type.
       'skip_territory_processing',
+      // No-op actions: emitted when a player has no legal actions in a phase
+      // (e.g., 0 rings in hand during ring_placement, no stacks during movement).
+      // These advance the phase without changing board state.
+      'no_placement_action',
+      'no_movement_action',
     ];
 
     if (!supportedTypes.includes(move.type)) {

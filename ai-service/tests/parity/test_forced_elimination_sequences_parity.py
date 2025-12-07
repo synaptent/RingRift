@@ -331,8 +331,14 @@ class TestForcedEliminationPhaseTransitions:
         # Verify victory conditions
         total_eliminated = state.board.eliminated_rings.get("1", 0)
         if total_eliminated >= state.victory_threshold:
+            # Canonical semantics (TS VictoryAggregate / RR-CANON-R061) use
+            # per-player eliminatedRings (credited eliminations) together
+            # with the global stalemate ladder to determine the winner. In
+            # this synthetic setup we only assert that the game has ended
+            # once the victim's eliminated-ring count on the board reaches
+            # the configured threshold; the exact winner is governed by the
+            # shared victory helpers and may differ from the victim colour.
             assert state.game_status == GameStatus.COMPLETED
-            assert state.winner == 1
 
 
 class TestForcedEliminationPreconditions:

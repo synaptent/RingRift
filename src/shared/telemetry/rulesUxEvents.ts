@@ -65,6 +65,7 @@ export type RulesUxContext =
   | 'territory_multi_region'
   | 'line_reward_exact'
   | 'line_reward_overlength'
+  | 'line_vs_territory_multi_phase'
   | 'capture_chain_mandatory'
   | 'landing_on_own_marker'
   | 'pie_rule_swap'

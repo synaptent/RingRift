@@ -16,12 +16,12 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-| Database                | Board Type | Players | Status           | Gate Summary                                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------- | ---------- | ------- | ---------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_square8.db`  | square8    | 2       | **canonical**    | parity_summary.canonical_square8.json (v1 parity) | Fresh canonical-oriented self-play; **parity currently shows 0 semantic divergences and 1 end-of-game-only divergence (phase/player/status only with identical final state hash). Canonical-phase history validated via `scripts/check_canonical_phase_history.py` (no violations). Future regenerations SHOULD use `generate_canonical_selfplay.py` so both parity and canonical-history gates are enforced by default.**      |
-| `canonical_square19.db` | square19   | 2       | **pending_gate** | db_health.canonical_square19.json                 | Generated via `scripts/generate_canonical_selfplay.py` (8 games); **currently fails the canonical gate**: parity shows 2 semantic divergences at move 2 (current_phase/current_player/state_hash), and `scripts/check_canonical_phase_history.py` reports non-canonical `no_line_action` moves recorded in `territory_processing`. **DO NOT use for training until the engine/parity bug is fixed and this DB is regenerated.** |
-| `canonical_hex.db`      | hexagonal  | 2       | **pending_gate** | N/A                                               | Placeholder DB (no canonical self-play recorded yet under the new 7-phase / forced-elimination model)                                                                                                                                                                                                                                                                                                                           |
-| `golden.db`             | mixed      | mixed   | **canonical**    | N/A                                               | Hand-curated golden games (small fixed set, inspected manually)                                                                                                                                                                                                                                                                                                                                                                 |
+| Database                | Board Type | Players | Status                | Gate Summary                      | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------- | ---------- | ------- | --------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `canonical_square8.db`  | square8    | 2       | **pending_gate**      | db_health.canonical_square8.json  | **Historical v1 entry demoted.** Earlier parity-only gating treated this DB as canonical, but the unified `generate_canonical_selfplay.py` gate now reports `canonical_ok = false` with phase/move invariant violations (for example, `place_ring` recorded while `currentPhase == line_processing`). Treat the current `canonical_square8.db` as **non-canonical bad data**; **DO NOT** use it for training. It must be regenerated under the new gate before being promoted again. |
+| `canonical_square19.db` | square19   | 2       | **pending_gate**      | db_health.canonical_square19.json | Generated via `scripts/generate_canonical_selfplay.py` (8 games); **currently fails the canonical gate**: parity shows 2 semantic divergences at move 2 (current_phase/current_player/state_hash), and `scripts/check_canonical_phase_history.py` reports non-canonical `no_line_action` moves recorded in `territory_processing`. **DO NOT use for training until the engine/parity bug is fixed and this DB is regenerated.**                                                      |
+| `canonical_hex.db`      | hexagonal  | 2       | ⚠️ **DEPRECATED_R10** | N/A                               | **DEPRECATED 2025-12-06:** Generated with old hex geometry (radius 10, 331 cells, 36 rings). Incompatible with current hex spec (radius 12, 469 cells, 48 rings). **File removed from repo.** See `data/HEX_DATA_DEPRECATION_NOTICE.md` and `docs/HEX_ARTIFACTS_DEPRECATED.md`.                                                                                                                                                                                                      |
+| `golden.db`             | mixed      | mixed   | **canonical**         | N/A                               | Hand-curated golden games (small fixed set, inspected manually)                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ### Legacy / Non-Canonical
 
@@ -34,19 +34,20 @@ These databases were generated **before** the following fixes were applied:
 
 **DO NOT use these for new training runs.** They are retained for historical comparison only.
 
-| Database                    | Board Type | Players | Status                  | Notes                    |
-| --------------------------- | ---------- | ------- | ----------------------- | ------------------------ |
-| `selfplay_square8_2p.db`    | square8    | 2       | **legacy_noncanonical** | Pre-parity-fix self-play |
-| `selfplay_square19_2p.db`   | square19   | 2       | **legacy_noncanonical** | Pre-parity-fix self-play |
-| `selfplay_square19_3p.db`   | square19   | 3       | **legacy_noncanonical** | Pre-parity-fix self-play |
-| `selfplay_square19_4p.db`   | square19   | 4       | **legacy_noncanonical** | Pre-parity-fix self-play |
-| `selfplay_hexagonal_2p.db`  | hexagonal  | 2       | **legacy_noncanonical** | Pre-parity-fix self-play |
-| `selfplay_hexagonal_3p.db`  | hexagonal  | 3       | **legacy_noncanonical** | Pre-parity-fix self-play |
-| `selfplay_hexagonal_4p.db`  | hexagonal  | 4       | **legacy_noncanonical** | Pre-parity-fix self-play |
-| `selfplay.db`               | mixed      | mixed   | **legacy_noncanonical** | Ad-hoc testing DB        |
-| `square8_2p.db`             | square8    | 2       | **legacy_noncanonical** | Early development DB     |
-| `minimal_test.db`           | mixed      | mixed   | **legacy_noncanonical** | Test fixture DB          |
-| `selfplay_hex_mps_smoke.db` | hexagonal  | 2       | **legacy_noncanonical** | MPS smoke test           |
+| Database                    | Board Type | Players | Status                  | Notes                               |
+| --------------------------- | ---------- | ------- | ----------------------- | ----------------------------------- |
+| `selfplay_square8_2p.db`    | square8    | 2       | **legacy_noncanonical** | Pre-parity-fix self-play            |
+| `selfplay_square19_2p.db`   | square19   | 2       | **legacy_noncanonical** | Pre-parity-fix self-play            |
+| `selfplay_square19_3p.db`   | square19   | 3       | **legacy_noncanonical** | Pre-parity-fix self-play            |
+| `selfplay_square19_4p.db`   | square19   | 4       | **legacy_noncanonical** | Pre-parity-fix self-play            |
+| `selfplay_hexagonal_2p.db`  | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + Pre-parity-fix |
+| `selfplay_hexagonal_3p.db`  | hexagonal  | 3       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + Pre-parity-fix |
+| `selfplay_hexagonal_4p.db`  | hexagonal  | 4       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + Pre-parity-fix |
+| `selfplay.db`               | mixed      | mixed   | **legacy_noncanonical** | Ad-hoc testing DB                   |
+| `square8_2p.db`             | square8    | 2       | **legacy_noncanonical** | Early development DB                |
+| `minimal_test.db`           | mixed      | mixed   | **legacy_noncanonical** | Test fixture DB                     |
+| `golden_hexagonal.db`       | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry (golden)         |
+| `selfplay_hex_mps_smoke.db` | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + MPS smoke      |
 
 ---
 
@@ -54,26 +55,27 @@ These databases were generated **before** the following fixes were applied:
 
 ### Model Provenance Table
 
-| Model File                                | Training Data               | Status                  | Notes                                          |
-| ----------------------------------------- | --------------------------- | ----------------------- | ---------------------------------------------- |
-| `ringrift_v1.pth`                         | Legacy selfplay DBs         | **legacy_noncanonical** | Main model, needs retraining on canonical data |
-| `ringrift_v1.pth.legacy`                  | Early selfplay DBs          | **legacy_noncanonical** | Original v1, historical only                   |
-| `ringrift_v1_legacy_nested.pth`           | Legacy nested replay export | **legacy_noncanonical** | Do not use                                     |
-| `ringrift_v1_mps.pth`                     | Legacy selfplay DBs         | **legacy_noncanonical** | MPS variant, needs retraining                  |
-| `ringrift_v1_mps_2025*.pth`               | Legacy selfplay DBs         | **legacy_noncanonical** | MPS checkpoints                                |
-| `ringrift_v1_2025*.pth`                   | Legacy selfplay DBs         | **legacy_noncanonical** | v1 checkpoints from Nov 2025                   |
-| `ringrift_from_replays_square8.pth`       | Mixed replay DBs            | **legacy_noncanonical** | Trained from legacy replays                    |
-| `ringrift_from_replays_square8_2025*.pth` | Mixed replay DBs            | **legacy_noncanonical** | Checkpoints from legacy replays                |
+| Model File                                | Training Data               | Status                  | Notes                                                                                                |
+| ----------------------------------------- | --------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| `ringrift_v1.pth`                         | Legacy selfplay DBs         | **legacy_noncanonical** | Main model, needs retraining on canonical data                                                       |
+| `ringrift_v1.pth.legacy`                  | Early selfplay DBs          | **legacy_noncanonical** | Original v1, historical only                                                                         |
+| `ringrift_v1_legacy_nested.pth`           | Legacy nested replay export | **legacy_noncanonical** | Do not use                                                                                           |
+| `ringrift_v1_mps.pth`                     | Legacy selfplay DBs         | **legacy_noncanonical** | MPS variant, needs retraining                                                                        |
+| `ringrift_v1_mps_2025*.pth`               | Legacy selfplay DBs         | **legacy_noncanonical** | MPS checkpoints                                                                                      |
+| `ringrift_v1_2025*.pth`                   | Legacy selfplay DBs         | **legacy_noncanonical** | v1 checkpoints from Nov 2025                                                                         |
+| `ringrift_from_replays_square8.pth`       | Mixed replay DBs            | **legacy_noncanonical** | Trained from legacy replays                                                                          |
+| `ringrift_from_replays_square8_2025*.pth` | Mixed replay DBs            | **legacy_noncanonical** | Checkpoints from legacy replays                                                                      |
+| `ringrift_v1_hex*.pth`                    | Legacy hex DBs (radius 10)  | ⚠️ **DEPRECATED_R10**   | Old hex geometry (331 cells, 36 rings, 21×21 input). Do not load; retrain on new radius-12 geometry. |
 
 ### Target Canonical Models
 
 Once canonical self-play DBs are generated and exported, retrain these models:
 
-| Target Model               | Training Data Source  | Status  |
-| -------------------------- | --------------------- | ------- |
-| `ringrift_v2_square8.pth`  | canonical_square8.db  | Pending |
-| `ringrift_v2_square19.pth` | canonical_square19.db | Pending |
-| `ringrift_v2_hex.pth`      | canonical_hex.db      | Pending |
+| Target Model               | Training Data Source       | Status                                              |
+| -------------------------- | -------------------------- | --------------------------------------------------- |
+| `ringrift_v2_square8.pth`  | canonical_square8.db       | Pending                                             |
+| `ringrift_v2_square19.pth` | canonical_square19.db      | Pending                                             |
+| `ringrift_v2_hex.pth`      | canonical_hex.db (removed) | Pending — regenerate a radius-12 hex DB and retrain |
 
 ---
 

@@ -515,10 +515,31 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
           // Check if current player has any movement or capture moves available.
           const playerStacks = hooks.getPlayerStacks(current.playerNumber, afterElimState.board);
           if (playerStacks.length > 0) {
-            // Player has stacks - get movement candidates from the shared aggregates.
-            // The sandbox's getValidMoves should return movement moves when called
-            // even though we're in ring_placement phase.
+            // Player has stacks - get valid moves from the shared orchestrator.
+            // The orchestrator returns no_placement_action when the player has 0 rings
+            // in ring_placement phase - we need to apply it to advance to movement phase.
             const validMoves = hooks.getValidMovesForCurrentPlayer();
+
+            // First, check for no_placement_action - this is how the orchestrator
+            // signals that ring_placement should be skipped for players with 0 rings.
+            const noPlacementMove = validMoves.find((m) => m.type === 'no_placement_action');
+            if (noPlacementMove) {
+              const moveNumber = afterElimState.history.length + 1;
+              const moveToApply: Move = {
+                ...noPlacementMove,
+                id: `no-placement-action-${moveNumber}`,
+                moveNumber,
+                timestamp: new Date(),
+                thinkTime: 0,
+              } as Move;
+
+              await hooks.applyCanonicalMove(moveToApply);
+              lastAIMove = moveToApply;
+              hooks.setLastAIMove(lastAIMove);
+              return;
+            }
+
+            // Otherwise, look for movement/capture moves
             const movementMoves = validMoves.filter(
               (m) =>
                 m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'overtaking_capture'

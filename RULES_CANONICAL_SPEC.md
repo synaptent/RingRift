@@ -1,6 +1,6 @@
 # RingRift Canonical Rules Specification
 
-> **Doc Status (2025-11-26): Active**
+> **Doc Status (2025-12-06): Active**
 >
 > - This document is the **rules-level canonical spec** for RingRift semantics and the single source of truth for rules behaviour. It normalizes the narrative sources into precise, implementation-ready constraints.
 > - It defines **RR-CANON-RXXX** rule IDs for core invariants, resources, turn/phase structure, line/territory semantics, and victory conditions.
@@ -14,7 +14,10 @@
 >   - **Python AI service** (`ai-service/app/**`) is a _host adapter_ that must mirror the canonical rules. If Python disagrees with the canonical rules or the validated TS engine behaviour, Python must be updated—never the other way around.
 >   - **Client sandbox, replay, and other hosts** similarly derive from the canonical rules via the shared engine; they must not introduce independent rules semantics.
 >
-> **Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`ringrift_complete_rules.md`](ringrift_complete_rules.md) ("Complete Rules") and [`ringrift_compact_rules.md`](ringrift_compact_rules.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
+> **How to use this doc.** Start with the quick map below, then jump to the relevant section; keep the Compact Spec open for concise semantics and use the Complete Rules for narrative/examples.
+> **Change log anchor.** When rules change, record the delta in §14 (“Change log & traceability”) with pointers into commits/tests that enforced the change.
+>
+> **Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`ringrift_complete_rules.md`](ringrift_complete_rules.md) ("Complete Rules") and [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
 
 The canonical rules here are binding whenever the two source documents diverge. For each rule we provide:
 
@@ -22,6 +25,18 @@ The canonical rules here are binding whenever the two source documents diverge. 
 - A precise statement of the rule.
 - Applicability (all versions vs version-specific).
 - References into the Complete and Compact docs.
+
+**Quick navigation**
+
+- §1–2 Resources & setup
+- §3 Turn/phase structure
+- §4 Movement & captures
+- §5 Lines
+- §6 Territory
+- §7 Victory & LPS
+- §8–9 Hashing & invariants
+- §10–12 Edge cases & judgment calls
+- §14 Change log & traceability
 
 The Compact Spec is generally treated as primary for formal semantics, and the Complete Rules as primary for examples, motivation, and prose. Explicit exceptions and judgment calls are documented in Sections 12 and 13.
 
@@ -33,7 +48,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **Board types.**
   - `square8`: 8×8 orthogonal grid.
   - `square19`: 19×19 orthogonal grid.
-  - `hexagonal`: hex board with radius 10 (11 cells per side).
+- `hexagonal`: hex board with radius 12 (13 cells per side).
 - **Notation.**
   - "Stack" = one or more rings in a single cell.
   - "Cap" = all consecutive rings from the top of a stack belonging to the controlling player.
@@ -51,25 +66,25 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R001] Board type configuration.**
   - For each `BoardType ∈ { square8, square19, hexagonal }`, define:
     - `size`, `totalSpaces`, `ringsPerPlayer`, `lineLength`, `movementAdjacency`, `lineAdjacency`, `territoryAdjacency`, `boardGeometry` exactly as in the table in the Compact Spec (§1.1).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.2.1, 16.10.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.2.1, 16.10.
 
 - **[RR-CANON-R002] Coordinate systems.**
   - Square boards use integer coordinates `(x,y)` with `0 ≤ x,y < size`.
   - Hex board uses cube coordinates `(x,y,z)` with `x + y + z = 0` and `max(|x|,|y|,|z|) ≤ size-1`.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.1.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.1.
 
 - **[RR-CANON-R003] Adjacency relations.**
   - Movement and line directions use `movementAdjacency` / `lineAdjacency` from RR-CANON-R001.
   - Territory connectivity uses `territoryAdjacency` from RR-CANON-R001.
   - Straight-line rays along these directions are used for movement, capture, and line detection.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.2, 3, 4, 5; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§2.1, 3.1, 8, 11, 12, 16.9.4.1.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §§1.2, 3, 4, 5; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§2.1, 3.1, 8, 11, 12, 16.9.4.1.
 
 ### 1.2 Players and identifiers
 
 - **[RR-CANON-R010] Player identifiers.**
   - Each player has a unique `PlayerId`.
   - Exactly 2–4 players participate; 3 is the default.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.1, 1.2, 13, 15.1, 19×19/8×8 setup sections.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.3, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.1, 1.2, 13, 15.1, 19×19/8×8 setup sections.
 
 ### 1.3 Rings, stacks, and control
 
@@ -77,24 +92,24 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - For each board type, each player P has a fixed personal supply of rings of P's **own colour**:
     - `square8`: 18 rings.
     - `square19`: 36 rings.
-    - `hexagonal`: 36 rings.
+  - `hexagonal`: 48 rings.
   - At all times, the total number of rings of P's colour that are **in play** (on the board in any stack, regardless of which player currently controls those stacks, plus in P's hand) must be ≤ this `ringsPerPlayer` value for the chosen board type.
   - Rings of other colours that P has captured and that are buried in stacks P controls **do not** count against P's `ringsPerPlayer` cap; they continue to belong, by colour, to their original owners for conservation, elimination, and victory accounting.
   - Eliminated rings of P's colour are permanently out of play and do not refresh or expand P's supply beyond `ringsPerPlayer`; they only change how much of that fixed supply is currently eliminated versus still in play.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:340) §§1.2.1, 3.2.1, 16.3–16.4, 16.9.2.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md:18) §1.1, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:340) §§1.2.1, 3.2.1, 16.3–16.4, 16.9.2.
 
 - **[RR-CANON-R021] Stack definition.**
   - A stack is an ordered sequence of one or more rings on a single board cell.
   - Rings are ordered bottom→top.
   - A cell may contain **either** a stack, **or** a marker, **or** be empty, **or** be collapsed; never more than one of these simultaneously.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7.
 
 - **[RR-CANON-R022] Control and cap height.**
   - `controllingPlayer` of a stack is the color of its top ring.
   - `stackHeight = rings.length`.
   - `capHeight` is the number of consecutive rings from the top that belong to `controllingPlayer`.
   - Control changes whenever the top ring changes color (due to overtaking or elimination).
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5.1–5.3, 7.2, 15.4 Q16.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5.1–5.3, 7.2, 15.4 Q16.
 
 - **[RR-CANON-R023] Stack mutation operations.**
   - Legal stack mutations are limited to:
@@ -104,7 +119,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Removing an entire cap (all consecutive top rings of the controlling color) via forced elimination, line processing, or region processing.
     - Removing all rings in a region during territory collapse.
   - Stacks may **never** be split or reordered in any other way.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§2–4, 5, 6; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7, 9–12, 15.4 Q1.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §§2–4, 5, 6; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7, 9–12, 15.4 Q1.
 
 ### 1.4 Markers and collapsed spaces
 
@@ -113,7 +128,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Each marker belongs to exactly one player.
   - Markers are created only as departure markers from movement/capture (RR-CANON-R082).
   - Markers may be flipped to another player or collapsed into Territory as movement/capture passes over them.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 3.2, 4.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§3.2.2, 8, 11, 12, 16.5–16.6.
+  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §§1.3, 3.2, 4.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§3.2.2, 8, 11, 12, 16.5–16.6.
 
 - **[RR-CANON-R031] Collapsed spaces.**
   - A collapsed space is a cell permanently claimed as Territory by exactly one player.
@@ -287,7 +302,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - **Testability**: Core rules can be tested in isolation without UX concerns.
     - **Correctness**: Silent phase skipping bugs cannot occur in the core layer.
   - Implementation references:
-    - TS shared orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts` returns `PendingDecision` values, including `DecisionType` variants such as `'no_line_action_required'` / `'no_territory_action_required'` for decision phases. For these decision types, `PendingDecision.options` is intentionally empty and hosts must synthesize and apply the corresponding `no_*_action` bookkeeping moves via the public API. Ring‑placement and movement phases currently still surface canonical `no_placement_action` / `no_movement_action` moves directly from `getValidMoves` and are being migrated toward the same PendingDecision pattern to fully satisfy this rule.
+    - TS shared orchestrator: `src/shared/engine/orchestration/turnOrchestrator.ts` returns `PendingDecision` values, including `DecisionType` variants such as `'no_line_action_required'` / `'no_territory_action_required'` for decision phases. For these decision types, `PendingDecision.options` is intentionally empty and hosts must synthesize and apply the corresponding `no_*_action` bookkeeping moves via the public API. For interactive phases (`ring_placement` and `movement`), the orchestrator’s `getValidMoves` now returns **only interactive moves** (e.g., `place_ring`, `skip_placement`, `move_stack`, captures); when no such moves exist, it returns an empty list and hosts are responsible for constructing and applying explicit `no_placement_action` / `no_movement_action` moves. The core TS engine no longer fabricates these moves itself, fully satisfying the “no auto‑generation in core” requirement.
     - Python GameEngine: `ai-service/app/game_engine.py` exposes `get_valid_moves(state, player)` for **interactive-only** legal moves in the current phase, and a separate `get_phase_requirement(state, player)` / `synthesize_bookkeeping_move(requirement, state)` pair for required `NO_*_ACTION` / `FORCED_ELIMINATION` bookkeeping moves. This keeps the core rules layer free of move fabrication while still making canonical bookkeeping moves host-accessible.
     - Host layer: `src/client/sandbox/ClientSandboxEngine.ts`, `src/server/game/turn/TurnEngineAdapter.ts`, and `ai-service/app/training/env.py` consume these pending-decision / phase-requirement surfaces, auto-filling bookkeeping moves for live play and self-play while replay/trace paths apply only the recorded explicit moves.
 
@@ -709,12 +724,16 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       and **does not** include pure forced-elimination actions from RR-CANON-R100.
   - A **full round of turns** is one contiguous cycle of turns in player order in which each non-eliminated player receives exactly one turn.
   - A player P wins by last-player-standing if all of the following hold:
-    - There exists at least one full round of turns such that:
-      - On each of P's turns in that round, P has at least one legal real action available at the start of their action; and
-      - On every other player's turns in that same round, those players have **no** legal real action available at the start of their action (they may have only forced-elimination actions, or no legal actions at all); and
-    - Immediately after that round completes (including all line and Territory processing), at the start of P's next turn P is still the only player who has any legal real action.
-  - Players who still have rings on the board (including rings buried inside mixed-colour stacks) but whose only legal actions on their turns are forced eliminations, or who have no legal actions at all, are **temporarily inactive** for last-player-standing purposes. They prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout at least one qualifying full round as above. If any such player regains a real action (for example, by gaining control of a stack when a buried ring of theirs becomes the top ring) before the condition above has been met, the last-player-standing condition resets and must be re-satisfied from that point.
-  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md:424) §7.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1228) §§13.3, 16.6, 16.9.4.5.
+    - **First round:** There exists at least one full round of turns such that:
+      - On P's turn in that round, P has at least one legal real action available at the start of their action **and takes at least one such action**; and
+      - On every other player's turns in that same round, those players have **no** legal real action available at the start of their action (they may have only forced-elimination actions, or no legal actions at all).
+    - **Second round:** After the first round completes (including all line and Territory processing), on the following round P remains the only player who has taken any legal real action.
+    - **Victory declared:** After the second round completes (including all post-movement processing), P is declared the winner by last-player-standing. This applies regardless of P's relative position in terms of territory claimed or rings eliminated.
+  - Players who still have rings on the board (including rings buried inside mixed-colour stacks) but whose only legal actions on their turns are forced eliminations, or who have no legal actions at all, are **temporarily inactive** for last-player-standing purposes. A player is temporarily inactive on their own turns when either:
+    - they control no stacks on the board and have no legal placements (because they have no rings in hand or all placements would be illegal); or
+    - they do control stacks but have no legal placements, no legal moves or overtaking captures, and no other legal turn actions at all, so their only possible turn action is forced elimination (RR-CANON-R100).
+  - Temporarily inactive players prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout both qualifying rounds above. A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolour stack whose top ring becomes their colour or by reducing the height of a stack they control so that it can move again. If any such player regains a real action before both rounds have been completed, the last-player-standing condition is not met and must be re-established from that point.
+  - References: [`ringrift_simple_human_rules.md`](ringrift_simple_human_rules.md:321) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1376) §13.3.
 
 - **[RR-CANON-R173] Global stalemate and tiebreaks.**
   - If **no** player has any legal placement, movement, capture, or forced elimination available (global stalemate):

@@ -1,0 +1,1653 @@
+{
+  "gameId": "",
+  "board": {
+    "type": "hexagonal",
+    "size": 13,
+    "stacks": {
+      "6,-11,5": {
+        "position": {
+          "x": 6,
+          "y": -11,
+          "z": 5
+        },
+        "rings": [1, 1, 1],
+        "stackHeight": 3,
+        "capHeight": 3,
+        "controllingPlayer": 1
+      }
+    },
+    "markers": {
+      "-11,12,-1": {
+        "position": {
+          "x": -11,
+          "y": 12,
+          "z": -1
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "2,-4,2": {
+        "position": {
+          "x": 2,
+          "y": -4,
+          "z": 2
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "1,-6,5": {
+        "position": {
+          "x": 1,
+          "y": -6,
+          "z": 5
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "1,2,-3": {
+        "position": {
+          "x": 1,
+          "y": 2,
+          "z": -3
+        },
+        "player": 2,
+        "type": "regular"
+      },
+      "9,-11,2": {
+        "position": {
+          "x": 9,
+          "y": -11,
+          "z": 2
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "-3,-8,11": {
+        "position": {
+          "x": -3,
+          "y": -8,
+          "z": 11
+        },
+        "player": 2,
+        "type": "regular"
+      },
+      "8,-8,0": {
+        "position": {
+          "x": 8,
+          "y": -8,
+          "z": 0
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "-6,8,-2": {
+        "position": {
+          "x": -6,
+          "y": 8,
+          "z": -2
+        },
+        "player": 2,
+        "type": "regular"
+      },
+      "-5,3,2": {
+        "position": {
+          "x": -5,
+          "y": 3,
+          "z": 2
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "9,-12,3": {
+        "position": {
+          "x": 9,
+          "y": -12,
+          "z": 3
+        },
+        "player": 2,
+        "type": "regular"
+      },
+      "1,3,-4": {
+        "position": {
+          "x": 1,
+          "y": 3,
+          "z": -4
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "-9,6,3": {
+        "position": {
+          "x": -9,
+          "y": 6,
+          "z": 3
+        },
+        "player": 2,
+        "type": "regular"
+      }
+    },
+    "collapsedSpaces": {},
+    "eliminatedRings": {
+      "1": 11,
+      "2": 12
+    },
+    "formedLines": []
+  },
+  "players": [
+    {
+      "playerNumber": 1,
+      "ringsInHand": 22,
+      "eliminatedRings": 11,
+      "territorySpaces": 0,
+      "isActive": true
+    },
+    {
+      "playerNumber": 2,
+      "ringsInHand": 24,
+      "eliminatedRings": 12,
+      "territorySpaces": 0,
+      "isActive": true
+    }
+  ],
+  "currentPlayer": 1,
+  "currentPhase": "movement",
+  "turnNumber": 50,
+  "moveHistory": [
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 1,
+      "to": {
+        "x": -11,
+        "y": 12,
+        "z": -1
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 1,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.373Z",
+      "thinkTime": 0,
+      "moveNumber": 1
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 1,
+      "from": {
+        "x": -11,
+        "y": 12,
+        "z": -1
+      },
+      "to": {
+        "x": -11,
+        "y": 5,
+        "z": 6
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.373Z",
+      "thinkTime": 0,
+      "moveNumber": 2
+    },
+    {
+      "id": "no-line-action-3",
+      "type": "no_line_action",
+      "player": 1,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.462Z",
+      "thinkTime": 0,
+      "moveNumber": 3
+    },
+    {
+      "id": "eliminate--11,5,6",
+      "type": "eliminate_rings_from_stack",
+      "player": 1,
+      "to": {
+        "x": -11,
+        "y": 5,
+        "z": 6
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 1,
+          "count": 1
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.462Z",
+      "thinkTime": 0,
+      "moveNumber": 4
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 2,
+      "to": {
+        "x": 2,
+        "y": -4,
+        "z": 2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 3,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.462Z",
+      "thinkTime": 0,
+      "moveNumber": 5
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 2,
+      "from": {
+        "x": 2,
+        "y": -4,
+        "z": 2
+      },
+      "to": {
+        "x": -2,
+        "y": -4,
+        "z": 6
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.462Z",
+      "thinkTime": 0,
+      "moveNumber": 6
+    },
+    {
+      "id": "no-line-action-7",
+      "type": "no_line_action",
+      "player": 2,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.493Z",
+      "thinkTime": 0,
+      "moveNumber": 7
+    },
+    {
+      "id": "eliminate--2,-4,6",
+      "type": "eliminate_rings_from_stack",
+      "player": 2,
+      "to": {
+        "x": -2,
+        "y": -4,
+        "z": 6
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 2,
+          "count": 3
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.493Z",
+      "thinkTime": 0,
+      "moveNumber": 8
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 1,
+      "to": {
+        "x": 1,
+        "y": -6,
+        "z": 5
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 2,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.493Z",
+      "thinkTime": 0,
+      "moveNumber": 9
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 1,
+      "from": {
+        "x": 1,
+        "y": -6,
+        "z": 5
+      },
+      "to": {
+        "x": -5,
+        "y": -6,
+        "z": 11
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.493Z",
+      "thinkTime": 0,
+      "moveNumber": 10
+    },
+    {
+      "id": "no-line-action-11",
+      "type": "no_line_action",
+      "player": 1,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.522Z",
+      "thinkTime": 0,
+      "moveNumber": 11
+    },
+    {
+      "id": "eliminate--5,-6,11",
+      "type": "eliminate_rings_from_stack",
+      "player": 1,
+      "to": {
+        "x": -5,
+        "y": -6,
+        "z": 11
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 1,
+          "count": 2
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.522Z",
+      "thinkTime": 0,
+      "moveNumber": 12
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 2,
+      "to": {
+        "x": 1,
+        "y": 2,
+        "z": -3
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 1,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.522Z",
+      "thinkTime": 0,
+      "moveNumber": 13
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 2,
+      "from": {
+        "x": 1,
+        "y": 2,
+        "z": -3
+      },
+      "to": {
+        "x": 0,
+        "y": 2,
+        "z": -2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.522Z",
+      "thinkTime": 0,
+      "moveNumber": 14
+    },
+    {
+      "id": "no-line-action-15",
+      "type": "no_line_action",
+      "player": 2,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.552Z",
+      "thinkTime": 0,
+      "moveNumber": 15
+    },
+    {
+      "id": "eliminate-0,2,-2",
+      "type": "eliminate_rings_from_stack",
+      "player": 2,
+      "to": {
+        "x": 0,
+        "y": 2,
+        "z": -2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 2,
+          "count": 1
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.552Z",
+      "thinkTime": 0,
+      "moveNumber": 16
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 1,
+      "to": {
+        "x": 9,
+        "y": -11,
+        "z": 2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 3,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.552Z",
+      "thinkTime": 0,
+      "moveNumber": 17
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 1,
+      "from": {
+        "x": 9,
+        "y": -11,
+        "z": 2
+      },
+      "to": {
+        "x": -12,
+        "y": 10,
+        "z": 2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.552Z",
+      "thinkTime": 0,
+      "moveNumber": 18
+    },
+    {
+      "id": "no-line-action-19",
+      "type": "no_line_action",
+      "player": 1,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.606Z",
+      "thinkTime": 0,
+      "moveNumber": 19
+    },
+    {
+      "id": "eliminate--12,10,2",
+      "type": "eliminate_rings_from_stack",
+      "player": 1,
+      "to": {
+        "x": -12,
+        "y": 10,
+        "z": 2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 1,
+          "count": 3
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.606Z",
+      "thinkTime": 0,
+      "moveNumber": 20
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 2,
+      "to": {
+        "x": -3,
+        "y": -8,
+        "z": 11
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 2,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.606Z",
+      "thinkTime": 0,
+      "moveNumber": 21
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 2,
+      "from": {
+        "x": -3,
+        "y": -8,
+        "z": 11
+      },
+      "to": {
+        "x": 6,
+        "y": -8,
+        "z": 2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.606Z",
+      "thinkTime": 0,
+      "moveNumber": 22
+    },
+    {
+      "id": "no-line-action-23",
+      "type": "no_line_action",
+      "player": 2,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.634Z",
+      "thinkTime": 0,
+      "moveNumber": 23
+    },
+    {
+      "id": "eliminate-6,-8,2",
+      "type": "eliminate_rings_from_stack",
+      "player": 2,
+      "to": {
+        "x": 6,
+        "y": -8,
+        "z": 2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 2,
+          "count": 2
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.634Z",
+      "thinkTime": 0,
+      "moveNumber": 24
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 1,
+      "to": {
+        "x": 8,
+        "y": -8,
+        "z": 0
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 2,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.634Z",
+      "thinkTime": 0,
+      "moveNumber": 25
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 1,
+      "from": {
+        "x": 8,
+        "y": -8,
+        "z": 0
+      },
+      "to": {
+        "x": -3,
+        "y": 3,
+        "z": 0
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.634Z",
+      "thinkTime": 0,
+      "moveNumber": 26
+    },
+    {
+      "id": "no-line-action-27",
+      "type": "no_line_action",
+      "player": 1,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.664Z",
+      "thinkTime": 0,
+      "moveNumber": 27
+    },
+    {
+      "id": "eliminate--3,3,0",
+      "type": "eliminate_rings_from_stack",
+      "player": 1,
+      "to": {
+        "x": -3,
+        "y": 3,
+        "z": 0
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 1,
+          "count": 2
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.664Z",
+      "thinkTime": 0,
+      "moveNumber": 28
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 2,
+      "to": {
+        "x": -6,
+        "y": 8,
+        "z": -2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 3,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.664Z",
+      "thinkTime": 0,
+      "moveNumber": 29
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 2,
+      "from": {
+        "x": -6,
+        "y": 8,
+        "z": -2
+      },
+      "to": {
+        "x": 1,
+        "y": 1,
+        "z": -2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.664Z",
+      "thinkTime": 0,
+      "moveNumber": 30
+    },
+    {
+      "id": "no-line-action-31",
+      "type": "no_line_action",
+      "player": 2,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.693Z",
+      "thinkTime": 0,
+      "moveNumber": 31
+    },
+    {
+      "id": "eliminate-1,1,-2",
+      "type": "eliminate_rings_from_stack",
+      "player": 2,
+      "to": {
+        "x": 1,
+        "y": 1,
+        "z": -2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 2,
+          "count": 3
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.693Z",
+      "thinkTime": 0,
+      "moveNumber": 32
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 1,
+      "to": {
+        "x": -5,
+        "y": 3,
+        "z": 2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 1,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.693Z",
+      "thinkTime": 0,
+      "moveNumber": 33
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 1,
+      "from": {
+        "x": -5,
+        "y": 3,
+        "z": 2
+      },
+      "to": {
+        "x": -1,
+        "y": 3,
+        "z": -2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.693Z",
+      "thinkTime": 0,
+      "moveNumber": 34
+    },
+    {
+      "id": "no-line-action-35",
+      "type": "no_line_action",
+      "player": 1,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.722Z",
+      "thinkTime": 0,
+      "moveNumber": 35
+    },
+    {
+      "id": "eliminate--1,3,-2",
+      "type": "eliminate_rings_from_stack",
+      "player": 1,
+      "to": {
+        "x": -1,
+        "y": 3,
+        "z": -2
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 1,
+          "count": 1
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.722Z",
+      "thinkTime": 0,
+      "moveNumber": 36
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 2,
+      "to": {
+        "x": 9,
+        "y": -12,
+        "z": 3
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 2,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.722Z",
+      "thinkTime": 0,
+      "moveNumber": 37
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 2,
+      "from": {
+        "x": 9,
+        "y": -12,
+        "z": 3
+      },
+      "to": {
+        "x": -2,
+        "y": -1,
+        "z": 3
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.722Z",
+      "thinkTime": 0,
+      "moveNumber": 38
+    },
+    {
+      "id": "no-line-action-39",
+      "type": "no_line_action",
+      "player": 2,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.752Z",
+      "thinkTime": 0,
+      "moveNumber": 39
+    },
+    {
+      "id": "eliminate--2,-1,3",
+      "type": "eliminate_rings_from_stack",
+      "player": 2,
+      "to": {
+        "x": -2,
+        "y": -1,
+        "z": 3
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 2,
+          "count": 2
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.752Z",
+      "thinkTime": 0,
+      "moveNumber": 40
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 1,
+      "to": {
+        "x": 1,
+        "y": 3,
+        "z": -4
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 2,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.752Z",
+      "thinkTime": 0,
+      "moveNumber": 41
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 1,
+      "from": {
+        "x": 1,
+        "y": 3,
+        "z": -4
+      },
+      "to": {
+        "x": 1,
+        "y": 7,
+        "z": -8
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.752Z",
+      "thinkTime": 0,
+      "moveNumber": 42
+    },
+    {
+      "id": "no-line-action-43",
+      "type": "no_line_action",
+      "player": 1,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.782Z",
+      "thinkTime": 0,
+      "moveNumber": 43
+    },
+    {
+      "id": "eliminate-1,7,-8",
+      "type": "eliminate_rings_from_stack",
+      "player": 1,
+      "to": {
+        "x": 1,
+        "y": 7,
+        "z": -8
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 1,
+          "count": 2
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.782Z",
+      "thinkTime": 0,
+      "moveNumber": 44
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 2,
+      "to": {
+        "x": -9,
+        "y": 6,
+        "z": 3
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 1,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.782Z",
+      "thinkTime": 0,
+      "moveNumber": 45
+    },
+    {
+      "id": "simulated",
+      "type": "move_stack",
+      "player": 2,
+      "from": {
+        "x": -9,
+        "y": 6,
+        "z": 3
+      },
+      "to": {
+        "x": -10,
+        "y": 7,
+        "z": 3
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.782Z",
+      "thinkTime": 0,
+      "moveNumber": 46
+    },
+    {
+      "id": "no-line-action-47",
+      "type": "no_line_action",
+      "player": 2,
+      "to": {
+        "x": 0,
+        "y": 0,
+        "z": null
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.812Z",
+      "thinkTime": 0,
+      "moveNumber": 47
+    },
+    {
+      "id": "eliminate--10,7,3",
+      "type": "eliminate_rings_from_stack",
+      "player": 2,
+      "to": {
+        "x": -10,
+        "y": 7,
+        "z": 3
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": null,
+      "placementCount": null,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": [
+        {
+          "player": 2,
+          "count": 1
+        }
+      ],
+      "timestamp": "2025-12-06T21:52:35.812Z",
+      "thinkTime": 0,
+      "moveNumber": 48
+    },
+    {
+      "id": "simulated",
+      "type": "place_ring",
+      "player": 1,
+      "to": {
+        "x": 6,
+        "y": -11,
+        "z": 5
+      },
+      "captureTarget": null,
+      "capturedStacks": null,
+      "captureChain": null,
+      "overtakenRings": null,
+      "placedOnStack": false,
+      "placementCount": 3,
+      "stackMoved": null,
+      "minimumDistance": null,
+      "actualDistance": null,
+      "markerLeft": null,
+      "formedLines": null,
+      "collapsedMarkers": null,
+      "claimedTerritory": null,
+      "disconnectedRegions": null,
+      "eliminatedRings": null,
+      "timestamp": "2025-12-06T21:52:35.812Z",
+      "thinkTime": 0,
+      "moveNumber": 49
+    }
+  ],
+  "gameStatus": "active",
+  "victoryThreshold": 37,
+  "territoryVictoryThreshold": 235,
+  "totalRingsEliminated": 23
+}

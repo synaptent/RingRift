@@ -591,7 +591,7 @@ function toAIInfoViewModel(player: Player): AIInfoViewModel {
 const BOARD_CONFIGS_LOCAL = {
   square8: { ringsPerPlayer: 18 },
   square19: { ringsPerPlayer: 36 },
-  hexagonal: { ringsPerPlayer: 36 },
+  hexagonal: { ringsPerPlayer: 48 },
 } as const;
 
 function calculateRingStats(player: Player, gameState: GameState): PlayerRingStatsViewModel {

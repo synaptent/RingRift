@@ -452,7 +452,26 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
     const nextMove = i + 1 < recordedMoves.length ? recordedMoves[i + 1] : null;
     applied += 1;
 
-    await engine.applyCanonicalMoveForReplay(move, nextMove);
+    try {
+      await engine.applyCanonicalMoveForReplay(move, nextMove);
+    } catch (err) {
+      const state = engine.getGameState();
+      console.error(
+        JSON.stringify(
+          {
+            kind: 'ts-replay-error',
+            k: applied,
+            move,
+            nextMove,
+            error: err instanceof Error ? err.message : String(err),
+            stateSummary: summarizeState('error', state),
+          },
+          null,
+          2
+        )
+      );
+      throw err;
+    }
     const state = engine.getGameState();
 
     // Optional debug dump for parity investigation

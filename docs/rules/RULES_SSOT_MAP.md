@@ -2,7 +2,7 @@
 
 > **Scope:** Design-level map of rules and orchestrator single sources of truth (SSOTs) and legacy/diagnostic surfaces.  
 > **Role:** Derived overview for maintainers; does not introduce new rules semantics or APIs.  
-> **Upstream semantics SSoT:** [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md), `ringrift_complete_rules.md`, `ringrift_compact_rules.md`, and the shared TS engine + orchestrator under [`src/shared/engine`](src/shared/engine).  
+> **Upstream semantics SSoT:** [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md), `ringrift_complete_rules.md`, `docs/rules/ringrift_compact_rules.md`, and the shared TS engine + orchestrator under [`src/shared/engine`](src/shared/engine).  
 > **Upstream lifecycle/API SSoT:** [`docs/CANONICAL_ENGINE_API.md`](docs/CANONICAL_ENGINE_API.md), shared types in [`src/shared/types/game.ts`](src/shared/types/game.ts), orchestrator types in [`src/shared/engine/orchestration/types.ts`](src/shared/engine/orchestration/types.ts), and WebSocket contracts in [`src/shared/types/websocket.ts`](src/shared/types/websocket.ts) and [`src/shared/validation/websocketSchemas.ts`](src/shared/validation/websocketSchemas.ts).  
 > **Upstream implementation-status SSoT:** [`CURRENT_STATE_ASSESSMENT.md`](CURRENT_STATE_ASSESSMENT.md).  
 > **This doc:** Clarifies what is canonical vs historical/diagnostic for rules execution across TS backend, sandbox, and Python, and records known drift items for follow-up tasks.
@@ -16,7 +16,15 @@ The hierarchy below orders sources by normative authority. Higher bullets win on
 **1. Rules semantics (normative)**
 
 - Rules-level spec: [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md) (RR-CANON rules; conflicts resolved in favour of Compact Spec as documented there).
-- Narrative sources (commentary only): [`ringrift_complete_rules.md`](ringrift_complete_rules.md), [`ringrift_compact_rules.md`](ringrift_compact_rules.md).
+- Narrative sources (commentary only): [`ringrift_complete_rules.md`](ringrift_complete_rules.md), [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md).
+
+**Non-canonical / diagnostic surfaces (use cautiously)**
+
+| Surface                                      | Purpose                 | Notes                                        |
+| -------------------------------------------- | ----------------------- | -------------------------------------------- |
+| Legacy `RuleEngine.ts` helpers               | Diagnostics/parity only | Not a production path; defer to orchestrator |
+| Archived replay DBs / legacy parity fixtures | Historical reference    | Do not treat as canonical data               |
+| Sandbox-only experimental toggles            | UX prototyping          | Must not alter canonical rules semantics     |
 
 **2. Executable rules semantics SSoT (TS engine)**
 
@@ -267,7 +275,7 @@ enforced across hosts and CI/rollout.
 
 **Canonical invariant definition (S‑invariant and progress)**
 
-- Formal rules: `RR-CANON-R120`–`R125` (progress and S‑invariant) in `RULES_CANONICAL_SPEC.md` and the commentary in `ringrift_compact_rules.md` §9.
+- Formal rules: `RR-CANON-R120`–`R125` (progress and S‑invariant) in `RULES_CANONICAL_SPEC.md` and the commentary in `docs/rules/ringrift_compact_rules.md` §9.
 - Executable S‑invariant helper (TS SSOT):
   - `computeProgressSnapshot(state: GameState): ProgressSnapshot` in
     `src/shared/engine/core.ts` with:

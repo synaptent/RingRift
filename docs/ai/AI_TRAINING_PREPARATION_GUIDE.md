@@ -53,7 +53,7 @@
 | Replay Buffer     | MAX_BUFFER_SIZE = 50,000 samples                                                      |
 | Storage Format    | Memory-mapped .npz datasets                                                           |
 | Heuristic Weights | 17 weights with 4 profiles                                                            |
-| Board Types       | SQUARE8 (8×8), SQUARE19 (19×19), HEXAGONAL (radius 10)                                |
+| Board Types       | SQUARE8 (8×8), SQUARE19 (19×19), HEXAGONAL (radius 12)                                |
 
 ---
 
@@ -94,7 +94,7 @@ class DatasetValidator:
 
 | Check           | Description                                               | Threshold                                            |
 | --------------- | --------------------------------------------------------- | ---------------------------------------------------- |
-| Feature Shape   | Spatial dimensions match board type                       | H×W must be 8×8, 19×19, or 21×21                     |
+| Feature Shape   | Spatial dimensions match board type                       | H×W must be 8×8, 19×19, or 25×25 (hex)               |
 | Channel Count   | Total input channels = in_channels × (history_length + 1) | Must equal 40                                        |
 | Value Range     | Normalized feature values                                 | `[-1.0, 1.0]`                                        |
 | Policy Sum      | Probability distribution validity                         | `sum(policy) ∈ [0.99, 1.01]` for non-terminal states |
@@ -512,8 +512,8 @@ class MemoryConfig:
     @property
     def max_batch_size(self) -> int:
         """Auto-scale batch size based on available memory."""
-        # Estimate: 40 channels × 21×21 × 4 bytes × batch_size ≈ 70KB/sample
-        bytes_per_sample = 40 * 21 * 21 * 4  # ~70KB
+        # Estimate (worst case, hex): 40 channels × 25×25 × 4 bytes × batch_size ≈ 100KB/sample
+        bytes_per_sample = 40 * 25 * 25 * 4  # ~100KB
         available = self.max_memory_gb * self.batch_memory_pct * 1024**3
         return min(256, max(8, int(available / bytes_per_sample)))
 

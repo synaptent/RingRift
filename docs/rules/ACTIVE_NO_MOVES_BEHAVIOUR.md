@@ -12,6 +12,8 @@
 > - Python strict-invariant and parity tests under [`ai-service/tests/invariants`](ai-service/tests/invariants/test_active_no_moves_movement_forced_elimination_regression.py:1) and [`ai-service/tests/parity`](ai-service/tests/parity/test_active_no_moves_line_processing_regression.py:1).
 >
 > Where this catalogue disagrees with RR-CANON or the shared TS engine, RR-CANON + code + tests win and this file must be updated.
+>
+> **Usage note:** Each scenario should cite the tests that exercise it; when adding or changing scenarios, include the primary Jest/pytest file name so readers can jump straight to coverage.
 
 ## 1. Core Concepts
 
@@ -163,15 +165,17 @@ The scenarios below capture concrete shapes that have historically exercised the
     - Exactly one player P has at least one **real action** (placement, movement, capture) available at the start of each of their turns over a full round, and
     - All other players have no real actions on their turns (they may have only forced eliminations, or no actions at all).
 - **Expected canonical behaviour (RR-CANON):**
-  - Per [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:438) and clarifications in [`docs/supplementary/RULES_RULESET_CLARIFICATIONS.md`](docs/supplementary/RULES_RULESET_CLARIFICATIONS.md:61), P should win **immediately** by Last Player Standing once the “exclusive real-action” condition has held for at least one full round and still holds at the start of P’s next turn.
+  - Per [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:700) and clarifications in [`ringrift_complete_rules.md`](../../ringrift_complete_rules.md:1376) §13.3, P should win by Last Player Standing once the “exclusive real-action” condition has held for at least one full round and still holds at the start of P’s next turn in the following round (two-round condition).
   - Forced eliminations for other players keep the game legal (no ANM), but do **not** count as real actions that would block Last-Player-Standing victory.
 - **Current implementation status:**
-  - TS and Python engines currently guarantee ANM and phase consistency via forced elimination and rotation (no dead players), but treat Last-Player-Standing largely as a derived pattern rather than an explicit early-termination rule; see [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md:184).
-  - Implementing the full RR-CANON-R172 condition is tracked separately (see CLAR-002 and `CCE-006`).
+  - TS and Python engines now implement explicit early LPS detection via the shared LPS tracker:
+    - Shared TS helpers in [`src/shared/engine/lpsTracking.ts`](../../src/shared/engine/lpsTracking.ts:1) (`updateLpsTracking`, `evaluateLpsVictory`).
+    - Victory evaluation in the TS `VictoryAggregate` and mirrored logic in Python `GameEngine._check_victory`.
+  - This replaces the earlier CCE-006 compromise where LPS was treated as an implicit “play-to-completion” pattern.
 - **RR-CANON mapping:**
   - Formal semantics in `RR-CANON-R172` and ANM definitions in the R2xx cluster.
 - **Status:**
-  - This scenario is treated as **binding** in the canonical rules, but is recognised as an **implementation compromise** in current engines. Future implementation and test work (outside this doc) must bring TS and Python into full alignment.
+  - This scenario is treated as **binding** in the canonical rules and is now explicitly implemented and exercised via TS/ Python parity tests and lpsTracking unit tests.
 
 ### ANM-SCEN-08 – Multi-player rotation with eliminated and inactive players
 

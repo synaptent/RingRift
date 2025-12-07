@@ -38,7 +38,10 @@ import {
   CaptureApplyAdapters,
   applyCaptureSegmentOnBoard,
 } from '../../src/client/sandbox/sandboxCaptures';
-import { applyMarkerEffectsAlongPathOnBoard, MarkerPathHelpers } from '../../src/client/sandbox/sandboxMovement';
+import {
+  applyMarkerEffectsAlongPathOnBoard,
+  MarkerPathHelpers,
+} from '../../src/client/sandbox/sandboxMovement';
 
 // TODO-CYCLIC-HEX-HEIGHT3: Skipping - diagnostic test with combinatorially expensive
 // capture chain search (findMaxCaptureChains) that can timeout even with reduced maxDepth.
@@ -147,7 +150,7 @@ describe.skip('Hex cyclic capture (height 3 targets, r=4 triangle) sandbox diagn
       {
         pruneVisitedPositions: true,
         maxDepth: 8, // Reduced from 16 to prevent combinatorial explosion
-      },
+      }
     );
 
     // At minimum, raising target/overtaker heights from 2 to 3 on the same
@@ -228,11 +231,11 @@ describe.skip('Hex cyclic capture (height 3 targets, r=4 triangle) sandbox diagn
         seg.target,
         seg.landing,
         1,
-        execApplyAdapters,
+        execApplyAdapters
       );
       // eslint-disable-next-line no-console
       console.log(
-        `  segment ${idx + 1}: (${seg.from.x},${seg.from.y},${seg.from.z}) -> (${seg.target.x},${seg.target.y},${seg.target.z}) -> (${seg.landing.x},${seg.landing.y},${seg.landing.z})`,
+        `  segment ${idx + 1}: (${seg.from.x},${seg.from.y},${seg.from.z}) -> (${seg.target.x},${seg.target.y},${seg.target.z}) -> (${seg.landing.x},${seg.landing.y},${seg.landing.z})`
       );
     }
 
@@ -245,20 +248,18 @@ describe.skip('Hex cyclic capture (height 3 targets, r=4 triangle) sandbox diagn
     // eslint-disable-next-line no-console
     console.log('  summary after executing one maximal hex chain (height=3, r=4):');
     // eslint-disable-next-line no-console
-    console.log(
-      `    - Final overtaker position: ${positionToString(execFinal.position)}`,
-    );
+    console.log(`    - Final overtaker position: ${positionToString(execFinal.position)}`);
     // eslint-disable-next-line no-console
     console.log(
       `    - Final overtaker height: ${execFinal.stackHeight} (expected 3 + maxSegments = ${
         3 + bestLength
-      })`,
+      })`
     );
     // eslint-disable-next-line no-console
     console.log(
       `    - Remaining target stacks (player 2): count=${execTargets.length}, heights=[${execTargets
         .map((s) => s.stackHeight)
-        .join(', ')}]`,
+        .join(', ')}]`
     );
 
     const totalRings = execStacks.reduce((sum, s) => sum + s.stackHeight, 0);

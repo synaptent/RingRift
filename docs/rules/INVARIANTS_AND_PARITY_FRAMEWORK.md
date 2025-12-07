@@ -4,15 +4,23 @@
 > **Role:** High-level overview of rules-level invariants and TS↔Python↔host parity, and how they are enforced via tests, soaks, metrics, and rollout SLOs. AI/training behaviour is treated as context only, not as an invariant surface.
 >
 > **SSoT alignment:** This document is a **derived** framework over:
->
-> - **Rules/invariants semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `ringrift_compact_rules.md`, and the shared TS engine under `src/shared/engine/**` plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`.
-> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared TS/WebSocket types & schemas under `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
-> - **Parity & invariants meta-docs:** `docs/RULES_SSOT_MAP.md` §7, `docs/PYTHON_PARITY_REQUIREMENTS.md`, and `docs/STRICT_INVARIANT_SOAKS.md`.
-> - **Operational SSoTs:** Orchestrator rollout and observability docs (`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`, `docs/ALERTING_THRESHOLDS.md`) and monitoring config under `monitoring/**`.
->
-> **Precedence:** If this document ever conflicts with the shared TS engine, contract vectors, Python mirror, or their tests (including orchestrator soaks and strict-invariant soaks), **code + tests win** and this document must be updated.
+
+- **Rules/invariants semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md`, `docs/rules/ringrift_compact_rules.md`, and the shared TS engine under `src/shared/engine/**` plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`.
+  > - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared TS/WebSocket types & schemas under `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+  > - **Parity & invariants meta-docs:** `docs/RULES_SSOT_MAP.md` §7, `docs/PYTHON_PARITY_REQUIREMENTS.md`, and `docs/STRICT_INVARIANT_SOAKS.md`.
+  > - **Operational SSoTs:** Orchestrator rollout and observability docs (`docs/ORCHESTRATOR_ROLLOUT_PLAN.md`, `docs/ALERTING_THRESHOLDS.md`) and monitoring config under `monitoring/**`.
+  >
+  > **Precedence:** If this document ever conflicts with the shared TS engine, contract vectors, Python mirror, or their tests (including orchestrator soaks and strict-invariant soaks), **code + tests win** and this document must be updated.
 
 This document is a navigation aid over the canonical TS engine and orchestrator under [`src/shared/engine`](src/shared/engine), the Python rules mirror under [`ai-service/app`](ai-service/app/game_engine.py:1), and the production hosts (backend `GameEngine`, sandbox `ClientSandboxEngine`, Python self‑play). It does **not** redefine rules semantics; when in doubt, defer to the SSoTs listed above.
+
+> **Quick checklist for rule-affecting changes**
+>
+> 1. Update `RULES_CANONICAL_SPEC.md` / Compact Spec as needed.
+> 2. Update TS engine + shared types; run `npm run test:ts-parity` / `npm run test:orchestrator-parity`.
+> 3. Update Python mirror; run `python -m scripts.check_ts_python_replay_parity --emit-state-bundles-dir <dir>`.
+> 4. Re-run strict invariant/soak profiles; watch `INV-*` metrics.
+> 5. Document deltas in change logs (rules docs + parity harness summaries).
 
 ## 1. Overview & Goals
 

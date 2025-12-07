@@ -76,7 +76,7 @@ def algebraic_to_position_square(notation: str) -> Position:
 - Constraint: `x + y + z = 0` (always)
 - Board radius: 11 (center at origin)
 - Valid positions: `|x| ≤ 11`, `|y| ≤ 11`, `|z| ≤ 11`
-- Total spaces: 331
+- Total spaces: 469
 
 **Algebraic Notation Options**:
 

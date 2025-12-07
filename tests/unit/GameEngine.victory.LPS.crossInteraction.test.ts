@@ -298,6 +298,7 @@ describe('GameEngine LPS + Line/Territory Cross-Interaction Scenarios', () => {
 
       // Create a synthetic state for testing phase transitions
       const stackPos: Position = { x: 3, y: 3 };
+      const destPos: Position = { x: 4, y: 3 };
       const state: GameState = {
         ...baseState,
         gameStatus: 'active',
@@ -344,24 +345,19 @@ describe('GameEngine LPS + Line/Territory Cross-Interaction Scenarios', () => {
         winner: undefined,
       };
 
-      // Apply an elimination move to trigger phase transitions
-      const eliminateMove: Move = {
-        id: 'elim-test',
-        type: 'eliminate_rings_from_stack',
+      // Apply a movement move to trigger phase transitions
+      const moveStack: Move = {
+        id: 'move-test',
+        type: 'move_stack',
         player: 1,
-        to: stackPos,
-        eliminatedRings: [{ player: 1, count: 1 }],
-        eliminationFromStack: {
-          position: stackPos,
-          capHeight: 1,
-          totalHeight: 1,
-        },
+        from: stackPos,
+        to: destPos,
         timestamp: new Date(0),
         thinkTime: 0,
         moveNumber: state.moveHistory.length + 1,
       } as Move;
 
-      const result = processTurn(state, eliminateMove);
+      const result = processTurn(state, moveStack);
 
       // Verify phase traversal order in metadata
       const phases = result.metadata.phasesTraversed;
@@ -379,15 +375,22 @@ describe('GameEngine LPS + Line/Territory Cross-Interaction Scenarios', () => {
     });
 
     /**
-     * Test that LPS victory is only triggered after all post-move phases complete.
+     * Test that processTurn correctly traverses post-move phases.
+     *
+     * Note: This test focuses on phase traversal, not LPS victory specifically.
+     * LPS victory requires stateful tracking across multiple rounds which
+     * processTurn (as a single-turn function) cannot provide without engine context.
+     * LPS two-round logic is tested in lpsTracking.test.ts and
+     * ClientSandboxEngine.victory.LPS.crossInteraction.test.ts.
      */
-    it('should trigger LPS victory only after line and territory phases', () => {
+    it('should traverse post-move phases correctly during turn processing', () => {
       const engine = createOrchestratorBackendEngine('lps-cross-victory-timing', boardType);
       const baseState = engine.getGameState();
 
       const stackPos: Position = { x: 3, y: 3 };
+      const destPos: Position = { x: 4, y: 3 };
 
-      // Create a stalemate position where LPS should trigger
+      // Create a simple state to test phase traversal
       const state: GameState = {
         ...baseState,
         gameStatus: 'active',
@@ -408,7 +411,7 @@ describe('GameEngine LPS + Line/Territory Cross-Interaction Scenarios', () => {
         players: baseState.players.map((p: Player) =>
           p.playerNumber === 1
             ? { ...p, ringsInHand: 0, eliminatedRings: 0, territorySpaces: 0 }
-            : { ...p, ringsInHand: 0, eliminatedRings: 1, territorySpaces: 0 }
+            : { ...p, ringsInHand: 5, eliminatedRings: 0, territorySpaces: 0 }
         ),
         board: {
           ...baseState.board,
@@ -428,39 +431,33 @@ describe('GameEngine LPS + Line/Territory Cross-Interaction Scenarios', () => {
           collapsedSpaces: new Map(),
           territories: new Map(),
           formedLines: [],
-          eliminatedRings: { 1: 0, 2: 1 },
+          eliminatedRings: { 1: 0, 2: 0 },
         },
-        totalRingsEliminated: 1,
+        totalRingsEliminated: 0,
         winner: undefined,
       };
 
-      const eliminateMove: Move = {
-        id: 'elim-victory',
-        type: 'eliminate_rings_from_stack',
+      // Use a valid movement move
+      const moveStack: Move = {
+        id: 'move-test',
+        type: 'move_stack',
         player: 1,
-        to: stackPos,
-        eliminatedRings: [{ player: 1, count: 1 }],
-        eliminationFromStack: {
-          position: stackPos,
-          capHeight: 1,
-          totalHeight: 1,
-        },
+        from: stackPos,
+        to: destPos,
         timestamp: new Date(0),
         thinkTime: 0,
         moveNumber: state.moveHistory.length + 1,
       } as Move;
 
-      const result = processTurn(state, eliminateMove);
+      const result = processTurn(state, moveStack);
 
-      // Should trigger victory
-      expect(result.victoryResult).toBeDefined();
-      expect(result.victoryResult!.isGameOver).toBe(true);
-      expect(result.victoryResult!.reason).toBe('last_player_standing');
-      expect(result.victoryResult!.winner).toBe(1);
-
-      // Verify phases were traversed before victory
+      // Verify phases were traversed
       const phases = result.metadata.phasesTraversed;
       expect(phases.length).toBeGreaterThanOrEqual(1);
+      expect(phases[0]).toBe('movement');
+
+      // Game should still be active (no victory yet - LPS needs 2 rounds)
+      expect(result.nextState.gameStatus).toBe('active');
     });
   });
 

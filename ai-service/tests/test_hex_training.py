@@ -45,7 +45,7 @@ from app.training.hex_augmentation import (
 
 
 def create_hex_game_state(
-    size: int = 11,
+    size: int = 13,
     current_player: int = 1,
     phase: GamePhase = GamePhase.MOVEMENT,
 ) -> GameState:
@@ -58,7 +58,7 @@ def create_hex_game_state(
             playerNumber=1,
             isReady=True,
             timeRemaining=600,
-            ringsInHand=30,
+            ringsInHand=48,
             eliminatedRings=0,
             territorySpaces=0,
             aiDifficulty=10,
@@ -70,7 +70,7 @@ def create_hex_game_state(
             playerNumber=2,
             isReady=True,
             timeRemaining=600,
-            ringsInHand=30,
+            ringsInHand=48,
             eliminatedRings=0,
             territorySpaces=0,
             aiDifficulty=10,
@@ -100,10 +100,10 @@ def create_hex_game_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=60,
+        totalRingsInPlay=96,
         totalRingsEliminated=0,
-        victoryThreshold=31,
-        territoryVictoryThreshold=166,
+        victoryThreshold=49,
+        territoryVictoryThreshold=235,
         chainCaptureState=None,
         mustMoveFromStackKey=None,
         rngSeed=42,
@@ -128,8 +128,8 @@ class TestHexStateEncoder:
 
     def test_encoder_initialization(self, encoder):
         """Test encoder initializes with correct parameters."""
-        assert encoder.board_size == HEX_BOARD_SIZE  # 21
-        assert encoder.radius == 10
+        assert encoder.board_size == HEX_BOARD_SIZE  # 25
+        assert encoder.radius == 12
         assert encoder.POLICY_SIZE == P_HEX
         assert encoder.NUM_CHANNELS == 10
         assert encoder.NUM_GLOBAL_FEATURES == 10
@@ -143,44 +143,44 @@ class TestHexStateEncoder:
     def test_valid_mask_center_is_valid(self, encoder):
         """Test that center cell (0,0) is marked as valid."""
         mask = encoder.get_valid_mask()
-        center = encoder.radius  # 10
+        center = encoder.radius  # 12
         assert mask[center, center]  # True for valid hex cell
 
     def test_valid_mask_corners_invalid(self, encoder):
         """Test that extreme corners of bounding box are invalid."""
         mask = encoder.get_valid_mask()
-        # Corners like (0,0) and (20,20) should be outside hex region
-        # q=-10, r=-10, s=20 → s > radius → invalid
+        # Corners like (0,0) and (24,24) should be outside hex region
+        # q=-12, r=-12, s=24 → s > radius → invalid
         assert not mask[0, 0]
-        assert not mask[20, 20]
-        # But (0,20) is edge: q=10, r=-10, s=0 → all <= radius → valid
-        assert mask[0, 20]
-        assert mask[20, 0]
+        assert not mask[24, 24]
+        # But (0,24) is edge: q=12, r=-12, s=0 → all <= radius → valid
+        assert mask[0, 24]
+        assert mask[24, 0]
 
     def test_valid_mask_cell_count(self, encoder):
         """Test correct number of valid hex cells."""
         mask = encoder.get_valid_mask()
-        # For radius N: 3N^2 + 3N + 1 = 331 for N=10
-        expected_count = 3 * 10 * 10 + 3 * 10 + 1
+        # For radius N: 3N^2 + 3N + 1 = 469 for N=12
+        expected_count = 3 * 12 * 12 + 3 * 12 + 1
         assert np.sum(mask) == expected_count
 
     def test_axial_to_canonical_center(self, encoder):
         """Test axial (0,0) maps to center of grid."""
         cx, cy = encoder.axial_to_canonical(0, 0)
-        assert cx == 10
-        assert cy == 10
+        assert cx == 12
+        assert cy == 12
 
     def test_canonical_to_axial_center(self, encoder):
         """Test center of grid maps to axial (0,0)."""
-        q, r = encoder.canonical_to_axial(10, 10)
+        q, r = encoder.canonical_to_axial(12, 12)
         assert q == 0
         assert r == 0
 
     def test_roundtrip_coordinates(self, encoder):
         """Test axial->canonical->axial roundtrip."""
-        for q in range(-5, 6):
-            for r in range(-5, 6):
-                if abs(q) + abs(r) + abs(-q - r) <= 20:  # Within radius
+        for q in range(-6, 7):
+            for r in range(-6, 7):
+                if abs(q) + abs(r) + abs(-q - r) <= 24:  # Within radius
                     cx, cy = encoder.axial_to_canonical(q, r)
                     q2, r2 = encoder.canonical_to_axial(cx, cy)
                     assert q == q2 and r == r2
@@ -257,8 +257,8 @@ class TestHexStateEncoder:
         _, globals_vec = encoder.encode(hex_state)
 
         # Check normalized ring counts
-        assert globals_vec[5] == 18.0 / 36.0  # Current player rings
-        assert globals_vec[6] == 20.0 / 36.0  # Opponent rings
+        assert globals_vec[5] == 18.0 / 48.0  # Current player rings
+        assert globals_vec[6] == 20.0 / 48.0  # Opponent rings
 
     def test_encode_with_history(self, encoder, hex_state):
         """Test encoding with history frames."""
@@ -300,7 +300,7 @@ class TestActionEncoderHex:
         """Create a test hex board."""
         return BoardState(
             type=BoardType.HEXAGONAL,
-            size=11,
+            size=13,
             stacks={},
             markers={},
             collapsedSpaces={},
@@ -327,10 +327,10 @@ class TestActionEncoderHex:
 
         idx = encoder.encode_move(move, hex_board)
 
-        # Center (cx=10, cy=10) with count=1
-        # pos_idx = 10 * 21 + 10 = 220
-        # idx = 220 * 3 + 0 = 660
-        expected = 10 * HEX_BOARD_SIZE * 3 + 10 * 3 + 0
+        # Center (cx=12, cy=12) with count=1
+        # pos_idx = 12 * 25 + 12 = 312
+        # idx = 312 * 3 + 0 = 936
+        expected = 12 * HEX_BOARD_SIZE * 3 + 12 * 3 + 0
         assert idx == expected
 
     def test_encode_placement_with_count(self, encoder, hex_board):
@@ -355,8 +355,8 @@ class TestActionEncoderHex:
 
     def test_decode_placement(self, encoder, hex_state):
         """Test decoding placement moves."""
-        # Center placement with count 1
-        idx = 10 * HEX_BOARD_SIZE * 3 + 10 * 3 + 0
+        # Center placement with count 1 (center at cx=12, cy=12 for 25x25 grid)
+        idx = 12 * HEX_BOARD_SIZE * 3 + 12 * 3 + 0
 
         move = encoder.decode_move(idx, hex_state)
 
@@ -605,7 +605,7 @@ class TestHexDataAugmentation:
 
         # Create hex mask to focus on valid cells
         mask = np.zeros((HEX_BOARD_SIZE, HEX_BOARD_SIZE), dtype=bool)
-        radius = 10
+        radius = 12  # Canonical hex radius
         for cy in range(HEX_BOARD_SIZE):
             for cx in range(HEX_BOARD_SIZE):
                 q = cx - radius
@@ -642,14 +642,14 @@ class TestBoardTypeDetection:
         assert board_type == BoardType.SQUARE19
 
     def test_detect_hexagonal(self):
-        """Test detection of hexagonal from 21x21 features."""
-        features = np.random.rand(10, 21, 21)
+        """Test detection of hexagonal from 25x25 features."""
+        features = np.random.rand(10, 25, 25)
         board_type = detect_board_type_from_features(features)
         assert board_type == BoardType.HEXAGONAL
 
     def test_detect_with_batch_dimension(self):
         """Test detection with batch dimension."""
-        features = np.random.rand(32, 10, 21, 21)
+        features = np.random.rand(32, 10, 25, 25)
         board_type = detect_board_type_from_features(features)
         assert board_type == BoardType.HEXAGONAL
 
@@ -748,7 +748,7 @@ class TestMoveEncodingEdgeCases:
     def test_boundary_positions(self, encoder, hex_state):
         """Test encoding moves at hex boundary."""
         hex_board = hex_state.board
-        radius = 10
+        radius = 12  # Canonical hex radius
 
         boundary_positions = [
             (radius, 0, -radius),

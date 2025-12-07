@@ -195,7 +195,7 @@ describe('useSandboxInteractions', () => {
   });
 
   describe('handleCellClick in ring_placement phase', () => {
-    it('attempts placement when engine returns success', async () => {
+    it('selects cell without attempting placement on first click', async () => {
       let result: ReturnType<typeof useSandboxInteractions> | null = null;
       render(
         <TestComponent
@@ -210,10 +210,12 @@ describe('useSandboxInteractions', () => {
         await new Promise((r) => setTimeout(r, 10));
       });
 
-      expect(mockTryPlaceRings).toHaveBeenCalledWith({ x: 4, y: 4 }, 1);
+      // Single click should only update selection state; placement is
+      // handled by double-click/context-menu flows.
+      expect(mockTryPlaceRings).not.toHaveBeenCalled();
     });
 
-    it('handles failed placement', async () => {
+    it('does not attempt placement even when engine mock would reject', async () => {
       mockTryPlaceRings.mockResolvedValue(false);
       let result: ReturnType<typeof useSandboxInteractions> | null = null;
       render(
@@ -229,7 +231,7 @@ describe('useSandboxInteractions', () => {
         await new Promise((r) => setTimeout(r, 10));
       });
 
-      expect(mockTryPlaceRings).toHaveBeenCalled();
+      expect(mockTryPlaceRings).not.toHaveBeenCalled();
     });
   });
 

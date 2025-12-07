@@ -207,7 +207,7 @@ describe('sandboxLines', () => {
       it('finds line on hexagonal board', () => {
         const board: BoardState = {
           type: 'hexagonal',
-          size: 11,
+          size: 13, // radius=12
           stacks: new Map(),
           markers: new Map(),
           collapsedSpaces: new Map(),
@@ -247,7 +247,7 @@ describe('sandboxLines', () => {
       it('handles hex positions with z coordinate correctly', () => {
         const board: BoardState = {
           type: 'hexagonal',
-          size: 11,
+          size: 13, // radius=12
           stacks: new Map(),
           markers: new Map(),
           collapsedSpaces: new Map(),

@@ -470,7 +470,7 @@ describe('MovementValidator branch coverage', () => {
         boardType: 'hexagonal',
       });
       state.board.type = 'hexagonal';
-      state.board.size = 11;
+      state.board.size = 13; // radius=12
       addStack(state, pos(0, 0, 0), 1, 2);
 
       const action: MoveStackAction = {

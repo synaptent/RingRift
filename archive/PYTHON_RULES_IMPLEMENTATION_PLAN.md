@@ -5,7 +5,7 @@ This document describes the current Python rules engine implementation in the AI
 The authoritative rules specification remains:
 
 - `ringrift_complete_rules.md`
-- `ringrift_compact_rules.md`
+- `docs/rules/ringrift_compact_rules.md`
 
 The canonical executable implementation is the TypeScript shared engine under `src/shared/engine/`, used by:
 

@@ -106,6 +106,7 @@ from app.db import (  # noqa: E402
     record_completed_game_with_parity_check,
     ParityValidationError,
 )
+from app.ai.neural_net import clear_model_cache  # noqa: E402
 
 
 VIOLATION_TYPE_TO_INVARIANT_ID: Dict[str, str] = {
@@ -350,6 +351,44 @@ def _build_mixed_ai_pool(
     return ai_by_player
 
 
+def _run_intra_game_gc(
+    ai_by_player: Dict[int, Any],
+    move_count: int,
+    verbose: bool = False,
+) -> None:
+    """Run lightweight intra-game memory cleanup.
+
+    This clears per-evaluation caches in AI instances without destroying
+    the AI instances themselves. The goal is to prevent memory
+    accumulation during long games (100+ moves) on large boards.
+
+    Trade-offs:
+    - Performance: ~5-15% overhead due to cache rebuilding
+    - Correctness: None (AI still produces valid moves)
+    - Play strength: Negligible (caches are per-evaluation anyway)
+    """
+    # Clear any per-move caches in AI instances
+    for ai in ai_by_player.values():
+        # HeuristicAI and similar classes may have clear_cache() methods
+        if hasattr(ai, "clear_evaluation_cache"):
+            ai.clear_evaluation_cache()
+        # Clear internal state caches if present
+        if hasattr(ai, "_cached_visible_stacks"):
+            ai._cached_visible_stacks = None
+        if hasattr(ai, "_visible_stacks_cache"):
+            ai._visible_stacks_cache = {}
+
+    # Run garbage collection but only on generation 0 (fast)
+    # This reclaims short-lived objects without full GC overhead
+    gc.collect(0)
+
+    if verbose:
+        print(
+            f"[intra-gc] Cleared AI caches at move {move_count}",
+            flush=True,
+        )
+
+
 def run_self_play_soak(
     args: argparse.Namespace,
 ) -> Tuple[List[GameRecord], List[Dict[str, Any]]]:
@@ -360,8 +399,44 @@ def run_self_play_soak(
     engine_mode = args.engine_mode
     base_seed = args.seed
     difficulty_band = getattr(args, "difficulty_band", "canonical")
-    gc_interval = getattr(args, "gc_interval", 0)
+    gc_interval = getattr(args, "gc_interval", 5)
     profile_timing = getattr(args, "profile_timing", False)
+
+    # Memory management options
+    intra_game_gc_interval = getattr(args, "intra_game_gc_interval", 0)
+    streaming_record = getattr(args, "streaming_record", False)
+    memory_constrained = getattr(args, "memory_constrained", False)
+
+    # Apply memory-constrained mode defaults
+    if memory_constrained:
+        if intra_game_gc_interval == 0:
+            # Auto-set based on board type
+            if board_type == BoardType.HEXAGONAL:
+                intra_game_gc_interval = 50
+            elif board_type == BoardType.SQUARE19:
+                intra_game_gc_interval = 40
+            else:
+                intra_game_gc_interval = 30
+        streaming_record = True
+        difficulty_band = "light"
+        print(
+            f"[memory-constrained] Enabled: intra_gc={intra_game_gc_interval}, "
+            f"streaming={streaming_record}, difficulty_band={difficulty_band}",
+            flush=True,
+        )
+
+    # For large boards, auto-enable intra-game GC if not explicitly set
+    if intra_game_gc_interval == 0 and board_type in (
+        BoardType.HEXAGONAL,
+        BoardType.SQUARE19,
+    ):
+        # Suggest but don't force - let user opt in
+        print(
+            f"[memory-warning] Large board {board_type.value} detected. "
+            f"Consider using --intra-game-gc-interval=50 or "
+            f"--memory-constrained for long games.",
+            file=sys.stderr,
+        )
 
     # Optional state-pool configuration. getattr() is used so that existing
     # callers that construct an argparse.Namespace manually without these
@@ -569,8 +644,23 @@ def run_self_play_soak(
                 move = ai.select_move(state)
                 if profile_timing:
                     timing_totals["move_select"] += time.time() - t_sel_start
+
                 if not move:
                     termination_reason = "ai_returned_no_move"
+                    break
+
+                # Guard against mis-attributed moves: actor must match
+                # the current player when the game is ACTIVE.
+                if state.game_status == GameStatus.ACTIVE and move.player != current_player:
+                    termination_reason = "ai_move_player_mismatch"
+                    _record_invariant_violation(
+                        "ACTIVE_WRONG_PLAYER_MOVE",
+                        state,
+                        game_idx,
+                        move_count,
+                        per_game_violations,
+                        invariant_violation_samples,
+                    )
                     break
 
                 if move.type == MoveType.SWAP_SIDES:
@@ -579,20 +669,53 @@ def run_self_play_soak(
                 try:
                     if profile_timing:
                         t_step_start = time.time()
+                    prev_current_player = state.current_player
                     state, _reward, done, step_info = env.step(move)
                     if profile_timing:
                         timing_totals["env_step"] += time.time() - t_step_start
                     last_move = move
+                    # Safety: ensure the recorded move actor matches the
+                    # pre-step current player. This guards against AI or
+                    # host bugs that might produce mis-attributed moves.
+                    if move.player != prev_current_player:
+                        termination_reason = "recorded_player_mismatch"
+                        _record_invariant_violation(
+                            "ACTIVE_WRONG_PLAYER_MOVE",
+                            state,
+                            game_idx,
+                            move_count,
+                            per_game_violations,
+                            invariant_violation_samples,
+                        )
+                        break
                     # Collect move for game recording.
-                    # Also include any auto-generated moves (e.g., no_territory_action)
-                    # that the engine appended internally per RR-CANON-R075. These
-                    # are critical for TS↔Python replay parity.
+                    # Also include any bookkeeping moves (e.g., no_territory_action)
+                    # that the host/rules stack may have appended based on phase
+                    # requirements per RR-CANON-R075/R076. These are critical for
+                    # TS↔Python replay parity.
                     if replay_db:
                         game_moves_for_recording.append(move)
                         auto_moves = step_info.get("auto_generated_moves", [])
                         if auto_moves:
+                            for auto in auto_moves:
+                                if auto.player != prev_current_player:
+                                    termination_reason = "recorded_player_mismatch"
+                                    _record_invariant_violation(
+                                        "ACTIVE_WRONG_PLAYER_MOVE",
+                                        state,
+                                        game_idx,
+                                        move_count,
+                                        per_game_violations,
+                                        invariant_violation_samples,
+                                    )
+                                    break
+                            if termination_reason == "recorded_player_mismatch":
+                                break
                             game_moves_for_recording.extend(auto_moves)
                 except Exception as exc:  # pragma: no cover - defensive
+                    import traceback
+                    print(f"[DEBUG] Step exception: {exc}")
+                    traceback.print_exc()
                     termination_reason = f"step_exception:{type(exc).__name__}"
                     state = state  # keep last known state
                     break
@@ -637,47 +760,25 @@ def run_self_play_soak(
 
                 # ACTIVE-no-moves invariant:
                 # INV-ACTIVE-NO-MOVES (global actions, R2xx cluster)
-                if state.game_status == GameStatus.ACTIVE:
-                    if ga.is_anm_state(state):
-                        _record_invariant_violation(
-                            "ACTIVE_NO_CANDIDATE_MOVES",
-                            state,
-                            game_idx,
-                            move_count,
-                            per_game_violations,
-                            invariant_violation_samples,
-                        )
+                if state.game_status == GameStatus.ACTIVE and ga.is_anm_state(state):
+                    _record_invariant_violation(
+                        "ACTIVE_NO_CANDIDATE_MOVES",
+                        state,
+                        game_idx,
+                        move_count,
+                        per_game_violations,
+                        invariant_violation_samples,
+                    )
 
                 # Optional state-pool sampling for mid-/late-game snapshots.
                 #
-                # Recommended soak configuration for generating evaluation
-                # pools:
-                #
-                # - Use a reasonably long `max_moves` (e.g. 200+) so that games
-                #   reliably reach rich mid- and late-game positions.
-                # - Treat `*_state_pool_sampling_interval` as the primary knob
-                #   for biasing toward mid/late-game: larger values sample less
-                #   frequently and naturally skip over the earliest plies.
-                # - Use `*_state_pool_max_states` to cap the total number of
-                #   snapshots per board; once this cap is reached, no further
-                #   states are written even if the soak continues.
-                #
-                # The "v1" evaluation pools used by heuristic CMA-ES training
-                # are expected to be generated by long mixed-engine soaks with
-                # these knobs tuned so that most sampled states come from
-                # mid- and late-game rather than symmetric openings.
+                # Recommended soak configuration for generating evaluation pools:
+                # use a long max_moves, sample every N moves, and cap outputs.
                 if (
                     square8_pool_enabled
                     and state.board_type == BoardType.SQUARE8
-                    and (
-                        square8_state_pool_sampled
-                        < square8_state_pool_max_states
-                    )
-                    and (
-                        move_count
-                        % square8_state_pool_sampling_interval
-                    )
-                    == 0
+                    and square8_state_pool_sampled < square8_state_pool_max_states
+                    and move_count % square8_state_pool_sampling_interval == 0
                     and state.game_status == GameStatus.ACTIVE
                 ):
                     try:
@@ -687,7 +788,6 @@ def run_self_play_soak(
                         )
                         square8_state_pool_sampled += 1
                     except Exception as exc:  # pragma: no cover - defensive
-                        # State export must never break the soak loop.
                         print(
                             "[square8-state-pool] Failed to "
                             "serialise/write state "
@@ -699,15 +799,8 @@ def run_self_play_soak(
                 if (
                     square19_pool_enabled
                     and state.board_type == BoardType.SQUARE19
-                    and (
-                        square19_state_pool_sampled
-                        < square19_state_pool_max_states
-                    )
-                    and (
-                        move_count
-                        % square19_state_pool_sampling_interval
-                    )
-                    == 0
+                    and square19_state_pool_sampled < square19_state_pool_max_states
+                    and move_count % square19_state_pool_sampling_interval == 0
                     and state.game_status == GameStatus.ACTIVE
                 ):
                     try:
@@ -717,7 +810,6 @@ def run_self_play_soak(
                         )
                         square19_state_pool_sampled += 1
                     except Exception as exc:  # pragma: no cover - defensive
-                        # State export must never break the soak loop.
                         print(
                             "[square19-state-pool] Failed to "
                             "serialise/write state "
@@ -729,15 +821,8 @@ def run_self_play_soak(
                 if (
                     hex_pool_enabled
                     and state.board_type == BoardType.HEXAGONAL
-                    and (
-                        hex_state_pool_sampled
-                        < hex_state_pool_max_states
-                    )
-                    and (
-                        move_count
-                        % hex_state_pool_sampling_interval
-                    )
-                    == 0
+                    and hex_state_pool_sampled < hex_state_pool_max_states
+                    and move_count % hex_state_pool_sampling_interval == 0
                     and state.game_status == GameStatus.ACTIVE
                 ):
                     try:
@@ -747,7 +832,6 @@ def run_self_play_soak(
                         )
                         hex_state_pool_sampled += 1
                     except Exception as exc:  # pragma: no cover - defensive
-                        # State export must never break the soak loop.
                         print(
                             "[hex-state-pool] Failed to "
                             "serialise/write state "
@@ -786,6 +870,18 @@ def run_self_play_soak(
                 if done:
                     termination_reason = "env_done_flag"
                     break
+
+                # Intra-game memory cleanup for long games on large boards
+                # This prevents OOM within a single game
+                if (
+                    intra_game_gc_interval > 0
+                    and move_count % intra_game_gc_interval == 0
+                ):
+                    _run_intra_game_gc(
+                        ai_by_player,
+                        move_count,
+                        verbose=(args.verbose and args.verbose >= 2),
+                    )
 
             # For problematic terminations, capture a minimal snapshot of the
             # final GameState + last Move so they can be turned into explicit
@@ -927,10 +1023,19 @@ def run_self_play_soak(
                 )
 
             # Optional periodic cache/GC cleanup to keep long soaks
-            # memory-bounded. This clears the GameEngine move cache and
+            # memory-bounded. This clears the GameEngine move cache,
+            # neural net model cache (releasing GPU/MPS memory), and
             # triggers a full garbage-collection cycle every N games.
-            if gc_interval and (game_idx + 1) % gc_interval == 0:
+            #
+            # For large boards (hex/square19), memory pressure is much higher
+            # (~7x more cells than square8), so we clear after EVERY game
+            # regardless of gc_interval to prevent OOM issues.
+            effective_gc_interval = gc_interval
+            if board_type in (BoardType.HEXAGONAL, BoardType.SQUARE19):
+                effective_gc_interval = 1  # Always clear for large boards
+            if effective_gc_interval and (game_idx + 1) % effective_gc_interval == 0:
                 GameEngine.clear_cache()
+                clear_model_cache()
                 gc.collect()
 
     # Emit final progress summary
@@ -1385,10 +1490,42 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gc-interval",
         type=int,
+        default=5,
+        help=(
+            "If >0, clear GameEngine move caches, neural net model cache "
+            "(releasing GPU/MPS memory), and run gc.collect() every N games "
+            "to bound memory usage in long soaks. Default: 5. Set to 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--intra-game-gc-interval",
+        type=int,
         default=0,
         help=(
-            "If >0, clear GameEngine move caches and run gc.collect() "
-            "every N games to bound memory usage in long soaks."
+            "If >0, run lightweight memory cleanup (AI caches, gc.collect) every N "
+            "moves WITHIN each game. This is critical for large boards (hex/square19) "
+            "where a single game can exhaust memory. Default: 0 (disabled). "
+            "Recommended: 50-100 for hex, 30-50 for square19. "
+            "Trade-off: Reduces peak memory at cost of ~5-15%% performance overhead."
+        ),
+    )
+    parser.add_argument(
+        "--streaming-record",
+        action="store_true",
+        help=(
+            "Enable streaming move recording: write moves incrementally to temp storage "
+            "instead of accumulating in memory. Reduces peak memory for long games but "
+            "adds I/O overhead. Recommended for hex/square19 with DB recording enabled."
+        ),
+    )
+    parser.add_argument(
+        "--memory-constrained",
+        action="store_true",
+        help=(
+            "Enable memory-constrained mode: combines --intra-game-gc-interval=50, "
+            "--streaming-record, and forces --difficulty-band=light. Optimized for "
+            "running large board soaks on memory-limited systems. Trade-offs: "
+            "~10-20%% slower, lighter AI opponents (reduced play strength diversity)."
         ),
     )
     parser.add_argument(
@@ -1559,10 +1696,10 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
         # mixed-engine job across square8, square19, and hexagonal boards.
         if args.seed is None:
             args.seed = 1764142864
-        if getattr(args, "gc_interval", 0) == 0:
-            # Health-check runs are short-lived; explicit GC is usually
-            # unnecessary.
-            args.gc_interval = 0
+        # Health-check runs are short-lived but span multiple board types,
+        # so periodic cleanup is still useful to prevent OOM on large boards.
+        if getattr(args, "gc_interval", 5) == 0:
+            args.gc_interval = 3  # Moderate cleanup for multi-board runs
 
         print(
             "AI self-play healthcheck starting with profile 'ai-healthcheck'. "

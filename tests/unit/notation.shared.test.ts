@@ -44,21 +44,21 @@ describe('notation', () => {
     describe('hexagonal boards', () => {
       it('formats hex center (0,0,0) correctly', () => {
         const result = formatPosition({ x: 0, y: 0, z: 0 }, { boardType: 'hexagonal' });
-        // Hex uses q (x) as rank, r (y) as file
-        // For center: rank = radius - 0 + 1 = 11, file = 'a' + (0 + 10) = 'k'
-        expect(result).toBe('k11');
+        // Hex uses q (x) as rank, r (y) as file (radius=12)
+        // For center: rank = radius - 0 + 1 = 13, file = 'a' + (0 + 12) = 'm'
+        expect(result).toBe('m13');
       });
 
       it('formats hex position with positive coordinates', () => {
         const result = formatPosition({ x: 1, y: 1, z: -2 }, { boardType: 'hexagonal' });
-        // rank = 10 - 1 + 1 = 10, file = 'a' + (1 + 10) = 'l'
-        expect(result).toBe('l10');
+        // rank = 12 - 1 + 1 = 12, file = 'a' + (1 + 12) = 'n'
+        expect(result).toBe('n12');
       });
 
       it('formats hex position with negative coordinates', () => {
         const result = formatPosition({ x: -1, y: -1, z: 2 }, { boardType: 'hexagonal' });
-        // rank = 10 - (-1) + 1 = 12, file = 'a' + (-1 + 10) = 'j'
-        expect(result).toBe('j12');
+        // rank = 12 - (-1) + 1 = 14, file = 'a' + (-1 + 12) = 'l'
+        expect(result).toBe('l14');
       });
     });
 

@@ -126,7 +126,7 @@ def get_training_config_for_board(
 
     elif board_type == BoardType.HEXAGONAL:
         # Hex board: specialized architecture with masked pooling
-        config.policy_size = P_HEX  # 54,244
+        config.policy_size = P_HEX  # 91,876
         config.num_res_blocks = 8  # Balanced depth
         config.num_filters = 128  # Full width for complex patterns
         config.batch_size = 32  # Standard batch size
@@ -167,13 +167,13 @@ BOARD_TRAINING_CONFIGS: Dict[BoardType, Dict[str, any]] = {
         "description": "Full capacity for 19x19 strategic depth",
     },
     BoardType.HEXAGONAL: {
-        "policy_size": 54244,
+        "policy_size": 91876,  # Updated for radius-12 hex (25×25 frame)
         "num_res_blocks": 8,
         "num_filters": 128,
         "batch_size": 32,
         "learning_rate": 1e-3,
-        "max_moves_per_game": 250,
+        "max_moves_per_game": 300,  # Increased for larger 469-cell board
         "model_id": "ringrift_hex_v1",
-        "description": "Specialized hex architecture with masked pooling",
+        "description": "Specialized hex architecture with masked pooling (radius 12)",
     },
 }

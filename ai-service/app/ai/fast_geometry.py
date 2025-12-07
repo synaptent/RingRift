@@ -132,7 +132,7 @@ class FastGeometry:
         all_keys: List[str],
     ) -> None:
         """Pre-compute adjacency table for hexagonal board."""
-        radius = size - 1  # 11 -> radius 10
+        radius = size - 1  # size=13 -> radius=12
 
         for x in range(-radius, radius + 1):
             for y in range(-radius, radius + 1):

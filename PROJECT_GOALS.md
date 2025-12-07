@@ -1,6 +1,6 @@
 # RingRift Project Goals
 
-> **Doc Status (2025-12-04): Active (project direction SSoT)**
+> **Doc Status (2025-12-06): Active (project direction SSoT)**
 >
 > - Single authoritative source for product/technical goals and non-goals.
 > - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/architecture/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
@@ -90,7 +90,7 @@ Together, these goals define **how the game should feel**: simple to describe at
 | Objective                          | Description                                                                                                                                                                                              | Rationale                                                      |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | **Complete rules implementation**  | Faithfully implement all game mechanics from [`ringrift_complete_rules.md`](ringrift_complete_rules.md) including movement, captures, chains, lines, territory disconnection, and all victory conditions | Core game value depends on correct rules                       |
-| **Multiple board types**           | Support 8×8 square (64 spaces), 19×19 square (361 spaces), and hexagonal (331 spaces) boards                                                                                                             | Provides accessibility gradient and geometric variety          |
+| **Multiple board types**           | Support 8×8 square (64 spaces), 19×19 square (361 spaces), and hexagonal (469 spaces) boards                                                                                                             | Provides accessibility gradient and geometric variety          |
 | **Flexible player configurations** | Support 2-4 players with any combination of human and AI participants                                                                                                                                    | Enables solo practice, competitive play, and social gaming     |
 | **AI opponents**                   | Provide AI opponents at multiple difficulty levels (1-10) with responsive move selection                                                                                                                 | Allows single-player experience and fills seats in multiplayer |
 | **Real-time multiplayer**          | WebSocket-based live gameplay with synchronized state and spectator support                                                                                                                              | Core online multiplayer experience                             |
@@ -235,7 +235,7 @@ These criteria are intentionally high‑level and goal‑oriented; detailed roll
 
 These goals assume the following technical and operational dependencies, which are defined in more detail in the referenced architecture and operations documents:
 
-- **Canonical rules specification as rules SSoT.** All gameplay semantics are defined, first and foremost, by the written canonical rules (`RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` / `ringrift_compact_rules.md`). The shared TypeScript engine under `src/shared/engine/**` (helpers → aggregates → orchestrator) is the primary executable derivation of that spec, validated by its contract tests and parity suites. Backend hosts, the client sandbox, and the Python rules engine are adapters over this shared surface; changes to rules must converge on the canonical rules spec and then be reflected in the shared engine. See [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md), [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md), and [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md) for the canonical module catalog, aggregate design, and Move/orchestrator/WebSocket lifecycle that implement these goals.
+- **Canonical rules specification as rules SSoT.** All gameplay semantics are defined, first and foremost, by the written canonical rules (`RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`). The shared TypeScript engine under `src/shared/engine/**` (helpers → aggregates → orchestrator) is the primary executable derivation of that spec, validated by its contract tests and parity suites. Backend hosts, the client sandbox, and the Python rules engine are adapters over this shared surface; changes to rules must converge on the canonical rules spec and then be reflected in the shared engine. See [`docs/architecture/MODULE_RESPONSIBILITIES.md`](docs/architecture/MODULE_RESPONSIBILITIES.md), [`docs/architecture/DOMAIN_AGGREGATE_DESIGN.md`](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md), and [`docs/architecture/CANONICAL_ENGINE_API.md`](docs/architecture/CANONICAL_ENGINE_API.md) for the canonical module catalog, aggregate design, and Move/orchestrator/WebSocket lifecycle that implement these goals.
 - **Python AI service as the primary tactical engine.** Higher AI difficulties (3–10) depend on the Python `ai-service` for Minimax, MCTS, and Descent-style search as described in [`AI_ARCHITECTURE.md`](AI_ARCHITECTURE.md:1) and AI docs under `docs/ai/` and `ai-service/docs/`. The TypeScript fallback AI exists for resilience and low-difficulty play, not as the sole long-term AI.
 - **Single-region, single-app-instance topology for v1.0.** The production topology assumes a single Node.js app instance per environment (`RINGRIFT_APP_TOPOLOGY=single`) backed by PostgreSQL and Redis, as described in [`docs/DEPLOYMENT_REQUIREMENTS.md`](docs/DEPLOYMENT_REQUIREMENTS.md:1) and [`docs/architecture/TOPOLOGY_MODES.md`](docs/architecture/TOPOLOGY_MODES.md:1). Horizontal scaling beyond this and multi-region deployments are explicitly post‑v1.0 concerns.
 - **PostgreSQL, Redis, and WebSocket infrastructure.** Game lifecycle, session management, and real-time multiplayer depend on PostgreSQL, Redis, and a WebSocket server as described in [`README.md`](README.md:1) and [`docs/OPERATIONS_DB.md`](docs/OPERATIONS_DB.md:1).
@@ -268,7 +268,7 @@ Sections 6–8 collectively define what is in scope for the current v1.0 phase (
 
 - 8×8 square board (18 rings/player, 64 spaces)
 - 19×19 square board (36 rings/player, 361 spaces)
-- Hexagonal board (36 rings/player, 331 spaces, 11 per side)
+- Hexagonal board (48 rings/player, 469 spaces, 13 per side)
 
 **Game Modes (Must Have)**
 
@@ -381,12 +381,12 @@ The tables below group key related documents by role so readers can quickly jump
 
 ### 8.2 Rules & Design Authority
 
-| Document                                                   | Purpose                                           |
-| ---------------------------------------------------------- | ------------------------------------------------- |
-| [`ringrift_complete_rules.md`](ringrift_complete_rules.md) | **Authoritative rulebook** - canonical game rules |
-| [`ringrift_compact_rules.md`](ringrift_compact_rules.md)   | Implementation-oriented rules summary             |
-| [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md)       | Technical specification of rule semantics         |
-| [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md)     | Test scenario mapping to rules/FAQ                |
+| Document                                                                       | Purpose                                           |
+| ------------------------------------------------------------------------------ | ------------------------------------------------- |
+| [`ringrift_complete_rules.md`](ringrift_complete_rules.md)                     | **Authoritative rulebook** - canonical game rules |
+| [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) | Implementation-oriented rules summary             |
+| [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md)                           | Technical specification of rule semantics         |
+| [`RULES_SCENARIO_MATRIX.md`](RULES_SCENARIO_MATRIX.md)                         | Test scenario mapping to rules/FAQ                |
 
 ### 8.3 Architecture & Technical
 

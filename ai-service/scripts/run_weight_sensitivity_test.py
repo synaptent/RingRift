@@ -81,8 +81,8 @@ def create_game_state(board_type_str: str) -> GameState:
         size = 19
         rings_per_player = 36
     else:
-        size = 11
-        rings_per_player = 36
+        size = 13  # Canonical hex: size=13, radius=12
+        rings_per_player = 48
 
     board = BoardState(
         type=board_type,

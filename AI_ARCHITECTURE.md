@@ -1,11 +1,11 @@
 # RingRift AI Architecture & Strategy
 
-**Last Updated:** December 4, 2025
+**Last Updated:** December 6, 2025
 **Scope:** AI Service, Algorithms, Training Pipeline, and Integration
 
 > **SSoT alignment:** This document is a derived view over the following canonical sources:
 >
-> - **Single Source of Truth (SSoT):** The canonical rules defined in `RULES_CANONICAL_SPEC.md` (plus `ringrift_complete_rules.md` / `ringrift_compact_rules.md`) are the **ultimate authority** for RingRift game semantics. All implementations must derive from and faithfully implement these canonical rules.
+> - **Single Source of Truth (SSoT):** The canonical rules defined in `RULES_CANONICAL_SPEC.md` (plus `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`) are the **ultimate authority** for RingRift game semantics. All implementations must derive from and faithfully implement these canonical rules.
 > - **Implementation hierarchy:**
 >   - **TS shared engine** (`src/shared/engine/**`) is the _primary executable derivation_ of the canonical rules spec. If the TS engine and the canonical rules document disagree, that is a bug in the TS engine.
 >   - **Python AI service** (`ai-service/app/**`) is a _host adapter_ that must mirror the canonical rules. If Python disagrees with the canonical rules or the validated TS engine behaviour, Python must be updated—never the other way around.
@@ -14,7 +14,7 @@
 >   - Offline optimisation & evaluation harnesses: `ai-service/scripts/run_cmaes_optimization.py`, `ai-service/scripts/run_genetic_heuristic_search.py`, and their associated tests (`ai-service/tests/test_heuristic_training_evaluation.py`, `ai-service/tests/test_multi_start_evaluation.py`) are treated as **sanity/diagnostic tooling** over the shared rules SSoT rather than independent sources of semantics.
 > - **Precedence:** If this document ever conflicts with those specs, engines, types, or workflows, **code + tests win**, and this doc must be updated to match them.
 >
-> **Doc Status (2025-12-04): Active (with historical appendix)**
+> **Doc Status (2025-12-06): Active (with historical appendix)**
 >
 > - Canonical reference for the **current AI architecture and integration**: Python AI service, TS AI boundary, RNG/determinism, neural nets, training pipeline, and resilience/fallback behaviour.
 > - As of Dec 2025, end‑to‑end GameRecord flow is implemented: online games populate canonical GameRecords via `GameRecordRepository`, and both Python self‑play (`generate_data.py --game-records-jsonl`) and Node (`scripts/export-game-records-jsonl.ts`) can export training‑ready `GameRecord` JSONL datasets.
@@ -337,19 +337,19 @@ should use a **separate neural network (or at least separate weights and
 heads)** from the square (8×8 / 19×19) boards, with its own input encoding and
 policy head.
 
-#### Hex-specific network design (side-10 hex, 331 cells)
+#### Hex-specific network design (side-13 hex, 469 cells)
 
-For the canonical regular hex board with 331 cells (side length N = 10):
+For the canonical regular hex board with 469 cells (side length N = 12):
 
-- Total cells: `C = 3N² + 3N + 1 = 331` (already used in rules docs/tests).
-- Bounding box in offset coordinates: `(2N+1) × (2N+1) = 21 × 21`.
+- Total cells: `C = 3N² + 3N + 1 = 469` (rules docs/tests).
+- Bounding box in offset coordinates: `(2N+1) × (2N+1) = 25 × 25`.
 
 We adopt a **dedicated hex model**:
 
 - **Name:** `HexNeuralNet` (Python) / `HexNN_v1` (model tag)
-- **Input tensor:** `[C_hex, 21, 21]` with a **binary mask** channel
+- **Input tensor:** `[C_hex, 25, 25]` with a **binary mask** channel
   indicating which lattice sites are real hex cells.
-  - Board-aligned channels (per 21×21 cell):
+  - Board-aligned channels (per 25×25 cell):
     - Current player’s ring height / presence
     - Opponent ring height / presence
     - Current player markers
@@ -365,7 +365,7 @@ We adopt a **dedicated hex model**:
       summary, time controls, etc. (mirroring the square model’s globals).
 - **Backbone:**
   - 8–10 residual blocks with 3×3 convolutions, stride 1, padding that
-    preserves 21×21.
+    preserves 25×25.
   - BatchNorm + ReLU (or GroupNorm for smaller batches).
 - **Heads:**
   - **Policy head**:
@@ -375,32 +375,32 @@ We adopt a **dedicated hex model**:
       parallel encoder).
     - Mask invalid actions via a hex-specific `ActionEncoderHex`.
   - **Value head**:
-    - 1×1 conv → BN → ReLU → global average pool (over 21×21 masked cells).
+    - 1×1 conv → BN → ReLU → global average pool (over 25×25 masked cells).
     - Concatenate with global features.
     - MLP → scalar tanh output in [-1, 1].
   - **Concrete hex action space (P_hex)**:
-    - We fix the policy head dimension to `P_hex = 54_244`, computed as:
-      - Placement: `21 × 21 × 3` = 1,323 slots (per-cell × 3 placement counts).
-      - Movement / capture: `21 × 21 × 6 × 20` = 52,920 slots (origin index × 6
-        hex directions × distance bucket up to 20).
+    - We fix the policy head dimension to `P_hex = 91_876`, computed as:
+      - Placement: `25 × 25 × 3` = 1,875 slots (per-cell × 3 placement counts).
+      - Movement / capture: `25 × 25 × 6 × 24` = 90,000 slots (origin index × 6
+        hex directions × distance bucket up to 24).
       - Special: 1 slot reserved for `skip_placement` (additional special
         actions may be layered on in future versions).
     - The hex action encoder (`ActionEncoderHex`) uses this layout:
-      - **Placements**: `pos_idx * 3 + (count - 1)` in `[0, 1,322]`, where
-        `pos_idx = cy * 21 + cx` on the canonical 21×21 frame and
+      - **Placements**: `pos_idx * 3 + (count - 1)` in `[0, 1,874]`, where
+        `pos_idx = cy * 25 + cx` on the canonical 25×25 frame and
         `count ∈ {1,2,3}`.
       - **Movement / captures**: indices in
-        `[HEX_MOVEMENT_BASE, HEX_MOVEMENT_BASE + 52_920)`, where
-        `HEX_MOVEMENT_BASE = 1,323` and
-        `idx = HEX_MOVEMENT_BASE + from_idx * (6 * 20) + dir_idx * 20 + (dist - 1)`,
-        with `from_idx = from_cy * 21 + from_cx`, directions from the 6
+        `[HEX_MOVEMENT_BASE, HEX_MOVEMENT_BASE + 90_000)`, where
+        `HEX_MOVEMENT_BASE = 1,875` and
+        `idx = HEX_MOVEMENT_BASE + from_idx * (6 * 24) + dir_idx * 24 + (dist - 1)`,
+        with `from_idx = from_cy * 25 + from_cx`, directions from the 6
         canonical hex directions `(1,0), (0,1), (-1,1), (-1,0), (0,-1), (1,-1)`,
-        and `1 ≤ dist ≤ 20`.
+        and `1 ≤ dist ≤ 24`.
       - **Special**: `idx == HEX_SPECIAL_BASE` encodes `skip_placement`, where
-        `HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + 52_920`.
+        `HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + 90_000`.
     - Any index that decodes to a canonical `(cx, cy)` outside the true hex
-      shape (331 valid cells inside the 21×21 frame) is treated as invalid and
-      yields `None` from `decode_move`, mirroring the square encoder’s
+      shape (469 valid cells inside the 25×25 frame) is treated as invalid and
+      yields `None` from `decode_move`, mirroring the square encoder's
       handling of off-board positions.
 
 The **square-board model** and **hex model** share high-level design (ResNet

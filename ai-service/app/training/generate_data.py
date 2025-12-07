@@ -137,10 +137,10 @@ def create_initial_state(
         rings_per_player = 36
         total_spaces = 361
     elif board_type == BoardType.HEXAGONAL:
-        # Hex boards use radius 11 and 36 rings per player in TS.
-        size = 11
-        rings_per_player = 36
-        total_spaces = 331
+        # Hex boards use radius 12 and 48 rings per player in TS.
+        size = 13
+        rings_per_player = 48
+        total_spaces = 469
     else:
         # Fallback to square8-style defaults if an unknown board is passed.
         size = 8
@@ -1079,9 +1079,10 @@ def generate_dataset(
 
             state, _, done, step_info = env.step(move)
 
-            # Include any auto-generated moves (e.g., no_territory_action) that
-            # the engine appended internally per RR-CANON-R075. These are
-            # critical for TS↔Python replay parity.
+            # Include any bookkeeping moves (e.g., no_territory_action) that
+            # the host/rules stack may have appended based on phase
+            # requirements per RR-CANON-R075/R076. These are critical for
+            # TS↔Python replay parity.
             auto_moves = step_info.get("auto_generated_moves", [])
             if auto_moves:
                 moves_for_db.extend(auto_moves)

@@ -379,6 +379,21 @@ class GameState(BaseModel):
         None,
         alias="lpsExclusivePlayerForCompletedRound",
     )
+    lps_current_round_first_player: Optional[int] = Field(
+        None,
+        alias="lpsCurrentRoundFirstPlayer",
+    )
+    # Number of consecutive completed rounds where the same player was the
+    # exclusive real-action holder. LPS victory requires 2 consecutive rounds.
+    lps_consecutive_exclusive_rounds: int = Field(
+        0,
+        alias="lpsConsecutiveExclusiveRounds",
+    )
+    # The player who has been exclusive for consecutive rounds.
+    lps_consecutive_exclusive_player: Optional[int] = Field(
+        None,
+        alias="lpsConsecutiveExclusivePlayer",
+    )
     # Optional per-game rules configuration (e.g., swap rule / pie rule).
     # Mirrors the RulesOptions bag in src/shared/types/game.ts; callers
     # currently use this primarily for swapRuleEnabled in 2-player games.

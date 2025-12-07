@@ -18,6 +18,7 @@ import {
   isLpsActivePhase,
   buildLpsVictoryResult,
   LpsTrackingState,
+  LPS_REQUIRED_CONSECUTIVE_ROUNDS,
 } from '../../src/shared/engine/lpsTracking';
 import type { GameState, GamePhase, Player } from '../../src/shared/types/game';
 
@@ -41,6 +42,16 @@ describe('lpsTracking module', () => {
     it('should set exclusivePlayerForCompletedRound to null', () => {
       const state = createLpsTrackingState();
       expect(state.exclusivePlayerForCompletedRound).toBeNull();
+    });
+
+    it('should set consecutiveExclusiveRounds to 0', () => {
+      const state = createLpsTrackingState();
+      expect(state.consecutiveExclusiveRounds).toBe(0);
+    });
+
+    it('should set consecutiveExclusivePlayer to null', () => {
+      const state = createLpsTrackingState();
+      expect(state.consecutiveExclusivePlayer).toBeNull();
     });
   });
 
@@ -72,6 +83,20 @@ describe('lpsTracking module', () => {
       state.exclusivePlayerForCompletedRound = 1;
       resetLpsTrackingState(state);
       expect(state.exclusivePlayerForCompletedRound).toBeNull();
+    });
+
+    it('should reset consecutiveExclusiveRounds to 0', () => {
+      const state = createLpsTrackingState();
+      state.consecutiveExclusiveRounds = 3;
+      resetLpsTrackingState(state);
+      expect(state.consecutiveExclusiveRounds).toBe(0);
+    });
+
+    it('should reset consecutiveExclusivePlayer to null', () => {
+      const state = createLpsTrackingState();
+      state.consecutiveExclusivePlayer = 2;
+      resetLpsTrackingState(state);
+      expect(state.consecutiveExclusivePlayer).toBeNull();
     });
   });
 
@@ -159,6 +184,70 @@ describe('lpsTracking module', () => {
       expect(lps.roundIndex).toBe(2);
       expect(lps.exclusivePlayerForCompletedRound).toBe(1);
       expect(lps.currentRoundFirstPlayer).toBe(1);
+      // First round with exclusive player
+      expect(lps.consecutiveExclusiveRounds).toBe(1);
+      expect(lps.consecutiveExclusivePlayer).toBe(1);
+    });
+
+    it('should track consecutive exclusive rounds for the same player', () => {
+      // Round 1: P1 exclusive
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+      updateLpsTracking(lps, { currentPlayer: 2, activePlayers: [1, 2], hasRealAction: false });
+      // Cycle to round 2
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+
+      expect(lps.consecutiveExclusiveRounds).toBe(1);
+      expect(lps.consecutiveExclusivePlayer).toBe(1);
+
+      // Round 2: P1 exclusive again
+      updateLpsTracking(lps, { currentPlayer: 2, activePlayers: [1, 2], hasRealAction: false });
+      // Cycle to round 3
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+
+      expect(lps.consecutiveExclusiveRounds).toBe(2);
+      expect(lps.consecutiveExclusivePlayer).toBe(1);
+    });
+
+    it('should reset consecutive count when different player becomes exclusive', () => {
+      // Round 1: P1 exclusive
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+      updateLpsTracking(lps, { currentPlayer: 2, activePlayers: [1, 2], hasRealAction: false });
+      // Cycle to round 2
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+
+      expect(lps.consecutiveExclusiveRounds).toBe(1);
+      expect(lps.consecutiveExclusivePlayer).toBe(1);
+
+      // Round 2: P2 exclusive now (different player).
+      // New round starts with P1 (no real actions), then P2 (has real actions),
+      // and finalises when we cycle back to P1.
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: false });
+      updateLpsTracking(lps, { currentPlayer: 2, activePlayers: [1, 2], hasRealAction: true });
+      // Cycle back to P1 to complete Round 2 (actor mask: P1=false, P2=true).
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: false });
+
+      // P2 is now exclusive for the most recent round, count reset to 1
+      expect(lps.consecutiveExclusiveRounds).toBe(1);
+      expect(lps.consecutiveExclusivePlayer).toBe(2);
+    });
+
+    it('should reset consecutive count when no exclusive player', () => {
+      // Round 1: P1 exclusive
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+      updateLpsTracking(lps, { currentPlayer: 2, activePlayers: [1, 2], hasRealAction: false });
+      // Cycle to round 2
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+
+      expect(lps.consecutiveExclusiveRounds).toBe(1);
+
+      // Round 2: Both players have actions (no exclusive)
+      updateLpsTracking(lps, { currentPlayer: 2, activePlayers: [1, 2], hasRealAction: true });
+      // Cycle to round 3
+      updateLpsTracking(lps, { currentPlayer: 1, activePlayers: [1, 2], hasRealAction: true });
+
+      // No exclusive player, count reset to 0
+      expect(lps.consecutiveExclusiveRounds).toBe(0);
+      expect(lps.consecutiveExclusivePlayer).toBeNull();
     });
 
     it('should handle 3-player cycle correctly', () => {
@@ -345,10 +434,21 @@ describe('lpsTracking module', () => {
         ...overrides,
       }) as unknown as GameState;
 
+    /**
+     * Helper to set up LPS state for victory evaluation.
+     * Sets both consecutiveExclusiveRounds and consecutiveExclusivePlayer
+     * as required by the two-round LPS requirement.
+     */
+    function setupLpsForVictory(lps: LpsTrackingState, player: number): void {
+      lps.consecutiveExclusiveRounds = 2;
+      lps.consecutiveExclusivePlayer = player;
+      lps.exclusivePlayerForCompletedRound = player;
+    }
+
     it('should return isVictory=false when game is not active', () => {
       const gameState = createMockGameState({ gameStatus: 'completed' });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 1;
+      setupLpsForVictory(lps, 1);
 
       const result = evaluateLpsVictory({
         gameState,
@@ -364,7 +464,7 @@ describe('lpsTracking module', () => {
     it('should return isVictory=false when not in interactive phase', () => {
       const gameState = createMockGameState({ currentPhase: 'line_formed' as GamePhase });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 1;
+      setupLpsForVictory(lps, 1);
 
       const result = evaluateLpsVictory({
         gameState,
@@ -377,10 +477,12 @@ describe('lpsTracking module', () => {
       expect(result.reason).toBe('not_interactive_phase');
     });
 
-    it('should return isVictory=false when no exclusive candidate', () => {
+    it('should return isVictory=false when insufficient consecutive rounds', () => {
       const gameState = createMockGameState();
       const lps = createLpsTrackingState();
-      // exclusivePlayerForCompletedRound is null
+      // Only 1 consecutive round - not enough for LPS victory
+      lps.consecutiveExclusiveRounds = 1;
+      lps.consecutiveExclusivePlayer = 1;
 
       const result = evaluateLpsVictory({
         gameState,
@@ -390,13 +492,31 @@ describe('lpsTracking module', () => {
       });
 
       expect(result.isVictory).toBe(false);
-      expect(result.reason).toBe('no_exclusive_candidate');
+      expect(result.reason).toMatch(/insufficient_consecutive_rounds/);
+    });
+
+    it('should return isVictory=false when no exclusive candidate', () => {
+      const gameState = createMockGameState();
+      const lps = createLpsTrackingState();
+      // Has 2 rounds but no consecutive player (e.g., different players were exclusive)
+      lps.consecutiveExclusiveRounds = 0;
+      lps.consecutiveExclusivePlayer = null;
+
+      const result = evaluateLpsVictory({
+        gameState,
+        lps,
+        hasAnyRealAction: () => true,
+        hasMaterial: () => true,
+      });
+
+      expect(result.isVictory).toBe(false);
+      expect(result.reason).toMatch(/insufficient_consecutive_rounds/);
     });
 
     it('should return isVictory=false when not candidates turn', () => {
       const gameState = createMockGameState({ currentPlayer: 2 });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 1;
+      setupLpsForVictory(lps, 1); // P1 is candidate but it's P2's turn
 
       const result = evaluateLpsVictory({
         gameState,
@@ -412,7 +532,7 @@ describe('lpsTracking module', () => {
     it('should return isVictory=false when candidate has no actions', () => {
       const gameState = createMockGameState({ currentPlayer: 1 });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 1;
+      setupLpsForVictory(lps, 1);
 
       const result = evaluateLpsVictory({
         gameState,
@@ -428,7 +548,7 @@ describe('lpsTracking module', () => {
     it('should return isVictory=false when other player with material has actions', () => {
       const gameState = createMockGameState({ currentPlayer: 1 });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 1;
+      setupLpsForVictory(lps, 1);
 
       const result = evaluateLpsVictory({
         gameState,
@@ -441,10 +561,10 @@ describe('lpsTracking module', () => {
       expect(result.reason).toBe('other_player_has_actions');
     });
 
-    it('should return isVictory=true when all conditions met', () => {
+    it('should return isVictory=true when all conditions met (2 consecutive rounds)', () => {
       const gameState = createMockGameState({ currentPlayer: 1 });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 1;
+      setupLpsForVictory(lps, 1);
 
       const result = evaluateLpsVictory({
         gameState,
@@ -460,7 +580,7 @@ describe('lpsTracking module', () => {
     it('should skip players without material when checking other player actions', () => {
       const gameState = createMockGameState({ currentPlayer: 1 });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 1;
+      setupLpsForVictory(lps, 1);
 
       const result = evaluateLpsVictory({
         gameState,
@@ -483,7 +603,7 @@ describe('lpsTracking module', () => {
         ],
       });
       const lps = createLpsTrackingState();
-      lps.exclusivePlayerForCompletedRound = 2;
+      setupLpsForVictory(lps, 2);
 
       const result = evaluateLpsVictory({
         gameState,
@@ -502,7 +622,7 @@ describe('lpsTracking module', () => {
       for (const phase of phases) {
         const gameState = createMockGameState({ currentPhase: phase, currentPlayer: 1 });
         const lps = createLpsTrackingState();
-        lps.exclusivePlayerForCompletedRound = 1;
+        setupLpsForVictory(lps, 1);
 
         const result = evaluateLpsVictory({
           gameState,
@@ -513,6 +633,103 @@ describe('lpsTracking module', () => {
 
         expect(result.isVictory).toBe(true);
       }
+    });
+
+    it('should trigger victory only after two-round exclusive real-action pattern', () => {
+      const lps = createLpsTrackingState();
+      const activePlayers = [1, 2];
+
+      const makeState = (overrides: Partial<GameState> = {}): GameState =>
+        ({
+          gameStatus: 'active',
+          currentPhase: 'movement' as GamePhase,
+          currentPlayer: 1,
+          players: [{ playerNumber: 1 } as Player, { playerNumber: 2 } as Player],
+          ...overrides,
+        }) as unknown as GameState;
+
+      // Round 1: P1 has real actions; P2 has none.
+      updateLpsTracking(lps, {
+        currentPlayer: 1,
+        activePlayers,
+        hasRealAction: true,
+      });
+      updateLpsTracking(lps, {
+        currentPlayer: 2,
+        activePlayers,
+        hasRealAction: false,
+      });
+
+      // Before cycling back to P1, no completed round exists and no LPS victory is possible.
+      let state = makeState({ currentPlayer: 1 });
+      let result = evaluateLpsVictory({
+        gameState: state,
+        lps,
+        hasAnyRealAction: (pn) => pn === 1,
+        hasMaterial: () => true,
+      });
+      expect(result.isVictory).toBe(false);
+      expect(result.reason).toMatch(/insufficient_consecutive_rounds/);
+
+      // Start of round 2: cycling back to P1 finalises Round 1 with P1 as exclusive actor.
+      // consecutiveExclusiveRounds is now 1.
+      updateLpsTracking(lps, {
+        currentPlayer: 1,
+        activePlayers,
+        hasRealAction: true,
+      });
+
+      // After 1 round, still not enough for LPS victory (requires 2)
+      state = makeState({ currentPlayer: 1 });
+      result = evaluateLpsVictory({
+        gameState: state,
+        lps,
+        hasAnyRealAction: (pn) => pn === 1,
+        hasMaterial: () => true,
+      });
+      expect(result.isVictory).toBe(false);
+      expect(result.reason).toMatch(/insufficient_consecutive_rounds_1/);
+      expect(lps.consecutiveExclusiveRounds).toBe(1);
+
+      // Round 2: P1 has real actions; P2 has none.
+      updateLpsTracking(lps, {
+        currentPlayer: 2,
+        activePlayers,
+        hasRealAction: false,
+      });
+
+      // Start of round 3: cycling back to P1 finalises Round 2 with P1 as exclusive actor.
+      // consecutiveExclusiveRounds is now 2 - LPS condition is now met!
+      updateLpsTracking(lps, {
+        currentPlayer: 1,
+        activePlayers,
+        hasRealAction: true,
+      });
+
+      expect(lps.consecutiveExclusiveRounds).toBe(2);
+      expect(lps.consecutiveExclusivePlayer).toBe(1);
+
+      state = makeState({ currentPlayer: 1 });
+      result = evaluateLpsVictory({
+        gameState: state,
+        lps,
+        hasAnyRealAction: (pn) => pn === 1, // only P1 has real actions
+        hasMaterial: () => true,
+      });
+
+      expect(result.isVictory).toBe(true);
+      expect(result.winner).toBe(1);
+
+      // If another player with material also has real actions at that moment, LPS must not fire.
+      const blockedResult = evaluateLpsVictory({
+        gameState: state,
+        lps,
+        hasAnyRealAction: () => true, // both players appear to have real actions
+        hasMaterial: () => true,
+      });
+
+      expect(blockedResult.isVictory).toBe(false);
+      expect(blockedResult.reason).toBe('other_player_has_actions');
     });
   });
 

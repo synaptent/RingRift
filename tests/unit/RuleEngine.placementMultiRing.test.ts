@@ -7,7 +7,7 @@ import {
   Player,
   Position,
   TimeControl,
-  positionToString
+  positionToString,
 } from '../../src/shared/types/game';
 
 // Minimal BoardManager stub for placement tests
@@ -52,7 +52,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
+      territorySpaces: 0,
     },
     {
       id: 'p2',
@@ -63,8 +63,8 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
       timeRemaining: timeControl.initialTime * 1000,
       ringsInHand: 18,
       eliminatedRings: 0,
-      territorySpaces: 0
-    }
+      territorySpaces: 0,
+    },
   ];
 
   const board: BoardState = {
@@ -74,8 +74,8 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
     territories: new Map(),
     formedLines: [],
     eliminatedRings: {},
-    size: boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 11,
-    type: boardType
+    size: boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 13, // hex: size=13, radius=12
+    type: boardType,
   };
 
   const now = new Date();
@@ -98,7 +98,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
     totalRingsInPlay: 0,
     totalRingsEliminated: 0,
     victoryThreshold: 0,
-    territoryVictoryThreshold: 0
+    territoryVictoryThreshold: 0,
   };
 }
 
@@ -112,7 +112,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
  */
 function collapseAllExcept(board: BoardState, keepPositions: Position[]): void {
   const size = board.size;
-  const keepKeys = new Set(keepPositions.map(p => positionToString(p)));
+  const keepKeys = new Set(keepPositions.map((p) => positionToString(p)));
   for (let x = 0; x < size; x++) {
     for (let y = 0; y < size; y++) {
       const key = positionToString({ x, y });
@@ -149,28 +149,26 @@ describe('RuleEngine ring placement multi-ring semantics', () => {
     const movementTargets: Position[] = [
       { x: 1, y: 0 },
       { x: 2, y: 0 },
-      { x: 3, y: 0 }
+      { x: 3, y: 0 },
     ];
 
     // Collapse all positions except target and movement targets
     collapseAllExcept(state.board, [targetPos, ...movementTargets]);
 
-    const moves = engine.getValidMoves(state).filter(m => m.type === 'place_ring');
+    const moves = engine.getValidMoves(state).filter((m) => m.type === 'place_ring');
 
     // Filter to only fresh placements at the target position
     const targetMoves = moves.filter(
-      m => !m.placedOnStack && m.to.x === targetPos.x && m.to.y === targetPos.y
+      (m) => !m.placedOnStack && m.to.x === targetPos.x && m.to.y === targetPos.y
     );
 
     // Should generate exactly 3 placement moves for 1, 2, or 3 rings on empty space
     expect(targetMoves.length).toBe(3);
 
-    const counts = targetMoves
-      .map(m => m.placementCount ?? 1)
-      .sort((a, b) => a - b);
+    const counts = targetMoves.map((m) => m.placementCount ?? 1).sort((a, b) => a - b);
 
     expect(counts).toEqual([1, 2, 3]);
-    targetMoves.forEach(m => {
+    targetMoves.forEach((m) => {
       expect(m.placedOnStack).toBe(false);
     });
   });
@@ -189,22 +187,20 @@ describe('RuleEngine ring placement multi-ring semantics', () => {
     // This satisfies no-dead-placement for heights 1 and 2.
     const movementTargets: Position[] = [
       { x: 1, y: 0 },
-      { x: 2, y: 0 }
+      { x: 2, y: 0 },
     ];
 
     // Collapse all positions except target and movement targets
     collapseAllExcept(state.board, [targetPos, ...movementTargets]);
 
-    const moves = engine.getValidMoves(state).filter(m => m.type === 'place_ring');
+    const moves = engine.getValidMoves(state).filter((m) => m.type === 'place_ring');
 
     // Filter to only fresh placements at the target position
     const targetMoves = moves.filter(
-      m => !m.placedOnStack && m.to.x === targetPos.x && m.to.y === targetPos.y
+      (m) => !m.placedOnStack && m.to.x === targetPos.x && m.to.y === targetPos.y
     );
 
-    const counts = targetMoves
-      .map(m => m.placementCount ?? 1)
-      .sort((a, b) => a - b);
+    const counts = targetMoves.map((m) => m.placementCount ?? 1).sort((a, b) => a - b);
 
     // With only 2 rings in hand, can only place 1 or 2 rings
     expect(counts).toEqual([1, 2]);
@@ -222,7 +218,7 @@ describe('RuleEngine ring placement multi-ring semantics', () => {
       rings: [1],
       stackHeight: 1,
       capHeight: 1,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     // After placing 1 ring on the existing stack, it becomes height 2.
@@ -237,11 +233,11 @@ describe('RuleEngine ring placement multi-ring semantics', () => {
     state.players[0].ringsInHand = 5;
     state.currentPhase = 'ring_placement';
 
-    const moves = engine.getValidMoves(state).filter(m => m.type === 'place_ring');
+    const moves = engine.getValidMoves(state).filter((m) => m.type === 'place_ring');
 
     // Filter to only stacking placements at (0,0)
     const targetMoves = moves.filter(
-      m => m.placedOnStack && m.to.x === pos.x && m.to.y === pos.y
+      (m) => m.placedOnStack && m.to.x === pos.x && m.to.y === pos.y
     );
 
     // Per rules: placing on existing stack allows exactly 1 ring only
@@ -262,7 +258,7 @@ describe('RuleEngine ring placement multi-ring semantics', () => {
       rings: [1],
       stackHeight: 1,
       capHeight: 1,
-      controllingPlayer: 1
+      controllingPlayer: 1,
     });
 
     state.players[0].ringsInHand = 5;
@@ -277,7 +273,7 @@ describe('RuleEngine ring placement multi-ring semantics', () => {
       placementCount: 2,
       timestamp: new Date(),
       thinkTime: 0,
-      moveNumber: 1
+      moveNumber: 1,
     };
 
     const valid = engine.validateMove(move, state);

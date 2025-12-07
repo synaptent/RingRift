@@ -93,7 +93,7 @@ def build_encoder(board_type: BoardType) -> NeuralNetAI:
     encoder.board_size = {
         BoardType.SQUARE8: 8,
         BoardType.SQUARE19: 19,
-        BoardType.HEXAGONAL: 21,
+        BoardType.HEXAGONAL: 25,
     }.get(board_type, 8)
     return encoder
 

@@ -8,8 +8,16 @@ The same model architecture is used for both inference (online play,
 parity tests) and training. Behaviour is configured via :class:`AIConfig`
 fields such as ``nn_model_id``, ``allow_fresh_weights``, and
 ``history_length``; see :class:`NeuralNetAI` for details.
+
+Memory management
+-----------------
+To prevent OOM issues in long soak tests and selfplay runs, this module
+uses a singleton model cache (``_MODEL_CACHE``) that shares model instances
+across multiple :class:`NeuralNetAI` instances. Call :func:`clear_model_cache`
+to release GPU/MPS memory between games or soak batches.
 """
 
+import gc
 import logging
 
 import torch
@@ -28,6 +36,59 @@ from ..models import (
     MoveType,
 )
 from ..rules.geometry import BoardGeometry
+
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Model Cache for Memory Efficiency
+# =============================================================================
+#
+# Singleton cache to share model instances across NeuralNetAI instances.
+# Key: (architecture_type, device_str, model_path)
+# Value: loaded model instance
+_MODEL_CACHE: Dict[Tuple[str, str, str], nn.Module] = {}
+
+
+def clear_model_cache() -> None:
+    """Clear the model cache and release GPU/MPS memory.
+
+    Call this function between games or soak batches to prevent OOM issues.
+    This is especially important for MPS where memory management is more
+    aggressive than CUDA.
+    """
+    global _MODEL_CACHE
+    cache_size = len(_MODEL_CACHE)
+
+    # Move models to CPU before clearing to release GPU memory
+    for model in _MODEL_CACHE.values():
+        try:
+            model.cpu()
+        except Exception:
+            pass
+
+    _MODEL_CACHE.clear()
+
+    # Clear PyTorch caches
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # Clear MPS cache if available (PyTorch 2.0+)
+    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+        try:
+            torch.mps.empty_cache()
+        except Exception:
+            pass
+
+    # Force garbage collection
+    gc.collect()
+
+    if cache_size > 0:
+        logger.info(f"Cleared model cache ({cache_size} models)")
+
+
+def get_cached_model_count() -> int:
+    """Return the number of models currently in the cache."""
+    return len(_MODEL_CACHE)
 
 
 INVALID_MOVE_INDEX = -1
@@ -74,14 +135,14 @@ MAX_PLAYERS = 4
 BOARD_POLICY_SIZES: Dict[BoardType, int] = {
     BoardType.SQUARE8: POLICY_SIZE_8x8,
     BoardType.SQUARE19: POLICY_SIZE_19x19,
-    BoardType.HEXAGONAL: 54244,  # P_HEX defined below
+    BoardType.HEXAGONAL: 91876,  # P_HEX defined below
 }
 
 # Board type to spatial size mapping
 BOARD_SPATIAL_SIZES: Dict[BoardType, int] = {
     BoardType.SQUARE8: 8,
     BoardType.SQUARE19: 19,
-    BoardType.HEXAGONAL: 21,  # HEX_BOARD_SIZE
+    BoardType.HEXAGONAL: 25,  # HEX_BOARD_SIZE
 }
 
 
@@ -96,13 +157,13 @@ def get_spatial_size_for_board(board_type: BoardType) -> int:
 
 # Hex-specific canonical geometry and policy layout constants.
 #
-# The canonical competitive hex board has radius N = 10, which yields
-# 3N^2 + 3N + 1 = 331 cells. We embed this hex into a fixed 21×21
+# The canonical competitive hex board has radius N = 12, which yields
+# 3N^2 + 3N + 1 = 469 cells. We embed this hex into a fixed 25×25
 # bounding box (2N + 1 on each axis) using _to_canonical_xy /
 # _from_canonical_xy, and define a dedicated hex action space of size
-# P_HEX = 54_244 as documented in AI_ARCHITECTURE.md.
-HEX_BOARD_SIZE = 21
-HEX_MAX_DIST = HEX_BOARD_SIZE - 1  # 20 distance buckets (1..20)
+# P_HEX = 91_876 as documented in AI_ARCHITECTURE.md.
+HEX_BOARD_SIZE = 25
+HEX_MAX_DIST = HEX_BOARD_SIZE - 1  # 24 distance buckets (1..24)
 
 # Canonical axial directions in the 2D embedding.
 HEX_DIRS = [
@@ -117,10 +178,10 @@ NUM_HEX_DIRS = len(HEX_DIRS)
 
 # Layout spans for the hex policy head (see AI_ARCHITECTURE.md):
 #
-# Placements: 21 × 21 × 3 = 1_323
-# Movement/capture: 21 × 21 × 6 × 20 = 52_920
+# Placements: 25 × 25 × 3 = 1_875
+# Movement/capture: 25 × 25 × 6 × 24 = 90_000
 # Special: 1 (skip_placement)
-# Total: P_HEX = 54_244
+# Total: P_HEX = 91_876
 HEX_PLACEMENT_SPAN = HEX_BOARD_SIZE * HEX_BOARD_SIZE * 3
 HEX_MOVEMENT_BASE = HEX_PLACEMENT_SPAN
 HEX_MOVEMENT_SPAN = (
@@ -244,9 +305,6 @@ def _from_canonical_xy(
     return Position(x=cx, y=cy)
 
 
-logger = logging.getLogger(__name__)
-
-
 class ResidualBlock(nn.Module):
     """Residual block with two 3x3 convolutions and skip connection."""
 
@@ -272,12 +330,12 @@ class RingRiftCNN(nn.Module):
     CNN architecture for RingRift board evaluation.
 
     This model uses a ResNet-style backbone with adaptive pooling to handle
-    variable board sizes (8x8, 19x19, 21x21 hex).
+    variable board sizes (8x8, 19x19, 25x25 hex).
 
     For optimal training, use board-specific policy sizes:
     - 8x8:  policy_size=7000  (POLICY_SIZE_8x8)
     - 19x19: policy_size=67000 (POLICY_SIZE_19x19)
-    - Hex:   Use HexNeuralNet instead (P_HEX=54244)
+    - Hex:   Use HexNeuralNet instead (P_HEX=91876)
 
     Architecture Version:
         v1.1.0 - Added configurable policy_size for board-specific optimization.
@@ -469,7 +527,7 @@ class RingRiftCNN_MPS(nn.Module):
         # MPS-compatible pooling: We use manual global average pooling
         # instead of AdaptiveAvgPool2d. This produces a fixed-size output
         # regardless of input spatial dimensions, allowing the same model
-        # to handle 8x8, 19x19, and 21x21 boards.
+        # to handle 8x8, 19x19, and 25x25 boards.
         # The output is num_filters channels (no spatial dimensions).
 
         # Fully connected layers
@@ -694,6 +752,119 @@ class RingRiftCNN_MultiPlayer(nn.Module):
         return values[:, player_idx:player_idx + 1]
 
 
+class RingRiftCNN_MultiPlayer_MPS(nn.Module):
+    """
+    MPS-compatible multi-player CNN architecture for RingRift.
+
+    This model combines the multi-player value head from RingRiftCNN_MultiPlayer
+    with the MPS-compatible global average pooling from RingRiftCNN_MPS. This
+    ensures the architecture works on Apple Silicon with any board size.
+
+    Key Differences from RingRiftCNN_MultiPlayer:
+        - Uses torch.mean(dim=[-2, -1]) instead of nn.AdaptiveAvgPool2d((4, 4))
+        - Fully compatible with MPS backend on Apple Silicon
+        - Maintains multi-player value output (batch, max_players)
+    """
+
+    ARCHITECTURE_VERSION = "v2.0.0-mps"
+
+    def __init__(
+        self,
+        board_size: int = 8,
+        in_channels: int = 10,
+        global_features: int = 10,
+        num_res_blocks: int = 10,
+        num_filters: int = 128,
+        history_length: int = 3,
+        max_players: int = MAX_PLAYERS,
+        policy_size: Optional[int] = None,
+    ):
+        super(RingRiftCNN_MultiPlayer_MPS, self).__init__()
+        self.board_size = board_size
+        self.max_players = max_players
+
+        self.total_in_channels = in_channels * (history_length + 1)
+
+        # Initial convolution
+        self.conv1 = nn.Conv2d(
+            self.total_in_channels, num_filters, kernel_size=3, padding=1
+        )
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+
+        # Residual blocks
+        self.res_blocks = nn.ModuleList([
+            ResidualBlock(num_filters) for _ in range(num_res_blocks)
+        ])
+
+        # MPS-compatible pooling: global average pooling instead of adaptive
+        # Output is num_filters channels (no spatial dimensions)
+
+        # Fully connected layers - input is just num_filters after global pooling
+        conv_out_size = num_filters
+        self.fc1 = nn.Linear(conv_out_size + global_features, 256)
+        self.dropout = nn.Dropout(0.3)
+
+        # Multi-player value head
+        self.value_head = nn.Linear(256, max_players)
+        self.tanh = nn.Tanh()
+
+        # Policy head
+        if policy_size is not None:
+            self.policy_size = policy_size
+        elif board_size == 8:
+            self.policy_size = POLICY_SIZE_8x8
+        elif board_size == 19:
+            self.policy_size = POLICY_SIZE_19x19
+        else:
+            self.policy_size = POLICY_SIZE
+        self.policy_head = nn.Linear(256, self.policy_size)
+
+    def forward(
+        self, x: torch.Tensor, globals: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        x = self.relu(self.bn1(self.conv1(x)))
+
+        for block in self.res_blocks:
+            x = block(x)
+
+        # MPS-compatible global average pooling
+        x = torch.mean(x, dim=[-2, -1])
+
+        # Concatenate global features
+        x = torch.cat((x, globals), dim=1)
+
+        x = self.relu(self.fc1(x))
+        x = self.dropout(x)
+
+        values = self.tanh(self.value_head(x))
+        policy = self.policy_head(x)
+
+        return values, policy
+
+    def forward_single(
+        self, feature: np.ndarray, globals_vec: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Convenience method for single-sample inference."""
+        self.eval()
+        with torch.no_grad():
+            x = torch.from_numpy(feature[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            g = torch.from_numpy(globals_vec[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            v, p = self.forward(x, g)
+        return v.cpu().numpy()[0], p.cpu().numpy()[0]
+
+    def get_perspective_value(
+        self, values: torch.Tensor, current_player: int
+    ) -> torch.Tensor:
+        """Extract value from current player's perspective."""
+        player_idx = current_player - 1
+        return values[:, player_idx:player_idx + 1]
+
+
 def multi_player_value_loss(
     pred_values: torch.Tensor,
     target_values: torch.Tensor,
@@ -796,7 +967,7 @@ def create_model_for_board(
 
     >>> # Create hex model
     >>> model_hex = create_model_for_board(BoardType.HEXAGONAL)
-    >>> assert model_hex.policy_size == P_HEX  # 54244
+    >>> assert model_hex.policy_size == P_HEX  # 91876
 
     >>> # Create multi-player 8x8 model
     >>> model_mp = create_model_for_board(
@@ -823,7 +994,20 @@ def create_model_for_board(
         # Fall through to use standard models for hex if explicitly requested
 
     # Select model class
-    if model_class == "RingRiftCNN_MultiPlayer":
+    if model_class == "RingRiftCNN_MultiPlayer_MPS" or (
+        model_class == "RingRiftCNN_MultiPlayer" and use_mps
+    ):
+        return RingRiftCNN_MultiPlayer_MPS(
+            board_size=board_size,
+            in_channels=in_channels,
+            global_features=global_features,
+            num_res_blocks=num_res_blocks,
+            num_filters=num_filters,
+            history_length=history_length,
+            max_players=max_players,
+            policy_size=policy_size,
+        )
+    elif model_class == "RingRiftCNN_MultiPlayer":
         return RingRiftCNN_MultiPlayer(
             board_size=board_size,
             in_channels=in_channels,
@@ -982,10 +1166,11 @@ class NeuralNetAI(BaseAI):
 
         # Architecture selection
         # RINGRIFT_NN_ARCHITECTURE can be:
-        # - "default": Use RingRiftCNN (default)
+        # - "default": Use RingRiftCNN (uses AdaptiveAvgPool2d - may fail on MPS)
         # - "mps": Use RingRiftCNN_MPS (MPS-compatible)
-        # - "auto": Auto-select MPS architecture if MPS available
-        arch_type = os.environ.get("RINGRIFT_NN_ARCHITECTURE", "default")
+        # - "auto": Auto-select MPS architecture if MPS available (RECOMMENDED)
+        # Default is "auto" to avoid AdaptiveAvgPool2d crashes on MPS for 19x19
+        arch_type = os.environ.get("RINGRIFT_NN_ARCHITECTURE", "auto")
         use_mps_arch = False
 
         if arch_type == "mps":
@@ -1010,49 +1195,27 @@ class NeuralNetAI(BaseAI):
                 )
         else:
             # Standard device selection for default architecture
-            if (torch.backends.mps.is_available() and
-                not disable_mps and not force_cpu):
-                self.device = torch.device("mps")
-            elif torch.cuda.is_available() and not force_cpu:
+            # NOTE: RingRiftCNN uses AdaptiveAvgPool2d which fails on MPS
+            # for non-divisible input sizes (e.g., 19x19 -> 4x4 pooling).
+            # We MUST NOT use MPS with the default architecture.
+            if torch.cuda.is_available() and not force_cpu:
                 self.device = torch.device("cuda")
             else:
                 self.device = torch.device("cpu")
+                # Warn if MPS is available but we're using CPU due to architecture
+                if (torch.backends.mps.is_available() and
+                    not disable_mps and not force_cpu):
+                    logger.warning(
+                        "Non-MPS architecture selected but MPS available. "
+                        "Using CPU to avoid AdaptiveAvgPool2d MPS limitations. "
+                        "Set RINGRIFT_NN_ARCHITECTURE=auto (default) or =mps "
+                        "to use MPS-compatible architecture."
+                    )
 
-        # Create model based on architecture selection
-        if use_mps_arch:
-            self.model = RingRiftCNN_MPS(
-                board_size=self.board_size,
-                in_channels=10,
-                global_features=10,
-                num_res_blocks=10,
-                num_filters=128,
-                history_length=self.history_length
-            )
-            self.architecture_type = "mps"
-            logger.info("Initialized RingRiftCNN_MPS architecture")
-        else:
-            self.model = RingRiftCNN(
-                board_size=self.board_size,
-                in_channels=10,
-                global_features=10,
-                num_res_blocks=10,
-                num_filters=128,
-                history_length=self.history_length
-            )
-            self.architecture_type = "default"
-            logger.info("Initialized RingRiftCNN architecture")
+        # Determine architecture type
+        self.architecture_type = "mps" if use_mps_arch else "default"
 
-        print(f"NeuralNetAI using device: {self.device}, "
-              f"architecture: {self.architecture_type}")
-
-        self.model.to(self.device)
-
-        # Load weights if available. When config.nn_model_id is provided, use
-        # it as the logical model identifier (e.g. "ringrift_v1" or
-        # "v1-nn-heuristic-5") and resolve to ``<base_dir>/models/<id>.pth``.
-        # Otherwise we fall back to the historical default "ringrift_v1.pth".
-        # For MPS architecture, append "_mps" suffix to model ID.
-        import os
+        # Resolve model path for cache key
         # Use absolute path relative to this file. Go up 3 levels:
         # neural_net.py -> ai/ -> app/ -> ai-service/
         base_dir = os.path.dirname(
@@ -1072,26 +1235,69 @@ class NeuralNetAI(BaseAI):
 
         model_path = os.path.join(base_dir, "models", model_filename)
 
-        import os as os_mod
-        if os_mod.path.exists(model_path):
-            self._load_model_checkpoint(model_path)
+        # Build cache key
+        cache_key = (self.architecture_type, str(self.device), model_path)
+
+        # Check cache for existing model
+        if cache_key in _MODEL_CACHE:
+            self.model = _MODEL_CACHE[cache_key]
+            logger.debug(
+                f"Reusing cached model: arch={self.architecture_type}, "
+                f"device={self.device}"
+            )
         else:
-            # No model found - this is often a configuration error in production
-            # but may be intentional for training. Log at WARNING level so it's
-            # visible in logs but doesn't crash inference-only workloads.
-            allow_fresh = getattr(self.config, "allow_fresh_weights", False)
-            if allow_fresh:
-                logger.info(
-                    f"No model found at {model_path}, using fresh weights "
-                    "(allow_fresh_weights=True)"
+            # Create new model based on architecture selection
+            if use_mps_arch:
+                self.model = RingRiftCNN_MPS(
+                    board_size=self.board_size,
+                    in_channels=10,
+                    global_features=10,
+                    num_res_blocks=10,
+                    num_filters=128,
+                    history_length=self.history_length
                 )
+                logger.info("Initialized RingRiftCNN_MPS architecture")
             else:
-                logger.warning(
-                    f"No model found at {model_path}, using fresh (random) weights. "
-                    "This may indicate a misconfigured model path. Set "
-                    "config.allow_fresh_weights=True to suppress this warning."
+                self.model = RingRiftCNN(
+                    board_size=self.board_size,
+                    in_channels=10,
+                    global_features=10,
+                    num_res_blocks=10,
+                    num_filters=128,
+                    history_length=self.history_length
                 )
-            self.model.eval()
+                logger.info("Initialized RingRiftCNN architecture")
+
+            self.model.to(self.device)
+
+            # Load weights if available
+            if os.path.exists(model_path):
+                self._load_model_checkpoint(model_path)
+            else:
+                # No model found - this is often a configuration error in production
+                # but may be intentional for training. Log at WARNING level so it's
+                # visible in logs but doesn't crash inference-only workloads.
+                allow_fresh = getattr(self.config, "allow_fresh_weights", False)
+                if allow_fresh:
+                    logger.info(
+                        f"No model found at {model_path}, using fresh weights "
+                        "(allow_fresh_weights=True)"
+                    )
+                else:
+                    logger.warning(
+                        f"No model found at {model_path}, using fresh (random) weights. "
+                        "This may indicate a misconfigured model path. Set "
+                        "config.allow_fresh_weights=True to suppress this warning."
+                    )
+                self.model.eval()
+
+            # Cache the model for reuse
+            _MODEL_CACHE[cache_key] = self.model
+            logger.info(
+                f"Cached model: arch={self.architecture_type}, device={self.device} "
+                f"(total cached: {len(_MODEL_CACHE)})"
+            )
+
 
     def _load_model_checkpoint(self, model_path: str) -> None:
         """
@@ -2127,13 +2333,14 @@ class NeuralNetAI(BaseAI):
             None,
         )
 
+        ring_norm = 48.0  # hex supply per player
         if my_player:
-            globals[5] = my_player.rings_in_hand / 20.0
-            globals[7] = my_player.eliminated_rings / 20.0
+            globals[5] = my_player.rings_in_hand / ring_norm
+            globals[7] = my_player.eliminated_rings / ring_norm
 
         if opp_player:
-            globals[6] = opp_player.rings_in_hand / 20.0
-            globals[8] = opp_player.eliminated_rings / 20.0
+            globals[6] = opp_player.rings_in_hand / ring_norm
+            globals[8] = opp_player.eliminated_rings / ring_norm
 
         # Is it my turn? (always yes for current_player perspective)
         globals[9] = 1.0
@@ -2144,29 +2351,29 @@ class NeuralNetAI(BaseAI):
 
 
 class ActionEncoderHex:
-    """Hex-only action encoder for the canonical N=10 board.
+    """Hex-only action encoder for the canonical N=12 board.
 
     The concrete layout matches the design in AI_ARCHITECTURE.md:
 
-      * Spatial frame: 21×21 canonical hex bounding box.
+      * Spatial frame: 25×25 canonical hex bounding box.
       * Placements (0 .. HEX_PLACEMENT_SPAN-1):
-          index = (cy * 21 + cx) * 3 + (count - 1)
+          index = (cy * 25 + cx) * 3 + (count - 1)
         where count ∈ {1,2,3} is the number of rings placed.
 
       * Movement / capture (HEX_MOVEMENT_BASE .. HEX_SPECIAL_BASE-1):
           index = HEX_MOVEMENT_BASE
-                  + from_idx * (6 * 20)
-                  + dir_idx * 20
+                  + from_idx * (6 * HEX_MAX_DIST)
+                  + dir_idx * HEX_MAX_DIST
                   + (dist - 1)
-        where from_idx = from_cy * 21 + from_cx, dir_idx ∈ [0,6),
-        dist ∈ [1,20]. This shared layout is used for MOVE_STACK,
+        where from_idx = from_cy * 25 + from_cx, dir_idx ∈ [0,6),
+        dist ∈ [1,HEX_MAX_DIST]. This shared layout is used for MOVE_STACK,
         OVERTAKING_CAPTURE, and CONTINUE_CAPTURE_SEGMENT.
 
       * Special (HEX_SPECIAL_BASE):
           SKIP_PLACEMENT sentinel.
 
     Any decoded index that maps to a canonical cell outside the true hex
-    (331-cell) region is treated as invalid and returns None.
+    (469-cell) region is treated as invalid and returns None.
     """
 
     def __init__(
@@ -2194,14 +2401,14 @@ class ActionEncoderHex:
         """Map a hex move into a [0, policy_size) index.
 
         This encoder is only valid for BoardType.HEXAGONAL boards of the
-        canonical radius (size == 11). For any non-hex geometry or
+        canonical radius (size == 13, radius == 12). For any non-hex geometry or
         geometries that do not match the canonical frame, the move is
         treated as unrepresentable and INVALID_MOVE_INDEX is returned.
         """
         if board.type != BoardType.HEXAGONAL:
             return INVALID_MOVE_INDEX
 
-        # Defensive guard: only support the canonical N=10 hex for now.
+        # Defensive guard: only support the canonical N=12 hex for now.
         if _infer_board_size(board) != HEX_BOARD_SIZE:
             return INVALID_MOVE_INDEX
 
@@ -2389,7 +2596,7 @@ class HexNeuralNet(nn.Module):
 
     Architecture Version:
         v1.0.0 - Initial hex architecture with 8 residual blocks, 128 filters,
-                 masked global average pooling, policy head size P_HEX=54244.
+                 masked global average pooling, policy head size P_HEX=91876.
 
     Design (see AI_ARCHITECTURE.md, HexNeuralNet section):
 
@@ -2397,7 +2604,7 @@ class HexNeuralNet(nn.Module):
         residual blocks with 3×3 convolutions (stride 1, padding 1).
       * Value head:
           - 1×1 conv → BN → ReLU producing a single-channel map;
-          - masked global average pooling over the 21×21 hex frame using
+          - masked global average pooling over the 25×25 hex frame using
             ``hex_mask`` when provided;
           - concatenation with the ``global_features`` vector; and
           - a small MLP + tanh to produce a scalar in [-1, 1].

@@ -263,7 +263,7 @@ Canonical mapping (see `AI_ARCHITECTURE.md` §1.2):
 - [x] **Introduce a dedicated hex-board neural network (`HexNeuralNet`)**
   - **Status:** encoder + HexNeuralNet + unit tests implemented.
     - `ActionEncoderHex` encodes/decodes the canonical hex action space with
-      policy dimension `P_hex = 54_244` (21×21×3 placements, 21×21×6×20
+      policy dimension `P_hex = 91_876` (25×25×3 placements, 25×25×6×24
       movement/capture, and one skip-placement slot), per
       `AI_ARCHITECTURE.md`.
     - `HexNeuralNet` implements the documented ResNet-style backbone, masked

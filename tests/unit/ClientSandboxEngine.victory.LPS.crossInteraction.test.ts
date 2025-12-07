@@ -59,7 +59,11 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
     return new ClientSandboxEngine({ config, interactionHandler: handler });
   }
 
-  function startInteractiveTurn(engineAny: any, state: GameState, playerNumber: number): GameResult | null {
+  function startInteractiveTurn(
+    engineAny: any,
+    state: GameState,
+    playerNumber: number
+  ): GameResult | null {
     state.currentPlayer = playerNumber;
     state.currentPhase = 'ring_placement';
     engineAny.handleStartOfInteractiveTurn();
@@ -77,7 +81,7 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
      * - P2 and P3 have no stacks, no rings in hand (no real actions)
      *
      * Expected:
-     * - After a full round of P1 being the only active player, LPS triggers
+     * - After TWO full rounds of P1 being the only active player, LPS triggers
      * - This tests the LPS + line phase ordering conceptually
      */
     it('LPS_triggers_only_after_line_processing_completes', async () => {
@@ -113,23 +117,29 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Game should be active before LPS tracking
       expect(state.gameStatus).toBe('active');
 
-      // Now simulate a full round of LPS tracking
-      // Turn 1: P1 starts (has actions)
+      // Now simulate TWO full rounds of LPS tracking (new requirement)
+      // Round 1: P1 -> P2 -> P3
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
-
-      // Turn 2: P2 (no actions)
       result = startInteractiveTurn(engineAny, state, 2);
       expect(result).toBeNull();
-
-      // Turn 3: P3 (no actions)
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // Turn 4: P1 again - now LPS should trigger
+      // Start of round 2: P1's turn completes round 1
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Still no LPS - only 1 consecutive round
+
+      // Round 2: P2 -> P3
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // Start of round 3: P1's turn completes round 2 - NOW LPS triggers
       result = startInteractiveTurn(engineAny, state, 1);
 
-      // LPS should trigger now
+      // LPS should trigger now (after 2 consecutive rounds)
       expect(result).not.toBeNull();
       expect(result!.winner).toBe(1);
       expect(result!.reason).toBe('last_player_standing');
@@ -168,11 +178,10 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       }
 
       // After line processing: only P1 has real actions
-      engineAny.hasAnyRealActionForPlayer = jest.fn(
-        (playerNumber: number) => playerNumber === 1
-      );
+      engineAny.hasAnyRealActionForPlayer = jest.fn((playerNumber: number) => playerNumber === 1);
 
-      // Full round where only P1 has actions
+      // TWO full rounds where only P1 has actions (new requirement)
+      // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
       result = startInteractiveTurn(engineAny, state, 2);
@@ -180,7 +189,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // P1's turn again - LPS should trigger now
+      // Start of round 2 (completes round 1)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 1 consecutive round - not enough
+
+      // Round 2
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // P1's turn again (start of round 3, completes round 2) - LPS should trigger now
       result = startInteractiveTurn(engineAny, state, 1);
 
       expect(result).not.toBeNull();
@@ -229,7 +248,8 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Verify P1 has material
       expect(engineAny.hasAnyRealActionForPlayer(1)).toBe(true);
 
-      // Full round of LPS tracking where only P1 has actions
+      // TWO full rounds of LPS tracking where only P1 has actions (new requirement)
+      // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
       result = startInteractiveTurn(engineAny, state, 2);
@@ -237,7 +257,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // P1's turn again - LPS should trigger now (completed a round)
+      // Start of round 2 (completes round 1)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 1 consecutive round
+
+      // Round 2
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // P1's turn again (start of round 3) - LPS should trigger now (completed 2 rounds)
       result = startInteractiveTurn(engineAny, state, 1);
 
       expect(result).not.toBeNull();
@@ -276,17 +306,15 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Track whether territory collapse has happened
       let territoryProcessed = false;
 
-      engineAny.hasAnyRealActionForPlayer = jest.fn(
-        (playerNumber: number) => {
-          if (!territoryProcessed) {
-            // Before territory: P1 and P2 have material
-            return playerNumber === 1 || playerNumber === 2;
-          } else {
-            // After territory: only P1 has real actions
-            return playerNumber === 1;
-          }
+      engineAny.hasAnyRealActionForPlayer = jest.fn((playerNumber: number) => {
+        if (!territoryProcessed) {
+          // Before territory: P1 and P2 have material
+          return playerNumber === 1 || playerNumber === 2;
+        } else {
+          // After territory: only P1 has real actions
+          return playerNumber === 1;
         }
-      );
+      });
 
       // Verify both P1 and P2 have material before territory processing
       expect(engineAny.hasAnyRealActionForPlayer(1)).toBe(true);
@@ -297,7 +325,8 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       state.board.collapsedSpaces.set(positionToString(p2StackPos), 1);
       territoryProcessed = true;
 
-      // Full round of LPS tracking
+      // TWO full rounds of LPS tracking (new requirement)
+      // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
       result = startInteractiveTurn(engineAny, state, 2);
@@ -305,7 +334,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // LPS triggers
+      // Start of round 2 (completes round 1)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 1 consecutive round
+
+      // Round 2
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // LPS triggers (start of round 3, completing 2 consecutive rounds)
       result = startInteractiveTurn(engineAny, state, 1);
       expect(result).not.toBeNull();
       expect(result!.winner).toBe(1);
@@ -344,17 +383,15 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Track processing phases
       let allProcessingComplete = false;
 
-      engineAny.hasAnyRealActionForPlayer = jest.fn(
-        (playerNumber: number) => {
-          if (!allProcessingComplete) {
-            // Before processing: P1 and P2 both have actions
-            return playerNumber === 1 || playerNumber === 2;
-          } else {
-            // After processing: only P1 has real actions
-            return playerNumber === 1;
-          }
+      engineAny.hasAnyRealActionForPlayer = jest.fn((playerNumber: number) => {
+        if (!allProcessingComplete) {
+          // Before processing: P1 and P2 both have actions
+          return playerNumber === 1 || playerNumber === 2;
+        } else {
+          // After processing: only P1 has real actions
+          return playerNumber === 1;
         }
-      );
+      });
 
       // Step 1: Simulate line processing effect (collapse line positions)
       for (let i = 0; i < requiredLineLength; i++) {
@@ -375,7 +412,8 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       // Game should still be active until LPS is properly tracked
       expect(state.gameStatus).toBe('active');
 
-      // Step 3: Full round of LPS tracking
+      // Step 3: TWO full rounds of LPS tracking (new requirement)
+      // Round 1
       let result = startInteractiveTurn(engineAny, state, 1);
       expect(result).toBeNull();
       result = startInteractiveTurn(engineAny, state, 2);
@@ -383,7 +421,17 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       result = startInteractiveTurn(engineAny, state, 3);
       expect(result).toBeNull();
 
-      // Step 4: LPS triggers on P1's next turn
+      // Start of round 2 (completes round 1)
+      result = startInteractiveTurn(engineAny, state, 1);
+      expect(result).toBeNull(); // Only 1 consecutive round
+
+      // Round 2
+      result = startInteractiveTurn(engineAny, state, 2);
+      expect(result).toBeNull();
+      result = startInteractiveTurn(engineAny, state, 3);
+      expect(result).toBeNull();
+
+      // Step 4: LPS triggers on P1's next turn (start of round 3, completes 2 consecutive rounds)
       result = startInteractiveTurn(engineAny, state, 1);
 
       expect(result).not.toBeNull();
@@ -423,7 +471,8 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
         // Don't actually process to avoid state changes
       });
 
-      const originalProcessTerritory = engineAny.processDisconnectedRegionsForCurrentPlayer.bind(engineAny);
+      const originalProcessTerritory =
+        engineAny.processDisconnectedRegionsForCurrentPlayer.bind(engineAny);
       engineAny.processDisconnectedRegionsForCurrentPlayer = jest.fn(async () => {
         processingOrder.push('territory_processing');
         // Don't actually process to avoid state changes
@@ -441,11 +490,7 @@ describe('ClientSandboxEngine LPS + Line/Territory Cross-Interaction Scenarios',
       await engineAny.advanceAfterMovement();
 
       // Verify order: lines → territory → victory
-      expect(processingOrder).toEqual([
-        'line_processing',
-        'territory_processing',
-        'victory_check',
-      ]);
+      expect(processingOrder).toEqual(['line_processing', 'territory_processing', 'victory_check']);
     });
   });
 });

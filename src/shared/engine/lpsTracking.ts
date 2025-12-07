@@ -2,9 +2,9 @@
  * Shared Last-Player-Standing (LPS) tracking helpers for RingRift engine.
  *
  * The LPS victory condition (R172) fires when exactly one player has any real
- * actions available for an entire round while all other players with material
- * are blocked. This module provides the core tracking algorithms that both
- * server and client engines use to detect this condition.
+ * actions available for TWO CONSECUTIVE full rounds while all other players
+ * with material are blocked. After the second round completes, the exclusive
+ * player wins by LPS.
  *
  * Real actions are: placement, non-capture movement, overtaking capture.
  * Non-real actions (that don't count for LPS): skip_placement, forced elimination,
@@ -51,6 +51,18 @@ export interface LpsTrackingState {
    * round, their player number is stored here. Otherwise null.
    */
   exclusivePlayerForCompletedRound: number | null;
+
+  /**
+   * Number of consecutive completed rounds where the same player was the
+   * exclusive real-action holder. LPS victory requires 2 consecutive rounds.
+   */
+  consecutiveExclusiveRounds: number;
+
+  /**
+   * The player who has been exclusive for consecutive rounds. Tracked
+   * separately to detect when the exclusive player changes (resetting count).
+   */
+  consecutiveExclusivePlayer: number | null;
 }
 
 /**
@@ -62,6 +74,8 @@ export function createLpsTrackingState(): LpsTrackingState {
     currentRoundActorMask: new Map(),
     currentRoundFirstPlayer: null,
     exclusivePlayerForCompletedRound: null,
+    consecutiveExclusiveRounds: 0,
+    consecutiveExclusivePlayer: null,
   };
 }
 
@@ -73,6 +87,8 @@ export function resetLpsTrackingState(state: LpsTrackingState): void {
   state.currentRoundActorMask.clear();
   state.currentRoundFirstPlayer = null;
   state.exclusivePlayerForCompletedRound = null;
+  state.consecutiveExclusiveRounds = 0;
+  state.consecutiveExclusivePlayer = null;
 }
 
 /**
@@ -146,12 +162,30 @@ export function updateLpsTracking(lps: LpsTrackingState, options: LpsUpdateOptio
     lps.currentRoundFirstPlayer = currentPlayer;
     lps.currentRoundActorMask.clear();
     lps.exclusivePlayerForCompletedRound = null;
+    // Reset consecutive tracking when round structure changes
+    lps.consecutiveExclusiveRounds = 0;
+    lps.consecutiveExclusivePlayer = null;
   } else if (currentPlayer === first && lps.currentRoundActorMask.size > 0) {
     // Cycled back to first player - finalize previous round
-    lps.exclusivePlayerForCompletedRound = finalizeCompletedLpsRound(
-      activePlayers,
-      lps.currentRoundActorMask
-    );
+    const exclusivePlayer = finalizeCompletedLpsRound(activePlayers, lps.currentRoundActorMask);
+    lps.exclusivePlayerForCompletedRound = exclusivePlayer;
+
+    // Track consecutive exclusive rounds for the same player
+    if (exclusivePlayer !== null) {
+      if (exclusivePlayer === lps.consecutiveExclusivePlayer) {
+        // Same player remains exclusive - increment count
+        lps.consecutiveExclusiveRounds += 1;
+      } else {
+        // Different player is now exclusive - reset and start counting
+        lps.consecutiveExclusivePlayer = exclusivePlayer;
+        lps.consecutiveExclusiveRounds = 1;
+      }
+    } else {
+      // No exclusive player this round - reset consecutive tracking
+      lps.consecutiveExclusiveRounds = 0;
+      lps.consecutiveExclusivePlayer = null;
+    }
+
     lps.roundIndex += 1;
     lps.currentRoundActorMask.clear();
     lps.currentRoundFirstPlayer = currentPlayer;
@@ -229,12 +263,19 @@ export interface LpsEvaluationResult {
 }
 
 /**
+ * Number of consecutive exclusive rounds required for LPS victory.
+ * Per RR-CANON-R172, a player must be the exclusive real-action holder
+ * for TWO consecutive full rounds before winning by LPS.
+ */
+export const LPS_REQUIRED_CONSECUTIVE_ROUNDS = 2;
+
+/**
  * Evaluate whether the Last-Player-Standing victory condition (R172) is satisfied.
  *
  * This should be called at the start of each interactive turn after updating
  * LPS tracking. The condition is satisfied when:
- * 1. There's an exclusive player from the completed round
- * 2. It's that player's turn
+ * 1. The same player has been the exclusive real-action holder for 2 consecutive rounds
+ * 2. It's that player's turn (start of round 3)
  * 3. They still have real actions
  * 4. All other players with material have no real actions
  *
@@ -267,18 +308,26 @@ export function evaluateLpsVictory(options: LpsEvaluationOptions): LpsEvaluation
     return { isVictory: false, reason: 'not_interactive_phase' };
   }
 
-  // Must have a candidate from the completed round
-  const candidate = lps.exclusivePlayerForCompletedRound;
+  // Must have completed at least 2 consecutive rounds with the same exclusive player
+  if (lps.consecutiveExclusiveRounds < LPS_REQUIRED_CONSECUTIVE_ROUNDS) {
+    return {
+      isVictory: false,
+      reason: `insufficient_consecutive_rounds_${lps.consecutiveExclusiveRounds}_of_${LPS_REQUIRED_CONSECUTIVE_ROUNDS}`,
+    };
+  }
+
+  // Must have a candidate who has been exclusive for consecutive rounds
+  const candidate = lps.consecutiveExclusivePlayer;
   if (candidate === null || candidate === undefined) {
     return { isVictory: false, reason: 'no_exclusive_candidate' };
   }
 
-  // Must be the candidate's turn
+  // Must be the candidate's turn (start of the round after the 2 qualifying rounds)
   if (gameState.currentPlayer !== candidate) {
     return { isVictory: false, reason: 'not_candidate_turn' };
   }
 
-  // Candidate must still have real actions
+  // Candidate must still have real actions at the start of this turn
   if (!hasAnyRealAction(candidate)) {
     return { isVictory: false, reason: 'candidate_no_actions' };
   }

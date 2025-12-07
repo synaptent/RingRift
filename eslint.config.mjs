@@ -3,6 +3,7 @@ import tsParser from '@typescript-eslint/parser';
 import reactPlugin from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import unicorn from 'eslint-plugin-unicorn';
+import jestPlugin from 'eslint-plugin-jest';
 import globals from 'globals';
 
 // Flat config for ESLint 9+, migrated from .eslintrc.json while preserving
@@ -84,8 +85,16 @@ export default [
         ...globals.jest,
       },
     },
+    plugins: {
+      jest: jestPlugin,
+    },
     rules: {
       '@typescript-eslint/no-var-requires': 'off',
+      // Prevent .only() calls from being committed - these cause CI to skip tests
+      'jest/no-focused-tests': 'error',
+      // Warn about .skip() calls - these should have justification comments
+      // See docs/supplementary/TEST_SKIPPED_TRIAGE.md for categorization
+      'jest/no-disabled-tests': 'warn',
     },
   },
 ];

@@ -142,7 +142,7 @@ function createBoardFromSpecs(
 ): BoardState {
   const stacksMap = new Map<string, RingStack>();
   const markersMap = new Map<string, MarkerInfo>();
-  const boardSize = boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 11;
+  const boardSize = boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 13; // hex: size=13, radius=12
 
   for (const spec of stacks) {
     const key = positionToString(spec.position);

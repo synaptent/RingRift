@@ -59,7 +59,7 @@ def encode_hex_legal_moves(
     """
     Encode a list of legal moves for hex boards using ActionEncoderHex.
 
-    The returned indices live in the P_HEX policy head (54,244 actions).
+    The returned indices live in the P_HEX policy head (91,876 actions).
     Moves that cannot be encoded (INVALID_MOVE_INDEX) are filtered out.
     """
     encoded_moves: List[int] = []
@@ -77,14 +77,14 @@ class HexStateEncoder:
     Converts hex game states to feature tensors suitable for HexNeuralNet.
     The encoder outputs feature tensors of shape (C, H, W) where:
     - C = 10 channels (stacks, markers, collapsed, liberties, line potential)
-    - H = W = 21 (for canonical N=10 hex board, embedded in 21x21 grid)
+    - H = W = 25 (for canonical N=12 hex board, embedded in 25x25 grid)
 
     Coordinate Systems:
     - Axial coordinates (q, r): Used in game state, q+r+s=0 with s=-q-r
     - Canonical grid (cx, cy): 0-indexed grid for CNN, where:
         cx = q + radius
         cy = r + radius
-      For radius=10, this maps q,r ∈ [-10,10] to cx,cy ∈ [0,20]
+      For radius=12, this maps q,r ∈ [-12,12] to cx,cy ∈ [0,24]
 
     Feature Channels:
         0: Current player stacks (height normalized to [0,1])
@@ -110,11 +110,11 @@ class HexStateEncoder:
     """
 
     # Canonical hex board dimensions
-    BOARD_SIZE = HEX_BOARD_SIZE  # 21
-    RADIUS = (HEX_BOARD_SIZE - 1) // 2  # 10
+    BOARD_SIZE = HEX_BOARD_SIZE  # 25
+    RADIUS = (HEX_BOARD_SIZE - 1) // 2  # 12
     NUM_CHANNELS = 10
     NUM_GLOBAL_FEATURES = 10
-    POLICY_SIZE = P_HEX  # 54,244
+    POLICY_SIZE = P_HEX  # 91,876
 
     def __init__(self, board_size: int = HEX_BOARD_SIZE):
         """
@@ -122,7 +122,7 @@ class HexStateEncoder:
 
         Args:
             board_size: Size of the canonical grid (2*radius + 1).
-                        Default is 21 for radius=10 hex boards.
+                        Default is 25 for radius=12 hex boards.
         """
         self.board_size = board_size
         self.radius = (board_size - 1) // 2
@@ -130,7 +130,7 @@ class HexStateEncoder:
             board_size=board_size, policy_size=P_HEX
         )
 
-        # Precompute valid hex cell mask for the 21x21 grid
+        # Precompute valid hex cell mask for the 25x25 grid
         # Only cells where |q| + |r| + |s| <= 2*radius are valid
         self._valid_mask = self._build_valid_mask()
 
@@ -419,13 +419,13 @@ class HexStateEncoder:
         )
 
         if my_player:
-            # Hex uses 36 rings per player
-            globals_vec[5] = my_player.rings_in_hand / 36.0
-            globals_vec[7] = my_player.eliminated_rings / 36.0
+            # Hex uses 48 rings per player
+            globals_vec[5] = my_player.rings_in_hand / 48.0
+            globals_vec[7] = my_player.eliminated_rings / 48.0
 
         if opp_player:
-            globals_vec[6] = opp_player.rings_in_hand / 36.0
-            globals_vec[8] = opp_player.eliminated_rings / 36.0
+            globals_vec[6] = opp_player.rings_in_hand / 48.0
+            globals_vec[8] = opp_player.eliminated_rings / 48.0
 
         # Turn indicator (index 9)
         globals_vec[9] = 1.0
@@ -582,12 +582,12 @@ def detect_board_type_from_features(features: np.ndarray) -> BoardType:
         return BoardType.SQUARE8
     elif h == w == 19:
         return BoardType.SQUARE19
-    elif h == w == 21:
+    elif h == w == 25:
         return BoardType.HEXAGONAL
     else:
         raise ValueError(
             f"Cannot detect board type from spatial size {h}x{w}. "
-            f"Expected 8x8, 19x19, or 21x21."
+            f"Expected 8x8, 19x19, or 25x25."
         )
 
 

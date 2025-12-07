@@ -190,9 +190,9 @@ Each subsection lists:
 
 - Elimination victory when a player’s credited eliminations reach `victoryThreshold` ([`RR‑CANON‑R170`](RULES_CANONICAL_SPEC.md:415)).
 - Territory victory when `territorySpaces` reach `territoryVictoryThreshold` ([`RR‑CANON‑R171`](RULES_CANONICAL_SPEC.md:420)).
-- Last‑player‑standing when, after a full turn:
-  - One player has at least one legal action on their **next** turn, and
-  - All others have no legal placements, movements, or captures (even if they own buried rings) ([`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:425)).
+- Last‑player‑standing when, after **two consecutive full rounds** of turns:
+  - One player (P) has at least one legal real action and takes at least one during both rounds, and
+  - All others have no legal placements, movements, or captures during both rounds (even if they own buried rings) ([`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703)).
 - Global stalemate only when **no player** has any legal placement, movement, capture, or forced elimination, which can occur only after all stacks are gone; tie‑breaking ladder territory → eliminated rings (including converted rings in hand) → markers → last actor ([`RR‑CANON‑R173`](RULES_CANONICAL_SPEC.md:433)).
 - S‑invariant `S = M + C + E` must be monotone and bounded under all **legal** moves; illegal states are outside the rules model ([`RR‑CANON‑R191`](RULES_CANONICAL_SPEC.md:455)).
 
@@ -203,7 +203,7 @@ Each subsection lists:
   - Only considers stalemate and tie‑breaking on a **bare board** (`board.stacks.size === 0`):
     - If any player with rings in hand has a legal placement satisfying no‑dead‑placement, the game is **not** over.
     - Otherwise, treats all rings in hand as eliminated for tie‑breaking (`handCountsAsEliminated`), and walks the ladder territory → eliminated rings (including hand) → markers → last actor → `game_completed`.
-  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:425); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
+  - There is **no explicit implementation** of non‑bare‑board last‑player‑standing as defined in [`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703) (two-round exclusive real-action condition); instead, games continue until ring‑elimination, territory victory, or bare‑board stalemate occurs.
 - Turn rotation in [`TypeScript.turnLogic`](src/shared/engine/turnLogic.ts:181) and Python strict invariants ensure that:
   - Players with neither stacks nor rings in hand are skipped when choosing the next active player.
   - Any ACTIVE state must offer at least one move or forced elimination to the current player (Python enforces this; TS assumes it via sequencing).

@@ -425,7 +425,7 @@ describe('useSandboxInteractions', () => {
     });
 
     describe('ring_placement phase', () => {
-      it('should select cell without placing rings on single click', async () => {
+      it('should place a ring and treat cell as selected on single click for empty cell', async () => {
         const placementState = createTestGameState({
           currentPhase: 'ring_placement',
           currentPlayer: 1,
@@ -443,25 +443,33 @@ describe('useSandboxInteractions', () => {
 
         await act(async () => {
           screen.getByTestId('click-0-0').click();
-          await Promise.resolve();
         });
 
         await waitFor(() => {
           expect(screen.getByTestId('selected').textContent).toBe('0,0');
         });
 
-        expect(mockEngine.tryPlaceRings).not.toHaveBeenCalled();
+        expect(mockEngine.handleHumanCellClick).toHaveBeenCalledWith(pos(0, 0));
       });
 
-      it('should not change selection when clicking again on same cell (no placement)', async () => {
+      it('should place a ring when clicking again on same already-selected stack', async () => {
         const placementState = createTestGameState({
           currentPhase: 'ring_placement',
           currentPlayer: 1,
           gameStatus: 'active',
         });
 
+        // Seed an existing stack at 0,0 so the second click represents
+        // clicking on an already-selected stack.
+        placementState.board.stacks.set('0,0', {
+          position: pos(0, 0),
+          rings: [1],
+          stackHeight: 1,
+          capHeight: 1,
+          controllingPlayer: 1,
+        } as any);
+
         mockEngine = createMockEngine({ gameState: placementState });
-        mockEngine.tryPlaceRings.mockResolvedValue(false);
         mockContext = createMockSandboxContext(mockEngine);
         (SandboxContextModule.useSandbox as jest.Mock).mockReturnValue(mockContext);
 
@@ -474,9 +482,10 @@ describe('useSandboxInteractions', () => {
           await Promise.resolve();
         });
 
-        // Selection should still be on the same cell; no placement attempted.
+        // Selection should still be on the same cell and a placement should
+        // have been attempted via handleHumanCellClick.
         expect(screen.getByTestId('selected').textContent).toBe('0,0');
-        expect(mockEngine.tryPlaceRings).not.toHaveBeenCalled();
+        expect(mockEngine.handleHumanCellClick).toHaveBeenCalledWith(pos(0, 0));
       });
     });
 

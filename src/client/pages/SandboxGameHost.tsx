@@ -6,6 +6,7 @@ import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal } from '../components/VictoryModal';
 import { GameEventLog } from '../components/GameEventLog';
 import { MoveHistory } from '../components/MoveHistory';
+import type { MoveNotationOptions } from '../../shared/engine/notation';
 import { SandboxTouchControlsPanel } from '../components/SandboxTouchControlsPanel';
 import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import { ScenarioPickerModal } from '../components/ScenarioPickerModal';
@@ -1092,7 +1093,7 @@ export const SandboxGameHost: React.FC = () => {
         return;
       }
 
-      const turnLabel = sandboxGameState.turnNumber ?? sandboxGameState.moveHistory.length + 1;
+      const turnLabel = sandboxGameState.moveHistory.length + 1;
       const name = `Sandbox Scenario - Turn ${turnLabel}`;
       exportGameStateToFile(sandboxGameState, name);
       toast.success('Sandbox scenario JSON downloaded');
@@ -2458,6 +2459,11 @@ export const SandboxGameHost: React.FC = () => {
                     showCoordinateLabels={
                       sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
                     }
+                    squareRankFromBottom={
+                      sandboxBoardState.type === 'square8' || sandboxBoardState.type === 'square19'
+                        ? true
+                        : false
+                    }
                     showLineOverlays={showLineOverlays}
                     showTerritoryRegionOverlays={showTerritoryOverlays}
                     pendingAnimation={
@@ -2677,6 +2683,20 @@ export const SandboxGameHost: React.FC = () => {
                   setIsViewingHistory(true);
                   setHistoryViewIndex(index + 1);
                 }}
+                notationOptions={((): MoveNotationOptions | undefined => {
+                  if (
+                    sandboxGameState.boardType === 'square8' ||
+                    sandboxGameState.boardType === 'square19'
+                  ) {
+                    const size = sandboxBoardState?.size ?? 0;
+                    return {
+                      boardType: sandboxGameState.boardType,
+                      boardSizeOverride: size > 0 ? size : undefined,
+                      squareRankFromBottom: true,
+                    };
+                  }
+                  return undefined;
+                })()}
               />
             )}
 

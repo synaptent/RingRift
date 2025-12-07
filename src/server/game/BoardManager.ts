@@ -198,8 +198,8 @@ export class BoardManager {
 
     if (this.boardType === 'hexagonal') {
       // Generate hexagonal board positions
-      // size=11 means radius 10 (positions from -10 to 10)
-      // This gives 3*10^2 + 3*10 + 1 = 331 positions
+      // size=13 means radius 12 (positions from -12 to 12)
+      // This gives 3*12^2 + 3*12 + 1 = 469 positions
       const radius = this.size - 1;
       for (let q = -radius; q <= radius; q++) {
         const r1 = Math.max(-radius, -q - radius);
@@ -750,7 +750,7 @@ export class BoardManager {
 
     if (this.boardType === 'hexagonal') {
       // Hexagonal edge positions
-      // size=11 means radius 10, so edge is at distance 10
+      // size=13 means radius 12, so edge is at distance 12
       const radius = this.size - 1;
       return allPositions.filter((pos) => {
         const distance = Math.max(Math.abs(pos.x), Math.abs(pos.y), Math.abs(pos.z || 0));
@@ -785,7 +785,7 @@ export class BoardManager {
 
   isOnEdge(position: Position): boolean {
     if (this.boardType === 'hexagonal') {
-      // size=11 means radius 10, so edge is at distance 10
+      // size=13 means radius 12, so edge is at distance 12
       const radius = this.size - 1;
       const distance = Math.max(
         Math.abs(position.x),

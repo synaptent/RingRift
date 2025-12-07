@@ -426,9 +426,9 @@ describe('BoardManager', () => {
     });
 
     describe('Position Generation', () => {
-      it('should generate 331 valid positions for hexagonal board', () => {
+      it('should generate 469 valid positions for hexagonal board', () => {
         const positions = boardManager['validPositions'];
-        expect(positions.size).toBe(331);
+        expect(positions.size).toBe(469);
       });
 
       it('should include center position', () => {
@@ -481,14 +481,15 @@ describe('BoardManager', () => {
       });
 
       it('should identify edge positions correctly', () => {
-        expect(boardManager.isOnEdge(pos(10, 0, -10))).toBe(true);
-        expect(boardManager.isOnEdge(pos(-10, 10, 0))).toBe(true);
+        // For radius=12 hex, edge positions are at max distance 12 from center
+        expect(boardManager.isOnEdge(pos(12, 0, -12))).toBe(true);
+        expect(boardManager.isOnEdge(pos(-12, 12, 0))).toBe(true);
       });
 
       it('should use radius = size - 1', () => {
-        // Size is 11, so radius should be 10
-        expect(boardManager.isOnEdge(pos(10, 0, -10))).toBe(true);
-        expect(boardManager.isOnEdge(pos(11, 0, -11))).toBe(false); // Beyond board
+        // Size is 13, so radius should be 12
+        expect(boardManager.isOnEdge(pos(12, 0, -12))).toBe(true);
+        expect(boardManager.isOnEdge(pos(13, 0, -13))).toBe(false); // Beyond board
       });
     });
   });
@@ -986,10 +987,10 @@ describe('BoardManager', () => {
         const edges = boardManager.getEdgePositions();
 
         expect(edges.length).toBeGreaterThan(0);
-        // All edge positions should be at radius 10
+        // All edge positions should be at radius 12
         for (const p of edges) {
           const dist = Math.max(Math.abs(p.x), Math.abs(p.y), Math.abs(p.z || 0));
-          expect(dist).toBe(10);
+          expect(dist).toBe(12);
         }
       });
     });

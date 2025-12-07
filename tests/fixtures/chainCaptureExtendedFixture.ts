@@ -113,7 +113,7 @@ function createBoardFromStacks(
   boardType: BoardType = 'square8'
 ): BoardState {
   const stacksMap = new Map<string, RingStack>();
-  const boardSize = boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 11;
+  const boardSize = boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 13; // hex: size=13, radius=12
 
   for (const spec of stacks) {
     const key = positionToString(spec.position);

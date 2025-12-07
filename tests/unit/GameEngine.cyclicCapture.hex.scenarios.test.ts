@@ -14,7 +14,10 @@ import {
   CaptureApplyAdapters,
   applyCaptureSegmentOnBoard,
 } from '../../src/client/sandbox/sandboxCaptures';
-import { applyMarkerEffectsAlongPathOnBoard, MarkerPathHelpers } from '../../src/client/sandbox/sandboxMovement';
+import {
+  applyMarkerEffectsAlongPathOnBoard,
+  MarkerPathHelpers,
+} from '../../src/client/sandbox/sandboxMovement';
 
 /**
  * Cyclic capture scenario on a hexagonal board.
@@ -158,11 +161,7 @@ describe('GameEngine cyclic capture scenarios (hexagonal; FAQ 15.3.x)', () => {
     const B: Position = { x: r, y: 0, z: -r };
     const C: Position = { x: 0, y: r, z: -r };
 
-    const makeStackEngine = (
-      playerNumber: number,
-      height: number,
-      position: Position,
-    ): void => {
+    const makeStackEngine = (playerNumber: number, height: number, position: Position): void => {
       const rings = Array(height).fill(playerNumber);
       const stack: RingStack = {
         position,
@@ -235,7 +234,7 @@ describe('GameEngine cyclic capture scenarios (hexagonal; FAQ 15.3.x)', () => {
 
     // Ensure no other players' stacks are present.
     const otherPlayerStacks = allStacks.filter(
-      (s) => s.controllingPlayer !== 1 && s.controllingPlayer !== 2,
+      (s) => s.controllingPlayer !== 1 && s.controllingPlayer !== 2
     );
     expect(otherPlayerStacks.length).toBe(0);
 
@@ -253,7 +252,7 @@ describe('GameEngine cyclic capture scenarios (hexagonal; FAQ 15.3.x)', () => {
    */
   test('FAQ_15_3_x_hex_cyclic_chain_maximal_search_sandbox', () => {
     const config = BOARD_CONFIGS.hexagonal;
-    const radius = config.size - 1; // cube radius (size 11 -> radius 10)
+    const radius = config.size - 1; // cube radius (size 13 -> radius 12)
 
     const board: BoardState = {
       stacks: new Map<string, RingStack>(),
@@ -344,7 +343,7 @@ describe('GameEngine cyclic capture scenarios (hexagonal; FAQ 15.3.x)', () => {
       O1,
       1,
       { ...captureBoardAdapters, ...captureApplyAdapters },
-      { pruneVisitedPositions: false },
+      { pruneVisitedPositions: false }
     );
 
     expect(results.length).toBeGreaterThan(0);
@@ -430,11 +429,11 @@ describe('GameEngine cyclic capture scenarios (hexagonal; FAQ 15.3.x)', () => {
         seg.target,
         seg.landing,
         1,
-        execApplyAdapters,
+        execApplyAdapters
       );
       // eslint-disable-next-line no-console
       console.log(
-        `  segment ${idx + 1}: (${seg.from.x},${seg.from.y},${seg.from.z}) -> (${seg.target.x},${seg.target.y},${seg.target.z}) -> (${seg.landing.x},${seg.landing.y},${seg.landing.z})`,
+        `  segment ${idx + 1}: (${seg.from.x},${seg.from.y},${seg.from.z}) -> (${seg.target.x},${seg.target.y},${seg.target.z}) -> (${seg.landing.x},${seg.landing.y},${seg.landing.z})`
       );
     }
 
@@ -448,20 +447,18 @@ describe('GameEngine cyclic capture scenarios (hexagonal; FAQ 15.3.x)', () => {
     // eslint-disable-next-line no-console
     console.log('  summary after executing one maximal hex chain:');
     // eslint-disable-next-line no-console
-    console.log(
-      `    - Final overtaker position: ${positionToString(execFinal.position)}`,
-    );
+    console.log(`    - Final overtaker position: ${positionToString(execFinal.position)}`);
     // eslint-disable-next-line no-console
     console.log(
       `    - Final overtaker height: ${execFinal.stackHeight} (expected 2 + maxSegments = ${
         2 + bestLength
-      })`,
+      })`
     );
     // eslint-disable-next-line no-console
     console.log(
       `    - Remaining target stacks (player 2): count=${execTargets.length}, heights=[${execTargets
         .map((s) => s.stackHeight)
-        .join(', ')}]`,
+        .join(', ')}]`
     );
 
     const totalRings = execStacks.reduce((sum, s) => sum + s.stackHeight, 0);

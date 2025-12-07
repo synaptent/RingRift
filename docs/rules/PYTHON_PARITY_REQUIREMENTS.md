@@ -2,7 +2,7 @@
 
 > **SSoT alignment:** This document is a derived parity/contract view over the canonical TS rules engine. It explains how the Python rules implementation in `ai-service/app/**` is validated against the **Canonical TS rules surface** (`src/shared/engine/**` helpers + aggregates + orchestrator + contracts and v2 contract vectors), and how parity fixtures/tests are maintained. It does not define new rules semantics.
 >
-> **Doc Status (2025-11-26): Active (with historical TypeScript implementation details)**
+> **Doc Status (2025-12-06): Active (with historical TypeScript implementation details)**
 >
 > - Canonical TS rules surface is the helpers + aggregates + orchestrator stack under `src/shared/engine/`: `core.ts`, movement/capture/line/territory/victory helpers, `aggregates/*Aggregate.ts`, and `orchestration/turnOrchestrator.ts` / `phaseStateMachine.ts`, plus contract vectors in `src/shared/engine/contracts/**` and `tests/fixtures/contract-vectors/v2/*.json`.
 > - Function and class names under `validators/*.ts` and `mutators/*.ts` in the tables below should be read as **semantic anchors**, not necessarily 1:1 concrete TS files. As of this date, only `validators/PlacementValidator.ts` and a subset of `mutators/*Mutator.ts` exist on the TS side; the rest of the semantics are expressed via helpers, aggregates, and the orchestrator and are exercised by:
@@ -15,6 +15,19 @@
 **Task:** T1-W1-F  
 **Date:** 2025-11-26  
 **Status:** Complete
+
+**Quickstart (current parity harness)**
+
+```bash
+cd ai-service
+python -m scripts.check_ts_python_replay_parity \
+  --db <path-to-db> \
+  --emit-state-bundles-dir parity_bundles
+python -m scripts.diff_state_bundle --bundle parity_bundles/<bundle>.state_bundle.json
+```
+
+- Use `--compact` to reduce noise; use `--emit-fixtures-dir` for minimal divergence fixtures.
+- Fix the underlying TS/Python logic; do not weaken parity expectations.
 
 ## 1. Overview
 

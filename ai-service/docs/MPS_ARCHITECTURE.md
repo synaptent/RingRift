@@ -51,7 +51,7 @@ x = torch.mean(x, dim=[-2, -1])  # [B, C, H, W] → [B, C]
 - Same input/output interfaces
 - Same policy head size (55,000 actions)
 - Same value head range ([-1, 1])
-- Compatible with all board sizes (8×8, 19×19, 21×21 hex)
+- Compatible with all board sizes (8×8, 19×19, 25×25 hex)
 
 ## Usage
 
@@ -165,7 +165,7 @@ python -m pytest tests/test_mps_architecture.py -v
 The test suite verifies:
 
 - ✅ Architecture instantiation
-- ✅ Forward pass correctness (8×8, 19×19, 21×21 boards)
+- ✅ Forward pass correctness (8×8, 19×19, 25×25 boards)
 - ✅ Output shape validation
 - ✅ Device compatibility (MPS when available)
 - ✅ Architecture selection via environment variables

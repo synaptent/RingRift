@@ -335,28 +335,29 @@ Raw events SHOULD be ingested into a log / warehouse for richer analysis. Promet
 
 ### 5.1 Core Counter
 
-**Current implementation (MetricsService, 2025‑12‑05)**
+**Current implementation (MetricsService, 2025‑12‑06)**
 
 The backend exposes a single low‑cardinality counter:
 
 ```text
 ringrift_rules_ux_events_total{
-  type,            // RulesUxEventType: rules_help_open / rules_help_repeat / rules_undo_churn / rules_weird_state_resign / rules_weird_state_help
-  board_type,      // square8 / square19 / hexagonal
-  num_players,     // 2 / 3 / 4
-  ai_difficulty,   // 1–10 or "unknown"
-  topic,           // low-cardinality teaching topic id or "none"
-  rules_concept,   // low-cardinality rulesConcept from scenarios or "none"
-  weird_state_type // coarse weird state: active-no-moves-*/forced-elimination/structural-stalemate/unknown
+  event_type,    // RulesUxEventType: help_open / help_topic_view / help_reopen / weird_state_* / sandbox_scenario_* / teaching_step_* / doc_link_clicked / legacy rules_* where still emitted
+  rules_context, // semantic rules context (anm_forced_elimination, structural_stalemate, etc.) or "none"
+  source,        // emitting surface: hud / victory_modal / teaching_overlay / sandbox / faq_panel / system_toast / external_docs / unknown
+  board_type,    // square8 / square19 / hexagonal / "unknown"
+  num_players,   // 1 / 2 / 3 / 4 / "unknown"
+  difficulty,    // primary difficulty bucket or AI level: tutorial / casual / ranked_low / 1–10 / "unknown"
+  is_ranked,     // "true" / "false" / "unknown"
+  is_sandbox,    // "true" / "false" / "unknown"
 }
 ```
 
 Implementation reference:
 
-- Counter is defined in `src/server/services/MetricsService.ts` as `rulesUxEventsTotal` with `name: 'ringrift_rules_ux_events_total'`.
-- Client payloads are defined in `src/shared/telemetry/rulesUxEvents.ts` and emitted via `src/client/utils/rulesUxTelemetry.ts`.
+- Counter is defined in [`MetricsService.ts`](src/server/services/MetricsService.ts:518) as `rulesUxEventsTotal` with `name: 'ringrift_rules_ux_events_total'`.
+- Client payloads are defined in [`rulesUxEvents.ts`](src/shared/telemetry/rulesUxEvents.ts:101) and emitted via [`rulesUxTelemetry.ts`](src/client/utils/rulesUxTelemetry.ts:147).
 
-This is a **strict subset** of the envelope in §2–§4: we intentionally do **not** expose `game_id`, `session_id`, `source`, or rich `rules_context` as metric labels to keep Prometheus cardinality bounded. Those fields (where present) remain in logs or higher‑volume telemetry streams.
+This is a **strict subset** of the envelope in §2–§4: we intentionally do **not** expose high‑cardinality identifiers such as `game_id`, `session_id`, `scenario_id`, or `teaching_flow_id` as metric labels to keep Prometheus cardinality bounded. Those fields (where present) remain in logs, warehouses, or higher‑volume telemetry streams.
 
 **Design intent (future extension)**
 
@@ -511,3 +512,144 @@ Together, these specs allow future Code‑mode tasks to:
 - Instrument a **small, well‑labeled** set of telemetry events around confusing rules contexts.
 - Aggregate them safely without exploding metric cardinality.
 - Run repeatable hotspot analyses that feed directly into UX copy changes and new / revised teaching scenarios.
+
+---
+
+## 9. Operational Runbook: Using Rules‑UX Telemetry for Iteration
+
+This section describes a lightweight loop for turning recorded telemetry into concrete W‑UX iteration items. It assumes:
+
+- Client and server are emitting `RulesUxEvent` telemetry per this spec.
+- Metrics and/or event logs are exported regularly to a warehouse or analytics job.
+- Pre‑aggregated snapshots are produced in the [`RulesUxAggregatesRoot`](src/shared/telemetry/rulesUxHotspotTypes.ts:1) shape.
+
+### 9.1 Generate a Rules‑UX Aggregates Snapshot
+
+From logs or warehouse tables containing raw `RulesUxEvent` rows, or from Prometheus counters, produce an aggregate JSON file matching `RulesUxAggregatesRoot`:
+
+- Restrict to a single board type and player count (today: `square8`, `num_players = 2`).
+- For each `rules_context`, build `sources: RulesUxSourceAggregate[]` with:
+  - `source` (hud / victory_modal / teaching_overlay / sandbox / faq_panel / …),
+  - `events` map containing integer counts for:
+    - `help_open`, `help_reopen` (or legacy `rules_help_repeat`),
+    - `weird_state_banner_impression`,
+    - `weird_state_details_open`,
+    - `resign_after_weird_state` (or legacy `rules_weird_state_resign`),
+    - plus any additional event types you wish to retain (ignored by the analyzer if unused).
+
+The resulting JSON should look like:
+
+```jsonc
+{
+  "board": "square8",
+  "num_players": 2,
+  "window": {
+    "start": "2025-11-01T00:00:00Z",
+    "end": "2025-11-30T23:59:59Z",
+  },
+  "games": {
+    "started": 1200,
+    "completed": 800,
+  },
+  "contexts": [
+    {
+      "rulesContext": "anm_forced_elimination",
+      "sources": [
+        {
+          "source": "hud",
+          "events": {
+            "help_open": 80,
+            "help_reopen": 40,
+            "weird_state_banner_impression": 200,
+            "weird_state_details_open": 120,
+            "resign_after_weird_state": 60,
+          },
+        },
+      ],
+    },
+  ],
+}
+```
+
+Export this to a file such as:
+
+```bash
+results/rules_ux_aggregates.square8_2p.2025-11.json
+```
+
+### 9.2 Run the Hotspot Analyzer
+
+Use the Node CLI in [`analyze_rules_ux_telemetry.ts`](scripts/analyze_rules_ux_telemetry.ts:1) to turn aggregates into a hotspot report:
+
+```bash
+node scripts/analyze_rules_ux_telemetry.js \
+  --input results/rules_ux_aggregates.square8_2p.2025-11.json \
+  --output-json docs/ux/rules_ux_hotspots/rules_ux_hotspots.square8_2p.2025-11.json \
+  --output-md docs/ux/rules_ux_hotspots/rules_ux_hotspots.square8_2p.2025-11.md \
+  --min-events 20 \
+  --top-k 5
+```
+
+The script:
+
+- Validates the snapshot as a `RulesUxAggregatesRoot`.
+- Computes, per `rules_context` and `source`:
+  - Help opens per 100 completed games.
+  - Help reopen fraction (using both `help_reopen` and legacy `rules_help_repeat`).
+  - Resigns‑after‑weird‑state fraction (using both `resign_after_weird_state` and legacy `rules_weird_state_resign`).
+- Assigns a `hotspotSeverity` (`LOW` / `MEDIUM` / `HIGH`) per context based on:
+  - Rank by help opens per 100 games.
+  - Repeat‑help rates.
+  - Resign‑after‑weird rates.
+- Emits:
+  - A machine‑readable JSON summary.
+  - A concise Markdown report suitable for pasting into W‑UX iteration docs.
+
+### 9.3 Interpreting the Output
+
+In the JSON and Markdown summary, focus on:
+
+- **Top contexts by help opens per 100 games**:
+  - High values mean players repeatedly need help in that rules area.
+- **Max help reopen rate per context**:
+  - Values ≥ 0.4 indicate a large fraction of help sessions reopen quickly, a strong signal of unresolved confusion.
+- **Max resign‑after‑weird‑state rate per context**:
+  - Values ≥ 0.2 indicate that a noticeable share of weird‑state impressions are followed by resigns or exits.
+
+Contexts marked `HIGH` severity typically combine:
+
+- High help‑opens per 100 games,
+- High repeat‑help rates (`help_reopen` / `help_open`),
+- And/or high resign‑after‑weird rates.
+
+These should be treated as primary W‑UX iteration targets.
+
+### 9.4 Turning Hotspots into UX Iteration Items
+
+For each high‑severity `rules_context`:
+
+1. **Inspect surface‑level breakdowns**:
+   - Look at per‑source metrics in the report:
+     - HUD vs `victory_modal` vs `teaching_overlay` vs `sandbox`.
+   - Example: ANM/forced‑elimination confusion primarily from HUD banners vs post‑game VictoryModal.
+
+2. **Map to teaching content and scenarios**:
+   - For weird states:
+     - Check the relevant topics and steps in [`TeachingOverlay.tsx`](src/client/components/TeachingOverlay.tsx:262) and [`TEACHING_SCENARIOS`](src/shared/teaching/teachingScenarios.ts:1).
+   - For sandbox presets:
+     - Review curated scenarios in [`curated.json`](src/client/public/scenarios/curated.json:1) and their `rulesConcept`.
+
+3. **Create concrete W‑UX tickets**, for example:
+   - Strengthen or shorten copy in the relevant TeachingOverlay topic.
+   - Add or adjust curated sandbox scenarios that demonstrate the confusing pattern earlier and more clearly.
+   - Add phase‑specific HUD hints or tweak weird‑state banners (without changing rules semantics).
+
+4. **Re‑run the analyzer** after deploying UX changes:
+   - Compare:
+     - Help‑opens/100 games,
+     - Help‑reopen rates,
+     - Resign‑after‑weird rates
+   - across the same time window before/after the change.
+   - Treat reductions in reopen and resign‑after‑weird rates as evidence that the UX change improved understanding.
+
+This runbook should be used alongside the broader improvement loop in [`UX_RULES_IMPROVEMENT_LOOP.md`](docs/UX_RULES_IMPROVEMENT_LOOP.md:1), which covers scheduling, ownership, and how rules‑UX telemetry feeds back into the canonical specs and teaching surfaces.

@@ -286,17 +286,77 @@ export function useSandboxInteractions({
     const phaseBefore = stateBefore.currentPhase;
     const board = stateBefore.board;
 
-    // Ring-placement phase: a single click is treated as a pure selection
-    // of the stack/cell under the cursor. Actual placement is triggered
-    // via double-click (2-ring on empties, 1-ring on stacks) or the
-    // context menu flow; this keeps the first click from immediately
-    // placing a ring.
     if (phaseBefore === 'ring_placement') {
-      setSelected(pos);
-      setValidTargets([]);
-      // Keep the engine's internal selection in sync so any downstream
-      // helpers that rely on _selectedStackKey see the same focus.
-      engine.handleHumanCellClick(pos);
+      const key = positionToString(pos);
+      const existingStack = board.stacks.get(key);
+
+      // 1) Selected stack + click on a valid landing → synthesize skip_placement + movement
+      if (selected) {
+        const selectedKey = positionToString(selected);
+        const selectedStack = board.stacks.get(selectedKey);
+
+        if (selectedStack && selectedStack.controllingPlayer === stateBefore.currentPlayer) {
+          const landingPositions = engine.getValidLandingPositionsForCurrentPlayer(selected);
+          const isValidLanding = landingPositions.some((t) => positionsEqual(t, pos));
+
+          if (isValidLanding && !positionsEqual(selected, pos)) {
+            void (async () => {
+              const skipMove = {
+                id: `skip-placement-${Date.now()}`,
+                type: 'skip_placement' as const,
+                player: stateBefore.currentPlayer,
+                to: { x: 0, y: 0 },
+                timestamp: new Date(),
+                thinkTime: 0,
+                moveNumber: stateBefore.history.length + 1,
+              };
+              await engine.applyCanonicalMove(skipMove);
+
+              const afterSkip = engine.getGameState();
+              if (afterSkip.gameStatus !== 'active') {
+                setSelected(undefined);
+                setValidTargets([]);
+                setSandboxTurn((t) => t + 1);
+                setSandboxStateVersion((v) => v + 1);
+                return;
+              }
+
+              const validMoves = engine.getValidMoves(afterSkip.currentPlayer);
+              const moveFromSelected = validMoves.find(
+                (m) =>
+                  m.from && positionsEqual(m.from, selected) && m.to && positionsEqual(m.to, pos)
+              );
+
+              if (moveFromSelected) {
+                await engine.applyCanonicalMove(moveFromSelected);
+              }
+
+              setSelected(undefined);
+              setValidTargets([]);
+              setSandboxTurn((t) => t + 1);
+              setSandboxStateVersion((v) => v + 1);
+              maybeRunSandboxAiIfNeeded();
+            })();
+            return;
+          }
+        }
+      }
+
+      // For all other clicks in ring_placement (empty cells or stacks that are
+      // not being used for skip_placement+moved), delegate to the sandbox
+      // engine's canonical handler and then mirror its selection by treating
+      // the clicked cell as selected and highlighting its movement targets.
+      void (async () => {
+        await engine.handleHumanCellClick(pos);
+
+        setSelected(pos);
+        const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
+        setValidTargets(targets);
+
+        setSandboxTurn((t) => t + 1);
+        setSandboxStateVersion((v) => v + 1);
+        maybeRunSandboxAiIfNeeded();
+      })();
       return;
     }
 

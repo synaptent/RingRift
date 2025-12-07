@@ -19,6 +19,12 @@ export interface MoveHistoryProps {
   maxHeight?: string | undefined;
   /** Optional class name for additional styling */
   className?: string | undefined;
+  /**
+   * Optional notation options to customize coordinate display.
+   * When provided, these override the default notation derived from boardType.
+   * Use this for sandbox contexts where the board labels use bottom-origin ranks.
+   */
+  notationOptions?: MoveNotationOptions | undefined;
 }
 
 /**
@@ -125,10 +131,20 @@ interface MoveItemProps {
   isCurrentMove: boolean;
   boardType: BoardType;
   onClick?: ((index: number) => void) | undefined;
+  /** Optional notation options for custom coordinate display */
+  notationOptions?: MoveNotationOptions | undefined;
 }
 
-function MoveItem({ move, index, isCurrentMove, boardType, onClick }: MoveItemProps) {
-  const notationOptions: MoveNotationOptions = { boardType };
+function MoveItem({
+  move,
+  index,
+  isCurrentMove,
+  boardType,
+  onClick,
+  notationOptions: explicitOptions,
+}: MoveItemProps) {
+  // Merge explicit notation options with boardType fallback
+  const notationOptions: MoveNotationOptions = explicitOptions ?? { boardType };
   const notation = formatMoveCompact(move, notationOptions);
 
   // Get player indicator color class
@@ -209,6 +225,7 @@ export function MoveHistory({
   onMoveClick,
   maxHeight = 'max-h-48',
   className = '',
+  notationOptions,
 }: MoveHistoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentMoveRef = useRef<HTMLDivElement>(null);
@@ -279,6 +296,7 @@ export function MoveHistory({
               isCurrentMove={index === effectiveCurrentIndex}
               boardType={boardType}
               onClick={onMoveClick}
+              notationOptions={notationOptions}
             />
           </div>
         ))}

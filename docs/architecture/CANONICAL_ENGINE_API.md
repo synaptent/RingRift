@@ -2,7 +2,7 @@
 
 > **SSoT alignment:** This document is a derived view over the following canonical sources:
 >
-> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers, mutators, aggregates, orchestrator, contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`).
+> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers, mutators, aggregates, orchestrator, contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`). This file documents the API/lifecycle only; it does **not** redefine rules semantics.
 > - **Lifecycle/API SSoT:** `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts` define the executable Move + orchestrator + WebSocket lifecycle that this doc describes.
 > - **Precedence:** If this document ever conflicts with those types, orchestrator implementations, WebSocket schemas, or contract vectors, **code and tests win** and this document must be updated to match them.
 >
@@ -617,14 +617,22 @@ type ValidationResult = { valid: boolean; reason?: string };
 validateMove(state: GameState, move: Move): ValidationResult;
 
 // Legal moves for the current player/phase.
-// - For decision phases (line/territory), this is **interactive moves only**;
-//   required `no_*_action` bookkeeping is surfaced via PendingDecision types
-//   such as 'no_line_action_required', and hosts must construct/apply the
-//   corresponding `no_*_action` Move (RR-CANON-R075/R076).
-// - For ring_placement/movement, the surface currently still includes
-//   canonical `no_placement_action` / `no_movement_action` bookkeeping
-//   moves when no interactive actions exist; these paths are being
-//   migrated toward the same PendingDecision pattern.
+// - For all phases, this returns **interactive moves only**:
+//   - ring_placement: place_ring, skip_placement (when eligible).
+//   - movement: move_stack, move_ring, overtaking_capture,
+//     continue_capture_segment.
+//   - capture / chain_capture: capture segments + skip_capture.
+//   - line_processing: process_line / choose_line_reward.
+//   - territory_processing: process_territory_region /
+//     eliminate_rings_from_stack (+ skip_territory_processing).
+//   - forced_elimination: forced_elimination options.
+// - When a phase has no interactive actions, getValidMoves returns an
+//   empty array. Per RR-CANON-R076, the core rules layer does **not**
+//   auto-generate `no_*_action` bookkeeping moves; hosts must detect
+//   no-move situations and construct/apply explicit `no_*_action`
+//   moves (or honour `no_*_action_required` PendingDecision types)
+//   via the public API so that canonical history still records every
+//   visited phase.
 getValidMoves(state: GameState): Move[];
 
 // Convenience wrapper around getValidMoves(state).length > 0

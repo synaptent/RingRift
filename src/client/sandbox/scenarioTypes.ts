@@ -55,7 +55,8 @@ export type ScenarioRulesConcept =
   | 'turn_multi_phase'
   | 'puzzle_capture'
   | 'anm_forced_elimination'
-  | 'anm_last_player_standing';
+  | 'anm_last_player_standing'
+  | 'structural_stalemate';
 
 /**
  * Source of a scenario for filtering and display.
@@ -266,4 +267,5 @@ export const SCENARIO_RULES_CONCEPTS: readonly ScenarioRulesConcept[] = [
   'puzzle_capture',
   'anm_forced_elimination',
   'anm_last_player_standing',
+  'structural_stalemate',
 ] as const;

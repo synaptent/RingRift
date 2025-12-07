@@ -3,7 +3,8 @@
 > **Doc Status (2025-11-30): Active (execution/backlog tracker)**
 >
 > - Canonical high-level task/backlog tracker for near- and mid-term work.
-> - Not a rules or lifecycle SSoT; for rules semantics defer to the canonical rules spec (`RULES_CANONICAL_SPEC.md` plus `ringrift_complete_rules.md` / `ringrift_compact_rules.md`) and its shared TS engine implementation, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
+
+- Not a rules or lifecycle SSoT; for rules semantics defer to the canonical rules spec (`RULES_CANONICAL_SPEC.md` plus `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`) and its shared TS engine implementation, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 
 **Last Updated:** December 5, 2025 (Engine Architecture Review)
 
@@ -44,7 +45,7 @@ win.
 For **rules semantics themselves** (what the correct behaviour _should_ be),
 the ultimate source of canonical truth is the rules documentation:
 [`ringrift_complete_rules.md`](ringrift_complete_rules.md) (and, where
-applicable, [`ringrift_compact_rules.md`](ringrift_compact_rules.md)).
+applicable, [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md)).
 When there is any ambiguity, parity mismatch, or question about an engine or
 sandbox implementation, tests and code should be treated as converging toward
 those documents, not the other way around. For **where** rules semantics are

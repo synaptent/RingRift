@@ -77,17 +77,17 @@ describe('notation branch coverage', () => {
 
       it('formats central hex position', () => {
         const result = formatPosition(pos(0, 0, 0), { boardType: 'hexagonal' });
-        // For hexagonal board with size 11 (radius 10):
-        // rankNum = radius - pos.x + 1 = 10 - 0 + 1 = 11
-        // fileCode = 'a' + (pos.y + radius) = 'a' + (0 + 10) = 'k'
-        expect(result).toBe('k11');
+        // For hexagonal board with size 13 (radius 12):
+        // rankNum = radius - pos.x + 1 = 12 - 0 + 1 = 13
+        // fileCode = 'a' + (pos.y + radius) = 'a' + (0 + 12) = 'm'
+        expect(result).toBe('m13');
       });
 
       it('formats negative hex position', () => {
         const result = formatPosition(pos(-5, 3, 2), { boardType: 'hexagonal' });
-        // rankNum = 10 - (-5) + 1 = 16
-        // fileCode = 'a' + (3 + 10) = 'n'
-        expect(result).toBe('n16');
+        // rankNum = 12 - (-5) + 1 = 18
+        // fileCode = 'a' + (3 + 12) = 'p'
+        expect(result).toBe('p18');
       });
     });
 

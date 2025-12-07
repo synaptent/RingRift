@@ -773,7 +773,7 @@ class RingRiftDataset(Dataset):
 
         # Initialize hex transform if augmentation enabled
         if self.augment_hex:
-            self.hex_transform = HexSymmetryTransform(board_size=21)
+            self.hex_transform = HexSymmetryTransform(board_size=25)
             logger.info("Hex symmetry augmentation enabled (D6 group)")
 
         self.length = 0
@@ -1325,9 +1325,9 @@ def train_model(
         board_size = 19
     elif config.board_type == BoardType.HEXAGONAL:
         # For hex boards we use the canonical 2 * radius + 1 mapping used by
-        # the feature encoder. With the default size parameter 11
-        # (see create_initial_state), this yields a 21×21 grid.
-        board_size = HEX_BOARD_SIZE  # 21
+        # the feature encoder. With the default size parameter 13
+        # (see create_initial_state), this yields a 25×25 grid.
+        board_size = HEX_BOARD_SIZE  # 25
     else:
         # Default to 8×8.
         board_size = 8

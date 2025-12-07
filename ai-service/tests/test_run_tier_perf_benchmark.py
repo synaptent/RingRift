@@ -19,7 +19,7 @@ from app.models import BoardType  # noqa: E402
 from app.training.tier_perf_benchmark import (  # noqa: E402
   TierPerfResult,
 )
-from app.scripts.run_tier_perf_benchmark import _eval_budget  # type: ignore[import]  # noqa: E402
+from scripts.run_tier_perf_benchmark import _eval_budget  # type: ignore[import]  # noqa: E402
 
 
 def _make_dummy_budget(max_avg: float, max_p95: float) -> TierPerfBudget:

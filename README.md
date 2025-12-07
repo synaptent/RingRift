@@ -7,7 +7,7 @@
 
 > **Note:** Replace `OWNER` above with your GitHub username or organization name once the repository is hosted on GitHub.
 
-**Doc Status (2025-12-04): Active (project overview & navigation)**
+**Doc Status (2025-12-06): Active (project overview & navigation)**
 
 - High-level project overview, setup, and API surface.
 - Not a rules or lifecycle SSoT. For rules semantics, defer to `RULES_CANONICAL_SPEC.md` plus the shared TypeScript rules engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts + v2 contract vectors). For lifecycle semantics (move/decision/WebSocket), defer to `docs/architecture/CANONICAL_ENGINE_API.md` plus shared TS/WebSocket types and schemas.
@@ -20,17 +20,12 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 
 ## 📋 Current Status
 
-**Last Updated:** 2025-12-01
+**Last checked:** 2025-12-06 (aligned with current scripts/config; run the commands below for fresh numbers)
 
-| Metric           | Status                                                                      |
-| ---------------- | --------------------------------------------------------------------------- |
-| CI Tests         | ![CI](https://github.com/OWNER/ringrift/actions/workflows/ci.yml/badge.svg) |
-| TypeScript Tests | 2,987 passing, 0 failing, ~130 skipped                                      |
-| Python Tests     | 836 passing                                                                 |
-| Contract Vectors | 49 vectors (16 files)                                                       |
-
-**Verification:** Code-verified assessment (see `CURRENT_STATE_ASSESSMENT.md` and `docs/archive/assessments/PASS18_ASSESSMENT_REPORT_PASS3.md`)
-**Overall Progress:** Stable beta approaching production readiness; see `CURRENT_STATE_ASSESSMENT.md` for the latest high-level summary.
+- JS/TS: `npm test` (see `tests/README.md` for suite layout and profiles)
+- Python AI service: `cd ai-service && pytest`
+- Parity/contract vectors: `npm run test:ts-parity` (TS) and `cd ai-service && python -m scripts.check_ts_python_replay_parity --db <path>` for replay parity on recorded games
+- For a code-verified snapshot, see `CURRENT_STATE_ASSESSMENT.md`; for open issues, see `KNOWN_ISSUES.md`.
 
 ### ✅ What's Working
 
@@ -47,7 +42,7 @@ A web-based multiplayer implementation of the RingRift strategy game supporting 
 - ✅ **Territory disconnection** - Detection and processing implemented
 - ✅ **Phase transitions** - Correct game flow through all phases
 - ✅ **Player state tracking** - Ring counts, eliminations, territory
-- ✅ **Hexagonal board support** - Full 331-space board validated
+- ✅ **Hexagonal board support** - Full 469-space board (13 per side) validated
 - ✅ **Client-local sandbox engine** - `/sandbox` uses `ClientSandboxEngine` plus `sandboxMovement.ts`, `sandboxCaptures.ts`, `sandboxTerritory.ts`, and `sandboxVictory.ts` (with line and territory processing now wired directly to shared helpers) to run full games in the browser (movement, captures, lines, territory, and ring/territory victories) with dedicated Jest suites under `tests/unit/ClientSandboxEngine.*.test.ts`.
 - ✅ **Orchestrator at 100%** - Shared turn orchestrator handles all turn processing; legacy paths deprecated
 - ✅ **Accessibility features (Wave 14.5)** – Keyboard navigation for board and dialogs, screen reader announcements via `ScreenReaderAnnouncer`, high-contrast and colorblind-friendly themes via `AccessibilitySettingsPanel` / `AccessibilityContext`, reduced-motion support, and over 50 ARIA/role attributes across core UI surfaces; see [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for details.
@@ -93,7 +88,7 @@ To understand the project and know which documents are authoritative for each ar
 ### For Players & Designers (Rules)
 
 - `ringrift_complete_rules.md` – **The authoritative rulebook.** Full, narrative rules for players and designers.
-- `ringrift_compact_rules.md` – Compact, implementation-oriented spec for engine/AI authors.
+- `docs/rules/ringrift_compact_rules.md` – Compact, implementation-oriented spec for engine/AI authors.
 - `archive/RULES_ANALYSIS_PHASE2.md` – Consistency and strategic assessment of the rules.
 
 ### For Developers (Architecture, Status, Setup)
@@ -708,7 +703,7 @@ npm test
 ### Game Rules
 
 - Complete rule documentation in `ringrift_complete_rules.md`
-- Compact rules summary in `ringrift_compact_rules.md`
+- Compact rules summary in `docs/rules/ringrift_compact_rules.md`
 - Future: interactive tutorial system, strategy guides, and video demonstrations
 
 ### Development Guides

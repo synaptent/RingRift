@@ -14,7 +14,7 @@ function createEmptyBoardState(type: 'square8' | 'square19' | 'hexagonal' = 'squ
     territories: new Map(),
     formedLines: [],
     eliminatedRings: {},
-    size: type === 'square8' ? 8 : type === 'square19' ? 19 : 11,
+    size: type === 'square8' ? 8 : type === 'square19' ? 19 : 13, // hex: size=13, radius=12
     type,
   };
 }
@@ -64,7 +64,7 @@ describe('BoardView', () => {
 
     it('renders hexagonal board correctly', () => {
       const board = createEmptyBoardState('hexagonal');
-      board.size = 11;
+      board.size = 13; // radius=12
       board.type = 'hexagonal';
       const { container } = render(<BoardView boardType="hexagonal" board={board} />);
 
@@ -440,7 +440,7 @@ describe('BoardView', () => {
       // Initial board: stack at origin only
       const preBoard = createEmptyBoardState('hexagonal');
       preBoard.type = 'hexagonal';
-      preBoard.size = 11;
+      preBoard.size = 13; // radius=12
       preBoard.stacks.set('0,0,0', {
         position: origin,
         rings: [1],
@@ -454,7 +454,7 @@ describe('BoardView', () => {
       // Post-move board: stack moved to dest, marker left at origin
       const postBoard = createEmptyBoardState('hexagonal');
       postBoard.type = 'hexagonal';
-      postBoard.size = 11;
+      postBoard.size = 13; // radius=12
       postBoard.stacks.set('0,2,-2', {
         position: dest,
         rings: [1],
@@ -716,7 +716,7 @@ describe('BoardView', () => {
     it('accepts chainCapturePath prop on hex boards', () => {
       const board = createEmptyBoardState('hexagonal');
       board.type = 'hexagonal';
-      board.size = 11;
+      board.size = 13; // radius=12
 
       const chainCapturePath = [
         { x: 0, y: 0, z: 0 },
@@ -757,6 +757,138 @@ describe('BoardView', () => {
       // Coordinate labels should not be present in label elements
       const labelElements = container.querySelectorAll('.text-slate-400');
       expect(labelElements.length).toBe(0);
+    });
+
+    describe('square rank orientation', () => {
+      it('uses canonical top-origin ranks by default (top row = rank 1)', () => {
+        const board = createEmptyBoardState('square8');
+
+        const { container } = render(
+          <BoardView boardType="square8" board={board} showCoordinateLabels={true} />
+        );
+
+        // Find all rank label elements (they're on the left/right edges)
+        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
+          (el) => el.textContent
+        );
+
+        // Canonical: ranks should go 1,2,3...8 from top to bottom
+        // The rank labels appear twice (left and right edges)
+        expect(labels).toContain('1');
+        expect(labels).toContain('8');
+
+        // Verify the ordering: rank labels should include 1 at the top
+        // In canonical mode, the visual top row is rank 1 (y=0)
+        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
+        expect(rankLabels.length).toBeGreaterThan(0);
+        expect(rankLabels).toContain('1');
+        expect(rankLabels).toContain('8');
+      });
+
+      it('uses bottom-origin ranks when squareRankFromBottom=true (bottom row = rank 1)', () => {
+        const board = createEmptyBoardState('square8');
+
+        const { container } = render(
+          <BoardView
+            boardType="square8"
+            board={board}
+            showCoordinateLabels={true}
+            squareRankFromBottom={true}
+          />
+        );
+
+        // Find all rank label elements
+        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
+          (el) => el.textContent
+        );
+
+        // Bottom-origin: ranks should go 8,7,6...1 from top to bottom (visually)
+        // So rank 1 appears at the bottom, rank 8 at the top
+        expect(labels).toContain('1');
+        expect(labels).toContain('8');
+
+        // Both arrays of labels should exist, but in reversed order
+        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
+        expect(rankLabels.length).toBeGreaterThan(0);
+        expect(rankLabels).toContain('1');
+        expect(rankLabels).toContain('8');
+      });
+
+      it('maintains canonical behavior for square19 by default', () => {
+        const board = createEmptyBoardState('square19');
+
+        const { container } = render(
+          <BoardView boardType="square19" board={board} showCoordinateLabels={true} />
+        );
+
+        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
+          (el) => el.textContent
+        );
+
+        // Canonical: should have ranks 1-19
+        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
+        expect(rankLabels).toContain('1');
+        expect(rankLabels).toContain('19');
+      });
+
+      it('flips square19 ranks when squareRankFromBottom=true', () => {
+        const board = createEmptyBoardState('square19');
+
+        const { container } = render(
+          <BoardView
+            boardType="square19"
+            board={board}
+            showCoordinateLabels={true}
+            squareRankFromBottom={true}
+          />
+        );
+
+        const labels = Array.from(container.querySelectorAll('.text-slate-400')).map(
+          (el) => el.textContent
+        );
+
+        // Should still show 1 and 19, but in flipped positions
+        const rankLabels = labels.filter((l) => l && /^\d+$/.test(l));
+        expect(rankLabels).toContain('1');
+        expect(rankLabels).toContain('19');
+      });
+
+      it('ignores squareRankFromBottom for hex boards', () => {
+        const board = createEmptyBoardState('hexagonal');
+        board.type = 'hexagonal';
+        board.size = 3;
+
+        // squareRankFromBottom should have no effect on hex boards
+        const { container } = render(
+          <BoardView
+            boardType="hexagonal"
+            board={board}
+            showCoordinateLabels={true}
+            squareRankFromBottom={true}
+          />
+        );
+
+        // Hex boards don't have rank labels; they use in-cell algebraic notation
+        // Just verify the board renders without errors
+        expect(screen.getByTestId('board-view')).toBeInTheDocument();
+      });
+
+      it('only affects labels when showCoordinateLabels is enabled', () => {
+        const board = createEmptyBoardState('square8');
+
+        const { container } = render(
+          <BoardView
+            boardType="square8"
+            board={board}
+            showCoordinateLabels={false}
+            squareRankFromBottom={true}
+          />
+        );
+
+        // No labels should be shown at all
+        const labelElements = container.querySelectorAll('.text-slate-400');
+        expect(labelElements.length).toBe(0);
+      });
     });
   });
 
@@ -1034,7 +1166,7 @@ describe('BoardView', () => {
     it('renders hexagonal cells with cube-coordinate data-x/data-y/data-z attributes', () => {
       const board = createEmptyBoardState('hexagonal');
       board.type = 'hexagonal';
-      board.size = 11; // canonical side length for the hex board in core rules
+      board.size = 13; // radius=12 // canonical side length for the hex board in core rules
 
       const { container } = render(<BoardView boardType="hexagonal" board={board} />);
 

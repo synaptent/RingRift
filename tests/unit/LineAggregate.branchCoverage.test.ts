@@ -88,8 +88,8 @@ describe('LineAggregate - Branch Coverage', () => {
       state.board.stacks.clear();
       state.board.markers.clear();
 
-      // Position at radius 10
-      addMarker(state.board, { x: 10, y: -5, z: -5 }, 1);
+      // Position at radius 12
+      addMarker(state.board, { x: 12, y: -6, z: -6 }, 1);
 
       const lines = findAllLines(state.board);
       expect(Array.isArray(lines)).toBe(true);
@@ -1024,9 +1024,9 @@ describe('LineAggregate - Branch Coverage', () => {
   // validateChooseLineReward additional branches
   // ==========================================================================
   describe('validateChooseLineReward additional branches', () => {
-    it('rejects MINIMUM_COLLAPSE for exact-length line (4 players = 4 threshold)', () => {
-      // 4-player game has threshold 4, so 4 markers is exact length
-      const state = createTestGameState({ numPlayers: 4 });
+    it('rejects MINIMUM_COLLAPSE for exact-length line (square19 = 4 threshold)', () => {
+      // square19 has threshold 4, so 4 markers is exact length
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.currentPhase = 'line_processing';
       state.currentPlayer = 1;
       state.board.formedLines = [
@@ -1060,8 +1060,8 @@ describe('LineAggregate - Branch Coverage', () => {
     });
 
     it('rejects MINIMUM_COLLAPSE without positions', () => {
-      // 4-player game has threshold 4, so 5 markers is overlength
-      const state = createTestGameState({ numPlayers: 4 });
+      // square19 has threshold 4, so 5 markers is overlength
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.currentPhase = 'line_processing';
       state.currentPlayer = 1;
       state.board.formedLines = [
@@ -1091,7 +1091,8 @@ describe('LineAggregate - Branch Coverage', () => {
     });
 
     it('rejects MINIMUM_COLLAPSE with wrong position count', () => {
-      const state = createTestGameState({ numPlayers: 4 });
+      // square19 has threshold 4
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.currentPhase = 'line_processing';
       state.currentPlayer = 1;
       state.board.formedLines = [
@@ -1124,7 +1125,8 @@ describe('LineAggregate - Branch Coverage', () => {
     });
 
     it('rejects MINIMUM_COLLAPSE with positions not in line', () => {
-      const state = createTestGameState({ numPlayers: 4 });
+      // square19 has threshold 4
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.currentPhase = 'line_processing';
       state.currentPlayer = 1;
       state.board.formedLines = [
@@ -1159,7 +1161,8 @@ describe('LineAggregate - Branch Coverage', () => {
     });
 
     it('rejects MINIMUM_COLLAPSE with non-consecutive positions', () => {
-      const state = createTestGameState({ numPlayers: 4 });
+      // square19 has threshold 4
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.currentPhase = 'line_processing';
       state.currentPlayer = 1;
       state.board.formedLines = [
@@ -1195,7 +1198,8 @@ describe('LineAggregate - Branch Coverage', () => {
     });
 
     it('accepts valid MINIMUM_COLLAPSE with consecutive positions', () => {
-      const state = createTestGameState({ numPlayers: 4 });
+      // square19 has threshold 4
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.currentPhase = 'line_processing';
       state.currentPlayer = 1;
       state.board.formedLines = [
@@ -1259,9 +1263,9 @@ describe('LineAggregate - Branch Coverage', () => {
       expect(moves).toHaveLength(0);
     });
 
-    it('returns single move for exact-length line (4-player)', () => {
-      // 4-player game has threshold 4
-      const state = createTestGameState({ numPlayers: 4 });
+    it('returns single move for exact-length line (square19 = threshold 4)', () => {
+      // square19 has threshold 4
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.board.formedLines = [
         {
           player: 1,
@@ -1278,9 +1282,9 @@ describe('LineAggregate - Branch Coverage', () => {
       expect(moves.length).toBe(1); // Only collapse-all option
     });
 
-    it('returns multiple moves for overlength line (4-player)', () => {
-      // 4-player game has threshold 4, so 5 markers is overlength
-      const state = createTestGameState({ numPlayers: 4 });
+    it('returns multiple moves for overlength line (square19 = threshold 4)', () => {
+      // square19 has threshold 4, so 5 markers is overlength
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       state.board.formedLines = [
         {
           player: 1,
@@ -1322,9 +1326,9 @@ describe('LineAggregate - Branch Coverage', () => {
       expect(options).toHaveLength(0);
     });
 
-    it('returns only COLLAPSE_ALL for exact-length line (4-player)', () => {
-      // 4-player game has threshold 4
-      const state = createTestGameState({ numPlayers: 4 });
+    it('returns only COLLAPSE_ALL for exact-length line (square19 = threshold 4)', () => {
+      // square19 has threshold 4
+      const state = createTestGameState({ numPlayers: 2, boardType: 'square19' });
       const line = {
         player: 1,
         positions: [

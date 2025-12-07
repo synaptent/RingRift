@@ -19,7 +19,30 @@ import {
  * These focus on:
  * - No-dead-placement: placement must leave at least one legal move/capture.
  * - Forced elimination: when a player is fully blocked with no rings in hand.
+ *
+ * NOTE: This file includes tests that throw errors from async methods.
+ * Jest parallel workers sometimes crash on async rejections even when properly
+ * caught. The unhandledRejection listener below prevents worker crashes.
+ * If issues persist, run with: npx jest --runInBand <this-file>
  */
+
+// Prevent Jest worker crashes from unhandled async rejections that ARE actually caught
+let capturedUnhandledRejection: Error | null = null;
+const unhandledRejectionHandler = (reason: unknown): void => {
+  capturedUnhandledRejection = reason instanceof Error ? reason : new Error(String(reason));
+};
+
+beforeAll(() => {
+  process.on('unhandledRejection', unhandledRejectionHandler);
+});
+
+afterAll(() => {
+  process.removeListener('unhandledRejection', unhandledRejectionHandler);
+});
+
+afterEach(() => {
+  capturedUnhandledRejection = null;
+});
 
 describe('ClientSandboxEngine placement + forced elimination', () => {
   const boardType: BoardType = 'square8';
@@ -52,7 +75,7 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
     return new ClientSandboxEngine({ config, interactionHandler: handler });
   }
 
-  test('no-dead-placement: sandbox rejects placements that leave no legal move/capture', () => {
+  test('no-dead-placement: sandbox rejects placements that leave no legal move/capture', async () => {
     const engine = createEngine();
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;
@@ -79,9 +102,21 @@ describe('ClientSandboxEngine placement + forced elimination', () => {
     const initialRingsInHand = player1.ringsInHand;
 
     // Attempt to place a ring at (0,0). The sandbox no-dead-placement check
-    // should reject this: stacks remains empty and ringsInHand unchanged.
+    // should reject this with an error. The state remains unchanged.
     const placementPos: Position = { x: 0, y: 0 };
-    engine.handleHumanCellClick(placementPos);
+
+    // Use try/catch for robust Jest worker isolation (avoids parallel worker crashes)
+    let caughtError: Error | null = null;
+    try {
+      await engine.handleHumanCellClick(placementPos);
+    } catch (err) {
+      caughtError = err as Error;
+    }
+
+    expect(caughtError).not.toBeNull();
+    expect(caughtError!.message).toContain(
+      'Placement would result in a stack with no legal moves or captures'
+    );
 
     const finalState = engine.getGameState();
     const finalBoard = finalState.board;

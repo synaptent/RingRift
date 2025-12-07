@@ -123,7 +123,14 @@ class TestRingRiftEnv(unittest.TestCase):
 
     def test_legal_moves_consistency(self):
         """
-        Verify env.legal_moves() matches GameEngine.get_valid_moves()
+        Verify env.legal_moves() aligns with core move/phase requirements.
+
+        For ordinary interactive phases (no pending phase requirement),
+        RingRiftEnv.legal_moves() should surface exactly the same moves as
+        GameEngine.get_valid_moves(). When a phase-level no-action requirement
+        exists, the environment is responsible for synthesizing the single
+        required bookkeeping move (no_*_action / forced_elimination) on top of
+        the empty interactive move list from the core engine.
         """
         config = TrainingEnvConfig(board_type=BoardType.SQUARE8)
         env = make_env(config)
@@ -132,15 +139,20 @@ class TestRingRiftEnv(unittest.TestCase):
         env_moves = env.legal_moves()
         engine_moves = GameEngine.get_valid_moves(state, state.current_player)
 
-        self.assertEqual(len(env_moves), len(engine_moves))
-        # We assume order is preserved or at least set content is same
-        # Since Move objects are Pydantic models, equality works if fields match
-        # But IDs might differ if generated dynamically?
-        # GameEngine generates IDs dynamically.
-        # Let's compare types and coordinates.
+        # At the initial state there should be no pending phase requirement;
+        # all legal moves are interactive placements from the core engine.
+        requirement = GameEngine.get_phase_requirement(
+            state,
+            state.current_player,
+        )
+        self.assertIsNone(requirement)
 
-        self.assertEqual(env_moves[0].type, engine_moves[0].type)
-        self.assertEqual(env_moves[0].to, engine_moves[0].to)
+        # In this case env.legal_moves() should exactly match
+        # GameEngine.get_valid_moves().
+        self.assertEqual(len(env_moves), len(engine_moves))
+        if env_moves:
+            self.assertEqual(env_moves[0].type, engine_moves[0].type)
+            self.assertEqual(env_moves[0].to, engine_moves[0].to)
 
     def test_reset_multi_player_initial_state(self):
         """Verify that RingRiftEnv.reset() respects num_players for N-player games.

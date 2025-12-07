@@ -33,7 +33,7 @@ export function posStr(x: number, y: number, z?: number): string {
 export function createTestBoard(boardType: BoardType = 'square8'): BoardState {
   return {
     type: boardType,
-    size: boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 11,
+    size: boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 13, // hex: size=13, radius=12
     stacks: new Map(),
     markers: new Map(),
     collapsedSpaces: new Map(),
@@ -114,9 +114,9 @@ export const BOARD_CONFIGS = {
   },
   hexagonal: {
     type: 'hexagonal' as BoardType,
-    size: 11,
-    ringsPerPlayer: 36,
-    minLineLength: 5,
+    size: 13, // radius=12
+    ringsPerPlayer: 48,
+    minLineLength: 4, // Same as other boards
     adjacencyType: 'hexagonal' as const,
   },
 } as const;

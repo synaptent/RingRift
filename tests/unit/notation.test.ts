@@ -21,11 +21,11 @@ describe('notation helpers', () => {
     });
 
     it('formats hex coordinates using algebraic notation', () => {
-      // Hex board size 11 -> radius 10
-      // q=1, r=-1 -> Rank = 10 - 1 + 1 = 10
-      // File = 'a' + (-1 + 10) = 'j'
-      // Expected: j10
-      expect(formatPosition({ x: 1, y: -1, z: 0 }, { boardType: 'hexagonal' })).toBe('j10');
+      // Hex board size 13 -> radius 12
+      // q=1, r=-1 -> Rank = 12 - 1 + 1 = 12
+      // File = 'a' + (-1 + 12) = 'l'
+      // Expected: l12
+      expect(formatPosition({ x: 1, y: -1, z: 0 }, { boardType: 'hexagonal' })).toBe('l12');
     });
   });
 

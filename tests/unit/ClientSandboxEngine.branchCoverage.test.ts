@@ -11,6 +11,8 @@ import {
   SandboxConfig,
 } from '../../src/client/sandbox/ClientSandboxEngine';
 import type {
+  GameState,
+  Move,
   PlayerChoice,
   PlayerChoiceResponseFor,
   PlayerChoiceResponse,
@@ -392,6 +394,29 @@ describe('ClientSandboxEngine branch coverage', () => {
       const state = engine.getGameState();
       // Just verify state is consistent after the move
       expect(state.board.stacks.size).toBeGreaterThan(0);
+    });
+
+    it('throws for mis-phased canonical move (place_ring in line_processing)', async () => {
+      // Force the game into a mis-phased state: line_processing with no lines.
+      const badPhaseState = {
+        ...engine.getGameState(),
+        currentPhase: 'line_processing' as GameState['currentPhase'],
+      };
+      (engine as any).gameState = badPhaseState;
+
+      const badMove: Move = {
+        id: 'misphased-place-ring',
+        type: 'place_ring',
+        player: badPhaseState.currentPlayer,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
+
+      await expect(engine.applyCanonicalMove(badMove)).rejects.toThrow(
+        /processMove failed for move type 'place_ring'/i
+      );
     });
   });
 

@@ -158,7 +158,7 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
       const configs = [
         { boardType: 'square8', spaces: 64, threshold: 33 },
         { boardType: 'square19', spaces: 361, threshold: 181 },
-        { boardType: 'hexagonal', spaces: 331, threshold: 166 },
+        { boardType: 'hexagonal', spaces: 469, threshold: 235 },
       ];
 
       configs.forEach((config) => {
@@ -509,7 +509,7 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
       const configs = [
         { boardType: 'square8', totalSpaces: 64, threshold: 33 },
         { boardType: 'square19', totalSpaces: 361, threshold: 181 },
-        { boardType: 'hexagonal', totalSpaces: 331, threshold: 166 },
+        { boardType: 'hexagonal', totalSpaces: 469, threshold: 235 },
       ];
 
       configs.forEach((config) => {

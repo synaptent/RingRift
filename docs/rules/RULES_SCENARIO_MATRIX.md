@@ -6,7 +6,7 @@
 > - It intentionally focuses on **which tests cover which rules/FAQ scenarios**; it does **not** redefine rules semantics or engine APIs.
 > - For rules semantics SSoT, see:
 >   - [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md) (RR-CANON-RXXX invariants and formal rules).
->   - [`ringrift_complete_rules.md`](ringrift_complete_rules.md) and [`ringrift_compact_rules.md`](ringrift_compact_rules.md) for narrative and compact prose.
+>   - [`ringrift_complete_rules.md`](ringrift_complete_rules.md) and [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) for narrative and compact prose.
 > - For Move/decision/WebSocket lifecycle SSoT, see:
 >   - [`docs/CANONICAL_ENGINE_API.md` §§3.9–3.10, 6](docs/CANONICAL_ENGINE_API.md).
 >   - `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, and `src/shared/types/websocket.ts`.
@@ -14,6 +14,8 @@
 >   - `src/shared/engine/contracts/*`, `tests/contracts/contractVectorRunner.test.ts`, and `ai-service/tests/contracts/test_contract_vectors.py`.
 >
 > **Purpose:** This file is the canonical map from the **rules documents** to the **Jest test suites**.
+>
+> **Coverage legend:** ✅ = covered, ⚠ = partial/fragile, ⏳ = pending/unimplemented. Use this to spot gaps quickly when adding scenarios.
 
 ---
 
@@ -74,7 +76,7 @@ It answers:
 It is meant to evolve alongside:
 
 - `ringrift_complete_rules.md`
-- `ringrift_compact_rules.md`
+- `docs/rules/ringrift_compact_rules.md`
 - `archive/RULES_ANALYSIS_PHASE2.md`
 - `tests/README.md`
 - `CURRENT_STATE_ASSESSMENT.md` / `KNOWN_ISSUES.md`
@@ -385,7 +387,7 @@ The following sections break these down in more detail.
 
 **Rules/FAQ:**
 
-- Compact rules §9 (S invariant), progress commentary in `ringrift_compact_rules.md` §9
+- Compact rules §9 (S invariant), progress commentary in `docs/rules/ringrift_compact_rules.md` §9
 - `archive/RULES_ANALYSIS_PHASE2.md` §4 (Progress & Termination)
 
 | Coverage | Scenario / intent | Jest file(s) | Engines | Notes |

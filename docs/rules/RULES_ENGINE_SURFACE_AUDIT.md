@@ -1,12 +1,12 @@
 # Rules Engine Surface Audit
 
 > **SSoT alignment:** This document is an audit/diagnostic view over the rules engine surfaces. It defers to:
->
-> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` / `ringrift_compact_rules.md` as the single source of truth for RingRift rules and invariants, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers → aggregates → turn orchestrator → contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`) as their primary executable implementation. This combined spec + implementation is the **Rules/invariants semantics SSoT** for RingRift.
-> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`) for the executable Move + orchestrator + WebSocket lifecycle.
-> - **Precedence:** Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. If this audit ever conflicts with the shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this document must be updated to match.
->
-> This file inventories and critiques surfaces around the canonical TS rules engine; it is not itself a semantics SSoT.
+
+- **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md` as the single source of truth for RingRift rules and invariants, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers → aggregates → turn orchestrator → contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`) as their primary executable implementation. This combined spec + implementation is the **Rules/invariants semantics SSoT** for RingRift.
+  > - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types (`src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, `src/shared/validation/websocketSchemas.ts`) for the executable Move + orchestrator + WebSocket lifecycle.
+  > - **Precedence:** Backend (`GameEngine`, `RuleEngine`, `BoardManager`, `TurnEngineAdapter`), client sandbox (`ClientSandboxEngine`, `SandboxOrchestratorAdapter`), and Python rules engine (`ai-service/app/game_engine.py`, `ai-service/app/rules/*`) are **hosts/adapters** over those SSoTs. If this audit ever conflicts with the shared TS engine, orchestrator/contracts, WebSocket schemas, or tests, **code + tests win** and this document must be updated to match.
+  >
+  > This file inventories and critiques surfaces around the canonical TS rules engine; it is not itself a semantics SSoT.
 
 **Doc Status (2025-11-26): Active (with historical/diagnostic analysis)**
 

@@ -1,14 +1,14 @@
 import type { GameState, GameResult, BoardState, Player } from '../../src/shared/types/game';
 import { getWeirdStateBanner } from '../../src/client/utils/gameStateWeirdness';
 
-jest.mock('../../shared/engine/globalActions', () => ({
+jest.mock('../../src/shared/engine/globalActions', () => ({
   __esModule: true,
   computeGlobalLegalActionsSummary: jest.fn(),
   isANMState: jest.fn(),
 }));
 
 const { computeGlobalLegalActionsSummary, isANMState } =
-  require('../../shared/engine/globalActions') as {
+  require('../../src/shared/engine/globalActions') as {
     computeGlobalLegalActionsSummary: jest.Mock;
     isANMState: jest.Mock;
   };

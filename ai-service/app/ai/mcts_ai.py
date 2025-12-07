@@ -605,6 +605,18 @@ class MCTSAI(HeuristicAI):
 
         return moves, probs
 
+    def clear_search_tree(self) -> None:
+        """Clear cached search tree nodes to free memory.
+
+        Call this between games during self-play or soak tests to prevent
+        memory accumulation from retained MCTS trees. The training roots
+        and incremental roots are cleared, allowing garbage collection
+        of the full tree structures.
+        """
+        self._training_root = None
+        self._training_root_lite = None
+        self.last_root_lite = None
+
     def select_move(self, game_state: GameState) -> Optional[Move]:
         """Select the best move using MCTS."""
         move, _ = self.select_move_and_policy(game_state)
@@ -672,6 +684,22 @@ class MCTSAI(HeuristicAI):
                         root.parent = None
                         break
 
+        # CRITICAL: Validate reused subtree is compatible with current phase.
+        # Phase transitions (e.g., line_processing → territory_processing)
+        # happen atomically during apply_move, so a reused subtree may have
+        # children/untried_moves from a different phase. If the valid_moves
+        # don't match what the reused tree expects, discard it and start fresh.
+        if root is not None:
+            valid_move_types = {m.type for m in valid_moves}
+            child_move_types = {c.move.type for c in root.children if c.move is not None}
+            untried_move_types = {m.type for m in root.untried_moves}
+            tree_move_types = child_move_types | untried_move_types
+
+            # If the tree's move types don't overlap with valid moves,
+            # the tree is stale (phase transition occurred) - discard it.
+            if tree_move_types and not (tree_move_types & valid_move_types):
+                root = None  # Discard stale tree
+
         if root is None:
             root = MCTSNode(game_state)
             root.untried_moves = list(valid_moves)
@@ -693,7 +721,12 @@ class MCTSAI(HeuristicAI):
 
             for _ in range(batch_size):
                 node = root
-                state = node.game_state
+                # CRITICAL: Use current game_state, NOT the stale state stored in tree.
+                # Phase transitions occur atomically during apply_move, so a reused
+                # tree's stored game_state may be from a different phase than the
+                # actual current state. Using the current state ensures we start
+                # from the correct phase.
+                state = game_state
                 played_moves: List[Move] = []
 
                 # Selection
@@ -977,6 +1010,24 @@ class MCTSAI(HeuristicAI):
 
             self.last_root = best_child
             self.last_root.parent = None
+
+            # CRITICAL: Validate selected move is in valid_moves.
+            # This catches edge cases where tree reuse or phase transitions
+            # result in an invalid move being selected.
+            if selected is not None:
+                is_valid = any(_moves_match(selected, vm) for vm in valid_moves)
+                if not is_valid:
+                    logger.warning(
+                        "MCTS legacy selected invalid move %s "
+                        "(not in valid_moves), falling back to random",
+                        selected.type if selected else None,
+                    )
+                    selected = self.get_random_element(valid_moves)
+                    policy = {
+                        str(m): (1.0 if m == selected else 0.0)
+                        for m in valid_moves
+                    }
+                    self.last_root = None  # Discard stale tree
         else:
             selected = self.get_random_element(valid_moves)
             policy = {
@@ -1021,6 +1072,23 @@ class MCTSAI(HeuristicAI):
                         root = child
                         root.parent = None
                         break
+
+        # CRITICAL: Validate reused subtree is compatible with current phase.
+        # Phase transitions (e.g., line_processing → territory_processing)
+        # happen atomically during apply_move, so a reused subtree may have
+        # children/untried_moves from a different phase. If the valid_moves
+        # don't match what the reused tree expects, discard it and start fresh.
+        if root is not None:
+            # Check if any child moves match the current valid_moves
+            valid_move_types = {m.type for m in valid_moves}
+            child_move_types = {c.move.type for c in root.children if c.move is not None}
+            untried_move_types = {m.type for m in root.untried_moves}
+            tree_move_types = child_move_types | untried_move_types
+
+            # If the tree's move types don't overlap with valid moves,
+            # the tree is stale (phase transition occurred) - discard it.
+            if tree_move_types and not (tree_move_types & valid_move_types):
+                root = None  # Discard stale tree
 
         if root is None:
             root = MCTSNodeLite()
@@ -1372,6 +1440,24 @@ class MCTSAI(HeuristicAI):
 
             self.last_root_lite = best_child
             self.last_root_lite.parent = None
+
+            # CRITICAL: Validate selected move is in valid_moves.
+            # This catches edge cases where tree reuse or phase transitions
+            # result in an invalid move being selected.
+            if selected is not None:
+                is_valid = any(_moves_match(selected, vm) for vm in valid_moves)
+                if not is_valid:
+                    logger.warning(
+                        "MCTS incremental selected invalid move %s "
+                        "(not in valid_moves), falling back to random",
+                        selected.type if selected else None,
+                    )
+                    selected = self.get_random_element(valid_moves)
+                    policy = {
+                        str(m): (1.0 if m == selected else 0.0)
+                        for m in valid_moves
+                    }
+                    self.last_root_lite = None  # Discard stale tree
         else:
             selected = self.get_random_element(valid_moves)
             policy = {

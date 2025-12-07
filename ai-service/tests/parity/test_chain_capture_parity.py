@@ -53,7 +53,7 @@ def create_base_state(
     elif board_type == BoardType.SQUARE19:
         size = 19
     else:
-        size = 11
+        size = 13  # Canonical hex: size=13, radius=12
 
     return GameState(
         id="chain-capture-parity",

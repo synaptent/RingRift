@@ -31,10 +31,10 @@ def make_dummy_hex_game_state() -> GameState:
     """Create a minimal, canonical hex GameState for encoder tests.
 
     This mirrors the helper patterns in tests/rules/test_utils.py but uses a
-    hexagonal board (BoardType.HEXAGONAL) with size=11 (radius=10), which
-    matches the canonical N=10 hex used by the neural-net encoder.
+    hexagonal board (BoardType.HEXAGONAL) with size=13 (radius=12), which
+    matches the canonical N=12 hex used by the neural-net encoder.
     """
-    board = BoardState(type=BoardType.HEXAGONAL, size=11)
+    board = BoardState(type=BoardType.HEXAGONAL, size=13)
 
     players = [
         Player(
@@ -45,7 +45,7 @@ def make_dummy_hex_game_state() -> GameState:
             isReady=True,
             timeRemaining=60,
             aiDifficulty=None,
-            ringsInHand=18,
+            ringsInHand=48,
             eliminatedRings=0,
             territorySpaces=0,
         ),
@@ -57,7 +57,7 @@ def make_dummy_hex_game_state() -> GameState:
             isReady=True,
             timeRemaining=60,
             aiDifficulty=None,
-            ringsInHand=18,
+            ringsInHand=48,
             eliminatedRings=0,
             territorySpaces=0,
         ),
@@ -239,13 +239,13 @@ class TestActionEncodingHex(unittest.TestCase):
 
     def test_hex_max_distance_round_trip(self):
         """Max-radius move from centre to edge should still decode validly."""
-        # Radius N=10: from centre (0,0,0) to edge (10,-10,0) lies on-board.
+        # Radius N=12: from centre (0,0,0) to edge (12,-12,0) lies on-board.
         move = Move(
             id="hex-move-maxdist",
             type=MoveType.MOVE_STACK,
             player=self.game_state.current_player,
             from_pos=Position(x=0, y=0, z=0),
-            to=Position(x=10, y=-10, z=0),
+            to=Position(x=12, y=-12, z=0),
             timestamp=datetime.now(),
             thinkTime=0,
             moveNumber=1,
@@ -261,27 +261,27 @@ class TestActionEncodingHex(unittest.TestCase):
         self.assertEqual(decoded.from_pos.x, 0)
         self.assertEqual(decoded.from_pos.y, 0)
         self.assertEqual(decoded.from_pos.z, 0)
-        self.assertEqual(decoded.to.x, 10)
-        self.assertEqual(decoded.to.y, -10)
+        self.assertEqual(decoded.to.x, 12)
+        self.assertEqual(decoded.to.y, -12)
         self.assertEqual(decoded.to.z, 0)
 
     def test_hex_offboard_decode_returns_none(self):
         """Indices that map outside the true hex should decode to None.
 
         We pick an obviously off-board canonical coordinate (e.g. a corner
-        of the 21×21 bounding box that lies outside the 331-cell hex) and
+        of the 25×25 bounding box that lies outside the 469-cell hex) and
         construct a fake index targeting it, then assert decode_move
         returns None.
         """
-        # Construct an index corresponding to a placement at (20, 11), which
-        # lies outside the axial radius-10 hex when mapped back via
+        # Construct an index corresponding to a placement at (24, 13), which
+        # lies outside the axial radius-12 hex when mapped back via
         # _from_canonical_xy / BoardGeometry.is_within_bounds.
-        cx, cy = 20, 11
-        pos_idx = cy * 21 + cx
+        cx, cy = 24, 13
+        pos_idx = cy * 25 + cx
         fake_index = pos_idx * 3  # count_idx = 0 ⇒ placementCount=1
 
         # Sanity check that this index is within the placement span.
-        self.assertLess(fake_index, HEX_PLACEMENT_SPAN := 21 * 21 * 3)
+        self.assertLess(fake_index, HEX_PLACEMENT_SPAN := 25 * 25 * 3)
 
         decoded = self.encoder.decode_move(fake_index, self.game_state)
         self.assertIsNone(decoded)

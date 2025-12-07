@@ -287,12 +287,12 @@ describe('BoardManager Branch Coverage', () => {
       // Center is valid
       expect(hexBoardManager.isValidPosition({ x: 0, y: 0, z: 0 })).toBe(true);
 
-      // Edge positions are valid (radius = 10 for size 11)
-      expect(hexBoardManager.isValidPosition({ x: 10, y: -10, z: 0 })).toBe(true);
-      expect(hexBoardManager.isValidPosition({ x: -10, y: 10, z: 0 })).toBe(true);
+      // Edge positions are valid (radius = 12 for size 13)
+      expect(hexBoardManager.isValidPosition({ x: 12, y: -12, z: 0 })).toBe(true);
+      expect(hexBoardManager.isValidPosition({ x: -12, y: 12, z: 0 })).toBe(true);
 
       // Beyond edge is invalid
-      expect(hexBoardManager.isValidPosition({ x: 11, y: -11, z: 0 })).toBe(false);
+      expect(hexBoardManager.isValidPosition({ x: 13, y: -13, z: 0 })).toBe(false);
     });
 
     it('should detect edge positions on hexagonal board', () => {
@@ -300,8 +300,8 @@ describe('BoardManager Branch Coverage', () => {
       expect(hexBoardManager.isOnEdge({ x: 0, y: 0, z: 0 })).toBe(false);
 
       // Edge positions (distance = radius)
-      expect(hexBoardManager.isOnEdge({ x: 10, y: -10, z: 0 })).toBe(true);
-      expect(hexBoardManager.isOnEdge({ x: 5, y: 5, z: -10 })).toBe(true);
+      expect(hexBoardManager.isOnEdge({ x: 12, y: -12, z: 0 })).toBe(true);
+      expect(hexBoardManager.isOnEdge({ x: 6, y: 6, z: -12 })).toBe(true);
     });
 
     it('should detect center positions on hexagonal board', () => {
@@ -319,10 +319,10 @@ describe('BoardManager Branch Coverage', () => {
     it('should get edge positions for hexagonal board', () => {
       const edgePositions = hexBoardManager.getEdgePositions();
 
-      // All edge positions should have distance = radius (10)
+      // All edge positions should have distance = radius (12)
       for (const pos of edgePositions) {
         const distance = Math.max(Math.abs(pos.x), Math.abs(pos.y), Math.abs(pos.z || 0));
-        expect(distance).toBe(10);
+        expect(distance).toBe(12);
       }
     });
 

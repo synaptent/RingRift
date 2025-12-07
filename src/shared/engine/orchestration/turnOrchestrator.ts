@@ -16,8 +16,9 @@ import type {
   Position,
   MoveType,
   GameResult,
+  BoardState,
 } from '../../types/game';
-import { positionToString } from '../../types/game';
+import { positionToString, BOARD_CONFIGS } from '../../types/game';
 import type {
   GameEndExplanation,
   GameEndEngineView,
@@ -336,6 +337,22 @@ function buildGameEndExplanationForVictory(
     if (primaryTerritoryWinner && !noStacksLeft) {
       outcomeType = 'territory_control';
       victoryReasonCode = 'victory_territory_majority';
+
+      // Detect if this is a mini-region territory victory (Q23-style scenario)
+      const miniRegionInfo = detectTerritoryMiniRegions(state.board, winnerNumber);
+      if (miniRegionInfo.isMiniRegionVictory) {
+        primaryConceptId = 'territory_mini_regions';
+        weirdStateContext = {
+          reasonCodes: ['ANM_TERRITORY_NO_ACTIONS'],
+          primaryReasonCode: 'ANM_TERRITORY_NO_ACTIONS',
+          rulesContextTags: ['territory_mini_region'],
+          teachingTopicIds: ['teaching.territory'],
+        };
+        telemetryTags = ['territory_mini_region'];
+        teaching = {
+          teachingTopics: ['teaching.territory'],
+        };
+      }
     } else if (noStacksLeft && !primaryTerritoryWinner) {
       // Bare-board structural stalemate resolved via territory tiebreak.
       outcomeType = 'structural_stalemate';
@@ -498,6 +515,185 @@ function deriveShortSummaryKey(outcomeType: GameEndOutcomeType, primaryConceptId
     return 'game_end.structural_stalemate.short';
   }
   return 'game_end.generic.short';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Mini-Region Detection
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Result of detecting territory mini-regions for explanation purposes.
+ */
+interface MiniRegionDetectionResult {
+  /** Whether the victory qualifies as a mini-region scenario */
+  isMiniRegionVictory: boolean;
+  /** Number of disconnected territory regions controlled by the winner */
+  regionCount: number;
+  /** True if at least one region is considered "mini" (small isolated region) */
+  hasMiniRegion: boolean;
+}
+
+/**
+ * Detect if a territory victory involves mini-regions (Q23-style scenarios).
+ *
+ * A territory mini-region ending is detected when the winner's controlled
+ * collapsed territory consists of 2+ disconnected regions, or when they
+ * have collapsed multiple small (≤4 cells) isolated regions.
+ *
+ * This is a UX-level detection for explanation enrichment; it does not
+ * affect game rules or victory semantics.
+ *
+ * @param board - The final board state
+ * @param winnerPlayer - Player number of the winner (may be null/undefined for draws)
+ * @returns Detection result with region information
+ */
+function detectTerritoryMiniRegions(
+  board: BoardState,
+  winnerPlayer: number | null | undefined
+): MiniRegionDetectionResult {
+  if (winnerPlayer == null) {
+    return { isMiniRegionVictory: false, regionCount: 0, hasMiniRegion: false };
+  }
+
+  // Find all collapsed spaces owned by the winner
+  const winnerCollapsedPositions: Position[] = [];
+  for (const [key, owner] of board.collapsedSpaces.entries()) {
+    if (owner === winnerPlayer) {
+      winnerCollapsedPositions.push(parsePositionKey(key, board.type));
+    }
+  }
+
+  if (winnerCollapsedPositions.length === 0) {
+    return { isMiniRegionVictory: false, regionCount: 0, hasMiniRegion: false };
+  }
+
+  // Group collapsed spaces into connected regions using flood-fill
+  const regions = groupIntoConnectedRegions(winnerCollapsedPositions, board);
+
+  // Mini-region detection criteria:
+  // 1. Winner has 2+ disconnected territory regions, OR
+  // 2. Winner has at least one small (≤4 cells) isolated region
+  const MINI_REGION_SIZE_THRESHOLD = 4;
+  const hasMiniRegion = regions.some((region) => region.length <= MINI_REGION_SIZE_THRESHOLD);
+  const isMiniRegionVictory = regions.length >= 2 || hasMiniRegion;
+
+  return {
+    isMiniRegionVictory,
+    regionCount: regions.length,
+    hasMiniRegion,
+  };
+}
+
+/**
+ * Parse a position key string back into a Position object.
+ */
+function parsePositionKey(key: string, boardType: string): Position {
+  // Position keys are "x,y" for square boards or "x,y,z" for hexagonal
+  const parts = key.split(',').map(Number);
+  if (boardType === 'hexagonal' && parts.length >= 3) {
+    return { x: parts[0], y: parts[1], z: parts[2] };
+  }
+  return { x: parts[0], y: parts[1] };
+}
+
+/**
+ * Group positions into connected regions using flood-fill.
+ *
+ * @param positions - All positions to group
+ * @param board - Board for adjacency calculation
+ * @returns Array of connected region groups
+ */
+function groupIntoConnectedRegions(positions: Position[], board: BoardState): Position[][] {
+  if (positions.length === 0) {
+    return [];
+  }
+
+  const positionSet = new Set(positions.map((p) => positionToString(p)));
+  const visited = new Set<string>();
+  const regions: Position[][] = [];
+
+  for (const pos of positions) {
+    const key = positionToString(pos);
+    if (visited.has(key)) {
+      continue;
+    }
+
+    // Flood-fill to find all connected positions
+    const region: Position[] = [];
+    const queue: Position[] = [pos];
+    visited.add(key);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      region.push(current);
+
+      // Get territory-adjacent neighbors
+      const neighbors = getTerritoryNeighborsForMiniRegion(current, board);
+      for (const neighbor of neighbors) {
+        const neighborKey = positionToString(neighbor);
+        if (!visited.has(neighborKey) && positionSet.has(neighborKey)) {
+          visited.add(neighborKey);
+          queue.push(neighbor);
+        }
+      }
+    }
+
+    if (region.length > 0) {
+      regions.push(region);
+    }
+  }
+
+  return regions;
+}
+
+/**
+ * Get territory-adjacent neighbors for mini-region detection.
+ *
+ * Uses the board's configured territory adjacency type.
+ */
+function getTerritoryNeighborsForMiniRegion(pos: Position, board: BoardState): Position[] {
+  const config = BOARD_CONFIGS[board.type];
+  const adjacencyType = config.territoryAdjacency;
+  const neighbors: Position[] = [];
+  const { x, y, z } = pos;
+
+  if (adjacencyType === 'hexagonal') {
+    const directions = [
+      { x: 1, y: 0, z: -1 },
+      { x: 1, y: -1, z: 0 },
+      { x: 0, y: -1, z: 1 },
+      { x: -1, y: 0, z: 1 },
+      { x: -1, y: 1, z: 0 },
+      { x: 0, y: 1, z: -1 },
+    ];
+    for (const dir of directions) {
+      neighbors.push({
+        x: x + dir.x,
+        y: y + dir.y,
+        z: (z ?? 0) + dir.z,
+      });
+    }
+  } else if (adjacencyType === 'von_neumann') {
+    const directions = [
+      { x: 0, y: 1 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: -1, y: 0 },
+    ];
+    for (const dir of directions) {
+      neighbors.push({ x: x + dir.x, y: y + dir.y });
+    }
+  } else {
+    // Moore adjacency (8-directional)
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        neighbors.push({ x: x + dx, y: y + dy });
+      }
+    }
+  }
+
+  return neighbors;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -722,7 +918,10 @@ export function processTurn(
 
   // For placement moves, don't process post-move phases - the player still needs to move
   // Post-move phases (lines, territory) only happen after movement/capture
-  const isPlacementMove = move.type === 'place_ring' || move.type === 'skip_placement';
+  const isPlacementMove =
+    move.type === 'place_ring' ||
+    move.type === 'skip_placement' ||
+    move.type === 'no_placement_action';
 
   // For decision moves (process_territory_region, eliminate_rings_from_stack, etc.),
   // if the move didn't actually change state (e.g., Q23 prerequisite not met), don't
@@ -1313,8 +1512,10 @@ function processPostMovePhases(
   );
   const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
   const nextPlayer = players[nextPlayerIndex].playerNumber;
-  // Always begin the next turn in ring_placement; when no legal placements
-  // exist, getValidMoves will emit a no_placement_action bookkeeping move.
+  // Always begin the next turn in ring_placement. When no legal placements
+  // exist for that player, hosts must emit an explicit no_placement_action
+  // bookkeeping move (or advance directly to movement via shared turnLogic);
+  // the core orchestrator no longer fabricates this move itself.
   const nextPhase: GamePhase = 'ring_placement';
 
   stateMachine.updateGameState({
@@ -1459,6 +1660,27 @@ export function validateMove(state: GameState, move: Move): { valid: boolean; re
 
 /**
  * Get all valid moves for the current player and phase.
+ *
+ * Per RR-CANON-R076, the core rules layer MUST NOT auto-generate moves,
+ * including no-action bookkeeping moves. This helper therefore returns
+ * only **interactive** moves:
+ *
+ * - ring_placement: place_ring, skip_placement (when eligible).
+ * - movement: move_stack, move_ring, overtaking_capture,
+ *   continue_capture_segment.
+ * - capture / chain_capture: capture segments + skip_capture.
+ * - line_processing: process_line / choose_line_reward.
+ * - territory_processing: process_territory_region /
+ *   eliminate_rings_from_stack (+ skip_territory_processing).
+ * - forced_elimination: forced_elimination options.
+ *
+ * When a phase has no interactive moves, this function returns an empty
+ * array. Hosts are responsible for:
+ *
+ * - Detecting no-move situations, and
+ * - Constructing explicit no_*_action moves (or forced_elimination moves)
+ *   via the public API so that every visited phase is still recorded in
+ *   canonical history (RR-CANON-R075/R076).
  */
 export function getValidMoves(state: GameState): Move[] {
   const player = state.currentPlayer;
@@ -1469,37 +1691,17 @@ export function getValidMoves(state: GameState): Move[] {
     case 'ring_placement': {
       const playerObj = state.players.find((p) => p.playerNumber === player);
 
-      // If the player has no rings in hand at all, or no legal placements
-      // exist (no positions allowed by no-dead-placement / caps), emit a
-      // forced no-op placement move so that the ring_placement phase is
-      // always recorded explicitly in canonical history.
+      // No rings in hand → placement is forbidden for this player.
+      // Per RR-CANON-R076, the core layer does not fabricate
+      // no_placement_action moves here; hosts must either:
+      // - Advance to movement via the shared turnLogic helpers, or
+      // - Construct an explicit no_placement_action move when required.
       if (!playerObj || playerObj.ringsInHand === 0) {
-        const move: Move = {
-          id: `no-placement-action-${moveNumber}`,
-          type: 'no_placement_action',
-          player,
-          to: { x: 0, y: 0 },
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber,
-        } as Move;
-        return [move];
+        return [];
       }
 
+      // Interactive placement and skip_placement options only.
       const positions = enumeratePlacementPositions(state, player);
-      if (positions.length === 0) {
-        const move: Move = {
-          id: `no-placement-action-${moveNumber}`,
-          type: 'no_placement_action',
-          player,
-          to: { x: 0, y: 0 },
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber,
-        } as Move;
-        return [move];
-      }
-
       const moves: Move[] = positions.map((pos) => ({
         id: `place-${positionToString(pos)}-${moveNumber}`,
         type: 'place_ring',
@@ -1530,22 +1732,6 @@ export function getValidMoves(state: GameState): Move[] {
     case 'movement': {
       const movements = enumerateSimpleMovesForPlayer(state, player);
       const captures = enumerateAllCaptureMoves(state, player);
-      if (movements.length === 0 && captures.length === 0) {
-        // No legal movement or capture anywhere. Surface an explicit
-        // no_movement_action move so that the movement phase is recorded in
-        // canonical history even when the player has no material at all
-        // (RR-CANON-R075: even eliminated players must record no-action).
-        const move: Move = {
-          id: `no-movement-action-${moveNumber}`,
-          type: 'no_movement_action',
-          player,
-          to: { x: 0, y: 0 },
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber,
-        } as Move;
-        return [move];
-      }
       return [...movements, ...captures];
     }
 

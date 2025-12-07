@@ -1441,6 +1441,7 @@ function GameHUDFromViewModel({
       reasonCode,
       rulesConcept: rulesUxRulesConcept,
       scenarioId: rulesUxScenarioId,
+      overlaySessionId,
     });
   }, [
     weirdState,

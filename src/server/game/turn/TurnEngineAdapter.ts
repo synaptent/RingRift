@@ -279,7 +279,47 @@ export class TurnEngineAdapter {
    * Get all valid moves for the current player.
    */
   getValidMovesFor(state: GameState): Move[] {
-    return getValidMoves(state);
+    const interactiveMoves = getValidMoves(state);
+
+    // Per RR-CANON-R076 the core orchestrator does not fabricate
+    // no_*_action bookkeeping moves. For backend hosts we preserve
+    // the historical behaviour by synthesising the required
+    // no_placement_action / no_movement_action moves when there are
+    // no interactive options in those phases, so canonical history
+    // still records every visited phase.
+    if (interactiveMoves.length === 0 && state.gameStatus === 'active') {
+      const moveNumber = state.moveHistory.length + 1;
+
+      if (state.currentPhase === 'ring_placement') {
+        return [
+          {
+            id: `no-placement-action-${moveNumber}`,
+            type: 'no_placement_action',
+            player: state.currentPlayer,
+            to: { x: 0, y: 0 },
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move,
+        ];
+      }
+
+      if (state.currentPhase === 'movement') {
+        return [
+          {
+            id: `no-movement-action-${moveNumber}`,
+            type: 'no_movement_action',
+            player: state.currentPlayer,
+            to: { x: 0, y: 0 },
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move,
+        ];
+      }
+    }
+
+    return interactiveMoves;
   }
 
   /**

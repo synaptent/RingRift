@@ -201,7 +201,7 @@ describe('sandboxPlacement', () => {
       it('returns legal placements for hexagonal board', () => {
         const board: BoardState = {
           type: 'hexagonal',
-          size: 11,
+          size: 13, // radius=12
           stacks: new Map(),
           markers: new Map(),
           collapsedSpaces: new Map(),
@@ -224,7 +224,7 @@ describe('sandboxPlacement', () => {
       it('excludes invalid positions on hexagonal board', () => {
         const board: BoardState = {
           type: 'hexagonal',
-          size: 11,
+          size: 13, // radius=12
           stacks: new Map(),
           markers: new Map(),
           collapsedSpaces: new Map(),
@@ -237,7 +237,7 @@ describe('sandboxPlacement', () => {
         const placements = enumerateLegalRingPlacements('hexagonal', board, 1, view);
 
         // All positions should be valid hex positions (|x|, |y|, |z| <= radius and x+y+z = 0)
-        const radius = 10; // size - 1
+        const radius = 12; // size - 1
         const allValid = placements.every(
           (p) =>
             p.z !== undefined &&
@@ -252,7 +252,7 @@ describe('sandboxPlacement', () => {
       it('excludes collapsed spaces on hexagonal board', () => {
         const board: BoardState = {
           type: 'hexagonal',
-          size: 11,
+          size: 13, // radius=12
           stacks: new Map(),
           markers: new Map(),
           collapsedSpaces: new Map(),
@@ -272,7 +272,7 @@ describe('sandboxPlacement', () => {
       it('excludes markers on hexagonal board', () => {
         const board: BoardState = {
           type: 'hexagonal',
-          size: 11,
+          size: 13, // radius=12
           stacks: new Map(),
           markers: new Map(),
           collapsedSpaces: new Map(),
@@ -313,7 +313,7 @@ describe('sandboxPlacement', () => {
       it('uses validatePlacementOnBoard for hexagonal board with context', () => {
         const board: BoardState = {
           type: 'hexagonal',
-          size: 11,
+          size: 13, // radius=12
           stacks: new Map(),
           markers: new Map(),
           collapsedSpaces: new Map(),

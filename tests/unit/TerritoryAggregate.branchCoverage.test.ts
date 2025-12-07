@@ -58,9 +58,9 @@ describe('TerritoryAggregate - Branch Coverage', () => {
       const state = createTestGameState({ boardType: 'hexagonal' });
       state.board.stacks.clear();
 
-      // Position at radius = 10 (boundary for hex11)
-      addStack(state.board, { x: 10, y: -10, z: 0 }, 1, 1, 1);
-      addStack(state.board, { x: 0, y: 10, z: -10 }, 1, 1, 1);
+      // Position at radius = 12 (boundary for hex13)
+      addStack(state.board, { x: 12, y: -12, z: 0 }, 1, 1, 1);
+      addStack(state.board, { x: 0, y: 12, z: -12 }, 1, 1, 1);
 
       const regions = findDisconnectedRegions(state, 1);
       expect(Array.isArray(regions)).toBe(true);

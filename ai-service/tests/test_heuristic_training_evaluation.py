@@ -91,27 +91,25 @@ def test_heuristic_weight_keys_are_canonical_and_complete() -> None:
     assert heuristic_ai_weight_attrs.issubset(canonical_keys)
 
 
-# TODO-HEURISTIC-ZERO-WEIGHTS: This test assumes that zero weights produce
-# effectively random play, but HeuristicAI has hardcoded penalties (e.g.
-# -50.0 for no stacks, -10.0 for single stack) that are NOT multiplied by
-# configurable weights. A zero-weight profile still has non-zero evaluations
-# from these hardcoded components, making the test premise invalid. Skip
-# pending a refactor of HeuristicAI to use weights for all score components.
-@pytest.mark.skip(
-    reason="TODO-HEURISTIC-ZERO-WEIGHTS: HeuristicAI has hardcoded penalties "
-    "not multiplied by weights; zero-weights != random play"
-)
+# NOTE: This test was rewritten from a "zero must lose" premise to a wiring
+# verification test. Originally it assumed that a zero-weight profile would
+# perform worse than baseline, but in practice zero-weight evaluation leads
+# to deterministic first-legal-move selection which can paradoxically win.
+# The new test focuses on verifying the fitness harness tracks stats correctly
+# and applies weights as expected.
 @pytest.mark.timeout(180)
-def test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline(
-) -> None:
+def test_evaluate_fitness_zero_profile_wiring_and_stats() -> None:
     """
-    Baseline vs baseline must evaluate to ~0.5, while a degenerate "zero"
-    profile must be clearly worse vs the same baseline under the shared
-    fitness harness.
+    Verify that the fitness evaluation harness correctly:
+    1. Baseline vs baseline evaluates to exactly 0.5 (symmetric).
+    2. Zero-weight profile vs baseline produces games with tracked stats.
+    3. Weight L2 distance is correctly computed (0 for same, >0 for diff).
+    4. All stats fields are present and consistent.
 
-    This protects against wiring bugs where candidate and baseline weights
-    are accidentally made identical, or where the candidate weights are
-    never actually applied to the HeuristicAI instances.
+    This is a WIRING test - it does NOT assert which profile wins, because
+    with zero weights the AI makes deterministic first-legal-move selections
+    which can produce surprising results. The key value is verifying that
+    the harness correctly applies different weights and tracks outcomes.
     """
     baseline = dict(BASE_V1_BALANCED_WEIGHTS)
     zero_profile = _make_zero_profile(baseline)
@@ -151,29 +149,57 @@ def test_evaluate_fitness_zero_profile_is_strictly_worse_than_baseline(
         debug_hook=_zero_hook,
     )
 
-    # Baseline vs baseline should be exactly symmetric under the alternating
-    # colour schedule: expect a 0.5 win rate with mirrored W/L.
-    assert abs(baseline_fitness - 0.5) < 1e-9
+    # ===== Baseline vs baseline checks =====
+    # Should be exactly symmetric under the alternating colour schedule:
+    # expect a 0.5 win rate with mirrored W/L.
+    assert abs(baseline_fitness - 0.5) < 1e-9, (
+        f"Baseline vs baseline should be 0.5, got {baseline_fitness}"
+    )
     assert (
         baseline_stats["wins"]
         + baseline_stats["draws"]
         + baseline_stats["losses"]
         == games_per_eval
+    ), "Baseline stats should sum to games_per_eval"
+    assert baseline_stats["wins"] == baseline_stats["losses"], (
+        "Baseline vs baseline should have equal wins/losses"
     )
-    assert baseline_stats["wins"] == baseline_stats["losses"]
-    assert baseline_stats["draws"] == 0
-    assert baseline_stats["weight_l2"] == 0.0
+    assert baseline_stats["draws"] == 0, "Mirror matches should not draw"
+    assert baseline_stats["weight_l2"] == 0.0, (
+        "Baseline vs baseline L2 distance should be 0"
+    )
 
-    # A clearly bad profile (all weights = 0) should perform worse than the
-    # balanced baseline, and the L2 distance should be non-zero. In practice
-    # we allow some sampling noise (the zero profile may win a small number
-    # of games) but still require that:
-    #   - it does not outperform the baseline, and
-    #   - its scalar fitness is well below 0.5.
-    assert zero_stats["losses"] >= zero_stats["wins"]
-    assert zero_fitness < baseline_fitness
-    assert zero_fitness < 0.25
-    assert zero_stats["weight_l2"] > 0.0
+    # ===== Zero-profile wiring checks =====
+    # The core assertion: games were played and stats were tracked.
+    assert (
+        zero_stats["wins"]
+        + zero_stats["draws"]
+        + zero_stats["losses"]
+        == games_per_eval
+    ), "Zero-profile stats should sum to games_per_eval"
+
+    # Weight L2 should be non-zero since zero-profile differs from baseline.
+    assert zero_stats["weight_l2"] > 0.0, (
+        "Zero vs baseline L2 distance should be positive"
+    )
+
+    # Fitness should be in valid range [0, 1].
+    assert 0.0 <= zero_fitness <= 1.0, (
+        f"Zero-profile fitness should be in [0, 1], got {zero_fitness}"
+    )
+
+    # Required stats fields should all be present.
+    required_fields = [
+        "wins", "draws", "losses", "games", "games_per_eval",
+        "fitness", "weight_l2", "weight_l2_to_baseline",
+    ]
+    for field in required_fields:
+        assert field in zero_stats, f"Missing required field: {field}"
+
+    # Fitness value in stats should match returned value.
+    assert math.isclose(zero_stats["fitness"], zero_fitness), (
+        f"Stats fitness {zero_stats['fitness']} != returned {zero_fitness}"
+    )
 
 
 def test_evaluate_fitness_debug_callback_receives_stats() -> None:

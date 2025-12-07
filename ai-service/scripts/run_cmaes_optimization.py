@@ -258,8 +258,8 @@ def create_game_state(
         size = 19
         rings_per_player = 36
     elif board_type == BoardType.HEXAGONAL:
-        size = 11
-        rings_per_player = 36
+        size = 13  # Canonical hex: size=13, radius=12
+        rings_per_player = 48
     else:
         size = 8
         rings_per_player = 18
@@ -1019,8 +1019,9 @@ def evaluate_fitness_multiplayer(
       to wire multi-player evaluation into future optimisation harnesses
       without committing to a final scoring design.
     - Callers are responsible for selecting appropriate multi-player pools
-      (for example, ``square19_3p_pool_v1`` or ``hex_4p_pool_v1``) via the
-      ``state_pool_id`` parameter.
+      (for example, ``square19_3p_pool_v1``; legacy ``hex_4p_pool_v1`` was
+      removed with the hex geometry change) via the ``state_pool_id``
+      parameter.
     """
     # Uses load_state_pool imported at module level for evaluation pools.
 
@@ -2238,9 +2239,9 @@ def main():
         help=(
             "Identifier for the evaluation state pool when using "
             "eval-mode=multi-start (default: v1). For multi-player runs, "
-            "pass an explicit id such as 'square19_3p_pool_v1' or "
-            "'hex_4p_pool_v1' that matches configured entries in "
-            "app.training.eval_pools.POOL_PATHS."
+            "pass an explicit id such as 'square19_3p_pool_v1'. Legacy "
+            "'hex_4p_pool_v1' was removed; regenerate a radius-12 hex pool "
+            "before adding it back to app.training.eval_pools.POOL_PATHS."
         ),
     )
     parser.add_argument(
@@ -2297,8 +2298,9 @@ def main():
             "which assigns the candidate to one random seat and uses "
             "baseline weights for all other players. Requires "
             "corresponding N-player state pools (for example, use "
-            "--state-pool-id square19_3p_pool_v1 for 3p Square19 or "
-            "--state-pool-id hex_4p_pool_v1 for 4p Hex)."
+            "--state-pool-id square19_3p_pool_v1 for 3p Square19; hex "
+            "multi-player pools were removed and must be regenerated for "
+            "the radius-12 geometry)."
         ),
     )
     parser.add_argument(
@@ -2441,8 +2443,8 @@ def main():
 
     # Resolve state_pool_id from CLI. For multi-player runs (num_players > 2),
     # callers are expected to provide an explicit pool id that matches
-    # app.training.eval_pools.POOL_PATHS (for example, 'square19_3p_pool_v1'
-    # or 'hex_4p_pool_v1').
+    # app.training.eval_pools.POOL_PATHS (for example, 'square19_3p_pool_v1';
+    # hex multi-player pools were removed with the geometry change).
     state_pool_id = args.state_pool_id
 
     config = CMAESConfig(

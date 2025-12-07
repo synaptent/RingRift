@@ -22,6 +22,19 @@ export interface MoveNotationOptions {
    * Defaults to BOARD_CONFIGS[boardType].size when available.
    */
   boardSizeOverride?: number;
+  /**
+   * When true, square board ranks are computed from the bottom (y = size-1)
+   * rather than from the top (y = 0). This aligns with traditional chess-style
+   * display where the bottom row is rank 1.
+   *
+   * - Default (false): rank = y + 1 (y=0 → rank 1, y=7 → rank 8)
+   * - With squareRankFromBottom (true): rank = boardSize - y (y=7 → rank 1, y=0 → rank 8)
+   *
+   * Use this option in sandbox/teaching contexts where the board labels show
+   * the bottom row as rank 1, to keep MoveHistory coordinates aligned with
+   * the visual board edge labels.
+   */
+  squareRankFromBottom?: boolean;
 }
 
 /**
@@ -45,8 +58,19 @@ export function formatPosition(pos: Position, options: MoveNotationOptions = {})
   if (isSquareBoard && pos.x >= 0 && pos.y >= 0) {
     const fileCode = 'a'.charCodeAt(0) + pos.x;
     const file = String.fromCharCode(fileCode);
-    const rank = (pos.y + 1).toString();
-    return `${file}${rank}`;
+
+    // Determine the rank based on the squareRankFromBottom option.
+    // Default: rank = y + 1 (y=0 → rank 1)
+    // With squareRankFromBottom: rank = boardSize - y (y=size-1 → rank 1)
+    let rankNum: number;
+    if (options.squareRankFromBottom) {
+      const boardSize = options.boardSizeOverride ?? config.size;
+      rankNum = boardSize - pos.y;
+    } else {
+      rankNum = pos.y + 1;
+    }
+
+    return `${file}${rankNum}`;
   }
 
   if (config.type === 'hexagonal') {

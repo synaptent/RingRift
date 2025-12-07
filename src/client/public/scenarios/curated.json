@@ -598,6 +598,333 @@
         "thinkTime": 0,
         "moveNumber": 5
       }
+    },
+    {
+      "id": "teaching.fe_loop.step_1",
+      "name": "Weird State: Active No Moves & Forced Elimination",
+      "description": "Player 1 controls a single stack that cannot move or capture, and both players have no rings in hand. This mirrors the core Active–No–Moves / Forced Elimination example: the next resolution will remove caps automatically until a real move becomes available or the stack is gone.",
+      "category": "learning",
+      "difficulty": "intermediate",
+      "tags": [
+        "tutorial",
+        "weird_state",
+        "anm_forced_elimination",
+        "forced_elimination",
+        "active_no_moves"
+      ],
+      "rulesConcept": "anm_forced_elimination",
+      "uxSpecAnchor": "active_no_moves.fe_core",
+      "rulesSnippet": "Forced Elimination: caps are removed from your stacks automatically until either a real move becomes available or your stacks are gone, and this does not count as a “real move” for Last Player Standing.",
+      "rulesSnippetRef": "docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md#ANM-SCEN-01",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-12-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "teaching.fe_loop.step_1",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "0,0": { "stackHeight": 2, "capHeight": 2, "controllingPlayer": 1 }
+          },
+          "markers": {},
+          "collapsedSpaces": {
+            "1,0": 0,
+            "0,1": 0,
+            "1,1": 0
+          },
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 0,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "You",
+            "type": "human"
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 0,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "AI",
+            "type": "ai"
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 10,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 19,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "teaching.structural_stalemate.step_1",
+      "name": "Weird State: Structural Stalemate & Tiebreak Ladder",
+      "description": "Both players have exhausted all legal placements, movements, captures, and forced eliminations. The board is fully collapsed into Territory, and the winner must be determined by the structural stalemate tiebreak ladder.",
+      "category": "learning",
+      "difficulty": "advanced",
+      "tags": ["weird_state", "structural_stalemate", "stalemate", "tiebreak"],
+      "rulesConcept": "structural_stalemate",
+      "uxSpecAnchor": "victory.structural_stalemate",
+      "rulesSnippet": "In a structural stalemate, no player has any legal placements, movements, captures, or forced eliminations; the game ends and the winner is decided by territory and eliminated rings plus markers and last real action.",
+      "rulesSnippetRef": "ringrift_complete_rules#end-of-game-stalemate-resolution",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-12-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "teaching.structural_stalemate.step_1",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {},
+          "markers": {},
+          "collapsedSpaces": {
+            "0,0": 1,
+            "0,1": 1,
+            "0,2": 1,
+            "0,3": 1,
+            "0,4": 1,
+            "0,5": 1,
+            "0,6": 1,
+            "0,7": 1,
+            "1,0": 1,
+            "1,1": 1,
+            "1,2": 1,
+            "1,3": 1,
+            "1,4": 1,
+            "1,5": 1,
+            "1,6": 1,
+            "1,7": 1,
+            "2,0": 1,
+            "2,1": 1,
+            "2,2": 1,
+            "2,3": 1,
+            "2,4": 1,
+            "2,5": 1,
+            "2,6": 1,
+            "2,7": 1,
+            "3,0": 1,
+            "3,1": 1,
+            "3,2": 1,
+            "3,3": 1,
+            "3,4": 1,
+            "3,5": 1,
+            "3,6": 1,
+            "3,7": 1,
+            "4,0": 1,
+            "4,1": 1,
+            "4,2": 1,
+            "4,3": 1,
+            "4,4": 1,
+            "4,5": 1,
+            "4,6": 1,
+            "4,7": 1,
+            "5,0": 1,
+            "5,1": 1,
+            "5,2": 1,
+            "5,3": 1,
+            "5,4": 1,
+            "5,5": 1,
+            "5,6": 1,
+            "5,7": 1,
+            "6,0": 1,
+            "6,1": 1,
+            "6,2": 1,
+            "6,3": 1,
+            "6,4": 1,
+            "6,5": 1,
+            "6,6": 1,
+            "6,7": 1,
+            "7,0": 1,
+            "7,1": 1,
+            "7,2": 1,
+            "7,3": 1,
+            "7,4": 1,
+            "7,5": 1,
+            "7,6": 1,
+            "7,7": 1
+          },
+          "eliminatedRings": { "1": 0, "2": 0 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 3,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "You",
+            "type": "human"
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 5,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "AI",
+            "type": "ai"
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 30,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 19,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "teaching.lps.step_1",
+      "name": "Weird State: Last Player Standing (Real Actions Only)",
+      "description": "Three-player example where only Player 1 can still make real moves. Players 2 and 3 have no stacks and no legal placements; this is the core Last Player Standing pattern driven by real actions, not forced elimination alone.",
+      "category": "learning",
+      "difficulty": "advanced",
+      "tags": ["weird_state", "last_player_standing", "anm_last_player_standing", "victory"],
+      "rulesConcept": "anm_last_player_standing",
+      "uxSpecAnchor": "victory.last_player_standing",
+      "rulesSnippet": "Last Player Standing: you win if you are the only player who can make real moves (placements, movements, or captures) for two full rounds; forced elimination does not count as a real move.",
+      "rulesSnippetRef": "ringrift_complete_rules#last-player-standing",
+      "boardType": "square8",
+      "playerCount": 3,
+      "createdAt": "2025-12-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "teaching.lps.step_1",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "3,3": { "stackHeight": 3, "capHeight": 3, "controllingPlayer": 1 }
+          },
+          "markers": {},
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 0, "2": 5, "3": 5 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 4,
+            "eliminatedRings": 0,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "You",
+            "type": "human"
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 0,
+            "eliminatedRings": 5,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "AI P2",
+            "type": "ai"
+          },
+          {
+            "playerNumber": 3,
+            "ringsInHand": 0,
+            "eliminatedRings": 5,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "AI P3",
+            "type": "ai"
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 25,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 25,
+        "territoryVictoryThreshold": 33
+      }
+    },
+    {
+      "id": "teaching.mini_region.step_1",
+      "name": "Weird State: Territory Mini-Regions (Q23)",
+      "description": "Q23-style mini-region on square8. Player 1 surrounds a compact 2×2 group of empty cells; processing the disconnected region eliminates interior rings and requires paying a self-elimination cost from an outside stack.",
+      "category": "territory_processing",
+      "difficulty": "advanced",
+      "tags": [
+        "territory",
+        "mini_region",
+        "weird_state",
+        "Q23",
+        "Rules_12_2_Q23_mini_region_square8_numeric_invariant"
+      ],
+      "rulesConcept": "territory_mini_region_q23",
+      "uxSpecAnchor": "territory.mini_region.q23",
+      "rulesSnippet": "Q23 mini-regions explain how disconnected groups of empty cells are processed: rings inside the region are eliminated and the surrounding markers become Territory.",
+      "rulesSnippetRef": "RULES_SCENARIO_MATRIX#Rules_12_2_Q23_mini_region_square8_numeric_invariant",
+      "matrixScenarioId": "Rules_12_2_Q23_mini_region_square8_numeric_invariant",
+      "boardType": "square8",
+      "playerCount": 2,
+      "createdAt": "2025-12-01T00:00:00.000Z",
+      "source": "curated",
+      "state": {
+        "gameId": "teaching.mini_region.step_1",
+        "board": {
+          "type": "square8",
+          "size": 8,
+          "stacks": {
+            "0,0": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 1 },
+            "7,7": { "stackHeight": 1, "capHeight": 1, "controllingPlayer": 2 }
+          },
+          "markers": {
+            "2,2": { "player": 1 },
+            "2,3": { "player": 1 },
+            "2,4": { "player": 1 },
+            "3,2": { "player": 1 },
+            "3,4": { "player": 1 },
+            "4,2": { "player": 1 },
+            "4,3": { "player": 1 },
+            "4,4": { "player": 1 },
+            "5,5": { "player": 2 },
+            "5,6": { "player": 2 },
+            "6,5": { "player": 2 },
+            "6,6": { "player": 2 }
+          },
+          "collapsedSpaces": {},
+          "eliminatedRings": { "1": 8, "2": 4 }
+        },
+        "players": [
+          {
+            "playerNumber": 1,
+            "ringsInHand": 9,
+            "eliminatedRings": 8,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "You",
+            "type": "human"
+          },
+          {
+            "playerNumber": 2,
+            "ringsInHand": 13,
+            "eliminatedRings": 4,
+            "territorySpaces": 0,
+            "isActive": true,
+            "username": "AI",
+            "type": "ai"
+          }
+        ],
+        "currentPlayer": 1,
+        "currentPhase": "movement",
+        "turnNumber": 20,
+        "moveHistory": [],
+        "gameStatus": "active",
+        "victoryThreshold": 19,
+        "territoryVictoryThreshold": 33
+      }
     }
   ]
 }

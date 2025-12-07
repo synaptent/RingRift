@@ -151,9 +151,9 @@ class TestMCTSAI(unittest.TestCase):
         way. It does not assert on search quality, only that the wiring
         is sound and a move is returned.
         """
-        # Configure the board as canonical hex (size=11, radius=10).
+        # Configure the board as canonical hex (size=13, radius=12).
         self.game_state.board.type = BoardType.HEXAGONAL
-        self.game_state.board.size = 11
+        self.game_state.board.size = 13
 
         # Keep the search very small for test speed.
         self.ai.config.think_time = 10  # milliseconds

@@ -1157,6 +1157,15 @@ class GameReplayDB:
         - All eliminations/decisions must be represented as explicit
           moves in the history, matching TS ``traceMode`` semantics.
 
+        **RR-PARITY-FIX (2024-12):** After applying each recorded move,
+        this method auto-injects NO_LINE_ACTION and NO_TERRITORY_ACTION
+        bookkeeping moves when the game lands in those phases without
+        interactive options. This matches TypeScript's replay behavior
+        where the SandboxOrchestratorAdapter auto-generates these moves
+        to complete turn traversal. Without this, Python would remain
+        stuck in line_processing/territory_processing waiting for
+        explicit moves that aren't in the database.
+
         Args:
             game_id: Game identifier
             move_number: The move number to reconstruct state after
@@ -1165,7 +1174,7 @@ class GameReplayDB:
             GameState after the specified move, or None if not found.
         """
         # Import here to avoid circular imports
-        from app.game_engine import GameEngine
+        from app.game_engine import GameEngine, PhaseRequirementType
 
         # Always start from the recorded initial state so that reconstructed
         # trajectories reflect the current canonical rules implementation.
@@ -1182,6 +1191,108 @@ class GameReplayDB:
         moves = self.get_moves(game_id, start=0, end=move_number + 1)
         for move in moves:
             state = GameEngine.apply_move(state, move, trace_mode=True)
+
+        # RR-PARITY-FIX: Auto-inject bookkeeping moves to match TS replay
+        # behavior. When TS replays recorded games, it auto-advances through
+        # no-action phases (line_processing, territory_processing) by
+        # synthesizing and applying NO_LINE_ACTION and NO_TERRITORY_ACTION
+        # moves. Python must do the same to maintain state parity.
+        #
+        # IMPORTANT: Only auto-inject if we're at the END of the recorded
+        # game (i.e., there are no more moves after this point). For
+        # intermediate positions where more recorded moves exist, those
+        # moves will handle phase transitions naturally. This prevents
+        # Python from "jumping ahead" to territory_processing when TS
+        # would stay in line_processing waiting for the explicit
+        # no_line_action move in the database.
+        #
+        # For legacy games missing bookkeeping moves, auto-injection at
+        # the final position ensures the state advances past any remaining
+        # no-action phases.
+        total_moves = self._get_game_move_count(game_id)
+        if move_number >= total_moves - 1:
+            # At or past the last recorded move - safe to auto-inject
+            state = self._auto_inject_no_action_moves(state)
+
+        return state
+
+    def _get_game_move_count(self, game_id: str) -> int:
+        """Get total number of moves recorded for a game.
+        
+        Used by get_state_at_move() to determine if we're at the
+        final recorded position and should auto-inject bookkeeping moves.
+        
+        Args:
+            game_id: Game identifier
+            
+        Returns:
+            Total number of moves stored for this game
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) as count FROM game_moves WHERE game_id = ?",
+                (game_id,),
+            ).fetchone()
+            return row["count"] if row else 0
+
+    def _auto_inject_no_action_moves(self, state: GameState) -> GameState:
+        """Auto-inject NO_LINE_ACTION and NO_TERRITORY_ACTION bookkeeping moves.
+
+        This helper matches TS's replay behavior where the orchestrator
+        auto-generates these moves to complete turn traversal through
+        phases that have no interactive options.
+
+        Args:
+            state: Current game state after applying a recorded move.
+
+        Returns:
+            Updated game state with bookkeeping moves auto-applied.
+        """
+        from app.game_engine import GameEngine, PhaseRequirementType
+        from app.models import GameStatus
+
+        # Limit iterations to prevent infinite loops in case of bugs
+        max_iterations = 10
+        iterations = 0
+
+        while iterations < max_iterations:
+            iterations += 1
+
+            # Exit if game is not active
+            status_value = (
+                state.game_status.value
+                if hasattr(state.game_status, "value")
+                else str(state.game_status)
+            )
+            if status_value != "active":
+                break
+
+            # Check if there's a phase requirement for the current player
+            requirement = GameEngine.get_phase_requirement(
+                state, state.current_player
+            )
+
+            if requirement is None:
+                # Interactive moves exist, stop auto-advancing
+                break
+
+            # Only auto-inject for line and territory no-action phases
+            # These are the phases where TS auto-advances during replay
+            if requirement.type == PhaseRequirementType.NO_LINE_ACTION_REQUIRED:
+                bookkeeping = GameEngine.synthesize_bookkeeping_move(
+                    requirement, state
+                )
+                state = GameEngine.apply_move(state, bookkeeping, trace_mode=True)
+            elif requirement.type == PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED:
+                bookkeeping = GameEngine.synthesize_bookkeeping_move(
+                    requirement, state
+                )
+                state = GameEngine.apply_move(state, bookkeeping, trace_mode=True)
+            else:
+                # Other requirements (NO_PLACEMENT, NO_MOVEMENT, FORCED_ELIMINATION)
+                # are not auto-injected during replay - they should be explicit
+                # moves in the database if required, or handled differently
+                break
 
         return state
 

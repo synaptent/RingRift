@@ -635,6 +635,7 @@ export {
   evaluateLpsVictory,
   isLpsActivePhase,
   buildLpsVictoryResult,
+  LPS_REQUIRED_CONSECUTIVE_ROUNDS,
 } from './lpsTracking';
 
 // =============================================================================

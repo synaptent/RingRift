@@ -196,7 +196,7 @@ describe('CaptureAggregate – canonical capture-chain behaviour', () => {
     const target: Position = { x: 1, y: -1, z: 0 };
 
     (state.board as BoardState).type = hexType;
-    (state.board as BoardState).size = 11;
+    (state.board as BoardState).size = 13; // radius=12
 
     addStack(state.board, from, 1, 2);
     addStack(state.board, target, 2, 1);

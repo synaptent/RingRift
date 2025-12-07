@@ -57,11 +57,28 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
   /**
    * Moves copied (in minimal canonical form) from the user's
    * ringrift_sandbox_fixture_v1 sample with rngSeed=412378288.
+   *
+   * NOTE: The original fixture was missing explicit `no_placement_action` moves
+   * for Player 1's turns that skip ring placement. These have been added to
+   * comply with phase enforcement rules (each turn starts with ring_placement).
    */
   function buildFixtureMoves(): Move[] {
     const ts = new Date('2025-12-05T00:00:00.000Z');
+    let moveNum = 0;
+
+    // Helper to create no_placement_action moves for P1
+    const skipPlacementP1 = (): Move => ({
+      id: `no-placement-p1-${++moveNum}`,
+      type: 'no_placement_action',
+      player: 1,
+      timestamp: ts,
+      thinkTime: 0,
+      moveNumber: moveNum,
+    });
 
     const moves: Move[] = [
+      // Turn 1: P1 skips placement, then moves
+      skipPlacementP1(),
       {
         id: 'move-3,4-4,4-1',
         type: 'move_stack',
@@ -70,8 +87,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 4, y: 4 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 1,
+        moveNumber: ++moveNum,
       },
+      // Turn 2: P2 places ring, then captures
       {
         id: '',
         type: 'place_ring',
@@ -80,7 +98,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 2,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 2,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -91,8 +109,10 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 4, y: 3 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 3,
+        moveNumber: ++moveNum,
       },
+      // Turn 3: P1 skips placement, then moves
+      skipPlacementP1(),
       {
         id: 'move-3,5-5,5-4',
         type: 'move_stack',
@@ -101,8 +121,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 5, y: 5 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 4,
+        moveNumber: ++moveNum,
       },
+      // Turn 4: P2 places ring, then moves
       {
         id: '',
         type: 'place_ring',
@@ -111,7 +132,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 2,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 5,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -121,8 +142,10 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 3, y: 0 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 6,
+        moveNumber: ++moveNum,
       },
+      // Turn 5: P1 skips placement, moves, then chain captures
+      skipPlacementP1(),
       {
         id: 'move-5,5-5,3-7',
         type: 'move_stack',
@@ -131,7 +154,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 5, y: 3 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 7,
+        moveNumber: ++moveNum,
       },
       {
         id: 'capture-5,3-4,3-0,3-8',
@@ -142,7 +165,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 0, y: 3 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 8,
+        moveNumber: ++moveNum,
       },
       {
         id: 'continue_capture_segment-0,3-4,3-7,3-8',
@@ -153,8 +176,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 7, y: 3 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 9,
+        moveNumber: ++moveNum,
       },
+      // Turn 6: P2 places ring, then captures
       {
         id: '',
         type: 'place_ring',
@@ -163,7 +187,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 2,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 10,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -174,8 +198,10 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 3, y: 4 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 11,
+        moveNumber: ++moveNum,
       },
+      // Turn 7: P1 skips placement, then chain captures
+      skipPlacementP1(),
       {
         id: 'capture-2,5-3,4-4,3-12',
         type: 'overtaking_capture',
@@ -185,7 +211,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 4, y: 3 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 12,
+        moveNumber: ++moveNum,
       },
       {
         id: 'continue_capture_segment-4,3-3,4-0,7-12',
@@ -196,8 +222,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 0, y: 7 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 13,
+        moveNumber: ++moveNum,
       },
+      // Turn 8: P2 places ring, then chain captures
       {
         id: '',
         type: 'place_ring',
@@ -206,7 +233,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 2,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 14,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -217,7 +244,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 7, y: 7 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 15,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -228,8 +255,10 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 7, y: 0 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 16,
+        moveNumber: ++moveNum,
       },
+      // Turn 9: P1 skips placement, then moves
+      skipPlacementP1(),
       {
         id: 'move-6,5-2,1-17',
         type: 'move_stack',
@@ -238,8 +267,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 2, y: 1 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 17,
+        moveNumber: ++moveNum,
       },
+      // Turn 10: P2 places ring, then moves
       {
         id: '',
         type: 'place_ring',
@@ -248,7 +278,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 2,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 18,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -258,8 +288,10 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 5, y: 0 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 19,
+        moveNumber: ++moveNum,
       },
+      // Turn 11: P1 skips placement, then chain captures
+      skipPlacementP1(),
       {
         id: 'capture-0,7-3,7-6,7-20',
         type: 'overtaking_capture',
@@ -269,7 +301,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 6, y: 7 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 20,
+        moveNumber: ++moveNum,
       },
       {
         id: 'continue_capture_segment-6,7-3,7-1,7-20',
@@ -280,8 +312,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 1, y: 7 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 21,
+        moveNumber: ++moveNum,
       },
+      // Turn 12: P2 places ring, then moves
       {
         id: '',
         type: 'place_ring',
@@ -290,7 +323,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 2,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 22,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -300,8 +333,10 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 1, y: 1 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 23,
+        moveNumber: ++moveNum,
       },
+      // Turn 13: P1 skips placement, then captures
+      skipPlacementP1(),
       {
         id: 'capture-1,7-1,1-1,0-24',
         type: 'overtaking_capture',
@@ -311,8 +346,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 1, y: 0 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 24,
+        moveNumber: ++moveNum,
       },
+      // Turn 14: P2 places ring, then captures
       {
         id: '',
         type: 'place_ring',
@@ -321,7 +357,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 1,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 25,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -332,8 +368,10 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 2, y: 0 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 26,
+        moveNumber: ++moveNum,
       },
+      // Turn 15: P1 skips placement, then moves
+      skipPlacementP1(),
       {
         id: 'move-3,2-3,4-27',
         type: 'move_stack',
@@ -342,8 +380,9 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 3, y: 4 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 27,
+        moveNumber: ++moveNum,
       },
+      // Turn 16: P2 places ring, then moves
       {
         id: '',
         type: 'place_ring',
@@ -352,7 +391,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         placementCount: 2,
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 28,
+        moveNumber: ++moveNum,
       },
       {
         id: '',
@@ -362,7 +401,7 @@ describe('ClientSandboxEngine LPS regression – sandbox fixture replay (square8
         to: { x: 2, y: 4 },
         timestamp: ts,
         thinkTime: 0,
-        moveNumber: 29,
+        moveNumber: ++moveNum,
       },
     ];
 

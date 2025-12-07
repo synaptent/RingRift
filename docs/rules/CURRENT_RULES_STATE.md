@@ -6,11 +6,11 @@ A central navigation guide for developers to quickly locate all rules-related do
 
 > **Doc Status (2025-12-01): Active (with historical appendix)**
 > Index and navigation guide to rules specifications, implementation mapping, and verification/audit docs. This file is **not** a rules semantics SSoT; it points to the true SSoTs and their verification harnesses.
->
-> - **Rules semantics SSoT:** The canonical rules documents (`RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` / `ringrift_compact_rules.md`) are the **single source of truth** for RingRift game semantics. The shared TypeScript engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts), cross-language contracts and vectors (`src/shared/engine/contracts/**`, `tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`), and rules docs (`RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`, `RULES_SCENARIO_MATRIX.md`, `docs/STRICT_INVARIANT_SOAKS.md`) describe and validate the primary executable implementation of that spec.
-> - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
-> - Some linked documents (especially under `archive/` and older UX/audit reports) are **partially historical**; this file is kept current but intentionally points at both active and archived material.
-> - For high-level architecture/topology, see `ARCHITECTURE_ASSESSMENT.md`, `ARCHITECTURE_REMEDIATION_PLAN.md`, and `DOCUMENTATION_INDEX.md`.
+
+- **Rules semantics SSoT:** The canonical rules documents (`RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`) are the **single source of truth** for RingRift game semantics. The shared TypeScript engine under `src/shared/engine/` (helpers → domain aggregates → turn orchestrator → contracts), cross-language contracts and vectors (`src/shared/engine/contracts/**`, `tests/fixtures/contract-vectors/v2/**`, `tests/contracts/contractVectorRunner.test.ts`, `ai-service/tests/contracts/test_contract_vectors.py`), and rules docs (`RULES_ENGINE_ARCHITECTURE.md`, `RULES_IMPLEMENTATION_MAPPING.md`, `docs/RULES_ENGINE_SURFACE_AUDIT.md`, `RULES_SCENARIO_MATRIX.md`, `docs/STRICT_INVARIANT_SOAKS.md`) describe and validate the primary executable implementation of that spec.
+  > - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
+  > - Some linked documents (especially under `archive/` and older UX/audit reports) are **partially historical**; this file is kept current but intentionally points at both active and archived material.
+  > - For high-level architecture/topology, see `ARCHITECTURE_ASSESSMENT.md`, `ARCHITECTURE_REMEDIATION_PLAN.md`, and `DOCUMENTATION_INDEX.md`.
 
 ---
 
@@ -35,7 +35,7 @@ A central navigation guide for developers to quickly locate all rules-related do
 | [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md)                                                       | Canonical rules with RR-CANON IDs | Authoritative reference for any rule question      |
 | [docs/supplementary/RULES_RULESET_CLARIFICATIONS.md](docs/supplementary/RULES_RULESET_CLARIFICATIONS.md) | Ambiguity resolutions (CLAR-XXX)  | When handling edge cases or unclear scenarios      |
 | [ringrift_complete_rules.md](ringrift_complete_rules.md)                                                 | Player-facing complete rules      | Understanding full ruleset from player perspective |
-| [ringrift_compact_rules.md](ringrift_compact_rules.md)                                                   | Player-facing compact rules       | Quick reference or onboarding new players          |
+| [docs/rules/ringrift_compact_rules.md](docs/rules/ringrift_compact_rules.md)                             | Player-facing compact rules       | Quick reference or onboarding new players          |
 
 ### Implementation
 

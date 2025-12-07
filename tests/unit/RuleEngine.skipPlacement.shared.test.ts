@@ -77,7 +77,7 @@ function createBaseRingPlacementState(boardType: BoardType = 'square8'): GameSta
     territories: new Map(),
     formedLines: [],
     eliminatedRings: {},
-    size: boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 11,
+    size: boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 13, // hex: size=13, radius=12
     type: boardType,
   };
 

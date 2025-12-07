@@ -94,6 +94,19 @@ export interface BoardViewProps {
    */
   showCoordinateLabels?: boolean;
   /**
+   * When true, square board ranks are labeled from the bottom (chess-style):
+   * bottom row = rank 1, top row = rank size. This matches the visual
+   * convention where row y=0 (rendered at top) has the highest rank number.
+   *
+   * When false (default), ranks match the canonical notation system:
+   * top row = rank 1, bottom row = rank size.
+   *
+   * This prop should be coordinated with the `squareRankFromBottom` option
+   * in `MoveNotationOptions` so that MoveHistory coordinates align with
+   * the board edge labels.
+   */
+  squareRankFromBottom?: boolean;
+  /**
    * Optional rules-lab overlay: when true, highlight any detected lines
    * present in board.formedLines. Primarily used by the sandbox host and
    * scenario viewers for debugging line geometry.
@@ -200,8 +213,16 @@ const generateFileLabels = (size: number, skipI = false): string[] => {
   return labels;
 };
 
-const generateRankLabels = (size: number): string[] =>
-  Array.from({ length: size }, (_, idx) => (size - idx).toString());
+/**
+ * Generate rank labels for square boards.
+ * @param size - The board size (8 or 19)
+ * @param fromBottom - If true, labels are chess-style: bottom row = rank 1.
+ *                     If false (default), labels match canonical notation: top row = rank 1.
+ */
+const generateRankLabels = (size: number, fromBottom = false): string[] =>
+  fromBottom
+    ? Array.from({ length: size }, (_, idx) => (size - idx).toString()) // [size..1] - chess style
+    : Array.from({ length: size }, (_, idx) => (idx + 1).toString()); // [1..size] - canonical style
 
 const StackWidget: React.FC<{
   stack: RingStack;
@@ -521,6 +542,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onShowKeyboardHelp,
   chainCapturePath,
   shakingCellKey,
+  squareRankFromBottom = false,
 }) => {
   // Animation state tracking
   const [animations, setAnimations] = useState<AnimationState[]>([]);
@@ -1398,7 +1420,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const renderSquareCoordinateLabels = (size: number) => {
     const skipI = effectiveBoardType === 'square19';
     const files = generateFileLabels(size, skipI);
-    const ranks = generateRankLabels(size);
+    const ranks = generateRankLabels(size, squareRankFromBottom ?? false);
     const topOffset = effectiveBoardType === 'square19' ? 28 : 22;
     const sideOffset = effectiveBoardType === 'square19' ? 28 : 24;
     const labelClass =
@@ -1806,7 +1828,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     // We render each q as a row and then wrap all rows in a flex column
     // with slight negative spacing to reduce vertical gaps.
 
-    const radius = board.size - 1; // e.g. size=11 => radius=10
+    const radius = board.size - 1; // e.g. size=13 => radius=12
     const rows: React.ReactNode[] = [];
 
     // Helper to generate algebraic labels for hex cells

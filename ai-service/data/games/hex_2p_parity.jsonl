@@ -1,0 +1,2 @@
+{"index": 0, "num_players": 2, "board_type": "hexagonal", "engine_mode": "descent-only", "seed": null, "length": 356, "status": "completed", "winner": 2, "termination_reason": "env_done_flag", "invariant_violations_by_type": {"ACTIVE_NO_CANDIDATE_MOVES": 1}, "swap_sides_moves": 0, "used_pie_rule": false}
+{"index": 1, "num_players": 2, "board_type": "hexagonal", "engine_mode": "descent-only", "seed": null, "length": 370, "status": "completed", "winner": 1, "termination_reason": "env_done_flag", "invariant_violations_by_type": {}, "swap_sides_moves": 0, "used_pie_rule": false}

@@ -74,8 +74,8 @@ export function createNearVictoryTerritoryFixture(
   const pendingRegionSize = options.pendingRegionSize ?? 1;
 
   // Board dimensions
-  const boardSize = boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 11;
-  const totalSpaces = boardType === 'hexagonal' ? 331 : boardSize * boardSize;
+  const boardSize = boardType === 'square8' ? 8 : boardType === 'square19' ? 19 : 13;
+  const totalSpaces = boardType === 'hexagonal' ? 469 : boardSize * boardSize;
 
   // Territory victory threshold is > 50% of board spaces
   const territoryVictoryThreshold = Math.floor(totalSpaces / 2) + 1;

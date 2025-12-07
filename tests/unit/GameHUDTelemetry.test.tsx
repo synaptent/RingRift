@@ -10,14 +10,20 @@ jest.mock('../../src/client/utils/rulesUxTelemetry', () => {
   return {
     __esModule: true,
     ...actual,
-    // Override with a Jest mock while keeping the rest of the module intact.
+    // Override with Jest mocks while keeping the rest of the module intact.
     sendRulesUxEvent: jest.fn(),
+    logRulesUxEvent: jest.fn(),
+    // Stable overlay session id so we can assert linkage between banner and details events.
+    newOverlaySessionId: jest.fn(() => 'overlay-session-hud-1'),
   };
 });
 
-// Cached typed handle to the mocked sendRulesUxEvent for all tests.
+// Cached typed handles to the mocked telemetry helpers for all tests.
 const mockSendRulesUxEvent = rulesUxTelemetry.sendRulesUxEvent as jest.MockedFunction<
   typeof rulesUxTelemetry.sendRulesUxEvent
+>;
+const mockLogRulesUxEvent = rulesUxTelemetry.logRulesUxEvent as jest.MockedFunction<
+  typeof rulesUxTelemetry.logRulesUxEvent
 >;
 
 function createHudWithWeirdState(): HUDViewModel {
@@ -56,7 +62,7 @@ describe('GameHUD rules-UX telemetry wiring', () => {
     jest.clearAllMocks();
   });
 
-  it('emits rules_weird_state_help and rules_help_open / repeat when weird-state help is opened multiple times', () => {
+  it('emits legacy and spec-compliant events when weird-state help is opened multiple times', () => {
     const hud = createHudWithWeirdState();
 
     render(
@@ -118,6 +124,29 @@ describe('GameHUD rules-UX telemetry wiring', () => {
     expect(repeatEvent.topic).toBe('forced_elimination');
     expect(repeatEvent.boardType).toBe('square8');
     expect(repeatEvent.numPlayers).toBe(2);
+
+    // Spec-aligned telemetry: banner impression + details open with full weird-state context.
+    const specEvents = mockLogRulesUxEvent.mock.calls.map(([arg]) => arg as any);
+    const impression = specEvents.find((event) => event.type === 'weird_state_banner_impression');
+    const details = specEvents.find((event) => event.type === 'weird_state_details_open');
+
+    expect(impression).toBeDefined();
+    expect(details).toBeDefined();
+
+    expect(details).toMatchObject({
+      type: 'weird_state_details_open',
+      source: 'hud',
+      boardType: 'square8',
+      numPlayers: 2,
+      topic: 'forced_elimination',
+      reasonCode: 'FE_SEQUENCE_CURRENT_PLAYER',
+      rulesContext: 'anm_forced_elimination',
+      weirdStateType: 'forced-elimination',
+    });
+
+    expect(typeof details!.overlaySessionId).toBe('string');
+    // Banner impression and details open should share the same overlaySessionId.
+    expect(details!.overlaySessionId).toBe(impression!.overlaySessionId);
   });
 
   it('emits rules_help_open when territory help is opened during territory_processing', () => {

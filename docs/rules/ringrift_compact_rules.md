@@ -4,6 +4,7 @@
 
 - Full, narrative rules: `ringrift_complete_rules.md`
 - This file: focuses on **state**, **version parameters**, and **transition rules**.
+- Omitted here (see Complete Rules for these): flavour prose, extended strategy notes, FAQ-style walkthroughs, and long-form examples. When semantics and prose diverge, this file + `RULES_CANONICAL_SPEC.md` win.
 
 ---
 
@@ -19,9 +20,10 @@ For each board type, define a static configuration:
 | --------- | ---- | ----------- | -------------- | ---------- | ----------------- | ------------- | ------------------- | --------------- |
 | square8   | 8    | 64          | 18             | 3          | Moore (8-dir)     | Moore         | Von Neumann (4-dir) | orthogonal grid |
 | square19  | 19   | 361         | 36             | 4          | Moore             | Moore         | Von Neumann         | orthogonal grid |
-| hexagonal | 11   | 331         | 36             | 4          | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
+| hexagonal | 13   | 469         | 48             | 4          | Hex (6-dir)       | Hex           | Hex                 | hex coordinates |
 
 - **Ring supply semantics:** For each player P, `ringsPerPlayer` is the maximum number of rings of P's own colour that may ever be in play: all of P's rings currently on the board in any stack (regardless of which player controls those stacks) plus all of P's rings in hand must never exceed this value. Rings of other colours that P has captured and that are buried in stacks P controls do **not** count against P's `ringsPerPlayer` cap; they remain, by colour, part of the original owner's supply for conservation and victory accounting.
+  - Quick supply check: `ringsInHand[P] + ringsOfColorOnBoard[P]` must always equal the starting supply for P's board type (18 on square8, 36 on square19, 48 on hex).
 
 - **Coordinates**:
   - Square boards: integer `(x, y)` in `[0, size-1] × [0, size-1]`.
@@ -45,7 +47,13 @@ You must implement three adjacency notions, driven by config:
 
 You must also support **straight-line rays** along these directions for movement, capture, and line-detection.
 
-### 1.3 Core state
+### 1.3 Quick mini-scenarios (implementation sanity checks)
+
+- **Chain capture continuation:** After an initial capture spawns multiple follow-ups, enter `chain_capture` and require continuation until no capture remains. Legal options must be enumerated explicitly; there is no free skip.
+- **Territory disconnection:** After line resolution, recompute regions using board-type adjacency; any region with zero controlled stacks collapses. Collapsed rings are credited to their owners (supply/victory) even if controlled by another player.
+- **Forced elimination entry:** Only enter `forced_elimination` when the current player controls ≥1 stack and has zero placements/movements/captures. Record the FE move explicitly; never apply FE silently during territory exit.
+
+### 1.4 Core state
 
 At minimum, your engine must maintain:
 

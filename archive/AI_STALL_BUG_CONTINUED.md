@@ -117,7 +117,9 @@ if (maxAvailableGlobal <= 0) {
 
 - Board: "Full Hex" (hexagonal)
 - Players: 4 AI players
-- Stall occurs when any AI player reaches exactly 36 rings on board
+- Original stall reproduced when a hex AI reached the **old** 36-ring cap
+  (radius-10 hex). With the new radius-12 hex cap of **48 rings**, retest to
+  confirm the stall no longer triggers or adjust logic accordingly.
 
 ---
 

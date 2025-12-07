@@ -30,8 +30,8 @@ from typing import Dict, List, Optional, Tuple, Any
 import logging
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash
-from app.training.generate_data import create_initial_state
 from app.game_engine import BoardType
+# NOTE: create_initial_state is imported lazily inside functions to avoid circular imports
 from app.rules.serialization import serialize_game_state
 
 logger = logging.getLogger(__name__)
@@ -171,6 +171,9 @@ def _summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumm
     """Summarize the initial state BEFORE any moves are applied."""
     state = db.get_initial_state(game_id)
     if state is None:
+        # Lazy import to avoid circular dependency
+        from app.training.generate_data import create_initial_state
+
         metadata = db.get_game_metadata(game_id)
         if metadata is None:
             raise RuntimeError(f"No initial_state and no metadata for {game_id}")
@@ -276,6 +279,9 @@ def _get_python_state_for_ts_k(
     if ts_k <= 0:
         state = db.get_initial_state(game_id)
         if state is None:
+            # Lazy import to avoid circular dependency
+            from app.training.generate_data import create_initial_state
+
             metadata = db.get_game_metadata(game_id)
             if metadata is None:
                 raise RuntimeError(f"No initial_state and no metadata for {game_id}")
