@@ -27,6 +27,26 @@ Baseline runner notes (Dec 2025):
 - Optional user seeding via `SEED_LOADTEST_USERS=true` (with `LOADTEST_USER_*` overrides) seeds a load-test account pool before k6 starts.
 - Smoke profile: set `SMOKE=1` for a short/local wiring check; otherwise the `load` profile is used.
 
+Common baseline commands:
+
+```bash
+# Staging baseline with seeding (default SCENARIO_ID, WS companion on)
+SEED_LOADTEST_USERS=true tests/load/scripts/run-baseline.sh --staging
+
+# Local smoke baseline without WS companion
+SMOKE=1 SKIP_WS_COMPANION=1 tests/load/scripts/run-baseline.sh --local
+```
+
+Recent baseline run artifacts (Dec 2025):
+
+| Date (UTC) | Scenario ID | Notes | Paths |
+| --- | --- | --- | --- |
+| 2025-12-08 | BCAP_STAGING_BASELINE_20G_60P | Smoke-level run; baseline + WS companion | `tests/load/results/baseline_staging_20251208_144949.json`, `tests/load/results/baseline_staging_20251208_144949_summary.json`, `tests/load/results/websocket_BCAP_STAGING_BASELINE_20G_60P_staging_20251208_144949.json` |
+
+Target-scale run tracking:
+
+- **Not yet executed** (as of 2025-12-08). First target-scale run should use `SCENARIO_ID=BCAP_SQ8_3P_TARGET_100G_300P`, include the WebSocket companion (unless skipped), and record both main and WS result paths here after completion.
+
 Latest staging baseline run for pipeline validation (smoke-level only, not target scale): see
 `tests/load/results/baseline_staging_20251208_144949.json` and the corresponding
 `baseline_staging_20251208_144949_summary.json` and
@@ -59,6 +79,12 @@ Latest staging baseline run for pipeline validation (smoke-level only, not targe
 
 Target scale testing validates the system at full production capacity:
 **100 concurrent games with 300 concurrent players**.
+
+Target-scale runner notes (Dec 2025):
+- `SCENARIO_ID` defaults to `BCAP_SQ8_3P_TARGET_100G_300P` and is threaded into filenames/tags.
+- Optional WebSocket companion run (`websocket-stress.js`, preset=target ~300 conns) runs automatically unless `SKIP_WS_COMPANION=true` is set; companion result files are named `websocket_<SCENARIO_ID>_...json`.
+- Optional user seeding via `SEED_LOADTEST_USERS=true` (with `LOADTEST_USER_*` overrides) seeds a load-test account pool before k6 starts.
+- Confirmation prompt can be skipped with `SKIP_CONFIRM=true` for CI/non-interactive runs.
 
 ### How to Run Target Scale Test
 

@@ -327,7 +327,7 @@ export function resolveDecision(
     phase: state.phase,
     player: state.player,
     choiceType: state.choiceType,
-    resolvedMoveId: moveId,
+    ...(moveId !== undefined ? { resolvedMoveId: moveId } : {}),
     resolvedAt,
     durationMs: resolvedAt - startedAt,
   };
@@ -346,20 +346,13 @@ export function cancelDecision(
   reason: string,
   nowMs?: number
 ): DecisionCancelledState {
-  const phase =
-    state.kind !== 'idle' && state.kind !== 'cancelled'
-      ? state.phase
-      : undefined;
-  const player =
-    state.kind !== 'idle' && state.kind !== 'cancelled'
-      ? state.player
-      : undefined;
+  const hasPhaseAndPlayer =
+    state.kind !== 'idle' && state.kind !== 'cancelled';
 
   return {
     kind: 'cancelled',
     reason,
-    phase,
-    player,
+    ...(hasPhaseAndPlayer ? { phase: state.phase, player: state.player } : {}),
     cancelledAt: nowMs ?? Date.now(),
   };
 }
@@ -434,8 +427,8 @@ export function getDecisionMetadata(state: DecisionPhaseState): {
   if (state.kind === 'cancelled') {
     return {
       kind: 'cancelled',
-      phase: state.phase,
-      player: state.player,
+      ...(state.phase !== undefined ? { phase: state.phase } : {}),
+      ...(state.player !== undefined ? { player: state.player } : {}),
     };
   }
   if (state.kind === 'resolved') {
@@ -447,12 +440,13 @@ export function getDecisionMetadata(state: DecisionPhaseState): {
     };
   }
 
+  const remaining = getRemainingTime(state);
   return {
     kind: state.kind,
     phase: state.phase,
     player: state.player,
     choiceType: state.choiceType,
-    remainingMs: getRemainingTime(state) ?? undefined,
+    ...(remaining !== null ? { remainingMs: remaining } : {}),
   };
 }
 

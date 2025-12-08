@@ -595,7 +595,18 @@ export function isValidPosition(pos: Position, boardType: BoardType, boardSize: 
   - Utilities: `isGameError()`, `wrapError()`, `getHttpStatus()`
 
 **Client:**
-- [ ] Extract GameFacade abstraction
+- [x] Extract GameFacade abstraction → `src/client/facades/`
+  - `GameFacade.ts` - Unified interface for backend and sandbox game hosts
+  - `FacadeConnectionStatus`, `GameFacadeMode`, `FacadeDecisionState`, `FacadePlayerInfo` types
+  - Utilities: `extractChainCapturePath()`, `deriveMustMoveFrom()`, `canSubmitMove()`, `canInteract()`
+- [x] Create useGamePlayViewModels hook → `src/client/facades/useGamePlayViewModels.ts`
+  - Derives all view models from facade: `boardViewModel`, `hudViewModel`, `victoryViewModel`, `eventLogViewModel`
+  - Handles optional capture highlighting and decision highlights
+  - `useInstructionText()` helper for phase-specific instructions
+- [x] Create useCellInteractions hook → `src/client/facades/useCellInteractions.ts`
+  - Shared cell click/double-click/context-menu handling
+  - Selection state management
+  - Invalid move detection with reason analysis
 - [ ] Implement compound state machines for GameContext
 
 ### Phase 3: Component Decomposition (Weeks 5-6)

@@ -126,7 +126,7 @@ export function selectFallbackMove(context: FallbackContext): FallbackResult {
     reason: context.reason,
     diagnostics: {
       validMoveCount: context.validMoves.length,
-      selectedMoveType: move?.type,
+      ...(move?.type ? { selectedMoveType: move.type } : {}),
       selectionTimeMs,
     },
   };
