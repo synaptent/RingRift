@@ -259,6 +259,25 @@ export function hasForcedEliminationAction(state: GameState, player: number): bo
 }
 
 /**
+ * Stricter zero-rings global action check used by termination guards:
+ * - If ringsInHand > 0 and a placement exists → true.
+ * - Otherwise, true only if a controlled stack has a legal move or capture.
+ * Forced elimination is ignored when ringsInHand == 0.
+ */
+export function hasAnyGlobalActionZeroRingAware(state: GameState, player: number): boolean {
+  const playerState = state.players.find((p) => p.playerNumber === player);
+  if (!playerState) {
+    return false;
+  }
+
+  if (playerState.ringsInHand > 0 && hasGlobalPlacementAction(state, player)) {
+    return true;
+  }
+
+  return hasAnyGlobalMovementOrCapture(state, player);
+}
+
+/**
  * A single stack that is eligible for forced elimination.
  */
 export interface ForcedEliminationOption {

@@ -183,7 +183,7 @@ def value_from_final_ranking(
         # Score: eliminated rings as primary, territory as tiebreaker
         # Higher score = better ranking
         score = (player.eliminated_rings, player.territory_spaces)
-        player_scores.append((player.number, score))
+        player_scores.append((player.player_number, score))
 
     # Sort by score descending (best first)
     player_scores.sort(key=lambda x: x[1], reverse=True)
@@ -247,7 +247,7 @@ def compute_multi_player_values(
     player_scores = []
     for player in final_state.players:
         score = (player.eliminated_rings, player.territory_spaces)
-        player_scores.append((player.number, score))
+        player_scores.append((player.player_number, score))
 
     # Sort by score descending (best = rank 1)
     player_scores.sort(key=lambda x: x[1], reverse=True)
@@ -259,11 +259,11 @@ def compute_multi_player_values(
 
     # Compute value for each active player position
     for player in final_state.players:
-        player_idx = player.number - 1  # 0-indexed for array
+        player_idx = player.player_number - 1  # 0-indexed for array
         if player_idx >= max_players:
             continue
 
-        rank = player_ranks.get(player.number, num_players)
+        rank = player_ranks.get(player.player_number, num_players)
 
         if num_players <= 1:
             values[player_idx] = 0.0

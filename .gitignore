@@ -146,6 +146,7 @@ eslint-report*.json
 
 # Load test result artifacts
 tests/load/*.load.results.json
+tests/load/results/
 
 # Local sync archives
 ai-service-sync.zip

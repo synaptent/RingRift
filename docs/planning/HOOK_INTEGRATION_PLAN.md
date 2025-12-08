@@ -370,7 +370,7 @@ const handleLoadScenario = useCallback(
 ## Success Criteria
 
 - [x] TypeScript compiles without errors
-- [x] All 374 existing hook tests pass (up from 77)
+- [x] All hook tests pass (443 total including 69 new sandbox hook tests)
 - [ ] Scenario loading works from picker (needs manual testing)
 - [ ] Self-play game loading works from browser (needs manual testing)
 - [ ] Replay mode displays correctly (needs manual testing)
@@ -380,6 +380,10 @@ const handleLoadScenario = useCallback(
 - [x] Auto-evaluation triggers on developer tools (hook integration complete)
 - [x] Manual evaluation works (hook integration complete)
 - [x] SandboxGameHost reduced to ~2708 lines (from ~2893, ~185 line reduction)
+- [x] New hook tests added (Phase 1 of REMAINING_COMPLEX_TASKS_PLAN complete):
+  - useSandboxEvaluation: 19 tests
+  - useSandboxPersistence: 19 tests
+  - useSandboxScenarios: 31 tests
 
 ---
 

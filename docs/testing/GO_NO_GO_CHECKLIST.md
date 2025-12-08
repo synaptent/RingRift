@@ -231,6 +231,19 @@ These gates connect the P‑01 k6 load scenarios, SLO documentation, and alertin
     - P‑01 scenarios and SLOs: [`STRATEGIC_ROADMAP.md`](../STRATEGIC_ROADMAP.md:413), [`ALERTING_THRESHOLDS.md`](./ALERTING_THRESHOLDS.md:925).
     - Baseline ranges and interpretation: [`LOAD_TEST_BASELINE.md`](./LOAD_TEST_BASELINE.md:1), [`LOAD_TEST_BASELINE_REPORT.md`](./LOAD_TEST_BASELINE_REPORT.md:1).
 
+- [ ] **Baseline, target-scale, and AI-heavy k6 runs executed with SLO verification and recorded**
+  - **Automation / commands**
+    - Baseline (20G/60P, WS companion optional): `cd tests/load && ./scripts/run-baseline.sh --staging` (or `--local` for smoke); WS companion SLOs verified separately if run.
+    - Target scale (100G/300P + WS companion): `cd tests/load && ./scripts/run-target-scale.sh --staging --skip-confirm true`.
+    - AI-heavy probe (4p/3 AI seats, ~75G/300P): `cd tests/load && ./scripts/run-ai-heavy.sh --staging` (use `SMOKE=1` for a short/local wiring check).
+    - Each script auto-runs `tests/load/scripts/verify-slos.js` against the configured `THRESHOLD_ENV`; rerun the verifier manually for WS companion outputs if applicable.
+  - **Evidence**
+    - Result + summary JSON (and WS companion if run) stored under `tests/load/results/` for this candidate.
+    - `docs/BASELINE_CAPACITY.md` updated with date, scenario ID, env, notes, and result paths for the baseline, target-scale, and AI-heavy runs (including SLO pass/fail).
+  - **References**
+    - Run parameters and recording template: [`docs/BASELINE_CAPACITY.md`](../docs/BASELINE_CAPACITY.md:1).
+    - SLO verifier: [`tests/load/scripts/verify-slos.js`](../tests/load/scripts/verify-slos.js:1).
+
 - [ ] **No core SLO violations under P‑01 load**
   - **Automation / commands**
     - During or immediately after the load runs above, confirm that:

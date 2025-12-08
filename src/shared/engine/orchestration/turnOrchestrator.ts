@@ -46,6 +46,7 @@ import {
   applyForcedEliminationForPlayer,
   computeGlobalLegalActionsSummary,
   hasAnyGlobalMovementOrCapture,
+  hasAnyGlobalActionZeroRingAware,
   enumerateForcedEliminationOptions,
 } from '../globalActions';
 
@@ -1937,14 +1938,8 @@ function processPostMovePhases(
   const allZeroRings = stateMachine.gameState.players.every((p) => p.ringsInHand <= 0);
   if (allZeroRings) {
     const anyActions = stateMachine.gameState.players.some((p) => {
-      // With no rings in hand anywhere, only placement or movement/capture
-      // actions matter. Ignore forced elimination (no rings to spend).
-      const hasPlacement = computeGlobalLegalActionsSummary(
-        stateMachine.gameState,
-        p.playerNumber
-      ).hasGlobalPlacementAction;
-      const hasMovementOrCapture = hasAnyGlobalMovementOrCapture(stateMachine.gameState, p.playerNumber);
-      return hasPlacement || hasMovementOrCapture;
+      // With no rings in hand anywhere, ignore forced elimination and skip actions.
+      return hasAnyGlobalActionZeroRingAware(stateMachine.gameState, p.playerNumber);
     });
     if (!anyActions) {
       stateMachine.updateGameState({
