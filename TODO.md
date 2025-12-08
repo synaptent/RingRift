@@ -507,6 +507,36 @@ Operational drills completed:
 | Python AI service parity             | P0       | ✅ Complete |
 | Orchestrator production hardening    | P0       | ✅ Complete |
 
+### 3.1.1 Recovery Action Implementation (New Rule Feature)
+
+**Specification:** See `RECOVERY_ACTION_IMPLEMENTATION_PLAN.md` and `RULES_CANONICAL_SPEC.md` §5.4 (RR-CANON-R110–R115).
+
+**Summary:** Recovery action allows temporarily eliminated players (no stacks, no rings in hand, but has markers and buried rings) to slide a marker to complete a line of exactly `lineLength`, extracting a buried ring as self-elimination cost.
+
+| Task                                            | Priority | Status  | Notes                                                         |
+| ----------------------------------------------- | -------- | ------- | ------------------------------------------------------------- |
+| Add `recovery_slide` MoveType (TS + Python)     | P1       | Pending | New move type in `game.ts` and `core.py`                      |
+| Implement recovery eligibility predicate        | P1       | Pending | Check: no stacks, no rings in hand, has markers, buried rings |
+| Implement recovery move generation              | P1       | Pending | Enumerate marker slides that complete exact-length lines      |
+| Implement recovery move application             | P1       | Pending | Marker slide → line collapse → buried ring extraction         |
+| Update LPS `hasAnyRealAction` for recovery      | P0       | Pending | Recovery counts as real action (RR-CANON-R110)                |
+| Integrate into turn orchestrator movement phase | P1       | Pending | Add recovery moves to movement phase enumeration              |
+| Add RecoveryAggregate.ts (TS)                   | P1       | Pending | New aggregate module                                          |
+| Add RecoveryValidator + RecoveryMutator (Python)| P1       | Pending | Shadow contract infrastructure                                |
+| Add recovery action unit tests (TS)             | P1       | Pending | Eligibility, enumeration, application, overlength exclusion   |
+| Add recovery action unit tests (Python)         | P1       | Pending | Mirror TS tests for parity                                    |
+| Add TS/Python parity tests for recovery         | P0       | Pending | Contract vectors for recovery scenarios                       |
+| Update AI move generation for recovery          | P2       | Pending | AI must consider recovery slides                              |
+| Update teaching materials for recovery          | P2       | Pending | TeachingOverlay, teachingTopics, scenarios                    |
+| Update UX copy for recovery action              | P2       | Pending | HUD hints, tooltips, victory explanations                     |
+
+**Key Interactions:**
+- **LPS:** Recovery action is a "real action" for Last-Player-Standing (RR-CANON-R110)
+- **FE:** Recovery uses buried ring extraction, not cap elimination
+- **ANM:** Temporarily eliminated player with recovery option is NOT in ANM state
+- **Line Length:** Recovery requires exactly `lineLength` markers (no overlength)
+- **Territory:** Line collapse may trigger territory processing cascade
+
 ### 3.2 Testing Work
 
 | Task                      | Priority | Status      |

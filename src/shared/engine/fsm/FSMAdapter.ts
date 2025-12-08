@@ -694,21 +694,20 @@ export function validateMoveWithFSM(gameState: GameState, move: Move): FSMValida
   // Attempt the transition
   const result = transition(fsmState, event, context);
 
-  if (result.ok) {
+  if (!result.ok) {
+    const error = result.error;
     return {
-      valid: true,
+      valid: false,
       currentPhase: fsmState.phase,
+      errorCode: error.code,
+      reason: error.message,
+      validEventTypes: getExpectedEventTypes(fsmState),
     };
   }
 
-  // Extract error information
-  const error = result.error;
   return {
-    valid: false,
+    valid: true,
     currentPhase: fsmState.phase,
-    errorCode: error.code,
-    reason: error.message,
-    validEventTypes: getExpectedEventTypes(fsmState),
   };
 }
 

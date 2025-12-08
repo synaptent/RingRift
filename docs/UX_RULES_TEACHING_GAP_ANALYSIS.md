@@ -45,16 +45,17 @@ Coverage was assessed by reviewing:
 
 ## Concept Coverage Matrix
 
-| Concept ID                   | Concept Name                         | Current Coverage Level | Priority | Gap Count | Addressed |
-| ---------------------------- | ------------------------------------ | ---------------------- | -------- | --------- | --------- |
-| `anm_fe_core`                | Active-No-Moves / Forced Elimination | High                   | High     | 3         | ✅ All    |
-| `structural_stalemate`       | Structural Stalemate                 | High                   | High     | 4         | ✅ All    |
-| `territory_mini_regions`     | Territory Mini-Regions               | High                   | High     | 4         | ✅ All    |
-| `capture_chains`             | Capture Chains                       | High                   | Medium   | 4         | ✅ All    |
-| `lps_real_actions`           | Last-Player-Standing Real Actions    | High                   | High     | 3         | ✅ All    |
-| `line_vs_territory_ordering` | Line vs Territory Ordering           | High                   | Medium   | 3         | ✅ All    |
+| Concept ID                   | Concept Name                         | Current Coverage Level | Priority | Gap Count | Addressed                    |
+| ---------------------------- | ------------------------------------ | ---------------------- | -------- | --------- | ---------------------------- |
+| `anm_fe_core`                | Active-No-Moves / Forced Elimination | High                   | High     | 3         | ✅ All                       |
+| `structural_stalemate`       | Structural Stalemate                 | High                   | High     | 4         | ✅ All                       |
+| `territory_mini_regions`     | Territory Mini-Regions               | High                   | High     | 4         | ✅ All                       |
+| `capture_chains`             | Capture Chains                       | High                   | Medium   | 4         | ✅ All                       |
+| `lps_real_actions`           | Last-Player-Standing Real Actions    | High                   | High     | 3         | ✅ All                       |
+| `recovery_action`            | Recovery Action (New Rule Feature)   | None                   | Medium   | 4         | ⏳ Pending (engine required) |
+| `line_vs_territory_ordering` | Line vs Territory Ordering           | High                   | Medium   | 3         | ✅ All                       |
 
-**Total Gaps: 21 (All Addressed)**
+**Total Gaps: 25 (21 Addressed, 4 Pending engine implementation for recovery_action)**
 
 ---
 
@@ -262,6 +263,58 @@ Coverage was assessed by reviewing:
 
 ---
 
+### recovery_action – Recovery Action (New Rule Feature)
+
+**Current Coverage:**
+
+- ❌ No TeachingOverlay topic exists for recovery action
+- ❌ No teaching scenarios implemented
+- ❌ No recovery-specific HUD hints or tooltips
+- ❌ No telemetry context for recovery action
+- ❌ Engine implementation not yet started
+
+**Canonical Rules:**
+
+- Recovery action allows a "temporarily eliminated" player (no stacks, no rings in hand, but has markers and buried rings) to slide a marker to complete a line of exactly `lineLength`, extracting a buried ring as self-elimination cost.
+- Recovery is a **real action** for LPS purposes (unlike forced elimination).
+- See `RULES_CANONICAL_SPEC.md` R110–R115 and `ringrift_complete_rules.md` §4.5.
+
+**Gaps:**
+
+#### GAP-RECOV-01: No TeachingOverlay topic for recovery action
+
+- **Status:** Pending (blocked on engine implementation)
+- **Description**: Recovery action is a new rule feature not yet implemented. Once implemented, a teaching topic should explain: eligibility (no stacks, no rings, has markers, buried rings), marker slide mechanics, line length requirement (exact length only), and buried ring extraction cost.
+- **Recommended Remedy**: Add `recovery_action` to `TeachingTopicId` and create dedicated teaching tips in `teachingTopics.ts`.
+- **Effort**: Small (once engine exists)
+- **Dependencies**: Engine implementation in `TODO.md` §3.1.1
+
+#### GAP-RECOV-02: No teaching scenarios for recovery action flow
+
+- **Status:** Pending (blocked on engine implementation)
+- **Description**: No guided or interactive scenarios exist showing recovery action in practice. The teaching flow should cover: (1) recognizing temporarily eliminated state, (2) identifying valid marker slides, (3) understanding line length requirement (no overlength), (4) cascading effects (line → territory).
+- **Recommended Remedy**: Add `recovery_intro` teaching scenario with 2-3 steps in `teachingScenarios.ts` once engine supports recovery.
+- **Effort**: Medium
+- **Dependencies**: GAP-RECOV-01, engine implementation
+
+#### GAP-RECOV-03: No distinction between "temporarily eliminated" vs "fully eliminated"
+
+- **Status:** Pending (blocked on engine implementation)
+- **Description**: Players will likely confuse "temporarily eliminated with recovery" and "fully eliminated for turn rotation". Teaching content should clarify: temporarily eliminated players can still act via recovery and are NOT skipped; fully eliminated players are skipped.
+- **Recommended Remedy**: Add comparative tips in ANM/FE and recovery topics.
+- **Effort**: Small
+- **Dependencies**: GAP-RECOV-01
+
+#### GAP-RECOV-04: Recovery action not integrated into LPS teaching
+
+- **Status:** Pending (blocked on engine implementation)
+- **Description**: LPS teaching currently covers placements, movements, captures as "real actions". Recovery action also counts as a real action and should be included in LPS explanations once implemented.
+- **Recommended Remedy**: Update `VICTORY_STALEMATE_TIPS` and LPS teaching scenarios to include recovery action.
+- **Effort**: Small
+- **Dependencies**: GAP-RECOV-01
+
+---
+
 ### line_vs_territory_ordering – Line vs Territory Ordering
 
 **Current Coverage:**
@@ -325,6 +378,15 @@ Gaps are scored by: `Score = Priority × (1 / Effort)` where Priority={High:3, M
 | 20   | GAP-ORDER-02 | line_vs_territory_ordering | Medium   | Medium | 3.0   | Option 1 vs Option 2 teaching scenario                 |
 | 21   | GAP-ORDER-03 | line_vs_territory_ordering | Medium   | Medium | 3.0   | Multi-phase sequence demonstration                     |
 
+**Recovery Action Gaps (Pending Engine Implementation):**
+
+| Rank | Gap ID        | Concept         | Priority | Effort | Score | Recommended Remedy Summary                              |
+| ---- | ------------- | --------------- | -------- | ------ | ----- | ------------------------------------------------------- |
+| –    | GAP-RECOV-01  | recovery_action | Medium   | Small  | N/A   | Add TeachingOverlay topic (after engine implementation) |
+| –    | GAP-RECOV-02  | recovery_action | Medium   | Medium | N/A   | Add teaching scenarios (after engine implementation)    |
+| –    | GAP-RECOV-03  | recovery_action | Medium   | Small  | N/A   | Add temp vs full elimination distinction                |
+| –    | GAP-RECOV-04  | recovery_action | Medium   | Small  | N/A   | Integrate into LPS teaching                             |
+
 ---
 
 ## Recommendations
@@ -354,6 +416,13 @@ Gaps are scored by: `Score = Priority × (1 / Effort)` where Priority={High:3, M
 
 - GAP-CHAIN-01 through GAP-CHAIN-04 – Capture chain teaching flow
 - GAP-ORDER-01 through GAP-ORDER-03 – Line vs territory ordering flow
+
+**Blocked on Engine Implementation:**
+
+- GAP-RECOV-01 through GAP-RECOV-04 – Recovery action teaching content
+  - Requires: Engine implementation of recovery action (`recovery_slide` MoveType) in TS and Python
+  - See: `TODO.md` §3.1.1 and `RECOVERY_ACTION_IMPLEMENTATION_PLAN.md`
+  - Once implemented: Add `recovery_action` TeachingOverlay topic, teaching scenarios, and integrate into LPS teaching
 
 **Note:** Some LPS scenarios (step 3) are deferred until CCE-006 implementation compromise is resolved and engines explicitly support early LPS detection.
 

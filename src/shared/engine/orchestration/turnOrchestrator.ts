@@ -1311,7 +1311,15 @@ export function processTurn(
 
       if (fsmEvent) {
         const fsmResult = fsmTransition(fsmState, fsmEvent, fsmContext);
-        if (fsmResult.ok) {
+        if (!fsmResult.ok) {
+          debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] ERROR', {
+            moveType: move.type,
+            movePlayer: move.player,
+            error: fsmResult.error,
+            gameId: state.id,
+            moveNumber: state.moveHistory.length + 1,
+          });
+        } else {
           const fsmPhase = fsmResult.state.phase;
           const fsmPlayer =
             (fsmResult.state as { player?: number }).player ?? finalState.currentPlayer;
@@ -1329,14 +1337,6 @@ export function processTurn(
               moveNumber: state.moveHistory.length + 1,
             });
           }
-        } else {
-          debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] ERROR', {
-            moveType: move.type,
-            movePlayer: move.player,
-            error: fsmResult.error,
-            gameId: state.id,
-            moveNumber: state.moveHistory.length + 1,
-          });
         }
       }
     } catch (err) {
@@ -2129,7 +2129,27 @@ function processPostMovePhases(
           pendingDecision: forcedDecision,
         };
       }
+      // Stay in forced_elimination; caller must supply explicit move.
+      // No decision options were constructed; stay in forced_elimination and
+      // let the caller supply a forced_elimination move.
+      return {};
     }
+
+    // If no forced elimination, advance explicitly to next player's ring_placement.
+    const currentState = stateMachine.gameState;
+    const players = currentState.players;
+    const currentPlayerIndex = players.findIndex(
+      (p) => p.playerNumber === currentState.currentPlayer
+    );
+    const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+    const nextPlayer = players[nextPlayerIndex].playerNumber;
+
+    stateMachine.updateGameState({
+      ...currentState,
+      currentPlayer: nextPlayer,
+      currentPhase: 'ring_placement',
+    });
+    return {};
   }
 
   // Check victory
