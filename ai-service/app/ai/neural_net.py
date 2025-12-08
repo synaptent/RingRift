@@ -196,6 +196,81 @@ HEX_MOVEMENT_SPAN = (
 HEX_SPECIAL_BASE = HEX_MOVEMENT_BASE + HEX_MOVEMENT_SPAN
 P_HEX = HEX_SPECIAL_BASE + 1
 
+# =============================================================================
+# Square Board Spatial Policy Constants (V3)
+# =============================================================================
+#
+# These constants define the spatial policy layout for V3 architecture.
+# V3 uses Conv1x1 spatial heads instead of GAP→FC policy heads.
+
+# Square board directions (8 cardinal + diagonal)
+NUM_SQUARE_DIRS = 8
+
+# Maximum movement distance for each board type
+MAX_DIST_SQUARE8 = 7   # Max diagonal: sqrt(7^2 + 7^2) ≈ 9.9
+MAX_DIST_SQUARE19 = 18  # Max diagonal: sqrt(18^2 + 18^2) ≈ 25.5
+
+# Line formation directions (horizontal, vertical, diagonal)
+NUM_LINE_DIRS = 4
+
+# Territory choice encoding dimensions
+TERRITORY_SIZE_BUCKETS = 8
+TERRITORY_MAX_PLAYERS = 4
+
+# Square8 Policy Layout (V3):
+#   Placement:       [0, 191]       = 3 * 8 * 8 = 192
+#   Movement:        [192, 3775]    = 8 * 8 * 8 * 7 = 3,584
+#   Line Formation:  [3776, 4031]   = 8 * 8 * 4 = 256
+#   Territory Claim: [4032, 4095]   = 8 * 8 = 64
+#   Skip Placement:  [4096]         = 1
+#   Swap Sides:      [4097]         = 1
+#   Line Choice:     [4098, 4101]   = 4
+#   Territory Choice:[4102, 6149]   = 64 * 8 * 4 = 2,048
+#   Total: 6,150 (POLICY_SIZE_8x8 = 7000 with padding)
+
+SQUARE8_PLACEMENT_SPAN = 3 * 8 * 8  # 192
+SQUARE8_MOVEMENT_BASE = SQUARE8_PLACEMENT_SPAN
+SQUARE8_MOVEMENT_SPAN = 8 * 8 * NUM_SQUARE_DIRS * MAX_DIST_SQUARE8  # 3,584
+SQUARE8_LINE_FORM_BASE = SQUARE8_MOVEMENT_BASE + SQUARE8_MOVEMENT_SPAN
+SQUARE8_LINE_FORM_SPAN = 8 * 8 * NUM_LINE_DIRS  # 256
+SQUARE8_TERRITORY_CLAIM_BASE = SQUARE8_LINE_FORM_BASE + SQUARE8_LINE_FORM_SPAN
+SQUARE8_TERRITORY_CLAIM_SPAN = 8 * 8  # 64
+SQUARE8_SPECIAL_BASE = SQUARE8_TERRITORY_CLAIM_BASE + SQUARE8_TERRITORY_CLAIM_SPAN
+SQUARE8_SKIP_PLACEMENT_IDX = SQUARE8_SPECIAL_BASE  # 4096
+SQUARE8_SWAP_SIDES_IDX = SQUARE8_SPECIAL_BASE + 1  # 4097
+SQUARE8_LINE_CHOICE_BASE = SQUARE8_SPECIAL_BASE + 2  # 4098
+SQUARE8_LINE_CHOICE_SPAN = 4
+SQUARE8_TERRITORY_CHOICE_BASE = SQUARE8_LINE_CHOICE_BASE + SQUARE8_LINE_CHOICE_SPAN
+SQUARE8_TERRITORY_CHOICE_SPAN = 8 * 8 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS  # 2,048
+
+# Square19 Policy Layout (V3):
+#   Placement:       [0, 1082]      = 3 * 19 * 19 = 1,083
+#   Movement:        [1083, 53066]  = 19 * 19 * 8 * 18 = 51,984
+#   Line Formation:  [53067, 54510] = 19 * 19 * 4 = 1,444
+#   Territory Claim: [54511, 54871] = 19 * 19 = 361
+#   Skip Placement:  [54872]        = 1
+#   Swap Sides:      [54873]        = 1
+#   Line Choice:     [54874, 54877] = 4
+#   Territory Choice:[54878, 66429] = 361 * 8 * 4 = 11,552
+#   Total: 66,430 (POLICY_SIZE_19x19 = 67000 with padding)
+
+SQUARE19_PLACEMENT_SPAN = 3 * 19 * 19  # 1,083
+SQUARE19_MOVEMENT_BASE = SQUARE19_PLACEMENT_SPAN
+SQUARE19_MOVEMENT_SPAN = 19 * 19 * NUM_SQUARE_DIRS * MAX_DIST_SQUARE19  # 51,984
+SQUARE19_LINE_FORM_BASE = SQUARE19_MOVEMENT_BASE + SQUARE19_MOVEMENT_SPAN
+SQUARE19_LINE_FORM_SPAN = 19 * 19 * NUM_LINE_DIRS  # 1,444
+SQUARE19_TERRITORY_CLAIM_BASE = SQUARE19_LINE_FORM_BASE + SQUARE19_LINE_FORM_SPAN
+SQUARE19_TERRITORY_CLAIM_SPAN = 19 * 19  # 361
+SQUARE19_SPECIAL_BASE = SQUARE19_TERRITORY_CLAIM_BASE + SQUARE19_TERRITORY_CLAIM_SPAN
+SQUARE19_SKIP_PLACEMENT_IDX = SQUARE19_SPECIAL_BASE  # 54872
+SQUARE19_SWAP_SIDES_IDX = SQUARE19_SPECIAL_BASE + 1  # 54873
+SQUARE19_LINE_CHOICE_BASE = SQUARE19_SPECIAL_BASE + 2  # 54874
+SQUARE19_LINE_CHOICE_SPAN = 4
+SQUARE19_TERRITORY_CHOICE_BASE = SQUARE19_LINE_CHOICE_BASE + SQUARE19_LINE_CHOICE_SPAN
+SQUARE19_TERRITORY_CHOICE_SPAN = (
+    19 * 19 * TERRITORY_SIZE_BUCKETS * TERRITORY_MAX_PLAYERS
+)  # 11,552
+
 
 def _infer_board_size(board: Union[BoardState, GameState]) -> int:
     """
@@ -702,6 +777,709 @@ class RingRiftCNN_v2_Lite(nn.Module):
         return float(v[0, player_idx].item()), p.cpu().numpy()[0]
 
 
+class RingRiftCNN_v3(nn.Module):
+    """
+    V3 architecture with spatial policy heads for square boards.
+
+    This architecture improves on V2 by using spatially-structured policy heads
+    that preserve the geometric relationship between positions and actions,
+    rather than collapsing everything through global average pooling.
+
+    Key improvements over V2:
+    - Spatial placement head: Conv1×1 → [B, 3, H, W] for (cell, ring_count) logits
+    - Spatial movement head: Conv1×1 → [B, 8*max_dist, H, W] for movement logits
+    - Spatial line formation head: Conv1×1 → [B, 4, H, W] for line directions
+    - Spatial territory claim head: Conv1×1 → [B, 1, H, W] for territory claims
+    - Spatial territory choice head: Conv1×1 → [B, 32, H, W] for territory choice
+    - Small FC for special actions (skip_placement, swap_sides, line_choice)
+    - Preserves spatial locality during policy computation
+
+    Why spatial heads are better:
+    1. No spatial information loss - each cell produces its own policy logits
+    2. Better gradient flow - actions at position (x,y) directly update features at (x,y)
+    3. Reduced parameter count - Conv1×1 vs large FC layer
+    4. Natural position encoding - the network learns to associate positions with actions
+
+    Architecture Version:
+        v3.1.0 - Spatial policy heads, SE backbone, MPS compatible, rank distribution output.
+
+    Rank Distribution Output (v3.1.0):
+        The value head now outputs a rank probability distribution for each player:
+        - Shape: [B, num_players, num_players] where rank_dist[b, p, r] = P(player p finishes at rank r)
+        - Uses softmax over ranks (dim=-1) so each player's rank probabilities sum to 1
+        - Ranks are 0-indexed: rank 0 = 1st place (winner), rank 1 = 2nd place, etc.
+        - Also outputs legacy value for backward compatibility: [B, num_players] in [-1, 1]
+    """
+
+    ARCHITECTURE_VERSION = "v3.1.0"
+
+    def __init__(
+        self,
+        board_size: int = 19,
+        in_channels: int = 14,
+        global_features: int = 20,
+        num_res_blocks: int = 12,
+        num_filters: int = 192,
+        history_length: int = 3,
+        policy_size: Optional[int] = None,
+        value_intermediate: int = 128,
+        num_players: int = 4,
+        se_reduction: int = 16,
+        num_ring_counts: int = 3,
+        num_directions: int = NUM_SQUARE_DIRS,  # 8 directions
+        num_line_dirs: int = NUM_LINE_DIRS,  # 4 line directions
+        territory_size_buckets: int = TERRITORY_SIZE_BUCKETS,  # 8
+        territory_max_players: int = TERRITORY_MAX_PLAYERS,  # 4
+    ) -> None:
+        super(RingRiftCNN_v3, self).__init__()
+        self.board_size = board_size
+        self.num_filters = num_filters
+        self.num_players = num_players
+        self.global_features = global_features
+
+        # Determine max distance based on board size
+        if board_size == 8:
+            self.max_distance = MAX_DIST_SQUARE8  # 7
+        else:
+            self.max_distance = MAX_DIST_SQUARE19  # 18
+
+        # Spatial policy dimensions
+        self.num_ring_counts = num_ring_counts
+        self.num_directions = num_directions
+        self.num_line_dirs = num_line_dirs
+        self.territory_size_buckets = territory_size_buckets
+        self.territory_max_players = territory_max_players
+        self.movement_channels = num_directions * self.max_distance  # 8 × 7 or 8 × 18
+        self.territory_choice_channels = (
+            territory_size_buckets * territory_max_players
+        )  # 32
+
+        # Input channels = base_channels * (history_length + 1)
+        self.total_in_channels = in_channels * (history_length + 1)
+
+        # Determine policy size
+        if policy_size is not None:
+            self.policy_size = policy_size
+        elif board_size == 8:
+            self.policy_size = POLICY_SIZE_8x8
+        elif board_size == 19:
+            self.policy_size = POLICY_SIZE_19x19
+        else:
+            self.policy_size = POLICY_SIZE
+
+        # Pre-compute index scatter tensors for policy assembly
+        self._register_policy_indices(board_size)
+
+        # Initial convolution
+        self.conv1 = nn.Conv2d(
+            self.total_in_channels, num_filters, kernel_size=3, padding=1
+        )
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+
+        # SE-enhanced residual blocks
+        self.res_blocks = nn.ModuleList([
+            SEResidualBlock(num_filters, reduction=se_reduction)
+            for _ in range(num_res_blocks)
+        ])
+
+        # Multi-player value head (legacy, kept for backward compatibility)
+        self.value_fc1 = nn.Linear(num_filters + global_features, value_intermediate)
+        self.value_fc2 = nn.Linear(value_intermediate, num_players)
+        self.tanh = nn.Tanh()
+        self.dropout = nn.Dropout(0.3)
+
+        # === V3.1 Rank Distribution Head ===
+        # Outputs P(player p finishes at rank r) for each player
+        # Shape: [B, num_players, num_players] with softmax over ranks (dim=-1)
+        rank_dist_intermediate = value_intermediate * 2  # 256 for full, 128 for lite
+        self.rank_dist_fc1 = nn.Linear(num_filters + global_features, rank_dist_intermediate)
+        self.rank_dist_fc2 = nn.Linear(rank_dist_intermediate, num_players * num_players)
+        self.rank_softmax = nn.Softmax(dim=-1)
+
+        # === V3 Spatial Policy Heads ===
+        # Placement head: [B, 3, H, W] for (cell, ring_count)
+        self.placement_conv = nn.Conv2d(num_filters, num_ring_counts, kernel_size=1)
+
+        # Movement head: [B, movement_channels, H, W] for (cell, dir, dist)
+        self.movement_conv = nn.Conv2d(num_filters, self.movement_channels, kernel_size=1)
+
+        # Line formation head: [B, 4, H, W] for (cell, line_direction)
+        self.line_form_conv = nn.Conv2d(num_filters, num_line_dirs, kernel_size=1)
+
+        # Territory claim head: [B, 1, H, W] for (cell)
+        self.territory_claim_conv = nn.Conv2d(num_filters, 1, kernel_size=1)
+
+        # Territory choice head: [B, 32, H, W] for (cell, size_bucket, player)
+        self.territory_choice_conv = nn.Conv2d(
+            num_filters, self.territory_choice_channels, kernel_size=1
+        )
+
+        # Special actions FC: skip_placement (1) + swap_sides (1) + line_choice (4) = 6
+        self.special_fc = nn.Linear(num_filters + global_features, 6)
+
+    def _register_policy_indices(self, board_size: int) -> None:
+        """
+        Pre-compute index tensors for scattering spatial logits into flat policy.
+
+        For Square8:
+            Placement: idx = y * 8 * 3 + x * 3 + ring_count
+            Movement: idx = MOVEMENT_BASE + y * 8 * 8 * 7 + x * 8 * 7 + dir * 7 + (dist - 1)
+            Line Form: idx = LINE_FORM_BASE + y * 8 * 4 + x * 4 + line_dir
+            Territory Claim: idx = TERRITORY_CLAIM_BASE + y * 8 + x
+            Territory Choice: idx = TERRITORY_CHOICE_BASE + y * 8 * 32 + x * 32 + size * 4 + player
+
+        For Square19: same pattern with 19x19 dimensions
+        """
+        H, W = board_size, board_size
+
+        # Get board-specific constants
+        if board_size == 8:
+            movement_base = SQUARE8_MOVEMENT_BASE
+            line_form_base = SQUARE8_LINE_FORM_BASE
+            territory_claim_base = SQUARE8_TERRITORY_CLAIM_BASE
+            territory_choice_base = SQUARE8_TERRITORY_CHOICE_BASE
+            max_dist = MAX_DIST_SQUARE8
+        else:
+            movement_base = SQUARE19_MOVEMENT_BASE
+            line_form_base = SQUARE19_LINE_FORM_BASE
+            territory_claim_base = SQUARE19_TERRITORY_CLAIM_BASE
+            territory_choice_base = SQUARE19_TERRITORY_CHOICE_BASE
+            max_dist = MAX_DIST_SQUARE19
+
+        # Placement indices: [3, H, W] → flat index
+        placement_idx = torch.zeros(self.num_ring_counts, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                for r in range(self.num_ring_counts):
+                    placement_idx[r, y, x] = y * W * 3 + x * 3 + r
+        self.register_buffer("placement_idx", placement_idx)
+
+        # Movement indices: [movement_channels, H, W] → flat index
+        movement_idx = torch.zeros(self.movement_channels, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                for d in range(self.num_directions):
+                    for dist_minus_1 in range(max_dist):
+                        channel = d * max_dist + dist_minus_1
+                        flat_idx = (
+                            movement_base
+                            + y * W * self.num_directions * max_dist
+                            + x * self.num_directions * max_dist
+                            + d * max_dist
+                            + dist_minus_1
+                        )
+                        movement_idx[channel, y, x] = flat_idx
+        self.register_buffer("movement_idx", movement_idx)
+
+        # Line formation indices: [4, H, W] → flat index
+        line_form_idx = torch.zeros(self.num_line_dirs, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                for ld in range(self.num_line_dirs):
+                    line_form_idx[ld, y, x] = (
+                        line_form_base + y * W * self.num_line_dirs + x * self.num_line_dirs + ld
+                    )
+        self.register_buffer("line_form_idx", line_form_idx)
+
+        # Territory claim indices: [1, H, W] → flat index
+        territory_claim_idx = torch.zeros(1, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                territory_claim_idx[0, y, x] = territory_claim_base + y * W + x
+        self.register_buffer("territory_claim_idx", territory_claim_idx)
+
+        # Territory choice indices: [32, H, W] → flat index
+        territory_choice_idx = torch.zeros(
+            self.territory_choice_channels, H, W, dtype=torch.long
+        )
+        for y in range(H):
+            for x in range(W):
+                for size_bucket in range(self.territory_size_buckets):
+                    for player_idx in range(self.territory_max_players):
+                        channel = size_bucket * self.territory_max_players + player_idx
+                        flat_idx = (
+                            territory_choice_base
+                            + y * W * self.territory_choice_channels
+                            + x * self.territory_choice_channels
+                            + size_bucket * self.territory_max_players
+                            + player_idx
+                        )
+                        territory_choice_idx[channel, y, x] = flat_idx
+        self.register_buffer("territory_choice_idx", territory_choice_idx)
+
+        # Store special action indices
+        if board_size == 8:
+            self.skip_placement_idx = SQUARE8_SKIP_PLACEMENT_IDX
+            self.swap_sides_idx = SQUARE8_SWAP_SIDES_IDX
+            self.line_choice_base = SQUARE8_LINE_CHOICE_BASE
+        else:
+            self.skip_placement_idx = SQUARE19_SKIP_PLACEMENT_IDX
+            self.swap_sides_idx = SQUARE19_SWAP_SIDES_IDX
+            self.line_choice_base = SQUARE19_LINE_CHOICE_BASE
+
+    def _scatter_policy_logits(
+        self,
+        placement_logits: torch.Tensor,
+        movement_logits: torch.Tensor,
+        line_form_logits: torch.Tensor,
+        territory_claim_logits: torch.Tensor,
+        territory_choice_logits: torch.Tensor,
+        special_logits: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Scatter spatial policy logits into flat policy vector.
+
+        Args:
+            placement_logits: [B, 3, H, W]
+            movement_logits: [B, movement_channels, H, W]
+            line_form_logits: [B, 4, H, W]
+            territory_claim_logits: [B, 1, H, W]
+            territory_choice_logits: [B, 32, H, W]
+            special_logits: [B, 6] (skip_placement, swap_sides, line_choice[4])
+
+        Returns:
+            policy_logits: [B, policy_size] flat policy vector
+        """
+        B = placement_logits.size(0)
+        device = placement_logits.device
+        dtype = placement_logits.dtype
+
+        # Initialize flat policy with large negative (will be masked by legal moves)
+        policy = torch.full(
+            (B, self.policy_size), -1e9, device=device, dtype=dtype
+        )
+
+        # Flatten and scatter placement logits
+        placement_flat = placement_logits.view(B, -1)
+        placement_idx_flat = self.placement_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, placement_idx_flat, placement_flat)
+
+        # Flatten and scatter movement logits
+        movement_flat = movement_logits.view(B, -1)
+        movement_idx_flat = self.movement_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, movement_idx_flat, movement_flat)
+
+        # Flatten and scatter line formation logits
+        line_form_flat = line_form_logits.view(B, -1)
+        line_form_idx_flat = self.line_form_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, line_form_idx_flat, line_form_flat)
+
+        # Flatten and scatter territory claim logits
+        territory_claim_flat = territory_claim_logits.view(B, -1)
+        territory_claim_idx_flat = self.territory_claim_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, territory_claim_idx_flat, territory_claim_flat)
+
+        # Flatten and scatter territory choice logits
+        territory_choice_flat = territory_choice_logits.view(B, -1)
+        territory_choice_idx_flat = self.territory_choice_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, territory_choice_idx_flat, territory_choice_flat)
+
+        # Add special action logits
+        policy[:, self.skip_placement_idx] = special_logits[:, 0]
+        policy[:, self.swap_sides_idx] = special_logits[:, 1]
+        policy[:, self.line_choice_base:self.line_choice_base + 4] = special_logits[:, 2:6]
+
+        return policy
+
+    def forward(
+        self, x: torch.Tensor, globals: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass with spatial policy heads and rank distribution output.
+
+        Args:
+            x: Input features [B, in_channels, H, W]
+            globals: Global features [B, global_features]
+
+        Returns:
+            value: [B, num_players] per-player expected outcome (legacy, tanh in [-1, 1])
+            policy: [B, policy_size] flat policy logits
+            rank_dist: [B, num_players, num_players] rank probability distribution
+                       where rank_dist[b, p, r] = P(player p finishes at rank r)
+                       Softmax applied over ranks (dim=-1), so each player's probs sum to 1
+        """
+        # Backbone with SE blocks
+        out = self.relu(self.bn1(self.conv1(x)))
+        for block in self.res_blocks:
+            out = block(out)
+
+        # === Value Head (legacy, for backward compatibility) ===
+        v_pooled = torch.mean(out, dim=[-2, -1])  # Global average pooling
+        v_cat = torch.cat([v_pooled, globals], dim=1)
+        v_hidden = self.relu(self.value_fc1(v_cat))
+        v_hidden = self.dropout(v_hidden)
+        v_out = self.tanh(self.value_fc2(v_hidden))  # [B, num_players]
+
+        # === Rank Distribution Head (V3.1) ===
+        # Compute rank probability distribution for each player
+        rank_hidden = self.relu(self.rank_dist_fc1(v_cat))
+        rank_hidden = self.dropout(rank_hidden)
+        rank_logits = self.rank_dist_fc2(rank_hidden)  # [B, num_players * num_players]
+        rank_logits = rank_logits.view(-1, self.num_players, self.num_players)  # [B, P, P]
+        rank_dist = self.rank_softmax(rank_logits)  # Softmax over ranks (dim=-1)
+
+        # === Spatial Policy Heads (V3) ===
+        placement_logits = self.placement_conv(out)  # [B, 3, H, W]
+        movement_logits = self.movement_conv(out)  # [B, movement_channels, H, W]
+        line_form_logits = self.line_form_conv(out)  # [B, 4, H, W]
+        territory_claim_logits = self.territory_claim_conv(out)  # [B, 1, H, W]
+        territory_choice_logits = self.territory_choice_conv(out)  # [B, 32, H, W]
+
+        # Special actions from pooled features
+        special_input = torch.cat([v_pooled, globals], dim=1)
+        special_logits = self.special_fc(special_input)  # [B, 6]
+
+        # Scatter into flat policy vector
+        policy_logits = self._scatter_policy_logits(
+            placement_logits,
+            movement_logits,
+            line_form_logits,
+            territory_claim_logits,
+            territory_choice_logits,
+            special_logits,
+        )
+
+        return v_out, policy_logits, rank_dist
+
+    def forward_single(
+        self, feature: np.ndarray, globals_vec: np.ndarray, player_idx: int = 0
+    ) -> tuple[float, np.ndarray, np.ndarray]:
+        """
+        Convenience method for single-sample inference.
+
+        Returns:
+            value: float, expected outcome for specified player (legacy)
+            policy: np.ndarray, flat policy logits
+            rank_dist: np.ndarray, shape [num_players, num_players], rank distribution for all players
+        """
+        self.eval()
+        with torch.no_grad():
+            x = torch.from_numpy(feature[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            g = torch.from_numpy(globals_vec[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            v, p, rank_dist = self.forward(x, g)
+        return float(v[0, player_idx].item()), p.cpu().numpy()[0], rank_dist.cpu().numpy()[0]
+
+
+class RingRiftCNN_v3_Lite(nn.Module):
+    """
+    Memory-efficient V3 architecture with spatial policy heads (48GB target).
+
+    Same spatial policy head design as RingRiftCNN_v3 but with reduced capacity:
+    - 6 SE residual blocks (vs 12)
+    - 96 filters (vs 192)
+    - 3 history frames (vs 4)
+    - 12 base input channels (vs 14)
+
+    Architecture Version:
+        v3.1.0-lite - Spatial policy heads, reduced capacity, rank distribution output.
+
+    Rank Distribution Output (v3.1.0):
+        Same as RingRiftCNN_v3 - outputs rank probability distribution for each player.
+    """
+
+    ARCHITECTURE_VERSION = "v3.1.0-lite"
+
+    def __init__(
+        self,
+        board_size: int = 19,
+        in_channels: int = 12,
+        global_features: int = 20,
+        num_res_blocks: int = 6,
+        num_filters: int = 96,
+        history_length: int = 2,
+        policy_size: Optional[int] = None,
+        value_intermediate: int = 64,
+        num_players: int = 4,
+        se_reduction: int = 16,
+        num_ring_counts: int = 3,
+        num_directions: int = NUM_SQUARE_DIRS,
+        num_line_dirs: int = NUM_LINE_DIRS,
+        territory_size_buckets: int = TERRITORY_SIZE_BUCKETS,
+        territory_max_players: int = TERRITORY_MAX_PLAYERS,
+    ) -> None:
+        super(RingRiftCNN_v3_Lite, self).__init__()
+        self.board_size = board_size
+        self.num_filters = num_filters
+        self.num_players = num_players
+        self.global_features = global_features
+
+        # Determine max distance based on board size
+        if board_size == 8:
+            self.max_distance = MAX_DIST_SQUARE8
+        else:
+            self.max_distance = MAX_DIST_SQUARE19
+
+        # Spatial policy dimensions
+        self.num_ring_counts = num_ring_counts
+        self.num_directions = num_directions
+        self.num_line_dirs = num_line_dirs
+        self.territory_size_buckets = territory_size_buckets
+        self.territory_max_players = territory_max_players
+        self.movement_channels = num_directions * self.max_distance
+        self.territory_choice_channels = territory_size_buckets * territory_max_players
+
+        # Input channels
+        self.total_in_channels = in_channels * (history_length + 1)
+
+        # Determine policy size
+        if policy_size is not None:
+            self.policy_size = policy_size
+        elif board_size == 8:
+            self.policy_size = POLICY_SIZE_8x8
+        elif board_size == 19:
+            self.policy_size = POLICY_SIZE_19x19
+        else:
+            self.policy_size = POLICY_SIZE
+
+        # Pre-compute index scatter tensors
+        self._register_policy_indices(board_size)
+
+        # Initial convolution
+        self.conv1 = nn.Conv2d(
+            self.total_in_channels, num_filters, kernel_size=3, padding=1
+        )
+        self.bn1 = nn.BatchNorm2d(num_filters)
+        self.relu = nn.ReLU()
+
+        # SE-enhanced residual blocks
+        self.res_blocks = nn.ModuleList([
+            SEResidualBlock(num_filters, reduction=se_reduction)
+            for _ in range(num_res_blocks)
+        ])
+
+        # Multi-player value head (legacy, kept for backward compatibility)
+        self.value_fc1 = nn.Linear(num_filters + global_features, value_intermediate)
+        self.value_fc2 = nn.Linear(value_intermediate, num_players)
+        self.tanh = nn.Tanh()
+        self.dropout = nn.Dropout(0.3)
+
+        # === V3.1 Rank Distribution Head ===
+        # Outputs P(player p finishes at rank r) for each player
+        rank_dist_intermediate = value_intermediate * 2  # 128 for lite
+        self.rank_dist_fc1 = nn.Linear(num_filters + global_features, rank_dist_intermediate)
+        self.rank_dist_fc2 = nn.Linear(rank_dist_intermediate, num_players * num_players)
+        self.rank_softmax = nn.Softmax(dim=-1)
+
+        # === V3 Spatial Policy Heads ===
+        self.placement_conv = nn.Conv2d(num_filters, num_ring_counts, kernel_size=1)
+        self.movement_conv = nn.Conv2d(num_filters, self.movement_channels, kernel_size=1)
+        self.line_form_conv = nn.Conv2d(num_filters, num_line_dirs, kernel_size=1)
+        self.territory_claim_conv = nn.Conv2d(num_filters, 1, kernel_size=1)
+        self.territory_choice_conv = nn.Conv2d(
+            num_filters, self.territory_choice_channels, kernel_size=1
+        )
+        self.special_fc = nn.Linear(num_filters + global_features, 6)
+
+    def _register_policy_indices(self, board_size: int) -> None:
+        """Pre-compute index tensors for policy assembly (same as V3 full)."""
+        H, W = board_size, board_size
+
+        if board_size == 8:
+            movement_base = SQUARE8_MOVEMENT_BASE
+            line_form_base = SQUARE8_LINE_FORM_BASE
+            territory_claim_base = SQUARE8_TERRITORY_CLAIM_BASE
+            territory_choice_base = SQUARE8_TERRITORY_CHOICE_BASE
+            max_dist = MAX_DIST_SQUARE8
+        else:
+            movement_base = SQUARE19_MOVEMENT_BASE
+            line_form_base = SQUARE19_LINE_FORM_BASE
+            territory_claim_base = SQUARE19_TERRITORY_CLAIM_BASE
+            territory_choice_base = SQUARE19_TERRITORY_CHOICE_BASE
+            max_dist = MAX_DIST_SQUARE19
+
+        # Placement indices
+        placement_idx = torch.zeros(self.num_ring_counts, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                for r in range(self.num_ring_counts):
+                    placement_idx[r, y, x] = y * W * 3 + x * 3 + r
+        self.register_buffer("placement_idx", placement_idx)
+
+        # Movement indices
+        movement_idx = torch.zeros(self.movement_channels, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                for d in range(self.num_directions):
+                    for dist_minus_1 in range(max_dist):
+                        channel = d * max_dist + dist_minus_1
+                        flat_idx = (
+                            movement_base
+                            + y * W * self.num_directions * max_dist
+                            + x * self.num_directions * max_dist
+                            + d * max_dist
+                            + dist_minus_1
+                        )
+                        movement_idx[channel, y, x] = flat_idx
+        self.register_buffer("movement_idx", movement_idx)
+
+        # Line formation indices
+        line_form_idx = torch.zeros(self.num_line_dirs, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                for ld in range(self.num_line_dirs):
+                    line_form_idx[ld, y, x] = (
+                        line_form_base + y * W * self.num_line_dirs + x * self.num_line_dirs + ld
+                    )
+        self.register_buffer("line_form_idx", line_form_idx)
+
+        # Territory claim indices
+        territory_claim_idx = torch.zeros(1, H, W, dtype=torch.long)
+        for y in range(H):
+            for x in range(W):
+                territory_claim_idx[0, y, x] = territory_claim_base + y * W + x
+        self.register_buffer("territory_claim_idx", territory_claim_idx)
+
+        # Territory choice indices
+        territory_choice_idx = torch.zeros(
+            self.territory_choice_channels, H, W, dtype=torch.long
+        )
+        for y in range(H):
+            for x in range(W):
+                for size_bucket in range(self.territory_size_buckets):
+                    for player_idx in range(self.territory_max_players):
+                        channel = size_bucket * self.territory_max_players + player_idx
+                        flat_idx = (
+                            territory_choice_base
+                            + y * W * self.territory_choice_channels
+                            + x * self.territory_choice_channels
+                            + size_bucket * self.territory_max_players
+                            + player_idx
+                        )
+                        territory_choice_idx[channel, y, x] = flat_idx
+        self.register_buffer("territory_choice_idx", territory_choice_idx)
+
+        # Special action indices
+        if board_size == 8:
+            self.skip_placement_idx = SQUARE8_SKIP_PLACEMENT_IDX
+            self.swap_sides_idx = SQUARE8_SWAP_SIDES_IDX
+            self.line_choice_base = SQUARE8_LINE_CHOICE_BASE
+        else:
+            self.skip_placement_idx = SQUARE19_SKIP_PLACEMENT_IDX
+            self.swap_sides_idx = SQUARE19_SWAP_SIDES_IDX
+            self.line_choice_base = SQUARE19_LINE_CHOICE_BASE
+
+    def _scatter_policy_logits(
+        self,
+        placement_logits: torch.Tensor,
+        movement_logits: torch.Tensor,
+        line_form_logits: torch.Tensor,
+        territory_claim_logits: torch.Tensor,
+        territory_choice_logits: torch.Tensor,
+        special_logits: torch.Tensor,
+    ) -> torch.Tensor:
+        """Scatter spatial policy logits into flat policy vector."""
+        B = placement_logits.size(0)
+        device = placement_logits.device
+        dtype = placement_logits.dtype
+
+        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+
+        # Scatter all spatial logits
+        placement_flat = placement_logits.view(B, -1)
+        placement_idx_flat = self.placement_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, placement_idx_flat, placement_flat)
+
+        movement_flat = movement_logits.view(B, -1)
+        movement_idx_flat = self.movement_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, movement_idx_flat, movement_flat)
+
+        line_form_flat = line_form_logits.view(B, -1)
+        line_form_idx_flat = self.line_form_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, line_form_idx_flat, line_form_flat)
+
+        territory_claim_flat = territory_claim_logits.view(B, -1)
+        territory_claim_idx_flat = self.territory_claim_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, territory_claim_idx_flat, territory_claim_flat)
+
+        territory_choice_flat = territory_choice_logits.view(B, -1)
+        territory_choice_idx_flat = self.territory_choice_idx.view(-1).expand(B, -1)
+        policy.scatter_(1, territory_choice_idx_flat, territory_choice_flat)
+
+        # Special actions
+        policy[:, self.skip_placement_idx] = special_logits[:, 0]
+        policy[:, self.swap_sides_idx] = special_logits[:, 1]
+        policy[:, self.line_choice_base:self.line_choice_base + 4] = special_logits[:, 2:6]
+
+        return policy
+
+    def forward(
+        self, x: torch.Tensor, globals: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass with spatial policy heads and rank distribution output.
+
+        Returns:
+            value: [B, num_players] per-player expected outcome (legacy)
+            policy: [B, policy_size] flat policy logits
+            rank_dist: [B, num_players, num_players] rank probability distribution
+        """
+        out = self.relu(self.bn1(self.conv1(x)))
+        for block in self.res_blocks:
+            out = block(out)
+
+        # Value head (legacy)
+        v_pooled = torch.mean(out, dim=[-2, -1])
+        v_cat = torch.cat([v_pooled, globals], dim=1)
+        v_hidden = self.relu(self.value_fc1(v_cat))
+        v_hidden = self.dropout(v_hidden)
+        v_out = self.tanh(self.value_fc2(v_hidden))
+
+        # Rank Distribution Head (V3.1)
+        rank_hidden = self.relu(self.rank_dist_fc1(v_cat))
+        rank_hidden = self.dropout(rank_hidden)
+        rank_logits = self.rank_dist_fc2(rank_hidden)
+        rank_logits = rank_logits.view(-1, self.num_players, self.num_players)
+        rank_dist = self.rank_softmax(rank_logits)
+
+        # Spatial policy heads
+        placement_logits = self.placement_conv(out)
+        movement_logits = self.movement_conv(out)
+        line_form_logits = self.line_form_conv(out)
+        territory_claim_logits = self.territory_claim_conv(out)
+        territory_choice_logits = self.territory_choice_conv(out)
+
+        special_input = torch.cat([v_pooled, globals], dim=1)
+        special_logits = self.special_fc(special_input)
+
+        policy_logits = self._scatter_policy_logits(
+            placement_logits,
+            movement_logits,
+            line_form_logits,
+            territory_claim_logits,
+            territory_choice_logits,
+            special_logits,
+        )
+
+        return v_out, policy_logits, rank_dist
+
+    def forward_single(
+        self, feature: np.ndarray, globals_vec: np.ndarray, player_idx: int = 0
+    ) -> tuple[float, np.ndarray, np.ndarray]:
+        """
+        Convenience method for single-sample inference.
+
+        Returns:
+            value: float, expected outcome for specified player (legacy)
+            policy: np.ndarray, flat policy logits
+            rank_dist: np.ndarray, shape [num_players, num_players], rank distribution
+        """
+        self.eval()
+        with torch.no_grad():
+            x = torch.from_numpy(feature[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            g = torch.from_numpy(globals_vec[None, ...]).float().to(
+                next(self.parameters()).device
+            )
+            v, p, rank_dist = self.forward(x, g)
+        return float(v[0, player_idx].item()), p.cpu().numpy()[0], rank_dist.cpu().numpy()[0]
+
+
 def multi_player_value_loss(
     pred_values: torch.Tensor,
     target_values: torch.Tensor,
@@ -736,6 +1514,139 @@ def multi_player_value_loss(
     loss = squared_errors.sum() / mask.sum()
 
     return loss
+
+
+def rank_distribution_loss(
+    pred_rank_dist: torch.Tensor,
+    target_ranks: torch.Tensor,
+    num_players: int,
+) -> torch.Tensor:
+    """
+    Cross-entropy loss for rank distribution predictions.
+
+    For each player, computes the cross-entropy loss between the predicted
+    rank probability distribution and the actual rank (one-hot encoded).
+
+    Parameters
+    ----------
+    pred_rank_dist : torch.Tensor
+        Predicted rank distributions of shape (batch, MAX_PLAYERS, MAX_PLAYERS).
+        pred_rank_dist[b, p, r] = P(player p finishes at rank r).
+        Must be probability distributions (sum to 1 over rank dimension).
+    target_ranks : torch.Tensor
+        Target rank indices of shape (batch, MAX_PLAYERS).
+        target_ranks[b, p] = actual rank of player p (0 = 1st place, 1 = 2nd, etc.)
+        Values should be in range [0, num_players-1] for active players.
+        Inactive player slots (index >= num_players) are ignored.
+    num_players : int
+        Number of active players in the game (2, 3, or 4).
+
+    Returns
+    -------
+    torch.Tensor
+        Scalar cross-entropy loss averaged over active players.
+
+    Example
+    -------
+    For a 3-player game where player 0 won (rank 0), player 1 came 2nd (rank 1),
+    and player 2 came last (rank 2):
+        target_ranks = [0, 1, 2, -1]  # -1 for inactive player 4
+        pred_rank_dist = [[0.8, 0.15, 0.05, 0],  # Player 0's rank dist
+                          [0.1, 0.7, 0.2, 0],    # Player 1's rank dist
+                          [0.1, 0.15, 0.75, 0],  # Player 2's rank dist
+                          [0.25, 0.25, 0.25, 0.25]]  # Inactive, ignored
+    """
+    batch_size = pred_rank_dist.size(0)
+    max_players = pred_rank_dist.size(1)
+
+    # Clamp predictions to avoid log(0)
+    pred_rank_dist = torch.clamp(pred_rank_dist, min=1e-8)
+
+    # Create mask for active players
+    player_mask = torch.zeros(batch_size, max_players, device=pred_rank_dist.device)
+    player_mask[:, :num_players] = 1.0
+
+    # Compute cross-entropy for each player
+    # For each player p, we want: -log(pred_rank_dist[b, p, target_ranks[b, p]])
+    # Use gather to select the predicted probability for the target rank
+    target_ranks_clamped = target_ranks.clamp(0, num_players - 1)  # Clamp to valid range
+    target_ranks_expanded = target_ranks_clamped.unsqueeze(-1)  # [B, P, 1]
+    pred_at_target = pred_rank_dist.gather(dim=2, index=target_ranks_expanded).squeeze(-1)  # [B, P]
+
+    # Negative log likelihood
+    nll = -torch.log(pred_at_target)  # [B, P]
+
+    # Apply mask and compute mean
+    masked_nll = nll * player_mask
+    loss = masked_nll.sum() / player_mask.sum()
+
+    return loss
+
+
+def ranks_from_game_result(
+    winner: int,
+    num_players: int,
+    player_territories: list[int] | None = None,
+    player_eliminated_rings: list[int] | None = None,
+    player_markers_on_board: list[int] | None = None,
+    elimination_order: list[int] | None = None,
+) -> torch.Tensor:
+    """
+    Compute rank indices from game result using canonical ranking rules.
+
+    Follows Section 8 of ringrift_compact_rules.md:
+    1. Winner gets rank 0 (1st place)
+    2. Remaining players ranked by: territory → eliminated rings → markers → elimination order
+
+    Parameters
+    ----------
+    winner : int
+        Index of winning player (0-indexed).
+    num_players : int
+        Number of active players (2, 3, or 4).
+    player_territories : list[int] | None
+        Territory count per player, or None if not available.
+    player_eliminated_rings : list[int] | None
+        Total eliminated rings per player, or None.
+    player_markers_on_board : list[int] | None
+        Markers remaining on board per player, or None.
+    elimination_order : list[int] | None
+        Order of elimination (later = better), or None.
+
+    Returns
+    -------
+    torch.Tensor
+        Rank indices of shape (MAX_PLAYERS,) where ranks[p] = rank of player p.
+        Inactive players get rank num_players (outside valid range).
+    """
+    MAX_PLAYERS = 4
+    ranks = torch.full((MAX_PLAYERS,), MAX_PLAYERS, dtype=torch.long)
+
+    # Winner gets rank 0
+    ranks[winner] = 0
+
+    # For remaining players, assign ranks 1, 2, ...
+    remaining = [p for p in range(num_players) if p != winner]
+
+    if len(remaining) == 0:
+        return ranks
+
+    # Build scoring tuples for sorting (higher is better)
+    def score(p: int) -> tuple:
+        territory = player_territories[p] if player_territories else 0
+        elim_rings = player_eliminated_rings[p] if player_eliminated_rings else 0
+        markers = player_markers_on_board[p] if player_markers_on_board else 0
+        elim_order = elimination_order.index(p) if elimination_order and p in elimination_order else -1
+        return (territory, elim_rings, markers, elim_order)
+
+    # Sort remaining players by score (descending)
+    remaining_sorted = sorted(remaining, key=score, reverse=True)
+
+    # Assign ranks
+    for rank_idx, player in enumerate(remaining_sorted, start=1):
+        ranks[player] = rank_idx
+
+    return ranks
 
 
 # =============================================================================
@@ -893,7 +1804,29 @@ def create_model_for_board(
             )
     else:
         # Square boards (8x8 and 19x19)
-        if tier == "high":
+        if tier == "v3-high":
+            # RingRiftCNN_v3: Spatial policy heads, 12 res blocks, 192 filters
+            return RingRiftCNN_v3(
+                board_size=board_size,
+                in_channels=in_channels,
+                global_features=global_features,
+                num_res_blocks=num_res_blocks or 12,
+                num_filters=num_filters or 192,
+                history_length=history_length,
+                policy_size=policy_size,
+            )
+        elif tier == "v3-low":
+            # RingRiftCNN_v3_Lite: Spatial policy heads, 6 res blocks, 96 filters
+            return RingRiftCNN_v3_Lite(
+                board_size=board_size,
+                in_channels=in_channels,
+                global_features=global_features,
+                num_res_blocks=num_res_blocks or 6,
+                num_filters=num_filters or 96,
+                history_length=history_length,
+                policy_size=policy_size,
+            )
+        elif tier == "high":
             # RingRiftCNN_v2: 12 res blocks, 192 filters, ~34M params
             return RingRiftCNN_v2(
                 board_size=board_size,
@@ -957,8 +1890,59 @@ def get_model_config_for_board(
         "memory_tier": tier,
     }
 
-    # Memory-tiered v2 models
-    if tier == "high":
+    # V3 models with spatial policy heads (more memory-efficient)
+    if tier == "v3-high":
+        if board_type == BoardType.HEXAGONAL:
+            config.update({
+                "num_res_blocks": 12,
+                "num_filters": 192,
+                "recommended_model": "HexNeuralNet_v3",
+                "description": "V3 spatial policy hex model for 96GB systems (~8M params)",
+                "estimated_params_m": 8.2,
+            })
+        elif board_type == BoardType.SQUARE19:
+            config.update({
+                "num_res_blocks": 12,
+                "num_filters": 192,
+                "recommended_model": "RingRiftCNN_v3",
+                "description": "V3 spatial policy 19x19 model for 96GB systems (~7M params)",
+                "estimated_params_m": 7.0,
+            })
+        else:  # SQUARE8
+            config.update({
+                "num_res_blocks": 12,
+                "num_filters": 192,
+                "recommended_model": "RingRiftCNN_v3",
+                "description": "V3 spatial policy 8x8 model for 96GB systems (~7M params)",
+                "estimated_params_m": 7.0,
+            })
+    elif tier == "v3-low":
+        if board_type == BoardType.HEXAGONAL:
+            config.update({
+                "num_res_blocks": 6,
+                "num_filters": 96,
+                "recommended_model": "HexNeuralNet_v3_Lite",
+                "description": "V3 spatial policy hex model for 48GB systems (~2M params)",
+                "estimated_params_m": 2.1,
+            })
+        elif board_type == BoardType.SQUARE19:
+            config.update({
+                "num_res_blocks": 6,
+                "num_filters": 96,
+                "recommended_model": "RingRiftCNN_v3_Lite",
+                "description": "V3 spatial policy 19x19 model for 48GB systems (~2M params)",
+                "estimated_params_m": 1.8,
+            })
+        else:  # SQUARE8
+            config.update({
+                "num_res_blocks": 6,
+                "num_filters": 96,
+                "recommended_model": "RingRiftCNN_v3_Lite",
+                "description": "V3 spatial policy 8x8 model for 48GB systems (~2M params)",
+                "estimated_params_m": 1.8,
+            })
+    # V2 models with FC policy heads
+    elif tier == "high":
         if board_type == BoardType.HEXAGONAL:
             config.update({
                 "num_res_blocks": 12,
@@ -1218,11 +2202,14 @@ class NeuralNetAI(BaseAI):
             return
 
         # Create new model using the factory function
+        # NOTE: in_channels=14 is the canonical value for all board types.
+        # Old hex models used in_channels=10 but are deprecated (radius-10 geometry).
+        # Current hex uses radius-12 geometry which requires 14 channels.
         self.model = create_model_for_board(
             board_type=board_type,
             model_class="auto",  # Let factory choose best class
             use_mps=self._use_mps_arch,
-            in_channels=10,
+            in_channels=14,
             global_features=10,
             num_res_blocks=10,
             num_filters=128,
@@ -2155,7 +3142,7 @@ class NeuralNetAI(BaseAI):
         board_size = _infer_board_size(board)
         self.board_size = board_size
 
-        # Board features: 10 channels
+        # Board features: 14 channels
         # 0: My stacks (height normalized)
         # 1: Opponent stacks (height normalized)
         # 2: My markers
@@ -2166,8 +3153,12 @@ class NeuralNetAI(BaseAI):
         # 7: Opponent liberties
         # 8: My line potential
         # 9: Opponent line potential
+        # 10: Cap presence - current player
+        # 11: Cap presence - opponent
+        # 12: Valid board position mask
+        # 13: Reserved (zeros)
         features = np.zeros(
-            (10, board_size, board_size), dtype=np.float32
+            (14, board_size, board_size), dtype=np.float32
         )
 
         is_hex = board.type == BoardType.HEXAGONAL
@@ -2303,9 +3294,47 @@ class NeuralNetAI(BaseAI):
             else:
                 features[9, cx, cy] = val
 
-        # --- Global features: 10 dims ---
-        # Phase (5), Rings in hand (2), Eliminated rings (2), Turn (1)
-        globals = np.zeros(10, dtype=np.float32)
+        # --- Channels 10-13: Extended features ---
+        # Channels 10/11: Reserved for future cap features (zeros for now)
+        # Channel 12: Valid board position mask (important for hex)
+        # Channel 13: Reserved (zeros)
+
+        # For hex boards, mark valid positions (not all grid cells are playable)
+        if is_hex:
+            # Use the board's valid positions from stacks, markers, collapsed_spaces
+            # or compute from board geometry
+            for pos_key in board.stacks.keys():
+                try:
+                    pos = _pos_from_key(pos_key)
+                    cx, cy = _to_canonical_xy(board, pos)
+                    if 0 <= cx < board_size and 0 <= cy < board_size:
+                        features[12, cx, cy] = 1.0
+                except ValueError:
+                    continue
+            for pos_key in board.markers.keys():
+                try:
+                    pos = _pos_from_key(pos_key)
+                    cx, cy = _to_canonical_xy(board, pos)
+                    if 0 <= cx < board_size and 0 <= cy < board_size:
+                        features[12, cx, cy] = 1.0
+                except ValueError:
+                    continue
+            for pos_key in board.collapsed_spaces.keys():
+                try:
+                    pos = _pos_from_key(pos_key)
+                    cx, cy = _to_canonical_xy(board, pos)
+                    if 0 <= cx < board_size and 0 <= cy < board_size:
+                        features[12, cx, cy] = 1.0
+                except ValueError:
+                    continue
+        else:
+            # Square boards: all positions are valid
+            features[12, :, :] = 1.0
+
+        # --- Global features: 20 dims ---
+        # Phase (5), Rings in hand (2), Eliminated rings (2), Turn (1), Reserved (10)
+        # Hex network model was trained with global_features=20 (value_fc1 expects 1+20=21 inputs)
+        globals = np.zeros(20, dtype=np.float32)
 
         # Phase one-hot
         phases = [

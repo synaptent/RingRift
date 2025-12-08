@@ -16,16 +16,15 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-_None passing as of the 2025-12-07 re-gate sweep; see the pending table below._
+| Database | Board Type | Players | Status | Gate Summary | Notes                                                                        |
+| -------- | ---------- | ------- | ------ | ------------ | ---------------------------------------------------------------------------- |
+| _None_   | –          | –       | –      | –            | Square8 regeneration is pending (see below); rerun the gate before training. |
 
 ### Pending Re-Gate / Needs Regeneration
 
-| Database                  | Board Type | Players | Status                    | Gate Summary                             | Notes                                                                                                                                                                                                                                                                             |
-| ------------------------- | ---------- | ------- | ------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_square8.db`    | square8    | 2       | **pending_regate**        | canonical_square8.db.parity_gate.json    | `check_canonical_phase_history.py --db ai-service/data/games/canonical_square8.db` flagged bad turn order near the final placements; parity gate (`passed_canonical_parity_gate: false`) shows structural errors. 8 games recorded; 4 replay clean, 4 fail at the last placement. |
-| `canonical_square8_2p.db` | square8    | 2       | **pending_regate**        | canonical_square8_2p.db.parity_gate.json | Single-game DB; parity gate hit a `Not your turn` structural error at move 57 and canonical phase replay reports the same (`check_canonical_phase_history.py`). Needs regeneration before reuse.                                                                                  |
-| `canonical_square19.db`   | square19   | 2       | **pending_regen (empty)** | canonical_square19.db.parity_gate.json   | DB currently has 0 games. Prior parity gate captured a structural replay failure; regenerate via `generate_canonical_selfplay.py` before marking canonical.                                                                                                                       |
-| `canonical_hex.db`        | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**     | N/A                                      | **Removed (radius-10)**. Old geometry; must rebuild a radius-12 canonical hex DB. Track new gate results alongside the planned HexNeuralNet alias/import fix.                                                                                                                     |
+| Database               | Board Type | Players | Status           | Gate Summary                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------- | ---------- | ------- | ---------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_square8.db` | square8    | 2       | **pending_gate** | db_health.canonical_square8.json | Latest sandbox attempt via `generate_canonical_selfplay.py --board-type square8 --num-games 4` failed during the Python self-play soak with `OMP: Error #179: Function Can't open SHM2 failed` (SHM permission in sandbox). DB currently contains 1 game; parity gate was not executed (`canonical_ok=false`, `parity_summary.error=failed_to_parse_parity_summary`). Rerun off-sandbox or on a host with SHM/OMP support, then refresh the summary + parity gate artifacts. |
 
 ### Legacy / Non-Canonical
 
@@ -38,20 +37,7 @@ These databases were generated **before** the following fixes were applied:
 
 **DO NOT use these for new training runs.** They are retained for historical comparison only.
 
-| Database                    | Board Type | Players | Status                  | Notes                               |
-| --------------------------- | ---------- | ------- | ----------------------- | ----------------------------------- |
-| `selfplay_square8_2p.db`    | square8    | 2       | **legacy_noncanonical** | Pre-parity-fix self-play            |
-| `selfplay_square19_2p.db`   | square19   | 2       | **legacy_noncanonical** | Pre-parity-fix self-play            |
-| `selfplay_square19_3p.db`   | square19   | 3       | **legacy_noncanonical** | Pre-parity-fix self-play            |
-| `selfplay_square19_4p.db`   | square19   | 4       | **legacy_noncanonical** | Pre-parity-fix self-play            |
-| `selfplay_hexagonal_2p.db`  | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + Pre-parity-fix |
-| `selfplay_hexagonal_3p.db`  | hexagonal  | 3       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + Pre-parity-fix |
-| `selfplay_hexagonal_4p.db`  | hexagonal  | 4       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + Pre-parity-fix |
-| `selfplay.db`               | mixed      | mixed   | **legacy_noncanonical** | Ad-hoc testing DB                   |
-| `square8_2p.db`             | square8    | 2       | **legacy_noncanonical** | Early development DB                |
-| `minimal_test.db`           | mixed      | mixed   | **legacy_noncanonical** | Test fixture DB                     |
-| `golden_hexagonal.db`       | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry (golden)         |
-| `selfplay_hex_mps_smoke.db` | hexagonal  | 2       | ⚠️ **DEPRECATED_R10**   | Radius 10 geometry + MPS smoke      |
+_None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-12-08 cleanup.
 
 ---
 
@@ -60,6 +46,7 @@ These databases were generated **before** the following fixes were applied:
 - Replayed `canonical_square8.db` and `canonical_square8_2p.db` via `check_canonical_phase_history.py`; both hit late-turn `Not your turn` failures (matching the parity gate structural errors). Treat them as pending re-generation.
 - `canonical_square19.db` currently has zero games despite an older parity gate artifact; regenerate and re-gate before use.
 - Hex assets remain deprecated until a radius-12 canonical DB is generated; keep the HexNeuralNet alias/import fix in mind when re-running the parity sweep.
+- 2025-12-08 sandbox attempt to regenerate `canonical_square8.db` via `generate_canonical_selfplay.py` failed before the parity gate due to OpenMP shared-memory permissions (`OMP: Error #179: Function Can't open SHM2 failed`). The resulting `db_health.canonical_square8.json` has `canonical_ok=false` and an empty `canonical_history` block. Re-run the generator on a host with SHM permissions, then replace the DB and summaries.
 
 ---
 
@@ -77,7 +64,7 @@ These databases were generated **before** the following fixes were applied:
 | `ringrift_v1_2025*.pth`                   | Legacy selfplay DBs         | **legacy_noncanonical** | v1 checkpoints from Nov 2025                                                                                                            |
 | `ringrift_from_replays_square8.pth`       | Mixed replay DBs            | **legacy_noncanonical** | Trained from legacy replays                                                                                                             |
 | `ringrift_from_replays_square8_2025*.pth` | Mixed replay DBs            | **legacy_noncanonical** | Checkpoints from legacy replays                                                                                                         |
-| `ringrift_v1_hex*.pth`                    | Legacy hex DBs (radius 10)  | ⚠️ **DEPRECATED_R10**   | Old hex geometry (331 cells, 36 rings, 21×21 input). Do not load; retrain on new radius-12 geometry (469 cells, 48 rings, 25×25 input). |
+| `ringrift_v1_hex*.pth`                    | Legacy hex DBs (radius 10)  | ⚠️ **DEPRECATED_R10**   | Old hex geometry (331 cells, 36 rings, 21×21 input). Do not load; retrain on new radius-12 geometry (469 cells, 72 rings, 25×25 input). |
 
 ### Target Canonical Models
 
@@ -136,27 +123,7 @@ Once canonical self-play DBs are generated and exported, retrain these models:
 
 ## Cleanup Recommendations
 
-### Move to `data/games/legacy/`:
-
-- `selfplay_square8_2p.db`
-- `selfplay_square19_*.db`
-- `selfplay_hexagonal_*.db`
-- `selfplay.db`
-- `square8_2p.db`
-- `minimal_test.db`
-- `selfplay_hex_mps_smoke.db`
-
-### Move to `models/legacy/`:
-
-- `ringrift_v1.pth.legacy`
-- `ringrift_v1_legacy_nested.pth`
-- `ringrift_v1_2025*.pth`
-- `ringrift_from_replays_square8*.pth`
-
-### Keep in place (but retrain when canonical data ready):
-
-- `ringrift_v1.pth` (current production model)
-- `ringrift_v1_mps.pth` (MPS production model)
+The legacy and pending DBs listed earlier have been removed. For any new replay DBs, place them under `data/games/canonical_<board>.db` only after passing the gate. Legacy models should still be parked under `models/legacy/` as noted in the Model Provenance table above; regenerate v2 models once new canonical data exists.
 
 ---
 
@@ -224,4 +191,4 @@ parity issues before promoting a DB to the canonical training allowlist.
 
 ---
 
-_Last updated: 2025-12-05_
+_Last updated: 2025-12-08_
