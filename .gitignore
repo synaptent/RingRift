@@ -94,6 +94,14 @@ ai-service/ts-replay-dumps-local/
 ai-service/tmp_state_*.json
 results/ops/
 
+# Parity testing debug artifacts
+parity_failures/**/*.ts_state.json
+parity_failures/**/*.parity_failure.json
+ai-service/parity_bundles/
+ai-service/parity_debug_*/
+ai-service/parity_failures/
+ai-service/parity_fixtures/**/*.json
+
 # Local cluster configuration (contains personal IPs)
 ai-service/scripts/cluster_workers.txt
 ai-service/config/distributed_hosts.yaml
