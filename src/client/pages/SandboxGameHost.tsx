@@ -65,6 +65,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useBoardOverlays } from '../hooks/useBoardViewProps';
 import { useSandboxPersistence, type LocalPlayerType } from '../hooks/useSandboxPersistence';
 import { useSandboxEvaluation } from '../hooks/useSandboxEvaluation';
+import { useSandboxScenarios, type LoadedScenario } from '../hooks/useSandboxScenarios';
 
 const BOARD_PRESETS: Array<{
   value: BoardType;
@@ -358,39 +359,17 @@ export const SandboxGameHost: React.FC = () => {
   // Local-only diagnostics / UX state
   const [isSandboxVictoryModalDismissed, setIsSandboxVictoryModalDismissed] = useState(false);
 
-  // Replay mode state (for database-loaded games via ReplayPanel)
-  const [isInReplayMode, setIsInReplayMode] = useState(false);
-  const [replayState, setReplayState] = useState<GameState | null>(null);
-  const [replayAnimation, setReplayAnimation] = useState<
-    import('../components/BoardView').MoveAnimationData | null
-  >(null);
+  // Selection + valid target highlighting
+  const [selected, setSelected] = useState<Position | undefined>();
+  const [validTargets, setValidTargets] = useState<Position[]>([]);
+
   // When a self-play scenario is loaded, this bridges the gameId into the
   // ReplayPanel so it can attempt to drive the board from the AI service's
   // /api/replay endpoints (Option A).
   const [requestedReplayGameId, setRequestedReplayGameId] = useState<string | null>(null);
 
-  // History scrubbing state (for locally loaded fixtures/scenarios)
-  const [isViewingHistory, setIsViewingHistory] = useState(false);
-  const [historyViewIndex, setHistoryViewIndex] = useState(0);
-  const [hasHistorySnapshots, setHasHistorySnapshots] = useState(true);
-
-  // AI evaluation state - using extracted evaluation hook
-  const {
-    evaluationHistory: sandboxEvaluationHistory,
-    evaluationError: sandboxEvaluationError,
-    isEvaluating: isSandboxAnalysisRunning,
-    requestEvaluation: requestSandboxEvaluation,
-    clearHistory: clearEvaluationHistory,
-  } = useSandboxEvaluation({
-    engine: sandboxEngine,
-    developerToolsEnabled,
-    isInReplayMode,
-    isViewingHistory,
-  });
-
-  // Selection + valid target highlighting
-  const [selected, setSelected] = useState<Position | undefined>();
-  const [validTargets, setValidTargets] = useState<Position[]>([]);
+  // Save state dialog (kept separate from scenarios hook)
+  const [showSaveStateDialog, setShowSaveStateDialog] = useState(false);
 
   // Board overlay visibility configuration - using extracted hook
   // Start with movement grid overlay enabled by default; it helps
@@ -411,11 +390,243 @@ export const SandboxGameHost: React.FC = () => {
   // Help / controls overlay for the active sandbox host
   const [showBoardControls, setShowBoardControls] = useState(false);
 
-  // Scenario picker, self-play browser, and save state dialogs
-  const [showScenarioPicker, setShowScenarioPicker] = useState(false);
-  const [showSelfPlayBrowser, setShowSelfPlayBrowser] = useState(false);
-  const [showSaveStateDialog, setShowSaveStateDialog] = useState(false);
-  const [lastLoadedScenario, setLastLoadedScenario] = useState<LoadableScenario | null>(null);
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SCENARIO/REPLAY STATE - using extracted scenarios hook
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Callback to reset UI state when loading a new scenario
+  const resetGameUIState = useCallback(() => {
+    setSelected(undefined);
+    setValidTargets([]);
+    setSandboxPendingChoice(null);
+    setIsSandboxVictoryModalDismissed(false);
+    setBackendSandboxError(null);
+    setSandboxCaptureChoice(null);
+    setSandboxCaptureTargets([]);
+    setSandboxStallWarning(null);
+    setSandboxLastProgressAt(null);
+  }, []);
+
+  // Callback to initialize sandbox engine with a scenario
+  const initSandboxWithScenario = useCallback(
+    (scenario: LoadableScenario): ClientSandboxEngine | null => {
+      // Update config to match scenario settings
+      setConfig((prev) => ({
+        ...prev,
+        boardType: scenario.boardType,
+        numPlayers: scenario.playerCount,
+      }));
+
+      // Determine player types. For general fixtures, default to human vs AI.
+      // For recorded self-play games, treat all seats as human so we don't
+      // auto-run local AI turns while replaying the canonical move sequence.
+      let playerTypes: LocalPlayerType[] =
+        scenario.playerCount === 2
+          ? ['human', 'ai', 'human', 'human']
+          : (config.playerTypes.slice(0, scenario.playerCount) as LocalPlayerType[]);
+
+      if (scenario.selfPlayMeta) {
+        playerTypes = Array.from(
+          { length: scenario.playerCount },
+          () => 'human' as LocalPlayerType
+        );
+      }
+
+      // Create interaction handler
+      const interactionHandler = createSandboxInteractionHandler(playerTypes);
+
+      // Initialize sandbox engine
+      const engine = initLocalSandboxEngine({
+        boardType: scenario.boardType,
+        numPlayers: scenario.playerCount,
+        playerTypes,
+        interactionHandler,
+      });
+
+      if (!engine) return null;
+
+      // Normalize terminal states to active (completed self-play snapshots)
+      const scenarioState = scenario.state;
+      const isTerminalStatus =
+        scenarioState.gameStatus === 'completed' || scenarioState.gameStatus === 'finished';
+      const normalizedState = isTerminalStatus
+        ? {
+            ...scenarioState,
+            gameStatus: 'active',
+            currentPhase: 'ring_placement',
+            chainCapturePosition: undefined,
+          }
+        : scenarioState;
+
+      engine.initFromSerializedState(normalizedState, playerTypes, interactionHandler);
+      return engine;
+    },
+    [config.playerTypes, createSandboxInteractionHandler, initLocalSandboxEngine]
+  );
+
+  // Callback when scenario is loaded (for telemetry)
+  const handleScenarioLoadComplete = useCallback((scenario: LoadedScenario) => {
+    void logSandboxScenarioLoaded(scenario as LoadableScenario);
+  }, []);
+
+  // Callback to bump state version
+  const handleStateVersionChange = useCallback(() => {
+    setSandboxStateVersion((v) => v + 1);
+  }, []);
+
+  // Scenarios hook - manages replay, history, and scenario state
+  const {
+    lastLoadedScenario,
+    setLastLoadedScenario,
+    showScenarioPicker,
+    setShowScenarioPicker,
+    showSelfPlayBrowser,
+    setShowSelfPlayBrowser,
+    isInReplayMode,
+    setIsInReplayMode,
+    replayState,
+    setReplayState,
+    replayAnimation,
+    setReplayAnimation,
+    isViewingHistory,
+    setIsViewingHistory,
+    historyViewIndex,
+    setHistoryViewIndex,
+    hasHistorySnapshots,
+    setHasHistorySnapshots,
+    handleLoadScenario: hookHandleLoadScenario,
+    handleForkFromReplay: hookHandleForkFromReplay,
+    handleResetScenario: hookHandleResetScenario,
+    clearScenarioContext,
+    originalScenarioRef,
+  } = useSandboxScenarios<LoadableScenario>({
+    initSandboxWithScenario,
+    onScenarioLoaded: handleScenarioLoadComplete,
+    onStateVersionChange: handleStateVersionChange,
+    onUIStateReset: resetGameUIState,
+  });
+
+  // AI evaluation state - using extracted evaluation hook
+  const {
+    evaluationHistory: sandboxEvaluationHistory,
+    evaluationError: sandboxEvaluationError,
+    isEvaluating: isSandboxAnalysisRunning,
+    requestEvaluation: requestSandboxEvaluation,
+    clearHistory: clearEvaluationHistory,
+  } = useSandboxEvaluation({
+    engine: sandboxEngine,
+    developerToolsEnabled,
+    isInReplayMode,
+    isViewingHistory,
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SCENARIO HANDLERS - wrap hook handlers with self-play specific logic
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Load a scenario from the scenario picker.
+   * Wraps the hook handler to add self-play replay logic.
+   */
+  const handleLoadScenario = useCallback(
+    (scenario: LoadableScenario) => {
+      // Reset state version before loading
+      setSandboxStateVersion(0);
+
+      // Call the hook handler (handles state management and engine creation)
+      hookHandleLoadScenario(scenario);
+
+      // Handle self-play specific logic
+      if (scenario.selfPlayMeta) {
+        const recordedMoves: Move[] | undefined = scenario.selfPlayMeta.moves;
+
+        if (recordedMoves && recordedMoves.length > 0) {
+          // Self-play replay: async replay of recorded moves
+          void (async () => {
+            // eslint-disable-next-line no-console
+            console.log('[SandboxSelfPlayReplay] Replaying recorded self-play game', {
+              gameId: scenario.selfPlayMeta?.gameId,
+              totalRecordedMoves: recordedMoves.length,
+            });
+
+            let appliedCount = 0;
+
+            try {
+              for (let i = 0; i < recordedMoves.length; i += 1) {
+                const move = recordedMoves[i];
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                await (sandboxEngine as ClientSandboxEngine).applyCanonicalMoveForReplay(
+                  move as any
+                );
+                appliedCount += 1;
+              }
+
+              setSandboxStateVersion((v) => v + 1);
+              setHasHistorySnapshots(true);
+
+              // eslint-disable-next-line no-console
+              console.log('[SandboxSelfPlayReplay] Finished local replay', {
+                gameId: scenario.selfPlayMeta?.gameId,
+                appliedMoves: appliedCount,
+                historyLength: (sandboxEngine as ClientSandboxEngine).getGameState().moveHistory
+                  .length,
+              });
+            } catch (err) {
+              console.error(
+                '[SandboxGameHost] Failed to replay recorded self-play game into sandbox engine',
+                {
+                  error: err,
+                  gameId: scenario.selfPlayMeta?.gameId,
+                  appliedMoves: appliedCount,
+                  totalRecordedMoves: recordedMoves.length,
+                }
+              );
+              setHasHistorySnapshots(false);
+            }
+          })();
+        } else {
+          // No recorded moves; disable snapshot-driven history
+          setHasHistorySnapshots(false);
+        }
+
+        // Bridge gameId into ReplayPanel for Option A
+        setRequestedReplayGameId(scenario.selfPlayMeta.gameId);
+      } else {
+        setRequestedReplayGameId(null);
+      }
+
+      toast.success(`Loaded scenario: ${scenario.name}`);
+    },
+    [hookHandleLoadScenario, sandboxEngine, setHasHistorySnapshots]
+  );
+
+  /**
+   * Fork from a replay position - wraps the hook handler.
+   */
+  const handleForkFromReplay = useCallback(
+    (state: GameState) => {
+      // Reset state version
+      setSandboxStateVersion(0);
+
+      // Call hook handler (uses move index 0 for forking which is fine)
+      hookHandleForkFromReplay(state, state.moveHistory?.length ?? 0);
+
+      // Clear requestedReplayGameId
+      setRequestedReplayGameId(null);
+    },
+    [hookHandleForkFromReplay]
+  );
+
+  /**
+   * Reset to last loaded scenario - wraps the hook handler.
+   */
+  const handleResetScenario = useCallback(() => {
+    const scenario = originalScenarioRef.current;
+    if (!scenario) return;
+
+    // Use handleLoadScenario to ensure self-play replay happens again
+    handleLoadScenario(scenario);
+  }, [handleLoadScenario, originalScenarioRef]);
 
   // Game storage state - using extracted persistence hook
   const {
@@ -707,315 +918,6 @@ export const SandboxGameHost: React.FC = () => {
         });
       },
     };
-  };
-
-  /**
-   * Load a scenario from the scenario picker.
-   * This initializes the sandbox engine from a pre-existing serialized game state.
-   */
-  const handleLoadScenario = (scenario: LoadableScenario) => {
-    // Update config to match scenario settings
-    setConfig((prev) => ({
-      ...prev,
-      boardType: scenario.boardType,
-      numPlayers: scenario.playerCount,
-    }));
-
-    // Get player types. For general fixtures, default to human vs AI for 2
-    // players. For recorded self-play games, treat all seats as human so we
-    // do not auto-run local AI turns while we are replaying the canonical
-    // move sequence from the recorder.
-    let playerTypes: LocalPlayerType[] =
-      scenario.playerCount === 2
-        ? ['human', 'ai', 'human', 'human']
-        : (config.playerTypes.slice(0, scenario.playerCount) as LocalPlayerType[]);
-
-    if (scenario.selfPlayMeta) {
-      playerTypes = Array.from({ length: scenario.playerCount }, () => 'human' as LocalPlayerType);
-    }
-
-    // Create interaction handler
-    const interactionHandler = createSandboxInteractionHandler(playerTypes);
-
-    // Initialize sandbox engine with the scenario state
-    const engine = initLocalSandboxEngine({
-      boardType: scenario.boardType,
-      numPlayers: scenario.playerCount,
-      playerTypes,
-      interactionHandler,
-    });
-
-    // Load the serialized state into the engine. When scenarios carry a
-    // terminal gameStatus (e.g. completed self-play snapshots captured via
-    // ringrift_sandbox_fixture_v1), normalise them into a fresh, playable
-    // sandbox snapshot by re-opening the game as active from ring_placement.
-    const scenarioState = scenario.state;
-    const isTerminalStatus =
-      scenarioState.gameStatus === 'completed' || scenarioState.gameStatus === 'finished';
-    const normalizedState = isTerminalStatus
-      ? {
-          ...scenarioState,
-          gameStatus: 'active',
-          currentPhase: 'ring_placement',
-          chainCapturePosition: undefined,
-        }
-      : scenarioState;
-
-    engine.initFromSerializedState(normalizedState, playerTypes, interactionHandler);
-
-    // Reset UI state
-    setSelected(undefined);
-    setValidTargets([]);
-    setSandboxPendingChoice(null);
-    setIsSandboxVictoryModalDismissed(false);
-    setBackendSandboxError(null);
-    setSandboxCaptureChoice(null);
-    setSandboxCaptureTargets([]);
-    setSandboxStallWarning(null);
-    setSandboxLastProgressAt(null);
-    setSandboxStateVersion(0);
-    setLastLoadedScenario(scenario);
-
-    // Emit a sandbox_scenario_loaded event for curated teaching scenarios.
-    void logSandboxScenarioLoaded(scenario);
-
-    // Reset history-playback availability; fixtures loaded via ScenarioPicker
-    // may or may not include internal snapshots. We conservatively assume
-    // snapshots exist for local fixtures and will downgrade this flag when
-    // getStateAtMoveIndex reports null for self-play snapshots.
-    setHasHistorySnapshots(true);
-    setIsViewingHistory(false);
-    setHistoryViewIndex(0);
-
-    // If this scenario originated from a recorded self-play game, attempt to
-    // reconstruct the full move trajectory locally (Option B) so the history
-    // slider under the board can scrub through every recorded move even when
-    // the AI service replay DB is unavailable.
-    if (scenario.selfPlayMeta) {
-      const recordedMoves: Move[] | undefined = scenario.selfPlayMeta.moves;
-
-      if (recordedMoves && recordedMoves.length > 0) {
-        void (async () => {
-          // Best-effort debug instrumentation so we can understand how many
-          // canonical moves successfully replay into the sandbox engine for
-          // recorded self-play games.
-          // eslint-disable-next-line no-console
-          console.log('[SandboxSelfPlayReplay] Replaying recorded self-play game', {
-            gameId: scenario.selfPlayMeta?.gameId,
-            totalRecordedMoves: recordedMoves.length,
-          });
-
-          let appliedCount = 0;
-
-          try {
-            for (let i = 0; i < recordedMoves.length; i += 1) {
-              const move = recordedMoves[i];
-              // Moves come from the recorder and already match the canonical
-              // Move surface; we cast through any to avoid over-constraining
-              // the type here.
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              await (engine as ClientSandboxEngine).applyCanonicalMoveForReplay(move as any);
-              appliedCount += 1;
-            }
-
-            // Bump state version so derived views (board, HUD, history) pick
-            // up the final replayed state and the newly-populated snapshots.
-            setSandboxStateVersion((v) => v + 1);
-            setHasHistorySnapshots(true);
-
-            // eslint-disable-next-line no-console
-            console.log('[SandboxSelfPlayReplay] Finished local replay', {
-              gameId: scenario.selfPlayMeta?.gameId,
-              appliedMoves: appliedCount,
-              historyLength: (engine as ClientSandboxEngine).getGameState().moveHistory.length,
-            });
-          } catch (err) {
-            console.error(
-              '[SandboxGameHost] Failed to replay recorded self-play game into sandbox engine',
-              {
-                error: err,
-                gameId: scenario.selfPlayMeta?.gameId,
-                appliedMoves: appliedCount,
-                totalRecordedMoves: recordedMoves.length,
-              }
-            );
-            setHasHistorySnapshots(false);
-          }
-        })();
-      } else {
-        // No recorded moves were attached; disable snapshot-driven history so
-        // the slider renders with an explicit "unavailable" hint instead of
-        // appearing to scrub a static board.
-        setHasHistorySnapshots(false);
-      }
-
-      // Best-effort Option A: bridge this gameId into the ReplayPanel so,
-      // when the AI service is pointed at a compatible GameReplayDB, the
-      // board can also be driven directly from /api/replay.
-      setRequestedReplayGameId(scenario.selfPlayMeta.gameId);
-      setIsInReplayMode(false);
-      setReplayState(null);
-    } else {
-      setRequestedReplayGameId(null);
-      setIsInReplayMode(false);
-      setReplayState(null);
-    }
-
-    toast.success(`Loaded scenario: ${scenario.name}`);
-  };
-
-  /**
-   * Fork from a replay position - loads the replay state into the sandbox engine
-   * as a new playable game.
-   */
-  const handleForkFromReplay = (state: GameState) => {
-    // Update config to match the replay state
-    const numPlayers = state.players.length;
-    setConfig((prev) => ({
-      ...prev,
-      boardType: state.board.type,
-      numPlayers,
-    }));
-
-    // Default player types for forked game
-    const playerTypes: LocalPlayerType[] = state.players.map((_, idx) =>
-      idx === 0 ? 'human' : 'ai'
-    );
-
-    // Create interaction handler
-    const interactionHandler = createSandboxInteractionHandler(playerTypes);
-
-    // Initialize sandbox engine
-    const engine = initLocalSandboxEngine({
-      boardType: state.board.type,
-      numPlayers,
-      playerTypes,
-      interactionHandler,
-    });
-
-    // Load the state into the engine (convert GameState to SerializedGameState)
-    const serialized = serializeGameState(state);
-    const isTerminalStatus =
-      serialized.gameStatus === 'completed' || serialized.gameStatus === 'finished';
-    const normalizedSerialized = isTerminalStatus
-      ? {
-          ...serialized,
-          gameStatus: 'active',
-          currentPhase: 'ring_placement',
-          chainCapturePosition: undefined,
-        }
-      : serialized;
-
-    engine.initFromSerializedState(normalizedSerialized, playerTypes, interactionHandler);
-
-    // Reset UI state
-    setSelected(undefined);
-    setValidTargets([]);
-    setSandboxPendingChoice(null);
-    setIsSandboxVictoryModalDismissed(false);
-    setBackendSandboxError(null);
-    setSandboxCaptureChoice(null);
-    setSandboxCaptureTargets([]);
-    setSandboxStallWarning(null);
-    setSandboxLastProgressAt(null);
-    setSandboxStateVersion(0);
-    setLastLoadedScenario(null);
-
-    // Exit replay mode
-    setIsInReplayMode(false);
-    setReplayState(null);
-
-    toast.success('Forked from replay position');
-  };
-
-  const handleResetScenario = () => {
-    if (!lastLoadedScenario) {
-      return;
-    }
-
-    const scenario = lastLoadedScenario;
-
-    // Mirror the logic from handleLoadScenario so reset behaves the same as a
-    // fresh scenario load.
-    setConfig((prev) => ({
-      ...prev,
-      boardType: scenario.boardType,
-      numPlayers: scenario.playerCount,
-    }));
-
-    let playerTypes: LocalPlayerType[] =
-      scenario.playerCount === 2
-        ? ['human', 'ai', 'human', 'human']
-        : (config.playerTypes.slice(0, scenario.playerCount) as LocalPlayerType[]);
-
-    if (scenario.selfPlayMeta) {
-      playerTypes = Array.from({ length: scenario.playerCount }, () => 'human' as LocalPlayerType);
-    }
-
-    const interactionHandler = createSandboxInteractionHandler(playerTypes);
-
-    const engine = initLocalSandboxEngine({
-      boardType: scenario.boardType,
-      numPlayers: scenario.playerCount,
-      playerTypes,
-      interactionHandler,
-    });
-
-    engine.initFromSerializedState(scenario.state, playerTypes, interactionHandler);
-
-    setSelected(undefined);
-    setValidTargets([]);
-    setSandboxPendingChoice(null);
-    setSandboxCaptureChoice(null);
-    setSandboxCaptureTargets([]);
-    setSandboxStallWarning(null);
-    setSandboxLastProgressAt(null);
-    setIsSandboxVictoryModalDismissed(false);
-    setBackendSandboxError(null);
-    setSandboxStateVersion((v) => v + 1);
-    setHasHistorySnapshots(true);
-    setIsViewingHistory(false);
-    setHistoryViewIndex(0);
-
-    // Treat a scenario reset as a fresh load from a telemetry perspective.
-    void logSandboxScenarioLoaded(scenario);
-
-    // Re-run local reconstruction for recorded self-play scenarios so the
-    // history slider remains meaningful after a reset.
-    if (
-      scenario.selfPlayMeta &&
-      scenario.selfPlayMeta.moves &&
-      scenario.selfPlayMeta.moves.length
-    ) {
-      void (async () => {
-        let appliedCount = 0;
-        try {
-          for (const move of scenario.selfPlayMeta?.moves as Move[]) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            await (engine as ClientSandboxEngine).applyCanonicalMoveForReplay(move as any);
-            appliedCount += 1;
-          }
-          setSandboxStateVersion((v) => v + 1);
-          setHasHistorySnapshots(true);
-          // eslint-disable-next-line no-console
-          console.log('[SandboxSelfPlayReplay] Finished local replay on scenario reset', {
-            gameId: scenario.selfPlayMeta?.gameId,
-            appliedMoves: appliedCount,
-            historyLength: (engine as ClientSandboxEngine).getGameState().moveHistory.length,
-          });
-        } catch (err) {
-          console.error(
-            '[SandboxGameHost] Failed to replay recorded self-play game on scenario reset',
-            { error: err, gameId: scenario.selfPlayMeta?.gameId, appliedMoves: appliedCount }
-          );
-          setHasHistorySnapshots(false);
-        }
-      })();
-    } else if (scenario.selfPlayMeta) {
-      setHasHistorySnapshots(false);
-    }
-
-    toast.success(`Scenario reset: ${scenario.name}`);
   };
 
   const handleStartLocalGame = async () => {

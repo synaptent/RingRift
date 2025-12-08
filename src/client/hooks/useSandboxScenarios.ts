@@ -11,9 +11,9 @@
  * @module hooks/useSandboxScenarios
  */
 
-import { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import type { GameState, Position, Move } from '../../shared/types/game';
+import type { GameState, Position } from '../../shared/types/game';
 import type { ClientSandboxEngine } from '../services/ClientSandboxEngine';
 import type { MoveAnimation } from './useMoveAnimation';
 
@@ -58,19 +58,21 @@ export interface ScenarioData {
 /**
  * Options for the scenarios hook.
  */
-export interface SandboxScenariosOptions {
-  /** Initialize sandbox engine with scenario */
-  initSandboxWithScenario: (scenario: ScenarioData) => ClientSandboxEngine | null;
-  /** Callback when scenario is loaded */
+export interface SandboxScenariosOptions<T = ScenarioData> {
+  /** Initialize sandbox engine with scenario - parent handles all complex engine creation logic */
+  initSandboxWithScenario: (scenario: T) => ClientSandboxEngine | null;
+  /** Callback when scenario is loaded (for telemetry, etc.) */
   onScenarioLoaded?: (scenario: LoadedScenario) => void;
   /** Callback when state version should be bumped */
   onStateVersionChange?: () => void;
+  /** Callback to reset parent's UI state (selection, pending choices, etc.) */
+  onUIStateReset?: () => void;
 }
 
 /**
  * Return type for useSandboxScenarios.
  */
-export interface SandboxScenariosState {
+export interface SandboxScenariosState<T = ScenarioData> {
   // Scenario state
   lastLoadedScenario: LoadedScenario | null;
   showScenarioPicker: boolean;
@@ -82,6 +84,7 @@ export interface SandboxScenariosState {
   isInReplayMode: boolean;
   setIsInReplayMode: (inReplay: boolean) => void;
   replayState: GameState | null;
+  setReplayState: (state: GameState | null) => void;
   replayAnimation: MoveAnimation | null;
   setReplayAnimation: (anim: MoveAnimation | null) => void;
 
@@ -94,10 +97,14 @@ export interface SandboxScenariosState {
   setHasHistorySnapshots: (has: boolean) => void;
 
   // Handlers
-  handleLoadScenario: (scenario: ScenarioData) => Promise<void>;
+  handleLoadScenario: (scenario: T) => void;
   handleForkFromReplay: (state: GameState, moveIndex: number) => void;
   handleResetScenario: () => void;
   clearScenarioContext: () => void;
+
+  // Ref to original scenario for reset
+  originalScenarioRef: React.RefObject<T | null>;
+  setLastLoadedScenario: (scenario: LoadedScenario | null) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -106,11 +113,26 @@ export interface SandboxScenariosState {
 
 /**
  * Hook for managing scenario loading and replay in sandbox mode.
+ *
+ * This hook provides state management for scenarios, replay, and history playback.
+ * Complex logic like engine creation, config updates, and move replay should be
+ * handled by the parent component via callbacks.
+ *
+ * @template T - The scenario type (defaults to ScenarioData)
  */
-export function useSandboxScenarios(
-  options: SandboxScenariosOptions
-): SandboxScenariosState {
-  const { initSandboxWithScenario, onScenarioLoaded, onStateVersionChange } = options;
+export function useSandboxScenarios<
+  T extends {
+    id: string;
+    name: string;
+    description?: string;
+    onboarding?: boolean;
+    rulesConcept?: string;
+    rulesSnippet?: string;
+    source?: string;
+  } = ScenarioData,
+>(options: SandboxScenariosOptions<T>): SandboxScenariosState<T> {
+  const { initSandboxWithScenario, onScenarioLoaded, onStateVersionChange, onUIStateReset } =
+    options;
 
   // Scenario state
   const [lastLoadedScenario, setLastLoadedScenario] = useState<LoadedScenario | null>(null);
@@ -128,102 +150,97 @@ export function useSandboxScenarios(
   const [hasHistorySnapshots, setHasHistorySnapshots] = useState(true);
 
   // Ref to store the original scenario for reset
-  const originalScenarioRef = useRef<ScenarioData | null>(null);
+  const originalScenarioRef = useRef<T | null>(null);
 
-  // Load a scenario
+  // Load a scenario - simplified to delegate complex logic to parent
   const handleLoadScenario = useCallback(
-    async (scenario: ScenarioData) => {
-      try {
-        // Store for potential reset
-        originalScenarioRef.current = scenario;
+    (scenario: T) => {
+      // Store for potential reset
+      originalScenarioRef.current = scenario;
 
-        // Initialize engine with scenario
-        const engine = initSandboxWithScenario(scenario);
+      // Initialize engine with scenario (parent handles complex logic)
+      const engine = initSandboxWithScenario(scenario);
 
-        if (!engine) {
-          toast.error('Failed to load scenario');
-          return;
-        }
-
-        // Track loaded scenario
-        const loadedScenario: LoadedScenario = {
-          id: scenario.id,
-          name: scenario.name,
-          description: scenario.description,
-          onboarding: scenario.onboarding,
-          rulesConcept: scenario.rulesConcept,
-          rulesSnippet: scenario.rulesSnippet,
-          source: scenario.source,
-        };
-
-        setLastLoadedScenario(loadedScenario);
-        onScenarioLoaded?.(loadedScenario);
-
-        // Close picker
-        setShowScenarioPicker(false);
-        setShowSelfPlayBrowser(false);
-
-        // Reset history state
-        setIsViewingHistory(false);
-        setHistoryViewIndex(0);
-        setHasHistorySnapshots(true);
-
-        // Exit replay mode if active
-        setIsInReplayMode(false);
-        setReplayState(null);
-
-        // If scenario has move history (self-play), replay them
-        if (scenario.moveHistory && scenario.moveHistory.length > 0) {
-          await replayMoveHistory(engine, scenario.moveHistory);
-        }
-
-        toast.success(`Loaded: ${scenario.name}`);
-        onStateVersionChange?.();
-      } catch (err) {
-        console.error('[useSandboxScenarios] Failed to load scenario:', err);
+      if (!engine) {
         toast.error('Failed to load scenario');
+        return;
       }
+
+      // Reset parent's UI state (selection, pending choices, etc.)
+      onUIStateReset?.();
+
+      // Track loaded scenario metadata
+      const loadedScenario: LoadedScenario = {
+        id: scenario.id,
+        name: scenario.name,
+        description: scenario.description,
+        onboarding: scenario.onboarding,
+        rulesConcept: scenario.rulesConcept,
+        rulesSnippet: scenario.rulesSnippet,
+        source: scenario.source,
+      };
+
+      setLastLoadedScenario(loadedScenario);
+      onScenarioLoaded?.(loadedScenario);
+
+      // Close pickers
+      setShowScenarioPicker(false);
+      setShowSelfPlayBrowser(false);
+
+      // Reset history state
+      setIsViewingHistory(false);
+      setHistoryViewIndex(0);
+      setHasHistorySnapshots(true);
+
+      // Exit replay mode if active
+      setIsInReplayMode(false);
+      setReplayState(null);
+
+      // Note: Move replay for self-play scenarios is handled by the parent
+      // after receiving the onScenarioLoaded callback
+
+      onStateVersionChange?.();
     },
-    [initSandboxWithScenario, onScenarioLoaded, onStateVersionChange]
+    [initSandboxWithScenario, onScenarioLoaded, onStateVersionChange, onUIStateReset]
   );
 
   // Fork from a replay position to start a new playable game
   const handleForkFromReplay = useCallback(
     (state: GameState, moveIndex: number) => {
-      try {
-        // Create scenario from the replay state
-        const forkScenario: ScenarioData = {
-          id: `fork-${state.gameId}-${moveIndex}`,
-          name: `Fork from move ${moveIndex}`,
-          description: `Forked from replay at move ${moveIndex}`,
-          gameState: state,
-          source: 'fork',
-        };
+      // For forking, we create a minimal scenario-like object
+      // The parent's initSandboxWithScenario must handle this case
+      const forkScenario = {
+        id: `fork-${state.gameId}-${moveIndex}`,
+        name: `Fork from move ${moveIndex}`,
+        description: `Forked from replay at move ${moveIndex}`,
+        source: 'fork',
+        // Include the state for the parent to use
+        state,
+      } as unknown as T;
 
-        // Initialize engine with forked state
-        const engine = initSandboxWithScenario(forkScenario);
+      // Initialize engine with forked state (parent handles complex logic)
+      const engine = initSandboxWithScenario(forkScenario);
 
-        if (!engine) {
-          toast.error('Failed to fork from replay');
-          return;
-        }
-
-        // Clear scenario context (fork is not a teaching scenario)
-        setLastLoadedScenario(null);
-        originalScenarioRef.current = null;
-
-        // Exit replay mode
-        setIsInReplayMode(false);
-        setReplayState(null);
-
-        toast.success(`Forked from move ${moveIndex}`);
-        onStateVersionChange?.();
-      } catch (err) {
-        console.error('[useSandboxScenarios] Failed to fork from replay:', err);
+      if (!engine) {
         toast.error('Failed to fork from replay');
+        return;
       }
+
+      // Reset parent's UI state
+      onUIStateReset?.();
+
+      // Clear scenario context (fork is not a teaching scenario)
+      setLastLoadedScenario(null);
+      originalScenarioRef.current = null;
+
+      // Exit replay mode
+      setIsInReplayMode(false);
+      setReplayState(null);
+
+      toast.success(`Forked from move ${moveIndex}`);
+      onStateVersionChange?.();
     },
-    [initSandboxWithScenario, onStateVersionChange]
+    [initSandboxWithScenario, onStateVersionChange, onUIStateReset]
   );
 
   // Reset to last loaded scenario
@@ -237,7 +254,6 @@ export function useSandboxScenarios(
 
     // Re-load the original scenario
     handleLoadScenario(scenario);
-    toast.success('Scenario reset');
   }, [handleLoadScenario]);
 
   // Clear scenario context
@@ -263,6 +279,7 @@ export function useSandboxScenarios(
     isInReplayMode,
     setIsInReplayMode,
     replayState,
+    setReplayState,
     replayAnimation,
     setReplayAnimation,
 
@@ -279,31 +296,11 @@ export function useSandboxScenarios(
     handleForkFromReplay,
     handleResetScenario,
     clearScenarioContext,
+
+    // Expose ref and setter for parent access
+    originalScenarioRef,
+    setLastLoadedScenario,
   };
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-/**
- * Replay move history through the engine.
- *
- * This is an async operation that applies moves sequentially
- * to reconstruct game state from a move history.
- */
-async function replayMoveHistory(
-  engine: ClientSandboxEngine,
-  moveHistory: Move[]
-): Promise<void> {
-  for (const move of moveHistory) {
-    try {
-      await engine.applyCanonicalMove(move);
-    } catch (err) {
-      console.warn('[useSandboxScenarios] Move replay failed:', err, move);
-      // Continue with next move - some moves may fail due to state mismatch
-    }
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
