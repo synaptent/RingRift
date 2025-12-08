@@ -129,9 +129,19 @@ export function serializeBoardState(board: BoardState): SerializedBoardState {
 export function deserializeBoardState(data: SerializedBoardState): BoardState {
   const stacks = new Map<string, RingStack>();
   for (const [key, stack] of Object.entries(data.stacks)) {
+    // Handle different ring formats: array, object with numeric keys, or undefined
+    let rings: number[];
+    if (Array.isArray(stack.rings)) {
+      rings = [...stack.rings];
+    } else if (stack.rings && typeof stack.rings === 'object') {
+      // Convert object with numeric keys to array (e.g., {0: 1, 1: 2} -> [1, 2])
+      rings = Object.values(stack.rings) as number[];
+    } else {
+      rings = [];
+    }
     stacks.set(key, {
       position: stack.position,
-      rings: [...stack.rings],
+      rings,
       stackHeight: stack.stackHeight,
       capHeight: stack.capHeight,
       controllingPlayer: stack.controllingPlayer,

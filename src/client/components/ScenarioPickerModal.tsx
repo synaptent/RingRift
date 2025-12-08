@@ -158,9 +158,7 @@ export const ScenarioPickerModal: React.FC<ScenarioPickerModalProps> = ({
   });
 
   const onboardingScenarios =
-    activeTab === 'curated'
-      ? filteredScenarios.filter((scenario) => scenario.onboarding)
-      : [];
+    activeTab === 'curated' ? filteredScenarios.filter((scenario) => scenario.onboarding) : [];
   const nonOnboardingScenarios =
     activeTab === 'curated'
       ? filteredScenarios.filter((scenario) => !scenario.onboarding)
@@ -301,8 +299,11 @@ export const ScenarioPickerModal: React.FC<ScenarioPickerModalProps> = ({
                         key={scenario.id}
                         scenario={scenario}
                         onSelect={() => {
-                          onSelectScenario(scenario);
-                          onClose();
+                          try {
+                            onSelectScenario(scenario);
+                          } finally {
+                            onClose();
+                          }
                         }}
                         developerToolsEnabled={developerToolsEnabled}
                         showRulesSnippet={!!scenario.rulesSnippet}
@@ -318,8 +319,11 @@ export const ScenarioPickerModal: React.FC<ScenarioPickerModalProps> = ({
                     key={scenario.id}
                     scenario={scenario}
                     onSelect={() => {
-                      onSelectScenario(scenario);
-                      onClose();
+                      try {
+                        onSelectScenario(scenario);
+                      } finally {
+                        onClose();
+                      }
                     }}
                     onDelete={
                       activeTab === 'custom' && developerToolsEnabled

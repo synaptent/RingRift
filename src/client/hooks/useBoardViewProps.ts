@@ -13,7 +13,7 @@
  * @module hooks/useBoardViewProps
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import type { BoardState, GameState, Position, Move, BoardType } from '../../shared/types/game';
 import type { BoardViewModel } from '../adapters/gameViewModels';
 import { toBoardViewModel, deriveBoardDecisionHighlights } from '../adapters/gameViewModels';
@@ -124,9 +124,7 @@ const DEFAULT_OVERLAYS: BoardOverlayConfig = {
 /**
  * Hook that consolidates BoardView props derivation.
  */
-export function useBoardViewProps(
-  options: UseBoardViewPropsOptions
-): BoardViewPropsResult | null {
+export function useBoardViewProps(options: UseBoardViewPropsOptions): BoardViewPropsResult | null {
   const {
     gameState,
     selectedPosition,
@@ -141,10 +139,7 @@ export function useBoardViewProps(
   } = options;
 
   // Merge overlay config with defaults
-  const overlayConfig = useMemo(
-    () => ({ ...DEFAULT_OVERLAYS, ...overlays }),
-    [overlays]
-  );
+  const overlayConfig = useMemo(() => ({ ...DEFAULT_OVERLAYS, ...overlays }), [overlays]);
 
   // Derive decision highlights from pending choice
   const decisionHighlights = useMemo(() => {
@@ -276,9 +271,7 @@ function extractChainCapturePath(gameState: GameState | null): Position[] | unde
  * This is a separate hook for use when the parent component needs
  * direct access to toggle the overlays.
  */
-export function useBoardOverlays(
-  defaults?: Partial<BoardOverlayConfig>
-): {
+export function useBoardOverlays(defaults?: Partial<BoardOverlayConfig>): {
   overlays: BoardOverlayConfig;
   setShowMovementGrid: (show: boolean) => void;
   setShowValidTargets: (show: boolean) => void;
@@ -288,8 +281,6 @@ export function useBoardOverlays(
   setShowTerritoryOverlays: (show: boolean) => void;
   resetOverlays: () => void;
 } {
-  const { useState, useCallback } = require('react');
-
   const [overlays, setOverlays] = useState<BoardOverlayConfig>({
     ...DEFAULT_OVERLAYS,
     ...defaults,

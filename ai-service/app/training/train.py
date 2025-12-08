@@ -1443,7 +1443,7 @@ def train_model(
         # RingRiftCNN_MultiPlayer for multi-player games on square boards
         model = RingRiftCNN_MultiPlayer(
             board_size=board_size,
-            in_channels=10,
+            in_channels=14,  # 14 spatial feature channels per frame
             global_features=20,  # Must match _extract_features() which returns 20 globals
             history_length=config.history_length,
             max_players=MAX_PLAYERS,
@@ -1457,7 +1457,7 @@ def train_model(
         # RingRiftCNN_v2 for square boards
         model = RingRiftCNN_v2(
             board_size=board_size,
-            in_channels=10,
+            in_channels=14,  # 14 spatial feature channels per frame
             global_features=20,  # Must match _extract_features() which returns 20 globals
             history_length=config.history_length,
             policy_size=policy_size,

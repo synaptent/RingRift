@@ -390,6 +390,79 @@ export const SandboxGameHost: React.FC = () => {
   // Help / controls overlay for the active sandbox host
   const [showBoardControls, setShowBoardControls] = useState(false);
 
+  // Ref for resolving pending player choices in sandbox mode
+  const sandboxChoiceResolverRef = useRef<
+    ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
+  >(null);
+
+  // Factory for creating interaction handlers for sandbox engine instances
+  const createSandboxInteractionHandler = useCallback(
+    (playerTypesSnapshot: LocalPlayerType[]): SandboxInteractionHandler => {
+      return {
+        async requestChoice<TChoice extends PlayerChoice>(
+          choice: TChoice
+        ): Promise<PlayerChoiceResponseFor<TChoice>> {
+          const playerKind = playerTypesSnapshot[choice.playerNumber - 1] ?? 'human';
+
+          // AI players: pick a random option without involving the UI.
+          if (playerKind === 'ai') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic choice type narrowing
+            const options = (choice as any).options as TChoice['options'];
+            const optionsArray = (options as unknown[]) ?? [];
+            if (optionsArray.length === 0) {
+              throw new Error('SandboxInteractionHandler: no options available for AI choice');
+            }
+            const selectedOption = optionsArray[
+              Math.floor(Math.random() * optionsArray.length)
+            ] as TChoice['options'][number];
+
+            return {
+              choiceId: choice.id,
+              playerNumber: choice.playerNumber,
+              choiceType: choice.type,
+              selectedOption,
+            } as PlayerChoiceResponseFor<TChoice>;
+          }
+
+          // Human players with a single available option: auto-resolve the
+          // choice without surfacing any blocking UI.
+          const rawOptions = (choice as any).options as TChoice['options'] | undefined;
+          const autoOptions = (rawOptions as unknown[]) ?? [];
+          if (autoOptions.length === 1) {
+            const onlyOption = autoOptions[0] as TChoice['options'][number];
+            return {
+              choiceId: choice.id,
+              playerNumber: choice.playerNumber,
+              choiceType: choice.type,
+              selectedOption: onlyOption,
+            } as PlayerChoiceResponseFor<TChoice>;
+          }
+
+          // Human players
+          if (choice.type === 'capture_direction') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- capture_direction type narrowing
+            const anyChoice = choice as any;
+            const options = (anyChoice.options ?? []) as Array<{ landingPosition: Position }>;
+            const targets: Position[] = options.map((opt) => opt.landingPosition);
+            setSandboxCaptureChoice(choice);
+            setSandboxCaptureTargets(targets);
+          } else {
+            setSandboxPendingChoice(choice);
+          }
+
+          return new Promise<PlayerChoiceResponseFor<TChoice>>((resolve) => {
+            sandboxChoiceResolverRef.current = ((
+              response: PlayerChoiceResponseFor<PlayerChoice>
+            ) => {
+              resolve(response as PlayerChoiceResponseFor<TChoice>);
+            }) as (response: PlayerChoiceResponseFor<PlayerChoice>) => void;
+          });
+        },
+      };
+    },
+    [setSandboxCaptureChoice, setSandboxCaptureTargets, setSandboxPendingChoice]
+  );
+
   // ═══════════════════════════════════════════════════════════════════════════
   // SCENARIO/REPLAY STATE - using extracted scenarios hook
   // ═══════════════════════════════════════════════════════════════════════════
@@ -530,72 +603,77 @@ export const SandboxGameHost: React.FC = () => {
    */
   const handleLoadScenario = useCallback(
     (scenario: LoadableScenario) => {
-      // Reset state version before loading
-      setSandboxStateVersion(0);
+      try {
+        // Reset state version before loading
+        setSandboxStateVersion(0);
 
-      // Call the hook handler (handles state management and engine creation)
-      hookHandleLoadScenario(scenario);
+        // Call the hook handler (handles state management and engine creation)
+        hookHandleLoadScenario(scenario);
 
-      // Handle self-play specific logic
-      if (scenario.selfPlayMeta) {
-        const recordedMoves: Move[] | undefined = scenario.selfPlayMeta.moves;
+        // Handle self-play specific logic
+        if (scenario.selfPlayMeta) {
+          const recordedMoves: Move[] | undefined = scenario.selfPlayMeta.moves;
 
-        if (recordedMoves && recordedMoves.length > 0) {
-          // Self-play replay: async replay of recorded moves
-          void (async () => {
-            // eslint-disable-next-line no-console
-            console.log('[SandboxSelfPlayReplay] Replaying recorded self-play game', {
-              gameId: scenario.selfPlayMeta?.gameId,
-              totalRecordedMoves: recordedMoves.length,
-            });
-
-            let appliedCount = 0;
-
-            try {
-              for (let i = 0; i < recordedMoves.length; i += 1) {
-                const move = recordedMoves[i];
-
-                await (sandboxEngine as ClientSandboxEngine).applyCanonicalMoveForReplay(
-                  move as any
-                );
-                appliedCount += 1;
-              }
-
-              setSandboxStateVersion((v) => v + 1);
-              setHasHistorySnapshots(true);
-
+          if (recordedMoves && recordedMoves.length > 0) {
+            // Self-play replay: async replay of recorded moves
+            void (async () => {
               // eslint-disable-next-line no-console
-              console.log('[SandboxSelfPlayReplay] Finished local replay', {
+              console.log('[SandboxSelfPlayReplay] Replaying recorded self-play game', {
                 gameId: scenario.selfPlayMeta?.gameId,
-                appliedMoves: appliedCount,
-                historyLength: (sandboxEngine as ClientSandboxEngine).getGameState().moveHistory
-                  .length,
+                totalRecordedMoves: recordedMoves.length,
               });
-            } catch (err) {
-              console.error(
-                '[SandboxGameHost] Failed to replay recorded self-play game into sandbox engine',
-                {
-                  error: err,
+
+              let appliedCount = 0;
+
+              try {
+                for (let i = 0; i < recordedMoves.length; i += 1) {
+                  const move = recordedMoves[i];
+
+                  await (sandboxEngine as ClientSandboxEngine).applyCanonicalMoveForReplay(
+                    move as any
+                  );
+                  appliedCount += 1;
+                }
+
+                setSandboxStateVersion((v) => v + 1);
+                setHasHistorySnapshots(true);
+
+                // eslint-disable-next-line no-console
+                console.log('[SandboxSelfPlayReplay] Finished local replay', {
                   gameId: scenario.selfPlayMeta?.gameId,
                   appliedMoves: appliedCount,
-                  totalRecordedMoves: recordedMoves.length,
-                }
-              );
-              setHasHistorySnapshots(false);
-            }
-          })();
+                  historyLength: (sandboxEngine as ClientSandboxEngine).getGameState().moveHistory
+                    .length,
+                });
+              } catch (err) {
+                console.error(
+                  '[SandboxGameHost] Failed to replay recorded self-play game into sandbox engine',
+                  {
+                    error: err,
+                    gameId: scenario.selfPlayMeta?.gameId,
+                    appliedMoves: appliedCount,
+                    totalRecordedMoves: recordedMoves.length,
+                  }
+                );
+                setHasHistorySnapshots(false);
+              }
+            })();
+          } else {
+            // No recorded moves; disable snapshot-driven history
+            setHasHistorySnapshots(false);
+          }
+
+          // Bridge gameId into ReplayPanel for Option A
+          setRequestedReplayGameId(scenario.selfPlayMeta.gameId);
         } else {
-          // No recorded moves; disable snapshot-driven history
-          setHasHistorySnapshots(false);
+          setRequestedReplayGameId(null);
         }
 
-        // Bridge gameId into ReplayPanel for Option A
-        setRequestedReplayGameId(scenario.selfPlayMeta.gameId);
-      } else {
-        setRequestedReplayGameId(null);
+        toast.success(`Loaded scenario: ${scenario.name}`);
+      } catch (err) {
+        console.error('[SandboxGameHost] Error loading scenario:', err);
+        toast.error('Failed to load scenario');
       }
-
-      toast.success(`Loaded scenario: ${scenario.name}`);
     },
     [hookHandleLoadScenario, sandboxEngine, setHasHistorySnapshots]
   );
@@ -650,10 +728,6 @@ export const SandboxGameHost: React.FC = () => {
 
   // Show/hide advanced options - collapsed by default for first-time players
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(!isFirstTimePlayer);
-
-  const sandboxChoiceResolverRef = useRef<
-    ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
-  >(null);
 
   const lastSandboxPhaseRef = useRef<string | null>(null);
 
@@ -852,72 +926,6 @@ export const SandboxGameHost: React.FC = () => {
       }
       return { ...prev, playerTypes: next };
     });
-  };
-
-  const createSandboxInteractionHandler = (
-    playerTypesSnapshot: LocalPlayerType[]
-  ): SandboxInteractionHandler => {
-    return {
-      async requestChoice<TChoice extends PlayerChoice>(
-        choice: TChoice
-      ): Promise<PlayerChoiceResponseFor<TChoice>> {
-        const playerKind = playerTypesSnapshot[choice.playerNumber - 1] ?? 'human';
-
-        // AI players: pick a random option without involving the UI.
-        if (playerKind === 'ai') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic choice type narrowing
-          const options = (choice as any).options as TChoice['options'];
-          const optionsArray = (options as unknown[]) ?? [];
-          if (optionsArray.length === 0) {
-            throw new Error('SandboxInteractionHandler: no options available for AI choice');
-          }
-          const selectedOption = optionsArray[
-            Math.floor(Math.random() * optionsArray.length)
-          ] as TChoice['options'][number];
-
-          return {
-            choiceId: choice.id,
-            playerNumber: choice.playerNumber,
-            choiceType: choice.type,
-            selectedOption,
-          } as PlayerChoiceResponseFor<TChoice>;
-        }
-
-        // Human players with a single available option: auto-resolve the
-        // choice without surfacing any blocking UI. This keeps sandbox
-        // decisions (including territory region and elimination) flowing
-        // without unnecessary dialogs when there is nothing to choose.
-        const rawOptions = (choice as any).options as TChoice['options'] | undefined;
-        const autoOptions = (rawOptions as unknown[]) ?? [];
-        if (autoOptions.length === 1) {
-          const onlyOption = autoOptions[0] as TChoice['options'][number];
-          return {
-            choiceId: choice.id,
-            playerNumber: choice.playerNumber,
-            choiceType: choice.type,
-            selectedOption: onlyOption,
-          } as PlayerChoiceResponseFor<TChoice>;
-        }
-
-        // Human players
-        if (choice.type === 'capture_direction') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- capture_direction type narrowing
-          const anyChoice = choice as any;
-          const options = (anyChoice.options ?? []) as Array<{ landingPosition: Position }>;
-          const targets: Position[] = options.map((opt) => opt.landingPosition);
-          setSandboxCaptureChoice(choice);
-          setSandboxCaptureTargets(targets);
-        } else {
-          setSandboxPendingChoice(choice);
-        }
-
-        return new Promise<PlayerChoiceResponseFor<TChoice>>((resolve) => {
-          sandboxChoiceResolverRef.current = ((response: PlayerChoiceResponseFor<PlayerChoice>) => {
-            resolve(response as PlayerChoiceResponseFor<TChoice>);
-          }) as (response: PlayerChoiceResponseFor<PlayerChoice>) => void;
-        });
-      },
-    };
   };
 
   const handleStartLocalGame = async () => {
