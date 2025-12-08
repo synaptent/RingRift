@@ -38,8 +38,17 @@ import os
 import json
 import time
 from .models import (
-    GameState, Move, Position, BoardType, GamePhase, RingStack, MarkerInfo,
-    GameStatus, MoveType, BoardState
+    GameState,
+    Move,
+    Position,
+    BoardType,
+    GamePhase,
+    RingStack,
+    MarkerInfo,
+    GameStatus,
+    MoveType,
+    BoardState,
+    Territory,
 )
 from .board_manager import BoardManager
 
@@ -2839,13 +2848,24 @@ class GameEngine:
         if eligible_regions:
             for idx, region in enumerate(eligible_regions):
                 rep = region.spaces[0]
+                # Canonical guard: controlling_player should not be 0. If the
+                # detector returned a neutral region, attribute it to the active
+                # player to keep the recording canonical with TS expectations.
+                controlling_player = (
+                    region.controlling_player if region.controlling_player != 0 else player_number
+                )
+                safe_region = Territory(
+                    spaces=region.spaces,
+                    controlling_player=controlling_player,
+                    is_disconnected=region.is_disconnected,
+                )
                 moves.append(
                     Move(
                         id=f"process-region-{idx}-{rep.to_key()}",
                         type=MoveType.PROCESS_TERRITORY_REGION,
                         player=player_number,
                         to=rep,
-                        disconnected_regions=(region,),  # type: ignore[arg-type]
+                        disconnected_regions=(safe_region,),  # type: ignore[arg-type]
                         timestamp=game_state.last_move_at,
                         thinkTime=0,
                         moveNumber=len(game_state.move_history) + 1,
