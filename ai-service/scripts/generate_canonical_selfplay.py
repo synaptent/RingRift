@@ -228,7 +228,18 @@ def main(argv: List[str] | None = None) -> int:
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    parity_summary = run_selfplay_and_parity(board_type, num_games, db_path, num_players, hosts)
+    try:
+        parity_summary = run_selfplay_and_parity(board_type, num_games, db_path, num_players, hosts)
+    except Exception as e:  # pragma: no cover - debug hook
+        payload = {
+            "board_type": board_type,
+            "num_players": num_players,
+            "db_path": str(db_path),
+            "num_games_requested": num_games,
+            "error": str(e),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        raise
 
     # Determine if the parity gate itself passed.
     passed_gate = bool(parity_summary.get("passed_canonical_parity_gate"))

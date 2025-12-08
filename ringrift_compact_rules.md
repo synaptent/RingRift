@@ -173,6 +173,19 @@ If after this elimination `P` still has no legal action, their turn ends.
 
 However, as long as any stacks remain on the board, it is never legal for the game to remain in an `active` state with the current player having no legal action. In any situation where **no player** has any legal placement, movement, or capture but at least one stack still exists on the board, the controlling player of some stack on their turn must satisfy the condition above and perform a forced elimination. Successive forced eliminations continue (possibly cycling through multiple players) until **no stacks remain**; only then can the game reach a structurally terminal state that is resolved by the stalemate rules in Section 7.4.
 
+### 2.4 Recovery action
+
+A player who controls **zero stacks**, has **zero rings in hand**, but has **at least one marker** and **at least one buried ring** (their ring at a non-top position in some stack) may perform a recovery action during the movement phase:
+
+1. **Marker slide:** Move one of your markers to an adjacent empty cell (Moore adjacency for square, hex-adjacency for hex).
+2. **Line requirement:** Legal only if it completes a line of exactly `lineLength` consecutive markers of your colour. Overlength lines (longer than `lineLength`) do **not** satisfy this requirement.
+3. **Buried ring extraction:** To pay self-elimination, extract your bottommost ring from any stack containing your buried rings:
+   - Ring is permanently eliminated (credited to you).
+   - Stack height decreases by 1; control determined by new top ring.
+4. **Cascade processing:** If line collapse creates territory regions, process normally. Each territory's self-elimination cost requires extracting another buried ring from a stack **outside** that region. If no buried rings remain outside claimable regions, those territories cannot be claimed.
+
+Move type: `recovery_slide`.
+
 ---
 
 ## 3. Non-Capture Movement
@@ -443,8 +456,9 @@ Last-player-standing is a **third formal victory condition**, alongside ring-eli
 For this rule, define a **real action** for a player `P` on their own turn as any legal:
 
 - ring placement (Section 2.1),
-- non-capture movement (Section 3), or
-- overtaking capture segment or chain (Section 4),
+- non-capture movement (Section 3),
+- overtaking capture segment or chain (Section 4), or
+- recovery action (Section 2.4),
 
 available at the start of their action. Having only forced elimination available (Section 2.3) does **not** count as having a real action for last-player-standing purposes.
 
@@ -507,6 +521,196 @@ If **no** player has any legal placement, movement, capture, or forced eliminati
 - Carefully respect **version parameters** (lineLength; adjacency type; ringsPerPlayer; thresholds) so that the same engine logic can run square8, square19, and hex.
 
 This compact spec plus the full narrative rules and tests should suffice to produce a complete, correct implementation of RingRift’s rules for both server engines and AI agents.
+
+---
+
+## 8. Final Player Rankings (Game End Standings)
+
+When the game ends (by any victory condition), all players receive a **final rank** from 1st (winner) to Nth (last place). This section defines the canonical ranking algorithm used for:
+
+- Leaderboards and statistics
+- AI training targets (win/loss/rank rewards)
+- Multiplayer tournament scoring
+
+**Key principle:** The ranking algorithm is **victory-type independent**. The same tiebreaker cascade applies regardless of whether the game ended by ring-elimination, territory-control, last-player-standing, or stalemate. Only the winner determination differs by victory type; all other players are ranked identically.
+
+### 8.1 Definitions
+
+#### 8.1.1 Turn-material
+
+A player P has **turn-material** at a given game state if and only if:
+
+- P controls at least one stack (there exists a stack whose top ring belongs to P), OR
+- `ringsInHand[P] > 0`
+
+Buried rings (rings not on top of a stack) do **not** grant turn-material to their owner.
+
+#### 8.1.2 Temporarily eliminated player
+
+A player P is **temporarily eliminated** at turn T if:
+
+- At the **start** of turn T, P has no turn-material (no controlled stacks AND `ringsInHand[P] == 0`), BUT
+- P still has at least one ring somewhere in the game (buried in another player's stack, for example).
+
+Temporary elimination is **reversible**: if stack control changes later reveal P's buried ring on top of a stack, P regains turn-material and is no longer eliminated.
+
+#### 8.1.3 Permanently eliminated player
+
+A player P is **permanently eliminated** at turn T if P has **no ring material of any kind remaining anywhere in the game**:
+
+- `ringsInHand[P] == 0`, AND
+- P controls no stacks (no stack has P's ring on top), AND
+- P has no rings buried in any stack on the board (no ring of P's colour exists anywhere in any stack).
+
+Permanent elimination is **irreversible**: once a player has zero rings in the game, they cannot regain material.
+
+#### 8.1.4 Elimination turn for ranking
+
+The **elimination turn** `eliminationTurn[P]` is defined as:
+
+- The turn number T when P was **permanently eliminated** (i.e., had zero rings anywhere in the game).
+- `∞` (infinity / `NEVER_ELIMINATED`) if P still has rings in any form at game end.
+
+**Key distinction:** Only permanent elimination counts for ranking purposes. A player who was temporarily eliminated but later regained turn-material (via buried rings resurfacing) has `eliminationTurn[P] = ∞` if they still have rings at game end.
+
+#### 8.1.5 Markers on board
+
+`markersOnBoard[P]` is the count of **markers owned by player P** currently on the board at game end. This counts only markers of P's colour, not all markers.
+
+### 8.2 Winner determination (1st place)
+
+The winner (rank 1) is determined by whichever victory condition triggered:
+
+1. **Ring-elimination victory (Section 7.1):** The player who reached `eliminatedRingsTotal ≥ victoryThreshold` is 1st.
+2. **Territory-control victory (Section 7.2):** The player who reached `territorySpaces ≥ territoryVictoryThreshold` is 1st.
+3. **Last-player-standing victory (Section 7.3):** The sole player with real actions for 3 consecutive rounds is 1st.
+4. **Stalemate (Section 7.4):** The player ranked highest by the tiebreaker cascade (§8.3) is 1st.
+
+### 8.3 Ranking remaining players (2nd through Nth)
+
+For all players except the winner, compute a **ranking score** using the following tiebreaker cascade. Players are sorted in descending order (higher values are better):
+
+| Priority | Criterion | Description | Comparison |
+| -------- | --------- | ----------- | ---------- |
+| 1 | `territorySpaces[P]` | Collapsed spaces controlled by P | More is better |
+| 2 | `eliminatedRingsTotal[P]` | Rings credited to P as eliminated (including stalemate conversion) | More is better |
+| 3 | `markersOnBoard[P]` | Markers of P's colour on the board at game end | More is better |
+| 4 | `eliminationTurn[P]` | Turn when P was **permanently** eliminated (∞ if never permanently eliminated) | Later is better (∞ > any finite value) |
+
+**Tie handling:** If two or more players are exactly equal on all four criteria, they share the same rank. For example, if Players 2 and 3 are tied for 2nd place, both receive rank 2, and the next player receives rank 4 (not 3).
+
+**Note:** Player ID is explicitly **not** used as a tiebreaker. Ties on all criteria result in shared ranks.
+
+### 8.4 Rank assignment algorithm
+
+```typescript
+/** Sentinel value representing "never eliminated" */
+const NEVER_ELIMINATED = Infinity
+
+interface PlayerRankingData {
+  id: PlayerId
+  territorySpaces: number        // Collapsed spaces controlled
+  eliminatedRingsTotal: number   // Rings credited as eliminated
+  markersOnBoard: number         // Markers of this player's colour on board
+  eliminationTurn: number        // Turn **permanently** eliminated, or NEVER_ELIMINATED
+}
+
+/**
+ * Compare two players for ranking. Returns:
+ *   positive if a ranks higher than b
+ *   negative if a ranks lower than b
+ *   0 if tied on all criteria
+ */
+function compareRankingScore(a: PlayerRankingData, b: PlayerRankingData): number {
+  // Priority 1: Territory (more is better)
+  if (a.territorySpaces !== b.territorySpaces)
+    return a.territorySpaces - b.territorySpaces
+
+  // Priority 2: Eliminated rings (more is better)
+  if (a.eliminatedRingsTotal !== b.eliminatedRingsTotal)
+    return a.eliminatedRingsTotal - b.eliminatedRingsTotal
+
+  // Priority 3: Markers on board (more is better)
+  if (a.markersOnBoard !== b.markersOnBoard)
+    return a.markersOnBoard - b.markersOnBoard
+
+  // Priority 4: Elimination turn (later is better; never > any finite)
+  // Handle infinity comparison explicitly
+  const aElim = a.eliminationTurn
+  const bElim = b.eliminationTurn
+  if (aElim === NEVER_ELIMINATED && bElim !== NEVER_ELIMINATED) return 1   // a never eliminated, b was
+  if (bElim === NEVER_ELIMINATED && aElim !== NEVER_ELIMINATED) return -1  // b never eliminated, a was
+  if (aElim !== bElim) return aElim - bElim  // Both finite: later turn wins
+
+  return 0  // Tied on all criteria
+}
+
+function computeFinalRanks(
+  winner: PlayerId,
+  players: PlayerRankingData[]
+): Map<PlayerId, number> {
+  const ranks = new Map<PlayerId, number>()
+
+  // Winner is always rank 1
+  ranks.set(winner, 1)
+
+  // Filter out winner and sort remaining by ranking score (descending)
+  const remaining = players.filter(p => p.id !== winner)
+  remaining.sort((a, b) => compareRankingScore(b, a))  // descending
+
+  // Assign ranks 2..N, handling ties
+  let currentRank = 2
+  for (let i = 0; i < remaining.length; i++) {
+    if (i > 0 && compareRankingScore(remaining[i], remaining[i - 1]) === 0) {
+      // Tie: same rank as previous player
+      ranks.set(remaining[i].id, ranks.get(remaining[i - 1].id)!)
+    } else {
+      ranks.set(remaining[i].id, currentRank)
+    }
+    currentRank++  // Always increment, even on ties (creates gaps)
+  }
+
+  return ranks
+}
+```
+
+### 8.5 Examples
+
+#### Example 1: 2-player ring-elimination victory
+
+- Player 1 reaches 50%+ eliminated rings on turn 45.
+- Result: Player 1 is 1st (winner), Player 2 is 2nd (sole loser).
+
+#### Example 2: 3-player territory victory with tiebreaker
+
+- Player 2 reaches 50%+ territory on turn 60.
+- At game end: Player 1 has 15 territory, 10 eliminations; Player 3 has 12 territory, 14 eliminations.
+- Ranking: Player 2 is 1st. Player 1 (15 territory) beats Player 3 (12 territory) on Priority 1.
+- Result: Player 2 is 1st, Player 1 is 2nd, Player 3 is 3rd.
+
+#### Example 3: 4-player LPS with permanent vs temporary elimination
+
+- Player 3 wins by LPS on turn 80.
+- Player 1 was **permanently eliminated** on turn 25 (lost all rings everywhere—none in hand, none controlled, none buried).
+- Player 4 was **temporarily eliminated** on turn 40 (lost turn-material but still had 2 rings buried in P2's stacks).
+- On turn 55, P2's capture revealed P4's ring on top → P4 regained turn-material and is no longer eliminated.
+- At game end: Player 2 has 8 territory, Player 4 has 8 territory, both have 5 eliminations, 3 markers. P2 was never eliminated; P4 was only temporarily eliminated (now has rings again).
+- Ranking: Both P2 and P4 have `eliminationTurn = ∞` (neither was permanently eliminated). Tied on all criteria.
+- Result: Player 3 is 1st, Players 2 and 4 **share 2nd place**, Player 1 is 4th.
+
+#### Example 4: Permanent elimination tracking
+
+- Player 1 loses all controlled stacks on turn 30 but has 2 rings buried under Player 2's stacks → **temporarily eliminated** (no turn-material, but rings exist).
+- On turn 45, Player 2's capture eliminates a ring from that stack, revealing Player 1's ring on top → Player 1 regains turn-material.
+- Player 1 later loses all rings (none controlled, none buried, none in hand) on turn 60 → **permanently eliminated**.
+- `eliminationTurn[P1] = 60` (the permanent elimination turn, not the temporary one at turn 30).
+
+#### Example 5: Stalemate with no winner determined by victory condition
+
+- Game reaches stalemate (no player has any legal action).
+- All rings in hand are converted to eliminated rings.
+- Apply tiebreaker cascade to all players; highest-ranked player is the winner (1st).
+- Remaining players ranked by the same cascade.
 
 ---
 

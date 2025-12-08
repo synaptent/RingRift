@@ -9,7 +9,7 @@
       "id": "multi_phase.placement_capture_line",
       "version": "v2",
       "category": "turn",
-      "description": "Placement triggers capture opportunity followed by line detection. Player 1 places a ring, creating a stack that must move. The capture leads to a chain capture, and the final landing completes a line of 5 markers.",
+      "description": "Placement triggers capture opportunity followed by line detection. Player 1 places a ring, creating a stack that must move. The capture leads to a chain capture, and the final landing completes a line of 5 markers. The line reward uses the zero-collapse option (no markers collapsed) to keep ring counts intact for the subsequent phases.",
       "tags": ["multi_phase", "turn", "placement", "capture", "chain_capture", "line_processing"],
       "source": "manual",
       "createdAt": "2025-12-01T11:30:00.000Z",
@@ -201,7 +201,7 @@
           "currentPhase": "ring_placement",
           "gameStatus": "active",
           "stackCount": 2,
-          "markerCount": 5,
+          "markerCount": 4,
           "sInvariantDelta": 4
         }
       }

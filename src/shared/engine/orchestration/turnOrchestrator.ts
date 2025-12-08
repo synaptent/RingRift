@@ -1244,24 +1244,34 @@ export function processTurn(
     finalState.gameStatus === 'active' &&
     !suppressForcedEliminationForTerritory
   ) {
-    const player = finalState.currentPlayer;
-    const summary = computeGlobalLegalActionsSummary(finalState, player);
+    // Only surface forced elimination after territory processing or when
+    // already in the forced_elimination phase. This avoids jumping straight
+    // to forced elimination from ring_placement when no placements exist; we
+    // still need to traverse movement/line/territory phases per RR-CANON-R075.
+    const canSurfaceForcedElimination =
+      finalState.currentPhase === 'territory_processing' ||
+      finalState.currentPhase === 'forced_elimination';
 
-    if (
-      summary.hasTurnMaterial &&
-      summary.hasForcedEliminationAction &&
-      !summary.hasGlobalPlacementAction &&
-      !summary.hasPhaseLocalInteractiveMove
-    ) {
-      const forcedDecision = createForcedEliminationDecision(finalState);
-      if (forcedDecision && forcedDecision.options.length > 0) {
-        // Transition to forced_elimination phase (7th phase in the state machine)
-        finalState = {
-          ...finalState,
-          currentPhase: 'forced_elimination' as GamePhase,
-        };
-        finalPendingDecision = forcedDecision;
-        finalStatus = 'awaiting_decision';
+    if (canSurfaceForcedElimination) {
+      const player = finalState.currentPlayer;
+      const summary = computeGlobalLegalActionsSummary(finalState, player);
+
+      if (
+        summary.hasTurnMaterial &&
+        summary.hasForcedEliminationAction &&
+        !summary.hasGlobalPlacementAction &&
+        !summary.hasPhaseLocalInteractiveMove
+      ) {
+        const forcedDecision = createForcedEliminationDecision(finalState);
+        if (forcedDecision && forcedDecision.options.length > 0) {
+          // Transition to forced_elimination phase (7th phase in the state machine)
+          finalState = {
+            ...finalState,
+            currentPhase: 'forced_elimination' as GamePhase,
+          };
+          finalPendingDecision = forcedDecision;
+          finalStatus = 'awaiting_decision';
+        }
       }
     }
   }
@@ -2035,6 +2045,28 @@ function processPostMovePhases(
           };
         }
         // Territory phase move was applied and no more regions, proceed to victory/turn advancement.
+      }
+    }
+
+    // If territory processing completed and the player is blocked with stacks
+    // (no placements anywhere, no movement/capture, but has material), surface
+    // forced elimination as the next phase instead of rotating turns.
+    const summary = computeGlobalLegalActionsSummary(
+      stateMachine.gameState,
+      stateMachine.gameState.currentPlayer
+    );
+    if (
+      summary.hasTurnMaterial &&
+      summary.hasForcedEliminationAction &&
+      !summary.hasGlobalPlacementAction &&
+      !summary.hasPhaseLocalInteractiveMove
+    ) {
+      stateMachine.transitionTo('forced_elimination');
+      const forcedDecision = createForcedEliminationDecision(stateMachine.gameState);
+      if (forcedDecision && forcedDecision.options.length > 0) {
+        return {
+          pendingDecision: forcedDecision,
+        };
       }
     }
   }

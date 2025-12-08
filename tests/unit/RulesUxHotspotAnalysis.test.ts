@@ -239,6 +239,38 @@ describe('RulesUxHotspotAnalysis – happy path', () => {
     expect(md).toContain('Context: anm_forced_elimination');
     expect(md).toContain('Context: structural_stalemate');
   });
+
+  it('skips Markdown output when --output-md is an empty string', async () => {
+    const fixturePath = path.resolve(
+      __dirname,
+      '../fixtures/rules_ux_hotspots/rules_ux_aggregates.square8_2p.sample.json'
+    );
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rules-ux-hotspots-nomd-'));
+    const jsonOutPath = path.join(tmpDir, 'summary.json');
+    const mdOutPath = path.join(tmpDir, 'summary.md');
+
+    const exitCode = await main([
+      'node',
+      'analyze_rules_ux_telemetry.ts',
+      '--input',
+      fixturePath,
+      '--output-json',
+      jsonOutPath,
+      '--output-md',
+      '',
+      '--min-events',
+      '10',
+      '--top-k',
+      '3',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(jsonOutPath)).toBe(true);
+    expect(fs.existsSync(mdOutPath)).toBe(false);
+
+    const summary = JSON.parse(fs.readFileSync(jsonOutPath, 'utf8')) as any;
+    expect(summary.topByHelpOpensPer100Games.length).toBeGreaterThan(0);
+  });
 });
 
 describe('RulesUxHotspotAnalysis – validation failures', () => {

@@ -5,7 +5,7 @@
 
 > **SSoT alignment:** This document is a derived view over the following canonical sources:
 >
-> - **Single Source of Truth (SSoT):** The canonical rules defined in `RULES_CANONICAL_SPEC.md` (plus `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`) are the **ultimate authority** for RingRift game semantics. All implementations must derive from and faithfully implement these canonical rules.
+> - **Single Source of Truth (SSoT):** The canonical rules defined in `RULES_CANONICAL_SPEC.md` (plus `ringrift_complete_rules.md` / `ringrift_compact_rules.md`) are the **ultimate authority** for RingRift game semantics. All implementations must derive from and faithfully implement these canonical rules.
 > - **Implementation hierarchy:**
 >   - **TS shared engine** (`src/shared/engine/**`) is the _primary executable derivation_ of the canonical rules spec. If the TS engine and the canonical rules document disagree, that is a bug in the TS engine.
 >   - **Python AI service** (`ai-service/app/**`) is a _host adapter_ that must mirror the canonical rules. If Python disagrees with the canonical rules or the validated TS engine behaviour, Python must be updated—never the other way around.

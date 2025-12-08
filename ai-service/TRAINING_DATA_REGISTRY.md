@@ -16,13 +16,15 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-| Database               | Board Type | Players | Status        | Gate Summary                     | Notes                                                                                                                                                                                                   |
-| ---------------------- | ---------- | ------- | ------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `canonical_square8.db` | square8    | 2       | **canonical** | db_health.canonical_square8.json | Regenerated 2025-12-07 via `generate_canonical_selfplay.py` (1 game, canonical_ok=true; parity gate passed with end-of-game-only current_player mismatch). Use as the current canonical square8 source. |
+| Database | Board Type | Players | Status | Gate Summary | Notes |
+| -------- | ---------- | ------- | ------ | ------------ | ----- |
+| _None_   | –          | –       | –      | –            | Square8 regeneration is pending (see below); rerun the gate before training. |
 
 ### Pending Re-Gate / Needs Regeneration
 
-_None._ All previously pending DBs were removed during the 2025-12-08 cleanup; regenerate fresh canonical DBs before training.
+| Database               | Board Type | Players | Status          | Gate Summary                           | Notes                                                                                                                                                                                                                         |
+| ---------------------- | ---------- | ------- | --------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_square8.db` | square8    | 2       | **pending_gate** | db_health.canonical_square8.json       | Latest sandbox attempt via `generate_canonical_selfplay.py --board-type square8 --num-games 4` failed during the Python self-play soak with `OMP: Error #179: Function Can't open SHM2 failed` (SHM permission in sandbox). DB currently contains 1 game; parity gate was not executed (`canonical_ok=false`, `parity_summary.error=failed_to_parse_parity_summary`). Rerun off-sandbox or on a host with SHM/OMP support, then refresh the summary + parity gate artifacts. |
 
 ### Legacy / Non-Canonical
 
@@ -44,6 +46,7 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 - Replayed `canonical_square8.db` and `canonical_square8_2p.db` via `check_canonical_phase_history.py`; both hit late-turn `Not your turn` failures (matching the parity gate structural errors). Treat them as pending re-generation.
 - `canonical_square19.db` currently has zero games despite an older parity gate artifact; regenerate and re-gate before use.
 - Hex assets remain deprecated until a radius-12 canonical DB is generated; keep the HexNeuralNet alias/import fix in mind when re-running the parity sweep.
+- 2025-12-08 sandbox attempt to regenerate `canonical_square8.db` via `generate_canonical_selfplay.py` failed before the parity gate due to OpenMP shared-memory permissions (`OMP: Error #179: Function Can't open SHM2 failed`). The resulting `db_health.canonical_square8.json` has `canonical_ok=false` and an empty `canonical_history` block. Re-run the generator on a host with SHM permissions, then replace the DB and summaries.
 
 ---
 
@@ -188,4 +191,4 @@ parity issues before promoting a DB to the canonical training allowlist.
 
 ---
 
-_Last updated: 2025-12-05_
+_Last updated: 2025-12-08_

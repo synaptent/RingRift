@@ -17,7 +17,7 @@
 > **How to use this doc.** Start with the quick map below, then jump to the relevant section; keep the Compact Spec open for concise semantics and use the Complete Rules for narrative/examples.
 > **Change log anchor.** When rules change, record the delta in §14 (“Change log & traceability”) with pointers into commits/tests that enforced the change.
 >
-> **Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`ringrift_complete_rules.md`](ringrift_complete_rules.md) ("Complete Rules") and [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
+> **Purpose.** This document is a normalization of the RingRift rules for engine/AI implementation and verification. It reconciles [`ringrift_complete_rules.md`](ringrift_complete_rules.md) ("Complete Rules") and [`ringrift_compact_rules.md`](ringrift_compact_rules.md) ("Compact Spec") into a single canonical, implementation-ready ruleset.
 
 The canonical rules here are binding whenever the two source documents diverge. For each rule we provide:
 
@@ -66,25 +66,25 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R001] Board type configuration.**
   - For each `BoardType ∈ { square8, square19, hexagonal }`, define:
     - `size`, `totalSpaces`, `ringsPerPlayer`, `lineLength`, `movementAdjacency`, `lineAdjacency`, `territoryAdjacency`, `boardGeometry` exactly as in the table in the Compact Spec (§1.1).
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.2.1, 16.10.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.2.1, 16.10.
 
 - **[RR-CANON-R002] Coordinate systems.**
   - Square boards use integer coordinates `(x,y)` with `0 ≤ x,y < size`.
   - Hex board uses cube coordinates `(x,y,z)` with `x + y + z = 0` and `max(|x|,|y|,|z|) ≤ size-1`.
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.1.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.1.
 
 - **[RR-CANON-R003] Adjacency relations.**
   - Movement and line directions use `movementAdjacency` / `lineAdjacency` from RR-CANON-R001.
   - Territory connectivity uses `territoryAdjacency` from RR-CANON-R001.
   - Straight-line rays along these directions are used for movement, capture, and line detection.
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §§1.2, 3, 4, 5; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§2.1, 3.1, 8, 11, 12, 16.9.4.1.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.2, 3, 4, 5; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§2.1, 3.1, 8, 11, 12, 16.9.4.1.
 
 ### 1.2 Players and identifiers
 
 - **[RR-CANON-R010] Player identifiers.**
   - Each player has a unique `PlayerId`.
   - Exactly 2–4 players participate; 3 is the default.
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.3, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.1, 1.2, 13, 15.1, 19×19/8×8 setup sections.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.1, 1.2, 13, 15.1, 19×19/8×8 setup sections.
 
 ### 1.3 Rings, stacks, and control
 
@@ -96,20 +96,20 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - At all times, the total number of rings of P's colour that are **in play** (on the board in any stack, regardless of which player currently controls those stacks, plus in P's hand) must be ≤ this `ringsPerPlayer` value for the chosen board type.
   - Rings of other colours that P has captured and that are buried in stacks P controls **do not** count against P's `ringsPerPlayer` cap; they continue to belong, by colour, to their original owners for conservation, elimination, and victory accounting.
   - Eliminated rings of P's colour are permanently out of play and do not refresh or expand P's supply beyond `ringsPerPlayer`; they only change how much of that fixed supply is currently eliminated versus still in play.
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md:18) §1.1, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:340) §§1.2.1, 3.2.1, 16.3–16.4, 16.9.2.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:340) §§1.2.1, 3.2.1, 16.3–16.4, 16.9.2.
 
 - **[RR-CANON-R021] Stack definition.**
   - A stack is an ordered sequence of one or more rings on a single board cell.
   - Rings are ordered bottom→top.
   - A cell may contain **either** a stack, **or** a marker, **or** be empty, **or** be collapsed; never more than one of these simultaneously.
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7.
 
 - **[RR-CANON-R022] Control and cap height.**
   - `controllingPlayer` of a stack is the color of its top ring.
   - `stackHeight = rings.length`.
   - `capHeight` is the number of consecutive rings from the top that belong to `controllingPlayer`.
   - Control changes whenever the top ring changes color (due to overtaking or elimination).
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5.1–5.3, 7.2, 15.4 Q16.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5.1–5.3, 7.2, 15.4 Q16.
 
 - **[RR-CANON-R023] Stack mutation operations.**
   - Legal stack mutations are limited to:
@@ -119,7 +119,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Removing an entire cap (all consecutive top rings of the controlling color) via forced elimination, line processing, or region processing.
     - Removing all rings in a region during territory collapse.
   - Stacks may **never** be split or reordered in any other way.
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §§2–4, 5, 6; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7, 9–12, 15.4 Q1.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§2–4, 5, 6; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5–7, 9–12, 15.4 Q1.
 
 ### 1.4 Markers and collapsed spaces
 
@@ -128,7 +128,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Each marker belongs to exactly one player.
   - Markers are created only as departure markers from movement/capture (RR-CANON-R082).
   - Markers may be flipped to another player or collapsed into Territory as movement/capture passes over them.
-  - References: [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) §§1.3, 3.2, 4.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§3.2.2, 8, 11, 12, 16.5–16.6.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 3.2, 4.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§3.2.2, 8, 11, 12, 16.5–16.6.
 
 - **[RR-CANON-R031] Collapsed spaces.**
   - A collapsed space is a cell permanently claimed as Territory by exactly one player.
@@ -574,6 +574,111 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Line formation and Territory disconnection created mid-chain are **not processed** until the entire chain (and movement phase) ends.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §4.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.3, 10.3, 15.3, 15.4 Q5, Q9, Q12.
 
+### 5.4 Recovery action
+
+- **[RR-CANON-R110] Recovery action eligibility.**
+  - A player P may perform a recovery action during the movement phase **if and only if** all of the following conditions are met:
+    - P controls **zero stacks** (no cell has a top ring belonging to P).
+    - P has **zero rings in hand** (`ringsInHand[P] == 0`).
+    - P has **at least one marker** on the board.
+    - P has **at least one buried ring**: a ring of P's colour that is **not** at the top position of any stack (i.e., it is underneath at least one other ring).
+  - A player meeting these conditions is considered "temporarily eliminated" but retains the ability to act via recovery.
+  - Recovery action is a **real action** for Last-Player-Standing purposes (RR-CANON-R172) because it is an interactive, voluntary move—unlike forced elimination which is mandatory.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.
+
+- **[RR-CANON-R111] Recovery action marker slide.**
+  - When P performs a recovery action:
+    - P selects one of their existing markers on the board.
+    - P slides that marker to an **adjacent empty cell**:
+      - For square boards: Moore neighborhood (8 directions, including diagonals).
+      - For hexagonal boards: hex-adjacency (6 directions).
+    - The destination cell must be:
+      - Not collapsed.
+      - Empty (no stack, no marker).
+    - The marker slide does **not** create a departure marker at the original position; the original cell becomes empty.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.2.
+
+- **[RR-CANON-R112] Recovery action line requirement.**
+  - A recovery marker slide is legal **only if** the resulting marker position completes a line of **exactly `lineLength`** consecutive markers of P's colour (as defined by `lineAdjacency` for the board type).
+  - The line must be exactly the minimum required length for the board/player-count configuration:
+    - `square8` 2-player: 4 markers.
+    - `square8` 3-4 player: 3 markers.
+    - `square19`: 4 markers.
+    - `hexagonal`: 4 markers.
+  - Overlength lines (longer than `lineLength`) do **not** satisfy this requirement; the slide must complete a line of exactly the required length.
+  - If no marker slide can complete an exact-length line, P has no legal recovery action and remains temporarily eliminated.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.3.
+
+- **[RR-CANON-R113] Recovery action buried ring extraction.**
+  - To pay the mandatory self-elimination cost for the line formed by the recovery slide, P must **extract a buried ring**:
+    - P selects any stack (controlled by any player) that contains at least one buried ring of P's colour.
+    - The **bottommost** ring belonging to P in that stack is removed.
+    - That ring is credited to P as a self-eliminated ring (contributes to P's `eliminatedRingsTotal`).
+    - The stack's height decreases by 1; all rings above the extracted position shift down.
+    - Stack control is determined by the new top ring (which is unchanged unless the stack becomes empty).
+    - If the stack becomes empty after extraction, remove it from the board.
+  - This extraction increases the global `E` (eliminated rings) component of the S-invariant, ensuring termination progress.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.4.
+
+- **[RR-CANON-R114] Recovery action cascade processing.**
+  - After the line is processed (markers collapse to territory), if the collapse creates one or more **disconnected territory regions** that P could claim:
+    - Each claimable region is processed per standard territory rules (RR-CANON-R140–R146).
+    - Each territory claim requires its own self-elimination cost.
+    - For recovery actions, **each additional self-elimination must be paid by extracting another buried ring** from a stack **outside** the region being claimed.
+    - If P has no buried rings in stacks outside a given region, that region cannot be claimed and remains unprocessed.
+  - After all line and territory processing completes, victory conditions are evaluated per RR-CANON-R170–R173.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§4.5.5–4.5.7.
+
+- **[RR-CANON-R115] Recovery action recording semantics.**
+  - Recovery action recording follows the state machine patterns established in RR-CANON-R074–R076, with specific adaptations for the recovery context:
+  - **Phase: `movement`**
+    - The `recovery_slide` move is an interactive move available in the `movement` phase when recovery eligibility (RR-CANON-R110) is met.
+    - Move payload structure:
+
+      ```json
+      {
+        type: 'recovery_slide',
+        markerFrom: PosKey,        // source marker position
+        markerTo: PosKey,          // adjacent destination
+        extractionStack: PosKey    // stack for buried ring extraction
+      }
+      ```
+
+    - Effect of `recovery_slide`:
+      - Marker moves from `markerFrom` to `markerTo`.
+      - Original cell becomes empty (no departure marker).
+      - Line of exactly `lineLength` is detected and collapsed.
+      - All markers in the line become collapsed spaces owned by P.
+      - Buried ring extracted from `extractionStack` (self-elimination for line).
+      - P's `territorySpaces` increases by `lineLength`.
+      - P's `eliminatedRingsTotal` increases by 1.
+  - **Line processing bundled into `recovery_slide`:**
+    - Because recovery requires exactly one line of exactly `lineLength` (no choice about which line or how to process it), the line collapse and self-elimination are bundled into the `recovery_slide` move effect.
+    - This is analogous to how `move_stack` bundles marker interactions along the movement path.
+    - After `recovery_slide`, the engine does **not** enter a separate `line_processing` phase.
+  - **Phase: `territory_processing` (if cascades exist)**
+    - If the line collapse creates disconnected territory regions per RR-CANON-R140–R142, the engine enters `territory_processing` as usual.
+    - P processes each claimable region via standard `process_territory_region` decisions.
+    - Self-elimination for each territory claim uses `eliminate_rings_from_stack` with extended semantics:
+
+      ```json
+      {
+        type: 'eliminate_rings_from_stack',
+        targetStack: PosKey,
+        eliminationMode: 'buried_extraction'  // NEW field for recovery context
+      }
+      ```
+
+    - When `eliminationMode == 'buried_extraction'`:
+      - Instead of eliminating a cap, extract P's bottommost ring from `targetStack`.
+      - Stack height decreases; rings above shift down.
+      - Ring credited to P as self-eliminated.
+    - If no buried rings remain in stacks outside a claimable region, that region cannot be processed and `no_territory_action` is recorded for it.
+  - **Turn completion:**
+    - After all processing completes, victory checks per RR-CANON-R170–R173.
+    - Turn rotates per RR-CANON-R201.
+  - References: RR-CANON-R074–R076, RR-CANON-R121–R122, RR-CANON-R144–R145.
+
 ---
 
 ## 6. Lines and Graduated Line Rewards
@@ -719,8 +824,9 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Last-player-standing is a third formal victory condition, alongside ring-elimination (RR-CANON-R170) and Territory-control (RR-CANON-R171).
   - For the purposes of this rule, a **real action** for a player P on their own turn means any legal:
     - ring placement (RR-CANON-R080–R082),
-    - non-capture movement (RR-CANON-R090–R092), or
-    - overtaking capture segment or chain (RR-CANON-R100–R103),
+    - non-capture movement (RR-CANON-R090–R092),
+    - overtaking capture segment or chain (RR-CANON-R100–R103), or
+    - recovery action (RR-CANON-R110–R115),
       and **does not** include pure forced-elimination actions from RR-CANON-R100.
   - A **full round of turns** is one contiguous cycle of turns in player order in which each player receives exactly one turn.
   - A player P wins by last-player-standing if all of the following hold:
@@ -734,7 +840,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - they control no stacks on the board and have no legal placements (because they have no rings in hand or all placements would be illegal); or
     - they do control stacks but have no legal placements, no legal moves or overtaking captures, and no other legal turn actions at all, so their only possible turn action is forced elimination (RR-CANON-R100).
   - **Empty/temporarily inactive seats still take turns:** All seats, including those with no stacks and no rings in hand, must still traverse every phase of their turn and record the canonical no-action/FE moves required by RR-CANON-R075. There is no skipping of empty seats for LPS purposes; their turns are needed to satisfy the three full-round condition.
-  - Temporarily inactive players prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout all three qualifying rounds above. A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolour stack whose top ring becomes their colour or by reducing the height of a stack they control so that it can move again. If any such player regains a real action before all three rounds have been completed, the last-player-standing condition is not met and must be re-established from that point.
+  - Temporarily inactive players prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout all three qualifying rounds above. A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolour stack whose top ring becomes their colour or by reduction of the height of a stack they control so that it can move again. If any such player regains a real action before all three rounds have been completed, the last-player-standing condition is not met and must be re-established from that point.
   - References: [`ringrift_simple_human_rules.md`](ringrift_simple_human_rules.md:321) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1376) §13.3.
 
 - **[RR-CANON-R173] Global stalemate and tiebreaks.**
@@ -748,6 +854,93 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       4. If still tied, last player to have completed a valid turn action.
     - Highest rank wins.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §7.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§13.4, 15.4 Q11.
+
+### 8.5 Player Ranking
+
+- **[RR-CANON-R175] Turn-material, temporary elimination, and permanent elimination definitions.**
+  - **Turn-material:** A player P has **turn-material** if and only if at least one of the following holds:
+    - P controls at least one stack on the board (a stack whose top ring is P's colour); or
+    - `P.ringsInHand > 0`.
+  - Rings that are **buried** (not on top of a stack) do **not** grant turn-material to their owner.
+  - **Temporarily eliminated:** A player P is **temporarily eliminated** at turn T if P lacks turn-material at the start of turn T but still has at least one ring somewhere in the game (buried in another player's stack, for example). Temporary elimination is reversible: if stack control changes later reveal P's buried ring on top, P regains turn-material and is no longer eliminated.
+  - **Permanently eliminated:** A player P is **permanently eliminated** at turn T if P has **no ring material of any kind remaining anywhere in the game**:
+    - `P.ringsInHand == 0`, AND
+    - P controls no stacks (no stack has P's ring on top), AND
+    - P has no rings buried in any stack on the board (no ring of P's colour exists anywhere in any stack).
+  - Permanent elimination is **irreversible**: once a player has zero rings in the game, they cannot regain material.
+  - **Elimination turn for ranking:** `eliminationTurn[P]` = the first turn number T at which player P was **permanently eliminated** (i.e., had zero rings anywhere). This is distinct from temporary elimination.
+    - If P is never permanently eliminated (still has rings in any form at game end), `eliminationTurn[P] = NEVER_ELIMINATED` (∞).
+    - A player who was temporarily eliminated but later regained turn-material (via buried rings resurfacing) has `eliminationTurn[P] = NEVER_ELIMINATED` if they still have rings at game end.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.1.
+
+- **[RR-CANON-R176] Victory-type independence of ranking.**
+  - The same tiebreaker cascade (RR-CANON-R177) applies to rank **all** players regardless of how the game ended:
+    - Ring-elimination victory (RR-CANON-R170).
+    - Territory-control victory (RR-CANON-R171).
+    - Last-player-standing victory (RR-CANON-R172).
+    - Global stalemate (RR-CANON-R173).
+  - The winner is always the player who triggered the victory condition. The ranking cascade determines only the **relative ordering** of all other players (and is used to break ties when multiple players are otherwise equal).
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.2.
+
+- **[RR-CANON-R177] Ranking tiebreaker cascade.**
+  - To rank players from best to worst, evaluate the following criteria in strict priority order:
+    1. **Territory (collapsed spaces)**: More is better.
+    2. **Eliminated rings total**: More is better. Includes rings converted from hand at game end (RR-CANON-R173).
+    3. **Markers on board**: Count of markers belonging to player P specifically (not total markers). More is better.
+    4. **Permanent elimination turn**: Later is better. A player who was never permanently eliminated (`eliminationTurn = NEVER_ELIMINATED`) ranks higher than any player who was permanently eliminated. Temporary elimination (loss of turn-material with buried rings remaining) does not affect this criterion.
+  - If two players are tied on all four criteria, they share the same rank.
+  - Player ID (seat number) is **not** a tiebreaker; ties are genuine and result in shared ranks.
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.3.
+
+- **[RR-CANON-R178] Rank assignment algorithm.**
+  - Define the comparison function:
+
+    ```text
+    compareRankingScore(A, B):
+      if A.territorySpaces ≠ B.territorySpaces: return sign(A.territorySpaces − B.territorySpaces)
+      if A.eliminatedRingsTotal ≠ B.eliminatedRingsTotal: return sign(A.eliminatedRingsTotal − B.eliminatedRingsTotal)
+      if A.markersOnBoard ≠ B.markersOnBoard: return sign(A.markersOnBoard − B.markersOnBoard)
+      if A.eliminationTurn = NEVER_ELIMINATED and B.eliminationTurn ≠ NEVER_ELIMINATED: return +1
+      if B.eliminationTurn = NEVER_ELIMINATED and A.eliminationTurn ≠ NEVER_ELIMINATED: return −1
+      if A.eliminationTurn ≠ B.eliminationTurn: return sign(A.eliminationTurn − B.eliminationTurn)
+      return 0  // tied on all criteria
+    ```
+
+  - Sort all players by `compareRankingScore` in descending order (highest score = rank 1).
+  - Assign ranks using **standard competition ranking** (1224 ranking):
+    - Players with equal scores share the same rank.
+    - The next distinct rank skips by the count of tied players.
+    - Example: If players A, B share rank 1, the next player gets rank 3 (not rank 2).
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.4.
+
+- **[RR-CANON-R179] Rank assignment examples.**
+  - **Example 1 (Ring-elimination, 3 players):**
+    - P1 reaches `victoryThreshold` eliminated rings → P1 wins (rank 1).
+    - P2: territory=5, elimRings=10, markers=3, never permanently eliminated.
+    - P3: territory=5, elimRings=10, markers=2, never permanently eliminated.
+    - Cascade: P2 and P3 tie on territory and elimRings; P2 has more markers → P2 rank 2, P3 rank 3.
+  - **Example 2 (LPS victory, 4 players):**
+    - P2 wins by last-player-standing → P2 rank 1.
+    - P1: territory=0, elimRings=5, markers=0, permanently eliminated turn 20 (zero rings anywhere).
+    - P3: territory=0, elimRings=5, markers=0, permanently eliminated turn 15 (zero rings anywhere).
+    - P4: territory=0, elimRings=5, markers=0, never permanently eliminated (still has buried rings).
+    - Cascade: P4 never permanently eliminated → P4 rank 2. P1 permanently eliminated later than P3 → P1 rank 3, P3 rank 4.
+  - **Example 3 (Territory victory with tie):**
+    - P1 reaches `territoryVictoryThreshold` → P1 wins (rank 1).
+    - P2: territory=10, elimRings=8, markers=4, never permanently eliminated.
+    - P3: territory=10, elimRings=8, markers=4, never permanently eliminated.
+    - Tied on all criteria → P2 and P3 share rank 2. Final: P1=1, P2=2, P3=2.
+  - **Example 4 (Temporary vs permanent elimination):**
+    - P1 loses all controlled stacks on turn 30 but has 2 rings buried under P2's stacks → **temporarily eliminated** (no turn-material, but rings exist).
+    - On turn 45, P2's capture eliminates a ring from that stack, revealing P1's ring on top → P1 regains turn-material and is no longer eliminated.
+    - P1 later loses all rings (none controlled, none buried, none in hand) on turn 60 → **permanently eliminated**.
+    - `eliminationTurn[P1] = 60` (the permanent elimination turn, not the temporary one).
+  - **Example 5 (Global stalemate):**
+    - No stacks remain; rings in hand converted to eliminated rings.
+    - P1: territory=12, elimRings=15, markers=6.
+    - P2: territory=12, elimRings=15, markers=6.
+    - Tied on all criteria → P1 and P2 share rank 1 (co-winners).
+  - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §8.5.
 
 ---
 

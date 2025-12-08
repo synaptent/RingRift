@@ -242,7 +242,7 @@ Operational drills completed:
 
 **P1 – Rules/FAQ scenario backfill**
 
-- Add multi-choice turn scenarios (chain → line → territory) across square8/19 and hex; update `RULES_SCENARIO_MATRIX.md` for any new FAQ mappings.
+- [x] Add multi-choice turn scenarios (chain → line → territory) across square8/19 and hex; update `RULES_SCENARIO_MATRIX.md` for any new FAQ mappings (see `tests/scenarios/MultiPhaseTurn.contractVectors.test.ts`).
 
 **P1 – AI boundary & observability**
 
@@ -303,6 +303,7 @@ Operational drills completed:
     - Removed (history fail): fixtures/golden_games/golden_square8_2p.db, legacy_noncanonical/canonical_square19.bad.db
   - [ ] Archive parity/history results alongside DB (or update registry entry)
 - [ ] Regenerate canonical DBs via `ai-service/scripts/generate_canonical_selfplay.py` starting with `canonical_square8.db`, attach emitted gate summaries next to the DBs, refresh the CI golden replay pack, and update `ai-service/TRAINING_DATA_REGISTRY.md` accordingly.
+  - Attempted `generate_canonical_selfplay.py --board-type square8 --num-games 4` in sandbox; Python self-play failed with `OMP: Error #179: Function Can't open SHM2 failed` (no SHM perms), so `canonical_ok=false` and parity gate not executed. Rerun off-sandbox/SHM-enabled host before promoting DB.
 - [x] Add and keep a small golden replay pack in CI that replays in TS + Python and fails on any semantic drift
   - [x] Exported new canonical golden from `canonical_square8_2p.db` -> `tests/fixtures/golden-games/golden_square8_2p_d033.json`
 - [x] Audit orchestrator/Python `game_engine.py` changes for silent transitions or forced elimination without recorded moves
@@ -547,6 +548,7 @@ Operational drills completed:
 - [ ] `docs/UX_RULES_CONCEPTS_INDEX.md` – Rules concepts index and cross-links
 - [ ] `docs/ux/rules_iterations/UX_RULES_IMPROVEMENT_ITERATION_0002.md` – Telemetry-driven rules UX iteration spec
 - [ ] `ai-service/TRAINING_DATA_REGISTRY.md` – Canonical vs legacy DB status after new gates
+- [ ] `docs/architecture/FSM_EXTENSION_STRATEGY.md` – FSM extension plan and roadmap (new)
 
 ### 4.2 CI/CD
 

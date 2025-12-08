@@ -15,7 +15,7 @@ import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';
 import { Trend, Rate, Counter } from 'k6/metrics';
-import { loginAndGetToken } from '../auth/helpers.js';
+import { getValidToken, loginAndGetToken } from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -33,6 +33,7 @@ const wsHandshakeSuccess = new Rate('ws_handshake_success_rate');
 const wsErrorMoveRejected = new Counter('ws_error_move_rejected_total');
 const wsErrorAccessDenied = new Counter('ws_error_access_denied_total');
 const wsErrorInternalError = new Counter('ws_error_internal_error_total');
+const authTokenExpired = new Counter('auth_token_expired_total');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment configuration
@@ -80,6 +81,14 @@ const BASELINE_TARGET_VUS = Number(__ENV.WS_GAMEPLAY_BASELINE_VUS || 20);
 const BASELINE_VUS_CLAMPED = Math.max(10, Math.min(BASELINE_TARGET_VUS, 25));
 
 const TERMINAL_GAME_STATUSES = ['completed', 'abandoned', 'finished'];
+
+const WS_GAMEPLAY_DEBUG = (() => {
+  const raw = String(__ENV.WS_GAMEPLAY_DEBUG || '').toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
+})();
+
+const MOVE_STALL_THRESHOLD_MS = Number(__ENV.WS_MOVE_STALL_THRESHOLD_MS || 2000);
+const MOVE_RTT_TIMEOUT_MS = Number(__ENV.WS_MOVE_RTT_TIMEOUT_MS || 10000);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // k6 options (scenarios + thresholds)
@@ -310,6 +319,7 @@ let myGameId = null;
 let myMovesInCurrentGame = 0;
 let myGameCreatedAt = 0;
 let gamesCompletedByVu = 0;
+let myLastObservedMoveNumberForPlayer = 0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main VU function
@@ -318,7 +328,7 @@ let gamesCompletedByVu = 0;
 export default function (data) {
   const baseUrl = data.baseUrl;
   const wsUrl = data.wsUrl;
-  const token = data.token;
+  let token = data.token;
   const userId = data.userId;
 
   if (gamesCompletedByVu >= VU_MAX_GAMES) {
@@ -343,7 +353,15 @@ export default function (data) {
       },
     };
 
-    const createRes = http.post(
+    // Always obtain a currently-valid token before creating a game so long
+    // runs are not dominated by AUTH_TOKEN_EXPIRED responses.
+    const auth = getValidToken(baseUrl, {
+      apiPrefix: API_PREFIX,
+      tags: { name: 'auth-login-websocket-gameplay' },
+    });
+    token = auth.token;
+
+    let createRes = http.post(
       `${baseUrl}${API_PREFIX}/games`,
       JSON.stringify(createPayload),
       {
@@ -354,6 +372,45 @@ export default function (data) {
         tags: { name: 'create-game-websocket' },
       }
     );
+
+    // If the token has expired, refresh once and retry game creation with a
+    // fresh token. This keeps long-running tests from being swamped by
+    // AUTH_TOKEN_EXPIRED errors.
+    if (createRes.status === 401) {
+      let errorCode = null;
+      try {
+        const errorBody = JSON.parse(createRes.body);
+        errorCode =
+          (errorBody && errorBody.code) ||
+          (errorBody && errorBody.error && errorBody.error.code) ||
+          null;
+      } catch (e) {
+        errorCode = null;
+      }
+
+      if (errorCode === 'AUTH_TOKEN_EXPIRED') {
+        authTokenExpired.add(1);
+
+        const refreshed = getValidToken(baseUrl, {
+          apiPrefix: API_PREFIX,
+          tags: { name: 'auth-login-websocket-gameplay-refresh' },
+          forceRefresh: true,
+        });
+        token = refreshed.token;
+
+        createRes = http.post(
+          `${baseUrl}${API_PREFIX}/games`,
+          JSON.stringify(createPayload),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            tags: { name: 'create-game-websocket' },
+          }
+        );
+      }
+    }
 
     let createdGameId = null;
     try {
@@ -368,6 +425,7 @@ export default function (data) {
       myGameId = createdGameId;
       myMovesInCurrentGame = 0;
       myGameCreatedAt = Date.now();
+      myLastObservedMoveNumberForPlayer = 0;
       console.log(`VU ${__VU}: Created AI game ${myGameId} for WebSocket gameplay`);
     } else {
       console.error(
@@ -502,6 +560,15 @@ export default function (data) {
           `VU ${__VU}: WebSocket closed for game ${myGameId} after ${durationMs}ms (code: ${code})`
         );
 
+        if (awaitingRttForMove) {
+          // Treat an unexpected close while a move is in flight as a failed,
+          // stalled move for success-rate accounting.
+          wsMoveSuccess.add(0);
+          wsMoveStalled.add(1);
+          awaitingRttForMove = false;
+          pendingMoveId = null;
+        }
+
         if (connectionOpened && !handshakeComplete) {
           wsHandshakeSuccess.add(0);
         }
@@ -561,6 +628,7 @@ export default function (data) {
     myGameId = null;
     myMovesInCurrentGame = 0;
     myGameCreatedAt = 0;
+    myLastObservedMoveNumberForPlayer = 0;
     gamesCompletedByVu += 1;
     sleep(1 + Math.random() * 2);
     return;
@@ -615,33 +683,82 @@ function handleGameStateMessage({
   let shouldRetireGame = false;
   const status = gameState.gameStatus;
   const isTerminal = TERMINAL_GAME_STATUSES.indexOf(status) !== -1;
+  const now = Date.now();
 
   // Determine this user's player number within the game.
   if (myPlayerNumberInGame == null && Array.isArray(gameState.players)) {
     const me = gameState.players.find((p) => p && p.id === userId);
     if (me && typeof me.playerNumber === 'number') {
       myPlayerNumberInGame = me.playerNumber;
+
+      if (WS_GAMEPLAY_DEBUG) {
+        console.log(
+          `[websocket-gameplay] VU ${__VU} joined game ${gameId} as player ${myPlayerNumberInGame} (userId=${userId})`
+        );
+      }
+    } else if (WS_GAMEPLAY_DEBUG) {
+      console.log(
+        `[websocket-gameplay] VU ${__VU} could not determine playerNumber in game ${gameId} for userId=${userId}`
+      );
     }
   }
 
-  // If we were waiting for a move RTT, check whether the latest move belongs to us.
-  if (awaitingRttForMove && Array.isArray(gameState.moveHistory) && gameState.moveHistory.length) {
-    const lastMove = gameState.moveHistory[gameState.moveHistory.length - 1];
-    const isOurMove =
-      lastMove &&
-      lastMove.player === myPlayerNumberInGame &&
-      (!pendingMoveId || lastMove.id === pendingMoveId);
+  const hasMoveHistory =
+    Array.isArray(gameState.moveHistory) && gameState.moveHistory.length > 0;
 
-    if (isOurMove) {
-      const rtt = Date.now() - lastSentAt;
-      wsMoveRtt.add(rtt);
-      if (rtt > 2000) {
-        wsMoveStalled.add(1);
+  // When not actively timing a move, keep a baseline of the last observed move
+  // number for this player so we can later detect new moves as RTT completions.
+  if (!awaitingRttForMove && myPlayerNumberInGame != null && hasMoveHistory) {
+    const lastMyMove = findLastMoveForPlayer(gameState.moveHistory, myPlayerNumberInGame);
+    if (lastMyMove && typeof lastMyMove.moveNumber === 'number') {
+      if (lastMyMove.moveNumber > myLastObservedMoveNumberForPlayer) {
+        myLastObservedMoveNumberForPlayer = lastMyMove.moveNumber;
       }
-      wsMoveSuccess.add(1);
+    }
+  }
+
+  // If we were waiting for a move RTT, either detect completion via moveHistory
+  // or mark the move as stalled/failed once a timeout elapses.
+  if (awaitingRttForMove && lastSentAt) {
+    const elapsedMs = now - lastSentAt;
+
+    if (elapsedMs >= MOVE_RTT_TIMEOUT_MS) {
+      wsMoveSuccess.add(0);
+      wsMoveStalled.add(1);
       awaitingRttForMove = false;
       pendingMoveId = null;
       lastSentAt = 0;
+    } else if (hasMoveHistory && myPlayerNumberInGame != null) {
+      const lastMyMove = findLastMoveForPlayer(
+        gameState.moveHistory,
+        myPlayerNumberInGame
+      );
+
+      if (lastMyMove) {
+        const moveNumber =
+          typeof lastMyMove.moveNumber === 'number' ? lastMyMove.moveNumber : null;
+        const isNewForUs =
+          moveNumber !== null && moveNumber > myLastObservedMoveNumberForPlayer;
+        const idMatches =
+          pendingMoveId && lastMyMove.id && lastMyMove.id === pendingMoveId;
+
+        if (isNewForUs || idMatches) {
+          const rtt = elapsedMs;
+          wsMoveRtt.add(rtt);
+          if (rtt > MOVE_STALL_THRESHOLD_MS) {
+            wsMoveStalled.add(1);
+          }
+          wsMoveSuccess.add(1);
+
+          awaitingRttForMove = false;
+          pendingMoveId = null;
+          lastSentAt = 0;
+
+          if (moveNumber !== null && moveNumber > myLastObservedMoveNumberForPlayer) {
+            myLastObservedMoveNumberForPlayer = moveNumber;
+          }
+        }
+      }
     }
   }
 
@@ -675,9 +792,9 @@ function handleGameStateMessage({
       };
       const msg = buildSocketIOEvent('player_move_by_id', movePayload);
       socket.send(msg);
-      lastSentAt = Date.now();
+      lastSentAt = now;
       awaitingRttForMove = true;
-      pendingMoveId = nextMove.id;
+      pendingMoveId = nextMove.id || null;
       wsMovesAttempted.add(1);
       currentMoveCount += 1;
     }
@@ -755,8 +872,25 @@ function chooseMoveFromValidMoves(validMoves, myPlayerNumberInGame) {
   );
 
   const pool = myMoves.length > 0 ? myMoves : validMoves;
-  const idx = Math.floor(Math.random() * pool.length);
-  return pool[idx] || null;
+
+  // Deterministic selection to keep runs repeatable: always take the first
+  // legal move available for this player.
+  return pool[0] || null;
+}
+
+function findLastMoveForPlayer(moveHistory, playerNumber) {
+  if (!Array.isArray(moveHistory) || moveHistory.length === 0 || playerNumber == null) {
+    return null;
+  }
+
+  for (let i = moveHistory.length - 1; i >= 0; i -= 1) {
+    const move = moveHistory[i];
+    if (move && move.player === playerNumber) {
+      return move;
+    }
+  }
+
+  return null;
 }
 
 // Shared SLO-aware summary writer; writes

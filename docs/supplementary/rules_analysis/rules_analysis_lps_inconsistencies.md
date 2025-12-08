@@ -16,7 +16,7 @@ According to `RULES_CANONICAL_SPEC.md` (RR-CANON-R172):
 ### 1. Documentation Status
 
 - **Canonical rulebook:** `ringrift_complete_rules.md` §13.3 now explicitly describes the three-round requirement from `RULES_CANONICAL_SPEC.md`.
-- **Implementation spec:** `docs/rules/ringrift_compact_rules.md` §7.3 is explicit about three consecutive full rounds with required real actions each round.
+- **Implementation spec:** `ringrift_compact_rules.md` §7.3 is explicit about three consecutive full rounds with required real actions each round.
 - **Human-readable rules:** `ringrift_simple_human_rules.md` §5.3 now mirrors the three-round flow.
 - **UX specs:** `docs/UX_RULES_COPY_SPEC.md` and `docs/UX_RULES_WEIRD_STATES_SPEC.md` now both call out the three-round requirement in tooltips/teaching copy.
 
@@ -41,6 +41,6 @@ According to `RULES_CANONICAL_SPEC.md` (RR-CANON-R172):
 
 The engines and canonical spec agree on **3 rounds**. The remaining gap is UX copy.
 
-- ✅ **Docs aligned:** `ringrift_complete_rules.md`, `docs/rules/ringrift_compact_rules.md`, `ringrift_simple_human_rules.md`, `docs/UX_RULES_COPY_SPEC.md`, and `docs/UX_RULES_WEIRD_STATES_SPEC.md` now all state the three-round requirement.
+- ✅ **Docs aligned:** `ringrift_complete_rules.md`, `ringrift_compact_rules.md`, `ringrift_simple_human_rules.md`, `docs/UX_RULES_COPY_SPEC.md`, and `docs/UX_RULES_WEIRD_STATES_SPEC.md` now all state the three-round requirement.
 - ⏳ **Update UX copy:** Refresh LPS text in `src/client/utils/rulesUxTelemetry.ts`, `src/client/adapters/gameViewModels.ts`, and related HUD/onboarding tooltips to say "THREE consecutive complete rounds".
 - ⏳ **Refresh tests/snapshots:** Update any snapshot or tooltip tests (`GameHUD` / `VictoryModal`) that assert the old two-round wording once the copy changes land.

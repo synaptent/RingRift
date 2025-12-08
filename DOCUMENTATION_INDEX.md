@@ -35,7 +35,7 @@ This index catalogs all project documentation organized by topic and location. F
 - [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md) - Authoritative rules specification
 - [ringrift_complete_rules.md](ringrift_complete_rules.md) - Full rulebook
 - [ringrift_simple_human_rules.md](ringrift_simple_human_rules.md) - Human-readable rules
-- [docs/rules/ringrift_compact_rules.md](docs/rules/ringrift_compact_rules.md) - Implementation-focused summary
+- [ringrift_compact_rules.md](ringrift_compact_rules.md) - Implementation-focused summary
 
 ### Architecture
 

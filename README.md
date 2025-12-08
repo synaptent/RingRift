@@ -114,7 +114,7 @@ To understand the project and know which documents are authoritative for each ar
 
 - `RULES_CANONICAL_SPEC.md` – Canonical semantics SSoT (phase/move contracts, forced elimination, and replay requirements).
 - `ringrift_complete_rules.md` – **The authoritative rulebook.** Full, narrative rules for players and designers.
-- `docs/rules/ringrift_compact_rules.md` – Compact, implementation-oriented spec for engine/AI authors.
+- `ringrift_compact_rules.md` – Compact, implementation-oriented spec for engine/AI authors.
 - `archive/RULES_ANALYSIS_PHASE2.md` – Consistency and strategic assessment of the rules.
 
 ### For Developers (Architecture, Status, Setup)
@@ -745,7 +745,7 @@ npm test
 ### Game Rules
 
 - Complete rule documentation in `ringrift_complete_rules.md`
-- Compact rules summary in `docs/rules/ringrift_compact_rules.md`
+- Compact rules summary in `ringrift_compact_rules.md`
 - Future: interactive tutorial system, strategy guides, and video demonstrations
 
 ### Development Guides

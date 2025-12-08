@@ -2,7 +2,7 @@
 
 > **SSoT alignment:** This document is a derived view over the following canonical sources:
 >
-> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers, mutators, aggregates, orchestrator, contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`). This file documents the API/lifecycle only; it does **not** redefine rules semantics.
+> - **Rules semantics SSoT:** `RULES_CANONICAL_SPEC.md`, `ringrift_complete_rules.md` / `ringrift_compact_rules.md`, and the shared TypeScript rules engine under `src/shared/engine/**` (helpers, mutators, aggregates, orchestrator, contracts plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**`). This file documents the API/lifecycle only; it does **not** redefine rules semantics.
 > - **Lifecycle/API SSoT:** `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts` define the executable Move + orchestrator + WebSocket lifecycle that this doc describes.
 > - **Precedence:** If this document ever conflicts with those types, orchestrator implementations, WebSocket schemas, or contract vectors, **code and tests win** and this document must be updated to match them.
 >
