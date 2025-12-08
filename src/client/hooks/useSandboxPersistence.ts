@@ -44,14 +44,14 @@ export type LocalPlayerType = 'human' | 'ai';
 export interface SandboxPersistenceOptions {
   /** Sandbox engine instance */
   engine: ClientSandboxEngine | null;
-  /** Victory result (if game ended) */
-  victoryResult: GameResult | null;
   /** Player types configuration */
   playerTypes: LocalPlayerType[];
   /** Number of players */
   numPlayers: number;
   /** Whether auto-save is enabled by default */
   defaultAutoSave?: boolean;
+  /** Sandbox state version (to trigger re-evaluation when state changes) */
+  stateVersion?: number;
 }
 
 /**
@@ -86,7 +86,10 @@ export interface SandboxPersistenceState {
 export function useSandboxPersistence(
   options: SandboxPersistenceOptions
 ): SandboxPersistenceState {
-  const { engine, victoryResult, playerTypes, numPlayers, defaultAutoSave = true } = options;
+  const { engine, playerTypes, numPlayers, defaultAutoSave = true, stateVersion = 0 } = options;
+
+  // Derive victory result from engine
+  const victoryResult = engine?.getVictoryResult() ?? null;
 
   // State
   const [autoSaveGames, setAutoSaveGames] = useState(defaultAutoSave);
@@ -215,7 +218,8 @@ export function useSandboxPersistence(
     };
 
     saveCompletedGame();
-  }, [autoSaveGames, victoryResult, engine, playerTypes, numPlayers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSaveGames, victoryResult, engine, playerTypes, numPlayers, stateVersion]);
 
   return {
     autoSaveGames,

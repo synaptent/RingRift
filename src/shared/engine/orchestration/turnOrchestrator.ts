@@ -45,6 +45,7 @@ import {
   isANMState,
   applyForcedEliminationForPlayer,
   computeGlobalLegalActionsSummary,
+  hasAnyGlobalMovementOrCapture,
   enumerateForcedEliminationOptions,
 } from '../globalActions';
 
@@ -1930,15 +1931,20 @@ function processPostMovePhases(
   // Zero-rings/no-actions terminal guard: if all players are out of rings and
   // none have any global interactive actions (placement, movement/capture,
   // forced elimination), end the game to mirror Python ANM/LPS termination.
+  // Zero-rings/no-actions terminal guard: if all players are out of rings and
+  // none have any global interactive actions (placement, movement/capture),
+  // end the game. Forced elimination is ignored when ringsInHand == 0 for all.
   const allZeroRings = stateMachine.gameState.players.every((p) => p.ringsInHand <= 0);
   if (allZeroRings) {
     const anyActions = stateMachine.gameState.players.some((p) => {
-      const summary = computeGlobalLegalActionsSummary(stateMachine.gameState, p.playerNumber);
-      return (
-        summary.hasGlobalPlacementAction ||
-        summary.hasPhaseLocalInteractiveMove ||
-        summary.hasForcedEliminationAction
-      );
+      // With no rings in hand anywhere, only placement or movement/capture
+      // actions matter. Ignore forced elimination (no rings to spend).
+      const hasPlacement = computeGlobalLegalActionsSummary(
+        stateMachine.gameState,
+        p.playerNumber
+      ).hasGlobalPlacementAction;
+      const hasMovementOrCapture = hasAnyGlobalMovementOrCapture(stateMachine.gameState, p.playerNumber);
+      return hasPlacement || hasMovementOrCapture;
     });
     if (!anyActions) {
       stateMachine.updateGameState({

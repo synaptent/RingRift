@@ -223,6 +223,49 @@
           { "duration": "5m", "target": 0 }
         ]
       }
+    },
+
+    "ai_heavy": {
+      "description": "AI-heavy probe (4p games with 3 AI seats) targeting ~75 concurrent games / ~300 players",
+      "duration_total_seconds": 1200,
+      "max_vus": 75,
+      "use_case": "AI-heavy capacity and AI-service stress (staging gate)",
+
+      "game_creation": {
+        "stages": [
+          { "duration": "1m", "target": 25 },
+          { "duration": "4m", "target": 75 },
+          { "duration": "10m", "target": 75 },
+          { "duration": "3m", "target": 0 }
+        ]
+      },
+
+      "concurrent_games": {
+        "stages": [
+          { "duration": "1m", "target": 25 },
+          { "duration": "4m", "target": 75 },
+          { "duration": "10m", "target": 75 },
+          { "duration": "3m", "target": 0 }
+        ]
+      },
+
+      "player_moves": {
+        "stages": [
+          { "duration": "1m", "target": 50 },
+          { "duration": "4m", "target": 225 },
+          { "duration": "10m", "target": 225 },
+          { "duration": "3m", "target": 0 }
+        ]
+      },
+
+      "websocket_stress": {
+        "stages": [
+          { "duration": "1m", "target": 75 },
+          { "duration": "4m", "target": 300 },
+          { "duration": "10m", "target": 300 },
+          { "duration": "3m", "target": 0 }
+        ]
+      }
     }
   },
 
@@ -270,6 +313,12 @@
         "profile": "soak",
         "scenarios": ["concurrent_games"],
         "purpose": "Long-running stability - detect memory leaks (run overnight)"
+      },
+      {
+        "step": 8,
+        "profile": "ai_heavy",
+        "scenarios": ["concurrent_games"],
+        "purpose": "AI-heavy probe (4p/3 AI seats) to stress AI service and concurrency"
       }
     ]
   },

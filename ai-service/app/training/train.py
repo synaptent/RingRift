@@ -1427,7 +1427,7 @@ def train_model(
         hex_in_channels = 10 * (config.history_length + 1)
         model = HexNeuralNet(
             in_channels=hex_in_channels,
-            global_features=10,
+            global_features=20,  # Must match _extract_features() which returns 20 globals
             num_res_blocks=8,
             num_filters=128,
             board_size=board_size,
@@ -1444,7 +1444,7 @@ def train_model(
         model = RingRiftCNN_MultiPlayer(
             board_size=board_size,
             in_channels=10,
-            global_features=10,
+            global_features=20,  # Must match _extract_features() which returns 20 globals
             history_length=config.history_length,
             max_players=MAX_PLAYERS,
             policy_size=policy_size,
@@ -1458,7 +1458,7 @@ def train_model(
         model = RingRiftCNN_v2(
             board_size=board_size,
             in_channels=10,
-            global_features=10,
+            global_features=20,  # Must match _extract_features() which returns 20 globals
             history_length=config.history_length,
             policy_size=policy_size,
         )

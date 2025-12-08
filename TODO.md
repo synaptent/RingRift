@@ -419,16 +419,18 @@ SandboxGameHost integration requires mapping existing state to hooks:
 
 | Hook | SandboxGameHost State | Status |
 |------|----------------------|--------|
-| `useSandboxPersistence` | `autoSaveGames`, `gameSaveStatus`, `pendingLocalGames`, `syncState`, `initialGameStateRef`, `gameSavedRef` | Pending |
-| `useSandboxScenarios` | `isInReplayMode`, `replayState`, `replayAnimation`, `isViewingHistory`, `historyViewIndex`, `hasHistorySnapshots`, `lastLoadedScenario`, `showScenarioPicker`, `showSelfPlayBrowser` | Pending |
-| `useSandboxEvaluation` | `sandboxEvaluationHistory`, `sandboxEvaluationError`, `isSandboxAnalysisRunning`, `lastEvaluatedMoveRef` | Pending |
+| `useSandboxPersistence` | `autoSaveGames`, `gameSaveStatus`, `pendingLocalGames`, `syncState`, `initialGameStateRef`, `gameSavedRef`, `cloneInitialGameState` | ✅ Complete |
+| `useSandboxScenarios` | `isInReplayMode`, `replayState`, `replayAnimation`, `isViewingHistory`, `historyViewIndex`, `hasHistorySnapshots`, `lastLoadedScenario`, `showScenarioPicker`, `showSelfPlayBrowser` | Planned (~175 line reduction) |
+| `useSandboxEvaluation` | `sandboxEvaluationHistory`, `sandboxEvaluationError`, `isSandboxAnalysisRunning`, `lastEvaluatedMoveRef` | ✅ Complete (~87 lines removed) |
 | `useBoardOverlays` | `showMovementGrid`, `showLineOverlays`, `showTerritoryOverlays`, `showValidTargets` | ✅ Complete |
 
 **Next Steps:**
 - [x] Integrate `useBoardOverlays` into SandboxGameHost (completed Dec 2025)
+- [x] Integrate `useSandboxPersistence` into SandboxGameHost (completed Dec 2025)
 - [x] FSM shadow validation infrastructure (already in place in turnOrchestrator)
 - [ ] Promote FSM validation from shadow to primary (requires confidence in shadow validation results)
-- [ ] Integrate remaining hooks (`useSandboxPersistence`, `useSandboxScenarios`, `useSandboxEvaluation`)
+- [x] Integrate `useSandboxEvaluation` (~87 lines removed) - Completed Dec 2025
+- [ ] Integrate `useSandboxScenarios` (~175 line reduction) - See `docs/planning/HOOK_INTEGRATION_PLAN.md`
 - [ ] Add additional sandbox hook tests
 
 ### 2.5 Deferred Work

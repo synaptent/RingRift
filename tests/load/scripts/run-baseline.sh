@@ -201,6 +201,27 @@ else
     log_warning "Analyzer script not found at $ANALYZER_SCRIPT"
 fi
 
+# Run SLO verifier if available
+VERIFIER_SCRIPT="$SCRIPT_DIR/verify-slos.js"
+SLO_EXIT_CODE=0
+if [[ -f "$VERIFIER_SCRIPT" ]]; then
+    if command -v node &> /dev/null; then
+        echo ""
+        log_info "Verifying SLOs against $THRESHOLD_ENV thresholds..."
+        if node "$VERIFIER_SCRIPT" "$RESULT_FILE" console --env "$THRESHOLD_ENV"; then
+            log_success "SLO verification passed"
+            SLO_EXIT_CODE=0
+        else
+            log_warning "SLO verification reported failures (see output above)"
+            SLO_EXIT_CODE=1
+        fi
+    else
+        log_warning "Node.js not available, skipping SLO verification"
+    fi
+else
+    log_warning "SLO verifier not found at $VERIFIER_SCRIPT"
+fi
+
 # Print summary
 echo ""
 echo "╔════════════════════════════════════════════════════════╗"
@@ -216,4 +237,4 @@ if [[ -f "$PROJECT_ROOT/docs/BASELINE_CAPACITY.md" ]]; then
     log_info "Update baseline documentation: docs/BASELINE_CAPACITY.md"
 fi
 
-exit $K6_EXIT_CODE
+exit $(( K6_EXIT_CODE || SLO_EXIT_CODE ))

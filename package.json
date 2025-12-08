@@ -26,6 +26,8 @@
     "load:analyze:target": "node tests/load/scripts/analyze-target-scale.js",
     "load:target:local": "cd tests/load && chmod +x scripts/run-target-scale.sh && ./scripts/run-target-scale.sh local",
     "load:target:staging": "cd tests/load && chmod +x scripts/run-target-scale.sh && ./scripts/run-target-scale.sh staging",
+    "load:ai-heavy:local": "cd tests/load && chmod +x scripts/run-ai-heavy.sh && ./scripts/run-ai-heavy.sh local",
+    "load:ai-heavy:staging": "cd tests/load && chmod +x scripts/run-ai-heavy.sh && ./scripts/run-ai-heavy.sh staging",
     "load:stress": "BASE_URL=${BASE_URL:-http://localhost:3001} LOAD_PROFILE=stress k6 run --config tests/load/k6.config.js tests/load/scenarios/concurrent-games.js",
     "load:stress:breaking": "cd tests/load && chmod +x scripts/run-stress-test.sh && ./scripts/run-stress-test.sh staging",
     "load:game-creation": "BASE_URL=${BASE_URL:-http://localhost:3001} k6 run tests/load/scenarios/game-creation.js",

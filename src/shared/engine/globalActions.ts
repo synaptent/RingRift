@@ -120,7 +120,7 @@ function createMovementBoardView(state: GameState): MovementBoardView {
  * state.currentPhase. This is used when evaluating forced-elimination
  * preconditions (R072/R100/R205).
  */
-function hasAnyGlobalMovementOrCapture(state: GameState, player: number): boolean {
+export function hasAnyGlobalMovementOrCapture(state: GameState, player: number): boolean {
   const boardType = state.board.type as BoardType;
   const view = createMovementBoardView(state);
 
@@ -167,6 +167,11 @@ export function hasPhaseLocalInteractiveMove(state: GameState, player: number): 
 
   switch (phase) {
     case 'ring_placement': {
+      // No placements possible when out of rings.
+      const playerState = state.players.find((p) => p.playerNumber === player);
+      if (!playerState || playerState.ringsInHand <= 0) {
+        return false;
+      }
       if (hasGlobalPlacementAction(state, player)) {
         return true;
       }

@@ -12,7 +12,6 @@ import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import { ScenarioPickerModal } from '../components/ScenarioPickerModal';
 import { SelfPlayBrowser } from '../components/SelfPlayBrowser';
 import { EvaluationPanel } from '../components/EvaluationPanel';
-import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import { SaveStateDialog } from '../components/SaveStateDialog';
 import { ReplayPanel } from '../components/ReplayPanel';
 import { HistoryPlaybackPanel } from '../components/HistoryPlaybackPanel';
@@ -50,9 +49,7 @@ import {
   GameAnnouncements,
 } from '../components/ScreenReaderAnnouncer';
 import { gameApi } from '../services/api';
-import { getReplayService } from '../services/ReplayService';
-import { storeGameLocally, getPendingCount } from '../services/LocalGameStorage';
-import { GameSyncService, type SyncState } from '../services/GameSyncService';
+import { GameSyncService } from '../services/GameSyncService';
 import type {
   ClientSandboxEngine,
   SandboxInteractionHandler,
@@ -67,6 +64,7 @@ import { buildTestFixtureFromGameState, exportGameStateToFile } from '../sandbox
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useBoardOverlays } from '../hooks/useBoardViewProps';
 import { useSandboxPersistence, type LocalPlayerType } from '../hooks/useSandboxPersistence';
+import { useSandboxEvaluation } from '../hooks/useSandboxEvaluation';
 
 const BOARD_PRESETS: Array<{
   value: BoardType;
@@ -357,12 +355,6 @@ export const SandboxGameHost: React.FC = () => {
     resetSandboxEngine,
   } = useSandbox();
 
-  const [sandboxEvaluationHistory, setSandboxEvaluationHistory] = useState<
-    PositionEvaluationPayload['data'][]
-  >([]);
-  const [sandboxEvaluationError, setSandboxEvaluationError] = useState<string | null>(null);
-  const [isSandboxAnalysisRunning, setIsSandboxAnalysisRunning] = useState(false);
-
   // Local-only diagnostics / UX state
   const [isSandboxVictoryModalDismissed, setIsSandboxVictoryModalDismissed] = useState(false);
 
@@ -381,6 +373,20 @@ export const SandboxGameHost: React.FC = () => {
   const [isViewingHistory, setIsViewingHistory] = useState(false);
   const [historyViewIndex, setHistoryViewIndex] = useState(0);
   const [hasHistorySnapshots, setHasHistorySnapshots] = useState(true);
+
+  // AI evaluation state - using extracted evaluation hook
+  const {
+    evaluationHistory: sandboxEvaluationHistory,
+    evaluationError: sandboxEvaluationError,
+    isEvaluating: isSandboxAnalysisRunning,
+    requestEvaluation: requestSandboxEvaluation,
+    clearHistory: clearEvaluationHistory,
+  } = useSandboxEvaluation({
+    engine: sandboxEngine,
+    developerToolsEnabled,
+    isInReplayMode,
+    isViewingHistory,
+  });
 
   // Selection + valid target highlighting
   const [selected, setSelected] = useState<Position | undefined>();
@@ -411,36 +417,28 @@ export const SandboxGameHost: React.FC = () => {
   const [showSaveStateDialog, setShowSaveStateDialog] = useState(false);
   const [lastLoadedScenario, setLastLoadedScenario] = useState<LoadableScenario | null>(null);
 
-  // Game storage state - auto-save completed games to replay database
-  const [autoSaveGames, setAutoSaveGames] = useState(true);
-  const [gameSaveStatus, setGameSaveStatus] = useState<
-    'idle' | 'saving' | 'saved' | 'saved-local' | 'error'
-  >('idle');
-  const [pendingLocalGames, setPendingLocalGames] = useState(0);
-  const [syncState, setSyncState] = useState<SyncState | null>(null);
-  const initialGameStateRef = useRef<GameState | null>(null);
-  const gameSavedRef = useRef(false);
-  const lastEvaluatedMoveRef = useRef<number | null>(null);
+  // Game storage state - using extracted persistence hook
+  const {
+    autoSaveGames,
+    setAutoSaveGames,
+    gameSaveStatus,
+    pendingLocalGames,
+    syncState,
+    initialGameStateRef,
+    gameSavedRef,
+    cloneInitialGameState,
+  } = useSandboxPersistence({
+    engine: sandboxEngine,
+    playerTypes: config.playerTypes as LocalPlayerType[],
+    numPlayers: config.numPlayers,
+    stateVersion: _sandboxStateVersion,
+  });
 
   // Screen reader announcements for accessibility - using priority queue (mirrors BackendGameHost)
   const { queue: announcementQueue, announce, removeAnnouncement } = useGameAnnouncements();
 
   // Show/hide advanced options - collapsed by default for first-time players
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(!isFirstTimePlayer);
-
-  // Safari and some older runtimes may not expose structuredClone; provide a
-  // small defensive wrapper so initial sandbox snapshots remain available
-  // without crashing the host. For replay storage we only require a
-  // JSON-serializable clone.
-  const cloneInitialGameState = useCallback((state: GameState): GameState => {
-    const globalClone = (globalThis as any).structuredClone as
-      | ((value: unknown) => unknown)
-      | undefined;
-    if (typeof globalClone === 'function') {
-      return globalClone(state) as GameState;
-    }
-    return JSON.parse(JSON.stringify(state)) as GameState;
-  }, []);
 
   const sandboxChoiceResolverRef = useRef<
     ((response: PlayerChoiceResponseFor<PlayerChoice>) => void) | null
@@ -500,61 +498,6 @@ export const SandboxGameHost: React.FC = () => {
       window.clearTimeout(timeoutId);
     };
   }, [sandboxEngine, _sandboxStateVersion]);
-
-  const requestSandboxEvaluation = useCallback(async () => {
-    // Get game state from engine directly to avoid forward reference issues
-    const gameState = sandboxEngine?.getGameState();
-    if (!sandboxEngine || !gameState) {
-      return;
-    }
-
-    try {
-      setIsSandboxAnalysisRunning(true);
-      setSandboxEvaluationError(null);
-
-      const serialized = sandboxEngine.getSerializedState();
-
-      const response = await fetch('/api/games/sandbox/evaluate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ state: serialized }),
-      });
-
-      if (!response.ok) {
-        let message = 'Sandbox evaluation request failed.';
-        try {
-          const errorBody = (await response.json()) as { error?: string } | null;
-          if (errorBody && typeof errorBody.error === 'string') {
-            message = errorBody.error;
-          }
-        } catch {
-          // Ignore JSON parse errors (HTML or empty responses)
-        }
-
-        const statusHint =
-          response.status === 404
-            ? 'AI evaluation is not enabled for this environment.'
-            : response.status === 503
-              ? 'Sandbox AI evaluation service is unavailable. Ensure the AI service is running.'
-              : `HTTP ${response.status}`;
-
-        setSandboxEvaluationError(`${message} ${statusHint}`.trim());
-        return;
-      }
-
-      const data: PositionEvaluationPayload['data'] = await response.json();
-      setSandboxEvaluationHistory((prev) => [...prev, data]);
-    } catch (err) {
-      console.warn('Sandbox evaluation request threw', err);
-      const message =
-        err instanceof Error ? err.message : 'Unknown error during sandbox evaluation request';
-      setSandboxEvaluationError(`Sandbox evaluation failed: ${message}`);
-    } finally {
-      setIsSandboxAnalysisRunning(false);
-    }
-  }, [sandboxEngine]);
 
   const handleSetupChange = (partial: Partial<LocalConfig>) => {
     setConfig((prev) => {
@@ -1765,148 +1708,8 @@ export const SandboxGameHost: React.FC = () => {
     };
   }, [isConfigured, sandboxEngine, showBoardControls]);
 
-  // Capture initial game state when engine is created for game storage
-  useEffect(() => {
-    if (!sandboxEngine) {
-      // Reset refs when engine is destroyed
-      initialGameStateRef.current = null;
-      gameSavedRef.current = false;
-      lastEvaluatedMoveRef.current = null;
-      setGameSaveStatus('idle');
-      return;
-    }
-    // Capture initial state only once per game (when moveHistory is empty)
-    const currentState = sandboxEngine.getGameState();
-    if (currentState.moveHistory.length === 0 && !initialGameStateRef.current) {
-      initialGameStateRef.current = cloneInitialGameState(currentState);
-      gameSavedRef.current = false;
-      setGameSaveStatus('idle');
-    }
-  }, [sandboxEngine, cloneInitialGameState]);
-
-  // Start game sync service and subscribe to state updates
-  useEffect(() => {
-    GameSyncService.start();
-    const unsubscribe = GameSyncService.subscribe((state) => {
-      setSyncState(state);
-      setPendingLocalGames(state.pendingCount);
-    });
-    return () => {
-      unsubscribe();
-      GameSyncService.stop();
-    };
-  }, []);
-
-  // Auto-save completed games to replay database when victory is detected
-  useEffect(() => {
-    if (!autoSaveGames || !sandboxVictoryResult || gameSavedRef.current) {
-      return;
-    }
-
-    const saveCompletedGame = async () => {
-      const finalState = sandboxEngine?.getGameState();
-      const initialState = initialGameStateRef.current;
-
-      if (!finalState || !initialState) {
-        console.warn('[SandboxGameHost] Cannot save game: missing state');
-        return;
-      }
-
-      const metadata = {
-        source: 'sandbox',
-        boardType: finalState.board.type,
-        numPlayers: finalState.players.length,
-        playerTypes: config.playerTypes.slice(0, config.numPlayers),
-        victoryReason: sandboxVictoryResult.reason,
-        winnerPlayerNumber: sandboxVictoryResult.winner,
-      };
-
-      try {
-        setGameSaveStatus('saving');
-        const replayService = getReplayService();
-        const result = await replayService.storeGame({
-          initialState,
-          finalState,
-          moves: finalState.moveHistory as unknown as Record<string, unknown>[],
-          metadata,
-        });
-
-        if (result.success) {
-          gameSavedRef.current = true;
-          setGameSaveStatus('saved');
-          toast.success(`Game saved (${result.totalMoves} moves)`);
-        } else {
-          // Server rejected - try local fallback
-          throw new Error('Server rejected game storage');
-        }
-      } catch (error) {
-        console.warn('[SandboxGameHost] Server save failed, trying local storage:', error);
-
-        // Fallback to IndexedDB local storage
-        try {
-          const localResult = await storeGameLocally(
-            initialState,
-            finalState,
-            finalState.moveHistory as unknown[],
-            metadata
-          );
-
-          if (localResult.success) {
-            gameSavedRef.current = true;
-            setGameSaveStatus('saved-local');
-            const newCount = await getPendingCount();
-            setPendingLocalGames(newCount);
-            toast.success('Game saved locally (will sync when server available)', {
-              icon: '💾',
-            });
-          } else {
-            setGameSaveStatus('error');
-            toast.error('Failed to save game');
-          }
-        } catch (localError) {
-          console.error('[SandboxGameHost] Local storage also failed:', localError);
-          setGameSaveStatus('error');
-          toast.error('Failed to save game (storage unavailable)');
-        }
-      }
-    };
-
-    saveCompletedGame();
-  }, [autoSaveGames, sandboxVictoryResult, sandboxEngine, config.playerTypes, config.numPlayers]);
-
-  // When developer tools are enabled, automatically request a sandbox AI
-  // evaluation after each new move so the EvaluationPanel can render a
-  // lightweight sparkline over the turn history.
-  useEffect(() => {
-    if (!developerToolsEnabled || !sandboxEngine || !sandboxGameState) {
-      return;
-    }
-
-    // Skip when viewing historical states via replay/fixtures.
-    if (isInReplayMode || isViewingHistory) {
-      return;
-    }
-
-    const moveNumber = sandboxGameState.moveHistory.length;
-    if (moveNumber <= 0) {
-      return;
-    }
-
-    if (lastEvaluatedMoveRef.current === moveNumber) {
-      return;
-    }
-
-    lastEvaluatedMoveRef.current = moveNumber;
-    // Fire and forget; requestSandboxEvaluation manages its own loading state.
-    requestSandboxEvaluation();
-  }, [
-    developerToolsEnabled,
-    sandboxEngine,
-    sandboxGameState,
-    isInReplayMode,
-    isViewingHistory,
-    requestSandboxEvaluation,
-  ]);
+  // Note: Evaluation state/effects now handled by useSandboxEvaluation hook
+  // Note: Persistence state/sync now handled by useSandboxPersistence hook
 
   // Pre-game setup view
   if (!isConfigured || !sandboxEngine) {

@@ -17,6 +17,10 @@ import { makeHandleSummary } from '../summary.js';
 const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
 const scenariosConfig = JSON.parse(open('../config/scenarios.json'));
 
+const AI_HEAVY =
+  (__ENV.AI_HEAVY || '').toLowerCase() === 'true' || (__ENV.AI_HEAVY || '') === '1';
+const AI_HEAVY_DIFFICULTY = Number(__ENV.AI_HEAVY_DIFFICULTY || 7);
+
 // Classification metrics shared across load scenarios
 export const contractFailures = new Counter('contract_failures_total');
 export const idLifecycleMismatches = new Counter('id_lifecycle_mismatches_total');
@@ -274,13 +278,14 @@ function createGame(baseUrl, token) {
   // Step 1: Create a game (contributes to concurrent count) using the
   // canonical create-game payload shape from the API:
   //   { boardType, maxPlayers, isPrivate, timeControl, isRated, aiOpponents? }
-  const boardTypes = ['square8', 'square19', 'hexagonal'];
-  const boardType = boardTypes[__VU % boardTypes.length];
+  const boardTypes = AI_HEAVY ? ['square8'] : ['square8', 'square19', 'hexagonal'];
+  const boardType = AI_HEAVY ? 'square8' : boardTypes[__VU % boardTypes.length];
 
-  const maxPlayersOptions = [2, 3, 4];
+  const maxPlayersOptions = AI_HEAVY ? [4] : [2, 3, 4];
   const maxPlayers = maxPlayersOptions[__VU % maxPlayersOptions.length];
 
-  const aiCount = 1 + (__VU % 2); // 1-2 AI opponents
+  const aiCount = AI_HEAVY ? 3 : 1 + (__VU % 2); // AI-heavy: force 3 AI seats
+  const aiDifficulty = AI_HEAVY ? AI_HEAVY_DIFFICULTY : 5;
   const hasAI = aiCount > 0;
 
   const gameConfig = {
@@ -297,7 +302,7 @@ function createGame(baseUrl, token) {
     ...(hasAI && {
       aiOpponents: {
         count: aiCount,
-        difficulty: Array(aiCount).fill(5),
+        difficulty: Array(aiCount).fill(aiDifficulty),
         mode: 'service',
         aiType: 'heuristic',
       },

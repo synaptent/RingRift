@@ -11,7 +11,6 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { GameState } from '../../shared/types/game';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import type { ClientSandboxEngine } from '../services/ClientSandboxEngine';
 
@@ -30,8 +29,6 @@ export type EvaluationData = PositionEvaluationPayload['data'];
 export interface SandboxEvaluationOptions {
   /** Sandbox engine instance */
   engine: ClientSandboxEngine | null;
-  /** Current game state */
-  gameState: GameState | null;
   /** Whether developer tools are enabled */
   developerToolsEnabled: boolean;
   /** Whether in replay mode (skip auto-evaluation) */
@@ -70,12 +67,14 @@ export function useSandboxEvaluation(
 ): SandboxEvaluationState {
   const {
     engine,
-    gameState,
     developerToolsEnabled,
     isInReplayMode = false,
     isViewingHistory = false,
-    evaluationEndpoint = '/api/evaluate',
+    evaluationEndpoint = '/api/games/sandbox/evaluate',
   } = options;
+
+  // Derive game state from engine
+  const gameState = engine?.getGameState() ?? null;
 
   // State
   const [evaluationHistory, setEvaluationHistory] = useState<EvaluationData[]>([]);
@@ -87,57 +86,59 @@ export function useSandboxEvaluation(
 
   // Request evaluation
   const requestEvaluation = useCallback(async () => {
-    if (!engine || !gameState) {
-      setEvaluationError('No game state available');
+    // Get game state from engine directly to avoid forward reference issues
+    const currentState = engine?.getGameState();
+    if (!engine || !currentState) {
       return;
-    }
-
-    if (isEvaluating) {
-      return; // Already running
     }
 
     setIsEvaluating(true);
     setEvaluationError(null);
 
     try {
+      const serialized = engine.getSerializedState();
+
       const response = await fetch(evaluationEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          gameState: gameState,
-          playerNumber: gameState.currentPlayer,
-        }),
+        body: JSON.stringify({ state: serialized }),
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Evaluation failed: ${response.status}`);
+        let message = 'Sandbox evaluation request failed.';
+        try {
+          const errorBody = (await response.json()) as { error?: string } | null;
+          if (errorBody && typeof errorBody.error === 'string') {
+            message = errorBody.error;
+          }
+        } catch {
+          // Ignore JSON parse errors (HTML or empty responses)
+        }
+
+        const statusHint =
+          response.status === 404
+            ? 'AI evaluation is not enabled for this environment.'
+            : response.status === 503
+              ? 'Sandbox AI evaluation service is unavailable. Ensure the AI service is running.'
+              : `HTTP ${response.status}`;
+
+        setEvaluationError(`${message} ${statusHint}`.trim());
+        return;
       }
 
-      const data = await response.json();
-
-      // Add to history
-      const evalData: EvaluationData = {
-        gameId: gameState.gameId,
-        moveNumber: gameState.moveHistory?.length ?? 0,
-        playerNumber: gameState.currentPlayer,
-        evaluation: data.evaluation ?? data.score ?? 0,
-        breakdown: data.breakdown ?? {},
-        timestamp: Date.now(),
-      };
-
-      setEvaluationHistory((prev) => [...prev, evalData]);
-      lastEvaluatedMoveRef.current = gameState.moveHistory?.length ?? 0;
+      const data: EvaluationData = await response.json();
+      setEvaluationHistory((prev) => [...prev, data]);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Evaluation failed';
-      console.error('[useSandboxEvaluation] Evaluation failed:', err);
-      setEvaluationError(message);
+      console.warn('[useSandboxEvaluation] Evaluation request threw', err);
+      const message =
+        err instanceof Error ? err.message : 'Unknown error during sandbox evaluation request';
+      setEvaluationError(`Sandbox evaluation failed: ${message}`);
     } finally {
       setIsEvaluating(false);
     }
-  }, [engine, gameState, isEvaluating, evaluationEndpoint]);
+  }, [engine, evaluationEndpoint]);
 
   // Clear history
   const clearHistory = useCallback(() => {
@@ -152,45 +153,37 @@ export function useSandboxEvaluation(
   }, [engine, clearHistory]);
 
   // Auto-evaluation when developer tools are enabled
+  // When developer tools are enabled, automatically request a sandbox AI
+  // evaluation after each new move so the EvaluationPanel can render a
+  // lightweight sparkline over the turn history.
   useEffect(() => {
     if (!developerToolsEnabled || !engine || !gameState) {
       return;
     }
 
-    // Skip if in replay or history viewing mode
+    // Skip when viewing historical states via replay/fixtures.
     if (isInReplayMode || isViewingHistory) {
       return;
     }
 
-    // Skip if game is not active
-    if (gameState.gameStatus !== 'active') {
+    const moveNumber = gameState.moveHistory?.length ?? 0;
+    if (moveNumber <= 0) {
       return;
     }
 
-    // Skip if already evaluating
-    if (isEvaluating) {
+    if (lastEvaluatedMoveRef.current === moveNumber) {
       return;
     }
 
-    // Check if we need to evaluate (new move since last evaluation)
-    const currentMoveCount = gameState.moveHistory?.length ?? 0;
-    if (currentMoveCount <= lastEvaluatedMoveRef.current) {
-      return;
-    }
-
-    // Debounce evaluation requests
-    const timeoutId = setTimeout(() => {
-      requestEvaluation();
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
+    lastEvaluatedMoveRef.current = moveNumber;
+    // Fire and forget; requestEvaluation manages its own loading state.
+    requestEvaluation();
   }, [
     developerToolsEnabled,
     engine,
     gameState,
     isInReplayMode,
     isViewingHistory,
-    isEvaluating,
     requestEvaluation,
   ]);
 
