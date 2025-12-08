@@ -1218,11 +1218,14 @@ class NeuralNetAI(BaseAI):
             return
 
         # Create new model using the factory function
+        # NOTE: in_channels=14 is the canonical value for all board types.
+        # Old hex models used in_channels=10 but are deprecated (radius-10 geometry).
+        # Current hex uses radius-12 geometry which requires 14 channels.
         self.model = create_model_for_board(
             board_type=board_type,
             model_class="auto",  # Let factory choose best class
             use_mps=self._use_mps_arch,
-            in_channels=10,
+            in_channels=14,
             global_features=10,
             num_res_blocks=10,
             num_filters=128,
