@@ -1,0 +1,16 @@
+{
+  "timestamp": "2025-12-08T21:06:57.707Z",
+  "environment": "staging",
+  "all_passed": true,
+  "passed_count": 14,
+  "total_count": 14,
+  "critical_breaches": 0,
+  "high_breaches": 0,
+  "key_metrics": {
+    "availability": 100,
+    "error_rate": 0,
+    "api_latency_p95": 0,
+    "move_latency_p95": 0,
+    "concurrent_players": 0
+  }
+}

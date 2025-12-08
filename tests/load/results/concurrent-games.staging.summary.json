@@ -1,38 +1,18 @@
 {
   "scenario": "concurrent-games",
   "environment": "staging",
-  "runTimestamp": "2025-12-08T20:41:31.337Z",
+  "runTimestamp": "2025-12-08T21:02:51.798Z",
   "overallPass": false,
   "thresholds": [
     {
-      "metric": "http_req_duration{name:create-game}",
-      "threshold": "p(95)<800",
-      "statistic": "p(95)",
-      "comparison": "<",
-      "limit": 800,
-      "value": 11.306,
-      "passed": true,
-      "hasSamples": null
-    },
-    {
-      "metric": "http_req_duration{name:create-game}",
-      "threshold": "p(99)<1500",
-      "statistic": "p(99)",
-      "comparison": "<",
-      "limit": 1500,
-      "value": null,
-      "passed": true,
-      "hasSamples": null
-    },
-    {
-      "metric": "http_req_failed",
+      "metric": "capacity_failures_total",
       "threshold": "rate<0.01",
       "statistic": "rate",
       "comparison": "<",
       "limit": 0.01,
-      "value": 0,
-      "passed": true,
-      "hasSamples": null
+      "value": null,
+      "passed": false,
+      "hasSamples": false
     },
     {
       "metric": "http_req_duration{name:get-game}",
@@ -40,7 +20,7 @@
       "statistic": "p(95)",
       "comparison": "<",
       "limit": 400,
-      "value": 9.867,
+      "value": 9.866,
       "passed": true,
       "hasSamples": null
     },
@@ -55,6 +35,16 @@
       "hasSamples": null
     },
     {
+      "metric": "contract_failures_total",
+      "threshold": "count<=0",
+      "statistic": "count",
+      "comparison": "<=",
+      "limit": 0,
+      "value": null,
+      "passed": false,
+      "hasSamples": false
+    },
+    {
       "metric": "game_state_check_success",
       "threshold": "rate>0.99",
       "statistic": "rate",
@@ -65,14 +55,24 @@
       "hasSamples": null
     },
     {
-      "metric": "capacity_failures_total",
-      "threshold": "rate<0.01",
-      "statistic": "rate",
+      "metric": "http_req_duration{name:create-game}",
+      "threshold": "p(95)<800",
+      "statistic": "p(95)",
       "comparison": "<",
-      "limit": 0.01,
+      "limit": 800,
+      "value": 11.665249999999999,
+      "passed": true,
+      "hasSamples": null
+    },
+    {
+      "metric": "http_req_duration{name:create-game}",
+      "threshold": "p(99)<1500",
+      "statistic": "p(99)",
+      "comparison": "<",
+      "limit": 1500,
       "value": null,
-      "passed": false,
-      "hasSamples": false
+      "passed": true,
+      "hasSamples": null
     },
     {
       "metric": "id_lifecycle_mismatches_total",
@@ -85,14 +85,14 @@
       "hasSamples": false
     },
     {
-      "metric": "contract_failures_total",
-      "threshold": "count<=0",
-      "statistic": "count",
-      "comparison": "<=",
-      "limit": 0,
-      "value": null,
-      "passed": false,
-      "hasSamples": false
+      "metric": "http_req_failed",
+      "threshold": "rate<0.01",
+      "statistic": "rate",
+      "comparison": "<",
+      "limit": 0.01,
+      "value": 0,
+      "passed": true,
+      "hasSamples": null
     }
   ],
   "slo": {
@@ -100,34 +100,14 @@
     "environment": "staging",
     "thresholds": [
       {
-        "metric": "http_req_duration{name:create-game}",
-        "threshold": "p(95)<800",
-        "statistic": "p(95)",
-        "comparison": "<",
-        "limit": 800,
-        "value": 11.306,
-        "passed": true,
-        "hasSamples": null
-      },
-      {
-        "metric": "http_req_duration{name:create-game}",
-        "threshold": "p(99)<1500",
-        "statistic": "p(99)",
-        "comparison": "<",
-        "limit": 1500,
-        "value": null,
-        "passed": true,
-        "hasSamples": null
-      },
-      {
-        "metric": "http_req_failed",
+        "metric": "capacity_failures_total",
         "threshold": "rate<0.01",
         "statistic": "rate",
         "comparison": "<",
         "limit": 0.01,
-        "value": 0,
-        "passed": true,
-        "hasSamples": null
+        "value": null,
+        "passed": false,
+        "hasSamples": false
       },
       {
         "metric": "http_req_duration{name:get-game}",
@@ -135,7 +115,7 @@
         "statistic": "p(95)",
         "comparison": "<",
         "limit": 400,
-        "value": 9.867,
+        "value": 9.866,
         "passed": true,
         "hasSamples": null
       },
@@ -150,6 +130,16 @@
         "hasSamples": null
       },
       {
+        "metric": "contract_failures_total",
+        "threshold": "count<=0",
+        "statistic": "count",
+        "comparison": "<=",
+        "limit": 0,
+        "value": null,
+        "passed": false,
+        "hasSamples": false
+      },
+      {
         "metric": "game_state_check_success",
         "threshold": "rate>0.99",
         "statistic": "rate",
@@ -160,14 +150,24 @@
         "hasSamples": null
       },
       {
-        "metric": "capacity_failures_total",
-        "threshold": "rate<0.01",
-        "statistic": "rate",
+        "metric": "http_req_duration{name:create-game}",
+        "threshold": "p(95)<800",
+        "statistic": "p(95)",
         "comparison": "<",
-        "limit": 0.01,
+        "limit": 800,
+        "value": 11.665249999999999,
+        "passed": true,
+        "hasSamples": null
+      },
+      {
+        "metric": "http_req_duration{name:create-game}",
+        "threshold": "p(99)<1500",
+        "statistic": "p(99)",
+        "comparison": "<",
+        "limit": 1500,
         "value": null,
-        "passed": false,
-        "hasSamples": false
+        "passed": true,
+        "hasSamples": null
       },
       {
         "metric": "id_lifecycle_mismatches_total",
@@ -180,28 +180,28 @@
         "hasSamples": false
       },
       {
-        "metric": "contract_failures_total",
-        "threshold": "count<=0",
-        "statistic": "count",
-        "comparison": "<=",
-        "limit": 0,
-        "value": null,
-        "passed": false,
-        "hasSamples": false
+        "metric": "http_req_failed",
+        "threshold": "rate<0.01",
+        "statistic": "rate",
+        "comparison": "<",
+        "limit": 0.01,
+        "value": 0,
+        "passed": true,
+        "hasSamples": null
       }
     ],
     "overallPass": false,
     "noSamplesForMetrics": [
       "capacity_failures_total",
-      "id_lifecycle_mismatches_total",
-      "contract_failures_total"
+      "contract_failures_total",
+      "id_lifecycle_mismatches_total"
     ],
     "overallReason": "no_samples_for_key_metric"
   },
   "thresholdsEnv": "staging",
   "http": {
     "http_req_duration": {
-      "p95": 9.950599999999998,
+      "p95": 9.94605,
       "p99": null,
       "hasSamples": null
     },
@@ -248,7 +248,7 @@
     "thresholdsEnv": "staging",
     "http": {
       "http_req_duration": {
-        "p95": 9.950599999999998,
+        "p95": 9.94605,
         "p99": null,
         "hasSamples": null
       },

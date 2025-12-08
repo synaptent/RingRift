@@ -1,0 +1,131 @@
+{
+  "timestamp": "2025-12-08T21:06:57.707Z",
+  "environment": "staging",
+  "source_file": "/Users/armand/Development/RingRift/tests/load/results/baseline_staging_20251208_144949_summary.json",
+  "slo_definitions_version": "1.0.0",
+  "all_passed": true,
+  "passed_count": 14,
+  "total_count": 14,
+  "slos": {
+    "availability": {
+      "name": "Service Availability",
+      "target": 99.9,
+      "actual": 100,
+      "unit": "percent",
+      "passed": true,
+      "priority": "critical"
+    },
+    "latency_api_p95": {
+      "name": "API Latency (p95)",
+      "target": 800,
+      "actual": 0,
+      "unit": "ms",
+      "passed": true,
+      "priority": "high"
+    },
+    "latency_api_p99": {
+      "name": "API Latency (p99)",
+      "target": 2000,
+      "actual": 0,
+      "unit": "ms",
+      "passed": true,
+      "priority": "medium"
+    },
+    "latency_websocket_connect": {
+      "name": "WebSocket Connection Time (p95)",
+      "target": 1000,
+      "actual": 0,
+      "unit": "ms",
+      "passed": true,
+      "priority": "high",
+      "note": "No WebSocket data collected"
+    },
+    "latency_move_e2e": {
+      "name": "Move End-to-End Latency (p95)",
+      "target": 500,
+      "actual": 0,
+      "unit": "ms",
+      "passed": true,
+      "priority": "high",
+      "note": "No move data collected"
+    },
+    "latency_move_server": {
+      "name": "Move Server Processing (p95)",
+      "target": 200,
+      "actual": 0,
+      "unit": "ms",
+      "passed": true,
+      "priority": "high",
+      "note": "No server processing data collected"
+    },
+    "latency_ai_response": {
+      "name": "AI Response Time (p95)",
+      "target": 1500,
+      "actual": 0,
+      "unit": "ms",
+      "passed": true,
+      "priority": "high",
+      "note": "No AI data collected"
+    },
+    "latency_game_creation": {
+      "name": "Game Creation Time (p95)",
+      "target": 2000,
+      "actual": 0,
+      "unit": "ms",
+      "passed": true,
+      "priority": "medium",
+      "note": "No game creation data collected"
+    },
+    "error_rate": {
+      "name": "Error Rate",
+      "target": 1,
+      "actual": 0,
+      "unit": "percent",
+      "passed": true,
+      "priority": "critical"
+    },
+    "concurrent_games": {
+      "name": "Concurrent Games Capacity",
+      "target": 20,
+      "actual": 0,
+      "unit": "games",
+      "passed": true,
+      "priority": "high",
+      "note": "No concurrent games data collected"
+    },
+    "concurrent_players": {
+      "name": "Concurrent Players Capacity",
+      "target": 60,
+      "actual": 0,
+      "unit": "players",
+      "passed": true,
+      "priority": "high",
+      "note": "No VU data collected"
+    },
+    "contract_failures": {
+      "name": "Contract Failures",
+      "target": 0,
+      "actual": 0,
+      "unit": "count",
+      "passed": true,
+      "priority": "critical"
+    },
+    "lifecycle_mismatches": {
+      "name": "ID Lifecycle Mismatches",
+      "target": 0,
+      "actual": 0,
+      "unit": "count",
+      "passed": true,
+      "priority": "critical"
+    },
+    "move_stall_rate": {
+      "name": "Move Stall Rate",
+      "target": 0.5,
+      "actual": 0,
+      "unit": "percent",
+      "passed": true,
+      "priority": "high",
+      "note": "No move data collected"
+    }
+  }
+}

@@ -2210,7 +2210,7 @@ class NeuralNetAI(BaseAI):
             model_class="auto",  # Let factory choose best class
             use_mps=self._use_mps_arch,
             in_channels=14,
-            global_features=10,
+            global_features=20,  # Must match encoder output (20 dims)
             num_res_blocks=10,
             num_filters=128,
             history_length=self.history_length,
@@ -2281,6 +2281,8 @@ class NeuralNetAI(BaseAI):
         direct state_dict loading for legacy checkpoints with explicit
         error handling.
         """
+        import os
+
         try:
             # Try to use versioned loading first
             from ..training.model_versioning import (
@@ -2307,6 +2309,51 @@ class NeuralNetAI(BaseAI):
                     verify_checksum=True,
                     device=self.device,
                 )
+                # Guard: reject checkpoints whose declared global_features do not
+                # match the current encoder/output shape.
+                expected_globals = getattr(self.model, "global_features", None)
+                if expected_globals is not None:
+                    meta_globals = None
+                    if hasattr(metadata, "global_features"):
+                        meta_globals = getattr(metadata, "global_features")
+                    else:
+                        meta_globals = metadata.config.get("global_features")
+                    if meta_globals is not None and meta_globals != expected_globals:
+                        logger.warning(
+                            "Model checkpoint incompatible with current global_features "
+                            f"(checkpoint={meta_globals}, expected={expected_globals}); "
+                            "discarding checkpoint and keeping fresh weights."
+                        )
+                        try:
+                            os.remove(model_path)
+                            logger.info(f"Deleted incompatible model file: {model_path}")
+                        except OSError:
+                            logger.debug(
+                                f"Could not delete incompatible model file: {model_path}"
+                            )
+                        return
+
+                # Guard: reject checkpoints whose value_fc1 weight shape does not
+                # match the current architecture (e.g., stale feature count).
+                vf1_weight = state_dict.get("value_fc1.weight")
+                if vf1_weight is not None and hasattr(self.model, "value_fc1"):
+                    expected_in = self.model.value_fc1.in_features
+                    actual_in = vf1_weight.shape[1]
+                    if actual_in != expected_in:
+                        logger.warning(
+                            "Model checkpoint incompatible with current feature shape "
+                            f"(value_fc1 in_features: checkpoint={actual_in}, "
+                            f"expected={expected_in}); discarding checkpoint."
+                        )
+                        try:
+                            os.remove(model_path)
+                            logger.info(f"Deleted incompatible model file: {model_path}")
+                        except OSError:
+                            logger.debug(
+                                f"Could not delete incompatible model file: {model_path}"
+                            )
+                        return
+
                 self.model.load_state_dict(state_dict)
                 self.model.eval()
                 logger.info(

@@ -17,18 +17,24 @@ set -euo pipefail
 #   STAGING_URL    - URL for staging environment (default: http://localhost:3000)
 #   K6_EXTRA_ARGS  - Additional arguments to pass to k6
 #   SKIP_CONFIRM   - Set to 'true' to skip the confirmation prompt
+#   SCENARIO_ID    - Scenario identifier/tag (default: BCAP_SQ8_3P_TARGET_100G_300P)
+#   SKIP_WS_COMPANION - Set to 1/true to skip the WebSocket companion run
+#   SEED_LOADTEST_USERS - If 'true', seed load-test users before running (uses scripts/seed-loadtest-users.js)
+#   LOADTEST_USER_COUNT / LOADTEST_USER_DOMAIN / LOADTEST_USER_OFFSET / LOADTEST_USER_PASSWORD / LOADTEST_USER_ROLE - Seeding overrides
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOAD_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$(dirname "$LOAD_DIR")")"
+SCENARIO_ID_DEFAULT="BCAP_SQ8_3P_TARGET_100G_300P"
+SCENARIO_ID="${SCENARIO_ID:-$SCENARIO_ID_DEFAULT}"
 
 # Default to staging
 TARGET="${1:-staging}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_DIR="$LOAD_DIR/results"
-RESULT_FILE="$RESULTS_DIR/target-scale_${TARGET}_${TIMESTAMP}.json"
-SUMMARY_FILE="$RESULTS_DIR/target-scale_${TARGET}_${TIMESTAMP}_summary.json"
+RESULT_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}.json"
+SUMMARY_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}_summary.json"
 CONFIG_FILE="$LOAD_DIR/configs/target-scale.json"
 
 # Color output helpers
@@ -106,6 +112,7 @@ echo "║     RingRift TARGET SCALE Load Test                    ║"
 echo "║     Target: 100 Concurrent Games / 300 Players         ║"
 echo "╠════════════════════════════════════════════════════════╣"
 echo "║  Configuration: $(basename "$CONFIG_FILE")"
+echo "║  Scenario ID:  $SCENARIO_ID"
 echo "║  Target:        $TARGET"
 echo "║  Base URL:      $BASE_URL"
 echo "║  WS URL:        $WS_URL"
@@ -163,6 +170,13 @@ if [[ "$TARGET" == *"staging"* ]]; then
     fi
 fi
 
+# Optionally seed load-test users to ensure sufficient accounts exist.
+if [[ "${SEED_LOADTEST_USERS:-false}" == "true" ]]; then
+    echo ""
+    log_info "Seeding load-test users (LOADTEST_USER_COUNT=${LOADTEST_USER_COUNT:-400}, domain=${LOADTEST_USER_DOMAIN:-loadtest.local}, offset=${LOADTEST_USER_OFFSET:-0})..."
+    (cd "$PROJECT_ROOT" && npm run load:seed-users) || log_warning "User seeding failed; continuing without seeding"
+fi
+
 # Warning and confirmation
 echo ""
 echo "╔════════════════════════════════════════════════════════╗"
@@ -213,7 +227,9 @@ K6_ARGS=(
     "--env" "WS_URL=$WS_URL"
     "--env" "THRESHOLD_ENV=$THRESHOLD_ENV"
     "--env" "LOAD_PROFILE=target_scale"
+    "--env" "SCENARIO_ID=$SCENARIO_ID"
     "--tag" "test=target-scale"
+    "--tag" "scenario_id=$SCENARIO_ID"
     "--tag" "target=$TARGET"
     "--tag" "timestamp=$TIMESTAMP"
     "--out" "json=$RESULT_FILE"
@@ -286,14 +302,46 @@ else
     fi
 fi
 
+# Optional: run WebSocket companion pass (preset=target, peak ~300 connections)
+WS_SCENARIO_FILE="$LOAD_DIR/scenarios/websocket-stress.js"
+if [[ -f "$WS_SCENARIO_FILE" ]]; then
+    echo ""
+    log_info "Starting WebSocket target-scale companion run (preset=target, peak ~300 connections)..."
+    if [[ "${SKIP_WS_COMPANION:-false}" == "true" || "${SKIP_WS_COMPANION:-0}" == "1" ]]; then
+        log_info "SKIP_WS_COMPANION set; skipping WebSocket companion run"
+    else
+        WS_RESULT_FILE="$RESULTS_DIR/websocket_${SCENARIO_ID}_${TARGET}_${TIMESTAMP}.json"
+        WS_SCENARIO_ID="${SCENARIO_ID}-websocket"
+    WS_K6_ARGS=(
+        "--env" "BASE_URL=$BASE_URL"
+        "--env" "WS_URL=$WS_URL"
+        "--env" "THRESHOLD_ENV=$THRESHOLD_ENV"
+        "--env" "WS_SCENARIO_PRESET=target"
+        "--env" "SCENARIO_ID=$WS_SCENARIO_ID"
+        "--tag" "test=websocket-target"
+        "--tag" "scenario_id=$WS_SCENARIO_ID"
+        "--tag" "target=$TARGET"
+        "--tag" "timestamp=$TIMESTAMP"
+        "--out" "json=$WS_RESULT_FILE"
+    )
+    k6 run "${WS_K6_ARGS[@]}" "$WS_SCENARIO_FILE" || log_warning "WebSocket companion run exited non-zero (thresholds may have failed)"
+    fi
+else
+    log_warning "WebSocket scenario not found at $WS_SCENARIO_FILE; skipping WebSocket companion run"
+fi
+
 # Print final summary
 echo ""
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║              Target Scale Test Complete                ║"
 echo "╠════════════════════════════════════════════════════════╣"
+echo "║  Scenario:    $SCENARIO_ID"
 echo "║  Duration:    ${DURATION_MINS} minutes"
 echo "║  Results:     $RESULT_FILE"
 echo "║  Summary:     $SUMMARY_FILE"
+if [[ -n "${WS_RESULT_FILE:-}" ]]; then
+    echo "║  WS Results:  $WS_RESULT_FILE"
+fi
 echo "╠════════════════════════════════════════════════════════╣"
 if [[ $K6_EXIT_CODE -eq 0 ]] && [[ ${ANALYZER_EXIT:-0} -eq 0 ]]; then
     echo "║  Status:      ✅ TARGET SCALE VALIDATED               ║"

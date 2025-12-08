@@ -547,20 +547,52 @@ export function isValidPosition(pos: Position, boardType: BoardType, boardSize: 
 - [ ] **NEW:** Unify `GameState` types (engine/types.ts → types/game.ts)
 
 **Python AI:**
-- [ ] Extract swap evaluation (300 lines)
-- [ ] Create EvaluationProvider interface
-- [ ] Extract move ordering heuristics
+- [x] Extract swap evaluation (~300 lines) → `ai-service/app/ai/swap_evaluation.py`
+  - `SwapWeights` dataclass for configurable weights
+  - `SwapEvaluator` class with position classification and swap bonus logic
+  - HeuristicAI delegates to SwapEvaluator (maintains backward compatibility)
+- [x] Create EvaluationProvider interface → `ai-service/app/ai/evaluation_provider.py`
+  - `EvaluationProvider` Protocol for position evaluation
+  - `HeuristicEvaluator` class with all evaluation features (Tier 0/1/2)
+  - `EvaluatorConfig` dataclass for evaluator configuration
+  - Enables composition over inheritance for MinimaxAI/MCTSAI
+- [x] Extract move ordering heuristics → `ai-service/app/ai/move_ordering.py`
+  - `MoveTypePriority` enum with standard priority values
+  - `MovePriorityScorer` class for move scoring
+  - `KillerMoveTable` for killer move heuristic
+  - `order_moves()`, `filter_noisy_moves()`, `score_noisy_moves()` utilities
 
 **Tests:**
-- [ ] Create Python `conftest.py` with shared fixtures
-- [ ] Create TS `mockFactories.ts`
+- [x] Create Python `conftest.py` with shared fixtures → `ai-service/tests/conftest.py`
+  - Factory fixtures: `player_factory`, `move_factory`, `ring_stack_factory`, `board_state_factory`, `game_state_factory`
+  - Common fixtures: `empty_game_state`, `game_state_with_stacks`, `game_state_mid_game`
+  - AI config fixtures: `ai_config_easy`, `ai_config_medium`, `ai_config_hard`
+  - Autouse cache-clearing fixture for test isolation
+- [x] Create TS mock factories → Extended `tests/utils/fixtures.ts`
+  - `createMockPythonRulesClient()` - Mock Python rules client
+  - `createMockSocket()` - Mock Socket.IO socket
+  - `createMockSocketIOServer()` - Mock Socket.IO server
+  - `createMockUserSockets()` - User-to-socket mapping
+  - `createTestMove()` - Test move factory
 
 ### Phase 2: State Consolidation (Weeks 3-4)
 
 **Server/Sandbox:**
-- [ ] Extract DecisionPhaseState machine to shared
-- [ ] Extract AIFallbackHandler to shared
-- [ ] Create GameDomainErrors
+- [x] Extract DecisionPhaseState machine to shared → `src/shared/decisions/DecisionPhaseState.ts`
+  - Discriminated union state machine: idle, pending, warning, expired, resolved, cancelled
+  - State transitions: `initializeDecision()`, `issueWarning()`, `expireDecision()`, `resolveDecision()`
+  - Query helpers: `isDecisionActive()`, `getRemainingTime()`, `getDecisionMetadata()`
+  - Timeout configuration with per-choice-type overrides
+- [x] Extract AIFallbackHandler to shared → `src/shared/ai/AIFallbackHandler.ts`
+  - `FallbackContext` and `FallbackResult` types for consistent fallback handling
+  - `selectFallbackMove()` wrapper with diagnostics
+  - RNG utilities: `createLocalAIRng()`, `deriveFallbackSeed()`
+  - Cumulative diagnostics tracking for sessions
+- [x] Create GameDomainErrors → `src/shared/errors/GameDomainErrors.ts`
+  - `GameErrorCode` enum with categorized error codes (GAME_, MOVE_, AI_, DECISION_, PLAYER_)
+  - `GameError` base class with code, context, HTTP status mapping
+  - Specific error classes: `InvalidMoveError`, `NotYourTurnError`, `AIServiceTimeoutError`, etc.
+  - Utilities: `isGameError()`, `wrapError()`, `getHttpStatus()`
 
 **Client:**
 - [ ] Extract GameFacade abstraction
@@ -636,12 +668,13 @@ export function isValidPosition(pos: Position, boardType: BoardType, boardSize: 
 
 ### Low-Risk Quick Wins
 
-| Refactoring | Risk | Impact |
-|-------------|------|--------|
-| Delete validators/ directory | Minimal | ~400 LOC saved |
-| Python conftest.py | None | Better test organization |
-| Extract swap_evaluation.py | Minimal | Testability improvement |
-| mockFactories.ts | None | Better test maintainability |
+| Refactoring | Risk | Impact | Status |
+|-------------|------|--------|--------|
+| Delete validators/ directory | Minimal | ~400 LOC saved | BLOCKED (type unification needed) |
+| Python conftest.py | None | Better test organization | ✅ DONE |
+| Extract swap_evaluation.py | Minimal | Testability improvement | ✅ DONE |
+| mockFactories.ts | None | Better test maintainability | ✅ DONE (extended fixtures.ts) |
+| Move isValidPosition to core.ts | None | Better organization | ✅ DONE |
 
 ---
 

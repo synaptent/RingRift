@@ -1301,6 +1301,35 @@ export function processTurn(
     }
   }
 
+  // Additional terminal guard: if all players have zero rings in hand and no
+  // global interactive moves remain (placements, movement, captures), treat the
+  // position as terminal rather than advancing to another ring_placement loop.
+  // This mirrors Python’s ANM/LPS termination observed in parity bundles.
+  if (finalStatus === 'complete' && finalState.gameStatus === 'active') {
+    const allZeroRings = finalState.players.every((p) => p.ringsInHand <= 0);
+    const anyPlayerHasActions = finalState.players.some((p) => {
+      const summary = computeGlobalLegalActionsSummary(finalState, p.playerNumber);
+      return (
+        summary.hasGlobalPlacementAction ||
+        summary.hasPhaseLocalInteractiveMove ||
+        summary.hasForcedEliminationAction
+      );
+    });
+
+    if (allZeroRings && !anyPlayerHasActions) {
+      const victory = toVictoryState(finalState);
+      if (victory.isGameOver) {
+        finalState = {
+          ...finalState,
+          currentPhase: 'game_over',
+          gameStatus: 'completed',
+          winner: victory.winner,
+        };
+        finalVictory = victory;
+      }
+    }
+  }
+
   // FSM orchestrator shadow check: run the FSM transition in parallel and log
   // divergences between FSM-derived phase/player and the orchestration result.
   if (isFSMOrchestratorShadowEnabled()) {

@@ -21,6 +21,17 @@ Baselines are established through load testing and used to:
 > npm run load:baseline:staging # For staging environment
 > ```
 
+Baseline runner notes (Dec 2025):
+- `SCENARIO_ID` defaults to `BCAP_STAGING_BASELINE_20G_60P` and is threaded into filenames/tags.
+- Optional WebSocket companion run (`websocket-stress.js`, preset=baseline ~60 conns) runs automatically unless `SKIP_WS_COMPANION=true` is set; companion result files are named `websocket_<SCENARIO_ID>_...json`.
+- Optional user seeding via `SEED_LOADTEST_USERS=true` (with `LOADTEST_USER_*` overrides) seeds a load-test account pool before k6 starts.
+- Smoke profile: set `SMOKE=1` for a short/local wiring check; otherwise the `load` profile is used.
+
+Latest staging baseline run for pipeline validation (smoke-level only, not target scale): see
+`tests/load/results/baseline_staging_20251208_144949.json` and the corresponding
+`baseline_staging_20251208_144949_summary.json` and
+`baseline_staging_20251208_144949_summary_slo_summary.json`.
+
 ### Production Targets (from PROJECT_GOALS.md)
 
 | Metric             | Target  | Current Baseline | Status | Notes                                  |
