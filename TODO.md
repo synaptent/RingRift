@@ -424,8 +424,8 @@ Operational drills completed:
 #### Spectator/Replay Polish
 
 - [ ] Enhance spectator HUD (reconnection state, watcher counts, phase/choice banners) and validate via integration tests
-- [ ] Ensure move history lists all phase moves, including `no_*` and `forced_elimination`, and supports export/share
-- [ ] Add fast-forward/rewind affordances and keyboard bindings for replay; prefetch upcoming turns for smooth playback
+- [x] Ensure move history lists all phase moves, including `no_*` and `forced_elimination`, and supports export/share
+- [x] Add fast-forward/rewind affordances and keyboard bindings for replay; prefetch upcoming turns for smooth playback
 
 #### E2E Test Coverage
 

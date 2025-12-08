@@ -816,6 +816,10 @@ export function ReplayPanel({
                     <kbd className="px-1 py-0.5 bg-slate-800 rounded">←</kbd>{' '}
                     <kbd className="px-1 py-0.5 bg-slate-800 rounded">→</kbd> step
                     <span className="mx-1">|</span>
+                    <kbd className="px-1 py-0.5 bg-slate-800 rounded">Home</kbd> start
+                    <span className="mx-1">|</span>
+                    <kbd className="px-1 py-0.5 bg-slate-800 rounded">End</kbd> end
+                    <span className="mx-1">|</span>
                     <kbd className="px-1 py-0.5 bg-slate-800 rounded">Esc</kbd> exit
                   </div>
                 </>

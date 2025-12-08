@@ -16,7 +16,9 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ### Canonical (Parity + Canonical-History Gated)
 
-_None passing as of the 2025-12-08 cleanup._
+| Database               | Board Type | Players | Status        | Gate Summary                     | Notes                                                                                                                                                                                                   |
+| ---------------------- | ---------- | ------- | ------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `canonical_square8.db` | square8    | 2       | **canonical** | db_health.canonical_square8.json | Regenerated 2025-12-07 via `generate_canonical_selfplay.py` (1 game, canonical_ok=true; parity gate passed with end-of-game-only current_player mismatch). Use as the current canonical square8 source. |
 
 ### Pending Re-Gate / Needs Regeneration
 

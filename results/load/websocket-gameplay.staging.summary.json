@@ -1,9 +1,18 @@
 {
   "scenario": "websocket-gameplay",
   "environment": "staging",
-  "runTimestamp": "2025-12-08T05:55:23.656Z",
+  "runTimestamp": "2025-12-08T06:51:43.622Z",
   "overallPass": false,
   "thresholds": [
+    {
+      "metric": "ws_moves_attempted_total",
+      "threshold": "count>0",
+      "statistic": "count",
+      "comparison": ">",
+      "limit": 0,
+      "value": 0,
+      "passed": false
+    },
     {
       "metric": "ws_connection_success_rate",
       "threshold": "rate>0.99",
@@ -19,15 +28,6 @@
       "statistic": "rate",
       "comparison": ">",
       "limit": 0.99,
-      "value": 0,
-      "passed": true
-    },
-    {
-      "metric": "ws_move_stalled_total",
-      "threshold": "count<10",
-      "statistic": "count",
-      "comparison": "<",
-      "limit": 10,
       "value": 0,
       "passed": true
     },
@@ -50,13 +50,13 @@
       "passed": true
     },
     {
-      "metric": "ws_moves_attempted_total",
-      "threshold": "count>0",
+      "metric": "ws_move_stalled_total",
+      "threshold": "count<10",
       "statistic": "count",
-      "comparison": ">",
-      "limit": 0,
+      "comparison": "<",
+      "limit": 10,
       "value": 0,
-      "passed": false
+      "passed": true
     },
     {
       "metric": "ws_move_success_rate",
@@ -73,6 +73,15 @@
     "environment": "staging",
     "thresholds": [
       {
+        "metric": "ws_moves_attempted_total",
+        "threshold": "count>0",
+        "statistic": "count",
+        "comparison": ">",
+        "limit": 0,
+        "value": 0,
+        "passed": false
+      },
+      {
         "metric": "ws_connection_success_rate",
         "threshold": "rate>0.99",
         "statistic": "rate",
@@ -87,15 +96,6 @@
         "statistic": "rate",
         "comparison": ">",
         "limit": 0.99,
-        "value": 0,
-        "passed": true
-      },
-      {
-        "metric": "ws_move_stalled_total",
-        "threshold": "count<10",
-        "statistic": "count",
-        "comparison": "<",
-        "limit": 10,
         "value": 0,
         "passed": true
       },
@@ -118,13 +118,13 @@
         "passed": true
       },
       {
-        "metric": "ws_moves_attempted_total",
-        "threshold": "count>0",
+        "metric": "ws_move_stalled_total",
+        "threshold": "count<10",
         "statistic": "count",
-        "comparison": ">",
-        "limit": 0,
+        "comparison": "<",
+        "limit": 10,
         "value": 0,
-        "passed": false
+        "passed": true
       },
       {
         "metric": "ws_move_success_rate",
@@ -141,7 +141,7 @@
   "thresholdsEnv": "staging",
   "http": {
     "http_req_duration": {
-      "p95": 16.29375,
+      "p95": 50.19675,
       "p99": null
     },
     "game_creation_latency_ms": null,
@@ -173,7 +173,7 @@
     "thresholdsEnv": "staging",
     "http": {
       "http_req_duration": {
-        "p95": 16.29375,
+        "p95": 50.19675,
         "p99": null
       },
       "game_creation_latency_ms": null,

@@ -76,4 +76,35 @@ describe('RulesMatrix Comprehensive Scenarios – v2 contract vector coverage', 
     expect(ids.has('hex_edge_case.corner_region.case1.hexagonal')).toBe(true);
     expect(ids.has('hex_edge_case.forced_elim_3p.hexagonal')).toBe(true);
   });
+
+  test('multi-phase turn vectors cover line → territory flows across all board types', () => {
+    const vectors = loadBundle('multi_phase_turn.vectors.json');
+    const ids = new Set(vectors.map((v) => v.id));
+
+    // Full-sequence turn including placement/capture/line/territory
+    expect(ids.has('multi_phase.full_sequence_with_territory')).toBe(true);
+    expect(ids.has('multi_phase.full_sequence_with_territory_square19')).toBe(true);
+    expect(ids.has('multi_phase.full_sequence_with_territory_hex')).toBe(true);
+
+    // Line → multi-region territory sequences by board type
+    expect(ids.has('multi_phase.line_then_multi_region_territory.square8.step1_line')).toBe(true);
+    expect(ids.has('multi_phase.line_then_multi_region_territory.square8.step2_regionB')).toBe(
+      true
+    );
+    expect(ids.has('multi_phase.line_then_multi_region_territory.square8.step3_regionA')).toBe(
+      true
+    );
+
+    expect(ids.has('multi_phase.line_then_multi_region_territory.square19.step1_line')).toBe(true);
+    expect(ids.has('multi_phase.line_then_multi_region_territory.square19.step2_regionB')).toBe(
+      true
+    );
+    expect(ids.has('multi_phase.line_then_multi_region_territory.square19.step3_regionA')).toBe(
+      true
+    );
+
+    expect(ids.has('multi_phase.line_then_multi_region_territory.hex.step1_line')).toBe(true);
+    expect(ids.has('multi_phase.line_then_multi_region_territory.hex.step2_regionB')).toBe(true);
+    expect(ids.has('multi_phase.line_then_multi_region_territory.hex.step3_regionA')).toBe(true);
+  });
 });

@@ -143,3 +143,4 @@ tests/load/*.load.results.json
 
 # Local sync archives
 ai-service-sync.zip
+.env.staging
