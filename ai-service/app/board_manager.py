@@ -337,7 +337,8 @@ class BoardManager:
                     Territory(
                         **{
                             "spaces": region,
-                            "controllingPlayer": 0,
+                            # Attribute control to the border color to avoid neutral regions.
+                            "controllingPlayer": border_color,
                             "isDisconnected": True,
                         }
                     )
@@ -392,15 +393,19 @@ class BoardManager:
                 board,
             )
             if len(represented_players) < len(active_players):
-                disconnected_regions.append(
-                    Territory(
-                        **{
-                            "spaces": region,
-                            "controllingPlayer": 0,
-                            "isDisconnected": True,
-                        }
+                # Only keep the region if exactly one player is represented inside;
+                # ambiguous/neutral regions are non-canonical and should be dropped.
+                if len(represented_players) == 1:
+                    sole_player = next(iter(represented_players))
+                    disconnected_regions.append(
+                        Territory(
+                            **{
+                                "spaces": region,
+                                "controllingPlayer": sole_player,
+                                "isDisconnected": True,
+                            }
+                        )
                     )
-                )
 
         return disconnected_regions
 
