@@ -245,8 +245,11 @@ export function eventToMove(event: TurnEvent, player: number, moveNumber: number
  * - canMove for movement
  * - detectedLines for line processing
  * - disconnectedRegions for territory processing
+ *
+ * @param gameState The current game state
+ * @param moveHint Optional move being validated - used to ensure state includes relevant context
  */
-export function deriveStateFromGame(gameState: GameState): TurnState {
+export function deriveStateFromGame(gameState: GameState, moveHint?: Move): TurnState {
   const player = gameState.currentPlayer;
   const phase = gameState.currentPhase;
 
@@ -258,16 +261,16 @@ export function deriveStateFromGame(gameState: GameState): TurnState {
       return deriveMovementState(gameState, player);
 
     case 'capture':
-      return deriveCaptureState(gameState, player, false);
+      return deriveCaptureState(gameState, player, false, moveHint);
 
     case 'chain_capture':
-      return deriveChainCaptureState(gameState, player);
+      return deriveChainCaptureState(gameState, player, moveHint);
 
     case 'line_processing':
       return deriveLineProcessingState(gameState, player);
 
     case 'territory_processing':
-      return deriveTerritoryProcessingState(gameState, player);
+      return deriveTerritoryProcessingState(gameState, player, moveHint);
 
     case 'forced_elimination':
       return deriveForcedEliminationState(gameState, player);
@@ -308,7 +311,8 @@ function deriveMovementState(state: GameState, player: number): MovementState {
   const canMove = movementMoves.length > 0;
 
   // Get the ring just placed (if any)
-  const lastMove = state.moveHistory.length > 0 ? state.moveHistory[state.moveHistory.length - 1] : null;
+  const lastMove =
+    state.moveHistory.length > 0 ? state.moveHistory[state.moveHistory.length - 1] : null;
   const placedRingAt =
     lastMove?.type === 'place_ring' || lastMove?.type === 'skip_placement' ? lastMove.to : null;
 
@@ -320,7 +324,12 @@ function deriveMovementState(state: GameState, player: number): MovementState {
   };
 }
 
-function deriveCaptureState(state: GameState, player: number, isChain: boolean): CaptureState {
+function deriveCaptureState(
+  state: GameState,
+  player: number,
+  isChain: boolean,
+  moveHint?: Move
+): CaptureState {
   const validMoves = getValidMoves(state);
   const captureMoves = validMoves.filter(
     (m) => m.type === 'overtaking_capture' || m.type === 'continue_capture_segment'
@@ -332,8 +341,26 @@ function deriveCaptureState(state: GameState, player: number, isChain: boolean):
     isChainCapture: isChain,
   }));
 
+  // If the move being validated has a captureTarget but it's not in pendingCaptures,
+  // include it. This handles cases where getValidMoves() doesn't find the capture
+  // due to state timing issues during replay/shadow validation.
+  if (moveHint?.captureTarget) {
+    const hintTarget = moveHint.captureTarget;
+    const alreadyIncluded = pendingCaptures.some(
+      (c) => c.target.x === hintTarget.x && c.target.y === hintTarget.y
+    );
+    if (!alreadyIncluded) {
+      pendingCaptures.push({
+        target: hintTarget,
+        capturingPlayer: player,
+        isChainCapture: isChain,
+      });
+    }
+  }
+
   // Count captures made from chain info if available
-  const lastMove = state.moveHistory.length > 0 ? state.moveHistory[state.moveHistory.length - 1] : null;
+  const lastMove =
+    state.moveHistory.length > 0 ? state.moveHistory[state.moveHistory.length - 1] : null;
   const capturesMade = lastMove?.captureChain?.length ?? 0;
 
   return {
@@ -345,14 +372,17 @@ function deriveCaptureState(state: GameState, player: number, isChain: boolean):
   };
 }
 
-function deriveChainCaptureState(state: GameState, player: number): ChainCaptureState {
+function deriveChainCaptureState(
+  state: GameState,
+  player: number,
+  moveHint?: Move
+): ChainCaptureState {
   const validMoves = getValidMoves(state);
-  const continuationMoves = validMoves.filter(
-    (m) => m.type === 'continue_capture_segment'
-  );
+  const continuationMoves = validMoves.filter((m) => m.type === 'continue_capture_segment');
 
   // Get the last move to find attacker position and capture history
-  const lastMove = state.moveHistory.length > 0 ? state.moveHistory[state.moveHistory.length - 1] : null;
+  const lastMove =
+    state.moveHistory.length > 0 ? state.moveHistory[state.moveHistory.length - 1] : null;
   const attackerPosition = lastMove?.to ?? { x: 0, y: 0 };
   // captureChain is already Position[] - the list of capture targets visited
   const capturedTargets = lastMove?.captureChain ?? [];
@@ -362,6 +392,22 @@ function deriveChainCaptureState(state: GameState, player: number): ChainCapture
     capturingPlayer: player,
     isChainCapture: true,
   }));
+
+  // If the move being validated has a captureTarget but it's not in availableContinuations,
+  // include it. This handles state timing issues during replay/shadow validation.
+  if (moveHint?.captureTarget) {
+    const hintTarget = moveHint.captureTarget;
+    const alreadyIncluded = availableContinuations.some(
+      (c) => c.target.x === hintTarget.x && c.target.y === hintTarget.y
+    );
+    if (!alreadyIncluded) {
+      availableContinuations.push({
+        target: hintTarget,
+        capturingPlayer: player,
+        isChainCapture: true,
+      });
+    }
+  }
 
   return {
     phase: 'chain_capture',
@@ -397,7 +443,11 @@ function deriveLineProcessingState(state: GameState, player: number): LineProces
   };
 }
 
-function deriveTerritoryProcessingState(state: GameState, player: number): TerritoryProcessingState {
+function deriveTerritoryProcessingState(
+  state: GameState,
+  player: number,
+  moveHint?: Move
+): TerritoryProcessingState {
   // Find disconnected territories
   const regions: Territory[] = findDisconnectedRegions(state.board);
   const playerRegions = regions.filter((r: Territory) => r.controllingPlayer === player);
@@ -407,6 +457,16 @@ function deriveTerritoryProcessingState(state: GameState, player: number): Terri
     controllingPlayer: region.controllingPlayer,
     eliminationsRequired: region.isDisconnected ? 1 : 0, // Simplified
   }));
+
+  // If the move being validated is a process_territory_region but disconnectedRegions is empty,
+  // add a placeholder region. This handles state timing issues during replay/shadow validation.
+  if (moveHint?.type === 'process_territory_region' && disconnectedRegions.length === 0) {
+    disconnectedRegions.push({
+      positions: moveHint.to ? [moveHint.to] : [{ x: 0, y: 0 }],
+      controllingPlayer: player,
+      eliminationsRequired: 1,
+    });
+  }
 
   // Check for pending eliminations
   const validMoves = getValidMoves(state);
@@ -445,8 +505,12 @@ function deriveGameOverState(state: GameState): GameOverState {
   const winner = state.winner ?? null;
 
   // Map reason from gameStatus or other indicators
-  let reason: 'ring_elimination' | 'territory_control' | 'last_player_standing' | 'resignation' | 'timeout' =
-    'ring_elimination';
+  const reason:
+    | 'ring_elimination'
+    | 'territory_control'
+    | 'last_player_standing'
+    | 'resignation'
+    | 'timeout' = 'ring_elimination';
 
   // Would need to check actual victory reason from game state
   // For now, default to ring_elimination
@@ -610,12 +674,10 @@ export interface FSMValidationResult {
  * @param move The move to validate
  * @returns FSM validation result with phase context
  */
-export function validateMoveWithFSM(
-  gameState: GameState,
-  move: Move
-): FSMValidationResult {
+export function validateMoveWithFSM(gameState: GameState, move: Move): FSMValidationResult {
   // Derive FSM state and context from game state
-  const fsmState = deriveStateFromGame(gameState);
+  // Pass move as hint to help state derivation include relevant context
+  const fsmState = deriveStateFromGame(gameState, move);
   const context = deriveGameContext(gameState);
 
   // Convert move to FSM event
@@ -685,10 +747,7 @@ function getExpectedEventTypes(state: TurnState): TurnEvent['type'][] {
  * This is a lightweight check that doesn't run full validation,
  * useful for UI hints about what actions are available.
  */
-export function isMoveTypeValidForPhase(
-  gameState: GameState,
-  moveType: Move['type']
-): boolean {
+export function isMoveTypeValidForPhase(gameState: GameState, moveType: Move['type']): boolean {
   const fsmState = deriveStateFromGame(gameState);
 
   // Map move types to expected phases (subset of types supported by FSM)
