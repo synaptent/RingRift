@@ -50,18 +50,20 @@ This index catalogs all project documentation organized by topic and location. F
 
 Engine and system architecture documentation.
 
-| Document                                                                                                 | Purpose                          |
-| -------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| [API_REFERENCE.md](docs/architecture/API_REFERENCE.md)                                                   | REST API documentation           |
-| [CANONICAL_ENGINE_API.md](docs/architecture/CANONICAL_ENGINE_API.md)                                     | Public engine API specification  |
-| [DOMAIN_AGGREGATE_DESIGN.md](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md)                               | Domain model and aggregates      |
-| [MODULE_RESPONSIBILITIES.md](docs/architecture/MODULE_RESPONSIBILITIES.md)                               | Module catalog                   |
-| [PLAYER_MOVE_TRANSPORT_DECISION.md](docs/architecture/PLAYER_MOVE_TRANSPORT_DECISION.md)                 | WebSocket vs HTTP move transport |
-| [STATE_MACHINES.md](docs/architecture/STATE_MACHINES.md)                                                 | Session/AI/choice state machines |
-| [TOPOLOGY_MODES.md](docs/architecture/TOPOLOGY_MODES.md)                                                 | Board topology design            |
-| [ORCHESTRATOR_ROLLOUT_PLAN.md](docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md)                           | Orchestrator migration plan      |
-| [ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md](docs/architecture/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md) | Migration completion             |
-| [SHARED_ENGINE_CONSOLIDATION_PLAN.md](docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md)             | Engine consolidation design      |
+| Document                                                                                                   | Purpose                                  |
+| ---------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| [API_REFERENCE.md](docs/architecture/API_REFERENCE.md)                                                     | REST API documentation                   |
+| [CANONICAL_ENGINE_API.md](docs/architecture/CANONICAL_ENGINE_API.md)                                       | Public engine API specification          |
+| [DOMAIN_AGGREGATE_DESIGN.md](docs/architecture/DOMAIN_AGGREGATE_DESIGN.md)                                 | Domain model and aggregates              |
+| [MODULE_RESPONSIBILITIES.md](docs/architecture/MODULE_RESPONSIBILITIES.md)                                 | Module catalog                           |
+| [PLAYER_MOVE_TRANSPORT_DECISION.md](docs/architecture/PLAYER_MOVE_TRANSPORT_DECISION.md)                   | WebSocket vs HTTP move transport         |
+| [STATE_MACHINES.md](docs/architecture/STATE_MACHINES.md)                                                   | Session/AI/choice state machines         |
+| [TOPOLOGY_MODES.md](docs/architecture/TOPOLOGY_MODES.md)                                                   | Board topology design                    |
+| [ORCHESTRATOR_ROLLOUT_PLAN.md](docs/architecture/ORCHESTRATOR_ROLLOUT_PLAN.md)                             | Orchestrator migration plan              |
+| [ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md](docs/architecture/ORCHESTRATOR_MIGRATION_COMPLETION_PLAN.md)   | Migration completion                     |
+| [SHARED_ENGINE_CONSOLIDATION_PLAN.md](docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md)               | Engine consolidation design              |
+| [CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md](docs/architecture/CLIENT_SANDBOX_ENGINE_REFACTOR_PROPOSAL.md) | Deferred refactor proposal (not started) |
+| [NEURAL_NET_INTEGRATION_DESIGN.md](docs/architecture/NEURAL_NET_INTEGRATION_DESIGN.md)                     | Neural network integration design        |
 
 ### /docs/rules/
 
@@ -97,18 +99,19 @@ AI service and training documentation.
 
 Test infrastructure and QA documentation.
 
-| Document                                                                                                                  | Purpose                        |
-| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| [TEST_CATEGORIES.md](docs/testing/TEST_CATEGORIES.md)                                                                     | CI vs diagnostic test types    |
-| [TEST_INFRASTRUCTURE.md](docs/testing/TEST_INFRASTRUCTURE.md)                                                             | Test framework setup           |
-| [STRICT_INVARIANT_SOAKS.md](docs/testing/STRICT_INVARIANT_SOAKS.md)                                                       | Long-running invariant tests   |
-| [E2E_AUTH_AND_GAME_FLOW_TEST_STABILIZATION_SUMMARY.md](docs/testing/E2E_AUTH_AND_GAME_FLOW_TEST_STABILIZATION_SUMMARY.md) | E2E test stabilization         |
-| [GO_NO_GO_CHECKLIST.md](docs/testing/GO_NO_GO_CHECKLIST.md)                                                               | Production readiness checklist |
-| [LOAD_TEST_BASELINE.md](docs/testing/LOAD_TEST_BASELINE.md)                                                               | Load test baseline targets     |
-| [LOAD_TEST_BASELINE_REPORT.md](docs/testing/LOAD_TEST_BASELINE_REPORT.md)                                                 | Load test results report       |
-| [LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md](docs/testing/LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md)                                 | WebSocket load testing design  |
-| [HUD_QA_CHECKLIST.md](docs/testing/HUD_QA_CHECKLIST.md)                                                                   | UI/UX manual QA checklist      |
-| [GOLDEN_REPLAYS.md](docs/testing/GOLDEN_REPLAYS.md)                                                                       | Golden replay test system      |
+| Document                                                                                                                  | Purpose                                                              |
+| ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [TEST_CATEGORIES.md](docs/testing/TEST_CATEGORIES.md)                                                                     | CI vs diagnostic test types                                          |
+| [TEST_INFRASTRUCTURE.md](docs/testing/TEST_INFRASTRUCTURE.md)                                                             | Test framework setup                                                 |
+| [STRICT_INVARIANT_SOAKS.md](docs/testing/STRICT_INVARIANT_SOAKS.md)                                                       | Long-running invariant tests                                         |
+| [E2E_AUTH_AND_GAME_FLOW_TEST_STABILIZATION_SUMMARY.md](docs/testing/E2E_AUTH_AND_GAME_FLOW_TEST_STABILIZATION_SUMMARY.md) | E2E test stabilization                                               |
+| [GO_NO_GO_CHECKLIST.md](docs/testing/GO_NO_GO_CHECKLIST.md)                                                               | Production readiness checklist                                       |
+| [LOAD_TEST_BASELINE.md](docs/testing/LOAD_TEST_BASELINE.md)                                                               | Load test baseline targets                                           |
+| [LOAD_TEST_BASELINE_REPORT.md](docs/testing/LOAD_TEST_BASELINE_REPORT.md)                                                 | Load test results report                                             |
+| [BASELINE_CAPACITY.md](docs/BASELINE_CAPACITY.md)                                                                         | Current/target/AI-heavy capacity runs and how to execute/record them |
+| [LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md](docs/testing/LOAD_TEST_WEBSOCKET_MOVE_STRATEGY.md)                                 | WebSocket load testing design                                        |
+| [HUD_QA_CHECKLIST.md](docs/testing/HUD_QA_CHECKLIST.md)                                                                   | UI/UX manual QA checklist                                            |
+| [GOLDEN_REPLAYS.md](docs/testing/GOLDEN_REPLAYS.md)                                                                       | Golden replay test system                                            |
 
 ### /docs/runbooks/
 
