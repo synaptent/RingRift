@@ -147,9 +147,8 @@ app.use('/api', setupRoutes(wsServer));
 
 if (config.isProduction) {
   // Express 5 uses path-to-regexp v8, which no longer accepts a bare "*" path.
-  // Use an explicit wildcard under the root path so we can continue to serve
-  // the SPA index.html for any non-API / non-metrics / non-health route.
-  app.get('/*', (req: Request, res: Response, next: NextFunction) => {
+  // Use a named wildcard parameter to catch all routes for SPA fallback.
+  app.get('/{*path}', (req: Request, res: Response, next: NextFunction) => {
     if (
       req.path.startsWith('/api') ||
       req.path.startsWith('/socket.io') ||
