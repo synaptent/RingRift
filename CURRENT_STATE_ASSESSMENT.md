@@ -1,6 +1,6 @@
 # RingRift Current State Assessment
 
-**Assessment Date:** 2025-12-06
+**Assessment Date:** 2025-12-08
 **Project Health Status:** GREEN
 **Purpose:** Authoritative snapshot of implementation status, architecture, and quality metrics
 
@@ -25,14 +25,14 @@ RingRift is a **stable beta** turn-based board game implementation with a consol
 
 ### Key Metrics
 
-| Metric                                | Value                                                      |
-| ------------------------------------- | ---------------------------------------------------------- |
-| TypeScript tests (CI-gated)           | 2,987 passing                                              |
-| Python tests                          | 836 passing                                                |
-| Contract vectors                      | 54 (legacy vectors still passing)                          |
-| DB replay parity (TS↔Python replays)  | In progress; CanonicalReplayEngine powering TS harness     |
-| Line coverage                         | ~69%                                                       |
-| Canonical phases                      | 8                                                          |
+| Metric                               | Value                                                  |
+| ------------------------------------ | ------------------------------------------------------ |
+| TypeScript tests (CI-gated)          | 2,987 passing                                          |
+| Python tests                         | 836 passing                                            |
+| Contract vectors                     | 54 (legacy vectors still passing)                      |
+| DB replay parity (TS↔Python replays) | In progress; CanonicalReplayEngine powering TS harness |
+| Line coverage                        | ~69%                                                   |
+| Canonical phases                     | 8                                                      |
 
 ### Architecture State
 
@@ -177,11 +177,11 @@ The contract testing framework ensures TypeScript and Python engines produce ide
 
 ### 3.2 Replay Parity Infrastructure
 
-| Tool                               | Purpose                    |
-| ---------------------------------- | -------------------------- |
+| Tool                               | Purpose                                                     |
+| ---------------------------------- | ----------------------------------------------------------- |
 | `selfplay-db-ts-replay.ts`         | TS replay from Python DBs (now via `CanonicalReplayEngine`) |
-| `check_ts_python_replay_parity.py` | Per-game parity comparison |
-| `debug_ts_python_state_diff.py`    | Structural diff tooling    |
+| `check_ts_python_replay_parity.py` | Per-game parity comparison                                  |
+| `debug_ts_python_state_diff.py`    | Structural diff tooling                                     |
 
 ### 3.3 Training Data Hygiene
 
@@ -195,11 +195,11 @@ The contract testing framework ensures TypeScript and Python engines produce ide
 
 ### 4.1 Test Counts
 
-| Category              | Count | Status                |
-| --------------------- | ----- | --------------------- |
-| TypeScript CI-gated   | 2,987 | ✅ Passing            |
-| TypeScript diagnostic | ~170  | Skipped (intentional) |
-| Python                | 836   | ✅ Passing            |
+| Category              | Count | Status                                                              |
+| --------------------- | ----- | ------------------------------------------------------------------- |
+| TypeScript CI-gated   | 2,987 | ✅ Passing                                                          |
+| TypeScript diagnostic | ~170  | Skipped (intentional)                                               |
+| Python                | 836   | ✅ Passing                                                          |
 | Contract vectors      | 54    | ✅ Legacy vectors green; DB replay parity still under investigation |
 
 ### 4.2 Test Categories
