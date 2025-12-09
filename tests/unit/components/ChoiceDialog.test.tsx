@@ -711,6 +711,15 @@ describe('ChoiceDialog', () => {
       expect(focusables).toContain(document.activeElement);
     });
 
+    it('auto-focuses the first option when the dialog opens', () => {
+      const choice = createLineOrderChoice();
+      render(<ChoiceDialog {...defaultProps} choice={choice} />);
+
+      const optionButtons = screen.getAllByRole('option') as HTMLButtonElement[];
+      expect(optionButtons.length).toBeGreaterThan(0);
+      expect(document.activeElement).toBe(optionButtons[0]);
+    });
+
     it('all option buttons have type="button"', () => {
       const choice = createLineOrderChoice();
       render(<ChoiceDialog {...defaultProps} choice={choice} />);

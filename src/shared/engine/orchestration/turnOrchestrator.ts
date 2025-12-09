@@ -1358,8 +1358,11 @@ export function processTurn(
   const fsmOrchestratorMode = getFSMOrchestratorMode();
   if (fsmOrchestratorMode !== 'off') {
     try {
-      // Compute FSM orchestration result
-      const fsmOrchResult = computeFSMOrchestration(state, move);
+      // Compute FSM orchestration result using pre-move state for FSM transition,
+      // but pass post-move state for chain capture availability checking.
+      const fsmOrchResult = computeFSMOrchestration(state, move, {
+        postMoveStateForChainCheck: finalState,
+      });
 
       if (!fsmOrchResult.success) {
         debugLog(true, '[FSM_ORCHESTRATOR] ERROR', {
@@ -1719,63 +1722,11 @@ function assertPhaseMoveInvariant(state: GameState, move: Move): void {
   const phase = state.currentPhase;
   const type = move.type;
 
-  // Meta-move allowed in any phase
-  if (type === 'swap_sides') {
-    return;
-  }
-
-  // Legacy / experimental – allow to avoid breaking historical logs,
-  // but these recordings should not be considered canonical.
-  if (type === 'line_formation' || type === 'territory_claim') {
-    return;
-  }
-
-  let allowed: Set<MoveType>;
-
-  switch (phase) {
-    case 'ring_placement':
-      allowed = new Set<MoveType>(['place_ring', 'skip_placement', 'no_placement_action']);
-      break;
-    case 'movement':
-      allowed = new Set<MoveType>([
-        'move_stack',
-        'move_ring',
-        'overtaking_capture',
-        'continue_capture_segment',
-        'no_movement_action',
-        'recovery_slide', // RR-CANON-R110–R115: Recovery action for temporarily eliminated players
-      ]);
-      break;
-    case 'capture':
-      allowed = new Set<MoveType>([
-        'overtaking_capture',
-        'continue_capture_segment',
-        'skip_capture',
-      ]);
-      break;
-    case 'chain_capture':
-      allowed = new Set<MoveType>(['overtaking_capture', 'continue_capture_segment']);
-      break;
-    case 'line_processing':
-      allowed = new Set<MoveType>(['process_line', 'choose_line_reward', 'no_line_action']);
-      break;
-    case 'territory_processing':
-      allowed = new Set<MoveType>([
-        'process_territory_region',
-        'eliminate_rings_from_stack',
-        'skip_territory_processing',
-        'no_territory_action',
-      ]);
-      break;
-    case 'forced_elimination':
-      allowed = new Set<MoveType>(['forced_elimination']);
-      break;
-    default:
-      // Unknown phase: do not enforce
-      return;
-  }
-
-  if (!allowed.has(type as MoveType)) {
+  // Delegate to FSMAdapter's canonical phase ↔ MoveType mapping. The adapter
+  // already treats meta/legacy move types (swap_sides, line_formation,
+  // territory_claim) as universally allowed, matching the historical behavior
+  // of this invariant while centralising the actual mapping.
+  if (!isMoveTypeValidForPhase(phase, type)) {
     throw new Error(`[PHASE_MOVE_INVARIANT] Cannot apply move type '${type}' in phase '${phase}'`);
   }
 }
@@ -1885,7 +1836,7 @@ function performFSMValidation(
       }
 
       // Also check phase validity
-      const fsmPhaseValid = isMoveTypeValidForPhase(state, move.type);
+      const fsmPhaseValid = isMoveTypeValidForPhase(state.currentPhase, move.type);
       const existingPhaseValid = isPhaseValidForMoveType(state.currentPhase, move.type);
 
       if (fsmPhaseValid !== existingPhaseValid) {
@@ -1971,61 +1922,9 @@ function performFSMValidation(
  * Used for comparison with FSM phase validation.
  */
 function isPhaseValidForMoveType(phase: GamePhase, moveType: Move['type']): boolean {
-  // Meta-moves allowed in any phase
-  if (moveType === 'swap_sides') {
-    return true;
-  }
-
-  // Legacy types allowed
-  if (moveType === 'line_formation' || moveType === 'territory_claim') {
-    return true;
-  }
-
-  let allowed: Set<MoveType>;
-
-  switch (phase) {
-    case 'ring_placement':
-      allowed = new Set<MoveType>(['place_ring', 'skip_placement', 'no_placement_action']);
-      break;
-    case 'movement':
-      allowed = new Set<MoveType>([
-        'move_stack',
-        'move_ring',
-        'overtaking_capture',
-        'continue_capture_segment',
-        'no_movement_action',
-        'recovery_slide', // RR-CANON-R110–R115: Recovery action for temporarily eliminated players
-      ]);
-      break;
-    case 'capture':
-      allowed = new Set<MoveType>([
-        'overtaking_capture',
-        'continue_capture_segment',
-        'skip_capture',
-      ]);
-      break;
-    case 'chain_capture':
-      allowed = new Set<MoveType>(['overtaking_capture', 'continue_capture_segment']);
-      break;
-    case 'line_processing':
-      allowed = new Set<MoveType>(['process_line', 'choose_line_reward', 'no_line_action']);
-      break;
-    case 'territory_processing':
-      allowed = new Set<MoveType>([
-        'process_territory_region',
-        'eliminate_rings_from_stack',
-        'skip_territory_processing',
-        'no_territory_action',
-      ]);
-      break;
-    case 'forced_elimination':
-      allowed = new Set<MoveType>(['forced_elimination']);
-      break;
-    default:
-      return true;
-  }
-
-  return allowed.has(moveType as MoveType);
+  // Thin wrapper retained for local callers/tests; the canonical mapping now
+  // lives in FSMAdapter.isMoveTypeValidForPhase.
+  return isMoveTypeValidForPhase(phase, moveType as MoveType);
 }
 
 /**

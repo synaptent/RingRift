@@ -67,4 +67,5 @@ export {
   computeFSMOrchestration,
   compareFSMWithLegacy,
   type FSMOrchestrationResult,
+  type FSMDecisionSurface,
 } from './FSMAdapter';

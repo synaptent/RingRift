@@ -1,0 +1,316 @@
+{
+  "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8.db",
+  "diverged_at": 3,
+  "game_id": "9b243bf3-61e4-4ca5-a4e5-d5b326fa2351",
+  "mismatch_context": "post_move",
+  "mismatch_kinds": ["current_player", "current_phase", "state_hash"],
+  "python_states": {
+    "2": {
+      "board": {
+        "collapsedSpaces": {},
+        "eliminatedRings": {},
+        "markers": {
+          "3,4": {
+            "player": 1,
+            "position": {
+              "x": 3,
+              "y": 4
+            }
+          }
+        },
+        "size": 8,
+        "stacks": {
+          "6,4": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 4
+            },
+            "rings": [1, 1, 1],
+            "stackHeight": 3
+          }
+        },
+        "type": "square8"
+      },
+      "currentPhase": "line_processing",
+      "currentPlayer": 1,
+      "gameId": "self-play",
+      "gameStatus": "active",
+      "moveHistory": [
+        {
+          "id": "simulated",
+          "moveNumber": 1,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-09T01:45:04.850431",
+          "to": {
+            "x": 3,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 3,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-09T01:45:04.850431",
+          "to": {
+            "x": 6,
+            "y": 4
+          },
+          "type": "move_stack"
+        }
+      ],
+      "players": [
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 15,
+          "territorySpaces": 0
+        },
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 18,
+          "territorySpaces": 0
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 0,
+      "totalRingsInPlay": 36,
+      "turnNumber": 3,
+      "victoryThreshold": 19,
+      "winner": null
+    },
+    "3": {
+      "board": {
+        "collapsedSpaces": {},
+        "eliminatedRings": {},
+        "markers": {
+          "3,4": {
+            "player": 1,
+            "position": {
+              "x": 3,
+              "y": 4
+            }
+          }
+        },
+        "size": 8,
+        "stacks": {
+          "6,4": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 4
+            },
+            "rings": [1, 1, 1],
+            "stackHeight": 3
+          }
+        },
+        "type": "square8"
+      },
+      "currentPhase": "ring_placement",
+      "currentPlayer": 2,
+      "gameId": "self-play",
+      "gameStatus": "active",
+      "moveHistory": [
+        {
+          "id": "simulated",
+          "moveNumber": 1,
+          "placedOnStack": false,
+          "placementCount": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-09T01:45:04.850431",
+          "to": {
+            "x": 3,
+            "y": 4
+          },
+          "type": "place_ring"
+        },
+        {
+          "from": {
+            "x": 3,
+            "y": 4
+          },
+          "id": "simulated",
+          "moveNumber": 2,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-09T01:45:04.850431",
+          "to": {
+            "x": 6,
+            "y": 4
+          },
+          "type": "move_stack"
+        },
+        {
+          "id": "no-line-action-3",
+          "moveNumber": 3,
+          "player": 1,
+          "thinkTime": 0,
+          "timestamp": "2025-12-09T01:45:05.139076",
+          "to": {
+            "x": 0,
+            "y": 0
+          },
+          "type": "no_line_action"
+        }
+      ],
+      "players": [
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 15,
+          "territorySpaces": 0
+        },
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 18,
+          "territorySpaces": 0
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 0,
+      "totalRingsInPlay": 36,
+      "turnNumber": 4,
+      "victoryThreshold": 19,
+      "winner": null
+    }
+  },
+  "total_moves_python": 57,
+  "total_moves_ts": 57,
+  "ts_k_values": [2, 3],
+  "ts_states": {
+    "2": {
+      "board": {
+        "collapsedSpaces": {},
+        "eliminatedRings": {},
+        "formedLines": [],
+        "markers": {
+          "3,4": {
+            "player": 1,
+            "position": {
+              "x": 3,
+              "y": 4,
+              "z": null
+            },
+            "type": "regular"
+          }
+        },
+        "size": 8,
+        "stacks": {
+          "6,4": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 4,
+              "z": null
+            },
+            "rings": [1, 1, 1],
+            "stackHeight": 3
+          }
+        },
+        "type": "square8"
+      },
+      "currentPhase": "line_processing",
+      "currentPlayer": 1,
+      "gameId": "self-play",
+      "gameStatus": "active",
+      "moveHistory": [],
+      "players": [
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 15,
+          "territorySpaces": 0
+        },
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 18,
+          "territorySpaces": 0
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 0,
+      "turnNumber": 1,
+      "victoryThreshold": 19
+    },
+    "3": {
+      "board": {
+        "collapsedSpaces": {},
+        "eliminatedRings": {},
+        "formedLines": [],
+        "markers": {
+          "3,4": {
+            "player": 1,
+            "position": {
+              "x": 3,
+              "y": 4,
+              "z": null
+            },
+            "type": "regular"
+          }
+        },
+        "size": 8,
+        "stacks": {
+          "6,4": {
+            "capHeight": 3,
+            "controllingPlayer": 1,
+            "position": {
+              "x": 6,
+              "y": 4,
+              "z": null
+            },
+            "rings": [1, 1, 1],
+            "stackHeight": 3
+          }
+        },
+        "type": "square8"
+      },
+      "currentPhase": "territory_processing",
+      "currentPlayer": 1,
+      "gameId": "self-play",
+      "gameStatus": "active",
+      "moveHistory": [],
+      "players": [
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 1,
+          "ringsInHand": 15,
+          "territorySpaces": 0
+        },
+        {
+          "eliminatedRings": 0,
+          "isActive": true,
+          "playerNumber": 2,
+          "ringsInHand": 18,
+          "territorySpaces": 0
+        }
+      ],
+      "territoryVictoryThreshold": 33,
+      "totalRingsEliminated": 0,
+      "turnNumber": 1,
+      "victoryThreshold": 19
+    }
+  }
+}

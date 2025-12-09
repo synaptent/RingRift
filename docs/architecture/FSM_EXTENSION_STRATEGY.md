@@ -68,12 +68,21 @@ RingRift has an explicit Turn FSM for game phase validation. This document outli
 
 **Goal:** Replace manual phase-routing branches with FSM-driven transitions.
 
-| Task                                              | Status     |
-| ------------------------------------------------- | ---------- |
-| Add feature flag `RINGRIFT_FSM_ORCHESTRATOR`      | 🔜 Planned |
-| Map FSM events to move shapes for compatibility   | 🔜 Planned |
-| Replace `advancePhase` calls with FSM transitions | 🔜 Planned |
-| Validate via orchestrator soak + parity gates     | 🔜 Planned |
+| Task                                              | Status  |
+| ------------------------------------------------- | ------- |
+| Add feature flag `RINGRIFT_FSM_ORCHESTRATOR_MODE` | ✅ Done |
+| Add `computeFSMOrchestration()` function          | ✅ Done |
+| Add `compareFSMWithLegacy()` for shadow mode      | ✅ Done |
+| Fix `currentPlayer` tracking for bookkeeping      | ✅ Done |
+| Integrate FSM orchestrator into turnOrchestrator  | ✅ Done |
+| Validate via orchestrator soak + parity gates     | ✅ Done |
+
+**Implementation Notes:**
+
+- `RINGRIFT_FSM_ORCHESTRATOR_MODE` supports `'off'`, `'shadow'`, `'active'`
+- Shadow mode logs divergences without affecting behavior
+- Bookkeeping moves (`no_*`, `skip_placement`) now correctly set `currentPlayer`
+- `deriveStateFromGame()` handles player derivation for bookkeeping moves
 
 **Benefits:**
 
@@ -86,35 +95,65 @@ RingRift has an explicit Turn FSM for game phase validation. This document outli
 
 **Goal:** Emit pending decisions (line/territory/FE choices) from FSM state.
 
-| Task                                              | Status     |
-| ------------------------------------------------- | ---------- |
-| Drive `pendingLines` from FSM state               | 🔜 Planned |
-| Drive `pendingRegions` from FSM state             | 🔜 Planned |
-| Ensure FE surfaces only after territory phase     | 🔜 Planned |
-| Forbid auto-advance without explicit `no_*` moves | 🔜 Planned |
+| Task                                              | Status      |
+| ------------------------------------------------- | ----------- |
+| Drive `pendingLines` from FSM state               | ✅ Done     |
+| Drive `pendingRegions` from FSM state             | ✅ Done     |
+| Add `FSMDecisionSurface` to orchestration result  | ✅ Done     |
+| Include chain continuations in decision surface   | ✅ Done     |
+| Include forced elimination count in surface       | ✅ Done     |
+| Ensure FE surfaces only after territory phase     | ✅ Done     |
+| Forbid auto-advance without explicit `no_*` moves | 🔄 Implicit |
+
+**Implementation Notes:**
+
+- `FSMDecisionSurface` interface provides concrete data for decisions:
+  - `pendingLines`: Lines requiring processing in `line_processing` phase
+  - `pendingRegions`: Territory regions in `territory_processing` phase
+  - `chainContinuations`: Available capture targets in `chain_capture` phase
+  - `forcedEliminationCount`: Rings to eliminate in `forced_elimination` phase
+- `computeFSMOrchestration()` now returns `decisionSurface` alongside `pendingDecisionType`
+- Decision surface data is extracted directly from FSM state after transition
+- The explicit `no_*` moves requirement is enforced by FSM guards (implicit)
 
 **Benefits:**
 
 - Predictable loops for multiple regions/lines
 - Fewer "silent skips"
 - Better UX/state explainability
+- Hosts can construct valid decision options from FSM state
 
 ### Phase 4: Python Parity (P1)
 
 **Goal:** Align Python phase machine to TS FSM transitions exactly.
 
-| Task                                           | Status     | Files                                   |
-| ---------------------------------------------- | ---------- | --------------------------------------- |
-| Mirror FSM transition table in Python          | 🔜 Planned | `ai-service/app/rules/phase_machine.py` |
-| Consider codegen from shared JSON/YAML spec    | 🔜 Planned | New spec file                           |
-| Add parity bundles for end-of-turn ownership   | 🔜 Planned | `ai-service/parity_fixtures/`           |
-| Fix `current_player` divergence at `game_over` | 🔜 Planned | Both engines                            |
+| Task                                           | Status     | Files                         |
+| ---------------------------------------------- | ---------- | ----------------------------- |
+| Mirror FSM transition table in Python          | ✅ Done    | `ai-service/app/rules/fsm.py` |
+| Add `FSMDecisionSurface` equivalent in Python  | ✅ Done    | `ai-service/app/rules/fsm.py` |
+| Add `FSMOrchestrationResult` in Python         | ✅ Done    | `ai-service/app/rules/fsm.py` |
+| Add `compute_fsm_orchestration()` function     | ✅ Done    | `ai-service/app/rules/fsm.py` |
+| Add `compare_fsm_with_legacy()` function       | ✅ Done    | `ai-service/app/rules/fsm.py` |
+| Consider codegen from shared JSON/YAML spec    | 🔜 Planned | New spec file                 |
+| Add parity bundles for end-of-turn ownership   | 🔜 Planned | `ai-service/parity_fixtures/` |
+| Fix `current_player` divergence at `game_over` | 🔜 Planned | Both engines                  |
+
+**Implementation Notes:**
+
+- Python FSM types mirror TypeScript exactly:
+  - `DetectedLine`, `DisconnectedRegion`, `ChainContinuation` dataclasses
+  - `FSMDecisionSurface` with pending_lines, pending_regions, chain_continuations, forced_elimination_count
+  - `FSMOrchestrationResult` with success, next_phase, next_player, pending_decision_type, decision_surface
+- `compute_fsm_orchestration()` implements the same transition logic as TS
+- `compare_fsm_with_legacy()` enables shadow mode comparison for parity testing
+- Python FSM can be used alongside existing `advance_phases()` for gradual migration
 
 **Benefits:**
 
 - Tight TS↔Python parity
 - Easier bundle diffing
 - Reduced maintenance burden
+- Same decision surface API on both sides
 
 ### Phase 5: UI/Telemetry Integration (P2)
 

@@ -339,3 +339,398 @@ class TurnFSM:
         """Reset the FSM state for a new game."""
         self.history.clear()
         self.violation_count = 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FSM TRANSITION TYPES (mirrors TurnStateMachine.ts)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@dataclass(frozen=True)
+class DetectedLine:
+    """A detected line requiring processing."""
+
+    positions: List[Tuple[int, int]]
+    player: int
+    requires_choice: bool
+
+
+@dataclass(frozen=True)
+class DisconnectedRegion:
+    """A disconnected territory region requiring processing."""
+
+    positions: List[Tuple[int, int]]
+    controlling_player: int
+    eliminations_required: int
+
+
+@dataclass(frozen=True)
+class ChainContinuation:
+    """A chain capture continuation target."""
+
+    target: Tuple[int, int]
+
+
+@dataclass
+class FSMDecisionSurface:
+    """
+    Decision surface information for hosts to construct valid decisions.
+
+    Mirrors the TypeScript FSMDecisionSurface interface from FSMAdapter.ts.
+    When the FSM transitions to a phase requiring player decisions, this
+    structure provides the concrete data needed to build the decision UI
+    and valid move options.
+    """
+
+    pending_lines: List[DetectedLine]
+    """Detected lines for the current player (line_processing phase)."""
+
+    pending_regions: List[DisconnectedRegion]
+    """Territory regions for the current player (territory_processing phase)."""
+
+    chain_continuations: List[ChainContinuation]
+    """Available capture targets (chain_capture phase)."""
+
+    forced_elimination_count: int
+    """Number of rings that must be eliminated (forced_elimination phase)."""
+
+    @classmethod
+    def empty(cls) -> "FSMDecisionSurface":
+        """Create an empty decision surface."""
+        return cls(
+            pending_lines=[],
+            pending_regions=[],
+            chain_continuations=[],
+            forced_elimination_count=0,
+        )
+
+
+PendingDecisionType = Literal[
+    "chain_capture",
+    "line_order_required",
+    "no_line_action_required",
+    "region_order_required",
+    "no_territory_action_required",
+    "forced_elimination",
+]
+
+
+@dataclass
+class FSMOrchestrationResult:
+    """
+    Result of FSM-driven orchestration.
+
+    Mirrors the TypeScript FSMOrchestrationResult interface from FSMAdapter.ts.
+    Contains the derived phase, player, and any pending decision information.
+    """
+
+    success: bool
+    """Whether the FSM transition was successful."""
+
+    next_phase: GamePhase
+    """The next phase according to FSM."""
+
+    next_player: int
+    """The next player according to FSM."""
+
+    pending_decision_type: Optional[PendingDecisionType] = None
+    """Type of pending decision if any."""
+
+    decision_surface: Optional[FSMDecisionSurface] = None
+    """Decision surface data for the pending decision."""
+
+    error_code: Optional[str] = None
+    """Error code if transition failed."""
+
+    error_message: Optional[str] = None
+    """Error message if transition failed."""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FSM TRANSITION FUNCTION (mirrors TurnStateMachine.transition)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def compute_fsm_orchestration(
+    game_state: GameState,
+    last_move: Move,
+) -> FSMOrchestrationResult:
+    """
+    Compute the next phase and player using FSM transition logic.
+
+    This mirrors the TypeScript computeFSMOrchestration function from FSMAdapter.ts.
+    It determines the next phase based on the current phase and move type.
+
+    Args:
+        game_state: Current game state (after move application)
+        last_move: The move that was just applied
+
+    Returns:
+        FSMOrchestrationResult with next phase, player, and decision surface
+    """
+    from app.game_engine import GameEngine
+    from app.rules.phase_machine import (
+        compute_had_any_action_this_turn,
+        player_has_stacks_on_board,
+    )
+
+    current_phase = game_state.current_phase
+    current_player = game_state.current_player
+    move_type = last_move.type
+
+    # Default result
+    next_phase = current_phase
+    next_player = current_player
+    pending_decision_type: Optional[PendingDecisionType] = None
+    decision_surface: Optional[FSMDecisionSurface] = None
+
+    # Phase transitions based on move type (mirrors TurnStateMachine handlers)
+    if current_phase == GamePhase.RING_PLACEMENT:
+        if move_type == MoveType.PLACE_RING:
+            # After placement, check if movement/capture is available
+            has_moves = GameEngine._has_valid_movements(game_state, current_player)
+            has_captures = GameEngine._has_valid_captures(game_state, current_player)
+            if has_moves or has_captures:
+                next_phase = GamePhase.MOVEMENT
+            else:
+                next_phase = GamePhase.LINE_PROCESSING
+        elif move_type in (MoveType.SKIP_PLACEMENT, MoveType.NO_PLACEMENT_ACTION):
+            # Skip/no-op placement always leads to movement phase
+            next_phase = GamePhase.MOVEMENT
+
+    elif current_phase == GamePhase.MOVEMENT:
+        if move_type == MoveType.MOVE_STACK:
+            # After movement, check for captures
+            capture_moves = GameEngine._get_capture_moves(game_state, current_player)
+            if capture_moves:
+                next_phase = GamePhase.CAPTURE
+            else:
+                next_phase = GamePhase.LINE_PROCESSING
+        elif move_type == MoveType.NO_MOVEMENT_ACTION:
+            next_phase = GamePhase.LINE_PROCESSING
+        elif move_type == MoveType.RECOVERY_SLIDE:
+            next_phase = GamePhase.LINE_PROCESSING
+        elif move_type == MoveType.OVERTAKING_CAPTURE:
+            # Initial capture may lead to chain capture
+            capture_moves = GameEngine._get_capture_moves(game_state, current_player)
+            if capture_moves:
+                next_phase = GamePhase.CHAIN_CAPTURE
+            else:
+                next_phase = GamePhase.LINE_PROCESSING
+
+    elif current_phase == GamePhase.CAPTURE:
+        if move_type == MoveType.OVERTAKING_CAPTURE:
+            capture_moves = GameEngine._get_capture_moves(game_state, current_player)
+            if capture_moves:
+                next_phase = GamePhase.CHAIN_CAPTURE
+            else:
+                next_phase = GamePhase.LINE_PROCESSING
+
+    elif current_phase == GamePhase.CHAIN_CAPTURE:
+        if move_type == MoveType.CONTINUE_CAPTURE_SEGMENT:
+            capture_moves = GameEngine._get_capture_moves(game_state, current_player)
+            if capture_moves:
+                next_phase = GamePhase.CHAIN_CAPTURE  # Stay in chain
+            else:
+                next_phase = GamePhase.LINE_PROCESSING
+
+    elif current_phase == GamePhase.LINE_PROCESSING:
+        if move_type == MoveType.NO_LINE_ACTION:
+            # Check for territory regions
+            territory_moves = GameEngine._get_territory_processing_moves(
+                game_state, current_player
+            )
+            if territory_moves:
+                next_phase = GamePhase.TERRITORY_PROCESSING
+            else:
+                # Check for forced elimination
+                had_action = compute_had_any_action_this_turn(game_state)
+                has_stacks = player_has_stacks_on_board(game_state, current_player)
+                if not had_action and has_stacks:
+                    next_phase = GamePhase.FORCED_ELIMINATION
+                else:
+                    # Turn ends - next player
+                    next_phase = GamePhase.RING_PLACEMENT
+                    next_player = _next_active_player(game_state)
+        elif move_type in (MoveType.PROCESS_LINE, MoveType.CHOOSE_LINE_REWARD):
+            # Check for more lines
+            line_moves = [
+                m
+                for m in GameEngine._get_line_processing_moves(game_state, current_player)
+                if m.type != MoveType.NO_LINE_ACTION
+            ]
+            if line_moves:
+                next_phase = GamePhase.LINE_PROCESSING  # Stay
+            else:
+                # Same logic as NO_LINE_ACTION after last line
+                territory_moves = GameEngine._get_territory_processing_moves(
+                    game_state, current_player
+                )
+                if territory_moves:
+                    next_phase = GamePhase.TERRITORY_PROCESSING
+                else:
+                    had_action = compute_had_any_action_this_turn(game_state)
+                    has_stacks = player_has_stacks_on_board(game_state, current_player)
+                    if not had_action and has_stacks:
+                        next_phase = GamePhase.FORCED_ELIMINATION
+                    else:
+                        next_phase = GamePhase.RING_PLACEMENT
+                        next_player = _next_active_player(game_state)
+
+    elif current_phase == GamePhase.TERRITORY_PROCESSING:
+        if move_type == MoveType.NO_TERRITORY_ACTION:
+            had_action = compute_had_any_action_this_turn(game_state)
+            has_stacks = player_has_stacks_on_board(game_state, current_player)
+            if not had_action and has_stacks:
+                next_phase = GamePhase.FORCED_ELIMINATION
+            else:
+                next_phase = GamePhase.RING_PLACEMENT
+                next_player = _next_active_player(game_state)
+        elif move_type in (
+            MoveType.PROCESS_TERRITORY_REGION,
+            MoveType.ELIMINATE_RINGS_FROM_STACK,
+        ):
+            # Check for more regions
+            territory_moves = GameEngine._get_territory_processing_moves(
+                game_state, current_player
+            )
+            if territory_moves:
+                next_phase = GamePhase.TERRITORY_PROCESSING  # Stay
+            else:
+                had_action = compute_had_any_action_this_turn(game_state)
+                has_stacks = player_has_stacks_on_board(game_state, current_player)
+                if not had_action and has_stacks:
+                    next_phase = GamePhase.FORCED_ELIMINATION
+                else:
+                    next_phase = GamePhase.RING_PLACEMENT
+                    next_player = _next_active_player(game_state)
+
+    elif current_phase == GamePhase.FORCED_ELIMINATION:
+        if move_type == MoveType.FORCED_ELIMINATION:
+            # After forced elimination, turn ends
+            next_phase = GamePhase.RING_PLACEMENT
+            next_player = _next_active_player(game_state)
+
+    # Build decision surface for the next phase
+    if next_phase == GamePhase.CHAIN_CAPTURE:
+        pending_decision_type = "chain_capture"
+        capture_moves = GameEngine._get_capture_moves(game_state, next_player)
+        decision_surface = FSMDecisionSurface(
+            pending_lines=[],
+            pending_regions=[],
+            chain_continuations=[
+                ChainContinuation(target=(m.capture_target.x, m.capture_target.y))
+                for m in capture_moves
+                if m.capture_target
+            ],
+            forced_elimination_count=0,
+        )
+
+    elif next_phase == GamePhase.LINE_PROCESSING:
+        line_moves = [
+            m
+            for m in GameEngine._get_line_processing_moves(game_state, next_player)
+            if m.type != MoveType.NO_LINE_ACTION
+        ]
+        if line_moves:
+            pending_decision_type = "line_order_required"
+        elif move_type not in (
+            MoveType.NO_LINE_ACTION,
+            MoveType.PROCESS_LINE,
+            MoveType.CHOOSE_LINE_REWARD,
+        ):
+            pending_decision_type = "no_line_action_required"
+
+        if pending_decision_type:
+            decision_surface = FSMDecisionSurface(
+                pending_lines=[],  # Would need line detection here
+                pending_regions=[],
+                chain_continuations=[],
+                forced_elimination_count=0,
+            )
+
+    elif next_phase == GamePhase.TERRITORY_PROCESSING:
+        territory_moves = GameEngine._get_territory_processing_moves(
+            game_state, next_player
+        )
+        if territory_moves:
+            pending_decision_type = "region_order_required"
+        elif move_type not in (
+            MoveType.NO_TERRITORY_ACTION,
+            MoveType.PROCESS_TERRITORY_REGION,
+            MoveType.ELIMINATE_RINGS_FROM_STACK,
+        ):
+            pending_decision_type = "no_territory_action_required"
+
+        if pending_decision_type:
+            decision_surface = FSMDecisionSurface(
+                pending_lines=[],
+                pending_regions=[],  # Would need territory detection here
+                chain_continuations=[],
+                forced_elimination_count=0,
+            )
+
+    elif next_phase == GamePhase.FORCED_ELIMINATION:
+        pending_decision_type = "forced_elimination"
+        decision_surface = FSMDecisionSurface(
+            pending_lines=[],
+            pending_regions=[],
+            chain_continuations=[],
+            forced_elimination_count=1,  # Simplified; actual count from game state
+        )
+
+    return FSMOrchestrationResult(
+        success=True,
+        next_phase=next_phase,
+        next_player=next_player,
+        pending_decision_type=pending_decision_type,
+        decision_surface=decision_surface,
+    )
+
+
+def _next_active_player(game_state: GameState) -> int:
+    """Get the next active player (simplified - would need full rotation logic)."""
+    num_players = len(game_state.players)
+    return (game_state.current_player % num_players) + 1
+
+
+def compare_fsm_with_legacy(
+    fsm_result: FSMOrchestrationResult,
+    legacy_phase: GamePhase,
+    legacy_player: int,
+) -> Dict[str, object]:
+    """
+    Compare FSM orchestration result with legacy orchestration result.
+
+    Mirrors the TypeScript compareFSMWithLegacy function from FSMAdapter.ts.
+    Returns divergence details if they differ.
+
+    Args:
+        fsm_result: Result from compute_fsm_orchestration
+        legacy_phase: Phase from legacy phase_machine
+        legacy_player: Player from legacy phase_machine
+
+    Returns:
+        Dict with divergence details
+    """
+    # Map FSM RING_PLACEMENT at turn boundary to legacy semantics
+    effective_fsm_phase = fsm_result.next_phase
+
+    phase_diverged = effective_fsm_phase != legacy_phase
+    player_diverged = fsm_result.next_player != legacy_player
+    diverged = phase_diverged or player_diverged
+
+    if diverged:
+        return {
+            "diverged": True,
+            "phase_diverged": phase_diverged,
+            "player_diverged": player_diverged,
+            "details": {
+                "fsm_phase": effective_fsm_phase.value,
+                "legacy_phase": legacy_phase.value,
+                "fsm_player": fsm_result.next_player,
+                "legacy_player": legacy_player,
+            },
+        }
+
+    return {"diverged": False, "phase_diverged": False, "player_diverged": False}

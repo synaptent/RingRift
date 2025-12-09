@@ -34,7 +34,8 @@ import {
   getSelfPlayGameService,
   importSelfPlayGameAsGameRecord,
 } from '../src/server/services/SelfPlayGameService';
-import type { BoardType, GameState, Move, Position } from '../src/shared/types/game';
+import type { SelfPlayMove } from '../src/server/services/SelfPlayGameService';
+import type { BoardType, GameState, GamePhase, Move, Position } from '../src/shared/types/game';
 import {
   hashGameStateSHA256,
   getEffectiveLineLengthThreshold,
@@ -199,49 +200,128 @@ export function parseArgs(argv: string[]): CliArgs | null {
 }
 
 /**
- * Normalize a recorded move from the self-play database into the canonical
- * Move surface expected by the sandbox engine.
+ * Build a canonical Move from a SelfPlayMove record stored in a GameReplayDB.
  *
- * This mirrors SelfPlayBrowser.normalizeRecordedMove but is defined locally
- * to avoid a React dependency in this Node script.
+ * The GameReplayDB stores:
+ * - Canonical (phase, move_type) columns that have been validated and,
+ *   for canonical DBs, canonicalised by the Python writer.
+ * - A legacy/raw move_json payload whose `type` field may be stale.
+ *
+ * For parity purposes, the canonical move_type field is the single source of
+ * truth for Move.type. The legacy move_json payload is treated as a best-effort
+ * source of geometry and diagnostics only.
  */
-function normalizeRecordedMove(rawMove: Move, fallbackMoveNumber: number): Move {
-  const anyMove = rawMove as any;
+export function buildCanonicalMoveFromSelfPlayRecord(
+  record: SelfPlayMove,
+  fallbackMoveNumber: number
+): Move {
+  const raw = (record.move ?? {}) as any;
 
-  const type: Move['type'] =
-    anyMove.type === 'forced_elimination' ? 'eliminate_rings_from_stack' : anyMove.type;
+  // Derive type from the canonical DB column, never from raw.type.
+  const canonicalType = record.moveType as Move['type'];
 
-  const timestampRaw = anyMove.timestamp;
+  const timestampRaw = raw.timestamp;
   const timestamp: Date =
     timestampRaw instanceof Date
       ? timestampRaw
       : typeof timestampRaw === 'string'
         ? new Date(timestampRaw)
-        : new Date();
-
-  const from: Position | undefined =
-    anyMove.from && typeof anyMove.from === 'object' ? anyMove.from : undefined;
+        : new Date(0);
 
   const moveNumber =
-    typeof anyMove.moveNumber === 'number' && Number.isFinite(anyMove.moveNumber)
-      ? anyMove.moveNumber
-      : fallbackMoveNumber;
+    typeof raw.moveNumber === 'number' && Number.isFinite(raw.moveNumber) && raw.moveNumber > 0
+      ? raw.moveNumber
+      : Number.isFinite(record.moveNumber) && record.moveNumber > 0
+        ? record.moveNumber
+        : fallbackMoveNumber;
 
   const thinkTime =
-    typeof anyMove.thinkTime === 'number'
-      ? anyMove.thinkTime
-      : typeof anyMove.thinkTimeMs === 'number'
-        ? anyMove.thinkTimeMs
-        : 0;
+    typeof raw.thinkTime === 'number'
+      ? raw.thinkTime
+      : typeof raw.thinkTimeMs === 'number'
+        ? raw.thinkTimeMs
+        : typeof record.thinkTimeMs === 'number'
+          ? record.thinkTimeMs
+          : 0;
 
-  return {
-    ...anyMove,
-    type,
-    from,
+  const id =
+    typeof raw.id === 'string' && raw.id.length > 0
+      ? raw.id
+      : `db-${record.moveNumber}-${canonicalType}`;
+
+  // Start from the raw payload so that geometry/effect fields for interactive
+  // moves are preserved, but always override the discriminant and metadata
+  // fields with canonical values from the DB row.
+  const canonical: Move = {
+    ...(raw as Partial<Move>),
+    id,
+    type: canonicalType,
+    player: record.player,
     timestamp,
     thinkTime,
     moveNumber,
   } as Move;
+
+  // Ensure `to` is always present – required by the Move contract. For moves
+  // without meaningful geometry we will overwrite this with a benign sentinel.
+  if (!isValidPosition((canonical as any).to)) {
+    (canonical as any).to = { x: 0, y: 0 };
+  }
+
+  // Sanitize bookkeeping / forced no-op moves so they don't carry stale
+  // geometry or effect payloads from legacy move_json blobs.
+  if (
+    canonicalType === 'no_placement_action' ||
+    canonicalType === 'no_movement_action' ||
+    canonicalType === 'no_line_action' ||
+    canonicalType === 'no_territory_action'
+  ) {
+    delete (canonical as any).from;
+    delete (canonical as any).captureTarget;
+    delete (canonical as any).formedLines;
+    delete (canonical as any).capturedStacks;
+    delete (canonical as any).captureChain;
+    delete (canonical as any).overtakenRings;
+    delete (canonical as any).claimedTerritory;
+    delete (canonical as any).disconnectedRegions;
+    delete (canonical as any).eliminatedRings;
+    (canonical as any).to = { x: 0, y: 0 };
+  } else if (
+    canonicalType === 'skip_placement' ||
+    canonicalType === 'skip_capture' ||
+    canonicalType === 'skip_territory_processing'
+  ) {
+    // Voluntary skips: there is no meaningful geometry; ensure we don't
+    // accidentally interpret stale coordinates as real board actions.
+    delete (canonical as any).from;
+    delete (canonical as any).captureTarget;
+    if (!isValidPosition((canonical as any).to)) {
+      (canonical as any).to = { x: 0, y: 0 };
+    }
+  } else {
+    // Interactive moves: normalise from/to so they are either valid Positions
+    // or undefined. This keeps downstream consumers resilient to incomplete
+    // legacy payloads without changing semantics for canonical recordings.
+    if (!isValidPosition((canonical as any).from)) {
+      (canonical as any).from = undefined;
+    }
+    if (!isValidPosition((canonical as any).to)) {
+      (canonical as any).to = { x: 0, y: 0 };
+    }
+  }
+
+  return canonical;
+}
+
+/**
+ * Runtime guard for Position-like objects.
+ */
+function isValidPosition(value: unknown): value is Position {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const pos = value as { x?: unknown; y?: unknown };
+  return typeof pos.x === 'number' && typeof pos.y === 'number';
 }
 
 /**
@@ -304,6 +384,188 @@ function rewriteLegacyProcessLineMoves(
     };
     return rewritten;
   });
+}
+
+/**
+ * Phase order for determining which phases are skipped during replay.
+ * Turn ends after territory_processing (or forced_elimination), then next player
+ * starts at ring_placement.
+ */
+const PHASE_ORDER: GamePhase[] = [
+  'ring_placement',
+  'movement',
+  'capture',
+  'chain_capture',
+  'line_processing',
+  'territory_processing',
+  'forced_elimination',
+];
+
+/**
+ * Get the bookkeeping move type for a phase that has no recorded action.
+ */
+function getBookkeepingMoveType(phase: GamePhase): Move['type'] | null {
+  switch (phase) {
+    case 'ring_placement':
+      return 'no_placement_action';
+    case 'movement':
+      return 'no_movement_action';
+    case 'line_processing':
+      return 'no_line_action';
+    case 'territory_processing':
+      return 'no_territory_action';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Check if a move type is valid for a given phase.
+ */
+function isMoveValidInPhase(moveType: Move['type'], phase: GamePhase): boolean {
+  const validMoves: Record<GamePhase, Move['type'][]> = {
+    ring_placement: ['place_ring', 'skip_placement', 'no_placement_action'],
+    movement: [
+      'move_stack',
+      'move_ring',
+      'overtaking_capture',
+      'continue_capture_segment',
+      'no_movement_action',
+      'recovery_slide',
+    ],
+    capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
+    chain_capture: ['overtaking_capture', 'continue_capture_segment'],
+    line_processing: ['process_line', 'choose_line_reward', 'no_line_action'],
+    territory_processing: [
+      'process_territory_region',
+      'eliminate_rings_from_stack',
+      'skip_territory_processing',
+      'no_territory_action',
+    ],
+    forced_elimination: ['forced_elimination'],
+    game_over: [],
+  };
+  return validMoves[phase]?.includes(moveType) ?? false;
+}
+
+/**
+ * Synthesize bookkeeping moves to bridge between current state and next recorded move.
+ *
+ * This is needed for legacy recordings that don't include explicit bookkeeping
+ * moves (no_line_action, no_territory_action) for phases that had no action.
+ * The modern engine requires explicit bookkeeping for phase invariant enforcement.
+ *
+ * @param currentPhase The engine's current phase
+ * @param currentPlayer The engine's current player
+ * @param nextMove The next recorded move to apply
+ * @param moveNumberBase Base move number for synthesized moves
+ * @returns Array of bookkeeping moves to inject before nextMove
+ */
+function synthesizeBookkeepingMoves(
+  currentPhase: GamePhase,
+  currentPlayer: number,
+  nextMove: Move,
+  moveNumberBase: number
+): Move[] {
+  const synthesized: Move[] = [];
+
+  // Don't bridge if game is over
+  if (currentPhase === 'game_over') {
+    return synthesized;
+  }
+
+  // If the next move is already valid in the current phase, no bridging needed
+  if (isMoveValidInPhase(nextMove.type, currentPhase)) {
+    return synthesized;
+  }
+
+  // If the next move is for a different player, we need to complete the current
+  // player's turn by injecting bookkeeping for remaining phases
+  if (nextMove.player !== currentPlayer) {
+    // Find current phase index
+    const currentIdx = PHASE_ORDER.indexOf(currentPhase);
+    if (currentIdx === -1) return synthesized;
+
+    // Inject bookkeeping for phases after current until turn ends
+    for (let i = currentIdx; i < PHASE_ORDER.length; i++) {
+      const phase = PHASE_ORDER[i];
+      const bookkeepingType = getBookkeepingMoveType(phase);
+      if (bookkeepingType) {
+        synthesized.push({
+          id: `synthesized-${bookkeepingType}-${moveNumberBase + synthesized.length}`,
+          type: bookkeepingType,
+          player: currentPlayer,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: moveNumberBase + synthesized.length,
+        });
+      }
+    }
+  } else {
+    // Same player - check if we need to bridge phases
+    // Find the expected phase for the next move type
+    const nextMovePhase = getMovePhase(nextMove.type);
+    if (!nextMovePhase) return synthesized;
+
+    const currentIdx = PHASE_ORDER.indexOf(currentPhase);
+    const nextIdx = PHASE_ORDER.indexOf(nextMovePhase);
+
+    // If next move is for a later phase, inject bookkeeping for skipped phases
+    if (nextIdx > currentIdx) {
+      for (let i = currentIdx; i < nextIdx; i++) {
+        const phase = PHASE_ORDER[i];
+        const bookkeepingType = getBookkeepingMoveType(phase);
+        if (bookkeepingType) {
+          synthesized.push({
+            id: `synthesized-${bookkeepingType}-${moveNumberBase + synthesized.length}`,
+            type: bookkeepingType,
+            player: currentPlayer,
+            to: { x: 0, y: 0 },
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber: moveNumberBase + synthesized.length,
+          });
+        }
+      }
+    }
+  }
+
+  return synthesized;
+}
+
+/**
+ * Get the phase a move type belongs to.
+ */
+function getMovePhase(moveType: Move['type']): GamePhase | null {
+  switch (moveType) {
+    case 'place_ring':
+    case 'skip_placement':
+    case 'no_placement_action':
+      return 'ring_placement';
+    case 'move_stack':
+    case 'move_ring':
+    case 'no_movement_action':
+    case 'recovery_slide':
+      return 'movement';
+    case 'overtaking_capture':
+    case 'continue_capture_segment':
+    case 'skip_capture':
+      return 'capture';
+    case 'process_line':
+    case 'choose_line_reward':
+    case 'no_line_action':
+      return 'line_processing';
+    case 'process_territory_region':
+    case 'skip_territory_processing':
+    case 'no_territory_action':
+    case 'eliminate_rings_from_stack':
+      return 'territory_processing';
+    case 'forced_elimination':
+      return 'forced_elimination';
+    default:
+      return null;
+  }
 }
 
 function summarizeState(label: string, state: GameState): Record<string, unknown> {
@@ -389,7 +651,7 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
   });
 
   const normalizedMoves: Move[] = detail.moves.map((m) =>
-    normalizeRecordedMove(m.move as Move, m.moveNumber)
+    buildCanonicalMoveFromSelfPlayRecord(m, m.moveNumber)
   );
 
   // Replay-only compatibility pass for legacy overlength process_line moves.
@@ -411,8 +673,62 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
   );
 
   let applied = 0;
+  let synthesizedCount = 0;
   for (let i = 0; i < recordedMoves.length; i++) {
     const move = recordedMoves[i];
+
+    // Check if we need to synthesize bookkeeping moves to bridge phases
+    const currentState = engine.getState() as GameState;
+
+    // Stop processing if the game is over (legacy recordings may have trailing moves)
+    if (currentState.currentPhase === 'game_over' || currentState.gameStatus === 'completed') {
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({
+          kind: 'ts-replay-game-ended',
+          appliedMoves: applied,
+          remainingRecordedMoves: recordedMoves.length - i,
+          summary: summarizeState('game_ended', currentState),
+        })
+      );
+      break;
+    }
+    const bridgeMoves = synthesizeBookkeepingMoves(
+      currentState.currentPhase,
+      currentState.currentPlayer,
+      move,
+      applied + 1
+    );
+
+    // Apply any synthesized bookkeeping moves first
+    for (const bridgeMove of bridgeMoves) {
+      synthesizedCount += 1;
+      const bridgeResult = await engine.applyMove(bridgeMove);
+      if (!bridgeResult.success) {
+        console.error(
+          JSON.stringify({
+            kind: 'ts-replay-bridge-error',
+            k: applied,
+            bridgeMove,
+            error: bridgeResult.error,
+            targetMove: move,
+            stateSummary: summarizeState('bridge-error', engine.getState() as GameState),
+          })
+        );
+        // Don't throw - try to continue with the original move
+        break;
+      }
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({
+          kind: 'ts-replay-bridge',
+          synthesizedMoveType: bridgeMove.type,
+          synthesizedPlayer: bridgeMove.player,
+          summary: summarizeState('after_bridge', engine.getState() as GameState),
+        })
+      );
+    }
+
     applied += 1;
 
     const result = await engine.applyMove(move);
@@ -527,6 +843,7 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
     JSON.stringify({
       kind: 'ts-replay-final',
       appliedMoves: applied,
+      synthesizedMoves: synthesizedCount,
       summary: summarizeState('final', finalState),
     })
   );

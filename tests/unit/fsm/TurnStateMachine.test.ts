@@ -27,6 +27,7 @@ describe('TurnStateMachine', () => {
       const state: RingPlacementState = {
         phase: 'ring_placement',
         player: 1,
+        ringsInHand: 1,
         canPlace: true,
         validPositions: [{ x: 3, y: 3 }],
       };
@@ -54,6 +55,7 @@ describe('TurnStateMachine', () => {
       const state: RingPlacementState = {
         phase: 'ring_placement',
         player: 1,
+        ringsInHand: 0,
         canPlace: false,
         validPositions: [],
       };
@@ -107,6 +109,42 @@ describe('TurnStateMachine', () => {
       }
     });
 
+    it('should reject NO_PLACEMENT_ACTION when valid placements exist', () => {
+      const state: RingPlacementState = {
+        phase: 'ring_placement',
+        player: 1,
+        ringsInHand: 1,
+        canPlace: true,
+        validPositions: [{ x: 3, y: 3 }],
+      };
+
+      const event: TurnEvent = { type: 'NO_PLACEMENT_ACTION' };
+      const result = transition(state, event, context);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('GUARD_FAILED');
+      }
+    });
+
+    it('should allow NO_PLACEMENT_ACTION when no placements are available', () => {
+      const state: RingPlacementState = {
+        phase: 'ring_placement',
+        player: 1,
+        ringsInHand: 0,
+        canPlace: false,
+        validPositions: [],
+      };
+
+      const event: TurnEvent = { type: 'NO_PLACEMENT_ACTION' };
+      const result = transition(state, event, context);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.state.phase).toBe('movement');
+      }
+    });
+
     it('should transition from movement to line_processing on MOVE_STACK', () => {
       const state: MovementState = {
         phase: 'movement',
@@ -129,10 +167,45 @@ describe('TurnStateMachine', () => {
       }
     });
 
+    it('should reject NO_MOVEMENT_ACTION when movement is possible', () => {
+      const state: MovementState = {
+        phase: 'movement',
+        player: 1,
+        canMove: true,
+        placedRingAt: { x: 3, y: 3 },
+      };
+
+      const event: TurnEvent = { type: 'NO_MOVEMENT_ACTION' };
+      const result = transition(state, event, context);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('GUARD_FAILED');
+      }
+    });
+
+    it('should allow NO_MOVEMENT_ACTION when no movement is possible', () => {
+      const state: MovementState = {
+        phase: 'movement',
+        player: 1,
+        canMove: false,
+        placedRingAt: { x: 3, y: 3 },
+      };
+
+      const event: TurnEvent = { type: 'NO_MOVEMENT_ACTION' };
+      const result = transition(state, event, context);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.state.phase).toBe('line_processing');
+      }
+    });
+
     it('should transition to game_over on RESIGN', () => {
       const state: RingPlacementState = {
         phase: 'ring_placement',
         player: 1,
+        ringsInHand: 1,
         canPlace: true,
         validPositions: [{ x: 3, y: 3 }],
       };
@@ -348,7 +421,7 @@ describe('TurnStateMachine', () => {
         awaitingReward: false, // Not awaiting reward
       };
 
-      const event: TurnEvent = { type: 'CHOOSE_LINE_REWARD', choice: 'eliminate_opponent' };
+      const event: TurnEvent = { type: 'CHOOSE_LINE_REWARD', choice: 'eliminate' };
       const result = transition(state, event, context);
 
       expect(result.ok).toBe(false);
@@ -377,7 +450,7 @@ describe('TurnStateMachine', () => {
         awaitingReward: true, // Awaiting reward
       };
 
-      const event: TurnEvent = { type: 'CHOOSE_LINE_REWARD', choice: 'eliminate_opponent' };
+      const event: TurnEvent = { type: 'CHOOSE_LINE_REWARD', choice: 'eliminate' };
       const result = transition(state, event, context);
 
       expect(result.ok).toBe(true);
@@ -496,6 +569,26 @@ describe('TurnStateMachine', () => {
       const result = transition(state, event, context);
 
       expect(result.ok).toBe(true);
+    });
+
+    it('should reject NO_TERRITORY_ACTION when regions exist', () => {
+      const state: TerritoryProcessingState = {
+        phase: 'territory_processing',
+        player: 1,
+        disconnectedRegions: [
+          { positions: [{ x: 0, y: 0 }], controllingPlayer: 1, eliminationsRequired: 1 },
+        ],
+        currentRegionIndex: 0,
+        eliminationsPending: [],
+      };
+
+      const event: TurnEvent = { type: 'NO_TERRITORY_ACTION' };
+      const result = transition(state, event, context);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.code).toBe('GUARD_FAILED');
+      }
     });
   });
 });

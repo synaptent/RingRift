@@ -112,21 +112,22 @@ describe('FAQ Q19-Q21, Q24: Player Counts, Thresholds & Forced Elimination', () 
       });
 
       it('should use correct thresholds for 4-player hexagonal (>120 rings)', () => {
-        // Per RR-CANON-R020, hex boards have 60 rings per player
+        // Hexagonal boards have 72 rings per player (per BOARD_CONFIGS)
         const players = [
-          createTestPlayer(1, { ringsInHand: 60 }),
-          createTestPlayer(2, { ringsInHand: 60 }),
-          createTestPlayer(3, { ringsInHand: 60 }),
-          createTestPlayer(4, { ringsInHand: 60 }),
+          createTestPlayer(1, { ringsInHand: 72 }),
+          createTestPlayer(2, { ringsInHand: 72 }),
+          createTestPlayer(3, { ringsInHand: 72 }),
+          createTestPlayer(4, { ringsInHand: 72 }),
         ];
 
         const engine = new GameEngine('faq-q19-4p-hex', 'hexagonal', players, timeControl, false);
         const engineAny: any = engine;
         const gameState = engineAny.gameState;
 
-        // Total rings: 4 × 60 = 240, Victory threshold = floor(240/2) + 1 = 121
-        expect(gameState.victoryThreshold).toBe(121);
-        expect(gameState.totalRingsInPlay).toBe(240);
+        // Total rings: 4 × 72 = 288, Victory threshold = floor(288/2) + 1 = 145
+        // (hexagonal ringsPerPlayer = 72 per BOARD_CONFIGS)
+        expect(gameState.victoryThreshold).toBe(145);
+        expect(gameState.totalRingsInPlay).toBe(288);
       });
     });
   });

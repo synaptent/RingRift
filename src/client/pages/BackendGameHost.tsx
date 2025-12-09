@@ -801,7 +801,8 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
           return allMatch ? prev : placementTargets;
         });
       } else {
-        setValidTargets([]);
+        // Only clear if not already empty, avoiding unnecessary re-renders
+        setValidTargets((prev) => (prev.length === 0 ? prev : []));
       }
     }
   }, [gameState?.currentPhase, validMoves]);

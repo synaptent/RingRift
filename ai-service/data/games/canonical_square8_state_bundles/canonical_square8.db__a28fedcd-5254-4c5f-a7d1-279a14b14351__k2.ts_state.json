@@ -1,0 +1,58 @@
+{
+  "gameId": "self-play",
+  "board": {
+    "type": "square8",
+    "size": 8,
+    "stacks": {
+      "0,3": {
+        "position": {
+          "x": 0,
+          "y": 3,
+          "z": null
+        },
+        "rings": [1, 1],
+        "stackHeight": 2,
+        "capHeight": 2,
+        "controllingPlayer": 1
+      }
+    },
+    "markers": {
+      "0,1": {
+        "position": {
+          "x": 0,
+          "y": 1,
+          "z": null
+        },
+        "player": 1,
+        "type": "regular"
+      }
+    },
+    "collapsedSpaces": {},
+    "eliminatedRings": {},
+    "formedLines": []
+  },
+  "players": [
+    {
+      "playerNumber": 1,
+      "ringsInHand": 16,
+      "eliminatedRings": 0,
+      "territorySpaces": 0,
+      "isActive": true
+    },
+    {
+      "playerNumber": 2,
+      "ringsInHand": 18,
+      "eliminatedRings": 0,
+      "territorySpaces": 0,
+      "isActive": true
+    }
+  ],
+  "currentPlayer": 1,
+  "currentPhase": "line_processing",
+  "turnNumber": 1,
+  "moveHistory": [],
+  "gameStatus": "active",
+  "victoryThreshold": 19,
+  "territoryVictoryThreshold": 33,
+  "totalRingsEliminated": 0
+}

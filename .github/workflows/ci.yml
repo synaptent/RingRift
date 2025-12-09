@@ -91,6 +91,9 @@ jobs:
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
       ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
+      # FSM Orchestrator shadow mode: logs divergences between FSM and legacy
+      # phase transitions without affecting behavior. Helps catch parity issues early.
+      RINGRIFT_FSM_ORCHESTRATOR_MODE: shadow
 
     steps:
       - name: Checkout code
@@ -136,6 +139,9 @@ jobs:
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
       ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
+      # FSM Orchestrator shadow mode: logs divergences between FSM and legacy
+      # phase transitions without affecting behavior. Helps catch parity issues early.
+      RINGRIFT_FSM_ORCHESTRATOR_MODE: shadow
 
     steps:
       - name: Checkout code
@@ -165,6 +171,8 @@ jobs:
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
       ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
+      # FSM Orchestrator shadow mode for parity detection
+      RINGRIFT_FSM_ORCHESTRATOR_MODE: shadow
 
     steps:
       - name: Checkout code

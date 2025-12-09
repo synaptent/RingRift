@@ -12,7 +12,15 @@
  * @module FSMAdapter
  */
 
-import type { Move, GameState, LineInfo, Territory, Position } from '../../types/game';
+import type {
+  Move,
+  GameState,
+  LineInfo,
+  Territory,
+  Position,
+  MoveType,
+  GamePhase,
+} from '../../types/game';
 import {
   transition,
   type TurnEvent,
@@ -34,6 +42,7 @@ import {
 import { getValidMoves, validateMove } from '../orchestration/turnOrchestrator';
 import { findLinesForPlayer } from '../lineDetection';
 import { findDisconnectedRegions } from '../territoryDetection';
+import { enumerateChainCaptureSegments } from '../aggregates/CaptureAggregate';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MOVE → EVENT CONVERSION
@@ -1031,78 +1040,106 @@ export function validateMoveWithFSMAndCompare(
 }
 
 /**
+ * Canonical mapping from FSM phase → allowed event types.
+ *
+ * All helpers that need to reason about phase ↔ MoveType relationships
+ * derive from this map so that the event surface and MoveType surface
+ * stay in sync.
+ */
+const PHASE_EVENT_TYPES: Record<TurnState['phase'], ReadonlyArray<TurnEvent['type']>> = {
+  ring_placement: ['PLACE_RING', 'SKIP_PLACEMENT', 'NO_PLACEMENT_ACTION', 'RESIGN', 'TIMEOUT'],
+  movement: ['MOVE_STACK', 'CAPTURE', 'RECOVERY_SLIDE', 'NO_MOVEMENT_ACTION', 'RESIGN', 'TIMEOUT'],
+  capture: ['CAPTURE', 'END_CHAIN', 'RESIGN', 'TIMEOUT'],
+  chain_capture: ['CONTINUE_CHAIN', 'END_CHAIN', 'RESIGN', 'TIMEOUT'],
+  line_processing: ['PROCESS_LINE', 'CHOOSE_LINE_REWARD', 'NO_LINE_ACTION', 'RESIGN', 'TIMEOUT'],
+  territory_processing: [
+    'PROCESS_REGION',
+    'ELIMINATE_FROM_STACK',
+    'NO_TERRITORY_ACTION',
+    'RESIGN',
+    'TIMEOUT',
+  ],
+  // Also allow ELIMINATE_FROM_STACK for backwards compatibility with historical game
+  // logs that recorded 'eliminate_rings_from_stack' moves during forced_elimination.
+  forced_elimination: ['FORCED_ELIMINATE', 'ELIMINATE_FROM_STACK', 'RESIGN', 'TIMEOUT'],
+  turn_end: ['_ADVANCE_TURN'],
+  game_over: [],
+};
+
+/**
  * Get expected event types for the current FSM phase.
  */
 function getExpectedEventTypes(state: TurnState): TurnEvent['type'][] {
-  switch (state.phase) {
-    case 'ring_placement':
-      // Placement phase supports explicit actions, voluntary skip, and forced no-op.
-      return ['PLACE_RING', 'SKIP_PLACEMENT', 'NO_PLACEMENT_ACTION', 'RESIGN', 'TIMEOUT'];
-    case 'movement':
-      // Per RR-CANON-R070: movement phase allows simple moves, overtaking captures,
-      // and recovery slides (RR-CANON-R110–R115), plus forced no-op when nothing available.
-      return ['MOVE_STACK', 'CAPTURE', 'RECOVERY_SLIDE', 'NO_MOVEMENT_ACTION', 'RESIGN', 'TIMEOUT'];
-    case 'capture':
-      return ['CAPTURE', 'END_CHAIN', 'RESIGN', 'TIMEOUT'];
-    case 'chain_capture':
-      return ['CONTINUE_CHAIN', 'END_CHAIN', 'RESIGN', 'TIMEOUT'];
-    case 'line_processing':
-      // Line-processing phase supports explicit processing, reward choice, and forced no-op.
-      return ['PROCESS_LINE', 'CHOOSE_LINE_REWARD', 'NO_LINE_ACTION', 'RESIGN', 'TIMEOUT'];
-    case 'territory_processing':
-      // Territory-processing phase supports region processing, self-elimination, voluntary
-      // skip, and forced no-op when no regions exist.
-      return ['PROCESS_REGION', 'ELIMINATE_FROM_STACK', 'NO_TERRITORY_ACTION', 'RESIGN', 'TIMEOUT'];
-    case 'forced_elimination':
-      return ['FORCED_ELIMINATE', 'RESIGN', 'TIMEOUT'];
-    case 'turn_end':
-      return ['_ADVANCE_TURN'];
-    case 'game_over':
-      return [];
-    default:
-      return [];
-  }
+  const events = PHASE_EVENT_TYPES[state.phase] ?? [];
+  // Return a mutable copy to satisfy the non-readonly return type.
+  return [...events];
 }
 
 /**
- * Check if a move type is valid for the current phase.
+ * Canonical mapping from GamePhase → allowed MoveType values.
  *
- * This is a lightweight check that doesn't run full validation,
- * useful for UI hints about what actions are available.
+ * This encodes the same contract that previously lived in
+ * assertPhaseMoveInvariant / isPhaseValidForMoveType in turnOrchestrator
+ * and is now centralised in the FSM adapter.
  */
-export function isMoveTypeValidForPhase(gameState: GameState, moveType: Move['type']): boolean {
-  const fsmState = deriveStateFromGame(gameState);
+const PHASE_ALLOWED_MOVE_TYPES: Record<GamePhase, ReadonlyArray<MoveType>> = {
+  ring_placement: ['place_ring', 'skip_placement', 'no_placement_action'],
+  movement: [
+    'move_stack',
+    'move_ring',
+    'overtaking_capture',
+    'continue_capture_segment',
+    'no_movement_action',
+    'recovery_slide',
+  ],
+  capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
+  chain_capture: ['overtaking_capture', 'continue_capture_segment'],
+  line_processing: ['process_line', 'choose_line_reward', 'no_line_action'],
+  territory_processing: [
+    'process_territory_region',
+    'eliminate_rings_from_stack',
+    'skip_territory_processing',
+    'no_territory_action',
+  ],
+  // Also allow 'eliminate_rings_from_stack' for backwards compatibility with
+  // historical game logs that recorded this move type during forced_elimination.
+  forced_elimination: ['forced_elimination', 'eliminate_rings_from_stack'],
+  game_over: [],
+};
 
-  // Map move types to expected phases (subset of types supported by FSM)
-  const movePhaseMap: Partial<Record<Move['type'], TurnState['phase'][]>> = {
-    place_ring: ['ring_placement'],
-    skip_placement: ['ring_placement'],
-    no_placement_action: ['ring_placement'],
-    move_ring: ['movement'], // Legacy alias
-    move_stack: ['movement'],
-    build_stack: ['movement'], // Legacy
-    no_movement_action: ['movement'],
-    recovery_slide: ['movement'], // RR-CANON-R110–R115
-    overtaking_capture: ['movement', 'capture', 'chain_capture'],
-    continue_capture_segment: ['chain_capture'],
-    skip_capture: ['capture', 'chain_capture'],
-    process_line: ['line_processing'],
-    choose_line_reward: ['line_processing'],
-    no_line_action: ['line_processing'],
-    process_territory_region: ['territory_processing'],
-    skip_territory_processing: ['territory_processing'],
-    no_territory_action: ['territory_processing'],
-    // Self-elimination decisions are modelled as part of the territory_processing
-    // phase only; the dedicated forced_elimination phase uses its own move type.
-    eliminate_rings_from_stack: ['territory_processing'],
-    forced_elimination: ['forced_elimination'],
-    swap_sides: [], // Meta-move, not FSM-tracked
-    line_formation: [], // Legacy
-    territory_claim: [], // Legacy
-  };
+/**
+ * Get the set of canonical MoveType values allowed for a given GamePhase.
+ */
+export function getAllowedMoveTypesForPhase(phase: GamePhase): ReadonlyArray<MoveType> {
+  return PHASE_ALLOWED_MOVE_TYPES[phase] ?? [];
+}
 
-  const validPhases = movePhaseMap[moveType] ?? [];
-  return validPhases.includes(fsmState.phase);
+/**
+ * Check if a MoveType is structurally valid for a given GamePhase.
+ *
+ * This is a lightweight check that does not run full validation and is
+ * suitable for UI hints, pre-flight invariants, and diagnostics. It treats
+ * FSMAdapter as the single source of truth for the canonical phase ↔ MoveType
+ * contract used by the orchestrator.
+ */
+export function isMoveTypeValidForPhase(phase: GamePhase, moveType: MoveType): boolean {
+  // Meta / legacy moves are allowed in any phase for historical compatibility.
+  if (
+    moveType === 'swap_sides' ||
+    moveType === 'line_formation' ||
+    moveType === 'territory_claim'
+  ) {
+    return true;
+  }
+
+  const allowedForPhase = PHASE_ALLOWED_MOVE_TYPES[phase];
+  if (!allowedForPhase) {
+    // Unknown/legacy phases default to permissive behaviour, matching the
+    // previous orchestrator helpers.
+    return true;
+  }
+
+  return allowedForPhase.includes(moveType);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1383,6 +1420,8 @@ export function computeFSMOrchestration(
     hadAnyActionThisTurn?: boolean;
     /** Whether the player has stacks on the board */
     playerHasStacks?: boolean;
+    /** Post-move state for chain capture continuation checking */
+    postMoveStateForChainCheck?: GameState;
   }
 ): FSMOrchestrationResult {
   // Derive FSM state from game state, passing move as hint
@@ -1428,8 +1467,56 @@ export function computeFSMOrchestration(
     };
   }
 
-  const nextState = transitionResult.state;
+  let nextState = transitionResult.state;
   const actions = transitionResult.actions;
+
+  // Post-transition adjustment: Check for chain capture availability after captures.
+  // The pure FSM doesn't have access to board state, so it defaults to line_processing
+  // after captures. We need to check if chain captures are actually available and
+  // adjust the phase accordingly.
+  const isCaptureMove =
+    move.type === 'overtaking_capture' || move.type === 'continue_capture_segment';
+  if (isCaptureMove && nextState.phase === 'line_processing' && move.to) {
+    // Use post-move state for chain capture check if available, otherwise fall back to pre-move state
+    const stateForChainCheck = options?.postMoveStateForChainCheck ?? gameState;
+
+    // Build the chain capture snapshot with already-captured targets to avoid revisiting
+    const capturedThisChain = [...(move.captureChain ?? [])];
+    // Also include the current capture target if available
+    if (move.captureTarget) {
+      capturedThisChain.push(move.captureTarget);
+    }
+
+    const continuations = enumerateChainCaptureSegments(
+      stateForChainCheck,
+      {
+        player: move.player,
+        currentPosition: move.to,
+        capturedThisChain,
+      },
+      {
+        kind: 'continuation',
+        disallowRevisitedTargets: true,
+      }
+    );
+
+    if (continuations.length > 0) {
+      // Chain captures are available - override to chain_capture phase
+      nextState = {
+        phase: 'chain_capture',
+        player: move.player,
+        attackerPosition: move.to,
+        capturedTargets: capturedThisChain,
+        availableContinuations: continuations.map((m) => ({
+          target: m.captureTarget ?? m.to,
+          capturingPlayer: move.player,
+          isChainCapture: true,
+        })),
+        segmentCount: capturedThisChain.length + 1,
+        isFirstSegment: false,
+      } as ChainCaptureState;
+    }
+  }
 
   // Extract next phase and player from FSM state
   const nextPhase = nextState.phase;

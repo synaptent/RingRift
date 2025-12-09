@@ -12,7 +12,15 @@
  */
 
 import { GameEngine } from '../../src/server/game/GameEngine';
-import type { Position, Player, TimeControl, GameState, Move, BoardState, Stack } from '../../src/shared/types/game';
+import type {
+  Position,
+  Player,
+  TimeControl,
+  GameState,
+  Move,
+  BoardState,
+  Stack,
+} from '../../src/shared/types/game';
 import { createTestPlayer, createTestBoard, pos, posStr } from '../utils/fixtures';
 import {
   hasGlobalPlacementAction,
@@ -23,7 +31,12 @@ import {
 /**
  * Helper to set a stack at a position
  */
-function setStack(board: BoardState, position: Position, rings: number[], controllingPlayer: number): void {
+function setStack(
+  board: BoardState,
+  position: Position,
+  rings: number[],
+  controllingPlayer: number
+): void {
   const posKey = posStr(position.x, position.y);
   const stack: Stack = {
     rings,
@@ -157,21 +170,22 @@ describe('MultiplayerRotation: 4-Player Game Scenarios', () => {
       expect(numPlayers).toBe(4);
 
       // Rotation: P1 -> P2 -> P3 -> P4 -> P1
-      expect((1 % numPlayers) + 1).toBe(2);  // P1 -> P2
-      expect((2 % numPlayers) + 1).toBe(3);  // P2 -> P3
-      expect((3 % numPlayers) + 1).toBe(4);  // P3 -> P4
-      expect((4 % numPlayers) + 1).toBe(1);  // P4 -> P1 (wraps)
+      expect((1 % numPlayers) + 1).toBe(2); // P1 -> P2
+      expect((2 % numPlayers) + 1).toBe(3); // P2 -> P3
+      expect((3 % numPlayers) + 1).toBe(4); // P3 -> P4
+      expect((4 % numPlayers) + 1).toBe(1); // P4 -> P1 (wraps)
     });
 
     it('should calculate correct victory threshold for 4-player square19', () => {
-      const engine = createMultiPlayerEngine('4p-threshold', 'square19', 4, 36);
+      // square19 ringsPerPlayer = 48 per BOARD_CONFIGS
+      const engine = createMultiPlayerEngine('4p-threshold', 'square19', 4, 48);
       const state = getGameState(engine);
 
-      // Total rings: 4 × 36 = 144
-      expect(state.totalRingsInPlay).toBe(144);
+      // Total rings: 4 × 48 = 192
+      expect(state.totalRingsInPlay).toBe(192);
 
-      // Victory threshold: 73 (>50% of 144)
-      expect(state.victoryThreshold).toBe(73);
+      // Victory threshold: floor(192/2) + 1 = 97
+      expect(state.victoryThreshold).toBe(97);
     });
   });
 
@@ -296,9 +310,11 @@ describe('MultiplayerRotation: Victory Conditions', () => {
 
       // Only P1 has material
       const playersWithMaterial = state.players.filter(
-        (p) => p.ringsInHand > 0 || Array.from(state.board.stacks.values()).some(
-          (s) => s.controllingPlayer === p.playerNumber
-        )
+        (p) =>
+          p.ringsInHand > 0 ||
+          Array.from(state.board.stacks.values()).some(
+            (s) => s.controllingPlayer === p.playerNumber
+          )
       );
 
       expect(playersWithMaterial.length).toBe(1);

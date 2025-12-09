@@ -604,10 +604,14 @@ class RingRiftEnv:
         actor_player = self._state.current_player
 
         # Apply move via the canonical Python rules engine.
+        # Use trace_mode=True to prevent automatic phase skipping (e.g., jumping
+        # from MOVEMENT directly to TERRITORY_PROCESSING when there are no lines).
+        # This ensures all bookkeeping moves (no_line_action, no_territory_action,
+        # forced_elimination) are explicitly emitted and recorded for replay parity.
         if self._rules_engine is not None:
             self._state = self._rules_engine.apply_move(self.state, move)
         else:
-            self._state = GameEngine.apply_move(self.state, move)
+            self._state = GameEngine.apply_move(self.state, move, trace_mode=True)
 
         self._move_count += 1
 
@@ -640,7 +644,7 @@ class RingRiftEnv:
             self._state = (
                 self._rules_engine.apply_move(self._state, auto_move)
                 if self._rules_engine is not None
-                else GameEngine.apply_move(self._state, auto_move)
+                else GameEngine.apply_move(self._state, auto_move, trace_mode=True)
             )
             self._move_count += 1
             auto_generated_moves.append(auto_move)
@@ -714,7 +718,7 @@ class RingRiftEnv:
             self._state = (
                 self._rules_engine.apply_move(self._state, forced_move)
                 if self._rules_engine is not None
-                else GameEngine.apply_move(self._state, forced_move)
+                else GameEngine.apply_move(self._state, forced_move, trace_mode=True)
             )
             self._move_count += 1
             auto_generated_moves.append(forced_move)

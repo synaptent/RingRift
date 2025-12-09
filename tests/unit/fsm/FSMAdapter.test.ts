@@ -14,8 +14,10 @@ import {
   getValidEvents,
   validateMoveWithFSM,
   isMoveTypeValidForPhase,
+  getAllowedMoveTypesForPhase,
+  computeFSMOrchestration,
 } from '../../../src/shared/engine/fsm/FSMAdapter';
-import type { Move, GameState } from '../../../src/shared/types/game';
+import type { Move, GameState, GamePhase, MoveType } from '../../../src/shared/types/game';
 import { createInitialGameState } from '../../../src/shared/engine/initialState';
 
 describe('FSMAdapter', () => {
@@ -274,8 +276,8 @@ describe('FSMAdapter', () => {
       const fsmState = deriveStateFromGame(state);
 
       expect(fsmState.phase).toBe('ring_placement');
-      expect(fsmState.player).toBe(1);
       if (fsmState.phase === 'ring_placement') {
+        expect(fsmState.player).toBe(1);
         expect(fsmState.canPlace).toBe(true);
         expect(fsmState.validPositions.length).toBeGreaterThan(0);
       }
@@ -444,7 +446,100 @@ describe('FSMAdapter', () => {
     });
   });
 
-  describe('isMoveTypeValidForPhase', () => {
+  describe('phase ↔ MoveType mapping', () => {
+    const phaseExpectations: Record<GamePhase, MoveType[]> = {
+      ring_placement: ['place_ring', 'skip_placement', 'no_placement_action'],
+      movement: [
+        'move_stack',
+        'move_ring',
+        'overtaking_capture',
+        'continue_capture_segment',
+        'no_movement_action',
+        'recovery_slide',
+      ],
+      capture: ['overtaking_capture', 'continue_capture_segment', 'skip_capture'],
+      chain_capture: ['overtaking_capture', 'continue_capture_segment'],
+      line_processing: ['process_line', 'choose_line_reward', 'no_line_action'],
+      territory_processing: [
+        'process_territory_region',
+        'eliminate_rings_from_stack',
+        'skip_territory_processing',
+        'no_territory_action',
+      ],
+      forced_elimination: ['forced_elimination', 'eliminate_rings_from_stack'],
+      game_over: [],
+    };
+
+    it('getAllowedMoveTypesForPhase should expose the canonical mapping for each phase', () => {
+      (Object.keys(phaseExpectations) as GamePhase[]).forEach((phase) => {
+        const expected = new Set(phaseExpectations[phase]);
+        const actual = new Set(getAllowedMoveTypesForPhase(phase));
+        expect(actual).toEqual(expected);
+      });
+    });
+
+    it('isMoveTypeValidForPhase should agree with getAllowedMoveTypesForPhase for canonical phases', () => {
+      (Object.keys(phaseExpectations) as GamePhase[]).forEach((phase) => {
+        const allowed = new Set(phaseExpectations[phase]);
+        const allTestMoveTypes: MoveType[] = [
+          'place_ring',
+          'skip_placement',
+          'no_placement_action',
+          'move_stack',
+          'move_ring',
+          'overtaking_capture',
+          'continue_capture_segment',
+          'no_movement_action',
+          'recovery_slide',
+          'process_line',
+          'choose_line_reward',
+          'no_line_action',
+          'process_territory_region',
+          'eliminate_rings_from_stack',
+          'skip_territory_processing',
+          'no_territory_action',
+          'skip_capture',
+          'forced_elimination',
+        ];
+
+        for (const moveType of allTestMoveTypes) {
+          const expected = allowed.has(moveType);
+          const actual = isMoveTypeValidForPhase(phase, moveType);
+          expect(actual).toBe(expected);
+        }
+      });
+    });
+
+    it('should treat meta/legacy move types as valid in any phase for backwards compatibility', () => {
+      const phases: GamePhase[] = [
+        'ring_placement',
+        'movement',
+        'capture',
+        'chain_capture',
+        'line_processing',
+        'territory_processing',
+        'forced_elimination',
+        'game_over',
+      ];
+      const metaMoveTypes: MoveType[] = ['swap_sides', 'line_formation', 'territory_claim'];
+
+      for (const phase of phases) {
+        for (const moveType of metaMoveTypes) {
+          expect(isMoveTypeValidForPhase(phase, moveType)).toBe(true);
+        }
+      }
+    });
+
+    it('should reject obviously invalid combinations (smoke test)', () => {
+      expect(isMoveTypeValidForPhase('ring_placement', 'move_stack')).toBe(false);
+      expect(isMoveTypeValidForPhase('ring_placement', 'overtaking_capture')).toBe(false);
+      expect(isMoveTypeValidForPhase('ring_placement', 'forced_elimination')).toBe(false);
+      expect(isMoveTypeValidForPhase('forced_elimination', 'place_ring')).toBe(false);
+      expect(isMoveTypeValidForPhase('forced_elimination', 'process_line')).toBe(false);
+    });
+  });
+
+  describe('computeFSMOrchestration', () => {
     const createTestGameState = (): GameState => {
       const players = [
         {
@@ -478,34 +573,90 @@ describe('FSMAdapter', () => {
       });
     };
 
-    it('should return true for place_ring in ring_placement phase', () => {
+    it('should return success for valid place_ring move', () => {
       const state = createTestGameState();
+      const move: Move = {
+        id: 'test-1',
+        type: 'place_ring',
+        player: 1,
+        to: { x: 3, y: 3 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
 
-      expect(isMoveTypeValidForPhase(state, 'place_ring')).toBe(true);
+      const result = computeFSMOrchestration(state, move);
+
+      expect(result.success).toBe(true);
+      expect(result.nextPhase).toBe('movement');
+      expect(result.nextPlayer).toBe(1);
     });
 
-    it('should return true for skip_placement in ring_placement phase', () => {
+    it('should return decision surface with pending decision type for line phase', () => {
+      // Create state in line_processing phase
       const state = createTestGameState();
+      (state as { currentPhase: string }).currentPhase = 'line_processing';
 
-      expect(isMoveTypeValidForPhase(state, 'skip_placement')).toBe(true);
+      const move: Move = {
+        id: 'test-2',
+        type: 'no_line_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 2,
+      };
+
+      const result = computeFSMOrchestration(state, move);
+
+      expect(result.success).toBe(true);
+      expect(result.nextPhase).toBe('territory_processing');
+      // Decision surface should be populated for the next phase
+      // (territory_processing with no regions)
+      expect(result.pendingDecisionType).toBe('no_territory_action_required');
+      expect(result.decisionSurface).toBeDefined();
+      expect(result.decisionSurface!.pendingLines).toEqual([]);
+      expect(result.decisionSurface!.pendingRegions).toEqual([]);
     });
 
-    it('should return false for move_stack in ring_placement phase', () => {
+    it('should include debug information', () => {
       const state = createTestGameState();
+      const move: Move = {
+        id: 'test-3',
+        type: 'place_ring',
+        player: 1,
+        to: { x: 3, y: 3 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
 
-      expect(isMoveTypeValidForPhase(state, 'move_stack')).toBe(false);
+      const result = computeFSMOrchestration(state, move);
+
+      expect(result.debug).toBeDefined();
+      expect(result.debug!.inputPhase).toBe('ring_placement');
+      expect(result.debug!.inputPlayer).toBe(1);
+      expect(result.debug!.fsmState).toBeDefined();
+      expect(result.debug!.event).toEqual({ type: 'PLACE_RING', to: { x: 3, y: 3 } });
     });
 
-    it('should return false for overtaking_capture in ring_placement phase', () => {
+    it('should handle meta-moves gracefully', () => {
       const state = createTestGameState();
+      const move: Move = {
+        id: 'test-4',
+        type: 'swap_sides',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
 
-      expect(isMoveTypeValidForPhase(state, 'overtaking_capture')).toBe(false);
-    });
+      const result = computeFSMOrchestration(state, move);
 
-    it('should return false for forced_elimination in ring_placement phase', () => {
-      const state = createTestGameState();
-
-      expect(isMoveTypeValidForPhase(state, 'forced_elimination')).toBe(false);
+      // Meta-moves should succeed without transition
+      expect(result.success).toBe(true);
+      expect(result.actions).toEqual([]);
     });
   });
 });
