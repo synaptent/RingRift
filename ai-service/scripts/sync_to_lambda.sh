@@ -86,7 +86,7 @@ rsync -avz --progress \
     --exclude='logs/' \
     --exclude='data/games/' \
     --exclude='data/training/' \
-    --exclude='models/' \
+    --exclude='/models/' \
     --exclude='.env' \
     "$LOCAL_DIR/" "$LAMBDA_HOST:$REMOTE_DIR/"
 
