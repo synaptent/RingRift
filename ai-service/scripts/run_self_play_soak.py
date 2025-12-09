@@ -103,6 +103,7 @@ from app.metrics import (  # type: ignore  # noqa: E402
     PYTHON_INVARIANT_VIOLATIONS,
 )
 from app.rules.core import compute_progress_snapshot  # noqa: E402
+from app.board_manager import BoardManager  # noqa: E402
 from app.rules import global_actions as ga  # type: ignore  # noqa: E402
 from app.utils.progress_reporter import SoakProgressReporter  # noqa: E402
 from app.db import (  # noqa: E402
@@ -728,6 +729,7 @@ def run_self_play_soak(
                             GamePhase.MOVEMENT,
                             GamePhase.LINE_PROCESSING,
                             GamePhase.TERRITORY_PROCESSING,
+                            GamePhase.FORCED_ELIMINATION,
                         )
                     ):
                         fallback_req_type = {
@@ -735,12 +737,20 @@ def run_self_play_soak(
                             GamePhase.MOVEMENT: PhaseRequirementType.NO_MOVEMENT_ACTION_REQUIRED,
                             GamePhase.LINE_PROCESSING: PhaseRequirementType.NO_LINE_ACTION_REQUIRED,
                             GamePhase.TERRITORY_PROCESSING: PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
+                            GamePhase.FORCED_ELIMINATION: PhaseRequirementType.FORCED_ELIMINATION_REQUIRED,
                         }.get(state.current_phase)
                         if fallback_req_type is not None:
+                            # For FORCED_ELIMINATION, we need eligible positions
+                            eligible_positions: List[Position] = []
+                            if fallback_req_type == PhaseRequirementType.FORCED_ELIMINATION_REQUIRED:
+                                stacks = BoardManager.get_player_stacks(state.board, current_player)
+                                eligible_positions = [
+                                    stack.position for stack in stacks.values() if stack.cap_height > 0
+                                ]
                             requirement = PhaseRequirement(  # type: ignore[attr-defined]
                                 type=fallback_req_type,
                                 player=current_player,
-                                eligible_positions=[],
+                                eligible_positions=eligible_positions,
                             )
 
                     if requirement is not None:

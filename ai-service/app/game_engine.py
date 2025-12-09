@@ -329,6 +329,22 @@ class GameEngine:
                 eligible_positions=[],
             )
 
+        elif phase == GamePhase.FORCED_ELIMINATION:
+            # Player is in forced_elimination phase but get_valid_moves returned
+            # empty. This means they need to select a stack to eliminate from.
+            # Return FORCED_ELIMINATION_REQUIRED with eligible positions.
+            from app.board_manager import BoardManager
+
+            stacks = BoardManager.get_player_stacks(game_state.board, player_number)
+            eligible_positions = [
+                stack.position for stack in stacks.values() if stack.cap_height > 0
+            ]
+            return PhaseRequirement(
+                type=PhaseRequirementType.FORCED_ELIMINATION_REQUIRED,
+                player=player_number,
+                eligible_positions=eligible_positions,
+            )
+
         return None
 
     @staticmethod
@@ -399,6 +415,25 @@ class GameEngine:
                 type=MoveType.NO_TERRITORY_ACTION,
                 player=player,
                 to=Position(x=0, y=0),
+                timestamp=datetime.now(),
+                thinkTime=0,
+                moveNumber=move_number,
+            )
+
+        elif requirement.type == PhaseRequirementType.FORCED_ELIMINATION_REQUIRED:
+            # Synthesize a FORCED_ELIMINATION move. Per RR-CANON-R206, when
+            # multiple stacks are eligible, the player should choose. For
+            # auto-synthesis, we pick the first eligible stack.
+            if not requirement.eligible_positions:
+                raise ValueError(
+                    "FORCED_ELIMINATION_REQUIRED but no eligible positions"
+                )
+            target_pos = requirement.eligible_positions[0]
+            return Move(
+                id=f"forced-elimination-{move_number}",
+                type=MoveType.FORCED_ELIMINATION,
+                player=player,
+                to=target_pos,
                 timestamp=datetime.now(),
                 thinkTime=0,
                 moveNumber=move_number,
@@ -1198,48 +1233,19 @@ class GameEngine:
         idx = (current_index + 1) % num_players
         candidate = players[idx]
 
-        stacks_for_candidate = BoardManager.get_player_stacks(
-            game_state.board,
-            candidate.player_number,
-        )
-        has_stacks = bool(stacks_for_candidate)
-        _has_rings_in_hand = candidate.rings_in_hand > 0  # Reserved for future placement logic
-
-        # Forced-elimination gating (RR-CANON-R070/R072/R100/R204):
+        # Per RR-CANON-R075, every phase must be visited and produce a recorded
+        # action. When a player has stacks but no valid actions, the host layer
+        # must emit the full sequence of bookkeeping moves:
+        #   no_placement_action → no_movement_action → no_line_action →
+        #   no_territory_action → forced_elimination
         #
-        # If this player controls at least one stack but has NO legal
-        # placement, movement, or capture action, their next interaction
-        # must be a canonical forced_elimination decision in the dedicated
-        # `forced_elimination` phase (7th phase in RR-CANON-R070).
+        # We always start in RING_PLACEMENT and let phase_machine.advance_phases()
+        # handle transitions as each bookkeeping move is applied. This ensures
+        # canonical traces are identical between live play and replay.
         #
-        # In trace_mode, we do not auto-enter forced_elimination here:
-        # replays are expected to contain an explicit `forced_elimination`
-        # move (or to surface the ANM shape as an invariant failure).
-        if has_stacks and not GameEngine._has_valid_actions(
-            game_state,
-            candidate.player_number,
-        ):
-            if trace_mode:
-                # In trace_mode, rotate to the next player but start in
-                # RING_PLACEMENT rather than auto-entering FORCED_ELIMINATION.
-                # The replay trace contains an explicit forced_elimination move
-                # that will transition phases appropriately.
-                game_state.current_player = candidate.player_number
-                game_state.current_phase = GamePhase.RING_PLACEMENT
-                game_state.must_move_from_stack_key = None
-                GameEngine._update_lps_round_tracking_for_current_player(
-                    game_state,
-                )
-                return
-
-            # Enter the explicit forced_elimination phase for this player.
-            game_state.current_player = candidate.player_number
-            game_state.current_phase = GamePhase.FORCED_ELIMINATION
-            game_state.must_move_from_stack_key = None
-            GameEngine._update_lps_round_tracking_for_current_player(
-                game_state,
-            )
-            return
+        # Note: Recovery slides (RR-CANON-R110) are mutually exclusive with
+        # forced elimination since recovery requires "no stacks" while FE
+        # requires "has stacks".
 
         # Found the next seat (even if empty). They must still traverse phases
         # and record any required no-action/FE bookkeeping move.
