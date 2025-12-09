@@ -45,6 +45,8 @@ def phase_move_contract() -> Dict[CanonicalPhase, Tuple[str, ...]]:
             "build_stack",
             "overtaking_capture",
             "continue_capture_segment",
+            # RR‑CANON‑R110–R115: recovery action when eligible.
+            "recovery_slide",
             # RR‑CANON‑R075: forced no‑op when no movement/capture is possible.
             "no_movement_action",
         ),
