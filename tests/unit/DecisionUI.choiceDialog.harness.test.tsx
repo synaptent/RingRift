@@ -261,6 +261,22 @@ describe('DecisionUI harness → ChoiceDialog integration', () => {
     expect(screen.getByText('5s')).toBeInTheDocument();
   });
 
+  it('applies critical severity when decision time remaining is low', async () => {
+    const deadline = Date.now() + 2500;
+    mockedUsePendingChoice.mockReturnValue({
+      pendingChoice: lineOrderChoice,
+      pendingChoiceView: { viewModel: undefined },
+      choiceDeadline: deadline,
+      reconciledDecisionTimeRemainingMs: 2500,
+    } as any);
+
+    render(<DecisionUIHarness />);
+
+    const countdown = await screen.findByTestId('choice-countdown');
+    expect(countdown).toHaveAttribute('data-severity', 'critical');
+    expect(screen.getByText('3s')).toBeInTheDocument();
+  });
+
   it('surfaces countdown severity for short timers', async () => {
     const deadline = Date.now() + 2500;
     mockedUsePendingChoice.mockReturnValue({

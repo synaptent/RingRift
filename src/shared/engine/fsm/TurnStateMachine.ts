@@ -354,14 +354,16 @@ function handleRingPlacement(
       if (state.canPlace) {
         return guardFailed(state, event, 'Cannot skip placement when valid placements exist');
       }
-      // Skip directly to next player's turn if truly no actions
-      return ok<TurnEndState>(
+      // No placement action (no rings in hand) - proceed to movement phase
+      // The player still gets their movement phase, just without placing a ring.
+      return ok<MovementState>(
         {
-          phase: 'turn_end',
-          completedPlayer: state.player,
-          nextPlayer: nextPlayer(state.player, _context.numPlayers),
+          phase: 'movement',
+          player: state.player,
+          canMove: true, // Will be determined at movement phase
+          placedRingAt: null,
         },
-        [{ type: 'CHECK_VICTORY' }]
+        []
       );
     }
 
