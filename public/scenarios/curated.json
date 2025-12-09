@@ -1421,7 +1421,7 @@
       "rulesConcept": "capture_basic",
       "uxSpecAnchor": "capture.choice",
       "onboarding": true,
-      "rulesSnippet": "When multiple captures are available, you choose which opponent stack to jump. Consider the resulting position and whether a chain capture might follow.",
+      "rulesSnippet": "When multiple captures are available, you choose which opponent stack to jump. Captured rings stay in play and do not count as eliminated. Consider the resulting position and whether a chain capture might follow.",
       "rulesSnippetRef": "UX_RULES_COPY_SPEC#5-capture-and-chain-capture-semantics",
       "boardType": "square8",
       "playerCount": 2,

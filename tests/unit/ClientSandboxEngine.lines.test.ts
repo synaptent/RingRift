@@ -29,8 +29,8 @@ import { getEffectiveLineLengthThreshold } from '../../src/shared/engine';
 
 describe('ClientSandboxEngine line processing', () => {
   const boardType: BoardType = 'square8';
-  // For 2-player sandbox games, use the effective line threshold (4-in-a-row
-  // on square8) rather than the base BOARD_CONFIGS.square8.lineLength (3).
+  // Effective line threshold is always 3 on square8 (per RR-CANON-R120),
+  // regardless of player count.
   const requiredLength = getEffectiveLineLengthThreshold(boardType, 2);
 
   function createEngine(): ClientSandboxEngine {
@@ -298,7 +298,7 @@ describe('ClientSandboxEngine line processing', () => {
     expect(minCollapseForLong.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('canonical choose_line_reward Move collapses entire overlength line and defers elimination reward', async () => {
+  test('canonical choose_line_reward Move collapses entire overlength line and auto-eliminates cap (sandbox flow)', async () => {
     const engine = createEngine();
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;
@@ -323,10 +323,10 @@ describe('ClientSandboxEngine line processing', () => {
       });
     }
 
-    // Single stack for player 1 that would be used for elimination under a
-    // follow-up eliminate_rings_from_stack decision.
+    // Single stack for player 1 that would be used for elimination.
     const stackPos: Position = { x: 7, y: 7 };
-    makeStack(1, 3, stackPos, board);
+    const stackHeight = 3;
+    makeStack(1, stackHeight, stackPos, board);
 
     const playerBefore = state.players.find((p) => p.playerNumber === 1)!;
     const initialEliminated = playerBefore.eliminatedRings;
@@ -369,11 +369,11 @@ describe('ClientSandboxEngine line processing', () => {
       expect(finalBoard.stacks.has(key)).toBe(false);
     }
 
-    // Canonical helpers do not auto-eliminate for line rewards; instead they
-    // set pendingLineRewardElimination so a follow-up eliminate_rings_from_stack
-    // decision can be applied. Ensure that no elimination has occurred yet.
-    expect(playerAfter.eliminatedRings).toBe(initialEliminated);
-    expect(finalState.totalRingsEliminated).toBe(initialTotalEliminated);
+    // For automatic sandbox flows, the sandbox immediately applies cap elimination
+    // when the shared helper reports pendingLineRewardElimination. The entire stack
+    // should be eliminated since collapse-all rewards grant mandatory elimination.
+    expect(playerAfter.eliminatedRings).toBe(initialEliminated + stackHeight);
+    expect(finalState.totalRingsEliminated).toBe(initialTotalEliminated + stackHeight);
 
     // Territory spaces should have increased by at least the line length.
     expect(playerAfter.territorySpaces).toBeGreaterThanOrEqual(
@@ -381,7 +381,7 @@ describe('ClientSandboxEngine line processing', () => {
     );
   });
 
-  test('2p-8x8: 3-in-a-row does NOT trigger line processing', () => {
+  test('2p-8x8: 2-in-a-row does NOT trigger line processing (below threshold)', () => {
     const engine = createEngine();
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;
@@ -393,10 +393,11 @@ describe('ClientSandboxEngine line processing', () => {
     board.stacks.clear();
     board.collapsedSpaces.clear();
 
-    // Place a 3-length horizontal line of markers for player 1 at y=1.
-    // On 2p-8x8, this should NOT be enough to trigger line processing.
+    // Place a 2-length horizontal line of markers for player 1 at y=1.
+    // On 2p-8x8, the threshold is 3-in-a-row (per RR-CANON-R120), so 2-in-a-row
+    // should NOT be enough to trigger line processing.
     const linePositions: Position[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
       const pos: Position = { x: i, y: 1 };
       linePositions.push(pos);
       board.markers.set(positionToString(pos), {

@@ -193,14 +193,15 @@ describe('ClientSandboxEngine placement parity vs shared core', () => {
     expect(moves.some((m) => m.type === 'place_ring')).toBe(true);
     expect(moves.some((m) => m.type === 'skip_placement')).toBe(true);
 
-    // Case 2: aggregate still allows skip when ringsInHand == 0, but sandbox
-    // and backend tighten behaviour to *not* expose skip_placement in this case.
+    // Case 2: aggregate now correctly rejects skip when ringsInHand == 0
+    // (per canonical rules, use no_placement_action instead).
     state.players = state.players.map((p) => (p.playerNumber === 1 ? { ...p, ringsInHand: 0 } : p));
 
     eligibility = evaluateSkipPlacementEligibilityAggregate(state, 1);
-    const aggregateStillEligible =
+    const aggregateRejectsWhenNoRings =
       (eligibility as any).eligible ?? (eligibility as any).canSkip ?? false;
-    expect(aggregateStillEligible).toBe(true);
+    expect(aggregateRejectsWhenNoRings).toBe(false);
+    expect((eligibility as any).code).toBe('NO_RINGS_IN_HAND');
 
     moves = engine.getValidMoves(1);
     expect(moves.some((m) => m.type === 'skip_placement')).toBe(false);

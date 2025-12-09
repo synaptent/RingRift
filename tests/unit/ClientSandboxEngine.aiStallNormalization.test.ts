@@ -95,10 +95,11 @@ describe('ClientSandboxEngine – AI stall completion normalization', () => {
         },
       ],
       currentPlayer: 2,
-      currentPhase: 'capture',
-      // Start from an active capture phase so the sandbox AI stall
+      currentPhase: 'chain_capture',
+      // Start from an active chain_capture phase so the sandbox AI stall
       // detector can observe consecutive no-op turns and then mark
-      // the game as completed.
+      // the game as completed. Note: must use 'chain_capture' (not 'capture')
+      // since chainCapturePosition is only preserved for chain_capture phase.
       gameStatus: 'active',
       moveHistory: [],
       history: [],
@@ -139,7 +140,7 @@ describe('ClientSandboxEngine – AI stall completion normalization', () => {
 
     const before = engine.getGameState();
     expect(before.gameStatus).toBe('active');
-    expect(before.currentPhase).toBe('capture');
+    expect(before.currentPhase).toBe('chain_capture');
     expect(before.chainCapturePosition).toEqual({ x: 7, y: 5 });
 
     // Force the AI stall safety-net to run its completion normalization path

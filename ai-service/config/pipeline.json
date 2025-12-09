@@ -1,0 +1,122 @@
+{
+  "version": "1.0.0",
+  "description": "RingRift AI Training Pipeline Configuration",
+
+  "workers": {
+    "staging": {
+      "host": "ringrift-staging",
+      "role": "selfplay",
+      "remote_path": "~/ringrift/ai-service",
+      "max_parallel_jobs": 4,
+      "capabilities": ["square8", "square19", "hexagonal"]
+    },
+    "extra": {
+      "host": "ringrift-selfplay-extra",
+      "role": "selfplay",
+      "remote_path": "~/ringrift/ai-service",
+      "max_parallel_jobs": 2,
+      "capabilities": ["square8", "square19", "hexagonal"]
+    },
+    "m1pro": {
+      "host": "m1-pro",
+      "role": "selfplay",
+      "remote_path": "~/Development/RingRift/ai-service",
+      "max_parallel_jobs": 2,
+      "capabilities": ["square8", "hexagonal"]
+    },
+    "mac-studio": {
+      "host": "mac-studio",
+      "role": "training",
+      "remote_path": "~/Development/RingRift/ai-service",
+      "max_parallel_jobs": 1,
+      "capabilities": ["nn", "nnue", "mps"]
+    }
+  },
+
+  "selfplay": {
+    "games_per_iteration": {
+      "square8_2p": 100,
+      "square8_3p": 60,
+      "square8_4p": 40,
+      "square19_2p": 50,
+      "square19_3p": 30,
+      "square19_4p": 20,
+      "hex_2p": 50,
+      "hex_3p": 30,
+      "hex_4p": 20
+    },
+    "engine_modes": ["descent-only", "heuristic-only", "mixed"],
+    "default_engine_mode": "descent-only",
+    "max_moves": {
+      "square8": 500,
+      "square19": 800,
+      "hexagonal": 800
+    },
+    "max_moves_3p": {
+      "square8": 600,
+      "square19": 1000,
+      "hexagonal": 1000
+    },
+    "max_moves_4p": {
+      "square8": 700,
+      "square19": 1200,
+      "hexagonal": 1200
+    }
+  },
+
+  "training": {
+    "nn": {
+      "epochs_per_iteration": 50,
+      "batch_size": 256,
+      "learning_rate": 0.001,
+      "device": "mps",
+      "save_checkpoints": true,
+      "checkpoint_frequency": 10
+    },
+    "nnue": {
+      "epochs_per_iteration": 20,
+      "batch_size": 1024,
+      "learning_rate": 0.0001
+    },
+    "cmaes": {
+      "generations_per_iteration": 10,
+      "max_iterations": 5,
+      "population_size": 20,
+      "games_per_eval": 12,
+      "improvement_threshold": 0.55,
+      "plateau_generations": 3
+    }
+  },
+
+  "evaluation": {
+    "tournament_games": 20,
+    "promotion_threshold": 0.55,
+    "ai_types": ["Heuristic", "MCTS", "Minimax"],
+    "difficulty_levels": [3, 5, 7]
+  },
+
+  "sync": {
+    "interval_minutes": 60,
+    "destinations": ["laptop", "mac-studio"],
+    "merge_on_sync": true,
+    "cleanup_after_days": 30
+  },
+
+  "monitoring": {
+    "log_level": "INFO",
+    "log_to_file": true,
+    "log_dir": "logs/pipeline",
+    "metrics_enabled": true,
+    "alert_on_error": false
+  },
+
+  "targets": {
+    "bootstrap_games": {
+      "square8": 2000,
+      "square19": 500,
+      "hexagonal": 500
+    },
+    "min_games_for_training": 500,
+    "convergence_threshold": 0.6
+  }
+}

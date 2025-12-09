@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { BoardView } from '../../../src/client/components/BoardView';
 import { BoardState, Position, RingStack } from '../../../src/shared/types/game';
@@ -174,6 +174,36 @@ describe('BoardView', () => {
       // Check that valid targets have outline styling (square8 uses emerald-400/95)
       const highlightedCells = container.querySelectorAll('.outline-emerald-400\\/95');
       expect(highlightedCells.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('renders board-driven markers when no stack is present', () => {
+      const board = createEmptyBoardState('square8');
+      board.markers.set('1,1', {
+        player: 2,
+        position: { x: 1, y: 1 },
+        type: 'regular',
+      });
+
+      const { container } = render(<BoardView boardType="square8" board={board} />);
+
+      const cell = container.querySelector('button[data-x="1"][data-y="1"]');
+      expect(cell).toBeInTheDocument();
+      // Marker uses the player color border class; for player 2 this is border-sky-500.
+      const markerEl = cell?.querySelector('.border-sky-500');
+      expect(markerEl).toBeInTheDocument();
+    });
+
+    it('renders collapsed territory overlays from board state', () => {
+      const board = createEmptyBoardState('square8');
+      board.collapsedSpaces.set('2,2', 3); // player 3 territory
+
+      const { container } = render(<BoardView boardType="square8" board={board} />);
+
+      const cell = container.querySelector('button[data-x="2"][data-y="2"]');
+      expect(cell).toBeInTheDocument();
+      // Territory overlay uses marker color classes; player 3 uses border-amber-400.
+      const territoryOverlay = cell?.querySelector('.border-amber-400');
+      expect(territoryOverlay).toBeInTheDocument();
     });
   });
 
@@ -966,7 +996,9 @@ describe('BoardView', () => {
       const firstCell = container.querySelector(
         'button[data-x="0"][data-y="0"]'
       ) as HTMLButtonElement;
-      firstCell.focus();
+      act(() => {
+        firstCell.focus();
+      });
       fireEvent.focus(firstCell);
 
       // Press ArrowRight
@@ -984,7 +1016,9 @@ describe('BoardView', () => {
       const firstCell = container.querySelector(
         'button[data-x="0"][data-y="0"]'
       ) as HTMLButtonElement;
-      firstCell.focus();
+      act(() => {
+        firstCell.focus();
+      });
       fireEvent.focus(firstCell);
 
       // Press ArrowDown
@@ -1003,7 +1037,9 @@ describe('BoardView', () => {
 
       // Focus a cell
       const cell = container.querySelector('button[data-x="3"][data-y="3"]') as HTMLButtonElement;
-      cell.focus();
+      act(() => {
+        cell.focus();
+      });
       fireEvent.focus(cell);
 
       // Press Enter
@@ -1022,7 +1058,9 @@ describe('BoardView', () => {
 
       // Focus a cell
       const cell = container.querySelector('button[data-x="4"][data-y="4"]') as HTMLButtonElement;
-      cell.focus();
+      act(() => {
+        cell.focus();
+      });
       fireEvent.focus(cell);
 
       // Press Space
@@ -1046,7 +1084,9 @@ describe('BoardView', () => {
 
       // Focus a cell
       const cell = container.querySelector('button[data-x="3"][data-y="3"]') as HTMLButtonElement;
-      cell.focus();
+      act(() => {
+        cell.focus();
+      });
       fireEvent.focus(cell);
 
       // Press Enter
@@ -1063,7 +1103,9 @@ describe('BoardView', () => {
       const topLeftCell = container.querySelector(
         'button[data-x="0"][data-y="0"]'
       ) as HTMLButtonElement;
-      topLeftCell.focus();
+      act(() => {
+        topLeftCell.focus();
+      });
       fireEvent.focus(topLeftCell);
 
       // Try to move up (should stay in place)
@@ -1081,7 +1123,9 @@ describe('BoardView', () => {
 
       // Focus a cell
       const cell = container.querySelector('button[data-x="3"][data-y="3"]') as HTMLButtonElement;
-      cell.focus();
+      act(() => {
+        cell.focus();
+      });
       fireEvent.focus(cell);
 
       // Cell should have amber focus ring class
@@ -1099,8 +1143,10 @@ describe('BoardView', () => {
       const centerCell = container.querySelector(
         'button[data-x="0"][data-y="0"][data-z="0"]'
       ) as HTMLButtonElement;
-      centerCell?.focus();
       if (centerCell) {
+        act(() => {
+          centerCell.focus();
+        });
         fireEvent.focus(centerCell);
       }
 

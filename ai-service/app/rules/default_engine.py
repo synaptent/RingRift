@@ -222,11 +222,11 @@ class DefaultRulesEngine(RulesEngine):
                     )
                     or (
                         state.current_phase == GamePhase.TERRITORY_PROCESSING
-                        and m.type
-                        in {
+                        and m.type in {
                             MoveType.PROCESS_TERRITORY_REGION,
                             MoveType.CHOOSE_TERRITORY_OPTION,
                             MoveType.SKIP_TERRITORY_PROCESSING,
+                            MoveType.NO_TERRITORY_ACTION,
                         }
                     )
                 ]
@@ -252,6 +252,24 @@ class DefaultRulesEngine(RulesEngine):
                             state,
                         )
                         # Return a single canonical bookkeeping move.
+                        moves = [bookkeeping_move]
+                    # Defensive: if we're in territory_processing with no moves
+                    # and no requirement, synthesize NO_TERRITORY_ACTION when
+                    # forced bookkeeping is on to avoid leaving the recorder in
+                    # a mid-phase state.
+                    elif (
+                        self._force_bookkeeping_moves
+                        and state.current_phase == GamePhase.TERRITORY_PROCESSING
+                    ):
+                        req = GameEngine.PhaseRequirement(  # type: ignore[attr-defined]
+                            type=PhaseRequirementType.NO_TERRITORY_ACTION_REQUIRED,
+                            player=player,
+                            eligible_positions=[],
+                        )
+                        bookkeeping_move = GameEngine.synthesize_bookkeeping_move(
+                            req,
+                            state,
+                        )
                         moves = [bookkeeping_move]
 
         # Defensive phase/move invariant: ensure every move we surface is

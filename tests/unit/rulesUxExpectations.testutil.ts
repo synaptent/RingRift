@@ -17,8 +17,9 @@ export const RulesUxPhrases = {
     structuralStalemate: [
       // Structural stalemate / plateau – no legal moves or forced eliminations remain.
       'structural stalemate',
-      // Common fragment across HUD banner and VictoryModal description.
-      'territory and eliminated rings',
+      // Tiebreak ladder enumeration in VictoryModal shows territory and eliminated rings separately.
+      'territory spaces',
+      'eliminated rings',
     ],
   },
   movement: {

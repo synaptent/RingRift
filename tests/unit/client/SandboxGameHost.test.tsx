@@ -405,6 +405,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const fakeEngine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     mockSandboxValue = createMockSandboxContext({
@@ -443,6 +444,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     mockSandboxValue = createMockSandboxContext({
@@ -479,6 +481,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
       // Minimal getValidMoves implementation that exposes a single
       // continue_capture_segment move from the current player so the
       // host can detect an active chain-capture continuation step.
@@ -516,6 +519,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const pendingChoice: PlayerChoice = {
@@ -565,6 +569,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
       getValidMoves: jest.fn(() => []),
     };
 
@@ -648,6 +653,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const captureChoice: PlayerChoice = {
@@ -699,6 +705,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
       getValidMoves: jest.fn(() => {
         const from: Position = { x: 0, y: 0 };
         const captureTarget: Position = { x: 0, y: 1 };
@@ -756,6 +763,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const pendingChoice: PlayerChoice = {
@@ -814,6 +822,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const pendingChoice: PlayerChoice = {
@@ -871,6 +880,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
       applyCanonicalMoveForReplay,
       getGameState: jest.fn(() => createSandboxGameState()),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const setSandboxStateVersion = jest.fn();
@@ -962,6 +972,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     mockSandboxValue = createMockSandboxContext({
@@ -1013,6 +1024,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     mockSandboxValue = createMockSandboxContext({
@@ -1039,6 +1051,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const setSandboxStallWarning = jest.fn();
@@ -1106,6 +1119,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => completedState),
       getVictoryResult: jest.fn(() => victoryResult),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const resetSandboxEngine = jest.fn();
@@ -1151,6 +1165,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
       getSerializedState: jest.fn(() => ({ dummy: 'state' }) as any),
     };
 
@@ -1210,6 +1225,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
       getSerializedState: jest.fn(() => ({ dummy: 'state' }) as any),
     };
     mockSandboxValue = createMockSandboxContext({
@@ -1287,6 +1303,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const resetSandboxEngine = jest.fn();
@@ -1324,6 +1341,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     mockSandboxValue = createMockSandboxContext({
@@ -1353,6 +1371,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     mockSandboxValue = createMockSandboxContext({
@@ -1403,6 +1422,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const engine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     mockSandboxValue = createMockSandboxContext({
@@ -1447,6 +1467,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
     const baseEngine = {
       getGameState: jest.fn(() => sandboxState),
       getVictoryResult: jest.fn(() => null as GameResult | null),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     const initLocalSandboxEngine = jest.fn();
@@ -1503,7 +1524,9 @@ describe('SandboxGameHost (React host behaviour)', () => {
       expect.objectContaining({
         boardType: 'square8',
         numPlayers: replayState.players.length,
-        playerTypes: ['human', 'ai'],
+        // For 2-player games, initSandboxWithScenario uses the default 2P config:
+        // ['human', 'ai', 'human', 'human'] (all 4 seats populated for max players).
+        playerTypes: ['human', 'ai', 'human', 'human'],
       })
     );
 
@@ -1533,6 +1556,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
             },
           }) as GameResult
       ),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     // Force storeGame to report a non-fatal failure so the host transitions
@@ -1576,6 +1600,7 @@ describe('SandboxGameHost (React host behaviour)', () => {
             },
           }) as GameResult
       ),
+      getGameEndExplanation: jest.fn(() => null),
     };
 
     // First-tier ReplayService save fails, forcing SandboxGameHost to use

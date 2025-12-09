@@ -588,9 +588,10 @@ describe('BackendGameHost (React host behaviour)', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    const polite1 = screen.getByTestId('sr-announcer-polite-1');
-    const polite2 = screen.getByTestId('sr-announcer-polite-2');
-    const combinedText = `${polite1.textContent ?? ''} ${polite2.textContent ?? ''}`;
+    // Victory announcements use assertive politeness (not polite), so check assertive regions.
+    const assertive1 = screen.getByTestId('sr-announcer-assertive-1');
+    const assertive2 = screen.getByTestId('sr-announcer-assertive-2');
+    const combinedText = `${assertive1.textContent ?? ''} ${assertive2.textContent ?? ''}`;
 
     expect(combinedText).toMatch(/last player standing/i);
   });

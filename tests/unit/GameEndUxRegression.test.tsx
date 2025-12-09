@@ -207,11 +207,11 @@ describe('GameEnd UX regression – VictoryModal & banners', () => {
     const modalText = dialog.textContent || '';
 
     // Structural-stalemate explanation should enumerate the four-step tiebreak ladder:
-    // 1) Territory spaces, 2) eliminated rings (including rings in hand),
-    // 3) markers, 4) last real action.
-    expect(modalText).toMatch(/total Territory spaces/i);
-    expect(modalText).toMatch(/eliminated rings \(including rings in hand\)/i);
-    expect(modalText).toMatch(/markers/i);
+    // 1) Territory spaces, 2) Eliminated rings (including rings in hand),
+    // 3) Markers, 4) Who made the last real action.
+    expect(modalText).toMatch(/Territory spaces/i);
+    expect(modalText).toMatch(/Eliminated rings \(including rings in hand\)/i);
+    expect(modalText).toMatch(/Markers/i);
     expect(modalText).toMatch(/last real action/i);
   });
 
@@ -240,8 +240,9 @@ describe('GameEnd UX regression – VictoryModal & banners', () => {
     const dialog = screen.getByRole('dialog');
     const text = dialog.textContent || '';
 
+    // LPS now requires 3 consecutive rounds per canonical rules
     expect(text).toMatch(
-      /only player able to make real moves \(placements, movements, or captures\) for a full round of turns/i
+      /only player able to make real moves \(placements, movements, or captures\) for three consecutive full rounds/i
     );
     expect(text).toMatch(
       /forced eliminations?, which do not count as real moves for Last Player Standing even though they still remove caps and permanently eliminate rings/i

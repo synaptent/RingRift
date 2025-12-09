@@ -29,7 +29,40 @@ import {
   positionToString,
   Position,
 } from '../../src/shared/types/game';
+import { createLpsTrackingState, LpsTrackingState } from '../../src/shared/engine';
 import { createTestBoard, createTestPlayer } from '../utils/fixtures';
+
+// Helper to create mock TurnEngineHooks with LPS support
+function createMockHooks(
+  eliminatePlayerRingOrCap: (playerNumber: number, stackPosition?: Position) => void,
+  endGame: (winner?: number, reason?: string) => { success: boolean; gameResult: any },
+  players: Player[],
+  stacksByPlayer: Record<number, RingStack[]>
+): TurnEngineHooks {
+  let lpsState: LpsTrackingState = createLpsTrackingState();
+
+  return {
+    eliminatePlayerRingOrCap,
+    endGame,
+    getLpsState: () => lpsState,
+    setLpsState: (next: LpsTrackingState) => {
+      lpsState = next;
+    },
+    hasAnyRealActionForPlayer: (playerNumber: number) => {
+      // Player has real actions if they have stacks or rings in hand
+      const hasStacks = (stacksByPlayer[playerNumber] ?? []).length > 0;
+      const player = players.find((p) => p.playerNumber === playerNumber);
+      const hasRings = (player?.ringsInHand ?? 0) > 0;
+      return hasStacks || hasRings;
+    },
+    hasMaterialForPlayer: (playerNumber: number) => {
+      const hasStacks = (stacksByPlayer[playerNumber] ?? []).length > 0;
+      const player = players.find((p) => p.playerNumber === playerNumber);
+      const hasRings = (player?.ringsInHand ?? 0) > 0;
+      return hasStacks || hasRings;
+    },
+  };
+}
 
 describe('GameEngine turn sequence & forced elimination scenarios (backend)', () => {
   const boardType: BoardType = 'square8';
@@ -77,13 +110,13 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
     const stacksByPlayer: Record<number, RingStack[]> = {
       1: [],
       2: [
-        ({
+        {
           position: { x: 0, y: 0 },
           rings: [2],
           stackHeight: 1,
           capHeight: 1,
           controllingPlayer: 2,
-        } as RingStack),
+        } as RingStack,
       ],
     };
 
@@ -134,7 +167,7 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
       };
     });
 
-    const hooks: TurnEngineHooks = { eliminatePlayerRingOrCap, endGame };
+    const hooks = createMockHooks(eliminatePlayerRingOrCap, endGame, players, stacksByPlayer);
 
     const gameState = createGameState(players, board);
     const initialTurnState: PerTurnState = {
@@ -214,7 +247,7 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
       };
     });
 
-    const hooks: TurnEngineHooks = { eliminatePlayerRingOrCap, endGame };
+    const hooks = createMockHooks(eliminatePlayerRingOrCap, endGame, players, stacksByPlayer);
 
     const gameState = createGameState(players, board);
     const initialTurnState: PerTurnState = {
@@ -255,13 +288,13 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
     const stacksByPlayer: Record<number, RingStack[]> = {
       1: [],
       2: [
-        ({
+        {
           position: { x: 0, y: 0 },
           rings: [2],
           stackHeight: 1,
           capHeight: 1,
           controllingPlayer: 2,
-        } as RingStack),
+        } as RingStack,
       ], // Player 2 controls a single stack but has no legal moves.
       3: [],
     };
@@ -314,7 +347,7 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
       };
     });
 
-    const hooks: TurnEngineHooks = { eliminatePlayerRingOrCap, endGame };
+    const hooks = createMockHooks(eliminatePlayerRingOrCap, endGame, players, stacksByPlayer);
 
     const gameState = createGameState(players, board);
     const initialTurnState: PerTurnState = {

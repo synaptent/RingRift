@@ -25,6 +25,7 @@
     "load-test:baseline": "THRESHOLD_ENV=${THRESHOLD_ENV:-staging} RINGRIFT_ENV=${RINGRIFT_ENV:-staging} BASE_URL=${BASE_URL:-http://localhost:3000} WS_URL=${WS_URL:-ws://localhost:3000} WS_GAMEPLAY_MODE=${WS_GAMEPLAY_MODE:-baseline} npx k6 run tests/load/scenarios/websocket-gameplay.js",
     "load:analyze": "node tests/load/scripts/analyze-results.js",
     "load:analyze:target": "node tests/load/scripts/analyze-target-scale.js",
+    "load:seed-users": "DATABASE_URL=${DATABASE_URL:-postgresql://ringrift:password@localhost:5432/ringrift} node scripts/seed-loadtest-users.js",
     "load:target:local": "cd tests/load && chmod +x scripts/run-target-scale.sh && ./scripts/run-target-scale.sh local",
     "load:target:staging": "cd tests/load && chmod +x scripts/run-target-scale.sh && ./scripts/run-target-scale.sh staging",
     "load:ai-heavy:local": "cd tests/load && chmod +x scripts/run-ai-heavy.sh && ./scripts/run-ai-heavy.sh local",

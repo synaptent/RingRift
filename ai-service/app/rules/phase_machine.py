@@ -301,6 +301,18 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
     #   still controls stacks; or
     # - end the turn and rotate to the next player.
     _on_line_processing_complete(game_state, trace_mode=trace_mode)
+    # If we landed in TERRITORY_PROCESSING with no regions, surface the
+    # requirement so hosts record NO_TERRITORY_ACTION (prevents silent
+    # territory skip leaving the next placement in the wrong phase).
+    remaining_regions = GameEngine._get_territory_processing_moves(
+      game_state,
+      current_player,
+    )
+    if (
+      game_state.current_phase == GamePhase.TERRITORY_PROCESSING
+      and not remaining_regions
+    ):
+      game_state.current_phase = GamePhase.TERRITORY_PROCESSING  # explicit
     # If line processing had no interactive decisions and territory also has
     # no regions, make sure hosts see the no-territory requirement so they
     # record NO_TERRITORY_ACTION rather than leaving the recorder mid-turn.

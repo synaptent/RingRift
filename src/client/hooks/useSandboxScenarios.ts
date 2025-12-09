@@ -215,10 +215,13 @@ export function useSandboxScenarios<
       // For forking, we create a minimal scenario-like object
       // The parent's initSandboxWithScenario must handle this case
       const forkScenario = {
-        id: `fork-${state.gameId}-${moveIndex}`,
+        id: `fork-${state.gameId ?? state.id}-${moveIndex}`,
         name: `Fork from move ${moveIndex}`,
         description: `Forked from replay at move ${moveIndex}`,
         source: 'fork',
+        // Extract boardType and playerCount from state for parent's engine init
+        boardType: state.boardType,
+        playerCount: state.players?.length,
         // Include the state for the parent to use
         state,
       } as unknown as T;
