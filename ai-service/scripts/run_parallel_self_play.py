@@ -87,11 +87,18 @@ def create_ai_instance(
     seed: int,
     memory_config: Optional[MemoryConfig] = None,
 ):
-    """Create an AI instance based on type string."""
+    """Create an AI instance based on type string.
+
+    Note: Uses non-zero randomness for heuristic/mcts/minimax AI to prevent
+    infinite loops where deterministic play causes games to never terminate.
+    The canonical difficulty profiles use randomness values of 0.02-0.3
+    depending on difficulty level; we use 0.1 as a reasonable default for
+    self-play that balances move diversity with strategic play.
+    """
     if ai_type == "heuristic":
         config = AIConfig(
             difficulty=5,
-            randomness=0.0,
+            randomness=0.1,  # Prevent infinite loops from deterministic ties
             think_time=1000,
             rngSeed=seed,
         )
@@ -101,7 +108,7 @@ def create_ai_instance(
             raise ImportError("MCTSAI not available")
         config = AIConfig(
             difficulty=5,
-            randomness=0.0,
+            randomness=0.05,  # MCTS is less prone to loops but still needs some
             think_time=1000,
             rngSeed=seed,
         )
@@ -110,7 +117,7 @@ def create_ai_instance(
         # DescentAI uses minimax-style search
         config = AIConfig(
             difficulty=5,
-            randomness=0.0,
+            randomness=0.05,  # Minimax is less prone to loops but still needs some
             think_time=1000,
             rngSeed=seed,
         )
