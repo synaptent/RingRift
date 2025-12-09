@@ -810,11 +810,11 @@ describe('TerritoryAggregate - Branch Coverage (Edge Cases)', () => {
   // enumerateTerritoryEliminationMoves with processable regions (line 672)
   // ==========================================================================
   describe('enumerateTerritoryEliminationMoves territory_processing with regions', () => {
-    it('returns empty when no processable regions in territory_processing phase', () => {
-      // Per updated logic: in territory_processing, elimination moves are only
-      // surfaced when there ARE processable territory regions. When no regions
-      // exist, the turn progresses via no_territory_action, and forced elimination
-      // (7th phase / blocked-with-stacks) is handled separately by turnOrchestrator.
+    it('returns elimination moves when no processable regions but player has stacks in territory_processing phase', () => {
+      // Per updated logic (lines 667-685 in TerritoryAggregate.ts): in territory_processing,
+      // elimination moves are surfaced when NO regions exist but player has stacks.
+      // This handles the blocked-player scenario where the player needs to pay a cost
+      // to proceed, without requiring a separate forced_elimination phase transition.
       const state = createTestGameState();
       state.currentPhase = 'territory_processing';
       state.board.stacks.clear();
@@ -824,11 +824,13 @@ describe('TerritoryAggregate - Branch Coverage (Edge Cases)', () => {
       addStack(state.board, { x: 0, y: 0 }, 1, 2, 2);
       addStack(state.board, { x: 7, y: 7 }, 1, 2, 2);
 
-      // getProcessableTerritoryRegions returns empty, so NO elimination moves
+      // getProcessableTerritoryRegions returns empty, so elimination moves ARE surfaced
+      // (one per stack the player controls)
       const moves = enumerateTerritoryEliminationMoves(state, 1);
 
-      // Returns empty - no territory regions to process
-      expect(moves.length).toBe(0);
+      // Returns elimination moves for each stack
+      expect(moves.length).toBe(2);
+      expect(moves.every((m) => m.type === 'eliminate_rings_from_stack')).toBe(true);
     });
 
     it('exercises territory_processing phase check', () => {

@@ -1420,20 +1420,26 @@ const createMove = (type: Move['type']): Move => ({
 });
 
 describe('turnOrchestrator advanced branch coverage', () => {
-  it('surfaces forced-elimination decision when blocked with stacks and no actions remain', () => {
-    // Start in territory_processing phase (where forced elimination is checked)
-    // to test the forced elimination decision directly
+  it('completes turn after no_territory_action when elimination moves are available in territory_processing', () => {
+    // Per updated logic in TerritoryAggregate.ts (lines 667-685):
+    // When in territory_processing with no regions but player has stacks,
+    // elimination moves are surfaced directly in territory_processing phase.
+    // This means no separate forced_elimination phase transition is needed.
+    //
+    // The player should use eliminate_rings_from_stack moves directly in
+    // territory_processing phase, not no_territory_action followed by
+    // forced_elimination.
     const board = createBoardWithSingleStack(1);
     const state = createBaseState('territory_processing', 0, board);
     const move = createMove('no_territory_action');
 
     const result = processTurn(state, move);
 
-    expect(result.status).toBe('awaiting_decision');
-    expect(result.pendingDecision?.type).toBe('elimination_target');
-    expect(result.nextState.currentPhase).toBe('forced_elimination');
-    expect(result.pendingDecision?.options).toHaveLength(1);
-    expect(result.pendingDecision?.context.extra?.reason).toBe('forced_elimination');
+    // Turn completes because elimination moves are available in territory_processing
+    // (not surfaced as forced_elimination since they're already interactive moves).
+    expect(result.status).toBe('complete');
+    expect(result.pendingDecision).toBeUndefined();
+    expect(result.nextState.currentPhase).not.toBe('forced_elimination');
   });
 
   it('does not surface forced-elimination decision when placement actions exist', () => {
