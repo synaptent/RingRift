@@ -100,6 +100,7 @@ results/ops/
 parity_failures/**/*.ts_state.json
 parity_failures/**/*.parity_failure.json
 ai-service/parity_bundles/
+ai-service/parity_state_bundles/
 ai-service/parity_debug_*/
 ai-service/parity_failures/
 ai-service/parity_fixtures/**/*.json
