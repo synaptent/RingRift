@@ -7,7 +7,7 @@ import type {
   Move,
   Position,
 } from '../../src/shared/types/game';
-import { BOARD_CONFIGS, positionToString } from '../../src/shared/types/game';
+import { BOARD_CONFIGS, positionToString, stringToPosition } from '../../src/shared/types/game';
 import { getEffectiveLineLengthThreshold } from '../../src/shared/engine/rulesConfig';
 import type { TurnEngineAdapter } from '../../src/server/game/turn/TurnEngineAdapter';
 import {
@@ -221,6 +221,41 @@ export interface TerritoryRegionSeed {
  * controlling player receives a single outside stack with the requested
  * height.
  */
+/**
+ * Get adjacent positions for territory border placement.
+ * Uses von_neumann adjacency for square boards, hexagonal for hex boards.
+ */
+function getAdjacentPositionsForBorder(pos: Position, boardType: string): Position[] {
+  const neighbors: Position[] = [];
+  const { x, y, z } = pos;
+
+  if (boardType === 'hexagonal') {
+    const directions = [
+      { x: 1, y: 0, z: -1 },
+      { x: 1, y: -1, z: 0 },
+      { x: 0, y: -1, z: 1 },
+      { x: -1, y: 0, z: 1 },
+      { x: -1, y: 1, z: 0 },
+      { x: 0, y: 1, z: -1 },
+    ];
+    for (const dir of directions) {
+      neighbors.push({ x: x + dir.x, y: y + dir.y, z: (z || 0) + dir.z });
+    }
+  } else {
+    // Square boards use von_neumann adjacency for territory
+    const directions = [
+      { x: 0, y: 1 },
+      { x: 1, y: 0 },
+      { x: 0, y: -1 },
+      { x: -1, y: 0 },
+    ];
+    for (const dir of directions) {
+      neighbors.push({ x: x + dir.x, y: y + dir.y });
+    }
+  }
+  return neighbors;
+}
+
 export function seedTerritoryRegionWithOutsideStack(
   engine: GameEngine,
   seed: TerritoryRegionSeed
@@ -257,6 +292,39 @@ export function seedTerritoryRegionWithOutsideStack(
     capHeight: outsideRings.length,
     controllingPlayer: seed.controllingPlayer,
   } as any);
+
+  // Place border markers around the region spaces so territory detection
+  // can find the disconnected region. The border is formed by markers of
+  // the controlling player around all region spaces.
+  const regionSet = new Set(seed.regionSpaces.map(positionToString));
+  const outsideKey = positionToString(seed.outsideStackPosition);
+  const borderPositions = new Set<string>();
+
+  for (const regionPos of seed.regionSpaces) {
+    const neighbors = getAdjacentPositionsForBorder(regionPos, board.type);
+    for (const neighbor of neighbors) {
+      const neighborKey = positionToString(neighbor);
+      // Don't place marker on region spaces, outside stack, or board edges
+      if (regionSet.has(neighborKey)) continue;
+      if (neighborKey === outsideKey) continue;
+      // Check board bounds for square boards
+      if (board.type.startsWith('square')) {
+        if (neighbor.x < 0 || neighbor.x >= board.size) continue;
+        if (neighbor.y < 0 || neighbor.y >= board.size) continue;
+      }
+      borderPositions.add(neighborKey);
+    }
+  }
+
+  // Place controlling player markers at border positions
+  for (const borderKey of borderPositions) {
+    const borderPos = stringToPosition(borderKey);
+    board.markers.set(borderKey, {
+      player: seed.controllingPlayer,
+      position: borderPos,
+      type: 'regular',
+    } as any);
+  }
 }
 
 /**

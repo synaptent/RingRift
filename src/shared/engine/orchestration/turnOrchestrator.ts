@@ -1166,6 +1166,16 @@ export function processTurn(
 
   // Apply the move based on type
   const applyResult = applyMoveWithChainInfo(stateMachine.gameState, move);
+
+  // DEBUG: Trace stacks after applyMoveWithChainInfo for choose_line_reward
+  if (process.env.NODE_ENV === 'test' && move.type === 'choose_line_reward') {
+    // eslint-disable-next-line no-console
+    console.log('[processTurn] after applyMoveWithChainInfo, stacks:', {
+      stackCount: applyResult.nextState.board.stacks.size,
+      stackKeys: Array.from(applyResult.nextState.board.stacks.keys()),
+    });
+  }
+
   stateMachine.updateGameState(applyResult.nextState);
 
   // Compute hash after applying move
@@ -1207,6 +1217,15 @@ export function processTurn(
     // Process post-move phases only for movement/capture moves, or for decision moves
     // that actually changed state.
     result = processPostMovePhases(stateMachine, options);
+
+    // DEBUG: Trace stacks after processPostMovePhases for choose_line_reward
+    if (process.env.NODE_ENV === 'test' && move.type === 'choose_line_reward') {
+      // eslint-disable-next-line no-console
+      console.log('[processTurn] after processPostMovePhases, stacks:', {
+        stackCount: stateMachine.gameState.board.stacks.size,
+        stackKeys: Array.from(stateMachine.gameState.board.stacks.keys()),
+      });
+    }
   }
 
   // Finalize metadata

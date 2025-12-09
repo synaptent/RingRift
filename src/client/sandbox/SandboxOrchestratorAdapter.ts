@@ -260,6 +260,16 @@ export class SandboxOrchestratorAdapter {
       while (result.status === 'awaiting_decision' && result.pendingDecision) {
         const decision = result.pendingDecision;
 
+        // DEBUG: Trace decision loop for choose_line_reward
+        if (process.env.NODE_ENV === 'test' && move.type === 'choose_line_reward') {
+          // eslint-disable-next-line no-console
+          console.log('[SandboxOrchestratorAdapter] Decision loop:', {
+            decisionType: decision.type,
+            decisionPlayer: decision.player,
+            stacksAtDecisionStart: Array.from(workingState.board.stacks.keys()),
+          });
+        }
+
         // Chain-capture decisions are handled specially: expose the available
         // continuation moves via getValidMoves() and return without auto-resolving.
         if (decision.type === 'chain_capture') {
@@ -353,6 +363,17 @@ export class SandboxOrchestratorAdapter {
 
         let chosenMove = await delegates.resolveDecision(decision);
 
+        // DEBUG: Trace resolved decision for choose_line_reward
+        if (process.env.NODE_ENV === 'test' && move.type === 'choose_line_reward') {
+          // eslint-disable-next-line no-console
+          console.log('[SandboxOrchestratorAdapter] Decision resolved:', {
+            chosenMoveType: chosenMove.type,
+            chosenMoveFrom: chosenMove.from,
+            chosenMoveTo: chosenMove.to,
+            eliminationTarget: (chosenMove as any).eliminationTarget,
+          });
+        }
+
         // WORKAROUND: The shared engine's TerritoryAggregate throws if passed 'forced_elimination',
         // but turnOrchestrator passes it through. We must convert to 'eliminate_rings_from_stack'
         // and rely on ClientSandboxEngine's phase coercion to 'territory_processing' to apply it.
@@ -361,13 +382,13 @@ export class SandboxOrchestratorAdapter {
             ...chosenMove,
             type: 'eliminate_rings_from_stack',
           } as Move;
-          
+
           // Also coerce the phase in workingState so assertPhaseMoveInvariant accepts it
           if (workingState.currentPhase === 'forced_elimination') {
-             workingState = {
-                 ...workingState,
-                 currentPhase: 'territory_processing',
-             };
+            workingState = {
+              ...workingState,
+              currentPhase: 'territory_processing',
+            };
           }
         }
 

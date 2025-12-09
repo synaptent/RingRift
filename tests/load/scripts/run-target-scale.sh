@@ -134,7 +134,7 @@ fi
 
 log_info "k6 version: $(k6 version)"
 
-# Pre-flight health check
+# Pre-flight checks
 echo ""
 log_info "Running pre-flight checks..."
 
@@ -156,13 +156,33 @@ else
     log_warning "AI service not responding at $AI_HEALTH_URL (optional)"
 fi
 
-# 3. Verify staging resources (if staging)
+# 3. Login pre-flight for load-test user
+if [[ -z "${LOADTEST_EMAIL:-}" || -z "${LOADTEST_PASSWORD:-}" ]]; then
+    log_error "LOADTEST_EMAIL and LOADTEST_PASSWORD must be set for login pre-flight."
+    log_error "Example: LOADTEST_EMAIL=target_scale_k6_user@loadtest.local LOADTEST_PASSWORD='TargetScaleTest123!' npm run load:target:${TARGET}"
+    exit 1
+fi
+
+LOGIN_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+  -X POST "${BASE_URL}/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"${LOADTEST_EMAIL}\",\"password\":\"${LOADTEST_PASSWORD}\"}") || LOGIN_STATUS=000
+
+if [[ "$LOGIN_STATUS" != "200" ]]; then
+    log_error "Login pre-flight failed (status=${LOGIN_STATUS}) for ${LOADTEST_EMAIL} at ${BASE_URL}/api/auth/login"
+    log_error "Ensure load-test user is seeded (npm run load:seed-users) and auth environment variables are correct for the target environment."
+    exit 1
+else
+    log_success "Login pre-flight succeeded for ${LOADTEST_EMAIL}"
+fi
+
+# 4. Verify staging resources (if staging)
 if [[ "$TARGET" == *"staging"* ]]; then
     log_info "Staging environment detected"
     log_warning "Ensure sufficient resources (~8GB RAM, 4+ CPU cores) for target scale test"
     
     # Check if Docker containers are running (if using staging)
-    if command -v docker &> /dev/null; then
+    if command -v docker > /dev/null; then
         CONTAINER_COUNT=$(docker ps --filter "name=ringrift" --format "{{.Names}}" 2>/dev/null | wc -l || echo "0")
         if [[ "$CONTAINER_COUNT" -gt 0 ]]; then
             log_success "Found $CONTAINER_COUNT RingRift containers running"

@@ -1471,12 +1471,16 @@ export function computeFSMOrchestration(
   const actions = transitionResult.actions;
 
   // Post-transition adjustment: Check for chain capture availability after captures.
-  // The pure FSM doesn't have access to board state, so it defaults to line_processing
-  // after captures. We need to check if chain captures are actually available and
-  // adjust the phase accordingly.
+  // The pure FSM doesn't have access to board state, so we need to verify chain
+  // capture availability against actual board state and adjust accordingly.
+  //
+  // Two cases to handle:
+  // 1. FSM says line_processing after capture → check if chain captures exist
+  // 2. FSM says chain_capture (optimistically) → verify continuations actually exist
   const isCaptureMove =
     move.type === 'overtaking_capture' || move.type === 'continue_capture_segment';
-  if (isCaptureMove && nextState.phase === 'line_processing' && move.to) {
+
+  if (isCaptureMove && move.to) {
     // Use post-move state for chain capture check if available, otherwise fall back to pre-move state
     const stateForChainCheck = options?.postMoveStateForChainCheck ?? gameState;
 
@@ -1501,7 +1505,7 @@ export function computeFSMOrchestration(
     );
 
     if (continuations.length > 0) {
-      // Chain captures are available - override to chain_capture phase
+      // Chain captures are available - ensure we're in chain_capture phase
       nextState = {
         phase: 'chain_capture',
         player: move.player,
@@ -1515,6 +1519,16 @@ export function computeFSMOrchestration(
         segmentCount: capturedThisChain.length + 1,
         isFirstSegment: false,
       } as ChainCaptureState;
+    } else if (nextState.phase === 'chain_capture') {
+      // FSM optimistically said chain_capture, but no continuations exist
+      // Transition to line_processing instead
+      nextState = {
+        phase: 'line_processing',
+        player: move.player,
+        detectedLines: [],
+        currentLineIndex: 0,
+        awaitingReward: false,
+      } as LineProcessingState;
     }
   }
 

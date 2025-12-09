@@ -115,6 +115,8 @@ npm run load:baseline:local
 npm run load:baseline:staging
 ```
 
+Note: The baseline (`npm run load:baseline:*`) and target-scale (`npm run load:target:*`) harness scripts perform a login pre-flight against `${BASE_URL}/api/auth/login` using the configured `LOADTEST_EMAIL` and `LOADTEST_PASSWORD`. If this login fails, the script aborts before starting k6 and will typically suggest running `npm run load:seed-users` and verifying staging auth environment variables (for example `JWT_SECRET`, `JWT_REFRESH_SECRET`) and network connectivity to `${BASE_URL}`.
+
 ### Option 2: Direct script execution
 
 ```bash

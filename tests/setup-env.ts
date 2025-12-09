@@ -24,3 +24,10 @@ Object.defineProperty(global, 'localStorage', {
 // Set test environment variables
 process.env.NODE_ENV = 'test';
 process.env.LOG_LEVEL = 'error';
+
+// Enable FSM validation in active mode for Jest tests by default, unless
+// explicitly overridden by the environment. This ensures that FSM validation
+// is authoritative in tests while leaving runtime defaults unchanged.
+if (!process.env.RINGRIFT_FSM_VALIDATION_MODE) {
+  process.env.RINGRIFT_FSM_VALIDATION_MODE = 'active';
+}

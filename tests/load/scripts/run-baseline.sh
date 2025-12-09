@@ -126,9 +126,9 @@ fi
 
 log_info "k6 version: $(k6 version)"
 
-# Pre-flight health check
+# Pre-flight checks
 echo ""
-log_info "Running pre-flight health check..."
+log_info "Running pre-flight checks..."
 HEALTH_URL="$BASE_URL/health"
 
 if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
@@ -145,6 +145,26 @@ if curl -sf "$AI_HEALTH_URL" > /dev/null 2>&1; then
     log_success "AI service is healthy"
 else
     log_warning "AI service not responding at $AI_HEALTH_URL (optional)"
+fi
+
+# Login pre-flight for load-test user
+if [[ -z "${LOADTEST_EMAIL:-}" || -z "${LOADTEST_PASSWORD:-}" ]]; then
+    log_error "LOADTEST_EMAIL and LOADTEST_PASSWORD must be set for login pre-flight."
+    log_error "Example: LOADTEST_EMAIL=baseline_k6_user@loadtest.local LOADTEST_PASSWORD='BaselineTest123!' npm run load:baseline:staging"
+    exit 1
+fi
+
+LOGIN_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+  -X POST "${BASE_URL}/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"${LOADTEST_EMAIL}\",\"password\":\"${LOADTEST_PASSWORD}\"}") || LOGIN_STATUS=000
+
+if [[ "$LOGIN_STATUS" != "200" ]]; then
+    log_error "Login pre-flight failed (status=${LOGIN_STATUS}) for ${LOADTEST_EMAIL} at ${BASE_URL}/api/auth/login"
+    log_error "Ensure load-test user is seeded (npm run load:seed-users) and auth environment variables are correct for the target environment."
+    exit 1
+else
+    log_success "Login pre-flight succeeded for ${LOADTEST_EMAIL}"
 fi
 
 # Run the baseline test

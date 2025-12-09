@@ -371,6 +371,17 @@ function collapseLinePositions(
 ): { nextState: GameState; collapsedCount: number } {
   const board = state.board;
 
+  // DEBUG: Trace input stacks
+  if (process.env.NODE_ENV === 'test') {
+    // eslint-disable-next-line no-console
+    console.log('[collapseLinePositions] INPUT stacks:', {
+      stackCount: board.stacks.size,
+      stackKeys: Array.from(board.stacks.keys()),
+      positionsToCollapse: positions.map((p) => positionToString(p)),
+      player,
+    });
+  }
+
   const nextBoard = {
     ...board,
     stacks: new Map(board.stacks),
@@ -440,6 +451,15 @@ function collapseLinePositions(
     board: nextBoard,
     players: nextPlayers,
   };
+
+  // DEBUG: Trace output stacks
+  if (process.env.NODE_ENV === 'test') {
+    // eslint-disable-next-line no-console
+    console.log('[collapseLinePositions] OUTPUT stacks:', {
+      stackCount: nextBoard.stacks.size,
+      stackKeys: Array.from(nextBoard.stacks.keys()),
+    });
+  }
 
   return { nextState, collapsedCount: collapsedKeys.size };
 }

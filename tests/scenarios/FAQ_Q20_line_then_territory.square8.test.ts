@@ -181,6 +181,20 @@ async function playLineThenTerritory(boardType: SquareBoard) {
   seedScenarioGeometry(engine, scenario);
   const adapter = getSandboxAdapter(engine);
 
+  // DEBUG: Log stacks BEFORE line processing
+  const beforeLine = engine.getGameState();
+  console.log('[DEBUG] BEFORE line processing, stacks:', {
+    stackCount: beforeLine.board.stacks.size,
+    stackKeys: Array.from(beforeLine.board.stacks.keys()),
+    stackDetails: Array.from(beforeLine.board.stacks.entries()).map(([k, s]) => ({
+      key: k,
+      controllingPlayer: s.controllingPlayer,
+      rings: s.rings,
+    })),
+    currentPhase: beforeLine.currentPhase,
+    currentPlayer: beforeLine.currentPlayer,
+  });
+
   // Resolve the overlength line (prefer explicit choose_line_reward).
   const lineDecision = buildLineRewardMove(
     engine.getGameState(),
@@ -191,11 +205,30 @@ async function playLineThenTerritory(boardType: SquareBoard) {
 
   // Apply any line-reward elimination that surfaces before territory.
   for (let i = 0; i < 2; i += 1) {
+    const elimMoves = adapter
+      .getValidMoves()
+      .filter((m) => m.type === 'eliminate_rings_from_stack');
+    console.log(`[DEBUG] Line-reward elim check ${i}:`, {
+      availableElimMoves: elimMoves.length,
+      elimMoveDetails: elimMoves.map((m) => ({
+        type: m.type,
+        from: m.from,
+        eliminationTarget: (m as any).eliminationTarget,
+      })),
+      currentPhase: engine.getGameState().currentPhase,
+      stacksBeforeElim: Array.from(engine.getGameState().board.stacks.keys()),
+    });
     const progressed = await applyIfPresent(
       adapter,
       engine,
       (m) => m.type === 'eliminate_rings_from_stack'
     );
+    if (progressed) {
+      console.log(
+        `[DEBUG] Applied elim move, stacks after:`,
+        Array.from(engine.getGameState().board.stacks.keys())
+      );
+    }
     if (!progressed) break;
   }
 
@@ -216,6 +249,20 @@ async function playLineThenTerritory(boardType: SquareBoard) {
 
   const afterLine = engine.getGameState();
   expect(afterLine.currentPhase).toBe('territory_processing');
+
+  // DEBUG: Log stacks to understand why canProcessTerritoryRegion fails
+  console.log('[DEBUG] After line processing, stacks:', {
+    stackCount: afterLine.board.stacks.size,
+    stackKeys: Array.from(afterLine.board.stacks.keys()),
+    stackDetails: Array.from(afterLine.board.stacks.entries()).map(([k, s]) => ({
+      key: k,
+      controllingPlayer: s.controllingPlayer,
+      rings: s.rings,
+    })),
+    expectedOutsideStack: scenario.territoryRegion.outsideStackPosition,
+    regionSpaces: scenario.territoryRegion.spaces,
+    controllingPlayer: scenario.territoryRegion.controllingPlayer,
+  });
 
   // Apply the territory region (single-cell) using the shared helper.
   const regionMove = buildRegionMove(afterLine, scenario);
