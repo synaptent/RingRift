@@ -167,4 +167,42 @@ describe('buildGameEndExplanation', () => {
     expect(explanation.telemetry!.rulesContextTags).toEqual(['structural_stalemate']);
     expect(explanation.telemetry!.weirdStateReasonCodes).toBeUndefined();
   });
+
+  it('builds territory-control explanation and applies telemetry tags', () => {
+    const source: GameEndExplanationSource = {
+      gameId: 'g_square19_2p_territory_majority',
+      boardType: 'square19',
+      numPlayers: 2,
+      winnerPlayerId: 'P1',
+      outcomeType: 'territory_control',
+      victoryReasonCode: 'victory_territory_majority',
+      scoreBreakdown: {
+        P1: {
+          playerId: 'P1',
+          eliminatedRings: 10,
+          territorySpaces: 190,
+          markers: 8,
+        },
+        P2: {
+          playerId: 'P2',
+          eliminatedRings: 4,
+          territorySpaces: 170,
+          markers: 6,
+        },
+      },
+      telemetryTags: ['territory_control'],
+      uxCopy: {
+        shortSummaryKey: 'game_end.territory_control.short',
+        detailedSummaryKey: 'game_end.territory_control.detailed',
+      },
+    };
+
+    const explanation = buildGameEndExplanation(source);
+
+    expect(explanation.outcomeType).toBe('territory_control');
+    expect(explanation.victoryReasonCode).toBe('victory_territory_majority');
+    expect(explanation.boardType).toBe('square19');
+    expect(explanation.scoreBreakdown).toEqual(source.scoreBreakdown);
+    expect(explanation.telemetry?.rulesContextTags).toEqual(['territory_control']);
+  });
 });

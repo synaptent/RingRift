@@ -235,4 +235,44 @@ describe('buildGameEndExplanationFromEngineView', () => {
     expect(new Set(telemetry.rulesContextTags)).toEqual(new Set(['territory_mini_region']));
     expect(telemetry.weirdStateReasonCodes).toEqual(['ANM_TERRITORY_NO_ACTIONS']);
   });
+
+  it('builds territory-control explanation with provided telemetry tags', () => {
+    const view: GameEndEngineView = {
+      gameId: 'g_square19_2p_territory_control',
+      boardType: 'square19',
+      numPlayers: 2,
+      winnerPlayerId: 'P1',
+      outcomeType: 'territory_control',
+      victoryReasonCode: 'victory_territory_majority',
+      scoreBreakdown: {
+        P1: {
+          playerId: 'P1',
+          eliminatedRings: 10,
+          territorySpaces: 190,
+          markers: 8,
+        },
+        P2: {
+          playerId: 'P2',
+          eliminatedRings: 4,
+          territorySpaces: 170,
+          markers: 6,
+        },
+      },
+    };
+
+    const explanation = buildGameEndExplanationFromEngineView(view, {
+      telemetryTags: ['territory_control'],
+      uxCopy: {
+        shortSummaryKey: 'game_end.territory_control.short',
+        detailedSummaryKey: 'game_end.territory_control.detailed',
+      },
+    });
+
+    expect(explanation.outcomeType).toBe('territory_control');
+    expect(explanation.victoryReasonCode).toBe('victory_territory_majority');
+    expect(explanation.winnerPlayerId).toBe('P1');
+    expect(explanation.boardType).toBe('square19');
+    expect(explanation.scoreBreakdown).toEqual(view.scoreBreakdown);
+    expect(explanation.telemetry?.rulesContextTags).toEqual(['territory_control']);
+  });
 });
