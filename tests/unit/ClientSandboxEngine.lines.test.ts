@@ -304,6 +304,7 @@ describe('ClientSandboxEngine line processing', () => {
     const state: GameState = engineAny.gameState as GameState;
 
     state.currentPlayer = 1;
+    state.currentPhase = 'line_processing'; // Required for choose_line_reward moves
     const board = state.board;
 
     board.markers.clear();

@@ -639,8 +639,9 @@ describe('PlacementValidator', () => {
       expect(result.code).toBe('NO_CONTROLLED_STACKS');
     });
 
-    it('allows skip when ringsInHand is 0 but player has legal moves', () => {
-      // Per code comment: "ringsInHand=0" should still allow skip if player has legal moves
+    it('rejects skip when ringsInHand is 0 even if player has legal moves', () => {
+      // Per canonical rules: skip_placement requires ringsInHand > 0. When ringsInHand = 0,
+      // the player should use no_placement_action instead (placement is skipped automatically).
       const stacks = new Map([
         [
           '3,3',
@@ -669,7 +670,9 @@ describe('PlacementValidator', () => {
 
       const result = validateSkipPlacement(state, action);
 
-      expect(result.valid).toBe(true);
+      // skip_placement is invalid when ringsInHand = 0; use no_placement_action instead
+      expect(result.valid).toBe(false);
+      expect(result.code).toBe('NO_RINGS_IN_HAND');
     });
   });
 
