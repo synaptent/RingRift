@@ -17,6 +17,8 @@ var mockRecordAIRequestDuration: jest.Mock;
 var mockRecordAIRequestLatencyMs: jest.Mock;
 
 var mockRecordAIRequestTimeout: jest.Mock;
+var mockRecordAIChoiceRequest: jest.Mock;
+var mockRecordAIChoiceLatencyMs: jest.Mock;
 
 jest.mock('axios', () => {
   mockAxiosPost = jest.fn();
@@ -46,6 +48,8 @@ jest.mock('../../../src/server/services/MetricsService', () => {
   mockRecordAIRequestDuration = jest.fn();
   mockRecordAIRequestLatencyMs = jest.fn();
   mockRecordAIRequestTimeout = jest.fn();
+  mockRecordAIChoiceRequest = jest.fn();
+  mockRecordAIChoiceLatencyMs = jest.fn();
 
   return {
     __esModule: true,
@@ -54,6 +58,8 @@ jest.mock('../../../src/server/services/MetricsService', () => {
       recordAIRequestDuration: mockRecordAIRequestDuration,
       recordAIRequestLatencyMs: mockRecordAIRequestLatencyMs,
       recordAIRequestTimeout: mockRecordAIRequestTimeout,
+      recordAIChoiceRequest: mockRecordAIChoiceRequest,
+      recordAIChoiceLatencyMs: mockRecordAIChoiceLatencyMs,
     }),
   };
 });
@@ -102,6 +108,8 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     mockRecordAIRequestDuration.mockClear();
     mockRecordAIRequestLatencyMs.mockClear();
     mockRecordAIRequestTimeout.mockClear();
+    mockRecordAIChoiceRequest.mockClear();
+    mockRecordAIChoiceLatencyMs.mockClear();
 
     // Reset concurrency counters between tests
     (AIServiceClient as any).inFlightRequests = 0;
@@ -232,6 +240,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '3', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('ring_elimination', 'success');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'ring_elimination',
+      expect.any(Number),
+      'success'
+    );
   });
 
   it('records timeout metrics for ring_elimination choice selection', async () => {
@@ -251,6 +265,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '3', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
     expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('ring_elimination', 'timeout');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'ring_elimination',
+      expect.any(Number),
+      'timeout'
+    );
   });
 
   it('records success metrics for region_order choice selection', async () => {
@@ -277,6 +297,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '4', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('region_order', 'success');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'region_order',
+      expect.any(Number),
+      'success'
+    );
   });
 
   it('records timeout metrics for region_order choice selection', async () => {
@@ -296,6 +322,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '4', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
     expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('region_order', 'timeout');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'region_order',
+      expect.any(Number),
+      'timeout'
+    );
   });
 
   it('records success metrics for line_order choice selection', async () => {
@@ -317,6 +349,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '2', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('line_order', 'success');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'line_order',
+      expect.any(Number),
+      'success'
+    );
   });
 
   it('records timeout metrics for line_order choice selection', async () => {
@@ -336,6 +374,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '2', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
     expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('line_order', 'timeout');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'line_order',
+      expect.any(Number),
+      'timeout'
+    );
   });
 
   it('records success metrics for line_reward_option choice selection', async () => {
@@ -358,6 +402,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '5', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('line_reward_option', 'success');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'line_reward_option',
+      expect.any(Number),
+      'success'
+    );
   });
 
   it('records timeout metrics for line_reward_option choice selection', async () => {
@@ -378,6 +428,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '5', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
     expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('line_reward_option', 'timeout');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'line_reward_option',
+      expect.any(Number),
+      'timeout'
+    );
   });
 
   it('records success metrics for capture_direction choice selection', async () => {
@@ -403,6 +459,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '6', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('capture_direction', 'success');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'capture_direction',
+      expect.any(Number),
+      'success'
+    );
   });
 
   it('records timeout metrics for capture_direction choice selection', async () => {
@@ -422,5 +484,11 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '6', expect.any(Number));
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
     expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+    expect(mockRecordAIChoiceRequest).toHaveBeenCalledWith('capture_direction', 'timeout');
+    expect(mockRecordAIChoiceLatencyMs).toHaveBeenCalledWith(
+      'capture_direction',
+      expect.any(Number),
+      'timeout'
+    );
   });
 });

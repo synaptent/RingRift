@@ -8,7 +8,7 @@
 import axios, { AxiosInstance } from 'axios';
 import { config } from '../config';
 import type { CancellationToken } from '../../shared/utils/cancellation';
-import { getMetricsService } from './MetricsService';
+import { getMetricsService, type AIChoiceOutcome } from './MetricsService';
 import {
   GameState,
   Move,
@@ -617,6 +617,7 @@ export class AIServiceClient {
     options: LineRewardChoice['options'],
     requestOptions?: AIServiceRequestOptions
   ): Promise<LineRewardChoiceResponsePayload> {
+    const choiceType = 'line_reward_option';
     // Cooperative pre-flight cancellation; choice selection is a pure
     // dependency call and should not proceed when canceled.
     requestOptions?.token?.throwIfCanceled(
@@ -652,6 +653,8 @@ export class AIServiceClient {
       metrics.recordAIRequest('success');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, 'success');
+      metrics.recordAIChoiceRequest(choiceType, 'success');
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, 'success');
 
       logger.info('AI line_reward_option choice received', {
         playerNumber,
@@ -669,11 +672,12 @@ export class AIServiceClient {
       const duration = performance.now() - startTime;
       const errorWithType = error as Error & { aiErrorType?: string };
       const aiErrorType = errorWithType.aiErrorType;
-      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
-        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      const latencyOutcome: AIChoiceOutcome = aiErrorType === 'timeout' ? 'timeout' : 'error';
       metrics.recordAIRequest('error');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      metrics.recordAIChoiceRequest(choiceType, latencyOutcome);
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, latencyOutcome);
       if (aiErrorType === 'timeout') {
         metrics.recordAIRequestTimeout();
       }
@@ -697,6 +701,7 @@ export class AIServiceClient {
     options: RingEliminationChoice['options'],
     requestOptions?: AIServiceRequestOptions
   ): Promise<RingEliminationChoiceResponsePayload> {
+    const choiceType = 'ring_elimination';
     // Cooperative pre-flight cancellation; choice selection is a pure
     // dependency call and should not proceed when canceled.
     requestOptions?.token?.throwIfCanceled(
@@ -732,6 +737,8 @@ export class AIServiceClient {
       metrics.recordAIRequest('success');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, 'success');
+      metrics.recordAIChoiceRequest(choiceType, 'success');
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, 'success');
 
       logger.info('AI ring_elimination choice received', {
         playerNumber,
@@ -749,11 +756,12 @@ export class AIServiceClient {
       const duration = performance.now() - startTime;
       const errorWithType = error as Error & { aiErrorType?: string };
       const aiErrorType = errorWithType.aiErrorType;
-      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
-        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      const latencyOutcome: AIChoiceOutcome = aiErrorType === 'timeout' ? 'timeout' : 'error';
       metrics.recordAIRequest('error');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      metrics.recordAIChoiceRequest(choiceType, latencyOutcome);
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, latencyOutcome);
       if (aiErrorType === 'timeout') {
         metrics.recordAIRequestTimeout();
       }
@@ -777,6 +785,7 @@ export class AIServiceClient {
     options: RegionOrderChoice['options'],
     requestOptions?: AIServiceRequestOptions
   ): Promise<RegionOrderChoiceResponsePayload> {
+    const choiceType = 'region_order';
     // Cooperative pre-flight cancellation; choice selection is a pure
     // dependency call and should not proceed when canceled.
     requestOptions?.token?.throwIfCanceled(
@@ -812,6 +821,8 @@ export class AIServiceClient {
       metrics.recordAIRequest('success');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, 'success');
+      metrics.recordAIChoiceRequest(choiceType, 'success');
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, 'success');
 
       logger.info('AI region_order choice received', {
         playerNumber,
@@ -829,11 +840,12 @@ export class AIServiceClient {
       const duration = performance.now() - startTime;
       const errorWithType = error as Error & { aiErrorType?: string };
       const aiErrorType = errorWithType.aiErrorType;
-      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
-        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      const latencyOutcome: AIChoiceOutcome = aiErrorType === 'timeout' ? 'timeout' : 'error';
       metrics.recordAIRequest('error');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      metrics.recordAIChoiceRequest(choiceType, latencyOutcome);
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, latencyOutcome);
       if (aiErrorType === 'timeout') {
         metrics.recordAIRequestTimeout();
       }
@@ -857,6 +869,7 @@ export class AIServiceClient {
     options: LineOrderChoice['options'],
     requestOptions?: AIServiceRequestOptions
   ): Promise<LineOrderChoiceResponsePayload> {
+    const choiceType = 'line_order';
     // Cooperative pre-flight cancellation; choice selection is a pure
     // dependency call and should not proceed when canceled.
     requestOptions?.token?.throwIfCanceled('before dispatching AIServiceClient.getLineOrderChoice');
@@ -890,6 +903,8 @@ export class AIServiceClient {
       metrics.recordAIRequest('success');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, 'success');
+      metrics.recordAIChoiceRequest(choiceType, 'success');
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, 'success');
 
       logger.info('AI line_order choice received', {
         playerNumber,
@@ -907,11 +922,12 @@ export class AIServiceClient {
       const duration = performance.now() - startTime;
       const errorWithType = error as Error & { aiErrorType?: string };
       const aiErrorType = errorWithType.aiErrorType;
-      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
-        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      const latencyOutcome: AIChoiceOutcome = aiErrorType === 'timeout' ? 'timeout' : 'error';
       metrics.recordAIRequest('error');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      metrics.recordAIChoiceRequest(choiceType, latencyOutcome);
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, latencyOutcome);
       if (aiErrorType === 'timeout') {
         metrics.recordAIRequestTimeout();
       }
@@ -935,6 +951,7 @@ export class AIServiceClient {
     options: CaptureDirectionChoice['options'],
     requestOptions?: AIServiceRequestOptions
   ): Promise<CaptureDirectionChoiceResponsePayload> {
+    const choiceType = 'capture_direction';
     // Cooperative pre-flight cancellation; choice selection is a pure
     // dependency call and should not proceed when canceled.
     requestOptions?.token?.throwIfCanceled(
@@ -970,6 +987,8 @@ export class AIServiceClient {
       metrics.recordAIRequest('success');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, 'success');
+      metrics.recordAIChoiceRequest(choiceType, 'success');
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, 'success');
 
       logger.info('AI capture_direction choice received', {
         playerNumber,
@@ -987,11 +1006,12 @@ export class AIServiceClient {
       const duration = performance.now() - startTime;
       const errorWithType = error as Error & { aiErrorType?: string };
       const aiErrorType = errorWithType.aiErrorType;
-      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
-        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      const latencyOutcome: AIChoiceOutcome = aiErrorType === 'timeout' ? 'timeout' : 'error';
       metrics.recordAIRequest('error');
       metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
       metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      metrics.recordAIChoiceRequest(choiceType, latencyOutcome);
+      metrics.recordAIChoiceLatencyMs(choiceType, duration, latencyOutcome);
       if (aiErrorType === 'timeout') {
         metrics.recordAIRequestTimeout();
       }

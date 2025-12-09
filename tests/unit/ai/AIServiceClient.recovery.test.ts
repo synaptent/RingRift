@@ -71,6 +71,8 @@ jest.mock('../../../src/server/services/MetricsService', () => ({
     recordAIRequestLatencyMs: jest.fn(),
     recordAIRequestTimeout: jest.fn(),
     recordAIFallback: jest.fn(),
+    recordAIChoiceRequest: jest.fn(),
+    recordAIChoiceLatencyMs: jest.fn(),
   })),
 }));
 

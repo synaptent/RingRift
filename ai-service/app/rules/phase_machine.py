@@ -31,6 +31,120 @@ class PhaseTransitionInput:
   trace_mode: bool = False
 
 
+def _is_no_action_bookkeeping_move(move_type: MoveType) -> bool:
+  """Return True for forced no-op bookkeeping moves that do NOT count as actions.
+
+  Mirrors the TS turnOrchestrator.isNoActionBookkeepingMove helper.
+  """
+  return move_type in {
+    MoveType.NO_PLACEMENT_ACTION,
+    MoveType.NO_MOVEMENT_ACTION,
+    MoveType.NO_LINE_ACTION,
+    MoveType.NO_TERRITORY_ACTION,
+  }
+
+
+def compute_had_any_action_this_turn(game_state: GameState) -> bool:
+  """
+  Python analogue of the TS computeHadAnyActionThisTurn helper.
+
+  Walk backwards through move_history for the current_player until the player
+  changes. Any move that is not a forced no-op bookkeeping move counts as an
+  action. Voluntary skips (e.g. SKIP_TERRITORY_PROCESSING) and
+  FORCED_ELIMINATION both count as actions; the various NO_*_ACTION moves do
+  not.
+  """
+  current_player = game_state.current_player
+  history = game_state.move_history
+
+  for move in reversed(history):
+    if move.player != current_player:
+      break
+    if not _is_no_action_bookkeeping_move(move.type):
+      return True
+  return False
+
+
+def player_has_stacks_on_board(game_state: GameState, player: int) -> bool:
+  """
+  True if ``player`` currently controls at least one stack on the board.
+
+  A stack is counted when stack_height > 0 and controlling_player == player.
+  Mirrors the TS playerHasStacksOnBoard helper used for FE gating.
+  """
+  for stack in game_state.board.stacks.values():
+    if stack.controlling_player == player and stack.stack_height > 0:
+      return True
+  return False
+
+
+def _on_line_processing_complete(game_state: GameState, *, trace_mode: bool) -> None:
+  """
+  Shared helper for exiting LINE_PROCESSING.
+
+  Decides whether to advance to TERRITORY_PROCESSING, enter FORCED_ELIMINATION,
+  or end the turn (rotate to next player) using the same boolean contract as
+  TurnStateMachine.onLineProcessingComplete on the TS side.
+  """
+  from app.game_engine import GameEngine
+
+  current_player = game_state.current_player
+
+  # Territory availability is defined by the presence of at least one
+  # process_territory_region decision for the active player.
+  territory_moves = GameEngine._get_territory_processing_moves(
+    game_state,
+    current_player,
+  )
+  has_territory_regions = bool(territory_moves)
+
+  had_any_action = compute_had_any_action_this_turn(game_state)
+  has_stacks = player_has_stacks_on_board(game_state, current_player)
+
+  if has_territory_regions:
+    GameEngine._advance_to_territory_processing(
+      game_state,
+      trace_mode=trace_mode,
+    )
+    return
+
+  # No territory regions – decide between forced_elimination and normal turn end.
+  if not had_any_action and has_stacks:
+    game_state.current_phase = GamePhase.FORCED_ELIMINATION
+    return
+
+  # Normal turn end: rotate to the next player using the canonical _end_turn
+  # helper so that FE gating and ANM invariants are applied consistently.
+  GameEngine._end_turn(game_state, trace_mode=trace_mode)
+
+
+def _on_territory_processing_complete(
+  game_state: GameState, *, trace_mode: bool
+) -> None:
+  """
+  Shared helper for exiting TERRITORY_PROCESSING.
+
+  Mirrors TurnStateMachine.onTerritoryProcessingComplete + orchestrator
+  behaviour:
+
+  - If the active player had **no actions at all this turn** and still controls
+    stacks, enter FORCED_ELIMINATION.
+  - Otherwise, perform a full turn end via GameEngine._end_turn so that the
+    next player's FE/ANM gating is applied consistently.
+  """
+  from app.game_engine import GameEngine
+
+  current_player = game_state.current_player
+  had_any_action = compute_had_any_action_this_turn(game_state)
+  has_stacks = player_has_stacks_on_board(game_state, current_player)
+
+  if not had_any_action and has_stacks:
+    game_state.current_phase = GamePhase.FORCED_ELIMINATION
+    return
+
+  GameEngine._end_turn(game_state, trace_mode=trace_mode)
+
+
 def advance_phases(inp: PhaseTransitionInput) -> None:
   """Advance phases and turn rotation for ``inp.game_state``.
 
@@ -123,6 +237,15 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
       game_state, trace_mode=trace_mode
     )
 
+  elif last_move.type == MoveType.RECOVERY_SLIDE:
+    # Recovery slide is a movement-phase real action. After applying it,
+    # we proceed to line_processing to record phase traversal (even if
+    # no further line decisions remain because collapse was applied).
+    game_state.chain_capture_state = None
+    GameEngine._advance_to_line_processing(
+      game_state, trace_mode=trace_mode
+    )
+
   elif last_move.type in (
     MoveType.OVERTAKING_CAPTURE,
     MoveType.CHAIN_CAPTURE,
@@ -148,13 +271,12 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
     MoveType.LINE_FORMATION,
     MoveType.CHOOSE_LINE_OPTION,
   ):
-    # After processing a line decision, check if there are more lines
-    # for the current player to process. If not, advance to territory
-    # processing (which may end the turn if no territories either).
-    # This mirrors the TS TurnEngine behaviour where line_processing
-    # automatically advances when no further decisions remain.
-    # NOTE: Filter out NO_LINE_ACTION - we only want actual line moves
-    # (PROCESS_LINE, CHOOSE_LINE_REWARD) to keep us in line_processing.
+    # After processing a line decision, check if there are more interactive
+    # line-processing moves for the current player. If not, delegate to the
+    # canonical post-line helper which decides between TERRITORY_PROCESSING,
+    # FORCED_ELIMINATION, and turn-end based on hadAnyActionThisTurn and the
+    # player's remaining material, mirroring the TS
+    # TurnStateMachine.onLineProcessingComplete semantics.
     remaining_lines = [
       m for m in GameEngine._get_line_processing_moves(
         game_state,
@@ -162,42 +284,42 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
       )
       if m.type != MoveType.NO_LINE_ACTION
     ]
-    if not remaining_lines:
-      GameEngine._advance_to_territory_processing(
-        game_state, trace_mode=trace_mode
-      )
+    if remaining_lines:
+      # Stay in line_processing; hosts will surface the next PROCESS_LINE or
+      # CHOOSE_LINE_REWARD move.
+      game_state.current_phase = GamePhase.LINE_PROCESSING
+    else:
+      _on_line_processing_complete(game_state, trace_mode=trace_mode)
 
   elif last_move.type == MoveType.NO_LINE_ACTION:
-    # Forced no-op: player entered line_processing but had no lines
-    # to process. Per RR-CANON-R075, this move marks that the phase
-    # was visited. After NO_LINE_ACTION, advance to territory_processing.
-    GameEngine._advance_to_territory_processing(
-      game_state, trace_mode=trace_mode
-    )
+    # Forced no-op: player entered line_processing but had no lines to process.
+    # Per RR-CANON-R075, this move marks that the phase was visited. After the
+    # final line-phase move (including NO_LINE_ACTION), delegate to the shared
+    # post-line helper so that we either:
+    # - enter TERRITORY_PROCESSING when regions exist;
+    # - enter FORCED_ELIMINATION when the player had no actions this turn but
+    #   still controls stacks; or
+    # - end the turn and rotate to the next player.
+    _on_line_processing_complete(game_state, trace_mode=trace_mode)
 
   elif last_move.type == MoveType.ELIMINATE_RINGS_FROM_STACK:
-    # After ELIMINATE_RINGS_FROM_STACK, check if the game will end:
-    # - Terminal: no stacks left AND no player has rings in hand
-    #   → stay on current player, set phase to territory_processing
-    # - Non-terminal: rotate to next player, set phase to ring_placement
-    no_stacks_left = not game_state.board.stacks
-    any_rings_in_hand = any(
-      p.rings_in_hand > 0 for p in game_state.players
+    # After an explicit ELIMINATE_RINGS_FROM_STACK decision, re-evaluate whether
+    # more territory decisions remain for the **same player**. When no further
+    # regions exist, delegate to the canonical post-territory helper so that we
+    # either enter FORCED_ELIMINATION (ANM + material) or perform a full turn
+    # end via GameEngine._end_turn, mirroring the TS orchestrator semantics for
+    # territory completion.
+    remaining_regions = GameEngine._get_territory_processing_moves(
+      game_state,
+      current_player,
     )
 
-    if no_stacks_left and not any_rings_in_hand:
-      # Terminal case: game will end, preserve current player
-      # and set phase to territory_processing (game over state)
+    if remaining_regions:
+      # Stay in territory_processing and keep the current player; hosts will
+      # surface the next PROCESS_TERRITORY_REGION decision.
       game_state.current_phase = GamePhase.TERRITORY_PROCESSING
-      game_state.must_move_from_stack_key = None
     else:
-      # Non-terminal case: perform a full turn end with ANM/FE gating.
-      # This mirrors TS turnLogic.advanceTurnAndPhase (which applies
-      # forced_elimination/no-action requirements rather than silently
-      # rotating). Using _end_turn ensures the next seat either has a
-      # legal action or will surface a forced_elimination/no_*_action
-      # requirement instead of leaving the recorder in an ANM state.
-      GameEngine._end_turn(game_state, trace_mode=trace_mode)
+      _on_territory_processing_complete(game_state, trace_mode=trace_mode)
 
   elif last_move.type == MoveType.PROCESS_TERRITORY_REGION:
     # After processing a disconnected territory region, re-evaluate whether
@@ -211,19 +333,22 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
 
     if remaining_regions:
       # Stay in territory_processing and keep the current player; hosts will
-      # surface the next process_territory_region decision.
+      # surface the next PROCESS_TERRITORY_REGION decision.
       game_state.current_phase = GamePhase.TERRITORY_PROCESSING
     else:
-      # No further territory decisions remain; rotate to the next player
-      # without applying forced elimination gating (mirrors TS turn end).
-      GameEngine._rotate_to_next_active_player(game_state)
+      # No further territory decisions remain; delegate to the shared
+      # post-territory helper so that we either:
+      # - enter FORCED_ELIMINATION when the player had no actions this
+      #   entire turn but still controls stacks; or
+      # - end the turn and rotate to the next player.
+      _on_territory_processing_complete(game_state, trace_mode=trace_mode)
 
   elif last_move.type == MoveType.NO_TERRITORY_ACTION:
-    # Forced no-op: player entered territory_processing but had no
-    # eligible regions. Per RR-CANON-R075, this move marks that the
-    # phase was visited. After a NO_TERRITORY_ACTION, rotate to the
-    # next player just like after PROCESS_TERRITORY_REGION.
-    GameEngine._rotate_to_next_active_player(game_state)
+    # Forced no-op: player entered territory_processing but had no eligible
+    # regions. Per RR-CANON-R075, this move marks that the phase was visited.
+    # After a NO_TERRITORY_ACTION, treat territory_processing as complete for
+    # this player and delegate to the canonical post-territory helper.
+    _on_territory_processing_complete(game_state, trace_mode=trace_mode)
 
   elif last_move.type in (
     MoveType.TERRITORY_CLAIM,

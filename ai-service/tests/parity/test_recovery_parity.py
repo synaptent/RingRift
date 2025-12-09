@@ -43,6 +43,7 @@ from app.rules.recovery import (
     apply_recovery_slide,
     calculate_recovery_cost,
 )
+from app.game_engine import GameEngine  # type: ignore[import]
 
 
 def make_test_state(
@@ -304,6 +305,55 @@ class TestBuriedRingCounting:
         )
 
         assert count_buried_rings(state.board, 1) == 0
+
+
+class TestRecoveryPhaseTransition:
+    """Ensure recovery slides advance into line_processing with collapses applied."""
+
+    def test_recovery_slide_enters_line_processing_and_collapses(self):
+        now = datetime.now()
+        state = make_test_state(
+            stacks={
+                "4,4": RingStack(
+                    position=Position(x=4, y=4),
+                    rings=[2, 1, 2],  # Player 1 buried ring
+                    stack_height=3,
+                    cap_height=1,
+                    controlling_player=2,
+                ),
+            },
+            markers={
+                "0,0": MarkerInfo(position=Position(x=0, y=0), player=1, type="regular"),
+                "1,0": MarkerInfo(position=Position(x=1, y=0), player=1, type="regular"),
+                "2,1": MarkerInfo(position=Position(x=2, y=1), player=1, type="regular"),
+            },
+            player1_rings_in_hand=0,
+            player2_rings_in_hand=0,
+        )
+
+        move = Move(
+            id="recovery-test",
+            type=MoveType.RECOVERY_SLIDE,
+            player=1,
+            from_pos=Position(x=2, y=1),
+            to=Position(x=2, y=0),
+            recovery_option=1,
+            timestamp=now,
+            think_time=0,
+            move_number=1,
+        )
+
+        next_state = GameEngine.apply_move(state, move)
+
+        # Phase should advance to line_processing after recovery.
+        assert next_state.current_phase == GamePhase.LINE_PROCESSING
+
+        # Collapsed spaces should include the completed line positions.
+        assert {"0,0", "1,0", "2,0"}.issubset(set(next_state.board.collapsed_spaces.keys()))
+
+        # Territory count should reflect collapsed markers.
+        p1 = next(p for p in next_state.players if p.player_number == 1)
+        assert p1.territory_spaces >= 3
 
 
 class TestRecoverySlideEnumeration:

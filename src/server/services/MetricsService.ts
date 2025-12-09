@@ -40,6 +40,7 @@ type MoveType = 'placement' | 'movement';
  * AI request outcome for AI metrics.
  */
 type AIOutcome = 'success' | 'fallback' | 'error';
+export type AIChoiceOutcome = 'success' | 'fallback' | 'timeout' | 'error';
 
 /**
  * Singleton MetricsService class that manages all Prometheus metrics.
@@ -151,6 +152,10 @@ export class MetricsService {
 
   /** Counter: AI request timeout occurrences */
   public readonly aiRequestTimeoutTotal: Counter<string>;
+  /** Counter: AI choice requests by choice type and outcome */
+  public readonly aiChoiceRequestsTotal: Counter<'choice_type' | 'outcome'>;
+  /** Histogram: AI choice latency in milliseconds by choice type and outcome */
+  public readonly aiChoiceLatencyMs: Histogram<'choice_type' | 'outcome'>;
 
   // ===================
   // Move Rejection Metrics
@@ -499,6 +504,17 @@ export class MetricsService {
     this.aiRequestTimeoutTotal = new Counter({
       name: 'ringrift_ai_request_timeout_total',
       help: 'Total number of AI request timeouts',
+    });
+    this.aiChoiceRequestsTotal = new Counter({
+      name: 'ringrift_ai_choice_requests_total',
+      help: 'Total number of AI choice requests by outcome and choice type',
+      labelNames: ['choice_type', 'outcome'] as const,
+    });
+    this.aiChoiceLatencyMs = new Histogram({
+      name: 'ringrift_ai_choice_latency_ms',
+      help: 'AI choice latency in milliseconds by choice type and outcome',
+      labelNames: ['choice_type', 'outcome'] as const,
+      buckets: [50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000],
     });
 
     // ===================
@@ -1026,6 +1042,24 @@ export class MetricsService {
    */
   public recordAIRequestTimeout(): void {
     this.aiRequestTimeoutTotal.inc();
+  }
+
+  /**
+   * Record an AI choice request outcome for a specific choice type.
+   */
+  public recordAIChoiceRequest(choiceType: string, outcome: AIChoiceOutcome): void {
+    this.aiChoiceRequestsTotal.labels(choiceType, outcome).inc();
+  }
+
+  /**
+   * Record AI choice latency in milliseconds for a specific choice type.
+   */
+  public recordAIChoiceLatencyMs(
+    choiceType: string,
+    latencyMs: number,
+    outcome: AIChoiceOutcome
+  ): void {
+    this.aiChoiceLatencyMs.labels(choiceType, outcome).observe(latencyMs);
   }
 
   // ===================
