@@ -674,6 +674,9 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
   let applied = 0;
   let synthesizedCount = 0;
+  // Track the last DB move index we've emitted a "complete" state for
+  let lastEmittedDbMoveComplete = -1;
+
   for (let i = 0; i < recordedMoves.length; i++) {
     const move = recordedMoves[i];
 
@@ -682,6 +685,18 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
     // Stop processing if the game is over (legacy recordings may have trailing moves)
     if (currentState.currentPhase === 'game_over' || currentState.gameStatus === 'completed') {
+      // Emit db-move-complete for the previous move before stopping
+      if (i > 0 && lastEmittedDbMoveComplete < i - 1) {
+        // eslint-disable-next-line no-console
+        console.log(
+          JSON.stringify({
+            kind: 'ts-replay-db-move-complete',
+            db_move_index: i - 1,
+            summary: summarizeState(`db_move_${i - 1}_complete`, currentState),
+          })
+        );
+        lastEmittedDbMoveComplete = i - 1;
+      }
       // eslint-disable-next-line no-console
       console.log(
         JSON.stringify({
@@ -727,6 +742,23 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
           summary: summarizeState('after_bridge', engine.getState() as GameState),
         })
       );
+    }
+
+    // After applying bridges (but before applying this move), emit the "complete" state
+    // for the PREVIOUS DB move. This state includes all bridges that were needed to
+    // transition from move i-1's phase to a phase where move i is valid.
+    // This matches Python's get_state_at_move(i-1) which includes internal phase transitions.
+    if (i > 0 && lastEmittedDbMoveComplete < i - 1) {
+      const stateForPreviousMove = engine.getState() as GameState;
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({
+          kind: 'ts-replay-db-move-complete',
+          db_move_index: i - 1,
+          summary: summarizeState(`db_move_${i - 1}_complete`, stateForPreviousMove),
+        })
+      );
+      lastEmittedDbMoveComplete = i - 1;
     }
 
     applied += 1;
@@ -786,6 +818,20 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
         movePlayer: move.player,
         moveNumber: move.moveNumber,
         summary: summarizeState(`after_move_${applied}`, state as GameState),
+      })
+    );
+  }
+
+  // Emit db-move-complete for the final recorded move (no bridges needed since there's no next move)
+  if (recordedMoves.length > 0 && lastEmittedDbMoveComplete < recordedMoves.length - 1) {
+    const finalDbMoveIndex = recordedMoves.length - 1;
+    const stateForFinalMove = engine.getState() as GameState;
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        kind: 'ts-replay-db-move-complete',
+        db_move_index: finalDbMoveIndex,
+        summary: summarizeState(`db_move_${finalDbMoveIndex}_complete`, stateForFinalMove),
       })
     );
   }

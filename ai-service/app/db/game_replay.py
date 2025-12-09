@@ -1223,23 +1223,26 @@ class GameReplayDB:
             state = self._auto_inject_before_move(state, move)
             state = GameEngine.apply_move(state, move, trace_mode=True)
 
-        # RR-PARITY-FIX: Auto-inject bookkeeping moves to match TS replay
-        # behavior. When TS replays recorded games, it auto-advances through
-        # no-action phases (line_processing, territory_processing) by
-        # synthesizing and applying NO_LINE_ACTION and NO_TERRITORY_ACTION
-        # moves. Python must do the same to maintain state parity.
+        # RR-PARITY-FIX-2024-12-09: Auto-inject bookkeeping moves AFTER the
+        # recorded move to match TS replay behavior, but ONLY when:
         #
-        # IMPORTANT: Only auto-inject if we're at the END of the recorded
-        # game (i.e., there are no more moves after this point). For
-        # intermediate positions where more recorded moves exist, those
-        # moves will handle phase transitions naturally. This prevents
-        # Python from "jumping ahead" to territory_processing when TS
-        # would stay in line_processing waiting for the explicit
-        # no_line_action move in the database.
+        # 1. We're at the end of recorded moves (no more moves after this), OR
+        # 2. The current phase requires a bookkeeping move but the NEXT recorded
+        #    move is NOT the corresponding bookkeeping move (i.e., DB is missing it)
         #
-        # For legacy games missing bookkeeping moves, auto-injection at
-        # the final position ensures the state advances past any remaining
-        # no-action phases.
+        # TS's ts-replay-step output represents state AFTER applying the recorded
+        # move PLUS any auto-advances through no-action phases WHEN APPROPRIATE.
+        # The key insight is that TS only auto-advances when:
+        # - There's no interactive option (e.g., no lines to process)
+        # - The DB explicitly doesn't have the bookkeeping move recorded
+        #
+        # For example, after process_line that results in territory_processing:
+        # - If DB has no_territory_action next: TS stays in territory_processing
+        # - If DB has place_ring next (missing no_territory_action): TS bridges
+        #
+        # We handle this by only auto-injecting at the final move position.
+        # The _auto_inject_before_move() handles the missing bookkeeping moves
+        # case for intermediate positions by injecting BEFORE the recorded move.
         total_moves = self._get_game_move_count(game_id)
         if move_number >= total_moves - 1:
             # At or past the last recorded move - safe to auto-inject
@@ -1301,8 +1304,29 @@ class GameReplayDB:
                 else str(state.current_phase)
             )
 
+            # Get the next move type for phase coercion checks
+            next_type = (
+                next_move.type.value
+                if hasattr(next_move.type, "value")
+                else str(next_move.type)
+            )
+
+            # RR-PARITY-FIX: When in ring_placement/movement but the next move
+            # is forced_elimination, coerce the phase. This happens when Python's
+            # phase machine recorded a forced_elimination mid-turn but the replay
+            # engine has already advanced to the next turn's start phase.
+            if current_phase in ("ring_placement", "movement") and next_type == "forced_elimination":
+                from app.models import GamePhase
+                state.current_phase = GamePhase.FORCED_ELIMINATION
+                break  # Phase is now correct, exit loop
+
             # Check if we're in a no-action phase that needs auto-advancing
             if current_phase == "territory_processing":
+                # Check if the next move is forced_elimination - if so, coerce phase
+                if next_type == "forced_elimination":
+                    from app.models import GamePhase
+                    state.current_phase = GamePhase.FORCED_ELIMINATION
+                    break
                 # Need to inject NO_TERRITORY_ACTION to advance
                 no_territory_move = Move(
                     id="auto-inject-no-territory",
@@ -1317,12 +1341,8 @@ class GameReplayDB:
             elif current_phase == "line_processing":
                 # Check if we need to inject NO_LINE_ACTION
                 # Only if the next move isn't already a line action
-                next_type = (
-                    next_move.type.value
-                    if hasattr(next_move.type, "value")
-                    else str(next_move.type)
-                )
-                if next_type not in ("no_line_action", "process_line"):
+                # (next_type already computed above at loop start)
+                if next_type not in ("no_line_action", "process_line", "choose_line_reward"):
                     no_line_move = Move(
                         id="auto-inject-no-line",
                         type=MoveType.NO_LINE_ACTION,

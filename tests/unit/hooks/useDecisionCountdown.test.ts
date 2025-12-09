@@ -99,6 +99,39 @@ describe('useDecisionCountdown', () => {
     expect(result.current.isServerCapped).toBe(false);
   });
 
+  it('normalizes negative baseline values to zero when no override is present', () => {
+    const choice = makeChoice();
+
+    const { result } = renderHook(() =>
+      useDecisionCountdown({
+        pendingChoice: choice,
+        baseTimeRemainingMs: -500,
+        timeoutWarning: null,
+      })
+    );
+
+    expect(result.current.effectiveTimeRemainingMs).toBe(0);
+    expect(result.current.isServerOverrideActive).toBe(false);
+    expect(result.current.isServerCapped).toBe(false);
+  });
+
+  it('clamps negative server override to zero and marks as capped', () => {
+    const choice = makeChoice();
+    const warning = makeWarning({ remainingMs: -250 });
+
+    const { result } = renderHook(() =>
+      useDecisionCountdown({
+        pendingChoice: choice,
+        baseTimeRemainingMs: 1_500,
+        timeoutWarning: warning,
+      })
+    );
+
+    expect(result.current.effectiveTimeRemainingMs).toBe(0);
+    expect(result.current.isServerOverrideActive).toBe(true);
+    expect(result.current.isServerCapped).toBe(true);
+  });
+
   it('clears server override when pending choice is cleared', () => {
     const choice = makeChoice();
     const warning = makeWarning({ remainingMs: 1_500 });
