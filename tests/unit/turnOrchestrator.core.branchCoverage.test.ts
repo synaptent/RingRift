@@ -1191,15 +1191,14 @@ describe('TurnOrchestrator core branch coverage', () => {
       expect(result.pendingDecision).toBeUndefined();
     });
 
-    it('completes turn after no_territory_action when elimination moves are available in territory_processing (2p square8)', () => {
-      // Per updated logic in TerritoryAggregate.ts (lines 667-685):
-      // When in territory_processing with no regions but player has stacks,
-      // elimination moves are surfaced directly in territory_processing phase.
-      // This means no separate forced_elimination phase transition is needed.
+    it('returns awaiting_decision after no_territory_action when elimination moves are needed (2p square8)', () => {
+      // Per turnOrchestrator.ts line 1226: no_territory_action is NOT turn-ending
+      // because forced elimination may be needed. Only skip_territory_processing
+      // is turn-ending.
       //
-      // The player should use eliminate_rings_from_stack moves directly in
-      // territory_processing phase, not no_territory_action followed by
-      // forced_elimination.
+      // When a player has stacks that need elimination, after no_territory_action
+      // the post-move processing will detect forced elimination is needed and
+      // return awaiting_decision.
       const state = createBaseState('territory_processing', 2);
       // Single blocked stack for player 1; player 2 has no material.
       state.board = createSingleCellBoardWithStack(1);
@@ -1211,10 +1210,10 @@ describe('TurnOrchestrator core branch coverage', () => {
 
       const result = processTurn(state, move);
 
-      // Turn completes because elimination moves are available in territory_processing
-      // (not surfaced as forced_elimination since they're already interactive moves).
-      // The actual elimination would be done via eliminate_rings_from_stack in territory_processing.
-      expect(result.status).toBe('complete');
+      // After no_territory_action, the system checks for forced elimination.
+      // Since elimination moves are needed, it returns awaiting_decision.
+      expect(result.status).toBe('awaiting_decision');
+      expect(result.pendingDecision).toBeDefined();
     });
   });
 

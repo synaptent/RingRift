@@ -1427,26 +1427,24 @@ const createMove = (type: Move['type']): Move => ({
 });
 
 describe('turnOrchestrator advanced branch coverage', () => {
-  it('completes turn after no_territory_action when elimination moves are available in territory_processing', () => {
-    // Per updated logic in TerritoryAggregate.ts (lines 667-685):
-    // When in territory_processing with no regions but player has stacks,
-    // elimination moves are surfaced directly in territory_processing phase.
-    // This means no separate forced_elimination phase transition is needed.
+  it('returns awaiting_decision after no_territory_action when elimination moves are needed', () => {
+    // Per turnOrchestrator.ts line 1226: no_territory_action is NOT turn-ending
+    // because forced elimination may be needed. Only skip_territory_processing
+    // is turn-ending.
     //
-    // The player should use eliminate_rings_from_stack moves directly in
-    // territory_processing phase, not no_territory_action followed by
-    // forced_elimination.
+    // When a player has stacks that need elimination, after no_territory_action
+    // the post-move processing will detect forced elimination is needed and
+    // return awaiting_decision.
     const board = createBoardWithSingleStack(1);
     const state = createBaseState('territory_processing', 0, board);
     const move = createMove('no_territory_action');
 
     const result = processTurn(state, move);
 
-    // Turn completes because elimination moves are available in territory_processing
-    // (not surfaced as forced_elimination since they're already interactive moves).
-    expect(result.status).toBe('complete');
-    expect(result.pendingDecision).toBeUndefined();
-    expect(result.nextState.currentPhase).not.toBe('forced_elimination');
+    // After no_territory_action, the system checks for forced elimination.
+    // Since elimination moves are needed, it returns awaiting_decision.
+    expect(result.status).toBe('awaiting_decision');
+    expect(result.pendingDecision).toBeDefined();
   });
 
   it('does not surface forced-elimination decision when placement actions exist', () => {
