@@ -2960,6 +2960,17 @@ class GameEngine:
         if placement_count <= 0:
             return
 
+        # Defensive guard: ensure the player has enough rings in hand.
+        # Move generation should guarantee this, but we guard here for parity
+        # with TS which rejects place_ring when ringsInHand is insufficient.
+        player = next(
+            (p for p in game_state.players if p.player_number == move.player),
+            None,
+        )
+        if not player or player.rings_in_hand < placement_count:
+            # No-op: cannot place rings the player doesn't have.
+            return
+
         existing = board.stacks.get(pos_key)
         zobrist = ZobristHash()
 
