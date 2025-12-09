@@ -163,9 +163,15 @@ export function updateLpsTracking(lps: LpsTrackingState, options: LpsUpdateOptio
     lps.currentRoundFirstPlayer = currentPlayer;
     lps.currentRoundActorMask.clear();
     lps.exclusivePlayerForCompletedRound = null;
-    // Reset consecutive tracking when round structure changes
-    lps.consecutiveExclusiveRounds = 0;
-    lps.consecutiveExclusivePlayer = null;
+    // Only reset consecutive tracking if the exclusive player also dropped out.
+    // If the exclusive player is still active, they should continue counting
+    // toward LPS victory even though the round structure changed (e.g., opponent
+    // lost all material).
+    const excl = lps.consecutiveExclusivePlayer;
+    if (excl === null || !activeSet.has(excl)) {
+      lps.consecutiveExclusiveRounds = 0;
+      lps.consecutiveExclusivePlayer = null;
+    }
   } else if (currentPlayer === first && lps.currentRoundActorMask.size > 0) {
     // Cycled back to first player - finalize previous round
     const exclusivePlayer = finalizeCompletedLpsRound(activePlayers, lps.currentRoundActorMask);

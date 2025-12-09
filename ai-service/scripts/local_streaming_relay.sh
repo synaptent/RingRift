@@ -71,8 +71,8 @@ log "Starting sync loop..."
 TOTAL_GAMES=0
 
 while true; do
-    # Get list of JSONL files on Vast.ai
-    FILES=$($SSH_CMD "ls ~/ringrift/ai-service/logs/selfplay/batch_*.jsonl 2>/dev/null" 2>&1 | grep -v "Welcome\|Have fun\|No such file" || true)
+    # Get list of all JSONL files on Vast.ai (batch_*, extra_*, c*_w*, etc.)
+    FILES=$($SSH_CMD "ls ~/ringrift/ai-service/logs/selfplay/*.jsonl 2>/dev/null" 2>&1 | grep -v "Welcome\|Have fun\|No such file" || true)
 
     if [ -n "$FILES" ]; then
         for remote_file in $FILES; do

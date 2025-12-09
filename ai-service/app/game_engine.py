@@ -2508,9 +2508,14 @@ class GameEngine:
             game_state.lps_current_round_first_player = current
             mask.clear()
             game_state.lps_exclusive_player_for_completed_round = None
-            # Reset consecutive tracking when round structure changes
-            game_state.lps_consecutive_exclusive_rounds = 0
-            game_state.lps_consecutive_exclusive_player = None
+            # Only reset consecutive tracking if the exclusive player also
+            # dropped out. If the exclusive player is still active, they
+            # should continue counting toward LPS victory even though the
+            # round structure changed (e.g., opponent lost all material).
+            excl = game_state.lps_consecutive_exclusive_player
+            if excl is None or excl not in active_set:
+                game_state.lps_consecutive_exclusive_rounds = 0
+                game_state.lps_consecutive_exclusive_player = None
         elif current == first and len(mask) > 0:
             # Cycled back to first player - finalize the previous round.
             # Determine if exactly one active player had real actions.

@@ -40,23 +40,29 @@ logger = logging.getLogger(__name__)
 #   Conservative estimate: 400 moves for 2p, +100 per additional player
 #
 # Games reaching these limits without a winner indicate potential bugs.
+#
+# NOTE: With canonical recording (RR-CANON-R075), each turn generates multiple
+# moves: RING_PLACEMENT/NO_PLACEMENT_ACTION, MOVEMENT/NO_MOVEMENT_ACTION,
+# LINE_PROCESSING/NO_LINE_ACTION, TERRITORY_PROCESSING/NO_TERRITORY_ACTION,
+# plus any captures. Typical games show ~4-5 moves per turn, so limits must
+# account for this multiplier.
 # -----------------------------------------------------------------------------
 
 THEORETICAL_MAX_MOVES: Dict[BoardType, Dict[int, int]] = {
     BoardType.SQUARE8: {
-        2: 150,
-        3: 200,
-        4: 250,
+        2: 400,   # ~80 turns * 5 moves/turn
+        3: 500,
+        4: 600,
     },
     BoardType.SQUARE19: {
-        2: 1000,
-        3: 1200,
-        4: 1400,
+        2: 2000,  # larger board, more phases
+        3: 2500,
+        4: 3000,
     },
     BoardType.HEXAGONAL: {
-        2: 1000,
-        3: 1200,
-        4: 1400,
+        2: 2000,
+        3: 2500,
+        4: 3000,
     },
 }
 
@@ -90,7 +96,7 @@ DEFAULT_TRAINING_EVAL_CONFIG: Dict[str, Any] = {
     "eval_mode": "multi-start",
     "state_pool_id": "v1",
     "games_per_eval": 16,
-    "max_moves": 200,
+    "max_moves": 400,  # Increased for canonical recording (~4-5 moves/turn)
     "eval_randomness": 0.0,
     # RNG seed is supplied by calling code; see `build_training_eval_kwargs`.
 }
@@ -256,19 +262,11 @@ def make_env(config: Optional[TrainingEnvConfig] = None) -> "RingRiftEnv":
     if config.max_moves is not None:
         max_moves = config.max_moves
     else:
-        # Use the historical training default for the calibration
-        # environment and otherwise fall back to the theoretical
-        # limit for the given board / player count.
-        if (
-            config.board_type == BoardType.SQUARE8
-            and config.num_players == 2
-        ):
-            max_moves = 200
-        else:
-            max_moves = get_theoretical_max_moves(
-                config.board_type,
-                config.num_players,
-            )
+        # Fall back to the theoretical limit for the given board / player count.
+        max_moves = get_theoretical_max_moves(
+            config.board_type,
+            config.num_players,
+        )
 
     return RingRiftEnv(
         board_type=config.board_type,
@@ -354,7 +352,7 @@ class RingRiftEnv:
     def __init__(
         self,
         board_type: BoardType = BoardType.SQUARE8,
-        max_moves: int = 200,
+        max_moves: int = 400,  # Increased for canonical recording (~4-5 moves/turn)
         reward_on: str = "terminal",  # "terminal" or "shaped"
         num_players: int = 2,
         *,

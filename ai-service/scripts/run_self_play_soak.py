@@ -41,7 +41,7 @@ From ``ai-service/``::
         --board-type square8 \
         --engine-mode mixed \
         --num-players 2 \
-        --max-moves 200 \
+        --max-moves 400 \
         --seed 42 \
         --log-jsonl logs/selfplay/soak.square8_2p.mixed.jsonl \
         --summary-json logs/selfplay/soak.square8_2p.mixed.summary.json
@@ -52,7 +52,7 @@ From ``ai-service/``::
         --board-type square8 \
         --engine-mode descent-only \
         --num-players 3 \
-        --max-moves 250 \
+        --max-moves 500 \
         --seed 123
 """
 
@@ -815,6 +815,51 @@ def run_self_play_soak(
                     if state.current_phase == GamePhase.RING_PLACEMENT and move.type == MoveType.SWAP_SIDES:
                         termination_reason = "swap_sides_not_allowed_in_ring_placement"
                         skipped = True
+                        break
+
+                    # Guard against movement/capture moves being returned after the host
+                    # has already advanced into decision phases. If this happens, drop
+                    # the game to avoid recording a structurally invalid trace.
+                    movement_phase_ok = state.current_phase in (
+                        GamePhase.MOVEMENT,
+                        GamePhase.CAPTURE,
+                        GamePhase.CHAIN_CAPTURE,
+                    )
+                    if (
+                        move.type
+                        in (
+                            MoveType.MOVE_STACK,
+                            MoveType.OVERTAKING_CAPTURE,
+                            MoveType.CONTINUE_CAPTURE_SEGMENT,
+                        )
+                        and not movement_phase_ok
+                    ):
+                        termination_reason = f"illegal_move_for_phase:{state.current_phase.value}:{move.type.value}"
+                        skipped = True
+                        try:
+                            failure_dir = os.path.join(
+                                os.path.dirname(args.log_jsonl) or ".",
+                                "failures",
+                            )
+                            os.makedirs(failure_dir, exist_ok=True)
+                            failure_path = os.path.join(
+                                failure_dir,
+                                f"failure_{game_idx}_illegal_move_for_phase.json",
+                            )
+                            with open(failure_path, "w", encoding="utf-8") as f:
+                                json.dump(
+                                    {
+                                        "game_index": game_idx,
+                                        "move_index": move_count,
+                                        "current_phase": state.current_phase.value,
+                                        "move_type": move.type.value,
+                                        "player": move.player,
+                                        "state_hash": getattr(state, "zobrist_hash", None),
+                                    },
+                                    f,
+                                )
+                        except Exception:
+                            pass
                         break
 
                 if state.current_phase == GamePhase.FORCED_ELIMINATION and move.type != MoveType.FORCED_ELIMINATION:
@@ -1811,8 +1856,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=200,
-        help=("Maximum moves per game before treating as a cutoff " "(default: 200)."),
+        default=400,
+        help=(
+            "Maximum moves per game before treating as a cutoff (default: 400). "
+            "Note: With canonical recording, each turn generates ~4-5 moves."
+        ),
     )
     parser.add_argument(
         "--seed",
