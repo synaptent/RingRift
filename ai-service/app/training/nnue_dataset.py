@@ -30,7 +30,8 @@ from ..ai.nnue import (
     extract_features_from_gamestate,
     get_feature_dim,
 )
-from ..models import BoardType, GameState
+from ..models import BoardType, GameState, Move
+from ..rules.default_engine import DefaultRulesEngine
 
 logger = logging.getLogger(__name__)
 
@@ -163,14 +164,18 @@ class NNUESQLiteDataset(Dataset):
             cursor.execute(snapshot_query, (game_id,))
             snapshots = cursor.fetchall()
 
-            if not snapshots:
-                # Try to get initial state and replay moves
+            # Determine expected positions based on sampling rate
+            expected_samples = total_moves // self.config.sample_every_n_moves
+            snapshots_sufficient = len(snapshots) >= max(expected_samples // 2, 5)
+
+            if not snapshots or not snapshots_sufficient:
+                # Not enough snapshots - use replay to extract all positions
                 samples.extend(self._extract_via_replay(
                     conn, game_id, winner, total_moves
                 ))
                 continue
 
-            # Sample positions from snapshots
+            # Sample positions from snapshots (only if we have good coverage)
             for i, snapshot in enumerate(snapshots):
                 move_num = snapshot['move_number']
 
@@ -239,11 +244,108 @@ class NNUESQLiteDataset(Dataset):
         winner: int,
         total_moves: int,
     ) -> List[NNUESample]:
-        """Extract samples by replaying moves when snapshots aren't available."""
-        # This would require implementing game replay logic
-        # For now, we skip games without snapshots
-        logger.debug(f"Skipping {game_id}: no state snapshots available")
-        return []
+        """Extract samples by replaying moves when snapshots aren't available.
+
+        This method loads the initial state and all moves for a game, then
+        replays the game to extract position features at sampled positions.
+        """
+        samples: List[NNUESample] = []
+        cursor = conn.cursor()
+
+        # Get initial state
+        cursor.execute(
+            "SELECT initial_state_json, compressed FROM game_initial_state WHERE game_id = ?",
+            (game_id,)
+        )
+        initial_row = cursor.fetchone()
+        if not initial_row:
+            logger.debug(f"Skipping {game_id}: no initial state")
+            return []
+
+        initial_json = initial_row[0]
+        if initial_row[1]:  # compressed
+            initial_json = gzip.decompress(initial_json.encode()).decode()
+
+        try:
+            state_dict = json.loads(initial_json)
+            state = GameState(**state_dict)
+        except Exception as e:
+            logger.debug(f"Failed to parse initial state for {game_id}: {e}")
+            return []
+
+        # Get all moves for this game
+        cursor.execute(
+            """
+            SELECT move_number, move_json
+            FROM game_moves
+            WHERE game_id = ?
+            ORDER BY move_number
+            """,
+            (game_id,)
+        )
+        moves = cursor.fetchall()
+
+        if not moves:
+            logger.debug(f"Skipping {game_id}: no moves found")
+            return []
+
+        # Create rules engine for move application
+        engine = DefaultRulesEngine()
+
+        # Replay game and sample positions
+        for move_row in moves:
+            move_number = move_row[0]
+            move_json_str = move_row[1]
+
+            # Sample every Nth position
+            if move_number % self.config.sample_every_n_moves == 0:
+                # Get current player from state
+                current_player = state.current_player
+                if current_player is None or current_player < 1:
+                    current_player = 1
+
+                # Calculate value: +1 if current player wins, -1 if loses
+                if winner == current_player:
+                    value = 1.0
+                elif winner is None or winner == 0:
+                    value = 0.0  # Draw
+                else:
+                    value = -1.0  # Loss
+
+                # Skip draws if configured
+                if value == 0.0 and not self.config.include_draws:
+                    pass  # Skip but continue replaying
+                else:
+                    # Extract NNUE features
+                    try:
+                        features = extract_features_from_gamestate(
+                            state, current_player
+                        )
+                        sample = NNUESample(
+                            features=features,
+                            value=value,
+                            player_number=current_player,
+                            game_id=game_id,
+                            move_number=move_number,
+                        )
+                        samples.append(sample)
+                    except Exception as e:
+                        logger.debug(f"Feature extraction failed for {game_id}:{move_number}: {e}")
+
+            # Apply move to advance state
+            try:
+                move_dict = json.loads(move_json_str)
+                move = Move(**move_dict)
+                state = engine.apply_move(state, move)
+            except Exception as e:
+                logger.debug(f"Failed to apply move {move_number} for {game_id}: {e}")
+                break  # Stop replay on error
+
+            # Check if we've collected enough samples
+            if self.max_samples and len(samples) >= self.max_samples:
+                break
+
+        return samples
 
     def _load_from_cache(self, cache_path: str) -> None:
         """Load samples from NPZ cache file."""
