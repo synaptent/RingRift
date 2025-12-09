@@ -71,6 +71,7 @@ run_batch_on_instance() {
                 --seed \$((${base_seed} + i)) \\
                 --log-jsonl logs/selfplay/batch_\${i}.jsonl \\
                 --no-record-db \\
+                --include-training-data \\
                 >> logs/selfplay/batch.log 2>&1 &
         done
 
