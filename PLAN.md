@@ -1054,11 +1054,12 @@ wandb.log({
 3. [x] Create `scripts/run_improvement_loop.py` (documented above)
 4. [x] Create `config/pipeline.json` (documented above)
 5. [x] Add NNUE distillation script (documented above)
-6. [ ] Add tournament round-robin mode to `run_ai_tournament.py`
+6. [x] Add tournament round-robin mode - EXISTS in `run_tournament.py` with `--scheduler round-robin`
 7. [ ] Set up monitoring dashboard (Grafana/Prometheus or W&B)
 8. [ ] Configure cloud GPU provisioning scripts
-9. [ ] Add `--dedupe-by-game-id` to `merge_game_dbs.py`
-10. [ ] Add `--nn-quality-gate` to `run_iterative_cmaes.py`
+9. [x] Add `--dedupe-by-game-id` to `merge_game_dbs.py`
+10. [x] Add `--nn-quality-gate` to `run_iterative_cmaes.py` (gates CMA-ES on NN quality)
+11. [ ] Add `--evaluator neural` to CMA-ES (future: use NN for position scoring instead of game outcomes)
 
 ## Success Criteria
 

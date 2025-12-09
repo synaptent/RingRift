@@ -8,24 +8,34 @@ training loop. After each CMA-ES run:
 2. If plateau detected: declare convergence
 
 Usage (local):
-    python scripts/run_iterative_cmaes.py \
-        --board square8 \
-        --num-players 2 \
-        --generations-per-iter 15 \
-        --max-iterations 10 \
-        --improvement-threshold 0.55 \
-        --plateau-generations 5 \
+    python scripts/run_iterative_cmaes.py \\
+        --board square8 \\
+        --num-players 2 \\
+        --generations-per-iter 15 \\
+        --max-iterations 10 \\
+        --improvement-threshold 0.55 \\
+        --plateau-generations 5 \\
         --output-dir logs/cmaes/iterative/square8_2p
 
 Usage (distributed):
-    python scripts/run_iterative_cmaes.py \
-        --board square8 \
-        --num-players 3 \
-        --generations-per-iter 10 \
-        --max-iterations 5 \
-        --output-dir logs/cmaes/iterative/square8_3p_dist \
-        --distributed \
+    python scripts/run_iterative_cmaes.py \\
+        --board square8 \\
+        --num-players 3 \\
+        --generations-per-iter 10 \\
+        --max-iterations 5 \\
+        --output-dir logs/cmaes/iterative/square8_3p_dist \\
+        --distributed \\
         --workers http://worker1:8000,http://worker2:8000
+
+Usage with NN quality gate:
+    # Only run NN-guided optimization if NN beats heuristic by 55%+
+    python scripts/run_iterative_cmaes.py \\
+        --board square8 \\
+        --num-players 2 \\
+        --output-dir logs/cmaes/iterative/square8_2p_gated \\
+        --nn-quality-gate 0.55 \\
+        --nn-model models/square8_2p_best.pth \\
+        --nn-gate-games 30
 """
 
 from __future__ import annotations
@@ -42,6 +52,117 @@ from typing import Any, Dict, List, Optional, Tuple
 
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.models import BoardType
+
+
+def check_nn_quality_gate(
+    nn_model_path: str,
+    board_type: str,
+    num_players: int,
+    quality_threshold: float,
+    num_games: int = 20,
+    max_moves: int = 200,
+) -> Tuple[bool, float]:
+    """Run a quick tournament to check if NN model meets quality threshold.
+
+    This gates CMA-ES optimization on NN quality to avoid optimizing heuristics
+    toward a weak neural network target.
+
+    Args:
+        nn_model_path: Path to the NN model checkpoint
+        board_type: Board type (square8, square19, hex)
+        num_players: Number of players (2, 3, 4)
+        quality_threshold: Minimum win rate required (e.g., 0.55)
+        num_games: Number of games for the quality check tournament
+        max_moves: Maximum moves per game
+
+    Returns:
+        Tuple of (passed: bool, actual_winrate: float)
+    """
+    import re
+
+    if not os.path.exists(nn_model_path):
+        print(f"[NN Quality Gate] Model not found: {nn_model_path}")
+        return False, 0.0
+
+    print(f"\n{'='*60}")
+    print("NN QUALITY GATE CHECK")
+    print(f"{'='*60}")
+    print(f"Model: {nn_model_path}")
+    print(f"Board: {board_type}, Players: {num_players}")
+    print(f"Threshold: {quality_threshold:.1%}")
+    print(f"Games: {num_games}")
+    print()
+
+    # Run tournament: Neural vs Heuristic
+    # Use run_ai_tournament.py for consistent evaluation
+    cmd = [
+        sys.executable,
+        "scripts/run_ai_tournament.py",
+        "--p1", "Neural",
+        "--p1-model", nn_model_path,
+        "--p2", "Heuristic",
+        "--board", board_type,
+        "--games", str(num_games),
+        "--max-moves", str(max_moves),
+    ]
+
+    env = os.environ.copy()
+    env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+
+    try:
+        result = subprocess.run(
+            cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=600,  # 10 minute timeout
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+        )
+
+        output = result.stdout + result.stderr
+
+        # Parse win rate from output
+        # Look for patterns like "P1 wins: 12/20 (60.0%)" or "Win rate: 0.60"
+        winrate = 0.0
+
+        # Try percentage pattern first
+        match = re.search(r"P1.*?(\d+\.?\d*)%", output)
+        if match:
+            winrate = float(match.group(1)) / 100.0
+        else:
+            # Try fraction pattern: "12/20"
+            match = re.search(r"P1.*?(\d+)/(\d+)", output)
+            if match:
+                wins = int(match.group(1))
+                total = int(match.group(2))
+                winrate = wins / max(total, 1)
+            else:
+                # Try decimal pattern
+                match = re.search(r"Win rate:\s*(\d+\.?\d*)", output)
+                if match:
+                    winrate = float(match.group(1))
+
+        passed = winrate >= quality_threshold
+
+        print(f"\nResults:")
+        print(f"  Neural win rate: {winrate:.1%}")
+        print(f"  Threshold: {quality_threshold:.1%}")
+        print(f"  Status: {'PASSED ✓' if passed else 'FAILED ✗'}")
+
+        if not passed:
+            print(f"\n  WARNING: NN model does not meet quality threshold.")
+            print(f"  CMA-ES will proceed with heuristic-only optimization.")
+
+        return passed, winrate
+
+    except subprocess.TimeoutExpired:
+        print("[NN Quality Gate] Tournament timed out")
+        return False, 0.0
+    except Exception as e:
+        print(f"[NN Quality Gate] Error running tournament: {e}")
+        return False, 0.0
 
 
 def get_profile_key(num_players: int) -> str:
@@ -697,7 +818,65 @@ def main() -> None:
         ),
     )
 
+    # NN Quality Gate arguments
+    parser.add_argument(
+        "--nn-quality-gate",
+        type=float,
+        default=None,
+        metavar="THRESHOLD",
+        help=(
+            "Enable NN quality gate: before starting CMA-ES, run a tournament "
+            "between the specified NN model and heuristic baseline. If the NN "
+            "win rate is below THRESHOLD (e.g., 0.55), proceed with heuristic-only "
+            "optimization. Requires --nn-model to be specified. "
+            "Example: --nn-quality-gate 0.55"
+        ),
+    )
+    parser.add_argument(
+        "--nn-model",
+        type=str,
+        default=None,
+        help=(
+            "Path to the neural network model checkpoint for quality gate check. "
+            "Required when --nn-quality-gate is specified."
+        ),
+    )
+    parser.add_argument(
+        "--nn-gate-games",
+        type=int,
+        default=20,
+        help=(
+            "Number of games to play for the NN quality gate tournament. "
+            "More games give more accurate estimates but take longer. Default: 20."
+        ),
+    )
+
     args = parser.parse_args()
+
+    # Validate NN quality gate arguments
+    if args.nn_quality_gate is not None and args.nn_model is None:
+        parser.error("--nn-quality-gate requires --nn-model to be specified")
+
+    # Run NN quality gate check if specified
+    nn_gate_passed = True
+    nn_gate_winrate = None
+    if args.nn_quality_gate is not None and args.nn_model is not None:
+        nn_gate_passed, nn_gate_winrate = check_nn_quality_gate(
+            nn_model_path=args.nn_model,
+            board_type=args.board,
+            num_players=args.num_players,
+            quality_threshold=args.nn_quality_gate,
+            num_games=args.nn_gate_games,
+            max_moves=args.max_moves,
+        )
+
+        if not nn_gate_passed:
+            print(f"\n[NN Quality Gate] NN model failed quality check "
+                  f"({nn_gate_winrate:.1%} < {args.nn_quality_gate:.1%})")
+            print("[NN Quality Gate] Proceeding with heuristic-only CMA-ES optimization")
+        else:
+            print(f"\n[NN Quality Gate] NN model passed quality check "
+                  f"({nn_gate_winrate:.1%} >= {args.nn_quality_gate:.1%})")
 
     # Parse inject_profiles from comma-separated string to list
     inject_profiles_list = None
