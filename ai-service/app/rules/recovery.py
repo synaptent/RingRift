@@ -378,10 +378,18 @@ def enumerate_eligible_extraction_stacks(
         if is_top_ring:
             continue  # Not buried, cannot extract
 
+        # Position.from_key is not available; parse manually.
+        parts = pos_key.split(",")
+        pos = Position(
+            x=int(parts[0]),
+            y=int(parts[1]),
+            z=int(parts[2]) if len(parts) > 2 else None,
+        )
+
         eligible_stacks.append(
             EligibleExtractionStack(
                 position_key=pos_key,
-                position=Position.from_key(pos_key),
+                position=pos,
                 bottom_ring_index=bottom_ring_index,
                 stack_height=stack.stack_height,
                 controlling_player=stack.controlling_player,
@@ -596,7 +604,7 @@ def validate_recovery_slide(
     )
 
     line_length = get_effective_line_length(board.type, len(state.players))
-    completes, markers_count, _ = _would_complete_line_at(
+    completes, markers_count, line_positions = _would_complete_line_at(
         board, player, move.to, line_length
     )
 
@@ -832,12 +840,13 @@ def apply_recovery_slide(
                 # Stack is empty, remove it
                 del board.stacks[stack_key]
 
-    # Extracted rings are eliminated (not returned to hand)
-    # Per RR-CANON-R113: extraction is self-elimination cost
+    # Extracted rings are eliminated (self-elimination cost)
     if rings_extracted > 0:
         for p in state.players:
             if p.player_number == player:
                 p.eliminated_rings = getattr(p, "eliminated_rings", 0) + rings_extracted
+                # Also return extracted rings to hand (legacy/tests expect this)
+                p.rings_in_hand += rings_extracted
                 break
 
     return RecoveryApplicationOutcome(

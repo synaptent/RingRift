@@ -83,7 +83,11 @@ import {
 } from '../../shared/utils/envFlags';
 import { SeededRNG, generateGameSeed } from '../../shared/utils/rng';
 import { applyMarkerEffectsAlongPathOnBoard } from '../../shared/engine';
-import { enumerateSimpleMovementLandings } from './sandboxMovement';
+import {
+  enumerateSimpleMovementLandings,
+  isPlayerEligibleForRecovery,
+  enumerateRecoverySlideLandings,
+} from './sandboxMovement';
 import { findAllLinesOnBoard } from './sandboxLines';
 import { findDisconnectedRegionsOnBoard } from './sandboxTerritory';
 import { forceEliminateCapOnBoard } from './sandboxElimination';
@@ -1148,11 +1152,24 @@ export class ClientSandboxEngine {
       simpleLandings = simpleMoves.map((m) => m.to);
     }
 
-    // 3. Return the union of capture and simple landings, deduplicated.
+    // 3. Enumerate recovery slide targets if player is eligible for recovery
+    // (RR-CANON-R110–R115). Recovery slides originate from marker positions,
+    // not stacks, so we check if the 'from' position matches any recovery target.
+    let recoveryLandings: Position[] = [];
+    if (
+      this.gameState.currentPhase === 'movement' &&
+      isPlayerEligibleForRecovery(this.gameState, playerNumber)
+    ) {
+      const recoveryTargets = enumerateRecoverySlideLandings(this.gameState, playerNumber);
+      const matchingRecovery = recoveryTargets.filter((t) => positionToString(t.from) === fromKey);
+      recoveryLandings = matchingRecovery.map((t) => t.to);
+    }
+
+    // 4. Return the union of capture, simple, and recovery landings, deduplicated.
     const allLandings: Position[] = [];
     const seen = new Set<string>();
 
-    for (const pos of [...captureLandings, ...simpleLandings]) {
+    for (const pos of [...captureLandings, ...simpleLandings, ...recoveryLandings]) {
       const key = positionToString(pos);
       if (seen.has(key)) continue;
       seen.add(key);

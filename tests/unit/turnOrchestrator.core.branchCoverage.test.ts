@@ -386,6 +386,20 @@ describe('TurnOrchestrator core branch coverage', () => {
         expect(['complete', 'awaiting_decision']).toContain(result.status);
         expect(result.nextState.gameStatus).toBe('active');
       });
+
+      it('rejects process_territory_region outside territory_processing phase', () => {
+        const state = createBaseState('ring_placement');
+        const move = createMove(
+          'process_territory_region',
+          1,
+          { x: 0, y: 0 },
+          {
+            disconnectedRegions: [],
+          }
+        );
+
+        expect(() => processTurn(state, move)).toThrow('[PHASE_MOVE_INVARIANT]');
+      });
     });
 
     describe('eliminate_rings_from_stack move', () => {
@@ -1168,6 +1182,38 @@ describe('TurnOrchestrator core branch coverage', () => {
       expect(result.status).toBe('complete');
       expect(result.nextState.currentPhase).toBe('movement');
       expect(result.pendingDecision).toBeUndefined();
+    });
+
+    it('enters forced_elimination after no_territory_action when player had no actions this turn but has stacks (2p square8)', () => {
+      // Construct a square8 2-player scenario where the active player:
+      // - Has no legal placement, movement, capture, or territory actions.
+      // - Still controls at least one stack on the board.
+      // - Has taken no real actions this turn (no non-no_* moves in moveHistory).
+      //
+      // After an explicit no_territory_action bookkeeping move in
+      // territory_processing, the orchestrator must:
+      // - Enter the dedicated forced_elimination phase.
+      // - Surface an explicit forced_elimination decision.
+      const state = createBaseState('territory_processing', 2);
+      // Single blocked stack for player 1; player 2 has no material.
+      state.board = createSingleCellBoardWithStack(1);
+      state.players[0].ringsInHand = 0;
+      state.players[1].ringsInHand = 0;
+      state.moveHistory = []; // No actions recorded this turn.
+
+      const move = createMove('no_territory_action', 1, { x: 0, y: 0 });
+
+      const result = processTurn(state, move);
+
+      expect(result.status).toBe('awaiting_decision');
+      expect(result.pendingDecision).toBeDefined();
+      expect(result.pendingDecision?.type).toBe('elimination_target');
+      expect(result.nextState.currentPhase).toBe('forced_elimination');
+
+      // In forced_elimination phase, only forced_elimination moves should be surfaced.
+      const feMoves = getValidMoves(result.nextState);
+      expect(feMoves.length).toBeGreaterThan(0);
+      expect(feMoves.every((m) => m.type === 'forced_elimination')).toBe(true);
     });
   });
 

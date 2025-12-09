@@ -418,5 +418,209 @@ class TestHasAnyRecoveryMove:
         assert has_any_recovery_move(state, 1) is False
 
 
+class TestRecoveryMoveApplication:
+    """Tests for recovery move application (state mutation parity)."""
+
+    def test_apply_exact_length_recovery_extracts_ring(self):
+        """Applying exact-length recovery slide extracts 1 buried ring."""
+        state = make_test_state(
+            stacks={
+                "7,7": RingStack(
+                    position=Position(x=7, y=7),
+                    rings=[1, 2],  # Player 1 has a buried ring at bottom
+                    stack_height=2,
+                    cap_height=2,
+                    controlling_player=2,
+                ),
+            },
+            markers={
+                "2,3": MarkerInfo(position=Position(x=2, y=3), player=1, type="regular"),
+                "3,3": MarkerInfo(position=Position(x=3, y=3), player=1, type="regular"),
+                "5,3": MarkerInfo(position=Position(x=5, y=3), player=1, type="regular"),
+            },
+            player1_rings_in_hand=0,
+        )
+
+        move = Move(
+            id="recovery-test",
+            type=MoveType.RECOVERY_SLIDE,
+            player=1,
+            from_pos=Position(x=5, y=3),
+            to=Position(x=4, y=3),
+            recovery_option=1,  # Use recovery_option field
+            extraction_stacks=("7,7",),
+            timestamp=datetime.now(),
+            think_time=0,
+            move_number=51,
+        )
+
+        result = apply_recovery_slide(state, move)
+
+        # Ring should be extracted from stack
+        assert result.success, f"Failed: {result.error}"
+        assert result.rings_extracted == 1  # Option 1 extracts 1 buried ring
+
+        # State is mutated in place - check it directly
+        stack = state.board.stacks.get("7,7")
+        assert stack is not None
+        assert len(stack.rings) == 1  # One ring removed
+        assert 1 not in stack.rings  # Player 1's ring was extracted
+
+    def test_apply_overlength_option2_no_extraction(self):
+        """Applying overlength recovery with Option 2 extracts no rings."""
+        state = make_test_state(
+            stacks={
+                "7,7": RingStack(
+                    position=Position(x=7, y=7),
+                    rings=[1, 2],
+                    stack_height=2,
+                    cap_height=2,
+                    controlling_player=2,
+                ),
+            },
+            markers={
+                "1,3": MarkerInfo(position=Position(x=1, y=3), player=1, type="regular"),
+                "2,3": MarkerInfo(position=Position(x=2, y=3), player=1, type="regular"),
+                "3,3": MarkerInfo(position=Position(x=3, y=3), player=1, type="regular"),
+                "5,3": MarkerInfo(position=Position(x=5, y=3), player=1, type="regular"),
+            },
+            player1_rings_in_hand=0,
+        )
+
+        # Line will be at positions 1,3 -> 2,3 -> 3,3 -> 4,3 (4 markers, overlength)
+        # Option 2 collapses only lineLength (3) consecutive markers
+        collapse_positions = (
+            Position(x=2, y=3),
+            Position(x=3, y=3),
+            Position(x=4, y=3),  # includes destination
+        )
+
+        move = Move(
+            id="recovery-test",
+            type=MoveType.RECOVERY_SLIDE,
+            player=1,
+            from_pos=Position(x=5, y=3),
+            to=Position(x=4, y=3),
+            recovery_option=2,  # Option 2: free (use recovery_option field)
+            collapse_positions=collapse_positions,  # Include on Move for validation
+            extraction_stacks=(),  # No extraction for Option 2
+            timestamp=datetime.now(),
+            think_time=0,
+            move_number=51,
+        )
+
+        result = apply_recovery_slide(state, move)
+
+        # No ring should be extracted
+        assert result.success, f"Failed: {result.error}"
+        assert result.rings_extracted == 0  # Option 2 is free
+
+        # State is mutated in place - check stack directly
+        stack = state.board.stacks.get("7,7")
+        assert stack is not None
+        assert len(stack.rings) == 2  # Both rings remain
+
+    def test_marker_moves_to_destination(self):
+        """Recovery slide moves the marker from source to destination."""
+        state = make_test_state(
+            stacks={
+                "7,7": RingStack(
+                    position=Position(x=7, y=7),
+                    rings=[1, 2],
+                    stack_height=2,
+                    cap_height=2,
+                    controlling_player=2,
+                ),
+            },
+            markers={
+                "2,3": MarkerInfo(position=Position(x=2, y=3), player=1, type="regular"),
+                "3,3": MarkerInfo(position=Position(x=3, y=3), player=1, type="regular"),
+                "5,3": MarkerInfo(position=Position(x=5, y=3), player=1, type="regular"),
+            },
+            player1_rings_in_hand=0,
+        )
+
+        move = Move(
+            id="recovery-test",
+            type=MoveType.RECOVERY_SLIDE,
+            player=1,
+            from_pos=Position(x=5, y=3),
+            to=Position(x=4, y=3),
+            recovery_option=1,  # Use recovery_option field
+            extraction_stacks=("7,7",),
+            timestamp=datetime.now(),
+            think_time=0,
+            move_number=51,
+        )
+
+        result = apply_recovery_slide(state, move)
+
+        assert result.success, f"Failed: {result.error}"
+
+        # State is mutated in place - check directly
+        # Source marker should be gone (moved to destination, then collapsed)
+        assert "5,3" not in state.board.markers
+
+        # Line positions should be tracked in result
+        assert len(result.line_positions) >= 3  # At least lineLength markers in line
+        assert len(result.collapsed_positions) >= 3  # All line markers collapsed for Option 1
+
+
+class TestRecoveryLpsIntegration:
+    """Tests for recovery integration with Last Player Standing."""
+
+    def test_recovery_counts_as_real_action(self):
+        """Recovery move should count as a real action for LPS."""
+        from app.game_engine import GameEngine
+
+        state = make_test_state(
+            stacks={
+                "7,7": RingStack(
+                    position=Position(x=7, y=7),
+                    rings=[1, 2],
+                    stack_height=2,
+                    cap_height=2,
+                    controlling_player=2,
+                ),
+            },
+            markers={
+                "2,3": MarkerInfo(position=Position(x=2, y=3), player=1, type="regular"),
+                "3,3": MarkerInfo(position=Position(x=3, y=3), player=1, type="regular"),
+                "5,3": MarkerInfo(position=Position(x=5, y=3), player=1, type="regular"),
+            },
+            player1_rings_in_hand=0,
+        )
+
+        # Player 1 has no stacks, no rings in hand, but can do recovery
+        result = GameEngine._has_real_action_for_player(state, 1)
+        assert result is True
+
+    def test_no_recovery_means_no_real_action(self):
+        """Player with no recovery option should have no real action."""
+        from app.game_engine import GameEngine
+
+        state = make_test_state(
+            stacks={
+                "7,7": RingStack(
+                    position=Position(x=7, y=7),
+                    rings=[2],  # No buried rings for player 1
+                    stack_height=1,
+                    cap_height=1,
+                    controlling_player=2,
+                ),
+            },
+            markers={
+                # Markers too far apart - no valid recovery slide
+                "0,0": MarkerInfo(position=Position(x=0, y=0), player=1, type="regular"),
+                "7,0": MarkerInfo(position=Position(x=7, y=0), player=1, type="regular"),
+            },
+            player1_rings_in_hand=0,
+        )
+
+        # Player 1 cannot do recovery - no buried rings and no valid slides
+        result = GameEngine._has_real_action_for_player(state, 1)
+        assert result is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -464,13 +464,24 @@ export function useSandboxInteractions({
         (m) => m.from && positionsEqual(m.from as Position, pos)
       );
 
-      if (hasStack && hasMovesFromHere) {
+      // RR-CANON-R110–R115: For recovery slides, the source is a marker position
+      // (not a stack). Check if there are recovery_slide moves from this position.
+      const hasRecoveryFromHere = validMoves.some(
+        (m) => m.type === 'recovery_slide' && m.from && positionsEqual(m.from as Position, pos)
+      );
+
+      // Allow selection if:
+      // - Position has a stack with valid moves (normal movement/capture), OR
+      // - Position has recovery slides from it (recovery action from marker)
+      if ((hasStack && hasMovesFromHere) || hasRecoveryFromHere) {
         // Selection click: record selected cell and highlight valid targets.
         setSelected(pos);
         const targets = engine.getValidLandingPositionsForCurrentPlayer(pos);
         setValidTargets(targets);
         // Inform the engine about the selection so its internal
         // movement state (_selectedStackKey) matches the UI.
+        // Note: For recovery, the engine doesn't track marker selection internally
+        // but this call is still safe and keeps behavior consistent.
         engine.handleHumanCellClick(pos);
       } else {
         const reason = analyzeInvalidMove(stateBefore, pos, {
@@ -500,9 +511,68 @@ export function useSandboxInteractions({
       // Clear selection/highlights immediately so movement overlays do not
       // persist while the orchestrator processes post-move consequences
       // (lines, territory, and any ring_elimination decisions).
+      const sourcePos = selected;
       setSelected(undefined);
       setValidTargets([]);
       void (async () => {
+        // RR-CANON-R110–R115: Check if this is a recovery_slide move
+        // Recovery moves must be applied via applyCanonicalMove since
+        // handleHumanCellClick uses stack-based movement semantics.
+        if (sourcePos) {
+          // Find all recovery moves for this source→destination pair
+          const matchingRecoveryMoves = validMoves.filter(
+            (m) =>
+              m.type === 'recovery_slide' &&
+              m.from &&
+              positionsEqual(m.from as Position, sourcePos) &&
+              m.to &&
+              positionsEqual(m.to as Position, pos)
+          );
+
+          if (matchingRecoveryMoves.length > 0) {
+            let selectedMove = matchingRecoveryMoves[0];
+
+            // For overlength lines, there are two options: Option 1 (collapse all, cost 1)
+            // and Option 2 (collapse minimum, free). Present a choice dialog.
+            if (matchingRecoveryMoves.length > 1) {
+              const option1Move = matchingRecoveryMoves.find((m) => m.option === 1);
+              const option2Move = matchingRecoveryMoves.find((m) => m.option === 2);
+
+              if (option1Move && option2Move) {
+                // Use confirm for a simple UX in sandbox mode
+                const chooseOption2 = window.confirm(
+                  'Overlength recovery line detected!\n\n' +
+                    'OPTION 2 (Free): Collapse minimum markers - no buried ring extracted\n' +
+                    'OPTION 1 (Cost): Collapse all markers - extract 1 buried ring\n\n' +
+                    'Click OK for FREE Option 2, or Cancel for Option 1 (cost).'
+                );
+
+                selectedMove = chooseOption2 ? option2Move : option1Move;
+              }
+            }
+
+            // Apply the selected recovery move
+            await engine.applyCanonicalMove(selectedMove);
+
+            // After recovery, the turn advances (line processing etc. may follow)
+            const after = engine.getGameState();
+            // Note: recovery doesn't lead to chain_capture, but check anyway for consistency
+            if (after.gameStatus === 'active' && after.currentPhase === 'chain_capture') {
+              const ctx = engine.getChainCaptureContextForCurrentPlayer();
+              if (ctx) {
+                setSelected(ctx.from);
+                setValidTargets(ctx.landings);
+              }
+            }
+
+            setSandboxTurn((t) => t + 1);
+            setSandboxStateVersion((v) => v + 1);
+            maybeRunSandboxAiIfNeeded();
+            return;
+          }
+        }
+
+        // Normal movement/capture via engine's click handler
         await engine.handleHumanCellClick(pos);
 
         const after = engine.getGameState();

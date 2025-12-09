@@ -1,18 +1,18 @@
 # Recovery Action Implementation Plan
 
-> **Doc Status (2025-12-08): Active – P0, P1 Complete**
+> **Doc Status (2025-12-08): Active – P0, P1, P2, P3 Complete**
 >
 > **Purpose:** Complete implementation plan for the Recovery Action rule feature.
 >
 > **Canonical Source:** `RULES_CANONICAL_SPEC.md` §5.4 (RR-CANON-R110–R115)
 >
-> **Progress (2025-12-08):** All P0 (Critical Path) and P1 (High Priority) tasks completed. P2 (UI, Teaching) remains.
+> **Progress (2025-12-08):** All P0 (Critical Path), P1 (High Priority), P2 (UI, Teaching), and P3 (AI, Testing) tasks completed.
 
 ---
 
 ## Executive Summary
 
-The **Recovery Action** allows temporarily eliminated players to remain active by sliding markers to form lines, paying costs with buried ring extraction. **P0 (Critical) and P1 (High) tasks are complete.** Only P2 (UI, Teaching) remains.
+The **Recovery Action** allows temporarily eliminated players to remain active by sliding markers to form lines, paying costs with buried ring extraction. **All P0, P1, P2, and P3 tasks are complete.**
 
 ### Implementation Status Overview
 
@@ -30,8 +30,11 @@ The **Recovery Action** allows temporarily eliminated players to remain active b
 | RuleEngine Validation           | ✅ Complete | `RuleEngine.ts` validation case                 |
 | Move Notation                   | ✅ Complete | `notation.ts` with `Rv` prefix                  |
 | Unit Tests (Option 1/2)         | ✅ Complete | `RecoveryAggregate.shared.test.ts` (35 tests)   |
-| UI Components                   | ❌ P2       | No recovery move display/selection              |
-| Teaching Materials              | ❌ P2       | No teaching content                             |
+| UI Components                   | ✅ Complete | Highlighting, selection, overlength dialog      |
+| Teaching Materials              | ✅ Complete | 7 tips in teachingTopics.ts                     |
+| AI Heuristic Evaluation         | ✅ Complete | `heuristic_ai.py` recovery potential weights    |
+| Extended Parity Tests           | ✅ Complete | `test_recovery_parity.py` (20 tests)            |
+| Backend LPS Wiring              | ✅ Complete | `TurnEngine.ts` calls `evaluateLpsVictory`      |
 
 ---
 
@@ -590,12 +593,12 @@ Ensure recovery_slide moves are correctly serialized/deserialized.
 8. ✅ Unit tests for Option 1/2 semantics (`RecoveryAggregate.shared.test.ts`)
 9. ✅ Move notation (`notation.ts`)
 
-### Medium Priority (P2) – PARTIAL
+### Medium Priority (P2) – ✅ COMPLETE
 
-10. ⬜ UI highlighting and selection
-11. ⬜ Choice dialog for overlength
+10. ✅ UI highlighting and selection (`ClientSandboxEngine.ts`, `useSandboxInteractions.ts`)
+11. ✅ Choice dialog for overlength (`useSandboxInteractions.ts` - confirm dialog)
 12. ✅ Move history display (`MoveHistory.tsx`)
-13. ✅ Teaching content (`teachingTopics.ts`)
+13. ✅ Teaching content (`teachingTopics.ts` - 7 tips)
 14. ✅ AI move ordering (already in `move_ordering.py`)
 
 ### Lower Priority (P3)

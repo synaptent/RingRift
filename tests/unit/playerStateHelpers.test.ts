@@ -235,10 +235,12 @@ describe('playerStateHelpers', () => {
       hasPlacement?: boolean;
       hasMovement?: boolean;
       hasCapture?: boolean;
+      hasRecovery?: boolean;
     }): ActionAvailabilityDelegates => ({
       hasPlacement: () => options.hasPlacement ?? false,
       hasMovement: () => options.hasMovement ?? false,
       hasCapture: () => options.hasCapture ?? false,
+      hasRecovery: () => options.hasRecovery ?? false,
     });
 
     it('should return false when game is not active', () => {
@@ -298,6 +300,15 @@ describe('playerStateHelpers', () => {
       expect(hasAnyRealAction(state, 1, delegates)).toBe(true);
     });
 
+    it('should return true when player has recovery available', () => {
+      const state = createMinimalState({
+        players: [{ playerNumber: 1, ringsInHand: 0, eliminated: false }],
+      });
+      const delegates = createDelegates({ hasRecovery: true });
+
+      expect(hasAnyRealAction(state, 1, delegates)).toBe(true);
+    });
+
     it('should return false when player has no actions available', () => {
       const state = createMinimalState({
         players: [{ playerNumber: 1, ringsInHand: 0, eliminated: false }],
@@ -306,6 +317,7 @@ describe('playerStateHelpers', () => {
         hasPlacement: false,
         hasMovement: false,
         hasCapture: false,
+        hasRecovery: false,
       });
 
       expect(hasAnyRealAction(state, 1, delegates)).toBe(false);

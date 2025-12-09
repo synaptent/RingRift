@@ -35,8 +35,10 @@ import {
   enumeratePlacementPositions,
   // Recovery helper
   hasAnyRecoveryMove,
-  // LPS real-action helper
+  // LPS helpers
   hasAnyRealAction,
+  createLpsTrackingState,
+  type LpsTrackingState,
   // Type guards for move narrowing
   isCaptureMove,
   // Swap sides (pie rule) helpers
@@ -160,6 +162,13 @@ export class GameEngine {
    */
   private _swapSidesApplied: boolean = false;
 
+  /**
+   * Last-Player-Standing (R172) tracking state. Mirrors sandbox LPS tracking
+   * so backend hosts can evaluate LPS victories (including recovery as a
+   * real action).
+   */
+  private _lpsState: LpsTrackingState;
+
   /** Returns true if the swap sides (pie rule) has been applied in this game. */
   public get swapSidesApplied(): boolean {
     return this._swapSidesApplied;
@@ -232,6 +241,9 @@ export class GameEngine {
     // ts-node/TypeScript with noUnusedLocals can compile the server in
     // dev without stripping them. This has no behavioural effect.
     this._debugUseInternalHelpers();
+
+    // Initialise LPS tracking state (R172) mirroring sandbox behaviour.
+    this._lpsState = createLpsTrackingState();
   }
 
   /**
@@ -1792,6 +1804,22 @@ export class GameEngine {
         this.eliminatePlayerRingOrCap(playerNumber, stackPosition);
       },
       endGame: (winner?: number, reason?: string) => this.endGame(winner, reason),
+      getLpsState: () => this._lpsState,
+      setLpsState: (next) => {
+        this._lpsState = next;
+      },
+      hasAnyRealActionForPlayer: (pn) => this.hasAnyRealActionForPlayer(pn),
+      hasMaterialForPlayer: (pn) => {
+        const player = this.gameState.players.find((p) => p.playerNumber === pn);
+        if (!player) return false;
+        const hasStacks =
+          this.gameState.board.stacks.size > 0
+            ? Array.from(this.gameState.board.stacks.values()).some(
+                (s) => s.controllingPlayer === pn || s.rings.includes(pn)
+              )
+            : false;
+        return player.ringsInHand > 0 || hasStacks;
+      },
     };
 
     const turnStateBefore: PerTurnState = {

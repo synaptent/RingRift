@@ -1,0 +1,249 @@
+{
+  "version": "v2",
+  "generated": "2025-12-08T20:05:00.000Z",
+  "count": 3,
+  "categories": ["movement", "edge_case"],
+  "vectors": [
+    {
+      "id": "recovery.exact_length_option1",
+      "version": "v2",
+      "category": "movement",
+      "description": "Exact-length recovery slide (lineLength=3) using Option 1 (cost 1)",
+      "tags": ["recovery", "option1", "exact_length", "square8"],
+      "source": "manual",
+      "createdAt": "2025-12-08T20:05:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "recovery-exact-square8",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "4,4": {
+                "position": { "x": 4, "y": 4 },
+                "rings": [2, 1, 2],
+                "stackHeight": 3,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {
+              "0,0": { "position": { "x": 0, "y": 0 }, "player": 1, "type": "regular" },
+              "1,0": { "position": { "x": 1, "y": 0 }, "player": 1, "type": "regular" },
+              "2,1": { "position": { "x": 2, "y": 1 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {}
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 3,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "moveHistory": [],
+          "totalRingsEliminated": 0
+        },
+        "initialMove": {
+          "id": "recovery-exact-opt1",
+          "type": "recovery_slide",
+          "player": 1,
+          "from": { "x": 2, "y": 1 },
+          "to": { "x": 2, "y": 0 },
+          "option": 1,
+          "timestamp": "2025-12-08T20:05:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "assertions": {
+        "boardChanges": {
+          "collapsedSpacesAdded": ["0,0", "1,0", "2,0"],
+          "markersRemaining": []
+        }
+      }
+    },
+    {
+      "id": "recovery.overlength_option1",
+      "version": "v2",
+      "category": "movement",
+      "description": "Overlength recovery slide (lineLength=3) using Option 1 (collapse all, cost 1)",
+      "tags": ["recovery", "option1", "overlength", "square8"],
+      "source": "manual",
+      "createdAt": "2025-12-08T20:05:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "recovery-overlength-opt1-square8",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "4,4": {
+                "position": { "x": 4, "y": 4 },
+                "rings": [2, 1, 2],
+                "stackHeight": 3,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {
+              "0,0": { "position": { "x": 0, "y": 0 }, "player": 1, "type": "regular" },
+              "1,0": { "position": { "x": 1, "y": 0 }, "player": 1, "type": "regular" },
+              "2,0": { "position": { "x": 2, "y": 0 }, "player": 1, "type": "regular" },
+              "3,1": { "position": { "x": 3, "y": 1 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {}
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 3,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "moveHistory": [],
+          "totalRingsEliminated": 0
+        },
+        "initialMove": {
+          "id": "recovery-overlength-opt1",
+          "type": "recovery_slide",
+          "player": 1,
+          "from": { "x": 3, "y": 1 },
+          "to": { "x": 3, "y": 0 },
+          "option": 1,
+          "timestamp": "2025-12-08T20:05:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "assertions": {
+        "boardChanges": {
+          "collapsedSpacesAdded": ["0,0", "1,0", "2,0", "3,0"],
+          "markersRemaining": []
+        }
+      }
+    },
+    {
+      "id": "recovery.overlength_option2_free",
+      "version": "v2",
+      "category": "movement",
+      "description": "Overlength recovery slide (lineLength=3) using Option 2 (collapse lineLength, cost 0)",
+      "tags": ["recovery", "option2", "overlength", "square8"],
+      "source": "manual",
+      "createdAt": "2025-12-08T20:05:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "recovery-overlength-opt2-square8",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "4,4": {
+                "position": { "x": 4, "y": 4 },
+                "rings": [2, 1, 2],
+                "stackHeight": 3,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {
+              "0,0": { "position": { "x": 0, "y": 0 }, "player": 1, "type": "regular" },
+              "1,0": { "position": { "x": 1, "y": 0 }, "player": 1, "type": "regular" },
+              "2,0": { "position": { "x": 2, "y": 0 }, "player": 1, "type": "regular" },
+              "3,1": { "position": { "x": 3, "y": 1 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {}
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 3,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "moveHistory": [],
+          "totalRingsEliminated": 0
+        },
+        "initialMove": {
+          "id": "recovery-overlength-opt2",
+          "type": "recovery_slide",
+          "player": 1,
+          "from": { "x": 3, "y": 1 },
+          "to": { "x": 3, "y": 0 },
+          "option": 2,
+          "collapsePositions": [
+            { "x": 1, "y": 0 },
+            { "x": 2, "y": 0 },
+            { "x": 3, "y": 0 }
+          ],
+          "timestamp": "2025-12-08T20:05:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "assertions": {
+        "boardChanges": {
+          "collapsedSpacesAdded": ["1,0", "2,0", "3,0"],
+          "markersRemaining": ["0,0"]
+        }
+      }
+    }
+  ]
+}

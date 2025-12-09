@@ -487,6 +487,43 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 - **Scope:** All hosts and board types.
 - **Recommendation:** Treat current behaviour as the reference ordering and keep future refactors pinned to the shared helpers, avoiding host‑specific shortcuts that bypass them.
 
+### CCE‑009 – Recovery Action interactions with LPS, ANM, FE, and weird states
+
+- **RR‑CANON rules:** `R110–R115` (Recovery Action), `R172` (Last Player Standing), `R200–R207` (Active No Moves), `R100` (Forced Elimination) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
+- **Code / tests:** Recovery action detection in [`TypeScript.globalActions.canPerformRecoveryAction()`](src/shared/engine/globalActions.ts:45), [`TypeScript.globalActions.enumerateRecoverySlides()`](src/shared/engine/globalActions.ts:89); line processing via [`TypeScript.lineDecisionHelpers`](src/shared/engine/lineDecisionHelpers.ts:1); victory logic in [`TypeScript.victoryLogic.evaluateVictory()`](src/shared/engine/victoryLogic.ts:45); ANM detection in shared engine helpers; weird state detection in [`TypeScript.gameStateWeirdness`](src/client/utils/gameStateWeirdness.ts:1).
+- **Interaction / edge case:** A player has zero stacks on board, zero rings in hand, but still has:
+  - At least one marker (from prior movements), AND
+  - At least one "buried ring" (opponent's stack sitting on top of one of their rings).
+
+  This player can perform a **recovery slide**: move a marker into a position that completes a line, triggering line collapse and potentially eliminating the opponent's cap on the buried ring. Key interaction questions:
+  1. **With LPS (R172):** Does a recovery action count as a "real action" that resets the three-round LPS counter?
+  2. **With ANM (R200–R207):** Does recovery availability prevent the ANM state (active player with turn-material but no legal global actions)?
+  3. **With Forced Elimination (R100):** Can a player with recovery available still be forced to eliminate? (No—recovery is a legal action.)
+  4. **With Weird States:** How should the UX present a "recovery only" turn where marker sliding is the sole legal action?
+
+- **Intended behaviour (RR‑CANON):**
+  - Recovery is a **real action** (involves board state change via marker slide + line collapse), so it resets the LPS counter and counts toward the "active player has legal actions" check.
+  - A player with at least one legal recovery slide is **not** in an ANM state—they have a legal global action.
+  - Forced Elimination (R100) only triggers when a player has NO legal placements, NO legal movements, NO legal captures, AND NO recovery actions. Recovery availability blocks forced elimination.
+  - UX should recognize "recovery only" as a distinct but valid game state—potentially surfacing a teaching prompt or weird-state banner explaining the limited action set.
+
+- **Observed behaviour:**
+  - `canPerformRecoveryAction()` correctly checks the three preconditions (zero stacks, zero rings in hand, has markers AND buried rings).
+  - `enumerateRecoverySlides()` produces valid marker-slide moves that complete lines.
+  - Turn orchestration includes recovery in the legal-action enumeration, so forced elimination is correctly blocked when recovery is available.
+  - ANM detection considers recovery availability in the "has any legal action" check.
+  - LPS tracking treats recovery as a real action (increments the active-player counter, resets the inactivity tracker).
+  - Weird state detection (`RWS-005` or similar) can surface "recovery only" scenarios, though teaching coverage for this specific state is minimal.
+
+- **Classification:** `Design‑intent match` for core mechanics; `Intentional but under‑documented` for UX/teaching coverage of recovery-only states.
+- **Severity:** `Low` for rules correctness; `Medium` for UX completeness.
+- **Scope:** All hosts (backend, sandbox, Python) where recovery action is implemented.
+- **Recommendation:**
+  - Document the interaction matrix (Recovery × LPS × ANM × FE) explicitly in `RULES_CANONICAL_SPEC.md` for clarity.
+  - Add or extend teaching scenarios and weird-state banners for "recovery only" turns (player has no stacks/rings but can still act via marker slides).
+  - Ensure Python AI service correctly enumerates and evaluates recovery moves in position evaluation.
+  - Add targeted regression tests that confirm: (a) recovery blocks forced elimination, (b) recovery resets LPS counter, (c) recovery prevents ANM classification.
+
 ## 5. Coverage of High‑Risk Areas from Prior Reports
 
 High‑risk themes identified in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:975) and [`archive/RULES_DYNAMIC_VERIFICATION.md`](../../archive/RULES_DYNAMIC_VERIFICATION.md:665) are addressed as follows:

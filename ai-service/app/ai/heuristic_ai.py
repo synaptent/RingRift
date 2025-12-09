@@ -131,6 +131,8 @@ from ..rules.geometry import BoardGeometry
 from .heuristic_weights import HEURISTIC_WEIGHT_PROFILES
 from .fast_geometry import FastGeometry
 from .swap_evaluation import SwapEvaluator, SwapWeights
+from ..rules.core import count_buried_rings, is_eligible_for_recovery
+from ..rules.recovery import has_any_recovery_move
 
 # Environment flag to enable make/unmake optimization
 # WARNING: When enabled, uses simplified evaluation (fewer heuristic features).
@@ -312,6 +314,13 @@ class HeuristicAI(BaseAI):
     # v1.4: Training diversity - Swap decision randomness
     # Controls stochastic exploration during training to create diverse swap decisions
     WEIGHT_SWAP_EXPLORATION_TEMPERATURE = 0.0  # Temperature for swap decision noise (0 = deterministic)
+
+    # v1.6: Recovery action evaluation weights (RR-CANON-R110–R115)
+    # Recovery allows temporarily eliminated players to slide markers to form lines
+    WEIGHT_RECOVERY_POTENTIAL = 6.0         # Value of having recovery available (threat potential)
+    WEIGHT_RECOVERY_ELIGIBILITY = 8.0       # Bonus/penalty for recovery eligibility status
+    WEIGHT_BURIED_RING_VALUE = 3.0          # Value of buried rings as recovery resource
+    WEIGHT_RECOVERY_THREAT = 5.0            # Threat from opponent's recovery potential
 
     def __init__(self, player_number: int, config: AIConfig) -> None:
         """
@@ -1004,6 +1013,15 @@ class HeuristicAI(BaseAI):
         scores["multi_leader_threat"] = self._evaluate_multi_leader_threat(
             game_state
         )
+
+        # Recovery potential evaluation (v1.6) – gated by eval_mode.
+        # This captures the strategic value of recovery as a threat/resource.
+        if self.eval_mode == "full":
+            scores["recovery_potential"] = self._evaluate_recovery_potential(
+                game_state
+            )
+        else:
+            scores["recovery_potential"] = 0.0
 
         return scores
 
@@ -2039,3 +2057,59 @@ class HeuristicAI(BaseAI):
         for full documentation.
         """
         return self.swap_evaluator.evaluate_swap_with_classifier(game_state)
+
+    def _evaluate_recovery_potential(
+        self,
+        game_state: GameState,
+    ) -> float:
+        """
+        Evaluate recovery potential for all players (v1.6).
+
+        Recovery (RR-CANON-R110–R115) allows temporarily eliminated players to
+        slide markers to form lines, paying costs with buried ring extraction.
+        This heuristic captures:
+
+        1. Value of having recovery available as a strategic option
+        2. Threat from opponents who have recovery potential
+        3. Value of buried rings as recovery resources
+
+        Returns:
+            Score representing recovery strategic value (positive = good for us)
+        """
+        score = 0.0
+
+        # Check our recovery status
+        my_eligible = is_eligible_for_recovery(game_state, self.player_number)
+        my_buried = count_buried_rings(
+            game_state.board, self.player_number
+        )
+
+        if my_eligible:
+            # Bonus for having recovery available
+            score += self.WEIGHT_RECOVERY_ELIGIBILITY
+
+            # Additional bonus if we actually have recovery moves
+            if has_any_recovery_move(game_state, self.player_number):
+                score += self.WEIGHT_RECOVERY_POTENTIAL
+        else:
+            # Small bonus for buried rings even if not currently eligible
+            # (potential future recovery resource)
+            score += my_buried * self.WEIGHT_BURIED_RING_VALUE * 0.3
+
+        # Evaluate opponent recovery threats
+        for player in game_state.players:
+            if player.player_number == self.player_number:
+                continue
+
+            opp_eligible = is_eligible_for_recovery(
+                game_state, player.player_number
+            )
+            if opp_eligible:
+                # Penalty for opponent having recovery potential
+                score -= self.WEIGHT_RECOVERY_ELIGIBILITY * 0.5
+
+                # Extra penalty if opponent actually has recovery moves
+                if has_any_recovery_move(game_state, player.player_number):
+                    score -= self.WEIGHT_RECOVERY_THREAT
+
+        return score

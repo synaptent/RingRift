@@ -5,11 +5,14 @@ import type {
   Position,
   PerTurnState as SharedPerTurnState,
   TurnLogicDelegates,
+  LpsTrackingState,
 } from '../../../shared/engine';
 import {
   advanceTurnAndPhase,
   enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
   applyForcedEliminationForPlayer,
+  evaluateLpsVictory,
+  updateLpsTracking,
 } from '../../../shared/engine';
 import { BoardManager } from '../BoardManager';
 import { RuleEngine } from '../RuleEngine';
@@ -40,6 +43,12 @@ export type PerTurnState = SharedPerTurnState;
 export interface TurnEngineHooks {
   eliminatePlayerRingOrCap: (playerNumber: number, stackPosition?: Position) => void;
   endGame: (winner?: number, reason?: string) => { success: boolean; gameResult: GameResult };
+  /** Accessors for LPS tracking state (host-owned, e.g., GameEngine) */
+  getLpsState: () => LpsTrackingState;
+  setLpsState: (next: LpsTrackingState) => void;
+  /** LPS helpers from host */
+  hasAnyRealActionForPlayer: (playerNumber: number) => boolean;
+  hasMaterialForPlayer: (playerNumber: number) => boolean;
 }
 
 /**
@@ -155,6 +164,29 @@ export function advanceGameForCurrentPlayer(
   // updated phase/player fields and any forced-elimination effects
   // without replacing their internal pointer.
   Object.assign(gameState, nextState);
+
+  // Evaluate Last Player Standing (R172) using shared helpers. LPS tracking
+  // state is owned by the host via hooks.
+  const lpsResult = evaluateLpsVictory({
+    gameState,
+    lps: hooks.getLpsState(),
+    hasAnyRealAction: (pn) => hooks.hasAnyRealActionForPlayer(pn),
+    hasMaterial: (pn) => hooks.hasMaterialForPlayer(pn),
+  });
+
+  if (lpsResult.isVictory) {
+    hooks.endGame(lpsResult.winner, 'last_player_standing');
+  } else {
+    // Update LPS tracking state in place for future turns
+    const lpsState = hooks.getLpsState();
+    updateLpsTracking(lpsState, {
+      currentPlayer: gameState.currentPlayer,
+      activePlayers: gameState.players.map((p) => p.playerNumber),
+      hasRealAction: hooks.hasAnyRealActionForPlayer(gameState.currentPlayer),
+    });
+    // State was mutated in place - persist it back
+    hooks.setLpsState(lpsState);
+  }
 
   return nextTurn as PerTurnState;
 }

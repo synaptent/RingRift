@@ -313,15 +313,21 @@ def _maybe_generate_parity_vectors(output_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    output_dir = os.path.join(os.path.dirname(__file__), "vectors")
+    here = os.path.dirname(__file__)
+    repo_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+    output_dir = os.path.join(here, "vectors")
     os.makedirs(output_dir, exist_ok=True)
 
     # Copy recovery contract vectors into the parity vectors folder to ensure
     # parity harnesses exercise recovery Option 1/2 semantics.
     try:
         recovery_src = os.path.join(
-            os.path.dirname(__file__),
-            "../../tests/fixtures/contract-vectors/v2/recovery_action.vectors.json",
+            repo_root,
+            "tests",
+            "fixtures",
+            "contract-vectors",
+            "v2",
+            "recovery_action.vectors.json",
         )
         if os.path.exists(recovery_src):
             recovery_dst = os.path.join(output_dir, "recovery_action.vectors.json")

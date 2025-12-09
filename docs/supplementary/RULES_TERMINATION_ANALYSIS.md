@@ -41,6 +41,22 @@ Where:
 | **Line Collapse**             |     -$k$      |     +$k$      |      +1       |     **+1**     | Markers convert to Collapsed ($\Delta M + \Delta C = 0$). Ring eliminated ($+1 E$).      |
 | **Territory Disconnection**   |     -$k$      |     +$k$      |   +$r$ + 1    |   **+$r$+1**   | Markers convert ($\Delta M + \Delta C = 0$). Rings inside ($r$) + Self ($1$) eliminated. |
 | **Forced Elimination**        |       0       |       0       |    +$cap$     |   **+$cap$**   | At least 1 ring eliminated.                                                              |
+| **Recovery Slide**            |      +1       |       0       |       0       |     **+1**     | Leaves marker at start cell. Line processing may follow.                                 |
+
+### 2.2.1 Recovery Action ($\Delta S$ Proof)
+
+The **Recovery Action** (`RR-CANON-R110–R115`) is available when a player has:
+
+- Zero stacks on board
+- Zero rings in hand
+- At least one marker AND at least one buried ring (opponent's stack over their ring)
+
+A recovery slide moves a marker to complete a line. This action:
+
+- Always leaves a marker at the start cell: $\Delta M = +1$
+- May trigger line collapse (adds $+1$ to $E$), further increasing $S$
+
+Since $\Delta S \geq +1$, recovery actions maintain the termination guarantee.
 
 ### 2.3 The Placement Loophole Closure
 
