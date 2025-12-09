@@ -14,6 +14,7 @@ import {
   type CancellationToken,
 } from '../../../shared/utils/cancellation';
 import { logger } from '../../utils/logger';
+import { getMetricsService, type AIChoiceOutcome } from '../../services/MetricsService';
 
 /**
  * AIInteractionHandler
@@ -91,12 +92,16 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
   private async selectLineOrderOption(
     choice: LineOrderChoice
   ): Promise<LineOrderChoice['options'][number]> {
+    const startedAt = Date.now();
+    let outcome: AIChoiceOutcome = 'success';
+
     if (!choice.options.length) {
       logger.error('AIInteractionHandler received line_order choice with no options', {
         choiceId: choice.id,
         choiceType: choice.type,
         playerNumber: choice.playerNumber,
       });
+      this.recordChoiceMetrics(choice.type, 'error', startedAt);
       throw new Error('PlayerChoice[line_order] must have at least one option');
     }
 
@@ -125,6 +130,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         );
 
         if (choice.options.includes(selected)) {
+          this.recordChoiceMetrics(choice.type, outcome, startedAt);
           return selected;
         }
 
@@ -139,13 +145,17 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
             invalidOption: selected,
           }
         );
+        outcome = 'fallback';
       } catch (error) {
+        const aiErrorType = (error as any)?.aiErrorType;
+        outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn('AI service unavailable for line_order; falling back to local heuristic', {
           gameId: choice.gameId,
           playerNumber: choice.playerNumber,
           choiceId: choice.id,
           choiceType: choice.type,
           error: error instanceof Error ? error.message : String(error),
+          aiErrorType,
         });
       }
     }
@@ -158,6 +168,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       }
     }
 
+    this.recordChoiceMetrics(choice.type, outcome, startedAt);
     return best;
   }
 
@@ -170,12 +181,16 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
   private async selectLineRewardOption(
     choice: LineRewardChoice
   ): Promise<LineRewardChoice['options'][number]> {
+    const startedAt = Date.now();
+    let outcome: AIChoiceOutcome = 'success';
+
     if (!choice.options.length) {
       logger.error('AIInteractionHandler received line_reward_option choice with no options', {
         choiceId: choice.id,
         choiceType: choice.type,
         playerNumber: choice.playerNumber,
       });
+      this.recordChoiceMetrics(choice.type, 'error', startedAt);
       throw new Error('PlayerChoice[line_reward_option] must have at least one option');
     }
 
@@ -198,6 +213,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         // Defensive: ensure the returned option is one of the original
         // options before accepting it.
         if (choice.options.includes(selected)) {
+          this.recordChoiceMetrics(choice.type, outcome, startedAt);
           return selected;
         }
 
@@ -216,6 +232,8 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         // Service is unavailable or misconfigured for this player. Log a
         // structured warning and fall back to the local heuristic; this is
         // treated as a degraded AI mode for non-move decisions.
+        const aiErrorType = (error as any)?.aiErrorType;
+        outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn(
           'AI service unavailable for line_reward_option; falling back to local heuristic',
           {
@@ -224,6 +242,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
             choiceId: choice.id,
             choiceType: choice.type,
             error: error instanceof Error ? error.message : String(error),
+            aiErrorType,
           }
         );
       }
@@ -231,10 +250,13 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
 
     const hasOption2 = choice.options.includes('option_2_min_collapse_no_elimination');
     if (hasOption2) {
+      this.recordChoiceMetrics(choice.type, outcome, startedAt);
       return 'option_2_min_collapse_no_elimination';
     }
 
-    return choice.options[0];
+    const selected = choice.options[0];
+    this.recordChoiceMetrics(choice.type, outcome, startedAt);
+    return selected;
   }
 
   /**
@@ -247,12 +269,16 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
   private async selectRingEliminationOption(
     choice: RingEliminationChoice
   ): Promise<RingEliminationChoice['options'][number]> {
+    const startedAt = Date.now();
+    let outcome: AIChoiceOutcome = 'success';
+
     if (!choice.options.length) {
       logger.error('AIInteractionHandler received ring_elimination choice with no options', {
         choiceId: choice.id,
         choiceType: choice.type,
         playerNumber: choice.playerNumber,
       });
+      this.recordChoiceMetrics(choice.type, 'error', startedAt);
       throw new Error('PlayerChoice[ring_elimination] must have at least one option');
     }
 
@@ -283,6 +309,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         // Defensive: ensure the returned option is one of the original
         // options before accepting it.
         if (choice.options.includes(selected)) {
+          this.recordChoiceMetrics(choice.type, outcome, startedAt);
           return selected;
         }
 
@@ -300,6 +327,8 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       } catch (error) {
         // Service is unavailable or misconfigured for this player. Log a
         // structured warning and fall back to the local heuristic.
+        const aiErrorType = (error as any)?.aiErrorType;
+        outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn(
           'AI service unavailable for ring_elimination; falling back to local heuristic',
           {
@@ -308,6 +337,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
             choiceId: choice.id,
             choiceType: choice.type,
             error: error instanceof Error ? error.message : String(error),
+            aiErrorType,
           }
         );
       }
@@ -323,6 +353,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       }
     }
 
+    this.recordChoiceMetrics(choice.type, outcome, startedAt);
     return best;
   }
 
@@ -341,12 +372,16 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
   private async selectRegionOrderOption(
     choice: RegionOrderChoice
   ): Promise<RegionOrderChoice['options'][number]> {
+    const startedAt = Date.now();
+    let outcome: AIChoiceOutcome = 'success';
+
     if (!choice.options.length) {
       logger.error('AIInteractionHandler received region_order choice with no options', {
         choiceId: choice.id,
         choiceType: choice.type,
         playerNumber: choice.playerNumber,
       });
+      this.recordChoiceMetrics(choice.type, 'error', startedAt);
       throw new Error('PlayerChoice[region_order] must have at least one option');
     }
 
@@ -377,6 +412,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         // Defensive: ensure the returned option is one of the original
         // options before accepting it.
         if (choice.options.includes(selected)) {
+          this.recordChoiceMetrics(choice.type, outcome, startedAt);
           return selected;
         }
 
@@ -394,12 +430,15 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       } catch (error) {
         // Service is unavailable or misconfigured for this player. Log a
         // structured warning and fall back to the local heuristic.
+        const aiErrorType = (error as any)?.aiErrorType;
+        outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn('AI service unavailable for region_order; falling back to local heuristic', {
           gameId: choice.gameId,
           playerNumber: choice.playerNumber,
           choiceId: choice.id,
           choiceType: choice.type,
           error: error instanceof Error ? error.message : String(error),
+          aiErrorType,
         });
       }
     }
@@ -413,7 +452,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     // If for some reason only skip-like options are present (no concrete
     // regions), prefer skipping further processing rather than throwing.
     if (regionOptions.length === 0 && skipOptions.length > 0) {
-      return skipOptions[0];
+      const selectedSkip = skipOptions[0];
+      this.recordChoiceMetrics(choice.type, outcome, startedAt);
+      return selectedSkip;
     }
 
     const candidates = regionOptions.length > 0 ? regionOptions : choice.options;
@@ -426,6 +467,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       }
     }
 
+    this.recordChoiceMetrics(choice.type, outcome, startedAt);
     return best;
   }
 
@@ -440,12 +482,16 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
   private async selectCaptureDirectionOption(
     choice: CaptureDirectionChoice
   ): Promise<CaptureDirectionChoice['options'][number]> {
+    const startedAt = Date.now();
+    let outcome: AIChoiceOutcome = 'success';
+
     if (!choice.options.length) {
       logger.error('AIInteractionHandler received capture_direction choice with no options', {
         choiceId: choice.id,
         choiceType: choice.type,
         playerNumber: choice.playerNumber,
       });
+      this.recordChoiceMetrics(choice.type, 'error', startedAt);
       throw new Error('PlayerChoice[capture_direction] must have at least one option');
     }
 
@@ -474,6 +520,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         );
 
         if (choice.options.includes(selected)) {
+          this.recordChoiceMetrics(choice.type, outcome, startedAt);
           return selected;
         }
 
@@ -489,6 +536,8 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
           }
         );
       } catch (error) {
+        const aiErrorType = (error as any)?.aiErrorType;
+        outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn(
           'AI service unavailable for capture_direction; falling back to local heuristic',
           {
@@ -497,6 +546,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
             choiceId: choice.id,
             choiceType: choice.type,
             error: error instanceof Error ? error.message : String(error),
+            aiErrorType,
           }
         );
       }
@@ -504,7 +554,9 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
 
     // If only one option, no need to compute distances.
     if (choice.options.length === 1) {
-      return choice.options[0];
+      const selected = choice.options[0];
+      this.recordChoiceMetrics(choice.type, outcome, startedAt);
+      return selected;
     }
 
     const centre = this.estimateBoardCentre(choice.options[0].landingPosition);
@@ -526,6 +578,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       }
     }
 
+    this.recordChoiceMetrics(choice.type, outcome, startedAt);
     return best;
   }
 
@@ -562,5 +615,18 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
     const dzA = a.z ?? 0;
     const dzB = b.z ?? 0;
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(dzA - dzB);
+  }
+
+  private recordChoiceMetrics(
+    choiceType: PlayerChoice['type'],
+    outcome: AIChoiceOutcome,
+    startedAtMs: number
+  ): void {
+    const durationMs = Math.max(0, Date.now() - startedAtMs);
+    const metrics = getMetricsService();
+
+    // Optional chaining so legacy/mocked metrics services do not break tests.
+    metrics?.recordAIChoiceRequest?.(choiceType, outcome);
+    metrics?.recordAIChoiceLatencyMs?.(choiceType, durationMs, outcome);
   }
 }

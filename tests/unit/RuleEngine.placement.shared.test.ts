@@ -89,7 +89,7 @@ describe('RuleEngine placement semantics – shared engine parity', () => {
     expect(moves.some((m) => m.type === 'skip_placement')).toBe(true);
   });
 
-  it('rejects skip_placement when ringsInHand == 0 even though aggregate allows it', () => {
+  it('rejects skip_placement when ringsInHand == 0 (aggregate correctly rejects as well)', () => {
     const { gameState, boardManager, ruleEngine } = createPlacementState('square8');
 
     // Player 1 controls a stack with legal actions but has no rings in hand.
@@ -99,8 +99,12 @@ describe('RuleEngine placement semantics – shared engine parity', () => {
 
     addStack(gameState.board, pos(3, 3), 1, 1);
 
+    // The aggregate correctly rejects skip_placement when player has no rings in hand.
+    // Per the rules, skip_placement is only valid when rings exist to potentially place;
+    // if ringsInHand == 0, the player should use no_placement_action instead.
     const aggregateEligibility = evaluateSkipPlacementEligibilityAggregate(gameState, 1);
-    expect((aggregateEligibility as any).eligible).toBe(true);
+    expect(aggregateEligibility.eligible).toBe(false);
+    expect(aggregateEligibility.code).toBe('NO_RINGS_IN_HAND');
 
     const moves = ruleEngine.getValidMoves(gameState);
     expect(moves.some((m) => m.type === 'skip_placement')).toBe(false);

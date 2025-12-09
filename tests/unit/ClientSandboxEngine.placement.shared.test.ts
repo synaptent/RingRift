@@ -137,6 +137,7 @@ describe('ClientSandboxEngine placement parity with shared PlacementAggregate', 
     const stackPos: Position = { x: 2, y: 2 };
     makeStack(1, 2, stackPos, state);
 
+    // Player 1 has rings in hand (default state), so skip_placement is eligible
     const eligible = evaluateSkipPlacementEligibilityAggregate(state, 1);
     expect(eligible.eligible).toBe(true);
 
@@ -158,16 +159,19 @@ describe('ClientSandboxEngine placement parity with shared PlacementAggregate', 
     expect(beforePhase).toBe('ring_placement');
     expect(afterState.currentPhase).toBe('movement');
 
+    // Now test blocked case: player 2 has no rings in hand
     const stateBlocked: GameState = engineAny.gameState as GameState;
     stateBlocked.currentPlayer = 2;
     stateBlocked.currentPhase = 'ring_placement';
     const player2 = stateBlocked.players.find((p) => p.playerNumber === 2)!;
     player2.ringsInHand = 0;
 
+    // The aggregate correctly rejects skip_placement when player has no rings
     const blockedEligible = evaluateSkipPlacementEligibilityAggregate(stateBlocked, 2);
     expect(blockedEligible.eligible).toBe(false);
+    expect(blockedEligible.code).toBe('NO_RINGS_IN_HAND');
 
-    const blockedPhaseBefore = stateBlocked.currentPhase;
+    // The engine now throws an error for invalid moves rather than silently ignoring them
     const blockedSkip: Move = {
       id: 'skip-2',
       type: 'skip_placement',
@@ -179,9 +183,8 @@ describe('ClientSandboxEngine placement parity with shared PlacementAggregate', 
       moveNumber: 1,
     } as Move;
 
-    await engine.applyCanonicalMove(blockedSkip);
-
-    const blockedAfter = engine.getGameState();
-    expect(blockedAfter.currentPhase).toBe(blockedPhaseBefore);
+    await expect(engine.applyCanonicalMove(blockedSkip)).rejects.toThrow(
+      'Cannot skip placement with no rings in hand'
+    );
   });
 });
