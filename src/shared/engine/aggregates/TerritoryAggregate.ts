@@ -664,24 +664,18 @@ export function enumerateTerritoryEliminationMoves(
 ): Move[] {
   const board = state.board;
 
-  // In the dedicated territory_processing phase, territory elimination moves
-  // serve two purposes:
-  // 1. When regions exist: elimination moves are NOT surfaced here - the
-  //    region processing flow handles self-elimination costs via process_territory_region.
-  // 2. When NO regions exist but player has stacks: surfacing elimination for
-  //    blocked players who need to pay a cost to proceed (forced-elimination
-  //    semantics within territory phase). This avoids requiring an explicit
-  //    phase transition to forced_elimination when the player is already in
-  //    territory_processing and has no other actions available.
+  // Per RR-CANON-R075/R076, eliminate_rings_from_stack moves are ONLY valid
+  // in the forced_elimination phase. In territory_processing, elimination is
+  // handled via process_territory_region moves that include self-elimination
+  // costs when regions exist. When no regions exist, the orchestrator
+  // transitions to forced_elimination phase where this function will be called.
   //
-  // NOTE: If no regions AND no stacks controlled by this player, return empty.
-  // The orchestrator will handle the turn transition appropriately.
+  // This ensures TS and Python parity: Python records forced_elimination moves
+  // in an explicit forced_elimination phase, not as territory_processing moves.
   if (state.currentPhase === 'territory_processing') {
-    const remainingRegions = getProcessableTerritoryRegions(board, { player });
-    // Only surface elimination when NO regions exist (blocked player scenario)
-    if (remainingRegions.length > 0) {
-      return [];
-    }
+    // Never return elimination moves in territory_processing phase.
+    // The orchestrator will transition to forced_elimination when needed.
+    return [];
   }
 
   const stacks: { key: string; stack: RingStack }[] = [];

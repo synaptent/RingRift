@@ -2117,7 +2117,11 @@ function processPostMovePhases(
     const player = state.currentPlayer;
     const regionsForPlayer = getProcessableTerritoryRegions(state.board, { player });
     const hasTerritoryRegions = regionsForPlayer.length > 0;
-    const hadAnyActionThisTurn = computeHadAnyActionThisTurn(stateMachine.gameState);
+    // Pass currentMove for parity with Python where move is in history during phase checks
+    const hadAnyActionThisTurn = computeHadAnyActionThisTurn(
+      stateMachine.gameState,
+      stateMachine.processingState.originalMove
+    );
     const playerHasStacks = playerHasStacksOnBoard(stateMachine.gameState, player);
 
     const phaseAfterLine = onLineProcessingComplete(
@@ -2210,7 +2214,11 @@ function processPostMovePhases(
     // skipped). Decide whether to enter forced_elimination or end the turn using
     // the canonical FSM helper so TS and Python stay aligned.
     const currentPlayer = stateMachine.gameState.currentPlayer;
-    const hadAnyActionThisTurn = computeHadAnyActionThisTurn(stateMachine.gameState);
+    // Pass currentMove for parity with Python where move is in history during phase checks
+    const hadAnyActionThisTurn = computeHadAnyActionThisTurn(
+      stateMachine.gameState,
+      stateMachine.processingState.originalMove
+    );
     const playerHasStacks = playerHasStacksOnBoard(stateMachine.gameState, currentPlayer);
 
     const phaseAfterTerritory = onTerritoryProcessingComplete(
@@ -2739,9 +2747,18 @@ export function hasValidMoves(state: GameState): boolean {
  * player. Forced no-op bookkeeping moves (no_*_action) are ignored; voluntary
  * skips (skip_*) count as actions.
  */
-function computeHadAnyActionThisTurn(state: GameState): boolean {
+function computeHadAnyActionThisTurn(state: GameState, currentMove?: Move): boolean {
   const currentPlayer = state.currentPlayer;
   const history = state.moveHistory;
+
+  // Include the current move being processed if provided.
+  // This is needed for parity with Python, where the move is already
+  // appended to move_history before phase transitions are computed.
+  if (currentMove && currentMove.player === currentPlayer) {
+    if (!isNoActionBookkeepingMove(currentMove.type)) {
+      return true;
+    }
+  }
 
   for (let i = history.length - 1; i >= 0; i--) {
     const move = history[i];

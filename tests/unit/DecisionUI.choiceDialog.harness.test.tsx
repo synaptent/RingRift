@@ -20,8 +20,13 @@ const mockedUsePendingChoice = usePendingChoice as MockedUsePendingChoice;
 const mockedUseGameActions = useGameActions as MockedUseGameActions;
 
 function DecisionUIHarness() {
-  const { pendingChoice, pendingChoiceView, choiceDeadline, reconciledDecisionTimeRemainingMs } =
-    usePendingChoice();
+  const {
+    pendingChoice,
+    pendingChoiceView,
+    choiceDeadline,
+    reconciledDecisionTimeRemainingMs,
+    decisionIsServerCapped,
+  } = usePendingChoice();
   const { respondToChoice } = useGameActions();
 
   return (
@@ -30,6 +35,7 @@ function DecisionUIHarness() {
       choiceViewModel={pendingChoiceView?.viewModel}
       deadline={choiceDeadline}
       timeRemainingMs={reconciledDecisionTimeRemainingMs}
+      isServerCapped={decisionIsServerCapped}
       onSelectOption={(choice, option) => respondToChoice(choice, option)}
     />
   );
@@ -291,6 +297,23 @@ describe('DecisionUI harness → ChoiceDialog integration', () => {
     const countdown = await screen.findByTestId('choice-countdown');
     expect(countdown).toHaveAttribute('data-severity', 'warning');
     expect(screen.getByText('8s')).toBeInTheDocument();
+  });
+
+  it('marks countdown as server-capped and updates copy when server reduces deadline', async () => {
+    const deadline = Date.now() + 3_000;
+    mockedUsePendingChoice.mockReturnValue({
+      pendingChoice: lineOrderChoice,
+      pendingChoiceView: { viewModel: undefined },
+      choiceDeadline: deadline,
+      reconciledDecisionTimeRemainingMs: 2_500,
+      decisionIsServerCapped: true,
+    } as any);
+
+    render(<DecisionUIHarness />);
+
+    const countdown = await screen.findByTestId('choice-countdown');
+    expect(countdown).toHaveAttribute('data-server-capped', 'true');
+    expect(screen.getByText(/Server deadline – respond within/)).toBeInTheDocument();
   });
 
   it('surfaces countdown severity for short timers', async () => {

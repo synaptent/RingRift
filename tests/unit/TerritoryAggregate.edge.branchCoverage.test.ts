@@ -37,6 +37,10 @@ import {
 } from '../utils/fixtures';
 import { positionToString } from '../../src/shared/types/game';
 import type { GameState, Position, Territory } from '../../src/shared/types/game';
+import {
+  createTerritoryFeEdgeBoard,
+  territoryFeEdgeRegionForPlayer1,
+} from '../fixtures/territoryFeEdgeFixture';
 
 describe('TerritoryAggregate - Branch Coverage (Edge Cases)', () => {
   // ==========================================================================
@@ -259,6 +263,65 @@ describe('TerritoryAggregate - Branch Coverage (Edge Cases)', () => {
         const key = positionToString(pos);
         expect(outcome.board.collapsedSpaces.has(key)).toBe(true);
       }
+    });
+  });
+
+  // ==========================================================================
+  // territory / FE edge fixture from canonical_square8_regen k90
+  // ==========================================================================
+  describe('territory/FE edge fixture – canonical_square8_regen k90', () => {
+    it('applies self-elimination prerequisite based on stacks outside the region', () => {
+      const board = createTerritoryFeEdgeBoard();
+      const region = territoryFeEdgeRegionForPlayer1;
+
+      // Player 1 controls stacks both inside and outside the region on this board,
+      // so the self-elimination prerequisite should pass.
+      expect(canProcessTerritoryRegion(board, region, { player: 1 })).toBe(true);
+
+      // If we remove all player 1 stacks outside the region, the region is no
+      // longer processable for player 1.
+      const boardNoOutside = createTerritoryFeEdgeBoard();
+      const regionKeys = new Set(region.spaces.map((p) => positionToString(p)));
+
+      for (const [key, stack] of Array.from(boardNoOutside.stacks.entries())) {
+        const isInRegion = regionKeys.has(key);
+        if (stack.controllingPlayer === 1 && !isInRegion) {
+          boardNoOutside.stacks.delete(key);
+        }
+      }
+
+      expect(canProcessTerritoryRegion(boardNoOutside, region, { player: 1 })).toBe(false);
+    });
+
+    it('eliminates internal stacks and credits eliminations on the k90 edge fixture', () => {
+      const board = createTerritoryFeEdgeBoard();
+      const region = territoryFeEdgeRegionForPlayer1;
+
+      const internalKey = positionToString({ x: 6, y: 1 });
+      const internalStack = board.stacks.get(internalKey);
+      expect(internalStack).toBeDefined();
+      const internalHeight = internalStack!.stackHeight;
+      const beforeElimsP1 = board.eliminatedRings[1] || 0;
+
+      const outcome = applyTerritoryRegion(board, region, { player: 1 });
+
+      // Original board is not mutated.
+      expect(board.stacks.has(internalKey)).toBe(true);
+
+      // Internal stack is removed on the next board.
+      expect(outcome.board.stacks.has(internalKey)).toBe(false);
+
+      // All region spaces are collapsed to player 1.
+      for (const pos of region.spaces) {
+        const key = positionToString(pos);
+        expect(outcome.board.collapsedSpaces.get(key)).toBe(1);
+        expect(outcome.board.stacks.has(key)).toBe(false);
+        expect(outcome.board.markers.has(key)).toBe(false);
+      }
+
+      // All internal rings are credited to player 1.
+      expect(outcome.eliminatedRingsByPlayer[1]).toBe(internalHeight);
+      expect(outcome.board.eliminatedRings[1]).toBe(beforeElimsP1 + internalHeight);
     });
   });
 
@@ -810,27 +873,25 @@ describe('TerritoryAggregate - Branch Coverage (Edge Cases)', () => {
   // enumerateTerritoryEliminationMoves with processable regions (line 672)
   // ==========================================================================
   describe('enumerateTerritoryEliminationMoves territory_processing with regions', () => {
-    it('returns elimination moves when no processable regions but player has stacks in territory_processing phase', () => {
-      // Per updated logic (lines 667-685 in TerritoryAggregate.ts): in territory_processing,
-      // elimination moves are surfaced when NO regions exist but player has stacks.
-      // This handles the blocked-player scenario where the player needs to pay a cost
-      // to proceed, without requiring a separate forced_elimination phase transition.
+    it('returns no elimination moves during territory_processing; forced_elimination handles them', () => {
+      // Per current logic (lines 667-679 in TerritoryAggregate.ts): in
+      // territory_processing, eliminate_rings_from_stack moves are never surfaced.
+      // When no processable regions exist but the player still has stacks, the
+      // orchestrator transitions to forced_elimination and calls this helper there.
       const state = createTestGameState();
       state.currentPhase = 'territory_processing';
       state.board.stacks.clear();
       state.board.markers.clear();
 
-      // Create stacks that won't form processable regions (no disconnection)
-      addStack(state.board, { x: 0, y: 0 }, 1, 2, 2);
-      addStack(state.board, { x: 7, y: 7 }, 1, 2, 2);
+      // Create stacks that will not form disconnected/processable regions.
+      addStack(state.board, { x: 0, y: 0 }, 1);
+      addStack(state.board, { x: 7, y: 7 }, 1);
 
-      // getProcessableTerritoryRegions returns empty, so elimination moves ARE surfaced
-      // (one per stack the player controls)
       const moves = enumerateTerritoryEliminationMoves(state, 1);
 
-      // Returns elimination moves for each stack
-      expect(moves.length).toBe(2);
-      expect(moves.every((m) => m.type === 'eliminate_rings_from_stack')).toBe(true);
+      // No elimination moves are surfaced in territory_processing; they are
+      // deferred to the forced_elimination phase.
+      expect(moves.length).toBe(0);
     });
 
     it('exercises territory_processing phase check', () => {
