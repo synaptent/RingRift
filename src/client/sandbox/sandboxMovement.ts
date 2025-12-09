@@ -1,5 +1,17 @@
-import type { BoardState, BoardType, Position, MovementBoardView } from '../../shared/engine';
+import type {
+  BoardState,
+  BoardType,
+  Position,
+  MovementBoardView,
+  GameState,
+} from '../../shared/engine';
 import { positionToString, enumerateSimpleMoveTargetsFromStack } from '../../shared/engine';
+import {
+  enumerateRecoverySlideTargets,
+  isEligibleForRecovery,
+  RecoverySlideTarget,
+} from '../../shared/engine/aggregates/RecoveryAggregate';
+import { isEligibleForRecovery as isEligibleHelper } from '../../shared/engine/playerStateHelpers';
 
 // Re-export marker-path helpers: MarkerPathHelpers is a TypeScript-only
 // interface, so we export it as a type to avoid creating a runtime import
@@ -67,3 +79,37 @@ export function enumerateSimpleMovementLandings(
 
   return results;
 }
+
+/**
+ * Check if a player is eligible for recovery action in sandbox context.
+ *
+ * @param state - Current game state
+ * @param playerNumber - Player to check
+ * @returns True if the player can perform recovery actions
+ */
+export function isPlayerEligibleForRecovery(state: GameState, playerNumber: number): boolean {
+  return isEligibleHelper(state, playerNumber);
+}
+
+/**
+ * Enumerate recovery slide targets for the sandbox UI.
+ *
+ * Recovery is available when a player:
+ * - Controls no stacks
+ * - Has zero rings in hand
+ * - Has at least one marker on the board
+ * - Has at least one buried ring
+ *
+ * @param state - Current game state
+ * @param playerNumber - Player to enumerate recovery moves for
+ * @returns Array of recovery slide targets with metadata
+ */
+export function enumerateRecoverySlideLandings(
+  state: GameState,
+  playerNumber: number
+): RecoverySlideTarget[] {
+  return enumerateRecoverySlideTargets(state, playerNumber);
+}
+
+// Re-export the RecoverySlideTarget type for sandbox components
+export type { RecoverySlideTarget };

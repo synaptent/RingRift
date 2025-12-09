@@ -59,9 +59,10 @@ describe('Recovery Action Contract Vectors', () => {
 
       // Process the recovery move
       const result = processTurn(initialState, initialMove);
+      const finalState = (result as any).nextState || (result as any).state;
 
       // Basic validation - move should be processed
-      expect(result.state).toBeDefined();
+      expect(finalState).toBeDefined();
 
       // If there are assertions, validate them
       if (vector.assertions) {
@@ -71,7 +72,7 @@ describe('Recovery Action Contract Vectors', () => {
         if (assertions.finalPhase) {
           // Note: The actual phase depends on whether line/territory processing is needed
           expect(['line_processing', 'territory_processing', 'ring_placement']).toContain(
-            result.state.currentPhase
+            finalState.currentPhase
           );
         }
 
@@ -85,7 +86,7 @@ describe('Recovery Action Contract Vectors', () => {
               const [x, y] = posKey.split(',').map(Number);
               const key = `${x},${y}`;
               // Collapsed spaces should be in the board
-              expect(result.state.board.collapsedSpaces.has(key)).toBe(true);
+              expect(finalState.board.collapsedSpaces.has(key)).toBe(true);
             }
           }
 
@@ -95,7 +96,7 @@ describe('Recovery Action Contract Vectors', () => {
               const [x, y] = posKey.split(',').map(Number);
               const key = `${x},${y}`;
               // These markers should still exist
-              expect(result.state.board.markers.has(key)).toBe(true);
+              expect(finalState.board.markers.has(key)).toBe(true);
             }
           }
         }

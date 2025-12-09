@@ -93,7 +93,7 @@ from .ai.zobrist import ZobristHash
 from .rules.geometry import BoardGeometry
 from .rules.core import count_rings_in_play_for_player, get_line_length_for_board, get_effective_line_length
 from .rules.capture_chain import enumerate_capture_moves_py
-from .rules.recovery import get_recovery_moves, apply_recovery_slide
+from .rules.recovery import get_recovery_moves, has_any_recovery_move, apply_recovery_slide
 
 
 DEBUG_ENGINE = os.environ.get("RINGRIFT_DEBUG_ENGINE") == "1"
@@ -2515,8 +2515,9 @@ class GameEngine:
         Combined placement/movement/capture availability check.
 
         This is a Python analogue of TS hasValidActions used to decide when
-        forced elimination is required. If ANY legal placement, movement, or
-        capture exists for the player, forced elimination is not permitted.
+        forced elimination is required. If ANY legal placement, movement,
+        capture, or recovery action exists for the player, forced elimination
+        is not permitted.
 
         For FE eligibility, we ignore must_move_from_stack_key since that's a
         per-turn constraint that doesn't apply when evaluating whether a player
@@ -2532,6 +2533,8 @@ class GameEngine:
             return True
         if GameEngine._has_valid_captures(game_state, player_number):
             return True
+        if has_any_recovery_move(game_state, player_number):
+            return True
         return False
 
     @staticmethod
@@ -2543,10 +2546,13 @@ class GameEngine:
         R172 real-action availability predicate for LPS.
 
         A player has a real action if they have at least one legal placement,
-        non-capture movement, or overtaking capture available on their turn.
-        Forced elimination and line/territory decision moves do not count.
+        non-capture movement, overtaking capture, or recovery action available
+        on their turn. Forced elimination and line/territory decision moves do
+        not count.
         """
-        return GameEngine._has_valid_actions(game_state, player_number)
+        if GameEngine._has_valid_actions(game_state, player_number):
+            return True
+        return has_any_recovery_move(game_state, player_number)
 
     @staticmethod
     def _update_lps_round_tracking_for_current_player(

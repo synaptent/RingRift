@@ -66,6 +66,21 @@ export function moveToEvent(move: Move): TurnEvent | null {
     case 'no_movement_action':
       return { type: 'NO_MOVEMENT_ACTION' };
 
+    // Recovery (RR-CANON-R110–R115)
+    case 'recovery_slide': {
+      if (!move.from) return null;
+      const recoveryEvent: TurnEvent = {
+        type: 'RECOVERY_SLIDE',
+        from: move.from,
+        to: move.to,
+      };
+      // Only set option if defined (exactOptionalPropertyTypes compliance)
+      if (move.recoveryOption !== undefined) {
+        (recoveryEvent as { option?: 1 | 2 }).option = move.recoveryOption;
+      }
+      return recoveryEvent;
+    }
+
     // Capture
     case 'overtaking_capture':
       if (!move.captureTarget) return null;
@@ -170,6 +185,20 @@ export function eventToMove(event: TurnEvent, player: number, moveNumber: number
 
     case 'NO_MOVEMENT_ACTION':
       return { ...baseMove, type: 'no_movement_action', to: { x: 0, y: 0 } };
+
+    case 'RECOVERY_SLIDE': {
+      const recoveryMove: Move = {
+        ...baseMove,
+        type: 'recovery_slide',
+        from: event.from,
+        to: event.to,
+      };
+      // Only set recoveryOption if defined (exactOptionalPropertyTypes compliance)
+      if (event.option !== undefined) {
+        recoveryMove.recoveryOption = event.option;
+      }
+      return recoveryMove;
+    }
 
     case 'CAPTURE':
       return {
@@ -724,9 +753,9 @@ function getExpectedEventTypes(state: TurnState): TurnEvent['type'][] {
       // Placement phase supports explicit actions, voluntary skip, and forced no-op.
       return ['PLACE_RING', 'SKIP_PLACEMENT', 'NO_PLACEMENT_ACTION', 'RESIGN', 'TIMEOUT'];
     case 'movement':
-      // Per RR-CANON-R070: movement phase allows both simple moves and overtaking captures,
-      // plus an explicit forced no-op when no movement/capture is available.
-      return ['MOVE_STACK', 'CAPTURE', 'NO_MOVEMENT_ACTION', 'RESIGN', 'TIMEOUT'];
+      // Per RR-CANON-R070: movement phase allows simple moves, overtaking captures,
+      // and recovery slides (RR-CANON-R110–R115), plus forced no-op when nothing available.
+      return ['MOVE_STACK', 'CAPTURE', 'RECOVERY_SLIDE', 'NO_MOVEMENT_ACTION', 'RESIGN', 'TIMEOUT'];
     case 'capture':
       return ['CAPTURE', 'END_CHAIN', 'RESIGN', 'TIMEOUT'];
     case 'chain_capture':
@@ -767,6 +796,7 @@ export function isMoveTypeValidForPhase(gameState: GameState, moveType: Move['ty
     move_stack: ['movement'],
     build_stack: ['movement'], // Legacy
     no_movement_action: ['movement'],
+    recovery_slide: ['movement'], // RR-CANON-R110–R115
     overtaking_capture: ['movement', 'capture', 'chain_capture'],
     continue_capture_segment: ['chain_capture'],
     skip_capture: ['capture', 'chain_capture'],

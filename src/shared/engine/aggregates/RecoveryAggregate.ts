@@ -277,6 +277,66 @@ export function hasAnyRecoveryMove(state: GameState, playerNumber: number): bool
 }
 
 /**
+ * Information about an eligible extraction stack.
+ */
+export interface EligibleExtractionStack {
+  /** Position key of the stack (e.g., "3,4") */
+  positionKey: string;
+  /** Position of the stack */
+  position: Position;
+  /** Index of the bottommost buried ring in the stack.rings array */
+  bottomRingIndex: number;
+  /** Total stack height */
+  stackHeight: number;
+  /** Current controlling player (top ring owner) */
+  controllingPlayer: number;
+}
+
+/**
+ * Enumerate all stacks from which a player can extract a buried ring.
+ *
+ * Per RR-CANON-R113: The player chooses which stack to extract from if
+ * multiple stacks contain their buried rings. The bottommost ring from
+ * the chosen stack is extracted.
+ *
+ * A stack is eligible if:
+ * 1. It contains at least one of the player's rings
+ * 2. At least one of those rings is buried (not the top ring)
+ *
+ * @param board - Current board state
+ * @param playerNumber - Player seeking extraction
+ * @returns Array of eligible extraction stacks with metadata
+ */
+export function enumerateEligibleExtractionStacks(
+  board: BoardState,
+  playerNumber: number
+): EligibleExtractionStack[] {
+  const eligibleStacks: EligibleExtractionStack[] = [];
+
+  for (const [posKey, stack] of board.stacks) {
+    // Find the bottommost ring of this player
+    const bottomRingIndex = stack.rings.indexOf(playerNumber);
+
+    // Player has no ring in this stack
+    if (bottomRingIndex === -1) continue;
+
+    // Check if it's buried (not the top ring)
+    const isTopRing = bottomRingIndex === stack.rings.length - 1;
+    if (isTopRing) continue; // Not buried, cannot extract
+
+    eligibleStacks.push({
+      positionKey: posKey,
+      position: stringToPosition(posKey),
+      bottomRingIndex,
+      stackHeight: stack.stackHeight,
+      controllingPlayer: stack.controllingPlayer,
+    });
+  }
+
+  return eligibleStacks;
+}
+
+/**
  * Calculate the cost of a recovery slide for a given option.
  *
  * Cost Model (Option 1 / Option 2):
@@ -288,14 +348,6 @@ export function hasAnyRecoveryMove(state: GameState, playerNumber: number): bool
  */
 export function calculateRecoveryCost(option: RecoveryOption): number {
   return option === 1 ? 1 : 0;
-}
-
-/**
- * @deprecated Use calculateRecoveryCost(option) instead.
- * This function used the old graduated cost model.
- */
-export function calculateRecoveryCostLegacy(lineLength: number, actualLineLength: number): number {
-  return 1 + Math.max(0, actualLineLength - lineLength);
 }
 
 // ===============================================================================
@@ -614,14 +666,15 @@ export function applyRecoverySlide(
   }
 
   // 4. Extract buried rings (self-elimination cost) - Option 1 only
+  //    Per RR-CANON-R113: Extract the bottommost ring from the chosen stack
   let extractionCount = 0;
   if (effectiveOption === 1) {
     for (const stackKey of extractionStacks) {
       const stack = board.stacks.get(stackKey);
       if (!stack) continue;
 
-      // Find and remove player's bottommost ring
-      const ringIndex = stack.rings.lastIndexOf(player);
+      // Find and remove player's bottommost ring (first occurrence = bottommost)
+      const ringIndex = stack.rings.indexOf(player);
       if (ringIndex === -1) continue;
 
       // Remove the ring

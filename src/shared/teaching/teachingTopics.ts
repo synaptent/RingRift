@@ -24,9 +24,10 @@ export type TeachingTopicId =
   | 'line_bonus'
   | 'line_territory_order'
   | 'territory'
-  // ANM / FE topics
+  // ANM / FE / Recovery topics
   | 'active_no_moves'
   | 'forced_elimination'
+  | 'recovery_action'
   // Victory condition topics
   | 'victory_elimination'
   | 'victory_territory'
@@ -315,6 +316,53 @@ export const LPS_FIRST_OCCURRENCE_TIPS: TeachingTip[] = [
     category: 'recovery',
     emphasis: 'normal',
     addressesGap: 'GAP-LPS-01',
+  },
+];
+
+/**
+ * Teaching tips for recovery action (RR-CANON-R110–R115).
+ * Recovery allows temporarily eliminated players to stay active by sliding
+ * markers to complete lines.
+ */
+export const RECOVERY_ACTION_TIPS: TeachingTip[] = [
+  // Eligibility
+  {
+    text: 'RECOVERY ACTION: When you have no stacks and no rings in hand, but still have markers AND buried rings, you can perform a recovery action instead of passing.',
+    category: 'eligibility',
+    emphasis: 'critical',
+  },
+  {
+    text: 'Recovery eligibility requires: (1) No stacks you control, (2) Zero rings in hand, (3) At least one marker on the board, (4) At least one buried ring in any stack.',
+    category: 'eligibility',
+    emphasis: 'important',
+  },
+  // Action mechanics
+  {
+    text: 'HOW IT WORKS: Slide one of your markers to an adjacent empty cell. The slide must complete a line of at least the minimum length (usually 3 or 4 markers depending on board/players).',
+    category: 'action',
+    emphasis: 'important',
+  },
+  {
+    text: 'The cost is self-elimination: extract your bottommost buried ring from a stack of your choice. This ring is eliminated, not returned to your hand.',
+    category: 'cost',
+    emphasis: 'normal',
+  },
+  // Option 1/2 for overlength
+  {
+    text: 'OVERLENGTH LINES: If your slide creates a line longer than the minimum, you have a choice! Option 1: Collapse all markers (costs 1 buried ring). Option 2: Collapse only the minimum length (FREE, no extraction).',
+    category: 'overlength',
+    emphasis: 'important',
+  },
+  {
+    text: 'Option 2 is useful when you have few buried rings left. You gain less territory but preserve your recovery capability for future turns.',
+    category: 'strategy',
+    emphasis: 'normal',
+  },
+  // LPS interaction
+  {
+    text: 'Recovery counts as a REAL ACTION for Last Player Standing purposes. If you can perform recovery, you are not "without moves" and the LPS countdown does not advance against you.',
+    category: 'lps',
+    emphasis: 'important',
   },
 ];
 

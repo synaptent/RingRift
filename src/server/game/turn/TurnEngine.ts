@@ -213,7 +213,8 @@ function hasValidActions(
   return (
     hasValidPlacements(gameState, deps, playerNumber) ||
     hasValidMovements(gameState, turnState, deps, playerNumber) ||
-    hasValidCaptures(gameState, turnState, deps, playerNumber)
+    hasValidCaptures(gameState, turnState, deps, playerNumber) ||
+    hasValidRecovery(gameState, deps, playerNumber)
   );
 }
 
@@ -297,6 +298,28 @@ function hasValidMovements(
   return moves.some(
     (m) => m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack'
   );
+}
+
+/**
+ * Check if player has any valid recovery slides (RR-CANON-R110–R115).
+ * Evaluated in movement context; recovery is a real action and should
+ * block forced elimination.
+ */
+function hasValidRecovery(
+  gameState: GameState,
+  deps: TurnEngineDeps,
+  playerNumber: number
+): boolean {
+  const { ruleEngine } = deps;
+
+  const tempState: GameState = {
+    ...gameState,
+    currentPlayer: playerNumber,
+    currentPhase: 'movement',
+  };
+
+  const moves = ruleEngine.getValidMoves(tempState);
+  return moves.some((m) => m.type === 'recovery_slide');
 }
 
 /**

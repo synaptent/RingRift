@@ -1,18 +1,18 @@
 # Recovery Action Implementation Plan
 
-> **Doc Status (2025-12-08): Active – P0 Complete, P1 In Progress**
+> **Doc Status (2025-12-08): Active – P0, P1 Complete**
 >
 > **Purpose:** Complete implementation plan for the Recovery Action rule feature.
 >
 > **Canonical Source:** `RULES_CANONICAL_SPEC.md` §5.4 (RR-CANON-R110–R115)
 >
-> **Progress (2025-12-08):** All P0 (Critical Path) tasks completed. P1 tasks in progress.
+> **Progress (2025-12-08):** All P0 (Critical Path) and P1 (High Priority) tasks completed. P2 (UI, Teaching) remains.
 
 ---
 
 ## Executive Summary
 
-The **Recovery Action** allows temporarily eliminated players to remain active by sliding markers to form lines, paying costs with buried ring extraction. This feature has **partial implementation** that needs updating to match the new Option 1/Option 2 overlength line semantics and full integration.
+The **Recovery Action** allows temporarily eliminated players to remain active by sliding markers to form lines, paying costs with buried ring extraction. **P0 (Critical) and P1 (High) tasks are complete.** Only P2 (UI, Teaching) remains.
 
 ### Implementation Status Overview
 
@@ -26,9 +26,10 @@ The **Recovery Action** allows temporarily eliminated players to remain active b
 | LPS Integration                 | ✅ Complete | Recovery counted as real action                 |
 | Contract Vectors                | ✅ Complete | `recovery_action.vectors.json` created          |
 | Parity Tests                    | ✅ Complete | `test_recovery_parity.py` (15 tests)            |
-| FSM Event Mapping               | ⚠️ P1       | Needs implementation                            |
-| RuleEngine Validation           | ⚠️ P1       | Needs validation case                           |
-| Move Notation                   | ⚠️ P1       | Needs recovery notation                         |
+| FSM Event Mapping               | ✅ Complete | `TurnStateMachine.ts`, `FSMAdapter.ts`          |
+| RuleEngine Validation           | ✅ Complete | `RuleEngine.ts` validation case                 |
+| Move Notation                   | ✅ Complete | `notation.ts` with `Rv` prefix                  |
+| Unit Tests (Option 1/2)         | ✅ Complete | `RecoveryAggregate.shared.test.ts` (35 tests)   |
 | UI Components                   | ❌ P2       | No recovery move display/selection              |
 | Teaching Materials              | ❌ P2       | No teaching content                             |
 
@@ -452,14 +453,14 @@ Create comprehensive test vectors:
 
 #### 6.2 Unit Tests (TypeScript)
 
-**File:** `tests/unit/RecoveryAggregate.shared.test.ts` (exists, extend)
+**File:** `tests/unit/RecoveryAggregate.shared.test.ts` (exists, extended)
 
-Add tests for:
+Test coverage (35 tests):
 
-- [ ] Option 1/Option 2 semantics for overlength
-- [ ] Overlength move legal even with 0 buried rings (Option 2)
-- [ ] Exact-length move requires 1 buried ring
-- [ ] Line collapse positions for Option 2 (subset selection)
+- [x] Option 1/Option 2 semantics for overlength
+- [x] Overlength move legal even with 0 buried rings (Option 2)
+- [x] Exact-length move requires 1 buried ring
+- [x] Line collapse positions for Option 2 (subset selection)
 - [ ] Territory cascade after recovery
 
 **File:** `tests/unit/lpsRecovery.test.ts` (NEW)
@@ -582,20 +583,20 @@ Ensure recovery_slide moves are correctly serialized/deserialized.
 4. ✅ **Contract vectors** for parity testing (`recovery_action.vectors.json`)
 5. ✅ **Basic parity tests** (`test_recovery_parity.py` - 15 tests)
 
-### High Priority (P1) – IN PROGRESS
+### High Priority (P1) – ✅ COMPLETE
 
-6. ⬜ FSM event mapping
-7. ⬜ RuleEngine validation case
-8. ⬜ Unit tests for Option 1/2 semantics
-9. ⬜ Move notation
+6. ✅ FSM event mapping (`TurnStateMachine.ts`, `FSMAdapter.ts`)
+7. ✅ RuleEngine validation case (`RuleEngine.ts`)
+8. ✅ Unit tests for Option 1/2 semantics (`RecoveryAggregate.shared.test.ts`)
+9. ✅ Move notation (`notation.ts`)
 
-### Medium Priority (P2)
+### Medium Priority (P2) – PARTIAL
 
-10. UI highlighting and selection
-11. Choice dialog for overlength
-12. Move history display
-13. Teaching content
-14. AI move ordering
+10. ⬜ UI highlighting and selection
+11. ⬜ Choice dialog for overlength
+12. ✅ Move history display (`MoveHistory.tsx`)
+13. ✅ Teaching content (`teachingTopics.ts`)
+14. ✅ AI move ordering (already in `move_ordering.py`)
 
 ### Lower Priority (P3)
 

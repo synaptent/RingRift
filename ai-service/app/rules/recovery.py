@@ -92,6 +92,16 @@ class RecoveryApplicationOutcome:
     collapsed_positions: List[Position] = field(default_factory=list)  # Markers that were collapsed
 
 
+@dataclass
+class EligibleExtractionStack:
+    """Information about a stack eligible for buried ring extraction."""
+    position_key: str  # Position key of the stack (e.g., "3,4")
+    position: Position  # Position of the stack
+    bottom_ring_index: int  # Index of the bottommost buried ring in the stack.rings list
+    stack_height: int  # Total stack height
+    controlling_player: int  # Current controlling player (top ring owner)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -332,18 +342,53 @@ def calculate_recovery_cost(option: RecoveryOption) -> int:
     return 1 if option == 1 else 0
 
 
-def calculate_recovery_cost_legacy(
+def enumerate_eligible_extraction_stacks(
     board: BoardState,
     player: int,
-    markers_in_line: int,
-) -> int:
+) -> List[EligibleExtractionStack]:
     """
-    DEPRECATED: Use calculate_recovery_cost(option) instead.
-    This function used the old graduated cost model.
+    Enumerate all stacks from which a player can extract a buried ring.
+
+    Per RR-CANON-R113: The player chooses which stack to extract from if
+    multiple stacks contain their buried rings. The bottommost ring from
+    the chosen stack is extracted.
+
+    A stack is eligible if:
+    1. It contains at least one of the player's rings
+    2. At least one of those rings is buried (not the top ring)
+
+    Args:
+        board: Current board state
+        player: Player seeking extraction
+
+    Returns:
+        List of eligible extraction stacks with metadata
     """
-    line_length = get_effective_line_length(board.type, 3)  # num_players not used for line length
-    excess = max(0, markers_in_line - line_length)
-    return 1 + excess
+    eligible_stacks: List[EligibleExtractionStack] = []
+
+    for pos_key, stack in board.stacks.items():
+        # Find the bottommost ring of this player
+        try:
+            bottom_ring_index = stack.rings.index(player)
+        except ValueError:
+            continue  # Player has no ring in this stack
+
+        # Check if it's buried (not the top ring)
+        is_top_ring = bottom_ring_index == len(stack.rings) - 1
+        if is_top_ring:
+            continue  # Not buried, cannot extract
+
+        eligible_stacks.append(
+            EligibleExtractionStack(
+                position_key=pos_key,
+                position=Position.from_key(pos_key),
+                bottom_ring_index=bottom_ring_index,
+                stack_height=stack.stack_height,
+                controlling_player=stack.controlling_player,
+            )
+        )
+
+    return eligible_stacks
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -569,24 +614,71 @@ def validate_recovery_slide(
     is_overlength = markers_count > line_length
     buried_rings = count_buried_rings(board, player)
 
-    # Option 2 is free but only available for overlength lines
-    # Option 1 costs 1 buried ring
-    can_use_option1 = buried_rings >= 1
-    can_use_option2 = is_overlength  # Free, only for overlength
+    # Determine requested option if provided
+    requested_option = getattr(move, "recovery_option", None)
+    option_used: RecoveryOption
+    cost: int
 
-    if not can_use_option1 and not can_use_option2:
-        return RecoveryValidationResult(
-            valid=False,
-            reason="Insufficient buried rings: need 1, have 0 (and no free Option 2 available)",
-        )
-
-    # Determine which option to use (prefer free Option 2 when available)
-    if can_use_option2:
-        option_used: RecoveryOption = 2
-        cost = 0
+    if requested_option is not None:
+        if requested_option == 2 and not is_overlength:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Option 2 is only available for overlength lines",
+            )
+        if requested_option == 1 and buried_rings < 1:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Option 1 requires 1 buried ring",
+            )
+        option_used = requested_option  # type: ignore[assignment]
+        cost = 0 if option_used == 2 else 1
     else:
-        option_used = 1
-        cost = 1
+        # Option 2 is free but only available for overlength lines
+        # Option 1 costs 1 buried ring
+        can_use_option1 = buried_rings >= 1
+        can_use_option2 = is_overlength  # Free, only for overlength
+
+        if not can_use_option1 and not can_use_option2:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Insufficient buried rings: need 1, have 0 (and no free Option 2 available)",
+            )
+
+        # Determine which option to use (prefer free Option 2 when available)
+        if can_use_option2:
+            option_used = 2
+            cost = 0
+        else:
+            option_used = 1
+            cost = 1
+
+    # Validate collapse positions for Option 2 when provided
+    if option_used == 2:
+        collapse_positions = getattr(move, "collapse_positions", None)
+        if collapse_positions is None:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Option 2 requires collapse_positions",
+            )
+        if len(collapse_positions) != line_length:
+            return RecoveryValidationResult(
+                valid=False,
+                reason=f"Option 2 requires exactly {line_length} collapse positions",
+            )
+        # Ensure all collapse positions are drawn from the formed line and include destination
+        line_keys = {p.to_key() for p in line_positions}
+        dest_key = move.to.to_key()
+        for pos in collapse_positions:
+            if pos.to_key() not in line_keys:
+                return RecoveryValidationResult(
+                    valid=False,
+                    reason="Collapse positions must be part of the formed line",
+                )
+        if dest_key not in {p.to_key() for p in collapse_positions}:
+            return RecoveryValidationResult(
+                valid=False,
+                reason="Collapse positions must include the destination",
+            )
 
     return RecoveryValidationResult(
         valid=True,
@@ -668,9 +760,11 @@ def apply_recovery_slide(
     # Determine effective option
     if option is not None:
         effective_option = option
+    elif getattr(move, "recovery_option", None) is not None:
+        effective_option = getattr(move, "recovery_option")
     elif is_overlength:
         # Default to Option 2 (free) for overlength if not specified
-        effective_option: RecoveryOption = 2
+        effective_option = 2
     else:
         effective_option = 1
 
@@ -690,31 +784,41 @@ def apply_recovery_slide(
     collapsed_positions = list(positions_to_collapse)
 
     # Calculate cost and extract rings (Option 1 only)
+    # Per RR-CANON-R113: Extract the bottommost ring from chosen stack(s)
     cost = calculate_recovery_cost(effective_option)
     rings_extracted = 0
 
     if cost > 0:
-        # Find stacks with buried rings and extract them
-        for stack_key, stack in list(board.stacks.items()):
-            if stack.controlling_player == player:
-                continue  # Skip player's own stacks
+        # Get extraction stacks from move, or auto-select if not provided
+        extraction_stacks = getattr(move, "extraction_stacks", None)
+        if not extraction_stacks:
+            # Auto-select: find eligible stacks and pick the first one(s)
+            eligible = enumerate_eligible_extraction_stacks(board, player)
+            extraction_stacks = tuple(es.position_key for es in eligible[:cost])
 
-            # Count and extract this player's rings from this stack
-            rings_to_remove = []
-            for i, ring in enumerate(stack.rings):
-                if ring == player and rings_extracted < cost:
-                    rings_to_remove.append(i)
-                    rings_extracted += 1
+        # Extract from each specified stack
+        for stack_key in extraction_stacks:
+            if rings_extracted >= cost:
+                break
 
-            # Remove rings from bottom to top (to maintain indices)
-            for i in reversed(rings_to_remove):
-                stack.rings.pop(i)
+            stack = board.stacks.get(stack_key)
+            if not stack:
+                continue
 
-            # Update stack height
+            # Find player's bottommost ring (first occurrence = bottommost)
+            try:
+                bottom_index = stack.rings.index(player)
+            except ValueError:
+                continue  # Player has no ring in this stack
+
+            # Extract (remove) the bottommost ring
+            stack.rings.pop(bottom_index)
             stack.stack_height = len(stack.rings)
+            rings_extracted += 1
 
-            # Recalculate cap height
+            # Update stack state after extraction
             if stack.rings:
+                # Recalculate cap height and controlling player
                 cap_height = 0
                 controlling = stack.rings[-1]
                 for r in reversed(stack.rings):
@@ -728,14 +832,12 @@ def apply_recovery_slide(
                 # Stack is empty, remove it
                 del board.stacks[stack_key]
 
-            if rings_extracted >= cost:
-                break
-
-    # Return extracted rings to player's hand
+    # Extracted rings are eliminated (not returned to hand)
+    # Per RR-CANON-R113: extraction is self-elimination cost
     if rings_extracted > 0:
         for p in state.players:
             if p.player_number == player:
-                p.rings_in_hand += rings_extracted
+                p.eliminated_rings = getattr(p, "eliminated_rings", 0) + rings_extracted
                 break
 
     return RecoveryApplicationOutcome(
@@ -775,7 +877,7 @@ def get_recovery_moves(state: GameState, player: int) -> List[Move]:
 
     for target in targets:
         move_number = len(state.move_history) + 1
-        move = Move(
+        base_kwargs = dict(
             id=f"recovery-{target.from_pos.to_key()}-{target.to_pos.to_key()}-{move_number}",
             type=MoveType.RECOVERY_SLIDE,
             player=player,
@@ -785,6 +887,31 @@ def get_recovery_moves(state: GameState, player: int) -> List[Move]:
             thinkTime=0,
             moveNumber=move_number,
         )
-        moves.append(move)
+
+        # Overlength: generate both options
+        if target.is_overlength:
+            # Option 2 (free) with default collapse subset (first lineLength)
+            moves.append(
+                Move(
+                    recoveryOption=2,
+                    collapsePositions=tuple(target.line_positions[: get_effective_line_length(state.board.type, len(state.players))]),
+                    **base_kwargs,
+                )
+            )
+            # Option 1 (cost 1)
+            moves.append(
+                Move(
+                    recoveryOption=1,
+                    **base_kwargs,
+                )
+            )
+        else:
+            # Exact length: only Option 1
+            moves.append(
+                Move(
+                    recoveryOption=1,
+                    **base_kwargs,
+                )
+            )
 
     return moves

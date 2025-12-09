@@ -30,6 +30,13 @@ import {
   findLinesForPlayer,
   // Capture aggregate helpers (global enumeration)
   enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
+  // Movement/placement aggregation helpers
+  enumerateSimpleMovesForPlayer,
+  enumeratePlacementPositions,
+  // Recovery helper
+  hasAnyRecoveryMove,
+  // LPS real-action helper
+  hasAnyRealAction,
   // Type guards for move narrowing
   isCaptureMove,
   // Swap sides (pie rule) helpers
@@ -2431,6 +2438,15 @@ export class GameEngine {
    *
    * Delegates to the shared hasAnyRealAction helper.
    */
+  private hasAnyRealActionForPlayer(playerNumber: number): boolean {
+    return hasAnyRealAction(this.gameState, playerNumber, {
+      hasPlacement: (pn) => enumeratePlacementPositions(this.gameState, pn).length > 0,
+      hasMovement: (pn) => enumerateSimpleMovesForPlayer(this.gameState, pn).length > 0,
+      hasCapture: (pn) => enumerateAllCaptureMovesAggregate(this.gameState, pn).length > 0,
+      // Recovery (RR-CANON-R110–R115) counts as a real action for LPS
+      hasRecovery: (pn) => hasAnyRecoveryMove(this.gameState, pn),
+    });
+  }
 
   /**
    * Test-only helper: resolve a late-detected "blocked with no moves"

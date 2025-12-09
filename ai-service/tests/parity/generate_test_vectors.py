@@ -316,6 +316,22 @@ if __name__ == "__main__":
     output_dir = os.path.join(os.path.dirname(__file__), "vectors")
     os.makedirs(output_dir, exist_ok=True)
 
+    # Copy recovery contract vectors into the parity vectors folder to ensure
+    # parity harnesses exercise recovery Option 1/2 semantics.
+    try:
+        recovery_src = os.path.join(
+            os.path.dirname(__file__),
+            "../../tests/fixtures/contract-vectors/v2/recovery_action.vectors.json",
+        )
+        if os.path.exists(recovery_src):
+            recovery_dst = os.path.join(output_dir, "recovery_action.vectors.json")
+            with open(recovery_src, "r", encoding="utf-8") as f_in:
+                with open(recovery_dst, "w", encoding="utf-8") as f_out:
+                    f_out.write(f_in.read())
+            print(f"Copied recovery_action.vectors.json to {recovery_dst}")
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"Failed to copy recovery vectors: {exc}")
+
     seeds = [42, 123, 999]
 
     for seed in seeds:

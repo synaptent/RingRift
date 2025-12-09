@@ -111,6 +111,8 @@ function formatMoveType(move: Move): string {
       return 'T';
     case 'skip_placement':
       return 'S';
+    case 'recovery_slide':
+      return 'Rv'; // Recovery slide (RR-CANON-R110–R115)
     default:
       return move.type;
   }
@@ -155,6 +157,18 @@ export function formatMove(move: Move, options: MoveNotationOptions = {}): strin
       return `${prefix} ${kind} ${fromPos}→${toPos}`;
     }
     return `${prefix} ${kind}`;
+  }
+
+  // Recovery slide (RR-CANON-R110–R115): marker slide that completes a line
+  if (move.type === 'recovery_slide') {
+    const optSuffix = move.recoveryOption ? ` [opt${move.recoveryOption}]` : '';
+    if (fromPos && toPos) {
+      return `${prefix} ${kind} ${fromPos}→${toPos}${optSuffix}`;
+    }
+    if (toPos) {
+      return `${prefix} ${kind} ${toPos}${optSuffix}`;
+    }
+    return `${prefix} ${kind}${optSuffix}`;
   }
 
   // Fallback for other/legacy move types.

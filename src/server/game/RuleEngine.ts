@@ -36,6 +36,10 @@ import {
   getChainCaptureContinuationInfo,
   // Type guards for move narrowing
   isCaptureMove,
+  // Recovery action (RR-CANON-R110–R115)
+  isEligibleForRecovery,
+  validateRecoverySlide as validateRecoverySlideAggregate,
+  enumerateRecoverySlideTargets,
 } from '../../shared/engine';
 import { getMovementDirectionsForBoardType } from '../../shared/engine/core';
 import { flagEnabled, debugLog } from '../../shared/utils/envFlags';
@@ -105,6 +109,10 @@ export class RuleEngine {
         // the rules (i.e. the player has rings in hand *and* at least one
         // controlled stack with a legal move or capture available).
         return this.validateSkipPlacement(move, gameState);
+      case 'recovery_slide':
+        // Recovery slide (RR-CANON-R110–R115): marker slide that completes a
+        // line, allowing temporarily eliminated players to remain active.
+        return this.validateRecoverySlide(move, gameState);
       default:
         return false;
     }
@@ -338,6 +346,49 @@ export class RuleEngine {
   }
 
   /**
+   * Validates a recovery slide move according to RR-CANON-R110–R115.
+   *
+   * A recovery slide is legal when:
+   * - The game is in movement phase
+   * - The player is eligible for recovery (no stacks, no rings in hand,
+   *   has markers, has buried rings)
+   * - The slide from→to completes a line of at least lineLength markers
+   * - The player has sufficient buried rings to pay the cost (1 for
+   *   exact-length or Option 1; 0 for Option 2 on overlength)
+   *
+   * Delegates to the shared RecoveryAggregate for canonical validation.
+   */
+  private validateRecoverySlide(move: Move, gameState: GameState): boolean {
+    // Recovery slides are only allowed during movement phase
+    if (gameState.currentPhase !== 'movement') {
+      return false;
+    }
+
+    if (!move.from) {
+      return false;
+    }
+
+    // Delegate to shared aggregate for canonical validation
+    // Build the RecoverySlideMove object conditionally to handle exactOptionalPropertyTypes
+    const recoveryMove: Parameters<typeof validateRecoverySlideAggregate>[1] = {
+      ...move,
+      type: 'recovery_slide' as const,
+      from: move.from,
+      to: move.to,
+      // extractionStacks is required but can be derived during apply if not provided
+      extractionStacks: [],
+    };
+
+    // Only set option if defined (exactOptionalPropertyTypes compliance)
+    if (move.recoveryOption !== undefined) {
+      recoveryMove.option = move.recoveryOption;
+    }
+
+    const result = validateRecoverySlideAggregate(gameState, recoveryMove);
+    return result.valid;
+  }
+
+  /**
    * Core validation for a single overtaking capture segment from `from`
    * over `target` to `landing`. This mirrors the Rust engine's
    * `validate_capture_segment` at a high level and is used both by
@@ -495,7 +546,10 @@ export class RuleEngine {
         // chosen directly when legal.
         moves.push(...this.getValidStackMovements(currentPlayer, gameState));
         moves.push(...this.getValidCaptures(currentPlayer, gameState));
-        // If no movements or captures available, emit no_movement_action
+        // Recovery slides (RR-CANON-R110–R115): marker slides that complete
+        // lines for temporarily eliminated players.
+        moves.push(...this.getValidRecoverySlides(currentPlayer, gameState));
+        // If no movements, captures, or recovery available, emit no_movement_action
         // per RR-CANON-R075 to record that the phase was visited.
         if (moves.length === 0) {
           moves.push({
@@ -793,6 +847,63 @@ export class RuleEngine {
           moveNumber: baseMoveNumber,
         });
       });
+    }
+
+    return moves;
+  }
+
+  /**
+   * Gets valid recovery slide moves for the given player using the shared
+   * RecoveryAggregate (RR-CANON-R110–R115).
+   *
+   * Recovery slides are only available when the player is "temporarily
+   * eliminated" (no stacks, no rings in hand, has markers, has buried rings)
+   * and can slide a marker to complete a line.
+   */
+  private getValidRecoverySlides(player: number, gameState: GameState): Move[] {
+    // Early exit if player is not eligible for recovery
+    if (!isEligibleForRecovery(gameState, player)) {
+      return [];
+    }
+
+    const baseMoveNumber = gameState.moveHistory.length + 1;
+    const targets = enumerateRecoverySlideTargets(gameState, player);
+    const moves: Move[] = [];
+
+    for (const target of targets) {
+      // Create base move for this slide target
+      const baseMove: Move = {
+        id: `recovery-${positionToString(target.from)}-${positionToString(target.to)}`,
+        type: 'recovery_slide',
+        player,
+        from: target.from,
+        to: target.to,
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: baseMoveNumber,
+      };
+
+      // For overlength lines, create separate moves for Option 1 and Option 2
+      if (target.isOverlength && target.option2Available) {
+        // Option 1 (collapse all, cost 1) - always available for overlength
+        const opt1Move: Move = {
+          ...baseMove,
+          id: `recovery-${positionToString(target.from)}-${positionToString(target.to)}-opt1`,
+          recoveryOption: 1,
+        };
+        moves.push(opt1Move);
+
+        // Option 2 (collapse minimum, free)
+        const opt2Move: Move = {
+          ...baseMove,
+          id: `recovery-${positionToString(target.from)}-${positionToString(target.to)}-opt2`,
+          recoveryOption: 2,
+        };
+        moves.push(opt2Move);
+      } else {
+        // Exact-length: only Option 1 semantics (costs 1 buried ring)
+        moves.push(baseMove);
+      }
     }
 
     return moves;

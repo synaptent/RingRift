@@ -433,6 +433,19 @@ export interface Move {
   /** Player numbers of overtaken rings added to the capturing stack. */
   overtakenRings?: number[];
 
+  // Recovery specific (RR-CANON-R110–R115)
+  /**
+   * For recovery_slide moves: Option 1 (collapse all, cost 1 buried ring)
+   * or Option 2 (collapse minimum, free). Only relevant for overlength lines;
+   * exact-length lines implicitly use Option 1.
+   */
+  recoveryOption?: 1 | 2;
+  /**
+   * For Option 2 recovery slides: specific positions to collapse (subset of
+   * the formed line). When omitted, defaults to collapsing all markers.
+   */
+  collapsePositions?: Position[];
+
   // Line formation specific
   /** Lines detected/processed as part of this action (if any). */
   formedLines?: LineInfo[];

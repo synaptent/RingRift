@@ -75,6 +75,8 @@ import {
   deriveStateFromGame as fsmDeriveState,
   deriveGameContext as fsmDeriveContext,
   moveToEvent as fsmMoveToEvent,
+  onLineProcessingComplete,
+  onTerritoryProcessingComplete,
 } from '../fsm';
 
 // Import from domain aggregates
@@ -1500,16 +1502,10 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         timestamp: move.timestamp,
         thinkTime: move.thinkTime,
         moveNumber: move.moveNumber,
-        option: (move as any).recoveryOption || 1,
-        collapsePositions: (move as any).collapsePositions,
+        option: (move as any).recoveryOption || (move as any).option || 1,
+        collapsePositions: (move as any).collapsePositions || (move as any).collapse_positions,
         extractionStacks: [], // Will be determined during validation/application
       };
-
-      // Validate the recovery slide
-      const validationResult = validateRecoverySlide(state, recoveryMove);
-      if (!validationResult.valid) {
-        throw new Error(`Invalid recovery slide: ${validationResult.reason}`);
-      }
 
       // For Option 1, need to select an extraction stack
       // For now, auto-select the first stack with a buried ring
@@ -1521,6 +1517,12 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
             break;
           }
         }
+      }
+
+      // Validate the recovery slide (after filling extractionStacks for Option 1)
+      const validationResult = validateRecoverySlide(state, recoveryMove);
+      if (!validationResult.valid) {
+        throw new Error(`Invalid recovery slide: ${validationResult.reason}`);
       }
 
       // Apply the recovery slide
@@ -1978,15 +1980,14 @@ function processPostMovePhases(
   const state = stateMachine.gameState;
   const originalMoveType = stateMachine.processingState.originalMove.type as string;
 
-  // Handle elimination phase completion - skip straight to victory check
+  // Handle forced_elimination phase completion - skip straight to victory check
   // and turn rotation since the elimination is the final action in the player's turn.
   // Per RR-CANON-R070, forced_elimination is the 7th and final phase.
-  // Also handle eliminate_rings_from_stack during territory_processing - this is
-  // the elimination that follows territory collapse (Q23 precondition).
-  if (
-    originalMoveType === 'forced_elimination' ||
-    originalMoveType === 'eliminate_rings_from_stack'
-  ) {
+  //
+  // Territory-driven self-elimination (eliminate_rings_from_stack) is handled via
+  // the territory_processing phase below and may still lead to forced_elimination
+  // depending on hadAnyActionThisTurn and the player's remaining material.
+  if (originalMoveType === 'forced_elimination') {
     // Check victory first
     const victoryResult = toVictoryState(stateMachine.gameState);
     if (victoryResult.isGameOver) {
@@ -2132,8 +2133,40 @@ function processPostMovePhases(
       };
     }
 
-    // Line phase move was applied and no more lines, continue to territory.
-    stateMachine.transitionTo('territory_processing');
+    // Line-phase move was applied and no more lines; decide the next phase using
+    // the canonical FSM helper so TS and Python share the same semantics.
+    const player = state.currentPlayer;
+    const regionsForPlayer = getProcessableTerritoryRegions(state.board, { player });
+    const hasTerritoryRegions = regionsForPlayer.length > 0;
+    const hadAnyActionThisTurn = computeHadAnyActionThisTurn(stateMachine.gameState);
+    const playerHasStacks = playerHasStacksOnBoard(stateMachine.gameState, player);
+
+    const phaseAfterLine = onLineProcessingComplete(
+      hasTerritoryRegions,
+      hadAnyActionThisTurn,
+      playerHasStacks
+    );
+
+    if (phaseAfterLine === 'territory_processing') {
+      // Enter territory_processing; region-order / no_territory_action-required
+      // decisions are handled in the territory block below.
+      stateMachine.transitionTo('territory_processing');
+    } else if (phaseAfterLine === 'forced_elimination') {
+      // Player had no actions in any phase this turn but still controls stacks.
+      // Enter forced_elimination and surface explicit forced_elimination options.
+      stateMachine.transitionTo('forced_elimination');
+      const forcedDecision = createForcedEliminationDecision(stateMachine.gameState);
+      if (forcedDecision && forcedDecision.options.length > 0) {
+        return {
+          pendingDecision: forcedDecision,
+        };
+      }
+      // If, unexpectedly, no forced_elimination options could be constructed,
+      // fall through to global ANM/terminal handling below.
+    }
+    // phaseAfterLine === 'turn_end' – no territory and either the player took
+    // real actions this turn or has no stacks left. Fall through to victory /
+    // turn-rotation logic at the end of this function.
   }
 
   // Process territory
@@ -2192,33 +2225,51 @@ function processPostMovePhases(
       }
     }
 
-    // If territory processing completed and the player is blocked with stacks
-    // (no placements anywhere, no movement/capture, but has material), surface
-    // forced elimination as the next phase instead of rotating turns.
-    const summary = computeGlobalLegalActionsSummary(
-      stateMachine.gameState,
-      stateMachine.gameState.currentPlayer
+    // Territory processing is complete for this player (either because there were
+    // no regions, all regions have been resolved, or the player explicitly
+    // skipped). Decide whether to enter forced_elimination or end the turn using
+    // the canonical FSM helper so TS and Python stay aligned.
+    const currentPlayer = stateMachine.gameState.currentPlayer;
+    const hadAnyActionThisTurn = computeHadAnyActionThisTurn(stateMachine.gameState);
+    const playerHasStacks = playerHasStacksOnBoard(stateMachine.gameState, currentPlayer);
+
+    const phaseAfterTerritory = onTerritoryProcessingComplete(
+      hadAnyActionThisTurn,
+      playerHasStacks
     );
-    if (
-      summary.hasTurnMaterial &&
-      summary.hasForcedEliminationAction &&
-      !summary.hasGlobalPlacementAction &&
-      !summary.hasPhaseLocalInteractiveMove
-    ) {
-      stateMachine.transitionTo('forced_elimination');
-      const forcedDecision = createForcedEliminationDecision(stateMachine.gameState);
-      if (forcedDecision && forcedDecision.options.length > 0) {
-        return {
-          pendingDecision: forcedDecision,
-        };
+
+    if (phaseAfterTerritory === 'forced_elimination') {
+      // Player had no actions in any phase this turn but still controls stacks.
+      // Only surface forced_elimination when it is the sole interactive option,
+      // matching the ANM/FE invariants used by Python.
+      const summary = computeGlobalLegalActionsSummary(stateMachine.gameState, currentPlayer);
+      if (
+        summary.hasTurnMaterial &&
+        summary.hasForcedEliminationAction &&
+        !summary.hasGlobalPlacementAction &&
+        !summary.hasPhaseLocalInteractiveMove
+      ) {
+        stateMachine.transitionTo('forced_elimination');
+        const forcedDecision = createForcedEliminationDecision(stateMachine.gameState);
+        if (forcedDecision && forcedDecision.options.length > 0) {
+          return {
+            pendingDecision: forcedDecision,
+          };
+        }
+        // If, unexpectedly, no concrete forced_elimination options could be
+        // constructed, remain in forced_elimination and let the caller drive
+        // the next move via getValidMoves()/processTurn. ANM guards below will
+        // still prevent leaking an unresolved ANM state.
+        return {};
       }
-      // Stay in forced_elimination; caller must supply explicit move.
-      // No decision options were constructed; stay in forced_elimination and
-      // let the caller supply a forced_elimination move.
-      return {};
+      // Fallback: if summary indicates that forced_elimination is not actually
+      // available, treat this as a normal turn-end and fall through to the
+      // generic rotation logic below. Canonical states should not hit this path.
     }
 
-    // If no forced elimination, advance explicitly to next player's ring_placement.
+    // phaseAfterTerritory === 'turn_end' – either the player took at least one
+    // real action this turn or they have no stacks left. Advance explicitly to
+    // the next player's ring_placement phase.
     const currentState = stateMachine.gameState;
     const players = currentState.players;
     const currentPlayerIndex = players.findIndex(
@@ -2685,4 +2736,53 @@ export function getValidMoves(state: GameState): Move[] {
  */
 export function hasValidMoves(state: GameState): boolean {
   return getValidMoves(state).length > 0;
+}
+
+/**
+ * Determine whether the active player has performed any "real" actions during
+ * the current turn, based on contiguous moveHistory entries for the current
+ * player. Forced no-op bookkeeping moves (no_*_action) are ignored; voluntary
+ * skips (skip_*) count as actions.
+ */
+function computeHadAnyActionThisTurn(state: GameState): boolean {
+  const currentPlayer = state.currentPlayer;
+  const history = state.moveHistory;
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const move = history[i];
+    if (move.player !== currentPlayer) {
+      break;
+    }
+    if (!isNoActionBookkeepingMove(move.type)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Check whether the given player currently controls at least one stack on the
+ * board (stackHeight > 0 and controllingPlayer === player).
+ */
+function playerHasStacksOnBoard(state: GameState, player: number): boolean {
+  for (const stack of state.board.stacks.values()) {
+    if (stack.controllingPlayer === player && stack.stackHeight > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Identify forced no-op bookkeeping move types that do not count as "real"
+ * actions for the purposes of forced_elimination gating.
+ */
+function isNoActionBookkeepingMove(type: MoveType): boolean {
+  return (
+    type === 'no_placement_action' ||
+    type === 'no_movement_action' ||
+    type === 'no_line_action' ||
+    type === 'no_territory_action'
+  );
 }

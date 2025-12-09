@@ -66,6 +66,8 @@ function getMoveTypeSymbol(move: Move): string {
       return '⇆'; // Swap symbol
     case 'skip_placement':
       return '−'; // Skip
+    case 'recovery_slide':
+      return '↻'; // Recovery action
     case 'process_line':
     case 'choose_line_reward':
       return '━'; // Line
@@ -110,6 +112,14 @@ function formatMoveCompact(move: Move, options: MoveNotationOptions): string {
       return `${typeSymbol} Swap`;
     case 'skip_placement':
       return `${typeSymbol} Pass`;
+    case 'recovery_slide': {
+      // Recovery: ↻ a3→b3 or ↻ a3→b3 (min) for Option 2
+      if (move.from) {
+        const optionSuffix = move.recoveryOption === 2 ? ' (min)' : '';
+        return `${typeSymbol}${formatPosition(move.from, options)}→${formatPosition(move.to, options)}${optionSuffix}`;
+      }
+      return `${typeSymbol}${formatPosition(move.to, options)}`;
+    }
     case 'process_line':
     case 'choose_line_reward':
       return `${typeSymbol} Line`;

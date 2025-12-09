@@ -26,10 +26,15 @@ export {
   type DisconnectedRegion,
   type CaptureContext,
   type EliminationTarget,
-  // Enums
+  // Enums / helpers
   type VictoryReason,
   type Direction,
   type LineRewardChoice,
+  // High-level phase completion helpers used by orchestrators / parity tooling
+  type PhaseAfterLineProcessing,
+  type PhaseAfterTerritoryProcessing,
+  onLineProcessingComplete,
+  onTerritoryProcessingComplete,
 } from './TurnStateMachine';
 
 // Adapter for bridging FSM with existing Move types

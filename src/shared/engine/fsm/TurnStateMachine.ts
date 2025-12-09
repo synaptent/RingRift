@@ -173,6 +173,14 @@ export type TurnEvent =
   | { readonly type: 'MOVE_STACK'; readonly from: Position; readonly to: Position }
   | { readonly type: 'NO_MOVEMENT_ACTION' }
 
+  // Recovery (RR-CANON-R110–R115)
+  | {
+      readonly type: 'RECOVERY_SLIDE';
+      readonly from: Position;
+      readonly to: Position;
+      readonly option?: 1 | 2;
+    }
+
   // Capture
   | { readonly type: 'CAPTURE'; readonly target: Position; readonly direction?: Direction }
   | { readonly type: 'CONTINUE_CHAIN'; readonly target: Position }
@@ -423,6 +431,22 @@ function handleMovement(
           awaitingReward: false,
         },
         [{ type: 'EXECUTE_CAPTURE', target: event.target, capturer: state.player }]
+      );
+    }
+
+    // Per RR-CANON-R110–R115: Recovery slide for temporarily eliminated players
+    // Recovery slides complete lines and transition to line_processing
+    case 'RECOVERY_SLIDE': {
+      // Recovery slides always lead to line_processing since they complete lines
+      return ok<LineProcessingState>(
+        {
+          phase: 'line_processing',
+          player: state.player,
+          detectedLines: [], // Will be populated by board analysis
+          currentLineIndex: 0,
+          awaitingReward: false,
+        },
+        [{ type: 'MOVE_STACK', from: event.from, to: event.to }]
       );
     }
 

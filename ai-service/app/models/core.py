@@ -297,6 +297,15 @@ class Move(BaseModel):
     disconnected_regions: Optional[Tuple[Territory, ...]] = Field(
         default=None, alias="disconnectedRegions"
     )
+    # Recovery-specific metadata
+    recovery_option: Optional[int] = Field(None, alias="recoveryOption")
+    collapse_positions: Optional[Tuple[Position, ...]] = Field(
+        default=None, alias="collapsePositions"
+    )
+    # Stack position keys from which to extract buried rings (for Option 1)
+    extraction_stacks: Optional[Tuple[str, ...]] = Field(
+        default=None, alias="extractionStacks"
+    )
     # Summary of rings eliminated by this action, grouped per player.
     eliminated_rings: Optional[Tuple[Dict[str, int], ...]] = Field(
         default=None, alias="eliminatedRings"
