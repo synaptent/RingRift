@@ -120,6 +120,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SSHWorkerStatus:
     """Status of a worker on a host via SSH."""
+
     host_name: str
     is_running: bool
     pid: Optional[int] = None
@@ -132,6 +133,7 @@ class SSHWorkerStatus:
 @dataclass
 class SSHClusterStatus:
     """Overall cluster status via SSH."""
+
     timestamp: datetime
     workers: List[SSHWorkerStatus] = field(default_factory=list)
     total_memory_gb: int = 0
@@ -182,10 +184,7 @@ class SSHClusterManager:
         self._hosts_config = load_remote_hosts()
 
         if hosts:
-            self._hosts = {
-                name: cfg for name, cfg in self._hosts_config.items()
-                if name in hosts
-            }
+            self._hosts = {name: cfg for name, cfg in self._hosts_config.items() if name in hosts}
         else:
             self._hosts = self._hosts_config
 
@@ -219,7 +218,7 @@ class SSHClusterManager:
             )
 
             if result.returncode == 0 and result.stdout.strip():
-                pids = result.stdout.strip().split('\n')
+                pids = result.stdout.strip().split("\n")
                 status.pid = int(pids[0])
                 status.is_running = True
 
@@ -244,10 +243,7 @@ class SSHClusterManager:
         status = SSHClusterStatus(timestamp=datetime.now())
 
         with ThreadPoolExecutor(max_workers=max(len(self._hosts), 1)) as pool:
-            futures = {
-                pool.submit(self.check_worker_status, name): name
-                for name in self._hosts
-            }
+            futures = {pool.submit(self.check_worker_status, name): name for name in self._hosts}
 
             for future in as_completed(futures):
                 worker_status = future.result()
@@ -340,10 +336,7 @@ class SSHClusterManager:
         started = 0
 
         with ThreadPoolExecutor(max_workers=max(len(self._hosts), 1)) as pool:
-            futures = {
-                pool.submit(self.start_worker, name, extra_args): name
-                for name in self._hosts
-            }
+            futures = {pool.submit(self.start_worker, name, extra_args): name for name in self._hosts}
 
             for future in as_completed(futures):
                 if future.result():
@@ -357,10 +350,7 @@ class SSHClusterManager:
         stopped = 0
 
         with ThreadPoolExecutor(max_workers=max(len(self._hosts), 1)) as pool:
-            futures = {
-                pool.submit(self.stop_worker, name): name
-                for name in self._hosts
-            }
+            futures = {pool.submit(self.stop_worker, name): name for name in self._hosts}
 
             for future in as_completed(futures):
                 if future.result():
@@ -441,12 +431,17 @@ class SSHClusterManager:
             worker_urls.append(host.http_worker_url)
 
         cmd = [
-            "python", "scripts/run_cmaes_optimization.py",
-            "--board", board_type,
-            "--generations", str(generations),
-            "--population-size", str(population_size),
+            "python",
+            "scripts/run_cmaes_optimization.py",
+            "--board",
+            board_type,
+            "--generations",
+            str(generations),
+            "--population-size",
+            str(population_size),
             "--distributed",
-            "--workers", ",".join(worker_urls),
+            "--workers",
+            ",".join(worker_urls),
         ]
 
         if extra_args:
@@ -486,11 +481,16 @@ class SSHClusterManager:
             worker_urls.append(host.http_worker_url)
 
         cmd = [
-            "python", "scripts/run_distributed_selfplay_soak.py",
-            "--board-type", board_type,
-            "--games", str(num_games),
-            "--difficulty", str(ai_difficulty),
-            "--workers", ",".join(worker_urls),
+            "python",
+            "scripts/run_distributed_selfplay_soak.py",
+            "--board-type",
+            board_type,
+            "--games",
+            str(num_games),
+            "--difficulty",
+            str(ai_difficulty),
+            "--workers",
+            ",".join(worker_urls),
         ]
 
         if extra_args:
@@ -529,29 +529,33 @@ class SSHClusterManager:
                     result = executor.run(cmd, timeout=300)
 
                     if result.returncode == 0:
-                        for line in result.stdout.split('\n'):
-                            if line.strip().startswith('{'):
+                        for line in result.stdout.split("\n"):
+                            if line.strip().startswith("{"):
                                 try:
                                     data = json.loads(line)
                                     host_results["benchmarks"].append(data)
                                 except json.JSONDecodeError:
                                     pass
                     else:
-                        host_results["benchmarks"].append({
-                            "ai_type": ai_type,
-                            "error": result.stderr,
-                        })
+                        host_results["benchmarks"].append(
+                            {
+                                "ai_type": ai_type,
+                                "error": result.stderr,
+                            }
+                        )
 
                 except Exception as e:
-                    host_results["benchmarks"].append({
-                        "ai_type": ai_type,
-                        "error": str(e),
-                    })
+                    host_results["benchmarks"].append(
+                        {
+                            "ai_type": ai_type,
+                            "error": str(e),
+                        }
+                    )
 
             results[host_name] = host_results
 
         if output_path:
-            with open(output_path, 'w') as f:
+            with open(output_path, "w") as f:
                 json.dump(results, f, indent=2)
             logger.info(f"Saved benchmark results to {output_path}")
 
@@ -573,11 +577,7 @@ def print_ssh_status(status: SSHClusterStatus) -> None:
         if worker.error:
             state = f"ERROR: {worker.error}"
 
-        print(
-            f"  {worker.host_name:20} {state:20} "
-            f"PID={worker.pid or '-':>6} "
-            f"Mem={worker.memory_mb:>6} MB"
-        )
+        print(f"  {worker.host_name:20} {state:20} " f"PID={worker.pid or '-':>6} " f"Mem={worker.memory_mb:>6} MB")
 
     print()
 
@@ -590,8 +590,8 @@ def print_ssh_status(status: SSHClusterStatus) -> None:
 def cmd_ssh_status(args) -> None:
     """Show cluster status via SSH."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -611,8 +611,8 @@ def cmd_ssh_status(args) -> None:
 def cmd_ssh_start(args) -> None:
     """Start workers via SSH."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -620,14 +620,14 @@ def cmd_ssh_start(args) -> None:
         print("No hosts configured.")
         return
 
-    manager.start_all_workers(getattr(args, 'extra_args', ''))
+    manager.start_all_workers(getattr(args, "extra_args", ""))
 
 
 def cmd_ssh_stop(args) -> None:
     """Stop workers via SSH."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -641,8 +641,8 @@ def cmd_ssh_stop(args) -> None:
 def cmd_ssh_restart(args) -> None:
     """Restart workers via SSH."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -652,14 +652,14 @@ def cmd_ssh_restart(args) -> None:
 
     manager.stop_all_workers()
     time.sleep(2)
-    manager.start_all_workers(getattr(args, 'extra_args', ''))
+    manager.start_all_workers(getattr(args, "extra_args", ""))
 
 
 def cmd_ssh_monitor(args) -> None:
     """Monitor cluster via SSH."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -669,15 +669,15 @@ def cmd_ssh_monitor(args) -> None:
 
     manager.monitor_cluster(
         interval=args.interval,
-        duration=getattr(args, 'duration', None),
+        duration=getattr(args, "duration", None),
     )
 
 
 def cmd_run_cmaes(args) -> None:
     """Run CMA-ES on cluster."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -689,7 +689,7 @@ def cmd_run_cmaes(args) -> None:
         board_type=args.board,
         generations=args.generations,
         population_size=args.population_size,
-        extra_args=getattr(args, 'extra_args', ''),
+        extra_args=getattr(args, "extra_args", ""),
     )
     sys.exit(result.returncode)
 
@@ -697,8 +697,8 @@ def cmd_run_cmaes(args) -> None:
 def cmd_run_soak(args) -> None:
     """Run self-play soak on cluster."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -710,7 +710,7 @@ def cmd_run_soak(args) -> None:
         board_type=args.board,
         num_games=args.games,
         ai_difficulty=args.difficulty,
-        extra_args=getattr(args, 'extra_args', ''),
+        extra_args=getattr(args, "extra_args", ""),
     )
     sys.exit(result.returncode)
 
@@ -718,8 +718,8 @@ def cmd_run_soak(args) -> None:
 def cmd_benchmark(args) -> None:
     """Benchmark cluster memory."""
     hosts = None
-    if hasattr(args, 'hosts') and args.hosts:
-        hosts = [h.strip() for h in args.hosts.split(',')]
+    if hasattr(args, "hosts") and args.hosts:
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     manager = SSHClusterManager(hosts=hosts)
 
@@ -727,14 +727,14 @@ def cmd_benchmark(args) -> None:
         print("No hosts configured.")
         return
 
-    ai_types = [t.strip() for t in args.ai.split(',')]
+    ai_types = [t.strip() for t in args.ai.split(",")]
     results = manager.benchmark_cluster_memory(
         board_type=args.board,
         ai_types=ai_types,
-        output_path=getattr(args, 'output', None),
+        output_path=getattr(args, "output", None),
     )
 
-    if not getattr(args, 'output', None):
+    if not getattr(args, "output", None):
         print(json.dumps(results, indent=2))
 
 
@@ -948,14 +948,8 @@ def main() -> None:
 
     # discover command
     p_discover = subparsers.add_parser("discover", help="Discover workers on network (mDNS)")
-    p_discover.add_argument(
-        "--timeout", type=float, default=10.0,
-        help="Discovery timeout in seconds (default: 10)"
-    )
-    p_discover.add_argument(
-        "--min-workers", type=int, default=0,
-        help="Minimum workers to wait for (default: 0)"
-    )
+    p_discover.add_argument("--timeout", type=float, default=10.0, help="Discovery timeout in seconds (default: 10)")
+    p_discover.add_argument("--min-workers", type=int, default=0, help="Minimum workers to wait for (default: 0)")
 
     # health command
     p_health = subparsers.add_parser("health", help="Check worker health (HTTP)")

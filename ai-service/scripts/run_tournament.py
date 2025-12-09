@@ -116,7 +116,8 @@ def parse_args():
         help="List available agents and exit",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Verbose output",
     )
@@ -150,10 +151,7 @@ def print_leaderboard(runner: TournamentRunner) -> None:
         draws = stats.get("draws", 0)
         win_rate = stats.get("win_rate", 0) * 100
 
-        print(
-            f"{rank:<6} {agent_id:<20} {rating:<10.1f} "
-            f"{wins}/{losses}/{draws:<8} {win_rate:<8.1f}%"
-        )
+        print(f"{rank:<6} {agent_id:<20} {rating:<10.1f} " f"{wins}/{losses}/{draws:<8} {win_rate:<8.1f}%")
 
     print("=" * 60)
 
@@ -187,9 +185,7 @@ def main():
 
     # Validate we have enough agents
     if len(agent_ids) < args.num_players:
-        logger.error(
-            f"Need at least {args.num_players} agents for {args.num_players}-player matches"
-        )
+        logger.error(f"Need at least {args.num_players} agents for {args.num_players}-player matches")
         return 1
 
     # Create scheduler

@@ -1472,10 +1472,12 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
     }
 
     case 'skip_placement': {
-      // Skip placement is a no-op on state, just phase transition
+      // Skip placement is a no-op on state, just phase transition.
+      // Update currentPlayer from move.player to handle turn boundary cases.
       return {
         nextState: {
           ...state,
+          currentPlayer: move.player,
           currentPhase: 'movement' as GamePhase,
         },
       };
@@ -1485,9 +1487,12 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // Explicit forced no-op in ring_placement when the player has no legal
       // placement anywhere (RR-CANON-R075). State is unchanged; advance to
       // movement so that the rest of the turn can proceed.
+      // Also update currentPlayer from move.player to handle turn boundary cases
+      // where the move's player may differ from state.currentPlayer.
       return {
         nextState: {
           ...state,
+          currentPlayer: move.player,
           currentPhase: 'movement' as GamePhase,
         },
       };
@@ -1520,7 +1525,13 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // Explicit forced no-op in movement phase when the player has no legal
       // movement or capture anywhere (RR-CANON-R075). State is unchanged;
       // post-move phase logic will advance to line_processing.
-      return { nextState: state };
+      // Update currentPlayer from move.player to handle turn boundary cases.
+      return {
+        nextState: {
+          ...state,
+          currentPlayer: move.player,
+        },
+      };
     }
 
     case 'recovery_slide': {
@@ -1608,9 +1619,11 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // Explicit no-op in line_processing phase when no lines exist for the
       // current player (RR-CANON-R075). State is unchanged; advance to
       // territory_processing so that the rest of the turn can proceed.
+      // Update currentPlayer from move.player to handle turn boundary cases.
       return {
         nextState: {
           ...state,
+          currentPlayer: move.player,
           currentPhase: 'territory_processing' as GamePhase,
         },
       };
@@ -1632,7 +1645,13 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // the post-move processing needs to check for forced elimination first.
       // If no forced elimination is needed, processPostMovePhases will handle
       // the turn rotation.
-      return { nextState: state };
+      // Update currentPlayer from move.player to handle turn boundary cases.
+      return {
+        nextState: {
+          ...state,
+          currentPlayer: move.player,
+        },
+      };
     }
 
     case 'skip_territory_processing': {
@@ -2244,11 +2263,12 @@ function processPostMovePhases(
           // Per RR-CANON-R075/R076, return a pending decision requiring an explicit
           // no_territory_action move. The core rules layer does NOT auto-generate moves.
           // EXCEPTION: If the original move was already a territory-related move
-          // (no_territory_action or process_territory_region), we don't need to return
-          // another pending decision - that move IS the territory phase action.
+          // (no_territory_action, process_territory_region, or eliminate_rings_from_stack),
+          // we don't need to return another pending decision - that move IS the territory phase action.
           const isTerritoryPhaseMove =
             originalMoveType === 'no_territory_action' ||
-            originalMoveType === 'process_territory_region';
+            originalMoveType === 'process_territory_region' ||
+            originalMoveType === 'eliminate_rings_from_stack';
           if (!isTerritoryPhaseMove) {
             return {
               pendingDecision: {
@@ -2310,8 +2330,23 @@ function processPostMovePhases(
     }
 
     // phaseAfterTerritory === 'turn_end' – either the player took at least one
-    // real action this turn or they have no stacks left. Advance explicitly to
-    // the next player's ring_placement phase.
+    // real action this turn or they have no stacks left.
+    //
+    // Before rotating to the next player, check for victory conditions.
+    // This is critical for LPS (last_player_standing) detection after
+    // eliminate_rings_from_stack removes the last stack for a player.
+    const territoryVictoryResult = toVictoryState(stateMachine.gameState);
+    if (territoryVictoryResult.isGameOver) {
+      stateMachine.updateGameState({
+        ...stateMachine.gameState,
+        gameStatus: 'completed',
+        winner: territoryVictoryResult.winner,
+        currentPhase: 'game_over',
+      });
+      return { victoryResult: territoryVictoryResult };
+    }
+
+    // Advance explicitly to the next player's ring_placement phase.
     const currentState = stateMachine.gameState;
     const players = currentState.players;
     const currentPlayerIndex = players.findIndex(

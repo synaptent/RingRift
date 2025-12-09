@@ -94,12 +94,10 @@ def build_axis_aligned_profile(
     non_zero_neg = [k for k, v in neg_profile.items() if abs(v) > 1e-9]
 
     assert non_zero_pos == [factor_key], (
-        f"Positive axis-aligned profile for {factor_key!r} has "
-        f"non-zero keys {non_zero_pos}"
+        f"Positive axis-aligned profile for {factor_key!r} has " f"non-zero keys {non_zero_pos}"
     )
     assert non_zero_neg == [factor_key], (
-        f"Negative axis-aligned profile for {factor_key!r} has "
-        f"non-zero keys {non_zero_neg}"
+        f"Negative axis-aligned profile for {factor_key!r} has " f"non-zero keys {non_zero_neg}"
     )
 
     return pos_profile, neg_profile, mag
@@ -188,41 +186,26 @@ def generate_axis_aligned_profiles(*, dry_run: bool = False) -> int:
         print(f"ERROR: {exc}")
         return 1
     except Exception as exc:  # pragma: no cover - defensive
-        msg = (
-            "ERROR: Unexpected failure during axis-aligned generation: "
-            f"{exc}"
-        )
+        msg = "ERROR: Unexpected failure during axis-aligned generation: " f"{exc}"
         print(msg)
         return 1
 
     if dry_run:
-        print(
-            f"[DRY-RUN] Would generate {total_written} axis-aligned profiles "
-            f"(pos/neg) in {OUTPUT_DIR}"
-        )
+        print(f"[DRY-RUN] Would generate {total_written} axis-aligned profiles " f"(pos/neg) in {OUTPUT_DIR}")
     else:
-        print(
-            f"Generated {total_written} axis-aligned profiles (pos/neg) "
-            f"in {OUTPUT_DIR}"
-        )
+        print(f"Generated {total_written} axis-aligned profiles (pos/neg) " f"in {OUTPUT_DIR}")
 
     return 0
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Generate axis-aligned HeuristicAI weight profiles for "
-            "diagnostics."
-        )
+        description=("Generate axis-aligned HeuristicAI weight profiles for " "diagnostics.")
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help=(
-            "Show what would be written without touching the filesystem; "
-            "profiles are printed to stdout."
-        ),
+        help=("Show what would be written without touching the filesystem; " "profiles are printed to stdout."),
     )
     return parser.parse_args(argv)
 

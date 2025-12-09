@@ -202,6 +202,7 @@ function validateScenario(data: unknown): ScenarioValidationResult {
   // selfPlayMeta.moves array so the sandbox host can reconstruct full history
   // snapshots by replaying the canonical move sequence from an inferred
   // initial state.
+  /* eslint-disable @typescript-eslint/no-explicit-any -- parsing untyped JSON fixtures */
   if (obj.kind === 'ringrift_sandbox_fixture_v1') {
     const fixture = obj as any;
     const fixtureState = fixture.state as Record<string, unknown> | undefined;
@@ -301,13 +302,14 @@ function validateScenario(data: unknown): ScenarioValidationResult {
         dbPath: 'sandbox_fixture',
         gameId: baseId,
         totalMoves: fixtureMoves.length,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         moves: fixtureMoves as any[],
       },
     };
 
     return { valid: true, errors: [], scenario };
   }
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Required fields
   if (!obj.id || typeof obj.id !== 'string') {

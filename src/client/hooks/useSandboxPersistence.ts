@@ -101,11 +101,9 @@ export function useSandboxPersistence(options: SandboxPersistenceOptions): Sandb
 
   // Clone initial game state utility - Safari-safe deep clone
   const cloneInitialGameState = useCallback((state: GameState): GameState => {
-    const globalClone = (globalThis as any).structuredClone as
-      | ((value: unknown) => unknown)
-      | undefined;
-    if (typeof globalClone === 'function') {
-      return globalClone(state) as GameState;
+    // structuredClone is available in modern browsers but may not be in older Safari
+    if (typeof structuredClone === 'function') {
+      return structuredClone(state) as GameState;
     }
     return JSON.parse(JSON.stringify(state)) as GameState;
   }, []);

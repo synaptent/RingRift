@@ -10,6 +10,7 @@ Usage:
     python scripts/training_preflight_check.py
 """
 
+import json
 import os
 import sys
 import tempfile
@@ -23,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 @dataclass
 class CheckResult:
     """Result of a single preflight check."""
+
     name: str
     passed: bool
     message: str = ""
@@ -33,6 +35,7 @@ class CheckResult:
 @dataclass
 class CheckCategory:
     """Category of related checks."""
+
     name: str
     checks: List[CheckResult] = field(default_factory=list)
 
@@ -84,58 +87,81 @@ class PreflightChecker:
         py_version = sys.version_info
         py_str = f"{py_version.major}.{py_version.minor}.{py_version.micro}"
         if py_version >= (3, 10):
-            self.add_check(cat, CheckResult(
-                name="Python version",
-                passed=True,
-                message=py_str,
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Python version",
+                    passed=True,
+                    message=py_str,
+                ),
+            )
         else:
-            self.add_check(cat, CheckResult(
-                name="Python version",
-                passed=False,
-                message=py_str,
-                error=f"Python 3.10+ required, got {py_str}",
-                suggestion="Upgrade to Python 3.10 or later",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Python version",
+                    passed=False,
+                    message=py_str,
+                    error=f"Python 3.10+ required, got {py_str}",
+                    suggestion="Upgrade to Python 3.10 or later",
+                ),
+            )
 
         # PyTorch
         try:
             import torch
-            self.add_check(cat, CheckResult(
-                name="PyTorch version",
-                passed=True,
-                message=torch.__version__,
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="PyTorch version",
+                    passed=True,
+                    message=torch.__version__,
+                ),
+            )
         except ImportError as e:
-            self.add_check(cat, CheckResult(
-                name="PyTorch version",
-                passed=False,
-                error=str(e),
-                suggestion="Install PyTorch: pip install torch",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="PyTorch version",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Install PyTorch: pip install torch",
+                ),
+            )
 
         # CUDA availability (optional)
         try:
             import torch
+
             if torch.cuda.is_available():
                 device_name = torch.cuda.get_device_name(0)
-                self.add_check(cat, CheckResult(
-                    name="CUDA available",
-                    passed=True,
-                    message=f"Yes ({device_name})",
-                ))
+                self.add_check(
+                    cat,
+                    CheckResult(
+                        name="CUDA available",
+                        passed=True,
+                        message=f"Yes ({device_name})",
+                    ),
+                )
             else:
-                self.add_check(cat, CheckResult(
+                self.add_check(
+                    cat,
+                    CheckResult(
+                        name="CUDA available",
+                        passed=True,
+                        message="No (CPU training only)",
+                    ),
+                )
+        except Exception as e:
+            self.add_check(
+                cat,
+                CheckResult(
                     name="CUDA available",
                     passed=True,
-                    message="No (CPU training only)",
-                ))
-        except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="CUDA available",
-                passed=True,
-                message=f"Check failed: {e}",
-            ))
+                    message=f"Check failed: {e}",
+                ),
+            )
 
         # Required packages
         required_packages = ["torch", "numpy", "psutil"]
@@ -161,20 +187,25 @@ class PreflightChecker:
             if any("optional" in m for m in missing):
                 optional_missing = [m for m in missing if "optional" in m]
                 msg = f"OK (missing optional: {', '.join(optional_missing)})"
-            self.add_check(cat, CheckResult(
-                name="Required packages",
-                passed=True,
-                message=msg,
-            ))
-        else:
-            self.add_check(cat, CheckResult(
-                name="Required packages",
-                passed=False,
-                error=f"Missing: {', '.join(missing)}",
-                suggestion="Install missing packages: pip install " + " ".join(
-                    m.split()[0] for m in missing if "optional" not in m
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Required packages",
+                    passed=True,
+                    message=msg,
                 ),
-            ))
+            )
+        else:
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Required packages",
+                    passed=False,
+                    error=f"Missing: {', '.join(missing)}",
+                    suggestion="Install missing packages: pip install "
+                    + " ".join(m.split()[0] for m in missing if "optional" not in m),
+                ),
+            )
 
     def _check_data_generation(self) -> None:
         """Check data generation components."""
@@ -183,19 +214,26 @@ class PreflightChecker:
         # Rules engine
         try:
             from app.rules.default_engine import DefaultRulesEngine
+
             DefaultRulesEngine()  # Verify instantiation works
-            self.add_check(cat, CheckResult(
-                name="Rules engine",
-                passed=True,
-                message="OK",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Rules engine",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Rules engine",
-                passed=False,
-                error=str(e),
-                suggestion="Ensure you're running from ai-service directory",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Rules engine",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Ensure you're running from ai-service directory",
+                ),
+            )
 
         # Self-play game (short test)
         try:
@@ -217,18 +255,24 @@ class PreflightChecker:
                 if done:
                     break
 
-            self.add_check(cat, CheckResult(
-                name="Self-play game",
-                passed=True,
-                message=f"OK ({moves_played} moves played)",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Self-play game",
+                    passed=True,
+                    message=f"OK ({moves_played} moves played)",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Self-play game",
-                passed=False,
-                error=str(e),
-                suggestion="Check game engine and RingRiftEnv implementation",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Self-play game",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check game engine and RingRiftEnv implementation",
+                ),
+            )
 
         # Generate data module
         try:
@@ -236,18 +280,25 @@ class PreflightChecker:
             from app.training.generate_data import (  # noqa: F401
                 create_initial_state,
             )
-            self.add_check(cat, CheckResult(
-                name="generate_data module",
-                passed=True,
-                message="OK",
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="generate_data module",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="generate_data module",
-                passed=False,
-                error=str(e),
-                suggestion="Check app/training/generate_data.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="generate_data module",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check app/training/generate_data.py",
+                ),
+            )
 
         # Canonical parity gate for Square-8 self-play data.
         #
@@ -264,17 +315,20 @@ class PreflightChecker:
             summary_path = root / "parity_summary.canonical_square8.json"
 
             if not summary_path.exists():
-                self.add_check(cat, CheckResult(
-                    name="Canonical square8 parity summary",
-                    passed=False,
-                    error="parity_summary.canonical_square8.json not found",
-                    suggestion=(
-                        "Run scripts/check_ts_python_replay_parity.py "
-                        "--db data/games/canonical_square8.db and keep the "
-                        "summary JSON alongside TRAINING_DATA_REGISTRY.md "
-                        "before training on canonical_square8.db."
+                self.add_check(
+                    cat,
+                    CheckResult(
+                        name="Canonical square8 parity summary",
+                        passed=False,
+                        error="parity_summary.canonical_square8.json not found",
+                        suggestion=(
+                            "Run scripts/check_ts_python_replay_parity.py "
+                            "--db data/games/canonical_square8.db and keep the "
+                            "summary JSON alongside TRAINING_DATA_REGISTRY.md "
+                            "before training on canonical_square8.db."
+                        ),
                     ),
-                ))
+                )
             else:
                 with summary_path.open("r", encoding="utf-8") as f:
                     summary = json.load(f)
@@ -284,31 +338,40 @@ class PreflightChecker:
                 total = int(summary.get("total_games_checked", 0))
 
                 if sem == 0 and struct == 0 and total > 0:
-                    self.add_check(cat, CheckResult(
-                        name="Canonical square8 parity summary",
-                        passed=True,
-                        message=f"OK ({total} games parity-checked, no semantic divergences)",
-                    ))
+                    self.add_check(
+                        cat,
+                        CheckResult(
+                            name="Canonical square8 parity summary",
+                            passed=True,
+                            message=f"OK ({total} games parity-checked, no semantic divergences)",
+                        ),
+                    )
                 else:
-                    self.add_check(cat, CheckResult(
-                        name="Canonical square8 parity summary",
-                        passed=False,
-                        error=(
-                            f"Parity summary reports semantic_divergences={sem}, "
-                            f"structural_issues={struct}, total_games_checked={total}"
+                    self.add_check(
+                        cat,
+                        CheckResult(
+                            name="Canonical square8 parity summary",
+                            passed=False,
+                            error=(
+                                f"Parity summary reports semantic_divergences={sem}, "
+                                f"structural_issues={struct}, total_games_checked={total}"
+                            ),
+                            suggestion=(
+                                "Investigate TS↔Python replay parity for "
+                                "canonical_square8.db and rerun the parity gate "
+                                "before training."
+                            ),
                         ),
-                        suggestion=(
-                            "Investigate TS↔Python replay parity for "
-                            "canonical_square8.db and rerun the parity gate "
-                            "before training."
-                        ),
-                    ))
+                    )
         except Exception as e:  # pragma: no cover - defensive
-            self.add_check(cat, CheckResult(
-                name="Canonical square8 parity summary",
-                passed=False,
-                error=f"Failed to load parity summary: {e}",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Canonical square8 parity summary",
+                    passed=False,
+                    error=f"Failed to load parity summary: {e}",
+                ),
+            )
 
     def _check_neural_networks(self) -> None:
         """Check neural network components."""
@@ -317,19 +380,26 @@ class PreflightChecker:
         # RingRiftCNN_v2 instantiation
         try:
             from app.ai.neural_net import RingRiftCNN_v2
+
             net = RingRiftCNN_v2(board_size=8)
-            self.add_check(cat, CheckResult(
-                name="RingRiftCNN_v2 instantiation",
-                passed=True,
-                message="OK",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="RingRiftCNN_v2 instantiation",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="RingRiftCNN_v2 instantiation",
-                passed=False,
-                error=str(e),
-                suggestion="Check app/ai/neural_net.py for RingRiftCNN_v2 class",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="RingRiftCNN_v2 instantiation",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check app/ai/neural_net.py for RingRiftCNN_v2 class",
+                ),
+            )
 
         # RingRiftCNN_v2 forward pass
         try:
@@ -356,18 +426,24 @@ class PreflightChecker:
             assert not torch.isnan(value).any(), "Value contains NaN"
             assert not torch.isnan(policy).any(), "Policy contains NaN"
 
-            self.add_check(cat, CheckResult(
-                name="RingRiftCNN_v2 forward pass",
-                passed=True,
-                message="OK",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="RingRiftCNN_v2 forward pass",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="RingRiftCNN_v2 forward pass",
-                passed=False,
-                error=str(e),
-                suggestion="Check neural network architecture",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="RingRiftCNN_v2 forward pass",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check neural network architecture",
+                ),
+            )
 
         # Weight initialization check
         try:
@@ -386,30 +462,42 @@ class PreflightChecker:
                     unreasonable_magnitude = True
 
             if has_nan:
-                self.add_check(cat, CheckResult(
+                self.add_check(
+                    cat,
+                    CheckResult(
+                        name="Weight initialization",
+                        passed=False,
+                        error="Weights contain NaN values",
+                        suggestion="Check weight initialization",
+                    ),
+                )
+            elif unreasonable_magnitude:
+                self.add_check(
+                    cat,
+                    CheckResult(
+                        name="Weight initialization",
+                        passed=True,
+                        message="OK (some large weights detected)",
+                    ),
+                )
+            else:
+                self.add_check(
+                    cat,
+                    CheckResult(
+                        name="Weight initialization",
+                        passed=True,
+                        message="OK",
+                    ),
+                )
+        except Exception as e:
+            self.add_check(
+                cat,
+                CheckResult(
                     name="Weight initialization",
                     passed=False,
-                    error="Weights contain NaN values",
-                    suggestion="Check weight initialization",
-                ))
-            elif unreasonable_magnitude:
-                self.add_check(cat, CheckResult(
-                    name="Weight initialization",
-                    passed=True,
-                    message="OK (some large weights detected)",
-                ))
-            else:
-                self.add_check(cat, CheckResult(
-                    name="Weight initialization",
-                    passed=True,
-                    message="OK",
-                ))
-        except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Weight initialization",
-                passed=False,
-                error=str(e),
-            ))
+                    error=str(e),
+                ),
+            )
 
     def _check_training_infrastructure(self) -> None:
         """Check training infrastructure components."""
@@ -418,19 +506,26 @@ class PreflightChecker:
         # EarlyStopping class
         try:
             from app.training.train import EarlyStopping
+
             EarlyStopping(patience=5)  # Verify instantiation works
-            self.add_check(cat, CheckResult(
-                name="EarlyStopping class",
-                passed=True,
-                message="OK",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="EarlyStopping class",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="EarlyStopping class",
-                passed=False,
-                error=str(e),
-                suggestion="Check app/training/train.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="EarlyStopping class",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check app/training/train.py",
+                ),
+            )
 
         # Checkpoint saving
         try:
@@ -438,34 +533,48 @@ class PreflightChecker:
                 save_checkpoint,
                 load_checkpoint,
             )
-            self.add_check(cat, CheckResult(
-                name="Checkpoint saving",
-                passed=True,
-                message="OK",
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Checkpoint saving",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Checkpoint saving",
-                passed=False,
-                error=str(e),
-                suggestion="Check save_checkpoint/load_checkpoint in train.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Checkpoint saving",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check save_checkpoint/load_checkpoint in train.py",
+                ),
+            )
 
         # LR schedulers
         try:
             from app.training.train import get_warmup_scheduler  # noqa: F401
-            self.add_check(cat, CheckResult(
-                name="LR schedulers",
-                passed=True,
-                message="OK",
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="LR schedulers",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="LR schedulers",
-                passed=False,
-                error=str(e),
-                suggestion="Check get_warmup_scheduler in train.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="LR schedulers",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check get_warmup_scheduler in train.py",
+                ),
+            )
 
         # Distributed utilities
         try:
@@ -476,18 +585,25 @@ class PreflightChecker:
                 get_distributed_sampler,
                 wrap_model_ddp,
             )
-            self.add_check(cat, CheckResult(
-                name="Distributed utilities",
-                passed=True,
-                message="OK",
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Distributed utilities",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Distributed utilities",
-                passed=False,
-                error=str(e),
-                suggestion="Check app/training/distributed.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Distributed utilities",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check app/training/distributed.py",
+                ),
+            )
 
     def _check_memory_management(self) -> None:
         """Check memory management components."""
@@ -496,42 +612,56 @@ class PreflightChecker:
         # MemoryConfig
         try:
             from app.utils.memory_config import MemoryConfig
+
             config = MemoryConfig()
             default_gb = config.max_memory_gb
-            self.add_check(cat, CheckResult(
-                name="MemoryConfig",
-                passed=True,
-                message=f"OK ({default_gb} GB default)",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="MemoryConfig",
+                    passed=True,
+                    message=f"OK ({default_gb} GB default)",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="MemoryConfig",
-                passed=False,
-                error=str(e),
-                suggestion="Check app/utils/memory_config.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="MemoryConfig",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check app/utils/memory_config.py",
+                ),
+            )
 
         # BoundedTranspositionTable
         try:
             from app.ai.bounded_transposition_table import (
                 BoundedTranspositionTable,
             )
+
             tt = BoundedTranspositionTable(max_entries=1000)
             tt.put("test_key", {"value": 42})
             retrieved = tt.get("test_key")
             assert retrieved is not None, "Failed to retrieve"
-            self.add_check(cat, CheckResult(
-                name="BoundedTranspositionTable",
-                passed=True,
-                message="OK",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="BoundedTranspositionTable",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="BoundedTranspositionTable",
-                passed=False,
-                error=str(e),
-                suggestion="Check app/ai/bounded_transposition_table.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="BoundedTranspositionTable",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check app/ai/bounded_transposition_table.py",
+                ),
+            )
 
     def _check_optimization_utilities(self) -> None:
         """Check optimization utilities."""
@@ -540,59 +670,83 @@ class PreflightChecker:
         # CMA-ES
         try:
             import cma  # noqa: F401
-            self.add_check(cat, CheckResult(
-                name="CMA-ES",
-                passed=True,
-                message="OK",
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="CMA-ES",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except ImportError:
-            self.add_check(cat, CheckResult(
-                name="CMA-ES",
-                passed=True,
-                message="Not installed (optional)",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="CMA-ES",
+                    passed=True,
+                    message="Not installed (optional)",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="CMA-ES",
-                passed=False,
-                error=str(e),
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="CMA-ES",
+                    passed=False,
+                    error=str(e),
+                ),
+            )
 
         # Hex augmentation
         try:
             from app.training.hex_augmentation import (  # noqa: F401
                 HexSymmetryTransform,
             )
-            self.add_check(cat, CheckResult(
-                name="Hex augmentation",
-                passed=True,
-                message="OK",
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Hex augmentation",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Hex augmentation",
-                passed=False,
-                error=str(e),
-                suggestion="Check app/training/hex_augmentation.py",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Hex augmentation",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check app/training/hex_augmentation.py",
+                ),
+            )
 
         # Parallel self-play utilities check (just imports)
         try:
             # Check that key components exist
             from app.ai.descent_ai import DescentAI  # noqa: F401
             from app.ai.heuristic_ai import HeuristicAI  # noqa: F401
-            self.add_check(cat, CheckResult(
-                name="Parallel self-play",
-                passed=True,
-                message="OK",
-            ))
+
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Parallel self-play",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Parallel self-play",
-                passed=False,
-                error=str(e),
-                suggestion="Check AI implementations in app/ai/",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Parallel self-play",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check AI implementations in app/ai/",
+                ),
+            )
 
     def _run_smoke_tests(self) -> None:
         """Run quick smoke tests."""
@@ -620,17 +774,23 @@ class PreflightChecker:
                         break
                 states.extend(game_states)
 
-            self.add_check(cat, CheckResult(
-                name="Generate data",
-                passed=True,
-                message=f"OK ({len(states)} states from 5 games)",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Generate data",
+                    passed=True,
+                    message=f"OK ({len(states)} states from 5 games)",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Generate data",
-                passed=False,
-                error=str(e),
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Generate data",
+                    passed=False,
+                    error=str(e),
+                ),
+            )
             return  # Can't continue without data
 
         # Save and load data
@@ -639,9 +799,7 @@ class PreflightChecker:
 
             # Create dummy training data
             num_samples = min(len(states), 10)
-            dummy_features = np.random.randn(num_samples, 40, 8, 8).astype(
-                np.float32
-            )
+            dummy_features = np.random.randn(num_samples, 40, 8, 8).astype(np.float32)
             dummy_globals = np.random.randn(num_samples, 10).astype(np.float32)
             dummy_values = np.random.randn(num_samples).astype(np.float32)
 
@@ -662,17 +820,23 @@ class PreflightChecker:
 
             os.unlink(temp_path)
 
-            self.add_check(cat, CheckResult(
-                name="Load data",
-                passed=True,
-                message="OK",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Load data",
+                    passed=True,
+                    message="OK",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Load data",
-                passed=False,
-                error=str(e),
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Load data",
+                    passed=False,
+                    error=str(e),
+                ),
+            )
 
         # Training step
         try:
@@ -706,24 +870,27 @@ class PreflightChecker:
 
             loss_val = loss.item()
 
-            if not (
-                torch.isfinite(torch.tensor(loss_val))
-                and not torch.isnan(torch.tensor(loss_val))
-            ):
+            if not (torch.isfinite(torch.tensor(loss_val)) and not torch.isnan(torch.tensor(loss_val))):
                 raise ValueError(f"Loss is not finite: {loss_val}")
 
-            self.add_check(cat, CheckResult(
-                name="Training step",
-                passed=True,
-                message=f"OK (loss={loss_val:.4f})",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Training step",
+                    passed=True,
+                    message=f"OK (loss={loss_val:.4f})",
+                ),
+            )
         except Exception as e:
-            self.add_check(cat, CheckResult(
-                name="Training step",
-                passed=False,
-                error=str(e),
-                suggestion="Check neural network training loop",
-            ))
+            self.add_check(
+                cat,
+                CheckResult(
+                    name="Training step",
+                    passed=False,
+                    error=str(e),
+                    suggestion="Check neural network training loop",
+                ),
+            )
 
     def print_report(self) -> None:
         """Print the preflight check report."""
@@ -758,10 +925,7 @@ class PreflightChecker:
         else:
             print("=== PREFLIGHT CHECK FAILED ===")
             failed = total_checks - total_passed
-            print(
-                f"{failed} of {total_checks} checks failed. "
-                "Please fix issues before training."
-            )
+            print(f"{failed} of {total_checks} checks failed. " "Please fix issues before training.")
 
 
 def main() -> int:

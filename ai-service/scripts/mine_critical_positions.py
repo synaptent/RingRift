@@ -30,8 +30,15 @@ from typing import Dict, List, Optional, Any, Iterator, Tuple
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models import (
-    AIConfig, BoardState, BoardType, GamePhase, GameState, GameStatus,
-    Move, Player, TimeControl,
+    AIConfig,
+    BoardState,
+    BoardType,
+    GamePhase,
+    GameState,
+    GameStatus,
+    Move,
+    Player,
+    TimeControl,
 )
 from app.ai.heuristic_ai import HeuristicAI
 from app.rules.default_engine import DefaultRulesEngine
@@ -41,6 +48,7 @@ from app.db import GameReplayDB
 @dataclass
 class CriticalPosition:
     """A critical position extracted from a game."""
+
     # Position identification
     game_id: str
     move_number: int
@@ -73,6 +81,7 @@ class CriticalPosition:
 @dataclass
 class GameTrajectory:
     """Full trajectory of a game with outcome."""
+
     game_id: str
     board_type: str
     winner: int
@@ -361,24 +370,26 @@ def extract_critical_positions(
 
         # Only include if critical
         if criticality_score > 0:
-            critical.append(CriticalPosition(
-                game_id=trajectory.game_id,
-                move_number=i,
-                board_type=trajectory.board_type,
-                state=state_dict,
-                move_played=move_dict,
-                player_to_move=player_to_move,
-                game_winner=trajectory.winner,
-                did_moving_player_win=(player_to_move == trajectory.winner),
-                moves_until_game_end=moves_until_end,
-                criticality_reason="|".join(criticality_reasons),
-                criticality_score=criticality_score,
-                player1_eliminated_rings=p1_elim,
-                player2_eliminated_rings=p2_elim,
-                victory_threshold=victory_threshold,
-                rings_to_victory_p1=rings_to_win_p1,
-                rings_to_victory_p2=rings_to_win_p2,
-            ))
+            critical.append(
+                CriticalPosition(
+                    game_id=trajectory.game_id,
+                    move_number=i,
+                    board_type=trajectory.board_type,
+                    state=state_dict,
+                    move_played=move_dict,
+                    player_to_move=player_to_move,
+                    game_winner=trajectory.winner,
+                    did_moving_player_win=(player_to_move == trajectory.winner),
+                    moves_until_game_end=moves_until_end,
+                    criticality_reason="|".join(criticality_reasons),
+                    criticality_score=criticality_score,
+                    player1_eliminated_rings=p1_elim,
+                    player2_eliminated_rings=p2_elim,
+                    victory_threshold=victory_threshold,
+                    rings_to_victory_p1=rings_to_win_p1,
+                    rings_to_victory_p2=rings_to_win_p2,
+                )
+            )
 
     return critical
 
@@ -421,9 +432,11 @@ def run_mining(
         if verbose and (i + 1) % 10 == 0:
             elapsed = time.time() - start_time
             eta = (elapsed / (i + 1)) * (num_games - i - 1)
-            print(f"  [{i+1:3d}/{num_games}] {trajectory.total_moves:3d} moves, "
-                  f"winner={trajectory.winner}, critical={len(critical) if trajectory.winner else 0}, "
-                  f"total={len(all_critical)} | ETA: {eta/60:.1f}m")
+            print(
+                f"  [{i+1:3d}/{num_games}] {trajectory.total_moves:3d} moves, "
+                f"winner={trajectory.winner}, critical={len(critical) if trajectory.winner else 0}, "
+                f"total={len(all_critical)} | ETA: {eta/60:.1f}m"
+            )
 
     elapsed = time.time() - start_time
     print(f"\nDone in {elapsed:.1f}s")
@@ -479,10 +492,12 @@ def run_mining_from_db(
 
             if verbose and games_processed % 10 == 0:
                 elapsed = time.time() - start_time
-                print(f"  [{games_processed:4d}] {trajectory.game_id}: "
-                      f"{trajectory.total_moves:3d} moves, winner={trajectory.winner}, "
-                      f"critical={len(critical)}, total={len(all_critical)} | "
-                      f"elapsed={elapsed:.1f}s")
+                print(
+                    f"  [{games_processed:4d}] {trajectory.game_id}: "
+                    f"{trajectory.total_moves:3d} moves, winner={trajectory.winner}, "
+                    f"critical={len(critical)}, total={len(all_critical)} | "
+                    f"elapsed={elapsed:.1f}s"
+                )
 
     elapsed = time.time() - start_time
     print(f"\nDone in {elapsed:.1f}s")
@@ -509,26 +524,31 @@ Examples:
   python scripts/mine_critical_positions.py --from-db data/games/selfplay.db --board hex
 """,
     )
-    parser.add_argument("--board", default="square8", choices=["square8", "square19", "hex"],
-                        help="Board type (used for both self-play and DB filtering)")
-    parser.add_argument("--num-games", type=int, default=100,
-                        help="Number of self-play games to run (ignored with --from-db)")
-    parser.add_argument("--max-moves", type=int, default=200,
-                        help="Maximum moves per game (ignored with --from-db)")
-    parser.add_argument("--seed", type=int, default=42,
-                        help="RNG seed for self-play (ignored with --from-db)")
-    parser.add_argument("--rings-from-victory", type=int, default=2,
-                        help="Include positions within N rings of victory threshold")
-    parser.add_argument("--last-n-moves", type=int, default=10,
-                        help="Include last N moves of each game")
-    parser.add_argument("--output", type=str, default="data/critical_positions/positions.jsonl",
-                        help="Output JSONL file path")
-    parser.add_argument("--quiet", action="store_true",
-                        help="Reduce output verbosity")
-    parser.add_argument("--from-db", type=str, default=None,
-                        help="Load games from a GameReplayDB SQLite database instead of self-play")
-    parser.add_argument("--db-limit", type=int, default=1000,
-                        help="Maximum number of games to load from database (with --from-db)")
+    parser.add_argument(
+        "--board",
+        default="square8",
+        choices=["square8", "square19", "hex"],
+        help="Board type (used for both self-play and DB filtering)",
+    )
+    parser.add_argument(
+        "--num-games", type=int, default=100, help="Number of self-play games to run (ignored with --from-db)"
+    )
+    parser.add_argument("--max-moves", type=int, default=200, help="Maximum moves per game (ignored with --from-db)")
+    parser.add_argument("--seed", type=int, default=42, help="RNG seed for self-play (ignored with --from-db)")
+    parser.add_argument(
+        "--rings-from-victory", type=int, default=2, help="Include positions within N rings of victory threshold"
+    )
+    parser.add_argument("--last-n-moves", type=int, default=10, help="Include last N moves of each game")
+    parser.add_argument(
+        "--output", type=str, default="data/critical_positions/positions.jsonl", help="Output JSONL file path"
+    )
+    parser.add_argument("--quiet", action="store_true", help="Reduce output verbosity")
+    parser.add_argument(
+        "--from-db", type=str, default=None, help="Load games from a GameReplayDB SQLite database instead of self-play"
+    )
+    parser.add_argument(
+        "--db-limit", type=int, default=1000, help="Maximum number of games to load from database (with --from-db)"
+    )
     args = parser.parse_args()
 
     if args.from_db:
@@ -568,8 +588,12 @@ Examples:
         lose_moves = [p for p in critical_positions if not p.did_moving_player_win]
 
         print(f"\nSummary:")
-        print(f"  Positions where moving player won:  {len(win_moves)} ({100*len(win_moves)/len(critical_positions):.1f}%)")
-        print(f"  Positions where moving player lost: {len(lose_moves)} ({100*len(lose_moves)/len(critical_positions):.1f}%)")
+        print(
+            f"  Positions where moving player won:  {len(win_moves)} ({100*len(win_moves)/len(critical_positions):.1f}%)"
+        )
+        print(
+            f"  Positions where moving player lost: {len(lose_moves)} ({100*len(lose_moves)/len(critical_positions):.1f}%)"
+        )
 
         # Criticality distribution
         by_reason = {}

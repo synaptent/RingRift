@@ -72,18 +72,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--run-dir",
         required=True,
-        help=(
-            "Path to a run directory produced by "
-            "run_tier_training_pipeline.py containing training_report.json."
-        ),
+        help=("Path to a run directory produced by " "run_tier_training_pipeline.py containing training_report.json."),
     )
     parser.add_argument(
         "--board",
         default="square8",
-        help=(
-            "Board identifier for future multi-board support "
-            "(default: square8)."
-        ),
+        help=("Board identifier for future multi-board support " "(default: square8)."),
     )
     parser.add_argument(
         "--num-players",
@@ -99,10 +93,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--demo",
         action="store_true",
-        help=(
-            "Use lightweight configs (few games, small perf sample) suitable "
-            "for CI and local smoke tests."
-        ),
+        help=("Use lightweight configs (few games, small perf sample) suitable " "for CI and local smoke tests."),
     )
     return parser.parse_args(argv)
 
@@ -300,10 +291,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     tier = args.tier.upper()
 
     if tier not in {"D2", "D4", "D6", "D8"}:
-        raise SystemExit(
-            f"Unsupported tier {args.tier!r}; expected one of "
-            "D2, D4, D6, D8."
-        )
+        raise SystemExit(f"Unsupported tier {args.tier!r}; expected one of " "D2, D4, D6, D8.")
 
     run_dir = os.path.abspath(args.run_dir)
     os.makedirs(run_dir, exist_ok=True)
@@ -314,8 +302,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if report_tier != tier:
         raise SystemExit(
-            "Tier mismatch between CLI and training_report.json: "
-            f"CLI tier={tier!r}, report tier={report_tier!r}"
+            "Tier mismatch between CLI and training_report.json: " f"CLI tier={tier!r}, report tier={report_tier!r}"
         )
     if report_candidate != args.candidate_id:
         raise SystemExit(
@@ -325,9 +312,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # Prefer the board/num_players recorded in the training report.
     board_from_report = training_report.get("board") or args.board
-    num_players_from_report = int(
-        training_report.get("num_players") or args.num_players
-    )
+    num_players_from_report = int(training_report.get("num_players") or args.num_players)
 
     if board_from_report != args.board:
         print(
@@ -397,9 +382,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     perf_block: Dict[str, Any] = {
         "run": perf_run,
         "result_path": perf_result_path,
-        "overall_pass": (
-            perf_eval.get("overall_pass") if perf_run and perf_eval else None
-        ),
+        "overall_pass": (perf_eval.get("overall_pass") if perf_run and perf_eval else None),
     }
 
     gate_report: Dict[str, Any] = {

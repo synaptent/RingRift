@@ -216,18 +216,16 @@ export function useGamePlayViewModels(
 
     // Augment with optional capture decision phase if applicable
     if (baseHudVM && !baseHudVM.decisionPhase && hasOptionalCapture) {
-      const actingPlayer = facade.gameState.players.find(
-        (p) => p.playerNumber === facade.gameState!.currentPlayer
-      );
+      const { currentPlayer, players } = facade.gameState;
+      const actingPlayer = players.find((p) => p.playerNumber === currentPlayer);
       const actingPlayerName =
-        actingPlayer?.username ||
-        `Player ${actingPlayer?.playerNumber ?? facade.gameState.currentPlayer}`;
+        actingPlayer?.username || `Player ${actingPlayer?.playerNumber ?? currentPlayer}`;
 
       return {
         ...baseHudVM,
         decisionPhase: {
           isActive: true,
-          actingPlayerNumber: facade.gameState.currentPlayer,
+          actingPlayerNumber: currentPlayer,
           actingPlayerName,
           isLocalActor: facade.isMyTurn,
           label: hasSkipCapture

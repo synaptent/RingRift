@@ -665,13 +665,21 @@ export function enumerateTerritoryEliminationMoves(
   const board = state.board;
 
   // In the dedicated territory_processing phase, territory elimination moves
-  // are only relevant when processing territory regions. If no regions exist,
-  // there's nothing to eliminate for territory purposes - forced elimination
-  // (7th phase) handles the case of blocked players with stacks.
+  // serve two purposes:
+  // 1. When regions exist: elimination moves are NOT surfaced here - the
+  //    region processing flow handles self-elimination costs via process_territory_region.
+  // 2. When NO regions exist but player has stacks: surfacing elimination for
+  //    blocked players who need to pay a cost to proceed (forced-elimination
+  //    semantics within territory phase). This avoids requiring an explicit
+  //    phase transition to forced_elimination when the player is already in
+  //    territory_processing and has no other actions available.
+  //
+  // NOTE: If no regions AND no stacks controlled by this player, return empty.
+  // The orchestrator will handle the turn transition appropriately.
   if (state.currentPhase === 'territory_processing') {
     const remainingRegions = getProcessableTerritoryRegions(board, { player });
-    // Only surface elimination when regions exist and need processing
-    if (remainingRegions.length === 0) {
+    // Only surface elimination when NO regions exist (blocked player scenario)
+    if (remainingRegions.length > 0) {
       return [];
     }
   }

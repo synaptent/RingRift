@@ -1,6 +1,7 @@
 """
 Benchmark script to compare AI engines
 """
+
 import sys
 import os
 import time
@@ -13,21 +14,37 @@ from app.rules.default_engine import DefaultRulesEngine
 from app.ai.mcts_ai import MCTSAI
 from app.ai.descent_ai import DescentAI
 
+
 def create_initial_state():
     return GameState(
         id="benchmark",
         boardType=BoardType.SQUARE8,
-        board=BoardState(
-            type=BoardType.SQUARE8,
-            size=8,
-            stacks={},
-            markers={},
-            collapsedSpaces={},
-            eliminatedRings={}
-        ),
+        board=BoardState(type=BoardType.SQUARE8, size=8, stacks={}, markers={}, collapsedSpaces={}, eliminatedRings={}),
         players=[
-            Player(id="p1", username="AI 1", type="ai", playerNumber=1, isReady=True, timeRemaining=600, ringsInHand=18, eliminatedRings=0, territorySpaces=0, aiDifficulty=5),
-            Player(id="p2", username="AI 2", type="ai", playerNumber=2, isReady=True, timeRemaining=600, ringsInHand=18, eliminatedRings=0, territorySpaces=0, aiDifficulty=5)
+            Player(
+                id="p1",
+                username="AI 1",
+                type="ai",
+                playerNumber=1,
+                isReady=True,
+                timeRemaining=600,
+                ringsInHand=18,
+                eliminatedRings=0,
+                territorySpaces=0,
+                aiDifficulty=5,
+            ),
+            Player(
+                id="p2",
+                username="AI 2",
+                type="ai",
+                playerNumber=2,
+                isReady=True,
+                timeRemaining=600,
+                ringsInHand=18,
+                eliminatedRings=0,
+                territorySpaces=0,
+                aiDifficulty=5,
+            ),
         ],
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=1,
@@ -41,8 +58,9 @@ def create_initial_state():
         totalRingsInPlay=36,
         totalRingsEliminated=0,
         victoryThreshold=19,
-        territoryVictoryThreshold=33
+        territoryVictoryThreshold=33,
     )
+
 
 def run_benchmark(num_games=10):
     print(f"Running benchmark: MCTS vs Descent ({num_games} games)", flush=True)
@@ -73,7 +91,6 @@ def run_benchmark(num_games=10):
             p1_name = "Descent"
             p2_name = "MCTS"
 
-
         state = create_initial_state()
         move_count = 0
 
@@ -88,7 +105,10 @@ def run_benchmark(num_games=10):
             duration = time.time() - start_time
 
             if not move:
-                print(f"  No move found for P{current_player} (Phase: {state.current_phase}, MustMove: {state.must_move_from_stack_key})", flush=True)
+                print(
+                    f"  No move found for P{current_player} (Phase: {state.current_phase}, MustMove: {state.must_move_from_stack_key})",
+                    flush=True,
+                )
                 # If no move found, current player loses
                 state.winner = 2 if current_player == 1 else 1
                 state.game_status = GameStatus.COMPLETED
@@ -105,11 +125,15 @@ def run_benchmark(num_games=10):
 
         # Correct win tracking based on player roles
         if winner == 1:
-            if p1_name == "MCTS": mcts_wins += 1
-            else: descent_wins += 1
+            if p1_name == "MCTS":
+                mcts_wins += 1
+            else:
+                descent_wins += 1
         elif winner == 2:
-            if p2_name == "MCTS": mcts_wins += 1
-            else: descent_wins += 1
+            if p2_name == "MCTS":
+                mcts_wins += 1
+            else:
+                descent_wins += 1
         else:
             draws += 1
 
@@ -118,5 +142,6 @@ def run_benchmark(num_games=10):
     print(f"Descent Wins: {descent_wins}")
     print(f"Draws: {draws}")
 
+
 if __name__ == "__main__":
-    run_benchmark(num_games=20) # Longer run for statistical significance
+    run_benchmark(num_games=20)  # Longer run for statistical significance

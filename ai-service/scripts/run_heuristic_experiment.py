@@ -261,10 +261,7 @@ def play_single_game(
     rules_engine = DefaultRulesEngine()
     move_count = 0
 
-    while (
-        game_state.game_status == GameStatus.ACTIVE
-        and move_count < max_moves
-    ):
+    while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player_num = game_state.current_player
         current_ai = ai1 if current_player_num == 1 else ai2
         current_ai.player_number = current_player_num
@@ -459,10 +456,7 @@ def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
 
     if mode == "baseline-vs-trained":
         if not args.trained_profiles_a:
-            raise SystemExit(
-                "--trained-profiles-a is required when "
-                "mode=baseline-vs-trained"
-            )
+            raise SystemExit("--trained-profiles-a is required when " "mode=baseline-vs-trained")
 
         # Load trained profiles under *_trained ids for A/B comparison.
         load_trained_profiles_if_available(
@@ -475,10 +469,7 @@ def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
         trained_id = f"{base_id_a}_trained"
 
         if trained_id not in HEURISTIC_WEIGHT_PROFILES:
-            raise SystemExit(
-                f"Trained profile {trained_id!r} not found after loading "
-                f"{args.trained_profiles_a!r}."
-            )
+            raise SystemExit(f"Trained profile {trained_id!r} not found after loading " f"{args.trained_profiles_a!r}.")
 
         for d in difficulties:
             for b in boards:
@@ -494,9 +485,7 @@ def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
 
     elif mode == "ab-trained":
         if not args.trained_profiles_b:
-            raise SystemExit(
-                "--trained-profiles-b is required when mode=ab-trained"
-            )
+            raise SystemExit("--trained-profiles-b is required when mode=ab-trained")
 
         # Load A under *_A, B under *_B
         load_trained_profiles_if_available(
@@ -517,10 +506,7 @@ def run_experiments(args: argparse.Namespace) -> List[MatchStats]:
 
         for pid in (profile_a, profile_b):
             if pid not in HEURISTIC_WEIGHT_PROFILES:
-                raise SystemExit(
-                    f"Trained profile {pid!r} not found after loading A/B "
-                    "trained files."
-                )
+                raise SystemExit(f"Trained profile {pid!r} not found after loading A/B " "trained files.")
 
         for d in difficulties:
             for b in boards:
@@ -564,9 +550,7 @@ def run_cmaes_train(args: argparse.Namespace) -> None:
     # Resolve baseline heuristic profile to raw weights.
     baseline_profile_id = args.cmaes_baseline_profile_id
     if baseline_profile_id not in HEURISTIC_WEIGHT_PROFILES:
-        raise SystemExit(
-            f"Unknown baseline profile id for CMA-ES: {baseline_profile_id!r}"
-        )
+        raise SystemExit(f"Unknown baseline profile id for CMA-ES: {baseline_profile_id!r}")
     baseline_weights = HEURISTIC_WEIGHT_PROFILES[baseline_profile_id]
 
     # Derive run identifiers and directories.
@@ -630,10 +614,7 @@ def run_cmaes_train(args: argparse.Namespace) -> None:
         enable_eval_progress=not args.cmaes_disable_eval_progress,
     )
 
-    print(
-        "\n=== Starting CMA-ES training via heuristic "
-        "experiment harness ==="
-    )
+    print("\n=== Starting CMA-ES training via heuristic " "experiment harness ===")
     print(f"Baseline profile id: {baseline_profile_id}")
     print(f"Run directory:       {run_dir}")
     print(f"Baseline weights:    {baseline_path}")
@@ -666,10 +647,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--trained-profiles-b",
-        help=(
-            "Path to trained profiles JSON file for experiment B (required "
-            "when mode=ab-trained)."
-        ),
+        help=("Path to trained profiles JSON file for experiment B (required " "when mode=ab-trained)."),
     )
     parser.add_argument(
         "--base-profile-id-a",
@@ -682,132 +660,89 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--base-profile-id-b",
         default="heuristic_v1_balanced",
-        help=(
-            "Baseline profile id for side B (only used in ab-trained mode; "
-            "default: heuristic_v1_balanced)."
-        ),
+        help=("Baseline profile id for side B (only used in ab-trained mode; " "default: heuristic_v1_balanced)."),
     )
     parser.add_argument(
         "--difficulties",
         default="5",
-        help=(
-            "Comma-separated list of heuristic difficulties to test "
-            "(default: '5')."
-        ),
+        help=("Comma-separated list of heuristic difficulties to test " "(default: '5')."),
     )
     parser.add_argument(
         "--boards",
         default="Square8",
-        help=(
-            "Comma-separated list of board types to test (choices: "
-            "Square8,Square19,Hex). Default: 'Square8'."
-        ),
+        help=("Comma-separated list of board types to test (choices: " "Square8,Square19,Hex). Default: 'Square8'."),
     )
     parser.add_argument(
         "--games-per-match",
         type=int,
         default=200,
-        help=(
-            "Number of games per (difficulty, board) pairing "
-            "(default: 200)."
-        ),
+        help=("Number of games per (difficulty, board) pairing " "(default: 200)."),
     )
     parser.add_argument(
         "--out-json",
-        help=(
-            "Optional path to write a JSON summary of all experiments. "
-            "Directories are created if needed."
-        ),
+        help=("Optional path to write a JSON summary of all experiments. " "Directories are created if needed."),
     )
     parser.add_argument(
         "--out-csv",
-        help=(
-            "Optional path to write a CSV summary of all experiments. "
-            "Directories are created if needed."
-        ),
+        help=("Optional path to write a CSV summary of all experiments. " "Directories are created if needed."),
     )
     # CMA-ES training options (used when mode=cmaes-train).
     parser.add_argument(
         "--cmaes-generations",
         type=int,
         default=50,
-        help=(
-            "Number of CMA-ES generations when mode=cmaes-train "
-            "(default: 50)."
-        ),
+        help=("Number of CMA-ES generations when mode=cmaes-train " "(default: 50)."),
     )
     parser.add_argument(
         "--cmaes-population-size",
         type=int,
         default=20,
-        help=(
-            "Population size per CMA-ES generation when mode=cmaes-train "
-            "(default: 20)."
-        ),
+        help=("Population size per CMA-ES generation when mode=cmaes-train " "(default: 20)."),
     )
     parser.add_argument(
         "--cmaes-games-per-eval",
         type=int,
         default=10,
-        help=(
-            "Games per candidate evaluation when mode=cmaes-train "
-            "(default: 10)."
-        ),
+        help=("Games per candidate evaluation when mode=cmaes-train " "(default: 10)."),
     )
     parser.add_argument(
         "--cmaes-sigma",
         type=float,
         default=0.5,
-        help=(
-            "Initial CMA-ES step size when mode=cmaes-train "
-            "(default: 0.5)."
-        ),
+        help=("Initial CMA-ES step size when mode=cmaes-train " "(default: 0.5)."),
     )
     parser.add_argument(
         "--cmaes-output-dir",
         default="logs/cmaes",
-        help=(
-            "Base directory for CMA-ES runs when mode=cmaes-train "
-            "(default: logs/cmaes)."
-        ),
+        help=("Base directory for CMA-ES runs when mode=cmaes-train " "(default: logs/cmaes)."),
     )
     parser.add_argument(
         "--cmaes-board",
         type=str,
         choices=["square8", "square19", "hex"],
         default="square8",
-        help=(
-            "Board type for CMA-ES self-play when mode=cmaes-train "
-            "(default: square8)."
-        ),
+        help=("Board type for CMA-ES self-play when mode=cmaes-train " "(default: square8)."),
     )
     parser.add_argument(
         "--cmaes-max-moves",
         type=int,
         default=200,
         help=(
-            "Maximum moves per CMA-ES self-play game before declaring a "
-            "draw when mode=cmaes-train (default: 200)."
+            "Maximum moves per CMA-ES self-play game before declaring a " "draw when mode=cmaes-train (default: 200)."
         ),
     )
     parser.add_argument(
         "--cmaes-seed",
         type=int,
         default=None,
-        help=(
-            "Random seed for CMA-ES runs when mode=cmaes-train "
-            "(optional)."
-        ),
+        help=("Random seed for CMA-ES runs when mode=cmaes-train " "(optional)."),
     )
     parser.add_argument(
         "--cmaes-opponent-mode",
         type=str,
         choices=["baseline-only", "baseline-plus-incumbent"],
         default="baseline-only",
-        help=(
-            "Opponent pool mode for CMA-ES fitness evaluation when "
-            "mode=cmaes-train (default: baseline-only)."
-        ),
+        help=("Opponent pool mode for CMA-ES fitness evaluation when " "mode=cmaes-train (default: baseline-only)."),
     )
     parser.add_argument(
         "--cmaes-baseline-profile-id",
@@ -823,10 +758,7 @@ def _parse_args() -> argparse.Namespace:
         "--cmaes-run-id",
         type=str,
         default=None,
-        help=(
-            "Logical run identifier used for CMA-ES training when "
-            "mode=cmaes-train (optional)."
-        ),
+        help=("Logical run identifier used for CMA-ES training when " "mode=cmaes-train (optional)."),
     )
     parser.add_argument(
         "--cmaes-progress-interval-sec",
@@ -871,10 +803,7 @@ def main() -> None:
             print(f"B wins:            {r.wins_b}")
             print(f"Draws:             {r.draws}")
             print(f"Non-draws:         {r.non_draws}")
-            print(
-                f"A winrate (no draws): {r.winrate_a_excl_draws:.3f} | "
-                f"B winrate: {r.winrate_b_excl_draws:.3f}"
-            )
+            print(f"A winrate (no draws): {r.winrate_a_excl_draws:.3f} | " f"B winrate: {r.winrate_b_excl_draws:.3f}")
             print("===================================")
 
         if args.out_json:

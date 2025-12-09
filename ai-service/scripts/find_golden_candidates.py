@@ -277,8 +277,7 @@ def main() -> None:
             all_candidates.extend(cands)
         except Exception as exc:  # pragma: no cover - defensive
             print(
-                f"[find_golden_candidates] ERROR while scanning {db_path}: "
-                f"{type(exc).__name__}: {exc}",
+                f"[find_golden_candidates] ERROR while scanning {db_path}: " f"{type(exc).__name__}: {exc}",
                 file=sys.stderr,
             )
 

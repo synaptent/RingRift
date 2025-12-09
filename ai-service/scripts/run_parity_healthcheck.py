@@ -95,15 +95,23 @@ def _classify_contract_vector_mismatch(failures: Sequence[str]) -> str:
     for msg in failures:
         if msg.startswith("Exception during apply_move:"):
             kind_flags["validation"] = True
-        elif msg.startswith("gameStatus:") or msg.startswith(
-            "currentPhase:",
-        ) or msg.startswith("currentPlayer:"):
+        elif (
+            msg.startswith("gameStatus:")
+            or msg.startswith(
+                "currentPhase:",
+            )
+            or msg.startswith("currentPlayer:")
+        ):
             kind_flags["status"] = True
         elif msg.startswith("sInvariantDelta:"):
             kind_flags["s_invariant"] = True
-        elif msg.startswith("stackCount:") or msg.startswith(
-            "markerCount:",
-        ) or msg.startswith("collapsedCount:"):
+        elif (
+            msg.startswith("stackCount:")
+            or msg.startswith(
+                "markerCount:",
+            )
+            or msg.startswith("collapsedCount:")
+        ):
             kind_flags["hash"] = True
 
     if kind_flags["validation"]:
@@ -221,10 +229,7 @@ def run_plateau_snapshots_suite() -> List[ParityCaseResult]:
                     ),
                 )
             else:
-                details = (
-                    "Python ComparableSnapshot diverged from TS plateau "
-                    f"fixture for case {case_id!r}."
-                )
+                details = "Python ComparableSnapshot diverged from TS plateau " f"fixture for case {case_id!r}."
                 results.append(
                     ParityCaseResult(
                         suite="plateau_snapshots",
@@ -239,10 +244,7 @@ def run_plateau_snapshots_suite() -> List[ParityCaseResult]:
                     suite="plateau_snapshots",
                     case_id=case_id,
                     mismatch_type="hash",
-                    details=(
-                        "AssertionError during plateau reconstruction: "
-                        f"{exc}"
-                    ),
+                    details=("AssertionError during plateau reconstruction: " f"{exc}"),
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive
@@ -275,12 +277,8 @@ def _summarise_parity_results(
         if r.suite not in suites:
             suites.append(r.suite)
         if r.mismatch_type:
-            mismatches_by_type[r.mismatch_type] = (
-                mismatches_by_type.get(r.mismatch_type, 0) + 1
-            )
-            mismatches_by_suite[r.suite] = (
-                mismatches_by_suite.get(r.suite, 0) + 1
-            )
+            mismatches_by_type[r.mismatch_type] = mismatches_by_type.get(r.mismatch_type, 0) + 1
+            mismatches_by_suite[r.suite] = mismatches_by_suite.get(r.suite, 0) + 1
 
     samples: List[Dict[str, Any]] = []
     for r in results:
@@ -305,10 +303,7 @@ def _summarise_parity_results(
         "mismatches_by_type": mismatches_by_type,
         "mismatches_by_suite": mismatches_by_suite,
         "samples": samples,
-        "parity_ids_by_suite": {
-            suite: PARITY_ID_BY_SUITE.get(suite, "")
-            for suite in sorted(set(suites))
-        },
+        "parity_ids_by_suite": {suite: PARITY_ID_BY_SUITE.get(suite, "") for suite in sorted(set(suites))},
     }
 
     # Leave a structured hook for future TS-side rules_parity_mismatches_total
@@ -362,34 +357,22 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--profile",
         default="parity-healthcheck",
-        help=(
-            "Logical profile name to embed in the JSON summary "
-            "(default: parity-healthcheck)."
-        ),
+        help=("Logical profile name to embed in the JSON summary " "(default: parity-healthcheck)."),
     )
     parser.add_argument(
         "--suite",
         action="append",
         choices=SUPPORTED_SUITES,
-        help=(
-            "Optional suite to run. May be provided multiple times. "
-            "Defaults to running all supported suites."
-        ),
+        help=("Optional suite to run. May be provided multiple times. " "Defaults to running all supported suites."),
     )
     parser.add_argument(
         "--summary-json",
-        help=(
-            "Optional path to write the parity summary JSON. Directories "
-            "are created if needed."
-        ),
+        help=("Optional path to write the parity summary JSON. Directories " "are created if needed."),
     )
     parser.add_argument(
         "--fail-on-mismatch",
         action="store_true",
-        help=(
-            "If set, exit with non-zero status when any mismatches are "
-            "observed. Intended for CI/nightly gates."
-        ),
+        help=("If set, exit with non-zero status when any mismatches are " "observed. Intended for CI/nightly gates."),
     )
     return parser.parse_args(argv)
 

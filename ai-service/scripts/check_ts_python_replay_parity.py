@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import uuid
 from dataclasses import dataclass, asdict, field
@@ -187,7 +188,8 @@ def import_json_to_temp_db(json_path: str) -> Tuple[Path, str]:
     cur = conn.cursor()
 
     # Create full schema (version 6) to match GameReplayDB and TS replay expectations
-    cur.executescript("""
+    cur.executescript(
+        """
         CREATE TABLE IF NOT EXISTS schema_metadata (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -290,15 +292,19 @@ def import_json_to_temp_db(json_path: str) -> Tuple[Path, str]:
             PRIMARY KEY (game_id, move_number),
             FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
         );
-    """)
+    """
+    )
 
     # Insert game record
     now = datetime.now().isoformat()
-    cur.execute("""
+    cur.execute(
+        """
         INSERT INTO games (game_id, board_type, num_players, created_at, game_status,
                           total_moves, total_turns, source, schema_version)
         VALUES (?, ?, ?, ?, 'completed', ?, ?, 'json_import', 6)
-    """, (game_id, board_type, num_players, now, len(moves), len(moves)))
+    """,
+        (game_id, board_type, num_players, now, len(moves), len(moves)),
+    )
 
     # Insert player records (GameRecord format has players, others generate defaults)
     if players:
@@ -307,24 +313,33 @@ def import_json_to_temp_db(json_path: str) -> Tuple[Path, str]:
             player_type = p.get("playerType", "ai")
             ai_type = p.get("aiType")
             ai_difficulty = p.get("aiDifficulty")
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO game_players (game_id, player_number, player_type, ai_type, ai_difficulty)
                 VALUES (?, ?, ?, ?, ?)
-            """, (game_id, player_num, player_type, ai_type, ai_difficulty))
+            """,
+                (game_id, player_num, player_type, ai_type, ai_difficulty),
+            )
     else:
         # Create default player entries for formats without explicit players
         for i in range(num_players):
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO game_players (game_id, player_number, player_type)
                 VALUES (?, ?, 'ai')
-            """, (game_id, i + 1))
+            """,
+                (game_id, i + 1),
+            )
 
     # Insert initial state only if we have one (GameRecord format has empty state_json)
     if state_json:
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO game_initial_state (game_id, initial_state_json, compressed)
             VALUES (?, ?, 0)
-        """, (game_id, json.dumps(state_json)))
+        """,
+            (game_id, json.dumps(state_json)),
+        )
 
     # Insert moves
     for i, move in enumerate(moves):
@@ -334,10 +349,13 @@ def import_json_to_temp_db(json_path: str) -> Tuple[Path, str]:
         phase = move.get("phase") or move.get("currentPhase") or "unknown"
         turn = move.get("turn") or move.get("turnNumber") or i
 
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO game_moves (game_id, move_number, turn_number, player, phase, move_type, move_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (game_id, i, turn, player, phase, move_type, json.dumps(move)))
+        """,
+            (game_id, i, turn, player, phase, move_type, json.dumps(move)),
+        )
 
     conn.commit()
     conn.close()
@@ -353,13 +371,9 @@ def summarize_python_state(db: GameReplayDB, game_id: str, move_index: int) -> S
     return StateSummary(
         move_index=move_index,
         current_player=state.current_player,
-        current_phase=state.current_phase.value
-        if hasattr(state.current_phase, "value")
-        else str(state.current_phase),
+        current_phase=state.current_phase.value if hasattr(state.current_phase, "value") else str(state.current_phase),
         game_status=_canonicalize_status(
-            state.game_status.value
-            if hasattr(state.game_status, "value")
-            else str(state.game_status)
+            state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
         ),
         state_hash=_compute_state_hash(state),
     )
@@ -394,13 +408,9 @@ def summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumma
     return StateSummary(
         move_index=0,
         current_player=state.current_player,
-        current_phase=state.current_phase.value
-        if hasattr(state.current_phase, "value")
-        else str(state.current_phase),
+        current_phase=state.current_phase.value if hasattr(state.current_phase, "value") else str(state.current_phase),
         game_status=_canonicalize_status(
-            state.game_status.value
-            if hasattr(state.game_status, "value")
-            else str(state.game_status)
+            state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
         ),
         state_hash=_compute_state_hash(state),
     )
@@ -465,9 +475,7 @@ def _get_python_state_for_ts_k(
         if state is None:
             metadata = db.get_game_metadata(game_id)
             if metadata is None:
-                raise RuntimeError(
-                    f"Python get_initial_state returned None and no game metadata for {game_id}"
-                )
+                raise RuntimeError(f"Python get_initial_state returned None and no game metadata for {game_id}")
             board_type_str = metadata.get("board_type", "square8")
             num_players = metadata.get("num_players", 2)
             board_type = _parse_board_type(board_type_str)
@@ -652,10 +660,7 @@ def dump_state_bundle(
 
     safe_game_id = game_id.replace("/", "_")
     diverged_label = str(result.diverged_at)
-    bundle_path = (
-        state_bundles_dir
-        / f"{Path(db_path).stem}__{safe_game_id}__k{diverged_label}.state_bundle.json"
-    )
+    bundle_path = state_bundles_dir / f"{Path(db_path).stem}__{safe_game_id}__k{diverged_label}.state_bundle.json"
 
     bundle = {
         "db_path": str(db_path),
@@ -785,9 +790,7 @@ def check_game_parity(db_path: Path, game_id: str) -> GameParityResult:
             py_summary = summarize_python_state(db, game_id, py_move_index)
 
             step_mismatches: List[str] = []
-            if (
-                py_summary.current_player != ts_summary.current_player
-            ):
+            if py_summary.current_player != ts_summary.current_player:
                 step_mismatches.append("current_player")
             if py_summary.current_phase != ts_summary.current_phase:
                 step_mismatches.append("current_phase")
@@ -821,11 +824,7 @@ def check_game_parity(db_path: Path, game_id: str) -> GameParityResult:
     # training; any structural difference (state_hash mismatch) is treated as
     # a full semantic divergence.
     is_end_of_game_only = False
-    if (
-        diverged_at is not None
-        and diverged_at == total_moves_py
-        and diverged_at == total_moves_ts
-    ):
+    if diverged_at is not None and diverged_at == total_moves_py and diverged_at == total_moves_ts:
         if py_summary_at_diverge is not None and ts_summary_at_diverge is not None:
             # Only treat as "end-of-game only" when the underlying board /
             # territory / elimination fingerprint is identical and the
@@ -869,10 +868,7 @@ def trace_game(db_path: Path, game_id: str, max_k: Optional[int] = None) -> None
     try:
         total_moves_ts, ts_summaries = run_ts_replay(db_path, game_id)
     except Exception as exc:
-        print(
-            "[trace] TS replay failed "
-            f"for db={db_path} game={game_id}: {exc}"
-        )
+        print("[trace] TS replay failed " f"for db={db_path} game={game_id}: {exc}")
         return
 
     print(
@@ -997,15 +993,12 @@ def trace_game(db_path: Path, game_id: str, max_k: Optional[int] = None) -> None
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Check TS vs Python replay parity for all self-play GameReplayDBs."
-    )
+    parser = argparse.ArgumentParser(description="Check TS vs Python replay parity for all self-play GameReplayDBs.")
     parser.add_argument(
         "--db",
         type=str,
         default=None,
-        help="Optional path to a single games.db to inspect. "
-        "When omitted, scans all known self-play locations.",
+        help="Optional path to a single games.db to inspect. " "When omitted, scans all known self-play locations.",
     )
     parser.add_argument(
         "--json",
@@ -1065,9 +1058,7 @@ def main() -> None:
         "--trace-max-k",
         type=int,
         default=0,
-        help=(
-            "Optional maximum TS k to include in --trace-game output (0 = all steps)."
-        ),
+        help=("Optional maximum TS k to include in --trace-game output (0 = all steps)."),
     )
     parser.add_argument(
         "--fail-on-divergence",
@@ -1094,6 +1085,7 @@ def main() -> None:
     json_game_id: Optional[str] = None
     if args.json:
         import shutil
+
         try:
             temp_db_path, json_game_id = import_json_to_temp_db(args.json)
             print(f"[json] Imported {args.json} -> temp DB at {temp_db_path}, game_id={json_game_id}")
@@ -1120,10 +1112,7 @@ def main() -> None:
                 trace_game(db_path, args.trace_game, max_k=max_k)
                 return
 
-        print(
-            f"[trace] game {args.trace_game} not found in any GameReplayDB "
-            f"(searched {len(db_paths)} databases)"
-        )
+        print(f"[trace] game {args.trace_game} not found in any GameReplayDB " f"(searched {len(db_paths)} databases)")
         return
 
     structural_issues: List[Dict[str, object]] = []
@@ -1241,19 +1230,13 @@ def main() -> None:
                         "python_summary": (
                             asdict(result.python_summary) if result.python_summary is not None else None
                         ),
-                        "ts_summary": (
-                            asdict(result.ts_summary) if result.ts_summary is not None else None
-                        ),
+                        "ts_summary": (asdict(result.ts_summary) if result.ts_summary is not None else None),
                         "canonical_move_index": canonical_move_index,
                         "canonical_move": canonical_move_dict,
                     }
 
                     safe_game_id = game_id.replace("/", "_")
-                    diverged_label = (
-                        "global"
-                        if result.diverged_at is None
-                        else str(result.diverged_at)
-                    )
+                    diverged_label = "global" if result.diverged_at is None else str(result.diverged_at)
                     fixture_path = fixtures_dir / f"{Path(db_path).stem}__{safe_game_id}__k{diverged_label}.json"
                     with open(fixture_path, "w", encoding="utf-8") as f:
                         json.dump(fixture, f, indent=2, sort_keys=True)
@@ -1293,6 +1276,7 @@ def main() -> None:
         # Cleanup temp DB if we created one
         if temp_db_path is not None:
             import shutil
+
             shutil.rmtree(temp_db_path.parent, ignore_errors=True)
         return
 
@@ -1320,6 +1304,7 @@ def main() -> None:
     # Cleanup temp DB if we created one
     if temp_db_path is not None:
         import shutil
+
         shutil.rmtree(temp_db_path.parent, ignore_errors=True)
 
     # CI gate: exit with non-zero status if semantic divergences were found

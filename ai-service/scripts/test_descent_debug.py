@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.models import AIConfig, BoardType
 from app.ai.descent_ai import DescentAI
 
+
 def main():
     config = AIConfig(
         difficulty=5,
@@ -19,54 +20,56 @@ def main():
         heuristic_profile_id=None,
     )
 
-    print('Creating DescentAI...')
+    print("Creating DescentAI...")
     ai = DescentAI(1, config)
-    print(f'Created. Type: {type(ai)}')
+    print(f"Created. Type: {type(ai)}")
     print(f'Has use_incremental_search: {hasattr(ai, "use_incremental_search")}')
-    print(f'use_incremental_search value: {ai.use_incremental_search}')
+    print(f"use_incremental_search value: {ai.use_incremental_search}")
     print(f'Has neural_net: {hasattr(ai, "neural_net")}')
-    print(f'neural_net value: {ai.neural_net}')
+    print(f"neural_net value: {ai.neural_net}")
 
     # Test player_number reassignment like in the evaluation script
     print()
-    print('Testing player_number reassignment...')
+    print("Testing player_number reassignment...")
     ai.player_number = 2
-    print(f'After reassignment, player_number: {ai.player_number}')
+    print(f"After reassignment, player_number: {ai.player_number}")
     print(f'Has use_incremental_search after reassignment: {hasattr(ai, "use_incremental_search")}')
 
     # Load checkpoint
-    ckpt = os.path.join(os.path.dirname(__file__), '..', 'checkpoints', 'checkpoint_final_epoch_5.pth')
+    ckpt = os.path.join(os.path.dirname(__file__), "..", "checkpoints", "checkpoint_final_epoch_5.pth")
     if os.path.exists(ckpt):
         import torch
-        print(f'\nLoading checkpoint: {ckpt}')
-        checkpoint = torch.load(ckpt, map_location='cpu', weights_only=False)
-        if ai.neural_net is not None and 'model_state_dict' in checkpoint:
-            ai.neural_net.model.load_state_dict(checkpoint['model_state_dict'])
+
+        print(f"\nLoading checkpoint: {ckpt}")
+        checkpoint = torch.load(ckpt, map_location="cpu", weights_only=False)
+        if ai.neural_net is not None and "model_state_dict" in checkpoint:
+            ai.neural_net.model.load_state_dict(checkpoint["model_state_dict"])
             ai.neural_net.model.eval()
-            print('Checkpoint loaded successfully')
+            print("Checkpoint loaded successfully")
         print(f'Has use_incremental_search after checkpoint load: {hasattr(ai, "use_incremental_search")}')
     else:
-        print(f'Checkpoint not found: {ckpt}')
+        print(f"Checkpoint not found: {ckpt}")
 
     # Now test select_move with a real game state
     print()
-    print('Testing select_move...')
+    print("Testing select_move...")
     from app.training.env import RingRiftEnv
 
     env = RingRiftEnv(board_type=BoardType.SQUARE8)
     game_state = env.reset()
 
-    print(f'Game state created. Current player: {game_state.current_player}')
+    print(f"Game state created. Current player: {game_state.current_player}")
     ai.player_number = game_state.current_player
 
     try:
         move = ai.select_move(game_state)
-        print(f'select_move succeeded! Move: {move}')
+        print(f"select_move succeeded! Move: {move}")
     except Exception as e:
-        print(f'select_move FAILED: {type(e).__name__}: {e}')
+        print(f"select_move FAILED: {type(e).__name__}: {e}")
         import traceback
+
         traceback.print_exc()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

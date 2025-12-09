@@ -50,6 +50,7 @@ from app.models import GamePhase, MoveType
 @dataclass
 class StateSummary:
     """Summary of game state at a specific move."""
+
     move_index: int
     current_player: int
     current_phase: str
@@ -60,6 +61,7 @@ class StateSummary:
 @dataclass
 class ParityVector:
     """A parity test vector capturing Python and TS states."""
+
     db_path: str
     game_id: str
     move_number: int
@@ -93,13 +95,9 @@ def summarize_python_state(db: GameReplayDB, game_id: str, move_index: int) -> S
     return StateSummary(
         move_index=move_index,
         current_player=state.current_player,
-        current_phase=state.current_phase.value
-        if hasattr(state.current_phase, "value")
-        else str(state.current_phase),
+        current_phase=state.current_phase.value if hasattr(state.current_phase, "value") else str(state.current_phase),
         game_status=_canonicalize_status(
-            state.game_status.value
-            if hasattr(state.game_status, "value")
-            else str(state.game_status)
+            state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
         ),
         state_hash=_compute_state_hash(state),
     )
@@ -116,10 +114,10 @@ def summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumma
         metadata = db.get_game_metadata(game_id)
         if metadata is None:
             raise RuntimeError(f"No initial state or metadata for {game_id}")
-        
+
         board_type_str = metadata.get("board_type", "square8")
         num_players = metadata.get("num_players", 2)
-        
+
         board_type_map = {
             "square8": BoardType.SQUARE8,
             "square19": BoardType.SQUARE19,
@@ -127,17 +125,13 @@ def summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumma
         }
         board_type = board_type_map.get(board_type_str.lower(), BoardType.SQUARE8)
         state = create_initial_state(board_type=board_type, num_players=num_players)
-    
+
     return StateSummary(
         move_index=0,
         current_player=state.current_player,
-        current_phase=state.current_phase.value
-        if hasattr(state.current_phase, "value")
-        else str(state.current_phase),
+        current_phase=state.current_phase.value if hasattr(state.current_phase, "value") else str(state.current_phase),
         game_status=_canonicalize_status(
-            state.game_status.value
-            if hasattr(state.game_status, "value")
-            else str(state.game_status)
+            state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
         ),
         state_hash=_compute_state_hash(state),
     )
@@ -145,7 +139,7 @@ def summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumma
 
 def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSummary]]:
     """Invoke the TS replay harness to get state summaries at each move.
-    
+
     Returns:
         (total_moves_ts, mapping from k -> StateSummary)
         where k=0 is initial state, k=1 is after move 0, etc.
@@ -161,10 +155,10 @@ def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSumm
         "--game",
         game_id,
     ]
-    
+
     env = os.environ.copy()
     env.setdefault("TS_NODE_PROJECT", "tsconfig.server.json")
-    
+
     proc = subprocess.Popen(
         cmd,
         cwd=str(root),
@@ -174,16 +168,15 @@ def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSumm
         text=True,
     )
     stdout, stderr = proc.communicate()
-    
+
     if proc.returncode != 0:
         raise RuntimeError(
-            f"TS replay harness failed for {db_path} / {game_id} with code {proc.returncode}:\n"
-            f"STDERR:\n{stderr}"
+            f"TS replay harness failed for {db_path} / {game_id} with code {proc.returncode}:\n" f"STDERR:\n{stderr}"
         )
-    
+
     total_ts_moves = 0
     summaries: Dict[int, StateSummary] = {}
-    
+
     for line in stdout.splitlines():
         line = line.strip()
         if not line:
@@ -192,7 +185,7 @@ def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSumm
             payload = json.loads(line)
         except json.JSONDecodeError:
             continue
-        
+
         kind = payload.get("kind")
         if kind == "ts-replay-initial":
             total_ts_moves = int(payload.get("totalRecordedMoves", 0))
@@ -214,7 +207,7 @@ def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSumm
                 game_status=_canonicalize_status(summary.get("gameStatus")),
                 state_hash=summary.get("stateHash"),
             )
-    
+
     return total_ts_moves, summaries
 
 
@@ -230,18 +223,18 @@ def sample_positions_random(total_moves: int, sample_rate: float, seed: Optional
     """Sample positions randomly at given rate."""
     if seed is not None:
         random.seed(seed)
-    
+
     positions = []
     for k in range(total_moves + 1):
         if random.random() < sample_rate:
             positions.append(k)
-    
+
     # Always include first and last
     if 0 not in positions:
         positions.insert(0, 0)
     if total_moves not in positions and total_moves > 0:
         positions.append(total_moves)
-    
+
     return sorted(set(positions))
 
 
@@ -252,14 +245,14 @@ def sample_positions_key(
 ) -> List[int]:
     """Sample positions at key game events (phase transitions, captures, etc.)."""
     positions: Set[int] = {0}  # Always include initial state
-    
+
     moves = db.get_moves(game_id)
-    
+
     # Track phase transitions
     prev_phase = None
     for i, move in enumerate(moves):
         move_type = move.type.value if hasattr(move.type, "value") else str(move.type)
-        
+
         # Include positions around captures
         if move_type in ("capture", "skip_capture", "chain_capture"):
             positions.add(i)
@@ -267,32 +260,32 @@ def sample_positions_key(
                 positions.add(i - 1)
             if i < len(moves) - 1:
                 positions.add(i + 1)
-        
+
         # Include positions around territory actions
         if move_type in ("claim_territory", "place_territory_marker", "territory_claim"):
             positions.add(i)
-        
+
         # Include positions around line formations
         if move_type in ("no_line_action", "select_ring_removal"):
             positions.add(i)
-        
+
         # Include forced elimination
         if move_type == "forced_elimination":
             positions.add(i)
             if i > 0:
                 positions.add(i - 1)
-    
+
     # Always include last position
     if total_moves > 0:
         positions.add(total_moves - 1)
-    
+
     return sorted(positions)
 
 
 def compare_summaries(py: StateSummary, ts: StateSummary) -> Tuple[bool, List[str]]:
     """Compare Python and TS summaries, return (is_match, mismatch_kinds)."""
     mismatches = []
-    
+
     if py.current_player != ts.current_player:
         mismatches.append("current_player")
     if py.current_phase != ts.current_phase:
@@ -301,7 +294,7 @@ def compare_summaries(py: StateSummary, ts: StateSummary) -> Tuple[bool, List[st
         mismatches.append("game_status")
     if py.state_hash != ts.state_hash:
         mismatches.append("state_hash")
-    
+
     return len(mismatches) == 0, mismatches
 
 
@@ -318,7 +311,7 @@ def generate_vectors(
     dry_run: bool = False,
 ) -> None:
     """Generate parity test vectors from a game database.
-    
+
     Args:
         db_path: Path to game replay database
         output_dir: Directory to write fixture JSONs
@@ -335,50 +328,50 @@ def generate_vectors(
     if not db_path_obj.exists():
         print(f"Error: Database not found: {db_path}")
         sys.exit(1)
-    
+
     output_path = Path(output_dir)
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
-    
+
     print(f"Generating parity vectors from {db_path_obj.name}")
     print(f"  Strategy: {strategy}")
     print(f"  Min moves: {min_moves}")
     print(f"  Max vectors: {max_vectors}")
     print(f"  Output: {output_dir}")
     print()
-    
+
     db = GameReplayDB(str(db_path_obj))
-    
+
     # Query games meeting criteria
     games = db.query_games(min_moves=min_moves, limit=limit_games or 100000)
     print(f"Games found: {len(games)}")
-    
+
     if not games:
         print("No games meet criteria.")
         return
-    
+
     vectors_generated = 0
     games_processed = 0
-    
+
     for game_meta in games:
         if vectors_generated >= max_vectors:
             break
-        
+
         game_id = game_meta["game_id"]
         total_moves = game_meta.get("total_moves", 0)
-        
+
         if total_moves < min_moves:
             continue
-        
+
         games_processed += 1
-        
+
         # Get TS replay data
         try:
             total_ts_moves, ts_summaries = run_ts_replay(db_path_obj, game_id)
         except Exception as e:
             print(f"  Skipping {game_id}: TS replay failed: {e}")
             continue
-        
+
         # Sample positions based on strategy
         if strategy == "uniform":
             positions = sample_positions_uniform(total_moves, interval)
@@ -389,14 +382,14 @@ def generate_vectors(
         else:
             print(f"Error: Unknown strategy '{strategy}'")
             sys.exit(1)
-        
+
         # Get moves for canonical move lookup
         moves = db.get_moves(game_id)
-        
+
         for k in positions:
             if vectors_generated >= max_vectors:
                 break
-            
+
             # Get Python summary
             try:
                 if k == 0:
@@ -407,20 +400,20 @@ def generate_vectors(
             except Exception as e:
                 print(f"    Skipping k={k}: Python state failed: {e}")
                 continue
-            
+
             # Get TS summary
             ts_summary = ts_summaries.get(k)
             if ts_summary is None:
                 print(f"    Skipping k={k}: No TS summary")
                 continue
-            
+
             # Compare
             is_match, mismatches = compare_summaries(py_summary, ts_summary)
-            
+
             # Skip matching vectors unless requested
             if is_match and not include_matching:
                 continue
-            
+
             # Get canonical move if available
             canonical_move = None
             if k > 0 and k - 1 < len(moves):
@@ -429,7 +422,7 @@ def generate_vectors(
                     canonical_move = json.loads(move_obj.model_dump_json(by_alias=True))
                 except Exception:
                     pass
-            
+
             # Build fixture
             db_name = db_path_obj.stem
             fixture = {
@@ -444,24 +437,24 @@ def generate_vectors(
                 "total_moves_python": total_moves,
                 "total_moves_ts": total_ts_moves,
             }
-            
+
             # Generate filename
             safe_game_id = game_id.replace("/", "_")
             fixture_name = f"{db_name}__{safe_game_id}__k{k}.json"
             fixture_path = output_path / fixture_name
-            
+
             if dry_run:
                 status = "MATCH" if is_match else f"MISMATCH({','.join(mismatches)})"
                 print(f"  Would write: {fixture_name} [{status}]")
             else:
                 with open(fixture_path, "w", encoding="utf-8") as f:
                     json.dump(fixture, f, indent=2, sort_keys=True)
-                
+
                 status = "MATCH" if is_match else f"MISMATCH({','.join(mismatches)})"
                 print(f"  Wrote: {fixture_name} [{status}]")
-            
+
             vectors_generated += 1
-    
+
     print()
     print(f"Summary:")
     print(f"  Games processed: {games_processed}")
@@ -491,7 +484,7 @@ Examples:
   python scripts/generate_parity_vectors.py --db data/games/canonical_square8.db --dry-run
 """,
     )
-    
+
     parser.add_argument(
         "--db",
         type=str,
@@ -551,9 +544,9 @@ Examples:
         action="store_true",
         help="Show what would be generated without writing files",
     )
-    
+
     args = parser.parse_args()
-    
+
     generate_vectors(
         db_path=args.db,
         output_dir=args.output,

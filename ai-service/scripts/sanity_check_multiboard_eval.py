@@ -109,26 +109,21 @@ def _run_profile(
             elapsed = time.perf_counter() - start
             per_board_fitness[board] = float(fitness)
             print(
-                f"[{label}]   -> {board.name} fitness={fitness:.3f} "
-                f"(elapsed={elapsed:.1f}s)",
+                f"[{label}]   -> {board.name} fitness={fitness:.3f} " f"(elapsed={elapsed:.1f}s)",
                 flush=True,
             )
 
         total_elapsed = time.perf_counter() - start_all
-        aggregate = float(
-            sum(per_board_fitness.values()) / float(len(per_board_fitness))
-        )
+        aggregate = float(sum(per_board_fitness.values()) / float(len(per_board_fitness)))
         print(
-            f"[{label}] aggregate over {len(boards)} boards = {aggregate:.3f} "
-            f"(total elapsed={total_elapsed:.1f}s)",
+            f"[{label}] aggregate over {len(boards)} boards = {aggregate:.3f} " f"(total elapsed={total_elapsed:.1f}s)",
             flush=True,
         )
         return aggregate, per_board_fitness
 
     # Single call over all boards using the shared helper.
     print(
-        f"[{label}] Evaluating over {len(boards)} boards via "
-        "evaluate_fitness_over_boards(...)",
+        f"[{label}] Evaluating over {len(boards)} boards via " "evaluate_fitness_over_boards(...)",
         flush=True,
     )
     start = time.perf_counter()
@@ -150,8 +145,7 @@ def _run_profile(
     )
     elapsed = time.perf_counter() - start
     print(
-        f"[{label}] aggregate={aggregate:.3f} over {len(boards)} boards "
-        f"(elapsed={elapsed:.1f}s)",
+        f"[{label}] aggregate={aggregate:.3f} over {len(boards)} boards " f"(elapsed={elapsed:.1f}s)",
         flush=True,
     )
     return aggregate, per_board_map
@@ -159,17 +153,14 @@ def _run_profile(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Sanity check multi-board, multi-start heuristic evaluation."
-        ),
+        description=("Sanity check multi-board, multi-start heuristic evaluation."),
     )
     parser.add_argument(
         "--games-per-eval",
         type=int,
         default=8,
         help=(
-            "Number of games per board for each evaluation "
-            "(default: 8). Smaller values run faster but are noisier."
+            "Number of games per board for each evaluation " "(default: 8). Smaller values run faster but are noisier."
         ),
     )
     parser.add_argument(
@@ -182,10 +173,7 @@ def main() -> None:
         "--max-moves",
         type=int,
         default=None,
-        help=(
-            "Override max_moves for evaluation "
-            "(default comes from DEFAULT_TRAINING_EVAL_CONFIG)."
-        ),
+        help=("Override max_moves for evaluation " "(default comes from DEFAULT_TRAINING_EVAL_CONFIG)."),
     )
     parser.add_argument(
         "--boards",
@@ -202,10 +190,7 @@ def main() -> None:
         type=str,
         choices=["initial-only", "multi-start"],
         default=None,
-        help=(
-            "Override eval_mode for evaluation. Defaults to the value in "
-            "DEFAULT_TRAINING_EVAL_CONFIG."
-        ),
+        help=("Override eval_mode for evaluation. Defaults to the value in " "DEFAULT_TRAINING_EVAL_CONFIG."),
     )
     parser.add_argument(
         "--per-board",
@@ -218,10 +203,7 @@ def main() -> None:
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help=(
-            "Pass verbose=True into the evaluation harness to print W/D/L "
-            "and avg_moves diagnostics per board."
-        ),
+        help=("Pass verbose=True into the evaluation harness to print W/D/L " "and avg_moves diagnostics per board."),
     )
     args = parser.parse_args()
 
@@ -249,20 +231,14 @@ def main() -> None:
             if not name:
                 continue
             if name not in name_to_board:
-                raise SystemExit(
-                    f"Unknown board name {raw!r} in --boards "
-                    "(expected square8,square19,hex)"
-                )
+                raise SystemExit(f"Unknown board name {raw!r} in --boards " "(expected square8,square19,hex)")
             requested.append(name_to_board[name])
         if not requested:
             raise SystemExit("No valid boards selected via --boards")
         # Preserve order from default config but filter to requested
         boards = [b for b in boards if b in requested]
         if not boards:
-            raise SystemExit(
-                "No overlap between --boards selection and "
-                "DEFAULT_TRAINING_EVAL_CONFIG boards"
-            )
+            raise SystemExit("No overlap between --boards selection and " "DEFAULT_TRAINING_EVAL_CONFIG boards")
 
     eval_mode = args.eval_mode or eval_cfg["eval_mode"]
     if args.max_moves is not None:

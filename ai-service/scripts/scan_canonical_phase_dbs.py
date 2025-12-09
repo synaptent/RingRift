@@ -91,9 +91,7 @@ def scan_databases(
                     os.remove(db_str)
                 except OSError as e:
                     # Surface the failure but continue scanning others.
-                    report.setdefault("delete_errors", []).append(
-                        {"path": db_str, "error": str(e)}
-                    )
+                    report.setdefault("delete_errors", []).append({"path": db_str, "error": str(e)})
 
     report["bad_database_count"] = len(report["bad_databases"])
     report["ok_database_count"] = len(report["ok_databases"])
@@ -203,4 +201,3 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

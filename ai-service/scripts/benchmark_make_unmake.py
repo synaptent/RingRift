@@ -43,6 +43,7 @@ from app.models import (  # noqa: E402
 @dataclass
 class BenchmarkResult:
     """Results from a single benchmark run."""
+
     mode: str
     depth: int
     avg_time: float
@@ -356,8 +357,7 @@ def validate_correctness(
         elif legacy_move is None or incremental_move is None:
             messages.append(f"  {name}: MISMATCH - One returned None")
             all_passed = False
-        elif (legacy_move.to.to_key() == incremental_move.to.to_key() and
-              legacy_move.type == incremental_move.type):
+        elif legacy_move.to.to_key() == incremental_move.to.to_key() and legacy_move.type == incremental_move.type:
             leg_key = legacy_move.to.to_key()
             leg_type = legacy_move.type
             msg = f"  {name}: Moves match (to={leg_key}, type={leg_type})"
@@ -400,10 +400,7 @@ def run_make_unmake_roundtrip_test() -> Tuple[bool, List[str]]:
     original_hash = mutable.zobrist_hash
     original_stacks = set(mutable.stacks.keys())
     original_markers = set(mutable.markers.keys())
-    original_player_rings = {
-        pn: ps.rings_in_hand
-        for pn, ps in mutable.players.items()
-    }
+    original_player_rings = {pn: ps.rings_in_hand for pn, ps in mutable.players.items()}
 
     # Get valid moves
     valid_moves = GameEngine.get_valid_moves(state, state.current_player)
@@ -439,10 +436,7 @@ def run_make_unmake_roundtrip_test() -> Tuple[bool, List[str]]:
             messages.append(msg)
             passed = False
 
-        current_player_rings = {
-            pn: ps.rings_in_hand
-            for pn, ps in mutable.players.items()
-        }
+        current_player_rings = {pn: ps.rings_in_hand for pn, ps in mutable.players.items()}
         if current_player_rings != original_player_rings:
             msg = f"  FAIL: Player rings not restored after {move.type}"
             messages.append(msg)
@@ -498,11 +492,7 @@ def main():
         # Benchmark legacy mode
         print("  Running legacy mode...", end="", flush=True)
         try:
-            legacy = benchmark_search(
-                use_incremental=False,
-                depth=depth,
-                num_runs=num_runs
-            )
+            legacy = benchmark_search(use_incremental=False, depth=depth, num_runs=num_runs)
             results.append(legacy)
             print(f" done ({legacy.avg_time:.3f}s avg)")
         except Exception as e:
@@ -512,11 +502,7 @@ def main():
         # Benchmark incremental mode
         print("  Running incremental mode...", end="", flush=True)
         try:
-            incremental = benchmark_search(
-                use_incremental=True,
-                depth=depth,
-                num_runs=num_runs
-            )
+            incremental = benchmark_search(use_incremental=True, depth=depth, num_runs=num_runs)
             results.append(incremental)
             print(f" done ({incremental.avg_time:.3f}s avg)")
         except Exception as e:
@@ -534,10 +520,11 @@ def main():
             inc_t += f" (min={incremental.min_time:.3f}s)"
             print(f"    Incremental: {inc_t}")
             print(f"    Speedup:     {speedup:.2f}x")
-            print(f"    Nodes/run:   legacy={legacy.nodes_visited}, "
-                  f"incremental={incremental.nodes_visited}")
-            print(f"    Peak memory: legacy={legacy.peak_memory_mb:.1f}MB, "
-                  f"incremental={incremental.peak_memory_mb:.1f}MB")
+            print(f"    Nodes/run:   legacy={legacy.nodes_visited}, " f"incremental={incremental.nodes_visited}")
+            print(
+                f"    Peak memory: legacy={legacy.peak_memory_mb:.1f}MB, "
+                f"incremental={incremental.peak_memory_mb:.1f}MB"
+            )
 
             if legacy.avg_time > 0:
                 legacy_nps = legacy.nodes_visited / legacy.avg_time
@@ -554,16 +541,8 @@ def main():
     if len(results) >= 2:
         # Group by depth
         for depth in depths:
-            legacy_res = next(
-                (r for r in results
-                 if r.depth == depth and r.mode == "legacy"),
-                None
-            )
-            incr_res = next(
-                (r for r in results
-                 if r.depth == depth and r.mode == "incremental"),
-                None
-            )
+            legacy_res = next((r for r in results if r.depth == depth and r.mode == "legacy"), None)
+            incr_res = next((r for r in results if r.depth == depth and r.mode == "incremental"), None)
 
             if legacy_res and incr_res and legacy_res.avg_time > 0:
                 speedup = legacy_res.avg_time / incr_res.avg_time
@@ -573,8 +552,7 @@ def main():
                     memory_reduction = (1 - inc_mem / leg_mem) * 100
                 else:
                     memory_reduction = 0
-                print(f"  Depth {depth}: {speedup:.2f}x speedup, "
-                      f"{memory_reduction:.0f}% memory reduction")
+                print(f"  Depth {depth}: {speedup:.2f}x speedup, " f"{memory_reduction:.0f}% memory reduction")
 
     print("\n  Note: Actual speedup during deep search may be higher due to")
     print("  reduced GC pressure and cache effects.")

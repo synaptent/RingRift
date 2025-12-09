@@ -32,9 +32,7 @@ def _compute_structural_diffs_from_states(
         only_py = set(stacks_py.keys()) - set(stacks_ts.keys())
         only_ts = set(stacks_ts.keys()) - set(stacks_py.keys())
         mismatched = {
-            key
-            for key in (set(stacks_py.keys()) & set(stacks_ts.keys()))
-            if stacks_py[key] != stacks_ts[key]
+            key for key in (set(stacks_py.keys()) & set(stacks_ts.keys())) if stacks_py[key] != stacks_ts[key]
         }
         if only_py:
             reasons.append(f"{len(only_py)} stacks only in PY")
@@ -114,11 +112,7 @@ def diff_state_from_bundle(bundle_path: Path, ts_k: int | None = None) -> None:
     ts_state = ts_raw
 
     print("Python state:")
-    print(
-        f"  phase={py_state.current_phase} "
-        f"player={py_state.current_player} "
-        f"status={py_state.game_status}"
-    )
+    print(f"  phase={py_state.current_phase} " f"player={py_state.current_player} " f"status={py_state.game_status}")
     print(
         f"  stacks={len(py_state.board.stacks)} "
         f"collapsed={len(py_state.board.collapsed_spaces)} "
@@ -185,4 +179,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

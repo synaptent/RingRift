@@ -78,10 +78,10 @@ logger = logging.getLogger(__name__)
 # - 64GB machine: can run 19x19/hex with memory pressure
 # - 96GB machine: runs everything comfortably
 BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
-    "square8": 8,      # 8GB minimum for 8x8 games
-    "square19": 48,    # 48GB minimum for 19x19 games
-    "hexagonal": 48,   # 48GB minimum for hex games
-    "hex": 48,         # Alias for hexagonal
+    "square8": 8,  # 8GB minimum for 8x8 games
+    "square19": 48,  # 48GB minimum for 19x19 games
+    "hexagonal": 48,  # 48GB minimum for hex games
+    "hex": 48,  # Alias for hexagonal
 }
 
 
@@ -106,7 +106,7 @@ def get_memory_info() -> Dict[str, Any]:
         )
         if result.returncode == 0:
             bytes_total = int(result.stdout.strip())
-            total_gb = bytes_total // (1024 ** 3)
+            total_gb = bytes_total // (1024**3)
 
         # macOS: use vm_stat for available (free + inactive pages)
         result = subprocess.run(
@@ -120,18 +120,18 @@ def get_memory_info() -> Dict[str, Any]:
             free_pages = 0
             inactive_pages = 0
 
-            for line in result.stdout.split('\n'):
-                if 'page size of' in line:
-                    match = re.search(r'page size of (\d+)', line)
+            for line in result.stdout.split("\n"):
+                if "page size of" in line:
+                    match = re.search(r"page size of (\d+)", line)
                     if match:
                         page_size = int(match.group(1))
-                elif 'Pages free:' in line:
-                    free_pages = int(line.split(':')[1].strip().rstrip('.'))
-                elif 'Pages inactive:' in line:
-                    inactive_pages = int(line.split(':')[1].strip().rstrip('.'))
+                elif "Pages free:" in line:
+                    free_pages = int(line.split(":")[1].strip().rstrip("."))
+                elif "Pages inactive:" in line:
+                    inactive_pages = int(line.split(":")[1].strip().rstrip("."))
 
             available_bytes = (free_pages + inactive_pages) * page_size
-            available_gb = available_bytes // (1024 ** 3)
+            available_gb = available_bytes // (1024**3)
     except Exception:
         pass
 
@@ -189,9 +189,7 @@ class WorkerStats:
             "total_games_played": self.total_games_played,
             "total_evaluation_time_sec": round(self.total_evaluation_time_sec, 2),
             "uptime_sec": round(uptime, 2),
-            "last_task_time": (
-                self.last_task_time.isoformat() if self.last_task_time else None
-            ),
+            "last_task_time": (self.last_task_time.isoformat() if self.last_task_time else None),
         }
 
 
@@ -275,9 +273,7 @@ def evaluate_candidate_task(task: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Parse configuration from task
         candidate_weights: HeuristicWeights = task["weights"]
-        baseline_weights: HeuristicWeights = task.get(
-            "baseline_weights", BASE_V1_BALANCED_WEIGHTS
-        )
+        baseline_weights: HeuristicWeights = task.get("baseline_weights", BASE_V1_BALANCED_WEIGHTS)
         board_type_str = task.get("board_type", "square8")
         board_type = BOARD_NAME_TO_TYPE.get(board_type_str, BoardType.SQUARE8)
         num_players = task.get("num_players", 2)
@@ -374,9 +370,7 @@ class WorkerRequestHandler(BaseHTTPRequestHandler):
         """Custom logging format."""
         logger.debug(f"{self.address_string()} - {format % args}")
 
-    def send_json_response(
-        self, status_code: int, data: Dict[str, Any]
-    ) -> None:
+    def send_json_response(self, status_code: int, data: Dict[str, Any]) -> None:
         """Send a JSON response."""
 
         def json_default(obj: Any) -> Any:
@@ -444,9 +438,7 @@ class WorkerRequestHandler(BaseHTTPRequestHandler):
     def _handle_pools(self) -> None:
         """List cached state pools."""
         with STATE_POOL_CACHE_LOCK:
-            pools = {
-                key: len(pool) for key, pool in STATE_POOL_CACHE.items()
-            }
+            pools = {key: len(pool) for key, pool in STATE_POOL_CACHE.items()}
         self.send_json_response(200, {"pools": pools})
 
     def _handle_evaluate(self) -> None:
@@ -462,9 +454,7 @@ class WorkerRequestHandler(BaseHTTPRequestHandler):
 
             # Validate required fields
             if "weights" not in task:
-                self.send_json_response(
-                    400, {"error": "Missing required field: weights"}
-                )
+                self.send_json_response(400, {"error": "Missing required field: weights"})
                 return
 
             result = evaluate_candidate_task(task)
@@ -478,9 +468,7 @@ class WorkerRequestHandler(BaseHTTPRequestHandler):
             self.send_json_response(400, {"error": f"Invalid JSON: {e}"})
         except Exception as e:
             logger.exception(f"Request handling error: {e}")
-            self.send_json_response(
-                500, {"error": str(e), "traceback": traceback.format_exc()}
-            )
+            self.send_json_response(500, {"error": str(e), "traceback": traceback.format_exc()})
 
     def _handle_preload_pool(self) -> None:
         """Pre-load a state pool into cache."""
@@ -531,10 +519,7 @@ class BonjourRegistration:
         try:
             from zeroconf import ServiceInfo, Zeroconf
         except ImportError:
-            logger.warning(
-                "zeroconf not installed. Run 'pip install zeroconf' for "
-                "Bonjour service registration."
-            )
+            logger.warning("zeroconf not installed. Run 'pip install zeroconf' for " "Bonjour service registration.")
             return False
 
         try:
@@ -555,9 +540,7 @@ class BonjourRegistration:
             )
 
             self.zeroconf.register_service(self.service_info)
-            logger.info(
-                f"Registered Bonjour service: {self.worker_id} at {local_ip}:{self.port}"
-            )
+            logger.info(f"Registered Bonjour service: {self.worker_id} at {local_ip}:{self.port}")
             return True
 
         except Exception as e:
@@ -596,9 +579,7 @@ class BonjourRegistration:
 def main() -> None:
     global WORKER_ID
 
-    parser = argparse.ArgumentParser(
-        description="RingRift CMA-ES evaluation worker for local Mac cluster"
-    )
+    parser = argparse.ArgumentParser(description="RingRift CMA-ES evaluation worker for local Mac cluster")
     parser.add_argument(
         "--port",
         type=int,
@@ -642,9 +623,7 @@ def main() -> None:
                     board_type_str = parts[0]
                     num_players = int(parts[1].replace("p", ""))
                     pool_id = "_".join(parts[2:])
-                    board_type = BOARD_NAME_TO_TYPE.get(
-                        board_type_str, BoardType.SQUARE8
-                    )
+                    board_type = BOARD_NAME_TO_TYPE.get(board_type_str, BoardType.SQUARE8)
                     logger.info(f"Preloading pool: {spec}")
                     get_cached_state_pool(board_type, num_players, pool_id)
             except Exception as e:

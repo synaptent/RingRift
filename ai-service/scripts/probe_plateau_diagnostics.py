@@ -82,8 +82,7 @@ def _parse_board_list(raw: str) -> List[BoardType]:
             boards.append(BOARD_NAME_TO_TYPE[name])
         except KeyError:
             raise SystemExit(
-                f"Unknown board name in --boards: {name!r} "
-                "(expected one of: square8,square19,hex)",
+                f"Unknown board name in --boards: {name!r} " "(expected one of: square8,square19,hex)",
             )
     return boards
 
@@ -217,28 +216,19 @@ def _export_weights(
 
 def main(argv: List[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Probe heuristic CMA-ES/GA plateau behaviour using the shared "
-            "multi-board evaluation harness."
-        ),
+        description=("Probe heuristic CMA-ES/GA plateau behaviour using the shared " "multi-board evaluation harness."),
     )
     parser.add_argument(
         "--boards",
         type=str,
         default="square8,square19,hex",
-        help=(
-            "Comma-separated list of boards to probe "
-            "(default: 'square8,square19,hex')."
-        ),
+        help=("Comma-separated list of boards to probe " "(default: 'square8,square19,hex')."),
     )
     parser.add_argument(
         "--games-per-eval",
         type=int,
         default=16,
-        help=(
-            "Games per candidate evaluation on each board "
-            "(default: 16, matching DEFAULT_TRAINING_EVAL_CONFIG)."
-        ),
+        help=("Games per candidate evaluation on each board " "(default: 16, matching DEFAULT_TRAINING_EVAL_CONFIG)."),
     )
     parser.add_argument(
         "--eval-mode",
@@ -255,10 +245,7 @@ def main(argv: List[str] | None = None) -> None:
         "--state-pool-id",
         type=str,
         default="v1",
-        help=(
-            "Identifier for the evaluation state pool when using "
-            "eval-mode=multi-start (default: 'v1')."
-        ),
+        help=("Identifier for the evaluation state pool when using " "eval-mode=multi-start (default: 'v1')."),
     )
     parser.add_argument(
         "--eval-randomness",
@@ -274,37 +261,25 @@ def main(argv: List[str] | None = None) -> None:
         "--seed",
         type=int,
         default=12345,
-        help=(
-            "Base RNG seed forwarded to the evaluation harness "
-            "(default: 12345)."
-        ),
+        help=("Base RNG seed forwarded to the evaluation harness " "(default: 12345)."),
     )
     parser.add_argument(
         "--near-count",
         type=int,
         default=5,
-        help=(
-            "Number of near-baseline random candidates to generate "
-            "(default: 5)."
-        ),
+        help=("Number of near-baseline random candidates to generate " "(default: 5)."),
     )
     parser.add_argument(
         "--max-moves",
         type=int,
         default=200,
-        help=(
-            "Maximum moves per self-play game before declaring a draw "
-            "(default: 200)."
-        ),
+        help=("Maximum moves per self-play game before declaring a draw " "(default: 200)."),
     )
     parser.add_argument(
         "--export-dir",
         type=str,
         default="logs/plateau_probe",
-        help=(
-            "Directory to write probed weight profiles as JSON "
-            "(default: logs/plateau_probe)."
-        ),
+        help=("Directory to write probed weight profiles as JSON " "(default: logs/plateau_probe)."),
     )
     args = parser.parse_args(argv)
 
@@ -312,9 +287,7 @@ def main(argv: List[str] | None = None) -> None:
     baseline: HeuristicWeights = dict(BASE_V1_BALANCED_WEIGHTS)
 
     zero: HeuristicWeights = {k: 0.0 for k in HEURISTIC_WEIGHT_KEYS}
-    scaled5: HeuristicWeights = {
-        k: float(baseline[k] * 5.0) for k in HEURISTIC_WEIGHT_KEYS
-    }
+    scaled5: HeuristicWeights = {k: float(baseline[k] * 5.0) for k in HEURISTIC_WEIGHT_KEYS}
 
     rng = np.random.default_rng(args.seed)
     near_profiles: List[Tuple[str, HeuristicWeights]] = []

@@ -109,11 +109,7 @@ def diff_state(
     ts_state = _load_ts_state(ts_state_path)
 
     print(f"Python state @ move_index={py_index}")
-    print(
-        f"  phase={py_state.current_phase} "
-        f"player={py_state.current_player} "
-        f"status={py_state.game_status}"
-    )
+    print(f"  phase={py_state.current_phase} " f"player={py_state.current_player} " f"status={py_state.game_status}")
     print(
         f"  stacks={len(py_state.board.stacks)} "
         f"collapsed={len(py_state.board.collapsed_spaces)} "
@@ -207,10 +203,7 @@ def diff_state(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Diff a Python GameReplayDB state against a TS sandbox replay dump "
-            "for a single (db, game, k)."
-        )
+        description=("Diff a Python GameReplayDB state against a TS sandbox replay dump " "for a single (db, game, k).")
     )
     parser.add_argument(
         "--db",
@@ -226,18 +219,12 @@ def main() -> None:
         "--k",
         type=int,
         required=True,
-        help=(
-            "TS replay step index k. k=0 is initial state; "
-            "k>=1 corresponds to Python get_state_at_move(k-1)."
-        ),
+        help=("TS replay step index k. k=0 is initial state; " "k>=1 corresponds to Python get_state_at_move(k-1)."),
     )
     parser.add_argument(
         "--dump-dir",
         default="../ts-replay-dumps",
-        help=(
-            "Directory where TS replay dumps are stored. "
-            "Defaults to ../ts-replay-dumps relative to ai-service/."
-        ),
+        help=("Directory where TS replay dumps are stored. " "Defaults to ../ts-replay-dumps relative to ai-service/."),
     )
     parser.add_argument(
         "--ts-state-path",
@@ -278,4 +265,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -10,13 +10,13 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Set environment flags for all optimizations
-os.environ['RINGRIFT_SKIP_SHADOW_CONTRACTS'] = 'true'
-os.environ['RINGRIFT_USE_MAKE_UNMAKE'] = 'true'
-os.environ['RINGRIFT_USE_BATCH_EVAL'] = 'true'
-os.environ['RINGRIFT_BATCH_EVAL_THRESHOLD'] = '50'
-os.environ['RINGRIFT_USE_FAST_TERRITORY'] = 'true'
-os.environ['RINGRIFT_USE_MOVE_CACHE'] = 'true'
-os.environ['RINGRIFT_EARLY_TERM_THRESHOLD'] = '50'
+os.environ["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+os.environ["RINGRIFT_USE_MAKE_UNMAKE"] = "true"
+os.environ["RINGRIFT_USE_BATCH_EVAL"] = "true"
+os.environ["RINGRIFT_BATCH_EVAL_THRESHOLD"] = "50"
+os.environ["RINGRIFT_USE_FAST_TERRITORY"] = "true"
+os.environ["RINGRIFT_USE_MOVE_CACHE"] = "true"
+os.environ["RINGRIFT_EARLY_TERM_THRESHOLD"] = "50"
 
 from app.ai.heuristic_ai import HeuristicAI  # noqa: E402
 from app.models import (  # noqa: E402
@@ -156,33 +156,29 @@ def run_benchmark(board_type, board_size, num_games=3, max_moves=30):
 
 
 def main():
-    print('Running benchmarks with all optimizations enabled...')
+    print("Running benchmarks with all optimizations enabled...")
     print()
 
     # 8x8 benchmark
-    moves, time_s, mps, avg_ms = run_benchmark(
-        BoardType.SQUARE8, 8, num_games=3, max_moves=30
-    )
-    print(f'8x8 Board:')
-    print(f'  Total moves: {moves}')
-    print(f'  Total time: {time_s:.2f}s')
-    print(f'  Moves/sec: {mps:.1f}')
-    print(f'  Avg time/move: {avg_ms:.1f}ms')
+    moves, time_s, mps, avg_ms = run_benchmark(BoardType.SQUARE8, 8, num_games=3, max_moves=30)
+    print(f"8x8 Board:")
+    print(f"  Total moves: {moves}")
+    print(f"  Total time: {time_s:.2f}s")
+    print(f"  Moves/sec: {mps:.1f}")
+    print(f"  Avg time/move: {avg_ms:.1f}ms")
     print()
 
     # Hex benchmark
-    moves, time_s, mps, avg_ms = run_benchmark(
-        BoardType.HEXAGONAL, 7, num_games=2, max_moves=20
-    )
-    print(f'Hex11 Board:')
-    print(f'  Total moves: {moves}')
-    print(f'  Total time: {time_s:.2f}s')
-    print(f'  Moves/sec: {mps:.1f}')
-    print(f'  Avg time/move: {avg_ms:.1f}ms')
+    moves, time_s, mps, avg_ms = run_benchmark(BoardType.HEXAGONAL, 7, num_games=2, max_moves=20)
+    print(f"Hex11 Board:")
+    print(f"  Total moves: {moves}")
+    print(f"  Total time: {time_s:.2f}s")
+    print(f"  Moves/sec: {mps:.1f}")
+    print(f"  Avg time/move: {avg_ms:.1f}ms")
     print()
 
-    print('Done!')
+    print("Done!")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

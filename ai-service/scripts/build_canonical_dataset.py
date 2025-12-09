@@ -76,9 +76,7 @@ def run_export(board_type: str, db_path: Path, output_path: Path) -> int:
 
 
 def main(argv: List[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Build NPZ training datasets from canonical_* GameReplayDBs."
-    )
+    parser = argparse.ArgumentParser(description="Build NPZ training datasets from canonical_* GameReplayDBs.")
     parser.add_argument(
         "--board-type",
         required=True,
@@ -89,19 +87,13 @@ def main(argv: List[str] | None = None) -> int:
         "--db",
         type=str,
         default=None,
-        help=(
-            "Path to canonical GameReplayDB. Defaults to "
-            "data/games/canonical_<board>.db."
-        ),
+        help=("Path to canonical GameReplayDB. Defaults to " "data/games/canonical_<board>.db."),
     )
     parser.add_argument(
         "--output",
         type=str,
         default=None,
-        help=(
-            "Output NPZ path. Defaults to "
-            "data/training/canonical_<board>.npz."
-        ),
+        help=("Output NPZ path. Defaults to " "data/training/canonical_<board>.npz."),
     )
     args = parser.parse_args(argv)
 
@@ -114,4 +106,3 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
     raise SystemExit(main())
-

@@ -19,18 +19,11 @@ from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.models import (
-    GameState, BoardType, GamePhase, GameStatus, Player, TimeControl,
-    BoardState, AIConfig
-)
+from app.models import GameState, BoardType, GamePhase, GameStatus, Player, TimeControl, BoardState, AIConfig
 from app.ai.heuristic_ai import HeuristicAI
 from app.rules.default_engine import DefaultRulesEngine
 
-BOARD_TYPES = {
-    "square8": BoardType.SQUARE8,
-    "square19": BoardType.SQUARE19,
-    "hex": BoardType.HEXAGONAL
-}
+BOARD_TYPES = {"square8": BoardType.SQUARE8, "square19": BoardType.SQUARE19, "hex": BoardType.HEXAGONAL}
 
 
 def load_weight_profile(path: str) -> Dict[str, float]:
@@ -45,7 +38,7 @@ def create_ai_with_weights(
     weights: Dict[str, float],
     difficulty: int = 10,
     randomness: float = 0.02,
-    rng_seed: Optional[int] = None
+    rng_seed: Optional[int] = None,
 ) -> HeuristicAI:
     """Create a HeuristicAI instance with custom weights applied."""
     ai = HeuristicAI(
@@ -72,29 +65,24 @@ def create_game_state(board_type: BoardType, num_players: int) -> GameState:
     elif board_type == BoardType.HEXAGONAL:
         size = 5
 
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={}
-    )
+    board = BoardState(type=board_type, size=size, stacks={}, markers={}, collapsedSpaces={}, eliminatedRings={})
 
     players = []
     for i in range(num_players):
-        players.append(Player(
-            id=f"player{i+1}",
-            username=f"AI_{i+1}",
-            type="ai",
-            playerNumber=i + 1,
-            isReady=True,
-            timeRemaining=600000,
-            aiDifficulty=10,
-            ringsInHand=20,
-            eliminatedRings=0,
-            territorySpaces=0
-        ))
+        players.append(
+            Player(
+                id=f"player{i+1}",
+                username=f"AI_{i+1}",
+                type="ai",
+                playerNumber=i + 1,
+                isReady=True,
+                timeRemaining=600000,
+                aiDifficulty=10,
+                ringsInHand=20,
+                eliminatedRings=0,
+                territorySpaces=0,
+            )
+        )
 
     return GameState(
         id=str(uuid.uuid4()),
@@ -116,16 +104,12 @@ def create_game_state(board_type: BoardType, num_players: int) -> GameState:
         territoryVictoryThreshold=10,
         chainCaptureState=None,
         mustMoveFromStackKey=None,
-        zobristHash=None
+        zobristHash=None,
     )
 
 
 def run_game(
-    ais: list,
-    board_type: BoardType,
-    num_players: int,
-    max_moves: int = 300,
-    verbose: bool = False
+    ais: list, board_type: BoardType, num_players: int, max_moves: int = 300, verbose: bool = False
 ) -> Tuple[Optional[int], Dict]:
     """
     Run a single game.
@@ -155,7 +139,7 @@ def run_game(
             game_state.winner = (current_player_num % num_players) + 1
             break
 
-        move_types.append(move.type if hasattr(move, 'type') else str(type(move).__name__))
+        move_types.append(move.type if hasattr(move, "type") else str(type(move).__name__))
 
         try:
             game_state = rules_engine.apply_move(game_state, move)
@@ -187,9 +171,11 @@ def run_game(
         game_info[f"p{p.player_number}_territory"] = p.territory_spaces
 
     if verbose:
-        print(f"  Game: {move_count} moves, winner=P{game_state.winner}, "
-              f"eliminated={game_info['players_eliminated']}, "
-              f"phases={game_info['phases']}")
+        print(
+            f"  Game: {move_count} moves, winner=P{game_state.winner}, "
+            f"eliminated={game_info['players_eliminated']}, "
+            f"phases={game_info['phases']}"
+        )
 
     if game_state.game_status == GameStatus.ACTIVE:
         return None, game_info  # Draw
@@ -227,50 +213,17 @@ def generate_configurations(num_players: int) -> List[Tuple[str, ...]]:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run tournament between two weight profiles (multiplayer-aware)"
-    )
-    parser.add_argument(
-        "--profile-a", type=str, required=True,
-        help="Path to first weight profile JSON"
-    )
-    parser.add_argument(
-        "--profile-b", type=str, required=True,
-        help="Path to second weight profile JSON"
-    )
-    parser.add_argument(
-        "--name-a", type=str, default="Profile_A",
-        help="Display name for profile A"
-    )
-    parser.add_argument(
-        "--name-b", type=str, default="Profile_B",
-        help="Display name for profile B"
-    )
-    parser.add_argument(
-        "--board", type=str, default="square8",
-        choices=BOARD_TYPES.keys(),
-        help="Board type"
-    )
-    parser.add_argument(
-        "--num-players", type=int, default=3,
-        help="Number of players (2-4)"
-    )
-    parser.add_argument(
-        "--games-per-config", type=int, default=10,
-        help="Number of games to play per configuration"
-    )
-    parser.add_argument(
-        "--max-moves", type=int, default=300,
-        help="Maximum moves per game"
-    )
-    parser.add_argument(
-        "--verbose", action="store_true",
-        help="Print per-game diagnostics"
-    )
-    parser.add_argument(
-        "--diagnostics", action="store_true",
-        help="Print detailed game statistics at the end"
-    )
+    parser = argparse.ArgumentParser(description="Run tournament between two weight profiles (multiplayer-aware)")
+    parser.add_argument("--profile-a", type=str, required=True, help="Path to first weight profile JSON")
+    parser.add_argument("--profile-b", type=str, required=True, help="Path to second weight profile JSON")
+    parser.add_argument("--name-a", type=str, default="Profile_A", help="Display name for profile A")
+    parser.add_argument("--name-b", type=str, default="Profile_B", help="Display name for profile B")
+    parser.add_argument("--board", type=str, default="square8", choices=BOARD_TYPES.keys(), help="Board type")
+    parser.add_argument("--num-players", type=int, default=3, help="Number of players (2-4)")
+    parser.add_argument("--games-per-config", type=int, default=10, help="Number of games to play per configuration")
+    parser.add_argument("--max-moves", type=int, default=300, help="Maximum moves per game")
+    parser.add_argument("--verbose", action="store_true", help="Print per-game diagnostics")
+    parser.add_argument("--diagnostics", action="store_true", help="Print detailed game statistics at the end")
 
     args = parser.parse_args()
 
@@ -310,7 +263,7 @@ def main():
 
     # Track diagnostics
     all_game_infos = []
-    wins_by_position = {i+1: 0 for i in range(num_players)}
+    wins_by_position = {i + 1: 0 for i in range(num_players)}
 
     for config_idx, config in enumerate(configs):
         config_a_wins = 0
@@ -329,10 +282,7 @@ def main():
                 else:
                     ais.append(create_ai_with_weights(p + 1, weights_b, rng_seed=ai_seed))
 
-            winner, game_info = run_game(
-                ais, board_type, num_players, args.max_moves,
-                verbose=args.verbose
-            )
+            winner, game_info = run_game(ais, board_type, num_players, args.max_moves, verbose=args.verbose)
             game_info["config"] = config
             all_game_infos.append(game_info)
 
@@ -348,16 +298,14 @@ def main():
                     config_b_wins += 1
                     total_b_wins += 1
 
-        config_results[config] = {
-            "a_wins": config_a_wins,
-            "b_wins": config_b_wins,
-            "draws": config_draws
-        }
+        config_results[config] = {"a_wins": config_a_wins, "b_wins": config_b_wins, "draws": config_draws}
 
         games_so_far = (config_idx + 1) * args.games_per_config
-        print(f"Config {config_idx+1}/{len(configs)} {config}: "
-              f"A={config_a_wins}, B={config_b_wins}, Draws={config_draws} "
-              f"(Total: A={total_a_wins}, B={total_b_wins})")
+        print(
+            f"Config {config_idx+1}/{len(configs)} {config}: "
+            f"A={config_a_wins}, B={config_b_wins}, Draws={config_draws} "
+            f"(Total: A={total_a_wins}, B={total_b_wins})"
+        )
 
     print(f"\n{'='*60}")
     print(f"Final Results:")
@@ -369,8 +317,10 @@ def main():
         total_in_config = results["a_wins"] + results["b_wins"] + results["draws"]
         a_pct = 100 * results["a_wins"] / total_in_config if total_in_config > 0 else 0
         b_pct = 100 * results["b_wins"] / total_in_config if total_in_config > 0 else 0
-        print(f"  {config}: A={results['a_wins']} ({a_pct:.1f}%), "
-              f"B={results['b_wins']} ({b_pct:.1f}%), Draws={results['draws']}")
+        print(
+            f"  {config}: A={results['a_wins']} ({a_pct:.1f}%), "
+            f"B={results['b_wins']} ({b_pct:.1f}%), Draws={results['draws']}"
+        )
 
     print(f"\nOverall Results:")
     print(f"  {args.name_a}: {total_a_wins} wins ({100*total_a_wins/total_games:.1f}%)")
@@ -431,10 +381,12 @@ def main():
         # Sample first 5 games
         print(f"\nSample games (first 5):")
         for i, g in enumerate(all_game_infos[:5]):
-            print(f"  Game {i+1}: {g.get('move_count', '?')} moves, "
-                  f"winner=P{g.get('winner', '?')}, "
-                  f"elim={g.get('total_rings_eliminated', '?')}, "
-                  f"config={g.get('config', '?')}")
+            print(
+                f"  Game {i+1}: {g.get('move_count', '?')} moves, "
+                f"winner=P{g.get('winner', '?')}, "
+                f"elim={g.get('total_rings_eliminated', '?')}, "
+                f"config={g.get('config', '?')}"
+            )
 
         # Per-player stats from last game
         last = all_game_infos[-1]

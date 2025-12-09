@@ -113,6 +113,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class WorkerConfig:
     """Configuration for a distributed worker."""
+
     worker_id: str
     num_games: int
     board_type: BoardType
@@ -131,6 +132,7 @@ class WorkerConfig:
 @dataclass
 class WorkerStats:
     """Statistics from a worker run."""
+
     worker_id: str
     games_completed: int
     samples_generated: int
@@ -183,6 +185,7 @@ def build_ai_pool(
 
     if engine_mode == "descent-only":
         from app.ai.descent_ai import DescentAI
+
         for pnum in player_numbers:
             cfg = AIConfig(
                 difficulty=5,
@@ -198,9 +201,7 @@ def build_ai_pool(
     if difficulty_band == "light":
         difficulty_choices = [1, 2, 4, 5]
 
-    game_rng = random.Random(
-        (base_seed + game_index) if base_seed is not None else None
-    )
+    game_rng = random.Random((base_seed + game_index) if base_seed is not None else None)
 
     for pnum in player_numbers:
         difficulty = game_rng.choice(difficulty_choices)
@@ -211,9 +212,7 @@ def build_ai_pool(
         heuristic_eval_mode = None
         if ai_type == AIType.HEURISTIC:
             heuristic_profile_id = profile.get("profile_id")
-            heuristic_eval_mode = TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.get(
-                board_type, "full"
-            )
+            heuristic_eval_mode = TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.get(board_type, "full")
 
         cfg = AIConfig(
             difficulty=difficulty,
@@ -386,9 +385,7 @@ def save_checkpoint(
 
 def load_checkpoint(config: WorkerConfig) -> Optional[Dict[str, Any]]:
     """Load checkpoint if it exists."""
-    if not config.checkpoint_path or not os.path.exists(
-        config.checkpoint_path
-    ):
+    if not config.checkpoint_path or not os.path.exists(config.checkpoint_path):
         return None
 
     try:
@@ -451,9 +448,7 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
             break
 
         # Run single game
-        final_state, state_history, move_history, game_info = run_single_game(
-            config, game_idx, env
-        )
+        final_state, state_history, move_history, game_info = run_single_game(config, game_idx, env)
 
         if final_state is None:
             continue
@@ -498,10 +493,7 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
             )
 
         # Checkpointing
-        if (
-            config.checkpoint_interval > 0
-            and games_completed % config.checkpoint_interval == 0
-        ):
+        if config.checkpoint_interval > 0 and games_completed % config.checkpoint_interval == 0:
             storage.flush()
             save_checkpoint(
                 config,
@@ -511,10 +503,7 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
             )
 
         # Garbage collection
-        if (
-            config.gc_interval > 0
-            and games_completed % config.gc_interval == 0
-        ):
+        if config.gc_interval > 0 and games_completed % config.gc_interval == 0:
             GameEngine.clear_cache()
             gc.collect()
 
@@ -524,11 +513,7 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
 
     # Compute stats
     elapsed = time.time() - start_time
-    avg_length = (
-        sum(total_game_lengths) / len(total_game_lengths)
-        if total_game_lengths
-        else 0.0
-    )
+    avg_length = sum(total_game_lengths) / len(total_game_lengths) if total_game_lengths else 0.0
 
     stats = WorkerStats(
         worker_id=config.worker_id,
@@ -547,9 +532,7 @@ def run_worker(config: WorkerConfig) -> WorkerStats:
 
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Distributed self-play worker for training data generation"
-    )
+    parser = argparse.ArgumentParser(description="Distributed self-play worker for training data generation")
 
     parser.add_argument(
         "--num-games",

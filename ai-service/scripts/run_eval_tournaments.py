@@ -58,10 +58,7 @@ from app.training.eval_pools import (  # noqa: E402
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     """Parse CLI arguments for the eval tournament harness."""
     parser = argparse.ArgumentParser(
-        description=(
-            "Run evaluation tournaments for AI tiers/engines on named "
-            "evaluation pools."
-        ),
+        description=("Run evaluation tournaments for AI tiers/engines on named " "evaluation pools."),
     )
     parser.add_argument(
         "--pool",
@@ -119,10 +116,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--demo",
         action="store_true",
-        help=(
-            "Enable CI-safe demo mode: limit scenarios/games and force "
-            "small move budgets and think_time=0."
-        ),
+        help=("Enable CI-safe demo mode: limit scenarios/games and force " "small move budgets and think_time=0."),
     )
     return parser.parse_args(argv)
 
@@ -131,9 +125,7 @@ def _normalise_tier_name(tier: str) -> str:
     """Return a canonical tier name like ``'D4'`` or raise ValueError."""
     name = tier.strip().upper()
     if not name.startswith("D") or not name[1:].isdigit():
-        raise ValueError(
-            f"Unsupported tier name {tier!r}; expected something like 'D2'."
-        )
+        raise ValueError(f"Unsupported tier name {tier!r}; expected something like 'D2'.")
     return name
 
 
@@ -201,10 +193,7 @@ def _build_ai_from_engine_spec(
         "descent": (AIType.DESCENT, 9),
     }
     if name not in engine_map:
-        raise ValueError(
-            f"Unknown engine spec {engine!r}; expected one of "
-            f"{', '.join(sorted(engine_map.keys()))}."
-        )
+        raise ValueError(f"Unknown engine spec {engine!r}; expected one of " f"{', '.join(sorted(engine_map.keys()))}.")
     ai_type, difficulty = engine_map[name]
     profile = _get_difficulty_profile(difficulty)
     cfg = AIConfig(
@@ -313,8 +302,7 @@ def _run_tournament_on_pool(
         # symmetric self-play where all seats use the primary spec. The
         # opponent spec is ignored but preserved in the report for clarity.
         print(
-            "Warning: --opponent is ignored for multiplayer pools "
-            "(num_players > 2); running symmetric evaluation.",
+            "Warning: --opponent is ignored for multiplayer pools " "(num_players > 2); running symmetric evaluation.",
         )
 
     scenario_results: List[Dict[str, Any]] = []
@@ -327,15 +315,10 @@ def _run_tournament_on_pool(
         victory_reasons: Dict[str, int] = {}
         total_moves_for_scenario = 0
 
-        player_numbers = [
-            p.player_number
-            for p in scenario.initial_state.players
-        ]
+        player_numbers = [p.player_number for p in scenario.initial_state.players]
 
         for game_index in range(effective_games):
-            game_seed = (
-                base_seed + s_idx * 1_000_003 + game_index
-            ) & 0x7FFFFFFF
+            game_seed = (base_seed + s_idx * 1_000_003 + game_index) & 0x7FFFFFFF
 
             # Build per-player AIs.
             ai_by_player: Dict[int, Any] = {}
@@ -351,8 +334,7 @@ def _run_tournament_on_pool(
             else:
                 if len(player_numbers) != 2:
                     raise RuntimeError(
-                        "2-player pool reported num_players=2 but GameState "
-                        f"has players={len(player_numbers)}",
+                        "2-player pool reported num_players=2 but GameState " f"has players={len(player_numbers)}",
                     )
                 p1, p2 = player_numbers
                 if opponent_spec:
@@ -413,8 +395,7 @@ def _run_tournament_on_pool(
                 ai = ai_by_player.get(current_player)
                 if ai is None:
                     raise RuntimeError(
-                        "No AI instance configured for player "
-                        f"{current_player} in tournament loop.",
+                        "No AI instance configured for player " f"{current_player} in tournament loop.",
                     )
 
                 move = ai.select_move(state)
@@ -445,11 +426,7 @@ def _run_tournament_on_pool(
             reason = last_info.get("victory_reason", "unknown")
             victory_reasons[reason] = victory_reasons.get(reason, 0) + 1
 
-        avg_length = (
-            float(total_moves_for_scenario) / games_for_scenario
-            if games_for_scenario > 0
-            else 0.0
-        )
+        avg_length = float(total_moves_for_scenario) / games_for_scenario if games_for_scenario > 0 else 0.0
         scenario_results.append(
             {
                 "scenario_id": scenario.id,
@@ -461,9 +438,7 @@ def _run_tournament_on_pool(
             },
         )
 
-    avg_game_length_all = (
-        float(total_moves_all) / total_games if total_games > 0 else 0.0
-    )
+    avg_game_length_all = float(total_moves_all) / total_games if total_games > 0 else 0.0
 
     report: Dict[str, Any] = {
         "pool_name": pool_name,

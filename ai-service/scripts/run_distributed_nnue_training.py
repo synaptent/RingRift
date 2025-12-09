@@ -320,7 +320,7 @@ def collect_remote_databases(
             logger.warning(f"No databases found on {host_name}")
             continue
 
-        remote_paths = result.stdout.strip().split('\n')
+        remote_paths = result.stdout.strip().split("\n")
         logger.info(f"Found {len(remote_paths)} databases on {host_name}")
 
         # Copy each database
@@ -335,10 +335,12 @@ def collect_remote_databases(
                 scp_cmd.extend(["-i", host.ssh_key_path])
             # Build remote target with optional ssh_user (e.g., ubuntu@host for AWS)
             ssh_target = f"{host.ssh_user}@{host.ssh_host}" if host.ssh_user else host.ssh_host
-            scp_cmd.extend([
-                f"{ssh_target}:{remote_path}",
-                local_path,
-            ])
+            scp_cmd.extend(
+                [
+                    f"{ssh_target}:{remote_path}",
+                    local_path,
+                ]
+            )
 
             try:
                 subprocess.run(scp_cmd, check=True, timeout=300)
@@ -378,8 +380,7 @@ def run_remote_training(
 
     if memory_info.total_gb < required_memory:
         raise RuntimeError(
-            f"Host {host_name} has {memory_info.total_gb}GB but "
-            f"{args.board} requires {required_memory}GB"
+            f"Host {host_name} has {memory_info.total_gb}GB but " f"{args.board} requires {required_memory}GB"
         )
 
     logger.info(f"Running training on {host_name} ({memory_info})")
@@ -387,15 +388,24 @@ def run_remote_training(
     # Build training command
     cmd_parts = [
         "PYTHONPATH=.",
-        "python", "scripts/train_nnue.py",
-        "--board-type", args.board,
-        "--num-players", str(args.num_players),
-        "--epochs", str(args.epochs),
-        "--batch-size", str(args.batch_size),
-        "--learning-rate", str(args.learning_rate),
-        "--hidden-dim", str(args.hidden_dim),
-        "--sample-every-n", str(args.sample_every_n),
-        "--seed", str(args.seed),
+        "python",
+        "scripts/train_nnue.py",
+        "--board-type",
+        args.board,
+        "--num-players",
+        str(args.num_players),
+        "--epochs",
+        str(args.epochs),
+        "--batch-size",
+        str(args.batch_size),
+        "--learning-rate",
+        str(args.learning_rate),
+        "--hidden-dim",
+        str(args.hidden_dim),
+        "--sample-every-n",
+        str(args.sample_every_n),
+        "--seed",
+        str(args.seed),
     ]
 
     if db_paths:
@@ -434,7 +444,7 @@ def run_remote_training(
             return {"error": result.stderr}
 
         # Parse output for report path
-        output_lines = result.stdout.strip().split('\n')
+        output_lines = result.stdout.strip().split("\n")
         report = {"success": True, "output": result.stdout}
 
         # Try to find and fetch the report JSON
@@ -480,14 +490,22 @@ def run_local_training(
 
     # Build argument list
     train_args = [
-        "--board-type", args.board,
-        "--num-players", str(args.num_players),
-        "--epochs", str(args.epochs),
-        "--batch-size", str(args.batch_size),
-        "--learning-rate", str(args.learning_rate),
-        "--hidden-dim", str(args.hidden_dim),
-        "--sample-every-n", str(args.sample_every_n),
-        "--seed", str(args.seed),
+        "--board-type",
+        args.board,
+        "--num-players",
+        str(args.num_players),
+        "--epochs",
+        str(args.epochs),
+        "--batch-size",
+        str(args.batch_size),
+        "--learning-rate",
+        str(args.learning_rate),
+        "--hidden-dim",
+        str(args.hidden_dim),
+        "--sample-every-n",
+        str(args.sample_every_n),
+        "--seed",
+        str(args.seed),
     ]
 
     if db_paths:
@@ -593,7 +611,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Collect remote databases if requested
     if args.collect_from:
-        collect_hosts = [h.strip() for h in args.collect_from.split(',')]
+        collect_hosts = [h.strip() for h in args.collect_from.split(",")]
         collect_dir = os.path.join(output_dir, "collected_dbs")
 
         logger.info(f"Collecting databases from: {collect_hosts}")

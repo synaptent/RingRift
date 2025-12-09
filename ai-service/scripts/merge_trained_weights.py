@@ -243,9 +243,7 @@ def create_player_specific_profiles(
         print("\nMerging 2-player weights:")
         files = expand_glob_patterns(weights_2p)
         if files:
-            merged, num_players, meta = merge_weights_average(
-                files, mode="fitness-weighted", expected_num_players=2
-            )
+            merged, num_players, meta = merge_weights_average(files, mode="fitness-weighted", expected_num_players=2)
             profiles["heuristic_v1_2p"] = merged
             metadata["profiles"]["heuristic_v1_2p"] = meta
 
@@ -253,9 +251,7 @@ def create_player_specific_profiles(
         print("\nMerging 3-player weights:")
         files = expand_glob_patterns(weights_3p)
         if files:
-            merged, num_players, meta = merge_weights_average(
-                files, mode="fitness-weighted", expected_num_players=3
-            )
+            merged, num_players, meta = merge_weights_average(files, mode="fitness-weighted", expected_num_players=3)
             profiles["heuristic_v1_3p"] = merged
             metadata["profiles"]["heuristic_v1_3p"] = meta
 
@@ -263,9 +259,7 @@ def create_player_specific_profiles(
         print("\nMerging 4-player weights:")
         files = expand_glob_patterns(weights_4p)
         if files:
-            merged, num_players, meta = merge_weights_average(
-                files, mode="fitness-weighted", expected_num_players=4
-            )
+            merged, num_players, meta = merge_weights_average(files, mode="fitness-weighted", expected_num_players=4)
             profiles["heuristic_v1_4p"] = merged
             metadata["profiles"]["heuristic_v1_4p"] = meta
 
@@ -280,11 +274,11 @@ def main():
     )
 
     parser.add_argument(
-        "--input", "-i",
+        "--input",
+        "-i",
         action="append",
         dest="inputs",
-        help="Input weight file(s) or glob pattern. All files must be from runs "
-             "with the same number of players.",
+        help="Input weight file(s) or glob pattern. All files must be from runs " "with the same number of players.",
     )
     parser.add_argument(
         "--input-2p",
@@ -305,13 +299,15 @@ def main():
         help="Input weight file(s) from 4-player training",
     )
     parser.add_argument(
-        "--mode", "-m",
+        "--mode",
+        "-m",
         choices=["equal", "fitness-weighted"],
         default="fitness-weighted",
         help="Merge mode (default: fitness-weighted)",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         required=True,
         help="Output path for merged weights JSON",
     )
@@ -326,9 +322,11 @@ def main():
         parser.error("Must provide either --input or --input-2p/3p/4p")
 
     if has_general and has_player_specific:
-        parser.error("Cannot mix --input with --input-2p/3p/4p. "
-                    "Use --input for same-player-count runs, or "
-                    "--input-Np for player-specific profiles.")
+        parser.error(
+            "Cannot mix --input with --input-2p/3p/4p. "
+            "Use --input for same-player-count runs, or "
+            "--input-Np for player-specific profiles."
+        )
 
     # Create output directory
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)

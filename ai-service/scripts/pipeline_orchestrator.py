@@ -49,6 +49,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 @dataclass
 class WorkerConfig:
     """Configuration for a compute worker."""
+
     name: str
     host: str
     role: str  # "selfplay", "training", "cmaes", "mixed"
@@ -61,6 +62,7 @@ class WorkerConfig:
 @dataclass
 class SelfplayJob:
     """Configuration for a selfplay job."""
+
     board_type: str
     num_players: int
     num_games: int
@@ -72,6 +74,7 @@ class SelfplayJob:
 @dataclass
 class PipelineState:
     """Current state of the pipeline."""
+
     iteration: int = 0
     phase: str = "idle"
     games_generated: Dict[str, int] = field(default_factory=dict)
@@ -211,9 +214,7 @@ class PipelineOrchestrator:
 
     async def check_worker_health(self, worker: WorkerConfig) -> bool:
         """Check if a worker is reachable and healthy."""
-        code, stdout, stderr = await self.run_remote_command(
-            worker, "echo 'healthy'"
-        )
+        code, stdout, stderr = await self.run_remote_command(worker, "echo 'healthy'")
         return code == 0 and "healthy" in stdout
 
     async def get_worker_game_count(self, worker: WorkerConfig) -> int:
@@ -250,9 +251,7 @@ python scripts/run_self_play_soak.py \
     --seed {seed} \
     --log-jsonl {log_file}
 """
-        self.log(
-            f"Dispatching {job.board_type} {job.num_players}p ({job.num_games} games) to {worker.name}"
-        )
+        self.log(f"Dispatching {job.board_type} {job.num_players}p ({job.num_games} games) to {worker.name}")
 
         code, _, stderr = await self.run_remote_command(worker, cmd, background=True)
         if code != 0:
@@ -346,9 +345,7 @@ python scripts/run_self_play_soak.py \
         results = {}
 
         # Find Mac Studio worker
-        mac_studio = next(
-            (w for w in WORKERS if w.name == "mac-studio"), None
-        )
+        mac_studio = next((w for w in WORKERS if w.name == "mac-studio"), None)
         if not mac_studio:
             self.log("Mac Studio worker not configured", "ERROR")
             return results
@@ -371,9 +368,7 @@ python app/training/train.py \
     --save-path models/square8_2p_iter{iteration}.pth
 """
         self.log("Starting NN training for square8 2p...")
-        code, stdout, stderr = await self.run_remote_command(
-            mac_studio, train_cmd, background=False
-        )
+        code, stdout, stderr = await self.run_remote_command(mac_studio, train_cmd, background=False)
         results["square8_2p"] = code == 0
         if code == 0:
             self.log("square8 2p training completed", "OK")
@@ -393,9 +388,7 @@ python app/training/train.py \
         results = {}
 
         # Find staging worker
-        staging = next(
-            (w for w in WORKERS if w.name == "staging"), None
-        )
+        staging = next((w for w in WORKERS if w.name == "staging"), None)
         if not staging:
             self.log("Staging worker not configured", "ERROR")
             return results
@@ -417,9 +410,7 @@ python scripts/run_iterative_cmaes.py \
     --output-dir logs/cmaes/iter{iteration}/square8_2p
 """
         self.log("Starting CMA-ES optimization for square8 2p...")
-        code, _, stderr = await self.run_remote_command(
-            staging, cmaes_cmd, background=True
-        )
+        code, _, stderr = await self.run_remote_command(staging, cmaes_cmd, background=True)
         results["square8_2p"] = code == 0
         if code == 0:
             self.log("CMA-ES square8 2p dispatched", "OK")
@@ -437,9 +428,7 @@ python scripts/run_iterative_cmaes.py \
         results = {}
 
         # Find a worker for evaluation
-        worker = next(
-            (w for w in WORKERS if await self.check_worker_health(w)), None
-        )
+        worker = next((w for w in WORKERS if await self.check_worker_health(w)), None)
         if not worker:
             self.log("No healthy workers for evaluation", "ERROR")
             return results
@@ -555,9 +544,7 @@ python scripts/run_ai_tournament.py \
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="RingRift AI Training Pipeline Orchestrator"
-    )
+    parser = argparse.ArgumentParser(description="RingRift AI Training Pipeline Orchestrator")
     parser.add_argument(
         "--config",
         type=str,

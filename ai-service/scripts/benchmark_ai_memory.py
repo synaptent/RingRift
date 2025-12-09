@@ -66,9 +66,11 @@ logger = logging.getLogger(__name__)
 # Benchmark Configurations
 # =============================================================================
 
+
 @dataclass
 class BenchmarkConfig:
     """Configuration for a single benchmark run."""
+
     name: str
     ai_type: str  # minimax, mcts, descent, random
     difficulty: int
@@ -112,6 +114,7 @@ FULL_BENCHMARKS = STANDARD_BENCHMARKS + [
 # Benchmark Runner
 # =============================================================================
 
+
 def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     """Run a single benchmark and return the memory profile.
 
@@ -123,10 +126,7 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     """
     import uuid
     from datetime import datetime as dt
-    from app.models import (
-        GameState, BoardType, GamePhase, GameStatus, Player, TimeControl,
-        BoardState, AIConfig
-    )
+    from app.models import GameState, BoardType, GamePhase, GameStatus, Player, TimeControl, BoardState, AIConfig
     from app.ai.heuristic_ai import HeuristicAI
     from app.ai.minimax_ai import MinimaxAI
     from app.ai.mcts_ai import MCTSAI
@@ -141,7 +141,9 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     }
 
     logger.info(f"Starting benchmark: {config.name}")
-    logger.info(f"  AI: {config.ai_type} D{config.difficulty}, Board: {config.board_type}, Players: {config.num_players}")
+    logger.info(
+        f"  AI: {config.ai_type} D{config.difficulty}, Board: {config.board_type}, Players: {config.num_players}"
+    )
 
     # Force garbage collection before benchmark
     gc.collect()
@@ -156,30 +158,25 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     elif board_type == BoardType.HEXAGONAL:
         size = 5
 
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={}
-    )
+    board = BoardState(type=board_type, size=size, stacks={}, markers={}, collapsedSpaces={}, eliminatedRings={})
 
     # Create players
     players = []
     for p in range(1, config.num_players + 1):
-        players.append(Player(
-            id=f"player{p}",
-            username=f"{config.ai_type}_L{config.difficulty}_P{p}",
-            type="ai",
-            playerNumber=p,
-            isReady=True,
-            timeRemaining=600000,
-            aiDifficulty=config.difficulty,
-            ringsInHand=20,
-            eliminatedRings=0,
-            territorySpaces=0
-        ))
+        players.append(
+            Player(
+                id=f"player{p}",
+                username=f"{config.ai_type}_L{config.difficulty}_P{p}",
+                type="ai",
+                playerNumber=p,
+                isReady=True,
+                timeRemaining=600000,
+                aiDifficulty=config.difficulty,
+                ringsInHand=20,
+                eliminatedRings=0,
+                territorySpaces=0,
+            )
+        )
 
     game_state = GameState(
         id=str(uuid.uuid4()),
@@ -201,7 +198,7 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
         territoryVictoryThreshold=10,
         chainCaptureState=None,
         mustMoveFromStackKey=None,
-        zobristHash=None
+        zobristHash=None,
     )
 
     # Create AI instances
@@ -232,7 +229,9 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     tracker.start()
 
     try:
-        logger.info(f"  Game initialized, performing {config.warmup_moves} warmup + {config.moves_to_benchmark} benchmark moves")
+        logger.info(
+            f"  Game initialized, performing {config.warmup_moves} warmup + {config.moves_to_benchmark} benchmark moves"
+        )
 
         total_moves = config.warmup_moves + config.moves_to_benchmark
         move_count = 0
@@ -274,6 +273,7 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     except Exception as e:
         logger.error(f"  Benchmark failed: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:
@@ -401,6 +401,7 @@ def run_remote_benchmark(
 # Neural Network Specific Benchmarks
 # =============================================================================
 
+
 def benchmark_nnue_inference(
     board_type: str = "square8",
     num_iterations: int = 1000,
@@ -520,6 +521,7 @@ def benchmark_nnue_training_step(
 # Main
 # =============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(description="Benchmark AI memory usage")
 
@@ -585,13 +587,15 @@ def main():
             for board_type in board_types:
                 for diff in difficulties:
                     name = f"{ai_type}_d{diff}_{board_type}"
-                    configs.append(BenchmarkConfig(
-                        name=name,
-                        ai_type=ai_type,
-                        difficulty=diff,
-                        board_type=board_type,
-                        num_players=2,
-                    ))
+                    configs.append(
+                        BenchmarkConfig(
+                            name=name,
+                            ai_type=ai_type,
+                            difficulty=diff,
+                            board_type=board_type,
+                            num_players=2,
+                        )
+                    )
 
         run_benchmarks(configs, args.output)
         return

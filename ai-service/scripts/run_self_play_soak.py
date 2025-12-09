@@ -84,6 +84,7 @@ from app.models import (  # type: ignore  # noqa: E402
     GamePhase,
     GameState,
     GameStatus,
+    Move,
     MoveType,
 )
 from app.training.env import (  # type: ignore  # noqa: E402
@@ -164,19 +165,18 @@ def _record_invariant_violation(
     while under a bounded limit, appends a small diagnostic sample that can
     be serialised in the final soak summary.
     """
-    per_game_counts[violation_type] = per_game_counts.get(
-        violation_type,
-        0,
-    ) + 1
+    per_game_counts[violation_type] = (
+        per_game_counts.get(
+            violation_type,
+            0,
+        )
+        + 1
+    )
 
     if len(samples) >= MAX_INVARIANT_VIOLATION_SAMPLES:
         return
 
-    board_type_value = (
-        state.board_type.value
-        if hasattr(state.board_type, "value")
-        else state.board_type
-    )
+    board_type_value = state.board_type.value if hasattr(state.board_type, "value") else state.board_type
 
     entry: Dict[str, Any] = {
         "type": violation_type,
@@ -257,10 +257,7 @@ def _parse_board_type(name: str) -> BoardType:
         return BoardType.SQUARE19
     if name == "hexagonal":
         return BoardType.HEXAGONAL
-    raise SystemExit(
-        f"Unknown board type: {name!r} "
-        "(expected square8|square19|hexagonal)"
-    )
+    raise SystemExit(f"Unknown board type: {name!r} " "(expected square8|square19|hexagonal)")
 
 
 def _canonical_termination_reason(state: GameState, fallback: str) -> str:
@@ -357,10 +354,7 @@ def _build_mixed_ai_pool(
 
     # mixed mode
     if engine_mode != "mixed":
-        raise SystemExit(
-            "engine_mode must be 'descent-only' or 'mixed', "
-            f"got {engine_mode!r}"
-        )
+        raise SystemExit("engine_mode must be 'descent-only' or 'mixed', " f"got {engine_mode!r}")
 
     # Difficulty presets chosen to cover the canonical ladder while keeping
     # runtime reasonable on square8.
@@ -590,19 +584,13 @@ def run_self_play_soak(
     # Precompute per-board pool-enable flags so that the inner loop can
     # cheaply skip sampling logic when pools are disabled.
     square8_pool_enabled = bool(
-        square8_state_pool_output
-        and square8_state_pool_max_states > 0
-        and square8_state_pool_sampling_interval > 0
+        square8_state_pool_output and square8_state_pool_max_states > 0 and square8_state_pool_sampling_interval > 0
     )
     square19_pool_enabled = bool(
-        square19_state_pool_output
-        and square19_state_pool_max_states > 0
-        and square19_state_pool_sampling_interval > 0
+        square19_state_pool_output and square19_state_pool_max_states > 0 and square19_state_pool_sampling_interval > 0
     )
     hex_pool_enabled = bool(
-        hex_state_pool_output
-        and hex_state_pool_max_states > 0
-        and hex_state_pool_sampling_interval > 0
+        hex_state_pool_output and hex_state_pool_max_states > 0 and hex_state_pool_sampling_interval > 0
     )
 
     os.makedirs(os.path.dirname(args.log_jsonl) or ".", exist_ok=True)
@@ -709,9 +697,8 @@ def run_self_play_soak(
 
                 current_player = state.current_player
                 legal_moves = env.legal_moves()
-                if (
-                    state.current_phase == GamePhase.FORCED_ELIMINATION
-                    and any(m.type != MoveType.FORCED_ELIMINATION for m in legal_moves)
+                if state.current_phase == GamePhase.FORCED_ELIMINATION and any(
+                    m.type != MoveType.FORCED_ELIMINATION for m in legal_moves
                 ):
                     termination_reason = "illegal_moves_in_forced_elimination"
                     skipped = True
@@ -793,10 +780,7 @@ def run_self_play_soak(
                         skipped = True
                         break
 
-                if (
-                    state.current_phase == GamePhase.FORCED_ELIMINATION
-                    and move.type != MoveType.FORCED_ELIMINATION
-                ):
+                if state.current_phase == GamePhase.FORCED_ELIMINATION and move.type != MoveType.FORCED_ELIMINATION:
                     termination_reason = "ai_move_not_forced_elimination"
                     skipped = True
                     print(
@@ -889,6 +873,7 @@ def run_self_play_soak(
                         break
                 except Exception as exc:  # pragma: no cover - defensive
                     import traceback
+
                     print(f"[DEBUG] Step exception: {exc}")
                     traceback.print_exc()
                     termination_reason = f"step_exception:{type(exc).__name__}"
@@ -1049,10 +1034,7 @@ def run_self_play_soak(
 
                 # Intra-game memory cleanup for long games on large boards
                 # This prevents OOM within a single game
-                if (
-                    intra_game_gc_interval > 0
-                    and move_count % intra_game_gc_interval == 0
-                ):
+                if intra_game_gc_interval > 0 and move_count % intra_game_gc_interval == 0:
                     _run_intra_game_gc(
                         ai_by_player,
                         move_count,
@@ -1128,8 +1110,7 @@ def run_self_play_soak(
 
                     failure_path = os.path.join(
                         failure_dir,
-                        f"failure_{game_idx}_"
-                        f"{termination_reason.replace(':', '_')}.json",
+                        f"failure_{game_idx}_" f"{termination_reason.replace(':', '_')}.json",
                     )
                     with open(
                         failure_path,
@@ -1219,9 +1200,11 @@ def run_self_play_soak(
                                             "move_number": getattr(mv, "move_number", None),
                                             "type": mv.type.value,
                                             "player": mv.player,
-                                            "phase_before": getattr(state, "current_phase", None).value
-                                            if state and getattr(state, "current_phase", None)
-                                            else None,
+                                            "phase_before": (
+                                                getattr(state, "current_phase", None).value
+                                                if state and getattr(state, "current_phase", None)
+                                                else None
+                                            ),
                                             "current_player": getattr(state, "current_player", None),
                                         }
                                     )
@@ -1238,11 +1221,13 @@ def run_self_play_soak(
                                             m.model_dump(mode="json")  # type: ignore[attr-defined]
                                             for m in game_moves_for_recording
                                         ],
-                                        "initial_state": initial_state_for_recording.model_dump(  # type: ignore[attr-defined]
-                                            mode="json"
-                                        )
-                                        if initial_state_for_recording
-                                        else None,
+                                        "initial_state": (
+                                            initial_state_for_recording.model_dump(  # type: ignore[attr-defined]
+                                                mode="json"
+                                            )
+                                            if initial_state_for_recording
+                                            else None
+                                        ),
                                         "replay_trace": replay_trace,
                                         "replay_error": replay_error,
                                     },
@@ -1297,8 +1282,7 @@ def run_self_play_soak(
                 except Exception as exc:  # pragma: no cover - defensive
                     # DB recording must never break the soak loop
                     print(
-                        f"[record-db] Failed to record game {game_idx}: "
-                        f"{type(exc).__name__}: {exc}",
+                        f"[record-db] Failed to record game {game_idx}: " f"{type(exc).__name__}: {exc}",
                         file=sys.stderr,
                     )
 
@@ -1342,8 +1326,7 @@ def run_self_play_soak(
     # Log DB recording summary if enabled
     if replay_db:
         print(
-            f"[record-db] Recorded {games_recorded}/{num_games} games "
-            f"to {record_db_path}",
+            f"[record-db] Recorded {games_recorded}/{num_games} games " f"to {record_db_path}",
             flush=True,
         )
 
@@ -1358,36 +1341,26 @@ def run_self_play_soak(
             "total_moves": total_moves,
             "env_reset": {
                 "total_sec": timing_totals["env_reset"],
-                "avg_per_game_sec": (
-                    timing_totals["env_reset"] / max(total_games_run, 1)
-                ),
+                "avg_per_game_sec": (timing_totals["env_reset"] / max(total_games_run, 1)),
             },
             "ai_build": {
                 "total_sec": timing_totals["ai_build"],
-                "avg_per_game_sec": (
-                    timing_totals["ai_build"] / max(total_games_run, 1)
-                ),
+                "avg_per_game_sec": (timing_totals["ai_build"] / max(total_games_run, 1)),
             },
             "db_record": {
                 "total_sec": timing_totals["db_record"],
-                "avg_per_game_sec": (
-                    timing_totals["db_record"] / max(total_games_run, 1)
-                ),
+                "avg_per_game_sec": (timing_totals["db_record"] / max(total_games_run, 1)),
             },
         }
 
         if total_moves > 0:
             timing_profile["move_select"] = {
                 "total_sec": timing_totals["move_select"],
-                "avg_per_move_sec": (
-                    timing_totals["move_select"] / total_moves
-                ),
+                "avg_per_move_sec": (timing_totals["move_select"] / total_moves),
             }
             timing_profile["env_step"] = {
                 "total_sec": timing_totals["env_step"],
-                "avg_per_move_sec": (
-                    timing_totals["env_step"] / total_moves
-                ),
+                "avg_per_move_sec": (timing_totals["env_step"] / total_moves),
             }
 
         # Stash for consumption by the CLI entrypoint.
@@ -1440,18 +1413,24 @@ def _summarise(
 
     for r in records:
         by_status[r.status] = by_status.get(r.status, 0) + 1
-        by_reason[r.termination_reason] = by_reason.get(
-            r.termination_reason,
-            0,
-        ) + 1
+        by_reason[r.termination_reason] = (
+            by_reason.get(
+                r.termination_reason,
+                0,
+            )
+            + 1
+        )
         lengths.append(r.length)
 
         if getattr(r, "skipped", False):
             skipped_games += 1
-            skipped_by_reason[r.termination_reason] = skipped_by_reason.get(
-                r.termination_reason,
-                0,
-            ) + 1
+            skipped_by_reason[r.termination_reason] = (
+                skipped_by_reason.get(
+                    r.termination_reason,
+                    0,
+                )
+                + 1
+            )
 
         if r.termination_reason.startswith("status:"):
             completed_games += 1
@@ -1469,14 +1448,10 @@ def _summarise(
             "invariant_violations_by_type",
             {},
         ).items():
-            violation_counts_by_type[v_type] = (
-                violation_counts_by_type.get(v_type, 0) + count
-            )
+            violation_counts_by_type[v_type] = violation_counts_by_type.get(v_type, 0) + count
             invariant_id = VIOLATION_TYPE_TO_INVARIANT_ID.get(v_type)
             if invariant_id:
-                invariant_violations_by_id[invariant_id] = (
-                    invariant_violations_by_id.get(invariant_id, 0) + count
-                )
+                invariant_violations_by_id[invariant_id] = invariant_violations_by_id.get(invariant_id, 0) + count
 
     lengths_sorted = sorted(lengths) if lengths else [0]
 
@@ -1499,16 +1474,8 @@ def _summarise(
         # Pie-rule usage aggregates
         "swap_sides_total_moves": total_swap_sides_moves,
         "swap_sides_games": games_with_swap_sides,
-        "swap_sides_games_fraction": (
-            games_with_swap_sides / total
-        )
-        if total
-        else 0.0,
-        "avg_swap_sides_moves_per_game": (
-            total_swap_sides_moves / total
-        )
-        if total
-        else 0.0,
+        "swap_sides_games_fraction": (games_with_swap_sides / total) if total else 0.0,
+        "avg_swap_sides_moves_per_game": (total_swap_sides_moves / total) if total else 0.0,
     }
 
     if invariant_samples is not None:
@@ -1609,21 +1576,13 @@ def run_ai_healthcheck_profile(
 
     games_per_config_env = os.getenv("RINGRIFT_AI_HEALTHCHECK_GAMES")
     try:
-        games_per_config = (
-            int(games_per_config_env)
-            if games_per_config_env
-            else 2
-        )
+        games_per_config = int(games_per_config_env) if games_per_config_env else 2
     except ValueError:
         games_per_config = 2
     if games_per_config <= 0:
         games_per_config = 1
 
-    base_seed = (
-        args.seed
-        if getattr(args, "seed", None) is not None
-        else 1764142864
-    )
+    base_seed = args.seed if getattr(args, "seed", None) is not None else 1764142864
 
     all_records: List[GameRecord] = []
     all_samples: List[Dict[str, Any]] = []
@@ -1690,18 +1649,14 @@ def _has_anomalies(records: List[GameRecord]) -> bool:
     anomalous_reasons = {"no_legal_moves_for_current_player"}
     anomalous_prefixes = ("step_exception:", "error_reset")
     return any(
-        (rec.termination_reason in anomalous_reasons)
-        or rec.termination_reason.startswith(anomalous_prefixes)
+        (rec.termination_reason in anomalous_reasons) or rec.termination_reason.startswith(anomalous_prefixes)
         for rec in records
     )
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Run long self-play soaks using the Python rules engine and "
-            "mixed/descent AI configurations."
-        ),
+        description=("Run long self-play soaks using the Python rules engine and " "mixed/descent AI configurations."),
     )
     parser.add_argument(
         "--num-games",
@@ -1751,19 +1706,13 @@ def _parse_args() -> argparse.Namespace:
         "--num-players",
         type=int,
         default=2,
-        help=(
-            "Number of active players per game (2–4). "
-            "Defaults to 2."
-        ),
+        help=("Number of active players per game (2–4). " "Defaults to 2."),
     )
     parser.add_argument(
         "--max-moves",
         type=int,
         default=200,
-        help=(
-            "Maximum moves per game before treating as a cutoff "
-            "(default: 200)."
-        ),
+        help=("Maximum moves per game before treating as a cutoff " "(default: 200)."),
     )
     parser.add_argument(
         "--seed",
@@ -1873,69 +1822,51 @@ def _parse_args() -> argparse.Namespace:
         "--square8-state-pool-max-states",
         type=int,
         default=500,
-        help=(
-            "Maximum number of Square8 GameState snapshots to append to the "
-            "state pool JSONL (default: 500)."
-        ),
+        help=("Maximum number of Square8 GameState snapshots to append to the " "state pool JSONL (default: 500)."),
     )
     parser.add_argument(
         "--square8-state-pool-sampling-interval",
         type=int,
         default=4,
-        help=(
-            "Sample a GameState every N plies for Square8 games "
-            "(default: 4)."
-        ),
+        help=("Sample a GameState every N plies for Square8 games " "(default: 4)."),
     )
     parser.add_argument(
         "--square19-state-pool-output",
         type=str,
         default=None,
         help=(
-            "Optional path to write a Square19 state pool JSONL file "
-            "(e.g., data/eval_pools/square19/pool_v1.jsonl)."
+            "Optional path to write a Square19 state pool JSONL file " "(e.g., data/eval_pools/square19/pool_v1.jsonl)."
         ),
     )
     parser.add_argument(
         "--square19-state-pool-max-states",
         type=int,
         default=0,
-        help=(
-            "If >0, max number of Square19 states to sample into the pool."
-        ),
+        help=("If >0, max number of Square19 states to sample into the pool."),
     )
     parser.add_argument(
         "--square19-state-pool-sampling-interval",
         type=int,
         default=0,
-        help=(
-            "If >0, record every Nth move for Square19 games into the pool."
-        ),
+        help=("If >0, record every Nth move for Square19 games into the pool."),
     )
     parser.add_argument(
         "--hex-state-pool-output",
         type=str,
         default=None,
-        help=(
-            "Optional path to write a Hex state pool JSONL file "
-            "(e.g., data/eval_pools/hex/pool_v1.jsonl)."
-        ),
+        help=("Optional path to write a Hex state pool JSONL file " "(e.g., data/eval_pools/hex/pool_v1.jsonl)."),
     )
     parser.add_argument(
         "--hex-state-pool-max-states",
         type=int,
         default=0,
-        help=(
-            "If >0, max number of Hex states to sample into the pool."
-        ),
+        help=("If >0, max number of Hex states to sample into the pool."),
     )
     parser.add_argument(
         "--hex-state-pool-sampling-interval",
         type=int,
         default=0,
-        help=(
-            "If >0, record every Nth move for Hex games into the pool."
-        ),
+        help=("If >0, record every Nth move for Hex games into the pool."),
     )
     parser.add_argument(
         "--record-db",
@@ -2047,11 +1978,7 @@ def main() -> None:  # pragma: no cover - CLI entrypoint
         if getattr(args, "profile_timing", False) and _LAST_TIMING_PROFILE is not None:
             summary["timing_profile"] = _LAST_TIMING_PROFILE
 
-    heading = (
-        "AI self-play healthcheck summary"
-        if profile == "ai-healthcheck"
-        else "Self-play soak summary"
-    )
+    heading = "AI self-play healthcheck summary" if profile == "ai-healthcheck" else "Self-play soak summary"
 
     print(f"\n=== {heading} ===")
     print(json.dumps(summary, indent=2, sort_keys=True))

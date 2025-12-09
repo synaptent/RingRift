@@ -38,28 +38,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for tier perf benchmarking."""
     parser = argparse.ArgumentParser(
         description=(
-            "Run a small per-move latency benchmark for a difficulty tier "
-            "(for example D4/D6/D8 on square8 2p)."
+            "Run a small per-move latency benchmark for a difficulty tier " "(for example D4/D6/D8 on square8 2p)."
         ),
     )
 
     parser.add_argument(
         "--tier",
         required=True,
-        help=(
-            "Tier identifier (for example D4, D6, D8 or "
-            "D4_SQ8_2P / D6_SQ8_2P / D8_SQ8_2P)."
-        ),
+        help=("Tier identifier (for example D4, D6, D8 or " "D4_SQ8_2P / D6_SQ8_2P / D8_SQ8_2P)."),
     )
 
     parser.add_argument(
         "--num-games",
         type=int,
         default=4,
-        help=(
-            "Number of self-play games to run (default: 4). "
-            "Each game samples up to --moves-per-game moves."
-        ),
+        help=("Number of self-play games to run (default: 4). " "Each game samples up to --moves-per-game moves."),
     )
 
     parser.add_argument(
@@ -83,10 +76,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output-json",
         type=str,
         default=None,
-        help=(
-            "Optional path to write a JSON summary containing raw metrics "
-            "and PASS/FAIL flags."
-        ),
+        help=("Optional path to write a JSON summary containing raw metrics " "and PASS/FAIL flags."),
     )
 
     return parser.parse_args(argv)
@@ -162,17 +152,11 @@ def main(argv: list[str] | None = None) -> int:
                 _ = get_tier_perf_budget(tier_key)
             except KeyError as exc:
                 available = ", ".join(sorted(TIER_PERF_BUDGETS.keys()))
-                msg = (
-                    f"Unknown tier '{args.tier}'. "
-                    f"Available perf-budgeted tiers: {available}"
-                )
+                msg = f"Unknown tier '{args.tier}'. " f"Available perf-budgeted tiers: {available}"
                 raise SystemExit(msg) from exc
         else:
             available = ", ".join(sorted(TIER_PERF_BUDGETS.keys()))
-            msg = (
-                f"Unknown tier '{args.tier}'. "
-                f"Available perf-budgeted tiers: {available}"
-            )
+            msg = f"Unknown tier '{args.tier}'. " f"Available perf-budgeted tiers: {available}"
             raise SystemExit(msg)
 
     result: TierPerfResult = run_tier_perf_benchmark(

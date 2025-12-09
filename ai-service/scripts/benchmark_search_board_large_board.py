@@ -45,24 +45,16 @@ PARITY_FIXTURES_DIR = AI_SERVICE_ROOT / "parity_fixtures"
 # Representative large-board fixtures (same set used in
 # test_search_board_parity.py for structural parity tests).
 LARGE_BOARD_FIXTURES: List[str] = [
-    (
-        "selfplay_square19_2p__"
-        "02aa8d91-47aa-4d3e-a506-cdd493bda33a__k118.json"
-    ),
-    (
-        "selfplay_hexagonal_2p__"
-        "41c7c746-af99-48cb-8887-435b03b5eac7__k8.json"
-    ),
-    (
-        "selfplay_hexagonal_3p__"
-        "1f7a10cc-e41c-48eb-80a9-8c4bfde8d3d0__k87.json"
-    ),
+    ("selfplay_square19_2p__" "02aa8d91-47aa-4d3e-a506-cdd493bda33a__k118.json"),
+    ("selfplay_hexagonal_2p__" "41c7c746-af99-48cb-8887-435b03b5eac7__k8.json"),
+    ("selfplay_hexagonal_3p__" "1f7a10cc-e41c-48eb-80a9-8c4bfde8d3d0__k87.json"),
 ]
 
 
 @dataclass
 class ReplayBenchmarkResult:
     """Simple timing summary for a single replay benchmark."""
+
     fixture_name: str
     board_type: str
     mode: str  # "canonical" or "search_board"
@@ -102,10 +94,7 @@ def _load_fixture_payload(fixture_name: str) -> dict:
         if "diverged_at" in payload:
             payload["canonical_move_index"] = payload["diverged_at"] - 1
         else:
-            raise ValueError(
-                f"Fixture {fixture_name} missing canonical_move_index "
-                "and diverged_at"
-            )
+            raise ValueError(f"Fixture {fixture_name} missing canonical_move_index " "and diverged_at")
 
     return payload
 
@@ -171,17 +160,12 @@ def run_benchmark_for_fixture(
 ) -> List[ReplayBenchmarkResult]:
     """Run canonical vs SearchBoard replay benchmarks for one fixture."""
     try:
-        initial_state, moves, board_type = _load_sequence_from_fixture(
-            fixture_name
-        )
+        initial_state, moves, board_type = _load_sequence_from_fixture(fixture_name)
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"  Skipping {fixture_name}: {exc}")
         return []
 
-    print(
-        f"  Fixture: {fixture_name} "
-        f"(board_type={board_type.value}, moves={len(moves)})"
-    )
+    print(f"  Fixture: {fixture_name} " f"(board_type={board_type.value}, moves={len(moves)})")
 
     # Canonical
     canon_total = _benchmark_canonical_replay(initial_state, moves, iterations)
@@ -240,14 +224,8 @@ def main() -> int:
         else:
             speedup = 0.0
 
-        print(
-            f"    Canonical:   {canon.avg_ms:.2f} ms / replay "
-            f"(total {canon.total_time_sec:.3f}s)"
-        )
-        print(
-            f"    SearchBoard: {sb.avg_ms:.2f} ms / replay "
-            f"(total {sb.total_time_sec:.3f}s)"
-        )
+        print(f"    Canonical:   {canon.avg_ms:.2f} ms / replay " f"(total {canon.total_time_sec:.3f}s)")
+        print(f"    SearchBoard: {sb.avg_ms:.2f} ms / replay " f"(total {sb.total_time_sec:.3f}s)")
         print(f"    Speedup:     {speedup:.2f}x")
         print()
 
@@ -263,25 +241,14 @@ def main() -> int:
         by_board.setdefault(res.board_type, []).append(res)
 
     for board_type, results in sorted(by_board.items()):
-        canon_times = [
-            r.total_time_sec
-            for r in results
-            if r.mode == "canonical" and r.total_time_sec > 0.0
-        ]
-        sb_times = [
-            r.total_time_sec
-            for r in results
-            if r.mode == "search_board" and r.total_time_sec > 0.0
-        ]
+        canon_times = [r.total_time_sec for r in results if r.mode == "canonical" and r.total_time_sec > 0.0]
+        sb_times = [r.total_time_sec for r in results if r.mode == "search_board" and r.total_time_sec > 0.0]
         if not canon_times or not sb_times:
             continue
         avg_canon = sum(canon_times) / len(canon_times)
         avg_sb = sum(sb_times) / len(sb_times)
         speedup = avg_canon / avg_sb if avg_sb > 0.0 else 0.0
-        print(
-            f"  Board {board_type}: average speedup "
-            f"{speedup:.2f}x over {len(canon_times)} fixtures"
-        )
+        print(f"  Board {board_type}: average speedup " f"{speedup:.2f}x over {len(canon_times)} fixtures")
 
     print()
     print("Done.")

@@ -248,8 +248,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         type=float,
         default=0.5,
         help=(
-            "Minimum acceptable lower bound of the 95%% CI for the candidate "
-            "win rate on each matrix (default: 0.5)."
+            "Minimum acceptable lower bound of the 95%% CI for the candidate " "win rate on each matrix (default: 0.5)."
         ),
     )
     parser.add_argument(
@@ -258,10 +257,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         nargs="*",
         choices=list(BOARD_TYPE_MAP.keys()),
         default=["square8"],
-        help=(
-            "Boards to include in the evaluation matrix. Defaults to "
-            "['square8']."
-        ),
+        help=("Boards to include in the evaluation matrix. Defaults to " "['square8']."),
     )
     parser.add_argument(
         "--output-json",
@@ -346,4 +342,3 @@ def main(argv: Iterable[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
-

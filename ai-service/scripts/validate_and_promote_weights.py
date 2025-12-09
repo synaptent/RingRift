@@ -314,11 +314,13 @@ def promote_weights(
 
     # Update profile
     data["profiles"][profile_id] = candidate_weights
-    data["metadata"]["updates"].append({
-        "profile_id": profile_id,
-        "source": candidate_path,
-        "timestamp": datetime.now().isoformat(),
-    })
+    data["metadata"]["updates"].append(
+        {
+            "profile_id": profile_id,
+            "source": candidate_path,
+            "timestamp": datetime.now().isoformat(),
+        }
+    )
 
     # Write output
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -348,7 +350,8 @@ def main():
     )
 
     parser.add_argument(
-        "--candidate", "-c",
+        "--candidate",
+        "-c",
         action="append",
         dest="candidates",
         help="Candidate weight file(s) to validate",
@@ -372,13 +375,15 @@ def main():
         help="Candidate weight file(s) for 4-player validation",
     )
     parser.add_argument(
-        "--games", "-g",
+        "--games",
+        "-g",
         type=int,
         default=50,
         help="Number of games per validation (default: 50)",
     )
     parser.add_argument(
-        "--num-players", "-n",
+        "--num-players",
+        "-n",
         type=int,
         default=2,
         choices=[2, 3, 4],
@@ -402,7 +407,8 @@ def main():
         help="Automatically promote weights that pass validation",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default="data/trained_heuristic_profiles.json",
         help="Output path for promoted profiles",
     )
@@ -413,7 +419,8 @@ def main():
         help="Board type for validation games",
     )
     parser.add_argument(
-        "--report", "-r",
+        "--report",
+        "-r",
         help="Path to save validation report JSON",
     )
 

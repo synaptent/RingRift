@@ -195,10 +195,7 @@ def main(argv: List[str] | None = None) -> int:
         "--db",
         type=str,
         default=None,
-        help=(
-            "Path to the GameReplayDB SQLite file to write. "
-            "Defaults to data/games/canonical_<board>.db."
-        ),
+        help=("Path to the GameReplayDB SQLite file to write. " "Defaults to data/games/canonical_<board>.db."),
     )
     parser.add_argument(
         "--summary",

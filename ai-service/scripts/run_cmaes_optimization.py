@@ -125,6 +125,7 @@ try:
         HostConfig,
         load_remote_hosts,
     )
+
     DISTRIBUTED_AVAILABLE = True
 except ImportError:
     DISTRIBUTED_AVAILABLE = False
@@ -133,9 +134,7 @@ except ImportError:
 VALID_MODES = ["local", "lan", "aws", "hybrid"]
 
 
-def get_hosts_for_mode(
-    mode: str, hosts_config: Dict[str, "HostConfig"]
-) -> List[str]:
+def get_hosts_for_mode(mode: str, hosts_config: Dict[str, "HostConfig"]) -> List[str]:
     """Get list of host names based on deployment mode.
 
     Args:
@@ -443,13 +442,9 @@ def play_single_game_from_state(
     move_count = 0
     moves_played: List[Move] = []  # Collect moves for recording
 
-    while (
-        game_state.game_status == GameStatus.ACTIVE and move_count < max_moves
-    ):
+    while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player = game_state.current_player
-        current_ai = (
-            candidate_ai if current_player == candidate_player else opponent_ai
-        )
+        current_ai = candidate_ai if current_player == candidate_player else opponent_ai
         current_ai.player_number = current_player
 
         move = current_ai.select_move(game_state)
@@ -686,10 +681,7 @@ def evaluate_fitness(
             games_vs_baseline = min(games_vs_baseline, games_per_eval - 1)
         games_vs_incumbent = games_per_eval - games_vs_baseline
 
-        opponents = (
-            [baseline_weights] * games_vs_baseline
-            + [incumbent_weights] * games_vs_incumbent
-        )
+        opponents = [baseline_weights] * games_vs_baseline + [incumbent_weights] * games_vs_incumbent
     else:
         raise ValueError(f"Unknown opponent_mode: {opponent_mode!r}")
 
@@ -702,10 +694,7 @@ def evaluate_fitness(
             max_states=games_per_eval,
         )
         if not pool_states:
-            raise ValueError(
-                f"State pool is empty for board_type={board_type}, "
-                f"pool_id={pool_id}"
-            )
+            raise ValueError(f"State pool is empty for board_type={board_type}, " f"pool_id={pool_id}")
 
     # Randomness/seeding configuration: keep historical behaviour when
     # eval_randomness == 0.0 (no AI randomness and rng seeds unset), and use
@@ -764,20 +753,10 @@ def evaluate_fitness(
                     # without changing the completed-games counter.
                     games_completed = _game_index
                     elapsed = time.time() - _start_time
-                    games_so_far = (
-                        games_completed if games_completed > 0 else 1
-                    )
-                    avg_moves_so_far = (
-                        total_moves / games_so_far
-                        if total_moves > 0
-                        else 0.0
-                    )
-                    sec_per_game = (
-                        elapsed / games_so_far if games_so_far > 0 else 0.0
-                    )
-                    sec_per_move = (
-                        elapsed / total_moves if total_moves > 0 else 0.0
-                    )
+                    games_so_far = games_completed if games_completed > 0 else 1
+                    avg_moves_so_far = total_moves / games_so_far if total_moves > 0 else 0.0
+                    sec_per_game = elapsed / games_so_far if games_so_far > 0 else 0.0
+                    sec_per_move = elapsed / total_moves if total_moves > 0 else 0.0
                     _progress.update(
                         completed=games_completed,
                         extra_metrics={
@@ -835,12 +814,8 @@ def evaluate_fitness(
         if progress_reporter is not None and start_time is not None:
             games_completed = i + 1
             elapsed = time.time() - start_time
-            avg_moves_so_far = (
-                total_moves / games_completed if games_completed > 0 else 0.0
-            )
-            sec_per_game = (
-                elapsed / games_completed if games_completed > 0 else 0.0
-            )
+            avg_moves_so_far = total_moves / games_completed if games_completed > 0 else 0.0
+            sec_per_game = elapsed / games_completed if games_completed > 0 else 0.0
             sec_per_move = elapsed / total_moves if total_moves > 0 else 0.0
 
             progress_reporter.update(
@@ -907,9 +882,7 @@ def evaluate_fitness(
         # Pie-rule diagnostics: total SWAP_SIDES selections during this
         # evaluation, plus a per-game average for quick sanity checks.
         "swap_sides_moves": swap_sides_moves,
-        "swap_sides_moves_per_game": (
-            swap_sides_moves / games_per_eval if games_per_eval > 0 else 0.0
-        ),
+        "swap_sides_moves_per_game": (swap_sides_moves / games_per_eval if games_per_eval > 0 else 0.0),
     }
 
     if debug_hook is not None:
@@ -991,16 +964,19 @@ def evaluate_fitness_over_boards(
             return tagged
 
         if debug_hook is not None:
+
             def board_debug_hook(
                 stats: Dict[str, Any],
                 *,
                 _tag=_tag_stats,
             ) -> None:
                 debug_hook(_tag(stats))
+
         else:
             board_debug_hook = None  # type: ignore[assignment]
 
         if debug_callback is not None:
+
             def board_debug_callback(
                 candidate_w: HeuristicWeights,
                 baseline_w: HeuristicWeights,
@@ -1010,6 +986,7 @@ def evaluate_fitness_over_boards(
                 _tag=_tag_stats,
             ) -> None:
                 debug_callback(candidate_w, baseline_w, bt, _tag(stats))
+
         else:
             board_debug_callback = None  # type: ignore[assignment]
 
@@ -1033,9 +1010,7 @@ def evaluate_fitness_over_boards(
         )
         per_board_fitness[board_type] = fitness
 
-    aggregate = float(
-        sum(per_board_fitness.values()) / float(len(per_board_fitness))
-    )
+    aggregate = float(sum(per_board_fitness.values()) / float(len(per_board_fitness)))
     return aggregate, per_board_fitness
 
 
@@ -1094,8 +1069,7 @@ def evaluate_fitness_multiplayer(
 
     if num_players <= 2:
         raise ValueError(
-            "evaluate_fitness_multiplayer is intended for 3p/4p games; "
-            f"got num_players={num_players!r}"
+            "evaluate_fitness_multiplayer is intended for 3p/4p games; " f"got num_players={num_players!r}"
         )
     if games_per_eval <= 0:
         return 0.0
@@ -1149,11 +1123,7 @@ def evaluate_fitness_multiplayer(
 
         ai_by_player: Dict[int, HeuristicAI] = {}
         for p in game_state.players:
-            weights = (
-                candidate_weights
-                if p.player_number == candidate_player_number
-                else baseline_weights
-            )
+            weights = candidate_weights if p.player_number == candidate_player_number else baseline_weights
             ai_by_player[p.player_number] = create_heuristic_ai_with_weights(
                 p.player_number,
                 weights,
@@ -1167,10 +1137,7 @@ def evaluate_fitness_multiplayer(
         moves_list: List[Move] = []
 
         moves_played = 0
-        while (
-            game_state.game_status == GameStatus.ACTIVE
-            and moves_played < 500
-        ):
+        while game_state.game_status == GameStatus.ACTIVE and moves_played < 500:
             current_player = game_state.current_player
             ai = ai_by_player.get(current_player)
             if ai is None:
@@ -1235,6 +1202,7 @@ def evaluate_fitness_multiplayer(
             except Exception as e:
                 # Don't fail evaluation if recording fails
                 import logging
+
                 logging.warning(f"Failed to record multiplayer game: {e}")
 
     return total_score / games_played if games_played > 0 else 0.0
@@ -1261,10 +1229,7 @@ def run_axis_aligned_multiplayer_eval(
     profiles: List[AxisAlignedProfile] = []
 
     if not os.path.isdir(profiles_dir):
-        raise ValueError(
-            "Axis-aligned profiles dir does not exist or is not a directory: "
-            f"{profiles_dir!r}"
-        )
+        raise ValueError("Axis-aligned profiles dir does not exist or is not a directory: " f"{profiles_dir!r}")
 
     for name in sorted(os.listdir(profiles_dir)):
         if not name.endswith(".json"):
@@ -1278,10 +1243,7 @@ def run_axis_aligned_multiplayer_eval(
 
         weights_obj = payload.get("weights")
         if not isinstance(weights_obj, dict):
-            raise ValueError(
-                "Axis-aligned profile "
-                f"{path!r} is missing a 'weights' object or it is not a dict"
-            )
+            raise ValueError("Axis-aligned profile " f"{path!r} is missing a 'weights' object or it is not a dict")
 
         weight_keys = set(weights_obj.keys())
         if weight_keys != baseline_keys:
@@ -1293,9 +1255,7 @@ def run_axis_aligned_multiplayer_eval(
                 f"missing={missing}, extra={extra}"
             )
 
-        weights: HeuristicWeights = {
-            str(k): float(v) for k, v in weights_obj.items()
-        }
+        weights: HeuristicWeights = {str(k): float(v) for k, v in weights_obj.items()}
 
         meta = payload.get("meta") or {}
         factor = meta.get("factor")
@@ -1364,10 +1324,7 @@ def run_axis_aligned_multiplayer_eval(
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
 
-    print(
-        "Axis-aligned multi-player evaluation written to "
-        f"{output_path}"
-    )
+    print("Axis-aligned multi-player evaluation written to " f"{output_path}")
 
 
 def load_weights_from_file(path: str) -> HeuristicWeights:
@@ -1532,9 +1489,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     os.makedirs(run_dir, exist_ok=True)
 
     # Resolve checkpoint and generation summary directories
-    checkpoint_dir = config.checkpoint_dir or os.path.join(
-        run_dir, "checkpoints"
-    )
+    checkpoint_dir = config.checkpoint_dir or os.path.join(run_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     generation_summaries_dir = os.path.join(run_dir, "generations")
@@ -1600,12 +1555,9 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
 
         try:
             for name in sorted(os.listdir(checkpoint_dir)):
-                if not (
-                    name.startswith("checkpoint_gen")
-                    and name.endswith(".json")
-                ):
+                if not (name.startswith("checkpoint_gen") and name.endswith(".json")):
                     continue
-                gen_str = name[len("checkpoint_gen"):-len(".json")]
+                gen_str = name[len("checkpoint_gen") : -len(".json")]
                 try:
                     gen_num = int(gen_str)
                 except ValueError:
@@ -1622,17 +1574,11 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                 # Optionally recover fitness metadata
                 with open(latest_checkpoint_path, "r", encoding="utf-8") as f:
                     checkpoint_payload = json.load(f)
-                if (
-                    isinstance(checkpoint_payload, dict)
-                    and "fitness" in checkpoint_payload
-                ):
+                if isinstance(checkpoint_payload, dict) and "fitness" in checkpoint_payload:
                     best_fitness = float(checkpoint_payload["fitness"])
                 initial_weights = weights_to_array(best_weights)
                 resume_generation_offset = latest_gen or 0
-                print(
-                    f"Resuming from checkpoint {latest_checkpoint_path} "
-                    f"(generation {resume_generation_offset})"
-                )
+                print(f"Resuming from checkpoint {latest_checkpoint_path} " f"(generation {resume_generation_offset})")
             except Exception as exc:  # pragma: no cover - defensive
                 print(f"WARNING: Failed to load resume checkpoint: {exc}")
 
@@ -1663,10 +1609,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     print(f"  Eval randomness: {config.eval_randomness}")
     if config.eval_mode == "multi-start":
         print(f"  State pool id: {config.state_pool_id or 'v1'}")
-        if (
-            len(eval_boards) == 3
-            and config.state_pool_id in (None, "v1")
-        ):
+        if len(eval_boards) == 3 and config.state_pool_id in (None, "v1"):
             print(
                 "  Evaluation preset: 2p-multi-board-multi-start "
                 f"(games_per_eval={config.games_per_eval}, "
@@ -1726,10 +1669,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                     profile_data = json.load(f)
                 profile_weights = profile_data.get("weights", profile_data)
                 # Convert to ordered array matching WEIGHT_KEYS
-                ordered_values = [
-                    profile_weights.get(name, baseline_weights.get(name, 0.0))
-                    for name in WEIGHT_KEYS
-                ]
+                ordered_values = [profile_weights.get(name, baseline_weights.get(name, 0.0)) for name in WEIGHT_KEYS]
                 injected_solutions.append(ordered_values)
                 print(f"Loaded inject profile: {profile_path}")
             except (FileNotFoundError, json.JSONDecodeError) as e:
@@ -1802,8 +1742,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             host_names = get_hosts_for_mode(config.mode, hosts_config)
             if not host_names:
                 raise RuntimeError(
-                    f"No hosts found for mode '{config.mode}'. "
-                    f"Check config/distributed_hosts.yaml configuration."
+                    f"No hosts found for mode '{config.mode}'. " f"Check config/distributed_hosts.yaml configuration."
                 )
             worker_urls = get_worker_urls_from_hosts(host_names)
             print(f"  Mode '{config.mode}': selected {len(worker_urls)} workers from config")
@@ -1817,18 +1756,14 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             )
             if len(workers) < config.min_workers:
                 raise RuntimeError(
-                    f"Not enough workers found. Required: {config.min_workers}, "
-                    f"found: {len(workers)}"
+                    f"Not enough workers found. Required: {config.min_workers}, " f"found: {len(workers)}"
                 )
             # Filter to healthy workers only
             workers = filter_healthy_workers(workers)
             worker_urls = [w.url for w in workers]
             print(f"  Discovered {len(worker_urls)} healthy workers")
         else:
-            raise RuntimeError(
-                "Distributed mode requires --workers, --mode (lan/aws/hybrid), "
-                "or --discover-workers"
-            )
+            raise RuntimeError("Distributed mode requires --workers, --mode (lan/aws/hybrid), " "or --discover-workers")
 
         if not worker_urls:
             raise RuntimeError("No workers available for distributed evaluation")
@@ -1868,11 +1803,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
 
         # Incumbent (B1) is the best-known weights at the *start* of
         # the generation.
-        incumbent_for_generation = (
-            best_weights
-            if config.opponent_mode == "baseline-plus-incumbent"
-            else None
-        )
+        incumbent_for_generation = best_weights if config.opponent_mode == "baseline-plus-incumbent" else None
 
         boards_for_eval = eval_boards
         candidate_per_board_fitness: List[Dict[BoardType, float]] = []
@@ -1880,10 +1811,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         # Queue-based distributed evaluation (for cloud deployment)
         if queue_evaluator is not None:
             # Convert solutions to weight dicts
-            population_weights = [
-                array_to_weights(np.array(sol, dtype=float))
-                for sol in solutions
-            ]
+            population_weights = [array_to_weights(np.array(sol, dtype=float)) for sol in solutions]
 
             # Progress callback
             def queue_progress(completed: int, total: int) -> None:
@@ -1931,10 +1859,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         # HTTP-based distributed evaluation: evaluate entire population in parallel on workers
         elif distributed_evaluator is not None:
             # Convert solutions to weight dicts
-            population_weights = [
-                array_to_weights(np.array(sol, dtype=float))
-                for sol in solutions
-            ]
+            population_weights = [array_to_weights(np.array(sol, dtype=float)) for sol in solutions]
 
             # Progress callback
             def distributed_progress(completed: int, total: int) -> None:
@@ -1981,12 +1906,11 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         else:
             # Local evaluation: evaluate candidates sequentially
             for idx, solution in enumerate(solutions):
-                candidate_weights = array_to_weights(
-                    np.array(solution, dtype=float)
-                )
+                candidate_weights = array_to_weights(np.array(solution, dtype=float))
 
                 # Optional per-candidate debug logging for plateau diagnosis.
                 if config.debug_plateau:
+
                     def cmaes_debug_hook(
                         stats: Dict[str, Any],
                         *,
@@ -2002,6 +1926,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                             f"l2={stats['weight_l2']:.3f} "
                             f"games={stats['games_per_eval']}"
                         )
+
                 else:
                     cmaes_debug_hook = None  # type: ignore[assignment]
 
@@ -2034,9 +1959,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
                     # We do not have per-board breakdown from the multi-player
                     # helper, so mirror the aggregate fitness across all boards
                     # for reporting purposes.
-                    per_board_fitness = {
-                        board: fitness for board in boards_for_eval
-                    }
+                    per_board_fitness = {board: fitness for board in boards_for_eval}
                 elif len(boards_for_eval) == 1:
                     board_type = boards_for_eval[0]
                     fitness = evaluate_fitness(
@@ -2106,14 +2029,9 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         # Per-generation best candidate
         best_idx = int(np.argmax(gen_fitnesses))
         gen_best_fitness = gen_fitnesses[best_idx]
-        gen_best_weights = array_to_weights(
-            np.array(solutions[best_idx], dtype=float)
-        )
+        gen_best_weights = array_to_weights(np.array(solutions[best_idx], dtype=float))
         best_per_board = candidate_per_board_fitness[best_idx]
-        best_per_board_serialized = {
-            board.value: float(score)
-            for board, score in best_per_board.items()
-        }
+        best_per_board_serialized = {board.value: float(score) for board, score in best_per_board.items()}
 
         is_new_global_best = gen_best_fitness > best_fitness
         if is_new_global_best:
@@ -2129,9 +2047,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         )
 
         # Save checkpoint for the current global best
-        checkpoint_path = os.path.join(
-            checkpoint_dir, f"checkpoint_gen{generation:03d}.json"
-        )
+        checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_gen{generation:03d}.json")
         save_weights_to_file(
             best_weights,
             checkpoint_path,
@@ -2140,9 +2056,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         )
 
         # Save generation summary
-        summary_path = os.path.join(
-            generation_summaries_dir, f"generation_{generation:03d}.json"
-        )
+        summary_path = os.path.join(generation_summaries_dir, f"generation_{generation:03d}.json")
         summary_payload: Dict[str, object] = {
             "generation": generation,
             "population_size": config.population_size,
@@ -2175,10 +2089,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     progress_reporter.finish()
 
     final_generation = resume_generation_offset + config.generations
-    print(
-        f"\nCompleted {config.generations} generations "
-        f"(last global generation {final_generation})"
-    )
+    print(f"\nCompleted {config.generations} generations " f"(last global generation {final_generation})")
     print(f"Best fitness achieved: {best_fitness:.4f}")
 
     # Save final weights
@@ -2193,15 +2104,13 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
     # Cleanup queue connection if used
     if queue_evaluator is not None:
         queue_evaluator.close()
-        logger.info("Queue evaluator connection closed")
+        print("Queue evaluator connection closed")
 
     return best_weights
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="CMA-ES optimization for HeuristicAI weights"
-    )
+    parser = argparse.ArgumentParser(description="CMA-ES optimization for HeuristicAI weights")
     parser.add_argument(
         "--generations",
         type=int,
@@ -2276,38 +2185,28 @@ def main():
         "--max-moves",
         type=int,
         default=200,
-        help=(
-            "Maximum moves per self-play game before declaring a draw "
-            "(default: 200)."
-        ),
+        help=("Maximum moves per self-play game before declaring a draw " "(default: 200)."),
     )
     parser.add_argument(
         "--run-id",
         type=str,
         default=None,
         help=(
-            "Logical run identifier used to name the run directory. "
-            "If omitted, a timestamp-based id is generated."
+            "Logical run identifier used to name the run directory. " "If omitted, a timestamp-based id is generated."
         ),
     )
     parser.add_argument(
         "--resume-from",
         type=str,
         default=None,
-        help=(
-            "Path to an existing CMA-ES run directory to approximately "
-            "resume from."
-        ),
+        help=("Path to an existing CMA-ES run directory to approximately " "resume from."),
     )
     parser.add_argument(
         "--opponent-mode",
         type=str,
         choices=["baseline-only", "baseline-plus-incumbent"],
         default="baseline-only",
-        help=(
-            "Opponent pool mode for fitness evaluation "
-            "(default: baseline-only)."
-        ),
+        help=("Opponent pool mode for fitness evaluation " "(default: baseline-only)."),
     )
     parser.add_argument(
         "--eval-mode",
@@ -2494,13 +2393,9 @@ def main():
     board_type = BOARD_NAME_TO_TYPE[args.board]
 
     # Parse evaluation boards from CLI string.
-    raw_names = [
-        name.strip() for name in args.eval_boards.split(",") if name.strip()
-    ]
+    raw_names = [name.strip() for name in args.eval_boards.split(",") if name.strip()]
     if not raw_names:
-        raise ValueError(
-            "At least one board must be specified in --eval-boards"
-        )
+        raise ValueError("At least one board must be specified in --eval-boards")
 
     eval_boards: List[BoardType] = []
     for name in raw_names:
@@ -2523,9 +2418,7 @@ def main():
             output_path = output_arg
         else:
             output_path = os.path.join(run_dir, "best_weights.json")
-        checkpoint_dir = args.checkpoint_dir or os.path.join(
-            run_dir, "checkpoints"
-        )
+        checkpoint_dir = args.checkpoint_dir or os.path.join(run_dir, "checkpoints")
     else:
         if output_ext == ".json":
             # Backward-compatible: treat --output as the final weights file.
@@ -2538,9 +2431,7 @@ def main():
             base_dir = output_arg
             run_dir = os.path.join(base_dir, "runs", run_id)
             output_path = os.path.join(run_dir, "best_weights.json")
-        checkpoint_dir = args.checkpoint_dir or os.path.join(
-            run_dir, "checkpoints"
-        )
+        checkpoint_dir = args.checkpoint_dir or os.path.join(run_dir, "checkpoints")
 
     # Resolve state_pool_id from CLI. For multi-player runs (num_players > 2),
     # callers are expected to provide an explicit pool id that matches
@@ -2573,14 +2464,10 @@ def main():
         enable_eval_progress=not args.disable_eval_progress,
         record_games=not args.no_record,
         inject_profiles=(
-            [p.strip() for p in args.inject_profiles.split(",") if p.strip()]
-            if args.inject_profiles else None
+            [p.strip() for p in args.inject_profiles.split(",") if p.strip()] if args.inject_profiles else None
         ),
         distributed=args.distributed,
-        workers=(
-            [w.strip() for w in args.workers.split(",") if w.strip()]
-            if args.workers else None
-        ),
+        workers=([w.strip() for w in args.workers.split(",") if w.strip()] if args.workers else None),
         discover_workers=args.discover_workers,
         min_workers=args.min_workers,
         queue_backend=args.queue_backend,

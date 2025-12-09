@@ -30,9 +30,7 @@ def run_cmd(cmd: Sequence[str], cwd: Path) -> int:
 
 
 def main(argv: List[str]) -> int:
-    parser = argparse.ArgumentParser(
-        description="Run both parity and canonical history gates for a replay DB."
-    )
+    parser = argparse.ArgumentParser(description="Run both parity and canonical history gates for a replay DB.")
     parser.add_argument(
         "--db",
         required=True,

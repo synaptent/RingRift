@@ -11,7 +11,7 @@ export interface TooltipProps {
    * link). The tooltip will attach hover/focus handlers and aria-describedby
    * to this element.
    */
-  children: ReactElement<any>;
+  children: ReactElement<Record<string, unknown>>;
 }
 
 /**
@@ -29,7 +29,7 @@ export function Tooltip({ content, children }: TooltipProps) {
   const show = () => setOpen(true);
   const hide = () => setOpen(false);
 
-  const trigger = cloneElement(children as ReactElement<any>, {
+  const trigger = cloneElement(children as ReactElement<Record<string, unknown>>, {
     onMouseEnter: (event: React.MouseEvent) => {
       children.props.onMouseEnter?.(event);
       show();

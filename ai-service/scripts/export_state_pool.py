@@ -159,9 +159,7 @@ def export_states_from_db(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Export mid-game states from recorded games to JSONL pools"
-    )
+    parser = argparse.ArgumentParser(description="Export mid-game states from recorded games to JSONL pools")
     parser.add_argument(
         "--db",
         type=str,
@@ -253,11 +251,7 @@ def main():
                 board_type=args.board_type,
                 num_players=args.num_players,
                 min_game_length=args.min_game_length,
-                max_states=(
-                    args.max_states - len(all_states)
-                    if args.max_states
-                    else None
-                ),
+                max_states=(args.max_states - len(all_states) if args.max_states else None),
                 winners_only=args.winners_only,
                 source_filter=args.source,
             )

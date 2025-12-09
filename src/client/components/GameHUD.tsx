@@ -1079,8 +1079,8 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
           <div className="flex-1">
             <div className="flex items-center gap-1">
               <span>
-                Last Player Standing – win when, for three full rounds, you are the only player
-                with any real moves (placements, movements, or captures).
+                Last Player Standing – win when, for three full rounds, you are the only player with
+                any real moves (placements, movements, or captures).
               </span>
               <Tooltip
                 content={
@@ -1720,9 +1720,9 @@ function GameHUDFromViewModel({
             </span>
             <span className="truncate">
               {decisionPhase.isLocalActor
-                ? `Your decision timer: ${formatMsAsClock(decisionPhase.timeRemainingMs!)}`
+                ? `Your decision timer: ${formatMsAsClock(decisionPhase.timeRemainingMs ?? 0)}`
                 : `Time left for ${decisionPhase.actingPlayerName}'s decision: ${formatMsAsClock(
-                    decisionPhase.timeRemainingMs!
+                    decisionPhase.timeRemainingMs ?? 0
                   )}`}
             </span>
           </span>

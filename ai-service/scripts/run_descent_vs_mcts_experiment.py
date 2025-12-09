@@ -34,10 +34,7 @@ from app.training.generate_data import generate_dataset
 from app.training.train import train_from_file
 from app.training.config import TrainConfig
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -163,10 +160,7 @@ def run_experiment(
     results["descent"]["model_path"] = str(descent_model_path)
     results["descent"]["train_time_sec"] = descent_train_time
     results["descent"]["final_loss"] = descent_losses.get("total", 0)
-    logger.info(
-        f"Descent model trained in {descent_train_time:.1f}s "
-        f"(loss={descent_losses.get('total', 0):.4f})"
-    )
+    logger.info(f"Descent model trained in {descent_train_time:.1f}s " f"(loss={descent_losses.get('total', 0):.4f})")
 
     # =========================================================================
     # Phase 4: Train model on MCTS data
@@ -197,10 +191,7 @@ def run_experiment(
     results["mcts"]["model_path"] = str(mcts_model_path)
     results["mcts"]["train_time_sec"] = mcts_train_time
     results["mcts"]["final_loss"] = mcts_losses.get("total", 0)
-    logger.info(
-        f"MCTS model trained in {mcts_train_time:.1f}s "
-        f"(loss={mcts_losses.get('total', 0):.4f})"
-    )
+    logger.info(f"MCTS model trained in {mcts_train_time:.1f}s " f"(loss={mcts_losses.get('total', 0):.4f})")
 
     # =========================================================================
     # Phase 5: Evaluate models
@@ -300,68 +291,34 @@ def run_experiment(
     logger.info(f"  MCTS model loss: {results['mcts'].get('final_loss', 'N/A'):.4f}")
 
     if "vs_heuristic" in results["descent"]:
-        logger.info(
-            f"  Descent vs Heuristic: {results['descent']['vs_heuristic']['win_rate']:.1%}"
-        )
+        logger.info(f"  Descent vs Heuristic: {results['descent']['vs_heuristic']['win_rate']:.1%}")
     if "vs_heuristic" in results["mcts"]:
-        logger.info(
-            f"  MCTS vs Heuristic: {results['mcts']['vs_heuristic']['win_rate']:.1%}"
-        )
+        logger.info(f"  MCTS vs Heuristic: {results['mcts']['vs_heuristic']['win_rate']:.1%}")
     if "descent_vs_mcts" in results["comparison"]:
-        logger.info(
-            f"  Descent vs MCTS: {results['comparison']['descent_vs_mcts']['descent_win_rate']:.1%}"
-        )
+        logger.info(f"  Descent vs MCTS: {results['comparison']['descent_vs_mcts']['descent_win_rate']:.1%}")
 
     return results
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run Descent vs MCTS training experiment"
-    )
-    parser.add_argument(
-        "--games",
-        type=int,
-        default=500,
-        help="Number of self-play games per engine (default: 500)"
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=20,
-        help="Training epochs per model (default: 20)"
-    )
-    parser.add_argument(
-        "--eval-games",
-        type=int,
-        default=100,
-        help="Evaluation games per matchup (default: 100)"
-    )
+    parser = argparse.ArgumentParser(description="Run Descent vs MCTS training experiment")
+    parser.add_argument("--games", type=int, default=500, help="Number of self-play games per engine (default: 500)")
+    parser.add_argument("--epochs", type=int, default=20, help="Training epochs per model (default: 20)")
+    parser.add_argument("--eval-games", type=int, default=100, help="Evaluation games per matchup (default: 100)")
     parser.add_argument(
         "--board-type",
         choices=["square8", "square19", "hexagonal"],
         default="square8",
-        help="Board type (default: square8)"
+        help="Board type (default: square8)",
     )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        default=2,
-        choices=[2, 3, 4],
-        help="Number of players (default: 2)"
-    )
+    parser.add_argument("--num-players", type=int, default=2, choices=[2, 3, 4], help="Number of players (default: 2)")
     parser.add_argument(
         "--output-dir",
         type=str,
         default="experiments/descent_vs_mcts",
-        help="Output directory (default: experiments/descent_vs_mcts)"
+        help="Output directory (default: experiments/descent_vs_mcts)",
     )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed (default: 42)"
-    )
+    parser.add_argument("--seed", type=int, default=42, help="Random seed (default: 42)")
 
     args = parser.parse_args()
 

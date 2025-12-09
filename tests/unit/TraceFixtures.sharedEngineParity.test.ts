@@ -146,6 +146,15 @@ describe('Trace fixtures shared-engine self-consistency', () => {
         const action = moveToGameAction(step.move, before as any);
         const event = engine.processAction(action);
 
+        // Check if this step expects an invalid move (tsValid: false)
+        const expectsInvalid = step.expected?.tsValid === false;
+
+        if (expectsInvalid) {
+          // For expected invalid moves, verify we get an error
+          expect(event.type).toBe('ERROR_OCCURRED');
+          continue; // Skip state verification for invalid moves
+        }
+
         if (event.type === 'ERROR_OCCURRED') {
           console.error(
             `[TraceFixtures] Error processing step ${index} in ${name}:`,

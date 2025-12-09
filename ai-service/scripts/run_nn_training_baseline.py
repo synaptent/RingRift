@@ -64,10 +64,7 @@ def _parse_board(board: str) -> BoardType:
     b = board.lower()
     if b in {"square8", "sq8"}:
         return BoardType.SQUARE8
-    raise SystemExit(
-        f"Unsupported board {board!r}; this baseline script currently "
-        "supports only square8 2-player."
-    )
+    raise SystemExit(f"Unsupported board {board!r}; this baseline script currently " "supports only square8 2-player.")
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -82,25 +79,18 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--board",
         default="square8",
-        help=(
-            "Board identifier (currently only 'square8' is supported)."
-        ),
+        help=("Board identifier (currently only 'square8' is supported)."),
     )
     parser.add_argument(
         "--num-players",
         type=int,
         default=2,
-        help=(
-            "Number of players (baseline is designed for 2-player only)."
-        ),
+        help=("Number of players (baseline is designed for 2-player only)."),
     )
     parser.add_argument(
         "--run-dir",
         required=True,
-        help=(
-            "Output dir for nn_training_report.json and checkpoints. "
-            "Will be created if needed."
-        ),
+        help=("Output dir for nn_training_report.json and checkpoints. " "Will be created if needed."),
     )
     parser.add_argument(
         "--demo",
@@ -121,8 +111,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=str,
         default=None,
         help=(
-            "Optional explicit nn_model_id / checkpoint stem. When omitted, "
-            "a timestamped baseline id is generated."
+            "Optional explicit nn_model_id / checkpoint stem. When omitted, " "a timestamped baseline id is generated."
         ),
     )
     parser.add_argument(
@@ -265,9 +254,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         "data_path": data_path,
         "model_path": save_path,
         "training_params": {
-            "board_type": train_cfg.board_type.name
-            if hasattr(train_cfg.board_type, "name")
-            else str(train_cfg.board_type),
+            "board_type": (
+                train_cfg.board_type.name if hasattr(train_cfg.board_type, "name") else str(train_cfg.board_type)
+            ),
             "epochs_per_iter": train_cfg.epochs_per_iter,
             "batch_size": train_cfg.batch_size,
             "learning_rate": train_cfg.learning_rate,

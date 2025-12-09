@@ -60,29 +60,27 @@ from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 import numpy as np
 
 # Allow imports from app/
-sys.path.insert(
-    0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Fallback for tqdm if not installed
 try:
     from tqdm import tqdm as tqdm_lib
+
     tqdm: Callable[..., Any] = tqdm_lib
 except ImportError:
-    def tqdm_fallback(
-        iterable: Any,
-        **kwargs: Any
-    ) -> Generator[Any, None, None]:
+
+    def tqdm_fallback(iterable: Any, **kwargs: Any) -> Generator[Any, None, None]:
         """Simple fallback for tqdm."""
-        total = kwargs.get('total')
-        if total is None and hasattr(iterable, '__len__'):
+        total = kwargs.get("total")
+        if total is None and hasattr(iterable, "__len__"):
             total = len(iterable)
-        desc = kwargs.get('desc', '')
+        desc = kwargs.get("desc", "")
         for i, item in enumerate(iterable):
             if total:
-                print(f"\r{desc}: {i+1}/{total}", end='', flush=True)
+                print(f"\r{desc}: {i+1}/{total}", end="", flush=True)
             yield item
         print()
+
     tqdm = tqdm_fallback
 
 from app.models import (  # noqa: E402
@@ -170,9 +168,7 @@ class EvaluationResults:
     p2_final_pieces_list: List[int] = field(default_factory=list)
 
 
-def wilson_score_interval(
-    wins: int, total: int, confidence: float = 0.95
-) -> Tuple[float, float]:
+def wilson_score_interval(wins: int, total: int, confidence: float = 0.95) -> Tuple[float, float]:
     """Calculate Wilson score confidence interval for win rate.
 
     The Wilson score interval is more accurate than the normal approximation,
@@ -203,9 +199,7 @@ def wilson_score_interval(
     # Wilson score interval formula
     denominator = 1 + z**2 / n
     center = (p + z**2 / (2 * n)) / denominator
-    spread = (z / denominator) * math.sqrt(
-        p * (1 - p) / n + z**2 / (4 * n**2)
-    )
+    spread = (z / denominator) * math.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))
 
     lower = max(0.0, center - spread)
     upper = min(1.0, center + spread)
@@ -213,9 +207,7 @@ def wilson_score_interval(
     return (round(lower, 4), round(upper, 4))
 
 
-def load_cmaes_weights(
-    path: str = "heuristic_weights_optimized.json"
-) -> Dict[str, float]:
+def load_cmaes_weights(path: str = "heuristic_weights_optimized.json") -> Dict[str, float]:
     """Load CMA-ES optimized weights from JSON file.
 
     Args:
@@ -233,13 +225,11 @@ def load_cmaes_weights(
 
     for p in paths_to_try:
         if os.path.exists(p):
-            with open(p, 'r') as f:
+            with open(p, "r") as f:
                 data = json.load(f)
                 return data.get("weights", data)
 
-    raise FileNotFoundError(
-        f"Could not find CMA-ES weights file. Tried: {paths_to_try}"
-    )
+    raise FileNotFoundError(f"Could not find CMA-ES weights file. Tried: {paths_to_try}")
 
 
 def create_ai(
@@ -334,19 +324,13 @@ def create_ai(
         # Find checkpoint if not specified
         ckpt = checkpoint
         if not ckpt:
-            checkpoints_dir = os.path.join(
-                os.path.dirname(os.path.dirname(__file__)),
-                "checkpoints"
-            )
+            checkpoints_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "checkpoints")
             if os.path.exists(checkpoints_dir):
                 # Use the most recent final checkpoint
-                checkpoints = sorted([
-                    f for f in os.listdir(checkpoints_dir)
-                    if f.endswith('.pth')
-                ])
+                checkpoints = sorted([f for f in os.listdir(checkpoints_dir) if f.endswith(".pth")])
                 if checkpoints:
                     # Prefer final checkpoints
-                    final_cps = [c for c in checkpoints if 'final' in c]
+                    final_cps = [c for c in checkpoints if "final" in c]
                     if final_cps:
                         ckpt = os.path.join(checkpoints_dir, final_cps[-1])
                     else:
@@ -368,14 +352,10 @@ def create_ai(
             try:
                 import torch
                 from typing import Dict, Any
-                checkpoint_data: Dict[str, Any] = torch.load(
-                    ckpt, map_location='cpu', weights_only=False
-                )
+
+                checkpoint_data: Dict[str, Any] = torch.load(ckpt, map_location="cpu", weights_only=False)
                 # Checkpoints contain model_state_dict - load into NN
-                if (
-                    ai.neural_net is not None
-                    and "model_state_dict" in checkpoint_data
-                ):
+                if ai.neural_net is not None and "model_state_dict" in checkpoint_data:
                     state_dict = checkpoint_data["model_state_dict"]
                     ai.neural_net.model.load_state_dict(state_dict)
                     ai.neural_net.model.eval()
@@ -387,9 +367,7 @@ def create_ai(
 
         return ai
 
-    raise ValueError(
-        f"Unknown AI type: {ai_type}. Supported: {SUPPORTED_AI_TYPES}"
-    )
+    raise ValueError(f"Unknown AI type: {ai_type}. Supported: {SUPPORTED_AI_TYPES}")
 
 
 def count_player_pieces(game_state: GameState, player_num: int) -> int:
@@ -409,7 +387,7 @@ def count_player_pieces(game_state: GameState, player_num: int) -> int:
     rings_on_board = 0
     if game_state.board and game_state.board.stacks:
         for stack in game_state.board.stacks.values():
-            if hasattr(stack, 'rings'):
+            if hasattr(stack, "rings"):
                 for ring in stack.rings:
                     if ring == player_num:
                         rings_on_board += 1
@@ -487,10 +465,7 @@ def play_single_game(
         game_state = env.reset()
         move_count = 0
 
-        while (
-            game_state.game_status == GameStatus.ACTIVE
-            and move_count < max_moves
-        ):
+        while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
             current_player = game_state.current_player
             current_ai = ai_p1 if current_player == 1 else ai_p2
 
@@ -580,9 +555,7 @@ def run_evaluation(
     p2_checkpoint = checkpoint_path2 if checkpoint_path2 else checkpoint_path
     start_time = time.time()
 
-    board_value = board_type.value if hasattr(board_type, 'value') else str(
-        board_type
-    )
+    board_value = board_type.value if hasattr(board_type, "value") else str(board_type)
     results = EvaluationResults(
         config={
             "player1": player1_type,
@@ -612,9 +585,7 @@ def run_evaluation(
 
     progress_desc = f"{player1_type} vs {player2_type}"
 
-    progress_label = (
-        f"{player1_type} vs {player2_type} | board={board_value}"
-    )
+    progress_label = f"{player1_type} vs {player2_type} | board={board_value}"
     progress_reporter = ProgressReporter(
         total_units=num_games,
         unit_name="game",
@@ -632,27 +603,15 @@ def run_evaluation(
         # Even games: player1_type as P1, odd games: player2_type as P1
         if i % 2 == 0:
             # player1_type plays as Player 1
-            ai_p1 = create_ai(
-                player1_type, 1,
-                p1_checkpoint, minimax_depth, cmaes_weights_path, game_seed
-            )
-            ai_p2 = create_ai(
-                player2_type, 2,
-                p2_checkpoint, minimax_depth, cmaes_weights_path, game_seed
-            )
+            ai_p1 = create_ai(player1_type, 1, p1_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
+            ai_p2 = create_ai(player2_type, 2, p2_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
             p1_is_player1_type = True
         else:
             # player2_type plays as Player 1 (color swap)
             # When swapping colors, also swap checkpoints so each AI type
             # always uses its designated checkpoint
-            ai_p1 = create_ai(
-                player2_type, 1,
-                p2_checkpoint, minimax_depth, cmaes_weights_path, game_seed
-            )
-            ai_p2 = create_ai(
-                player1_type, 2,
-                p1_checkpoint, minimax_depth, cmaes_weights_path, game_seed
-            )
+            ai_p1 = create_ai(player2_type, 1, p2_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
+            ai_p2 = create_ai(player1_type, 2, p1_checkpoint, minimax_depth, cmaes_weights_path, game_seed)
             p1_is_player1_type = False
 
         # Reset environment with different seed for variety
@@ -709,14 +668,11 @@ def run_evaluation(
         # Track victory types
         if game_result.victory_type:
             vtype = game_result.victory_type
-            results.victory_types[vtype] = (
-                results.victory_types.get(vtype, 0) + 1
-            )
+            results.victory_types[vtype] = results.victory_types.get(vtype, 0) + 1
 
         # Determine winner type name
-        winner_is_p1_type = (
-            (p1_is_player1_type and game_result.winner == 1)
-            or (not p1_is_player1_type and game_result.winner == 2)
+        winner_is_p1_type = (p1_is_player1_type and game_result.winner == 1) or (
+            not p1_is_player1_type and game_result.winner == 2
         )
         if game_result.winner:
             winner_name = player1_type if winner_is_p1_type else player2_type
@@ -726,16 +682,18 @@ def run_evaluation(
             winner_num = 0
 
         # Store game record
-        results.games.append({
-            "game_number": i + 1,
-            "winner": winner_name,
-            "winner_number": winner_num,
-            "length": game_result.length,
-            "victory_type": game_result.victory_type,
-            "p1_was": p1_ai_type,
-            "p2_was": p2_ai_type,
-            "error": game_result.error,
-        })
+        results.games.append(
+            {
+                "game_number": i + 1,
+                "winner": winner_name,
+                "winner_number": winner_num,
+                "length": game_result.length,
+                "victory_type": game_result.victory_type,
+                "p1_was": p1_ai_type,
+                "p2_was": p2_ai_type,
+                "error": game_result.error,
+            }
+        )
 
         games_completed = i + 1
         progress_reporter.update(
@@ -750,9 +708,7 @@ def run_evaluation(
     elapsed = time.time() - start_time
     results.total_runtime_seconds = elapsed
 
-    games_per_sec = (
-        num_games / elapsed if elapsed > 0 and num_games > 0 else 0.0
-    )
+    games_per_sec = num_games / elapsed if elapsed > 0 and num_games > 0 else 0.0
     progress_reporter.finish(
         extra_metrics={
             "p1_wins": results.player1_wins,
@@ -780,37 +736,28 @@ def format_results_json(results: EvaluationResults) -> Dict[str, Any]:
     p1_win_rate = results.player1_wins / total_games if total_games > 0 else 0
     p1_win_rate_ci = wilson_score_interval(results.player1_wins, total_games)
 
-    avg_game_length = (
-        sum(results.game_lengths) / len(results.game_lengths)
-        if results.game_lengths else 0
-    )
+    avg_game_length = sum(results.game_lengths) / len(results.game_lengths) if results.game_lengths else 0
 
     game_length_std = 0.0
     if len(results.game_lengths) > 1:
         mean = avg_game_length
-        variance = sum(
-            (x - mean) ** 2 for x in results.game_lengths
-        ) / len(results.game_lengths)
+        variance = sum((x - mean) ** 2 for x in results.game_lengths) / len(results.game_lengths)
         game_length_std = math.sqrt(variance)
 
     avg_decision_time_p1 = (
-        sum(results.p1_decision_times) / len(results.p1_decision_times)
-        if results.p1_decision_times else 0
+        sum(results.p1_decision_times) / len(results.p1_decision_times) if results.p1_decision_times else 0
     )
 
     avg_decision_time_p2 = (
-        sum(results.p2_decision_times) / len(results.p2_decision_times)
-        if results.p2_decision_times else 0
+        sum(results.p2_decision_times) / len(results.p2_decision_times) if results.p2_decision_times else 0
     )
 
     # Piece advantage calculation
     avg_p1_pieces = (
-        sum(results.p1_final_pieces_list) / len(results.p1_final_pieces_list)
-        if results.p1_final_pieces_list else 0
+        sum(results.p1_final_pieces_list) / len(results.p1_final_pieces_list) if results.p1_final_pieces_list else 0
     )
     avg_p2_pieces = (
-        sum(results.p2_final_pieces_list) / len(results.p2_final_pieces_list)
-        if results.p2_final_pieces_list else 0
+        sum(results.p2_final_pieces_list) / len(results.p2_final_pieces_list) if results.p2_final_pieces_list else 0
     )
 
     return {
@@ -862,30 +809,27 @@ def print_summary(results: EvaluationResults) -> None:
 
     print(f"\nWin Rate ({config['player1']}):")
     print(f"  Rate:   {res['player1_win_rate']:.1%}")
-    ci_lo = res['player1_win_rate_ci95'][0]
-    ci_hi = res['player1_win_rate_ci95'][1]
+    ci_lo = res["player1_win_rate_ci95"][0]
+    ci_hi = res["player1_win_rate_ci95"][1]
     print(f"  95% CI: [{ci_lo:.1%}, {ci_hi:.1%}]")
 
     print("\nGame Statistics:")
-    avg_len = res['avg_game_length']
-    std_len = res['avg_game_length_std']
+    avg_len = res["avg_game_length"]
+    std_len = res["avg_game_length_std"]
     print(f"  Avg length: {avg_len:.1f} +/- {std_len:.1f} moves")
-    p1_time = res['avg_decision_time_p1'] * 1000
-    p2_time = res['avg_decision_time_p2'] * 1000
+    p1_time = res["avg_decision_time_p1"] * 1000
+    p2_time = res["avg_decision_time_p2"] * 1000
     print(f"  Avg decision time ({config['player1']}): {p1_time:.1f}ms")
     print(f"  Avg decision time ({config['player2']}): {p2_time:.1f}ms")
 
     print("\nVictory Types:")
-    for vtype, count in res['victory_types'].items():
+    for vtype, count in res["victory_types"].items():
         print(f"  {vtype}: {count}")
 
     print("\nPiece Advantage:")
-    print(f"  Avg final pieces ({config['player1']}): "
-          f"{res['avg_p1_final_pieces']:.1f}")
-    print(f"  Avg final pieces ({config['player2']}): "
-          f"{res['avg_p2_final_pieces']:.1f}")
-    print(f"  {config['player1']} advantage: "
-          f"{res['piece_advantage_p1']:+.1f}")
+    print(f"  Avg final pieces ({config['player1']}): " f"{res['avg_p1_final_pieces']:.1f}")
+    print(f"  Avg final pieces ({config['player2']}): " f"{res['avg_p2_final_pieces']:.1f}")
+    print(f"  {config['player1']} advantage: " f"{res['piece_advantage_p1']:+.1f}")
 
     print(f"\nTotal runtime: {res['total_runtime_seconds']:.1f}s")
     print("=" * 60)
@@ -917,100 +861,50 @@ Supported AI Types:
   - neural_network: DescentAI with trained neural network
   - random: RandomAI baseline
   - minimax: MinimaxAI with alpha-beta pruning
-        """
+        """,
     )
 
-    parser.add_argument(
-        "--player1",
-        type=str,
-        choices=SUPPORTED_AI_TYPES,
-        required=True,
-        help="AI type for player 1"
-    )
+    parser.add_argument("--player1", type=str, choices=SUPPORTED_AI_TYPES, required=True, help="AI type for player 1")
 
-    parser.add_argument(
-        "--player2",
-        type=str,
-        choices=SUPPORTED_AI_TYPES,
-        required=True,
-        help="AI type for player 2"
-    )
+    parser.add_argument("--player2", type=str, choices=SUPPORTED_AI_TYPES, required=True, help="AI type for player 2")
 
-    parser.add_argument(
-        "--games",
-        type=int,
-        default=50,
-        help="Number of games to play (default: 50)"
-    )
+    parser.add_argument("--games", type=int, default=50, help="Number of games to play (default: 50)")
 
     parser.add_argument(
         "--board",
         type=str,
         choices=list(BOARD_TYPE_MAP.keys()),
         default="square8",
-        help="Board type to use (default: square8)"
+        help="Board type to use (default: square8)",
     )
 
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=None,
-        help="Random seed for reproducibility"
-    )
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducibility")
 
-    parser.add_argument(
-        "--output",
-        type=str,
-        default=None,
-        help="Output JSON file path for results"
-    )
+    parser.add_argument("--output", type=str, default=None, help="Output JSON file path for results")
 
     parser.add_argument(
         "--checkpoint",
         type=str,
         default=None,
-        help="Path to neural network checkpoint for player 1 (or both if --checkpoint2 not set)"
+        help="Path to neural network checkpoint for player 1 (or both if --checkpoint2 not set)",
     )
 
     parser.add_argument(
         "--checkpoint2",
         type=str,
         default=None,
-        help="Path to neural network checkpoint for player 2 (enables NN vs NN comparison)"
+        help="Path to neural network checkpoint for player 2 (enables NN vs NN comparison)",
     )
 
-    parser.add_argument(
-        "--cmaes-weights",
-        type=str,
-        default=None,
-        help="Path to CMA-ES optimized weights JSON file"
-    )
+    parser.add_argument("--cmaes-weights", type=str, default=None, help="Path to CMA-ES optimized weights JSON file")
 
-    parser.add_argument(
-        "--minimax-depth",
-        type=int,
-        default=3,
-        help="Search depth for minimax AI (default: 3)"
-    )
+    parser.add_argument("--minimax-depth", type=int, default=3, help="Search depth for minimax AI (default: 3)")
 
-    parser.add_argument(
-        "--max-moves",
-        type=int,
-        default=200,
-        help="Maximum moves per game before draw (default: 200)"
-    )
+    parser.add_argument("--max-moves", type=int, default=200, help="Maximum moves per game before draw (default: 200)")
 
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Print verbose move-by-move output"
-    )
+    parser.add_argument("--verbose", action="store_true", help="Print verbose move-by-move output")
 
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress summary output (only write to file)"
-    )
+    parser.add_argument("--quiet", action="store_true", help="Suppress summary output (only write to file)")
 
     return parser.parse_args()
 
@@ -1056,7 +950,7 @@ def main() -> int:
         output_dir = os.path.dirname(args.output)
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
-        with open(args.output, 'w') as f:
+        with open(args.output, "w") as f:
             json.dump(formatted_results, f, indent=2)
         print(f"\nResults written to: {args.output}")
 

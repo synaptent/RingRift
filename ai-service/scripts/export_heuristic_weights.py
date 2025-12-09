@@ -80,10 +80,7 @@ def export_all_profiles(output_dir: Path) -> None:
     # Also export a combined file
     combined_path = output_dir / "all_profiles.json"
     combined_data = {
-        "profiles": {
-            pid: weights_to_json(weights)
-            for pid, weights in HEURISTIC_WEIGHT_PROFILES.items()
-        },
+        "profiles": {pid: weights_to_json(weights) for pid, weights in HEURISTIC_WEIGHT_PROFILES.items()},
         "metadata": {
             "exported_from": "python",
             "format_version": "1.0",
@@ -97,9 +94,7 @@ def export_all_profiles(output_dir: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Export heuristic weights to JSON for TypeScript"
-    )
+    parser = argparse.ArgumentParser(description="Export heuristic weights to JSON for TypeScript")
     parser.add_argument(
         "--profile",
         type=str,

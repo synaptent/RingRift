@@ -383,10 +383,7 @@ def _parse_args() -> argparse.Namespace:
         "--state-pool-id",
         type=str,
         default="v1",
-        help=(
-            "State pool identifier when using eval-mode=multi-start "
-            "(default: v1)."
-        ),
+        help=("State pool identifier when using eval-mode=multi-start " "(default: v1)."),
     )
     parser.add_argument(
         "--eval-randomness",
@@ -411,10 +408,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--disable-progress",
         action="store_true",
-        help=(
-            "Disable optimisation-level progress logging for GA runs, "
-            "leaving only per-individual debug output."
-        ),
+        help=("Disable optimisation-level progress logging for GA runs, " "leaving only per-individual debug output."),
     )
     parser.add_argument(
         "--disable-eval-progress",
@@ -445,13 +439,9 @@ def main() -> None:
     else:
         eval_boards_str = args.eval_boards
 
-    raw_names = [
-        name.strip() for name in eval_boards_str.split(",") if name.strip()
-    ]
+    raw_names = [name.strip() for name in eval_boards_str.split(",") if name.strip()]
     if not raw_names:
-        raise SystemExit(
-            "At least one board must be specified in --eval-boards"
-        )
+        raise SystemExit("At least one board must be specified in --eval-boards")
 
     boards: List[BoardType] = []
     for name in raw_names:
@@ -526,10 +516,7 @@ def main() -> None:
         elites = _select_elites(population, args.elite_count)
         best = elites[0]
 
-        print(
-            f"  mean={mean_f:.4f}, std={std_f:.4f}, "
-            f"best={max_f:.4f}"
-        )
+        print(f"  mean={mean_f:.4f}, std={std_f:.4f}, " f"best={max_f:.4f}")
 
         # Report generation completion with statistics
         if progress_reporter is not None:
@@ -540,10 +527,7 @@ def main() -> None:
             )
 
         # Track global best
-        if (
-            best_overall is None
-            or (best.fitness or 0.0) > (best_overall.fitness or 0.0)
-        ):
+        if best_overall is None or (best.fitness or 0.0) > (best_overall.fitness or 0.0):
             best_overall = Individual(
                 weights=dict(best.weights),
                 fitness=best.fitness,

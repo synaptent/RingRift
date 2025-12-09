@@ -91,8 +91,7 @@ def _run_ts_dump(
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"TS replay failed for {game_id} @ k={ts_k}: "
-            f"code={proc.returncode}, stderr={proc.stderr.strip()}"
+            f"TS replay failed for {game_id} @ k={ts_k}: " f"code={proc.returncode}, stderr={proc.stderr.strip()}"
         )
 
 
@@ -143,11 +142,7 @@ def _compute_structural_diffs(
         if only_ts:
             reasons.append(f"stacks only in TS: {sorted(only_ts)}")
         common = set(stacks_py.keys()) & set(stacks_ts.keys())
-        mismatched = [
-            key
-            for key in common
-            if stacks_py[key] != stacks_ts[key]
-        ]
+        mismatched = [key for key in common if stacks_py[key] != stacks_ts[key]]
         if mismatched:
             reasons.append(f"stacks with mismatched geometry: {sorted(mismatched)}")
 
@@ -159,11 +154,7 @@ def _compute_structural_diffs(
         if only_ts:
             reasons.append(f"collapsed only in TS: {sorted(only_ts)}")
         common = set(collapsed_py.keys()) & set(collapsed_ts.keys())
-        mismatched = [
-            key
-            for key in common
-            if collapsed_py[key] != collapsed_ts[key]
-        ]
+        mismatched = [key for key in common if collapsed_py[key] != collapsed_ts[key]]
         if mismatched:
             reasons.append(f"collapsed with mismatched owner: {sorted(mismatched)}")
 
@@ -252,18 +243,13 @@ def classify_structural_mismatches(
 
     output = {
         "entries": [asdict(r) for r in results],
-        "per_game_structural": {
-            f"{db}::{gid}": structural
-            for (db, gid), structural in per_game.items()
-        },
+        "per_game_structural": {f"{db}::{gid}": structural for (db, gid), structural in per_game.items()},
     }
     output_path.write_text(json.dumps(output, indent=2))
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Classify parity divergences as structural vs bookkeeping-only."
-    )
+    parser = argparse.ArgumentParser(description="Classify parity divergences as structural vs bookkeeping-only.")
     parser.add_argument(
         "--summary",
         type=str,
@@ -274,8 +260,7 @@ def main() -> None:
         "--dump-dir",
         type=str,
         default="../ts-replay-dumps",
-        help="Directory where TS replay dumps are/will be stored "
-             "(default: ../ts-replay-dumps from ai-service/)",
+        help="Directory where TS replay dumps are/will be stored " "(default: ../ts-replay-dumps from ai-service/)",
     )
     parser.add_argument(
         "--output",
@@ -287,8 +272,7 @@ def main() -> None:
         "--limit-games",
         type=int,
         default=None,
-        help="Optional limit on number of divergences to classify "
-             "(primarily for quick testing).",
+        help="Optional limit on number of divergences to classify " "(primarily for quick testing).",
     )
 
     args = parser.parse_args()
@@ -307,4 +291,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

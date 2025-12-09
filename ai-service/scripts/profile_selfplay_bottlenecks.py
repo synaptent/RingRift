@@ -130,7 +130,7 @@ class TimingStats:
 
     total_time: float = 0.0
     call_count: int = 0
-    min_time: float = float('inf')
+    min_time: float = float("inf")
     max_time: float = 0.0
 
     def record(self, elapsed: float) -> None:
@@ -255,11 +255,7 @@ class SelfPlayProfiler:
         print("-" * 74)
 
         # Sort by total time
-        sorted_timings = sorted(
-            self.timings.items(),
-            key=lambda x: x[1].total_time,
-            reverse=True
-        )
+        sorted_timings = sorted(self.timings.items(), key=lambda x: x[1].total_time, reverse=True)
 
         total_measured = sum(t.total_time for _, t in sorted_timings)
 
@@ -337,7 +333,7 @@ def run_cprofile_analysis(board_type: BoardType, num_players: int, num_games: in
     # Print stats
     stream = io.StringIO()
     stats = pstats.Stats(profiler, stream=stream)
-    stats.sort_stats('cumulative')
+    stats.sort_stats("cumulative")
     stats.print_stats(30)
 
     print(stream.getvalue())
@@ -346,7 +342,7 @@ def run_cprofile_analysis(board_type: BoardType, num_players: int, num_games: in
     print("\nTop functions by total time (excluding subcalls):")
     stream2 = io.StringIO()
     stats2 = pstats.Stats(profiler, stream=stream2)
-    stats2.sort_stats('tottime')
+    stats2.sort_stats("tottime")
     stats2.print_stats(20)
     print(stream2.getvalue())
 
@@ -358,19 +354,22 @@ def main():
     )
 
     parser.add_argument(
-        "--board", "-b",
+        "--board",
+        "-b",
         choices=["square8", "square19", "hex"],
         default="square8",
         help="Board type to profile",
     )
     parser.add_argument(
-        "--games", "-g",
+        "--games",
+        "-g",
         type=int,
         default=3,
         help="Number of games to play",
     )
     parser.add_argument(
-        "--players", "-p",
+        "--players",
+        "-p",
         type=int,
         default=2,
         choices=[2, 3, 4],
@@ -420,24 +419,25 @@ def main():
         run_cprofile_analysis(board_type, args.players, args.games)
 
     # Check if skip_shadow_contracts is enabled
-    skip_shadow = os.getenv("RINGRIFT_SKIP_SHADOW_CONTRACTS", "").lower() in {
-        "1", "true", "yes", "on"
-    }
+    skip_shadow = os.getenv("RINGRIFT_SKIP_SHADOW_CONTRACTS", "").lower() in {"1", "true", "yes", "on"}
 
     print("\n" + "=" * 70)
     print("OPTIMIZATION STATUS")
     print("=" * 70)
-    print(f"""
+    print(
+        f"""
   RINGRIFT_SKIP_SHADOW_CONTRACTS: {"ENABLED ✓" if skip_shadow else "DISABLED"}
 
   To enable shadow contract skip for 2-3x speedup:
     export RINGRIFT_SKIP_SHADOW_CONTRACTS=true
-""")
+"""
+    )
 
     print("=" * 70)
     print("RECOMMENDATIONS FOR GPU/MPS ACCELERATION")
     print("=" * 70)
-    print("""
+    print(
+        """
 0. SKIP SHADOW CONTRACTS (Already implemented - HIGHEST IMPACT!)
    - Set RINGRIFT_SKIP_SHADOW_CONTRACTS=true
    - Skips validation deep-copies in DefaultRulesEngine
@@ -477,7 +477,8 @@ def main():
 6. MOVE SAMPLING (Already implemented)
    - training_move_sample_limit already exists
    - Reduces evaluations needed per move
-""")
+"""
+    )
 
 
 if __name__ == "__main__":

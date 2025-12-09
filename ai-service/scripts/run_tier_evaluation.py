@@ -35,9 +35,7 @@ from app.training.tier_eval_runner import (  # noqa: E402
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for tier evaluation."""
     parser = argparse.ArgumentParser(
-        description=(
-            "Evaluate a candidate AI configuration for a difficulty tier."
-        ),
+        description=("Evaluate a candidate AI configuration for a difficulty tier."),
     )
 
     parser.add_argument(
@@ -60,10 +58,7 @@ def parse_args() -> argparse.Namespace:
         "--num-games",
         type=int,
         default=None,
-        help=(
-            "Override the number of games per opponent. Defaults to "
-            "the tier profile value."
-        ),
+        help=("Override the number of games per opponent. Defaults to " "the tier profile value."),
     )
 
     parser.add_argument(
@@ -84,10 +79,7 @@ def parse_args() -> argparse.Namespace:
         "--profile",
         type=str,
         default=None,
-        help=(
-            "Optional profile variant name. Reserved for future "
-            "multi-profile tier configs."
-        ),
+        help=("Optional profile variant name. Reserved for future " "multi-profile tier configs."),
     )
 
     return parser.parse_args()
@@ -109,16 +101,9 @@ def _print_human_summary(result: Any) -> None:
     print("Matchups:")
     for m in result.matchups:
         win_rate_pct = m.win_rate * 100.0
-        header = (
-            f"  vs {m.opponent_id} "
-            f"(difficulty {m.opponent_difficulty}, "
-            f"ai={m.opponent_ai_type})"
-        )
+        header = f"  vs {m.opponent_id} " f"(difficulty {m.opponent_difficulty}, " f"ai={m.opponent_ai_type})"
         print(header)
-        line = (
-            f"    W/D/L: {m.wins} / {m.draws} / {m.losses} "
-            f"(win-rate: {win_rate_pct:.1f}%)"
-        )
+        line = f"    W/D/L: {m.wins} / {m.draws} / {m.losses} " f"(win-rate: {win_rate_pct:.1f}%)"
         print(line)
 
     print()
@@ -152,10 +137,7 @@ def main() -> int:
     tier_name = args.tier.upper()
     if tier_name not in TIER_EVAL_CONFIGS:
         available = ", ".join(sorted(TIER_EVAL_CONFIGS.keys()))
-        msg = (
-            f"Unknown tier '{args.tier}'. "
-            f"Available tiers: {available}"
-        )
+        msg = f"Unknown tier '{args.tier}'. " f"Available tiers: {available}"
         raise SystemExit(msg)
 
     tier_config = get_tier_config(tier_name)

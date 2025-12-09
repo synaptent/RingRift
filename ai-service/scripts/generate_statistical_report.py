@@ -24,6 +24,7 @@ from app.utils.progress_reporter import ProgressReporter
 @dataclass
 class MatchupResult:
     """Represents the result of a matchup between two AI implementations."""
+
     player1: str
     player2: str
     player1_wins: int
@@ -83,7 +84,7 @@ def binomial_test_pvalue(successes: int, trials: int, null_prob: float = 0.5) ->
         return math.factorial(n) // (math.factorial(k) * math.factorial(n - k))
 
     def binomial_prob(n: int, k: int, p: float) -> float:
-        return binomial_coef(n, k) * (p ** k) * ((1 - p) ** (n - k))
+        return binomial_coef(n, k) * (p**k) * ((1 - p) ** (n - k))
 
     # Calculate probability of observed outcome under null
     observed_prob = binomial_prob(trials, successes, null_prob)
@@ -114,10 +115,10 @@ def fishers_exact_test(a: int, b: int, c: int, d: int) -> float:
     def hypergeom_prob(a: int, b: int, c: int, d: int) -> float:
         """Calculate hypergeometric probability for given cell values."""
         try:
-            numerator = (math.factorial(a + b) * math.factorial(c + d) *
-                        math.factorial(a + c) * math.factorial(b + d))
-            denominator = (math.factorial(a) * math.factorial(b) *
-                          math.factorial(c) * math.factorial(d) * math.factorial(n))
+            numerator = math.factorial(a + b) * math.factorial(c + d) * math.factorial(a + c) * math.factorial(b + d)
+            denominator = (
+                math.factorial(a) * math.factorial(b) * math.factorial(c) * math.factorial(d) * math.factorial(n)
+            )
             return numerator / denominator
         except (ValueError, ZeroDivisionError):
             return 0.0
@@ -218,24 +219,24 @@ def statistical_power(effect_size: float, n: int, alpha: float = 0.05) -> float:
 def load_result_file(filepath: Path) -> Optional[MatchupResult]:
     """Load and parse a single result JSON file."""
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             data = json.load(f)
 
-        config = data.get('config', {})
-        results = data.get('results', {})
+        config = data.get("config", {})
+        results = data.get("results", {})
 
-        player1 = config.get('player1', 'unknown')
-        player2 = config.get('player2', 'unknown')
+        player1 = config.get("player1", "unknown")
+        player2 = config.get("player2", "unknown")
 
-        player1_wins = results.get('player1_wins', 0)
-        player2_wins = results.get('player2_wins', 0)
-        draws = results.get('draws', 0)
+        player1_wins = results.get("player1_wins", 0)
+        player2_wins = results.get("player2_wins", 0)
+        draws = results.get("draws", 0)
         total_games = player1_wins + player2_wins + draws
 
-        win_rate = results.get('player1_win_rate', player1_wins / total_games if total_games > 0 else 0)
+        win_rate = results.get("player1_win_rate", player1_wins / total_games if total_games > 0 else 0)
 
         # Use existing CI if available, otherwise compute
-        ci = results.get('player1_win_rate_ci95')
+        ci = results.get("player1_win_rate_ci95")
         if ci and len(ci) == 2:
             win_rate_ci = (ci[0], ci[1])
         else:
@@ -250,10 +251,10 @@ def load_result_file(filepath: Path) -> Optional[MatchupResult]:
             total_games=total_games,
             win_rate=win_rate,
             win_rate_ci=win_rate_ci,
-            avg_game_length=results.get('avg_game_length', 0),
-            avg_game_length_std=results.get('avg_game_length_std', 0),
-            victory_types=results.get('victory_types', {}),
-            source_file=filepath.name
+            avg_game_length=results.get("avg_game_length", 0),
+            avg_game_length_std=results.get("avg_game_length_std", 0),
+            victory_types=results.get("victory_types", {}),
+            source_file=filepath.name,
         )
     except (json.JSONDecodeError, KeyError, TypeError) as e:
         print(f"Warning: Could not parse {filepath}: {e}")
@@ -322,7 +323,7 @@ def analyze_vs_random(results: List[MatchupResult]) -> Dict:
         else:
             continue
 
-        if ai_name not in vs_random or total > vs_random[ai_name]['total_games']:
+        if ai_name not in vs_random or total > vs_random[ai_name]["total_games"]:
             # P-value: testing if win_rate > 50%
             p_value = binomial_test_pvalue(wins, total, 0.5)
 
@@ -333,18 +334,18 @@ def analyze_vs_random(results: List[MatchupResult]) -> Dict:
             power = statistical_power(effect, total)
 
             vs_random[ai_name] = {
-                'wins': wins,
-                'losses': losses,
-                'draws': r.draws,
-                'total_games': total,
-                'win_rate': win_rate,
-                'win_rate_ci': wilson_score_interval(wins, total),
-                'p_value': p_value,
-                'effect_size': effect,
-                'effect_interpretation': effect_size_interpretation(effect),
-                'statistical_power': power,
-                'significant': p_value < 0.05,
-                'source_file': r.source_file
+                "wins": wins,
+                "losses": losses,
+                "draws": r.draws,
+                "total_games": total,
+                "win_rate": win_rate,
+                "win_rate_ci": wilson_score_interval(wins, total),
+                "p_value": p_value,
+                "effect_size": effect,
+                "effect_interpretation": effect_size_interpretation(effect),
+                "statistical_power": power,
+                "significant": p_value < 0.05,
+                "source_file": r.source_file,
             }
 
     return vs_random
@@ -371,19 +372,19 @@ def analyze_pairwise(results: List[MatchupResult]) -> Dict:
         effect = cohens_h(r.win_rate, 0.5)
 
         pairwise[key] = {
-            'player1': r.player1,
-            'player2': r.player2,
-            'player1_wins': r.player1_wins,
-            'player2_wins': r.player2_wins,
-            'draws': r.draws,
-            'total_games': r.total_games,
-            'player1_win_rate': r.win_rate,
-            'player1_win_rate_ci': r.win_rate_ci,
-            'p_value': p_value,
-            'effect_size': effect,
-            'effect_interpretation': effect_size_interpretation(effect),
-            'significant': p_value < 0.05,
-            'source_file': r.source_file
+            "player1": r.player1,
+            "player2": r.player2,
+            "player1_wins": r.player1_wins,
+            "player2_wins": r.player2_wins,
+            "draws": r.draws,
+            "total_games": r.total_games,
+            "player1_win_rate": r.win_rate,
+            "player1_win_rate_ci": r.win_rate_ci,
+            "p_value": p_value,
+            "effect_size": effect,
+            "effect_interpretation": effect_size_interpretation(effect),
+            "significant": p_value < 0.05,
+            "source_file": r.source_file,
         }
 
     return pairwise
@@ -396,34 +397,34 @@ def calculate_cross_comparison(vs_random: Dict) -> Dict:
     ai_names = list(vs_random.keys())
 
     for i, ai1 in enumerate(ai_names):
-        for ai2 in ai_names[i + 1:]:
+        for ai2 in ai_names[i + 1 :]:
             data1 = vs_random[ai1]
             data2 = vs_random[ai2]
 
             # Fisher's exact test for comparing two AIs
             # 2x2 table: AI wins vs losses for each
-            a = data1['wins']  # AI1 wins
-            b = data1['losses']  # AI1 losses
-            c = data2['wins']  # AI2 wins
-            d = data2['losses']  # AI2 losses
+            a = data1["wins"]  # AI1 wins
+            b = data1["losses"]  # AI1 losses
+            c = data2["wins"]  # AI2 wins
+            d = data2["losses"]  # AI2 losses
 
             p_value = fishers_exact_test(a, b, c, d)
 
             # Effect size between the two win rates
-            effect = cohens_h(data1['win_rate'], data2['win_rate'])
+            effect = cohens_h(data1["win_rate"], data2["win_rate"])
 
             key = f"{ai1}_vs_{ai2}_indirect"
             comparisons[key] = {
-                'ai1': ai1,
-                'ai2': ai2,
-                'ai1_win_rate_vs_random': data1['win_rate'],
-                'ai2_win_rate_vs_random': data2['win_rate'],
-                'difference': data1['win_rate'] - data2['win_rate'],
-                'p_value': p_value,
-                'effect_size': effect,
-                'effect_interpretation': effect_size_interpretation(effect),
-                'significant': p_value < 0.05,
-                'comparison_type': 'indirect_via_random'
+                "ai1": ai1,
+                "ai2": ai2,
+                "ai1_win_rate_vs_random": data1["win_rate"],
+                "ai2_win_rate_vs_random": data2["win_rate"],
+                "difference": data1["win_rate"] - data2["win_rate"],
+                "p_value": p_value,
+                "effect_size": effect,
+                "effect_interpretation": effect_size_interpretation(effect),
+                "significant": p_value < 0.05,
+                "comparison_type": "indirect_via_random",
             }
 
     return comparisons
@@ -436,61 +437,61 @@ def rank_ais(vs_random: Dict, pairwise: Dict) -> List[Dict]:
     # Primary score: win rate vs random
     for ai_name, data in vs_random.items():
         scores[ai_name] = {
-            'name': ai_name,
-            'win_rate_vs_random': data['win_rate'],
-            'significant_vs_random': data['significant'],
-            'effect_vs_random': data['effect_size'],
-            'head_to_head_wins': 0,
-            'head_to_head_losses': 0,
-            'head_to_head_ties': 0,
+            "name": ai_name,
+            "win_rate_vs_random": data["win_rate"],
+            "significant_vs_random": data["significant"],
+            "effect_vs_random": data["effect_size"],
+            "head_to_head_wins": 0,
+            "head_to_head_losses": 0,
+            "head_to_head_ties": 0,
         }
 
     # Secondary: head-to-head results
     for key, data in pairwise.items():
-        p1, p2 = data['player1'], data['player2']
+        p1, p2 = data["player1"], data["player2"]
 
         if p1 not in scores:
             scores[p1] = {
-                'name': p1,
-                'win_rate_vs_random': 0,
-                'significant_vs_random': False,
-                'effect_vs_random': 0,
-                'head_to_head_wins': 0,
-                'head_to_head_losses': 0,
-                'head_to_head_ties': 0,
+                "name": p1,
+                "win_rate_vs_random": 0,
+                "significant_vs_random": False,
+                "effect_vs_random": 0,
+                "head_to_head_wins": 0,
+                "head_to_head_losses": 0,
+                "head_to_head_ties": 0,
             }
         if p2 not in scores:
             scores[p2] = {
-                'name': p2,
-                'win_rate_vs_random': 0,
-                'significant_vs_random': False,
-                'effect_vs_random': 0,
-                'head_to_head_wins': 0,
-                'head_to_head_losses': 0,
-                'head_to_head_ties': 0,
+                "name": p2,
+                "win_rate_vs_random": 0,
+                "significant_vs_random": False,
+                "effect_vs_random": 0,
+                "head_to_head_wins": 0,
+                "head_to_head_losses": 0,
+                "head_to_head_ties": 0,
             }
 
-        if data['significant']:
-            if data['player1_win_rate'] > 0.5:
-                scores[p1]['head_to_head_wins'] += 1
-                scores[p2]['head_to_head_losses'] += 1
+        if data["significant"]:
+            if data["player1_win_rate"] > 0.5:
+                scores[p1]["head_to_head_wins"] += 1
+                scores[p2]["head_to_head_losses"] += 1
             else:
-                scores[p2]['head_to_head_wins'] += 1
-                scores[p1]['head_to_head_losses'] += 1
+                scores[p2]["head_to_head_wins"] += 1
+                scores[p1]["head_to_head_losses"] += 1
         else:
-            scores[p1]['head_to_head_ties'] += 1
-            scores[p2]['head_to_head_ties'] += 1
+            scores[p1]["head_to_head_ties"] += 1
+            scores[p2]["head_to_head_ties"] += 1
 
     # Sort by: 1) win rate vs random, 2) head-to-head wins, 3) effect size
     ranked = sorted(
         scores.values(),
-        key=lambda x: (x['win_rate_vs_random'], x['head_to_head_wins'], x['effect_vs_random']),
-        reverse=True
+        key=lambda x: (x["win_rate_vs_random"], x["head_to_head_wins"], x["effect_vs_random"]),
+        reverse=True,
     )
 
     # Add rank
     for i, entry in enumerate(ranked):
-        entry['rank'] = i + 1
+        entry["rank"] = i + 1
 
     return ranked
 
@@ -510,93 +511,88 @@ def generate_report(results_dir: Path, output_path: Path) -> Dict:
 
     # Build report
     report = {
-        'metadata': {
-            'generated_at': datetime.utcnow().isoformat() + 'Z',
-            'results_directory': str(results_dir),
-            'files_analyzed': [r.source_file for r in all_results],
-            'statistical_methods': {
-                'confidence_intervals': 'Wilson score interval (95%)',
-                'significance_test': 'Binomial exact test (two-tailed)',
-                'pairwise_comparison': "Fisher's exact test",
-                'effect_size': 'Cohen\'s h',
-                'significance_threshold': 0.05
-            }
+        "metadata": {
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "results_directory": str(results_dir),
+            "files_analyzed": [r.source_file for r in all_results],
+            "statistical_methods": {
+                "confidence_intervals": "Wilson score interval (95%)",
+                "significance_test": "Binomial exact test (two-tailed)",
+                "pairwise_comparison": "Fisher's exact test",
+                "effect_size": "Cohen's h",
+                "significance_threshold": 0.05,
+            },
         },
-        'summary': {
-            'total_matchups_analyzed': len(all_results),
-            'ais_evaluated': list(vs_random.keys()),
-            'best_performer': ranking[0]['name'] if ranking else None,
+        "summary": {
+            "total_matchups_analyzed": len(all_results),
+            "ais_evaluated": list(vs_random.keys()),
+            "best_performer": ranking[0]["name"] if ranking else None,
         },
-        'vs_random_baseline': vs_random,
-        'pairwise_comparisons': pairwise,
-        'cross_comparisons': cross_comparison,
-        'ranking': ranking,
-        'key_findings': {
-            'cmaes_vs_baseline': None,
-            'neural_network_performance': None,
-            'training_effectiveness': None
-        }
+        "vs_random_baseline": vs_random,
+        "pairwise_comparisons": pairwise,
+        "cross_comparisons": cross_comparison,
+        "ranking": ranking,
+        "key_findings": {"cmaes_vs_baseline": None, "neural_network_performance": None, "training_effectiveness": None},
     }
 
     # Extract key findings
     # CMA-ES vs Baseline
     for key, data in pairwise.items():
-        if 'baseline_heuristic' in key and 'cmaes_heuristic' in key:
-            report['key_findings']['cmaes_vs_baseline'] = {
-                'result': 'no_significant_difference' if not data['significant'] else 'significant_difference',
-                'p_value': data['p_value'],
-                'effect_size': data['effect_size'],
-                'effect_interpretation': data['effect_interpretation'],
-                'conclusion': (
-                    'CMA-ES optimization did NOT provide statistically significant improvement over baseline'
-                    if not data['significant']
+        if "baseline_heuristic" in key and "cmaes_heuristic" in key:
+            report["key_findings"]["cmaes_vs_baseline"] = {
+                "result": "no_significant_difference" if not data["significant"] else "significant_difference",
+                "p_value": data["p_value"],
+                "effect_size": data["effect_size"],
+                "effect_interpretation": data["effect_interpretation"],
+                "conclusion": (
+                    "CMA-ES optimization did NOT provide statistically significant improvement over baseline"
+                    if not data["significant"]
                     else f"CMA-ES {'improved' if data['player1_win_rate'] < 0.5 else 'worse than'} baseline with {data['effect_interpretation']} effect"
                 ),
-                'raw_data': data
+                "raw_data": data,
             }
 
     # Neural network performance
-    if 'neural_network' in vs_random:
-        nn_data = vs_random['neural_network']
-        baseline_data = vs_random.get('baseline_heuristic', {})
+    if "neural_network" in vs_random:
+        nn_data = vs_random["neural_network"]
+        baseline_data = vs_random.get("baseline_heuristic", {})
 
-        report['key_findings']['neural_network_performance'] = {
-            'win_rate_vs_random': nn_data['win_rate'],
-            'significant_vs_random': nn_data['significant'],
-            'p_value_vs_random': nn_data['p_value'],
-            'comparison_to_baseline': (
-                nn_data['win_rate'] - baseline_data.get('win_rate', 0)
-                if baseline_data else None
+        report["key_findings"]["neural_network_performance"] = {
+            "win_rate_vs_random": nn_data["win_rate"],
+            "significant_vs_random": nn_data["significant"],
+            "p_value_vs_random": nn_data["p_value"],
+            "comparison_to_baseline": (
+                nn_data["win_rate"] - baseline_data.get("win_rate", 0) if baseline_data else None
             ),
-            'conclusion': (
+            "conclusion": (
                 f"Neural network achieves {nn_data['win_rate']:.0%} win rate vs random "
                 f"({'statistically significant' if nn_data['significant'] else 'not statistically significant'})"
-            )
+            ),
         }
 
     # Training effectiveness
     nn_vs_heuristic_direct = None
     for key, data in pairwise.items():
-        if 'neural_network' in key:
+        if "neural_network" in key:
             nn_vs_heuristic_direct = data
             break
 
     if nn_vs_heuristic_direct:
-        report['key_findings']['training_effectiveness'] = {
-            'neural_network_vs_heuristics': {
-                'matchup': f"{nn_vs_heuristic_direct['player1']} vs {nn_vs_heuristic_direct['player2']}",
-                'result_win_rate': nn_vs_heuristic_direct['player1_win_rate'],
-                'significant': nn_vs_heuristic_direct['significant'],
-                'p_value': nn_vs_heuristic_direct['p_value']
+        report["key_findings"]["training_effectiveness"] = {
+            "neural_network_vs_heuristics": {
+                "matchup": f"{nn_vs_heuristic_direct['player1']} vs {nn_vs_heuristic_direct['player2']}",
+                "result_win_rate": nn_vs_heuristic_direct["player1_win_rate"],
+                "significant": nn_vs_heuristic_direct["significant"],
+                "p_value": nn_vs_heuristic_direct["p_value"],
             },
-            'conclusion': (
-                'Neural network training shows limited effectiveness compared to hand-tuned heuristics. '
-                'Heuristic approaches remain stronger for this game.'
-            )
+            "conclusion": (
+                "Neural network training shows limited effectiveness compared to hand-tuned heuristics. "
+                "Heuristic approaches remain stronger for this game."
+            ),
         }
 
     # Save report
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(report, f, indent=2)
 
     print(f"Report saved to {output_path}")
@@ -619,12 +615,12 @@ def print_summary(report: Dict) -> None:
     print("   (Null hypothesis: win_rate = 50%)")
     print("-" * 70)
 
-    vs_random = report['vs_random_baseline']
-    sorted_vs_random = sorted(vs_random.items(), key=lambda x: x[1]['win_rate'], reverse=True)
+    vs_random = report["vs_random_baseline"]
+    sorted_vs_random = sorted(vs_random.items(), key=lambda x: x[1]["win_rate"], reverse=True)
 
     for ai_name, data in sorted_vs_random:
-        ci_low, ci_high = data['win_rate_ci']
-        sig_str = "✓ SIGNIFICANT" if data['significant'] else "✗ not significant"
+        ci_low, ci_high = data["win_rate_ci"]
+        sig_str = "✓ SIGNIFICANT" if data["significant"] else "✗ not significant"
         print(f"   {ai_name}:")
         print(f"      Win Rate: {data['win_rate']:.0%} [{ci_low:.1%}, {ci_high:.1%}]")
         print(f"      p-value: {data['p_value']:.4f} ({sig_str})")
@@ -637,10 +633,10 @@ def print_summary(report: Dict) -> None:
     print("2. PAIRWISE COMPARISONS (Direct Head-to-Head)")
     print("-" * 70)
 
-    pairwise = report['pairwise_comparisons']
+    pairwise = report["pairwise_comparisons"]
     for key, data in pairwise.items():
-        sig_str = "SIGNIFICANT" if data['significant'] else "not significant"
-        ci_low, ci_high = data['player1_win_rate_ci']
+        sig_str = "SIGNIFICANT" if data["significant"] else "not significant"
+        ci_low, ci_high = data["player1_win_rate_ci"]
         print(f"   {data['player1']} vs {data['player2']}:")
         print(f"      {data['player1']} win rate: {data['player1_win_rate']:.0%} [{ci_low:.1%}, {ci_high:.1%}]")
         print(f"      p-value: {data['p_value']:.4f} ({sig_str})")
@@ -661,12 +657,14 @@ def print_summary(report: Dict) -> None:
     print("4. AI RANKING (by strength)")
     print("-" * 70)
 
-    ranking = report['ranking']
+    ranking = report["ranking"]
     for entry in ranking:
-        sig_marker = "**" if entry.get('significant_vs_random', False) else ""
+        sig_marker = "**" if entry.get("significant_vs_random", False) else ""
         print(f"   {entry['rank']}. {entry['name']}{sig_marker}")
         print(f"      Win rate vs random: {entry['win_rate_vs_random']:.0%}")
-        print(f"      Head-to-head: {entry['head_to_head_wins']}W-{entry['head_to_head_losses']}L-{entry['head_to_head_ties']}T")
+        print(
+            f"      Head-to-head: {entry['head_to_head_wins']}W-{entry['head_to_head_losses']}L-{entry['head_to_head_ties']}T"
+        )
         print()
 
     # 5. KEY FINDINGS
@@ -674,10 +672,10 @@ def print_summary(report: Dict) -> None:
     print("5. KEY FINDINGS")
     print("-" * 70)
 
-    findings = report['key_findings']
+    findings = report["key_findings"]
 
-    if findings.get('cmaes_vs_baseline'):
-        f = findings['cmaes_vs_baseline']
+    if findings.get("cmaes_vs_baseline"):
+        f = findings["cmaes_vs_baseline"]
         print(f"   CMA-ES vs Baseline Heuristic:")
         print(f"      Result: {f['result'].replace('_', ' ')}")
         print(f"      p-value: {f['p_value']:.4f}")
@@ -685,18 +683,18 @@ def print_summary(report: Dict) -> None:
         print(f"      Conclusion: {f['conclusion']}")
         print()
 
-    if findings.get('neural_network_performance'):
-        f = findings['neural_network_performance']
+    if findings.get("neural_network_performance"):
+        f = findings["neural_network_performance"]
         print(f"   Neural Network Performance:")
         print(f"      Win rate vs random: {f['win_rate_vs_random']:.0%}")
         print(f"      Significant: {'Yes' if f['significant_vs_random'] else 'No'} (p={f['p_value_vs_random']:.4f})")
-        if f['comparison_to_baseline'] is not None:
+        if f["comparison_to_baseline"] is not None:
             print(f"      vs Baseline: {f['comparison_to_baseline']:+.0%} difference")
         print(f"      Conclusion: {f['conclusion']}")
         print()
 
-    if findings.get('training_effectiveness'):
-        f = findings['training_effectiveness']
+    if findings.get("training_effectiveness"):
+        f = findings["training_effectiveness"]
         print(f"   Training Effectiveness:")
         print(f"      {f['conclusion']}")
         print()

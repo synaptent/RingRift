@@ -31,10 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.models import BoardType
 from app.training.curriculum import CurriculumConfig, CurriculumTrainer
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -46,141 +43,44 @@ def main():
 
     # Core settings
     parser.add_argument(
-        "--board-type",
-        choices=["square8", "square19", "hexagonal"],
-        default="square8",
-        help="Board type to train on"
+        "--board-type", choices=["square8", "square19", "hexagonal"], default="square8", help="Board type to train on"
     )
-    parser.add_argument(
-        "--generations",
-        type=int,
-        default=10,
-        help="Number of curriculum generations"
-    )
-    parser.add_argument(
-        "--games-per-gen",
-        type=int,
-        default=500,
-        help="Self-play games per generation"
-    )
-    parser.add_argument(
-        "--training-epochs",
-        type=int,
-        default=20,
-        help="Training epochs per generation"
-    )
-    parser.add_argument(
-        "--eval-games",
-        type=int,
-        default=50,
-        help="Evaluation games for promotion decision"
-    )
-    parser.add_argument(
-        "--num-players",
-        type=int,
-        default=2,
-        choices=[2, 3, 4],
-        help="Number of players for self-play"
-    )
+    parser.add_argument("--generations", type=int, default=10, help="Number of curriculum generations")
+    parser.add_argument("--games-per-gen", type=int, default=500, help="Self-play games per generation")
+    parser.add_argument("--training-epochs", type=int, default=20, help="Training epochs per generation")
+    parser.add_argument("--eval-games", type=int, default=50, help="Evaluation games for promotion decision")
+    parser.add_argument("--num-players", type=int, default=2, choices=[2, 3, 4], help="Number of players for self-play")
 
     # Engine mixing
     parser.add_argument(
-        "--engine",
-        choices=["descent", "mcts"],
-        default="descent",
-        help="Base engine for self-play data generation"
+        "--engine", choices=["descent", "mcts"], default="descent", help="Base engine for self-play data generation"
     )
     parser.add_argument(
-        "--engine-mix",
-        choices=["single", "per_game", "per_player"],
-        default="single",
-        help="Engine mixing strategy"
+        "--engine-mix", choices=["single", "per_game", "per_player"], default="single", help="Engine mixing strategy"
     )
-    parser.add_argument(
-        "--engine-ratio",
-        type=float,
-        default=0.5,
-        help="MCTS ratio when using engine mixing (0.0-1.0)"
-    )
+    parser.add_argument("--engine-ratio", type=float, default=0.5, help="MCTS ratio when using engine mixing (0.0-1.0)")
 
     # Model pool
-    parser.add_argument(
-        "--use-model-pool",
-        action="store_true",
-        help="Enable model pool evaluation (more robust)"
-    )
-    parser.add_argument(
-        "--model-pool-size",
-        type=int,
-        default=5,
-        help="Maximum models in evaluation pool"
-    )
-    parser.add_argument(
-        "--pool-eval-games",
-        type=int,
-        default=20,
-        help="Games per opponent in pool evaluation"
-    )
+    parser.add_argument("--use-model-pool", action="store_true", help="Enable model pool evaluation (more robust)")
+    parser.add_argument("--model-pool-size", type=int, default=5, help="Maximum models in evaluation pool")
+    parser.add_argument("--pool-eval-games", type=int, default=20, help="Games per opponent in pool evaluation")
 
     # Training hyperparameters
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-3,
-        help="Training learning rate"
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=32,
-        help="Training batch size"
-    )
-    parser.add_argument(
-        "--promotion-threshold",
-        type=float,
-        default=0.55,
-        help="Win rate threshold for promotion"
-    )
+    parser.add_argument("--learning-rate", type=float, default=1e-3, help="Training learning rate")
+    parser.add_argument("--batch-size", type=int, default=32, help="Training batch size")
+    parser.add_argument("--promotion-threshold", type=float, default=0.55, help="Win rate threshold for promotion")
 
     # Data retention
+    parser.add_argument("--data-retention", type=int, default=3, help="Generations of historical data to retain")
     parser.add_argument(
-        "--data-retention",
-        type=int,
-        default=3,
-        help="Generations of historical data to retain"
-    )
-    parser.add_argument(
-        "--historical-decay",
-        type=float,
-        default=0.8,
-        help="Decay factor for historical data weighting"
+        "--historical-decay", type=float, default=0.8, help="Decay factor for historical data weighting"
     )
 
     # Other settings
-    parser.add_argument(
-        "--base-model",
-        type=str,
-        default=None,
-        help="Path to initial model checkpoint"
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=str,
-        default="curriculum_runs",
-        help="Output directory for artifacts"
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed"
-    )
-    parser.add_argument(
-        "--max-moves",
-        type=int,
-        default=200,
-        help="Maximum moves per self-play game"
-    )
+    parser.add_argument("--base-model", type=str, default=None, help="Path to initial model checkpoint")
+    parser.add_argument("--output-dir", type=str, default="curriculum_runs", help="Output directory for artifacts")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--max-moves", type=int, default=200, help="Maximum moves per self-play game")
 
     args = parser.parse_args()
 
@@ -255,10 +155,7 @@ def main():
     print()
     for r in results:
         status = "PROMOTED" if r.promoted else "skipped"
-        print(
-            f"Gen {r.generation}: {status} "
-            f"(win={r.win_rate:.1%}, loss={r.training_loss:.4f})"
-        )
+        print(f"Gen {r.generation}: {status} " f"(win={r.win_rate:.1%}, loss={r.training_loss:.4f})")
 
 
 if __name__ == "__main__":

@@ -243,9 +243,7 @@ def run_pipeline(
         all_runs.extend(runs)
 
         # Merge weights if multiple runs
-        merged_path = os.path.join(
-            output_dir, "pipeline", f"merged_{num_players}p_weights.json"
-        )
+        merged_path = os.path.join(output_dir, "pipeline", f"merged_{num_players}p_weights.json")
 
         if len(runs) > 1:
             merged_path = merge_weights(runs, merged_path, num_players)
@@ -339,7 +337,8 @@ def main():
     )
 
     parser.add_argument(
-        "--training-dir", "-t",
+        "--training-dir",
+        "-t",
         help="Training directory to process (general, uses --num-players)",
     )
     parser.add_argument(
@@ -355,14 +354,16 @@ def main():
         help="Training directory for 4-player runs",
     )
     parser.add_argument(
-        "--num-players", "-n",
+        "--num-players",
+        "-n",
         type=int,
         default=2,
         choices=[2, 3, 4],
         help="Number of players (for --training-dir)",
     )
     parser.add_argument(
-        "--validation-games", "-g",
+        "--validation-games",
+        "-g",
         type=int,
         default=50,
         help="Number of games for validation (default: 50)",
@@ -374,7 +375,8 @@ def main():
         help="Minimum win rate for promotion (default: 0.52)",
     )
     parser.add_argument(
-        "--output-dir", "-o",
+        "--output-dir",
+        "-o",
         default="data",
         help="Output directory for results (default: data)",
     )

@@ -64,6 +64,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import yaml
+
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
@@ -82,9 +83,9 @@ BOARD_CONFIGS: Dict[str, Dict[int, int]] = {
 # - 64GB machine: can run 19x19/hex with memory pressure
 # - 96GB machine: runs everything comfortably
 BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
-    "square8": 8,      # 8GB minimum for 8x8 games
-    "square19": 48,    # 48GB minimum for 19x19 games (64GB machine has pressure)
-    "hexagonal": 48,   # 48GB minimum for hex games
+    "square8": 8,  # 8GB minimum for 8x8 games
+    "square19": 48,  # 48GB minimum for 19x19 games (64GB machine has pressure)
+    "hexagonal": 48,  # 48GB minimum for hex games
 }
 
 # Default config file paths (relative to ai-service/)
@@ -208,7 +209,7 @@ def get_local_memory_gb() -> Tuple[int, int]:
         )
         if result.returncode == 0:
             bytes_total = int(result.stdout.strip())
-            total_gb = bytes_total // (1024 ** 3)
+            total_gb = bytes_total // (1024**3)
 
         # macOS: use vm_stat for available (free + inactive pages)
         result = subprocess.run(
@@ -223,20 +224,20 @@ def get_local_memory_gb() -> Tuple[int, int]:
             free_pages = 0
             inactive_pages = 0
 
-            for line in result.stdout.split('\n'):
-                if 'page size of' in line:
+            for line in result.stdout.split("\n"):
+                if "page size of" in line:
                     # Extract page size from first line
-                    match = re.search(r'page size of (\d+)', line)
+                    match = re.search(r"page size of (\d+)", line)
                     if match:
                         page_size = int(match.group(1))
-                elif 'Pages free:' in line:
-                    free_pages = int(line.split(':')[1].strip().rstrip('.'))
-                elif 'Pages inactive:' in line:
-                    inactive_pages = int(line.split(':')[1].strip().rstrip('.'))
+                elif "Pages free:" in line:
+                    free_pages = int(line.split(":")[1].strip().rstrip("."))
+                elif "Pages inactive:" in line:
+                    inactive_pages = int(line.split(":")[1].strip().rstrip("."))
 
             # Available = free + inactive (can be reclaimed)
             available_bytes = (free_pages + inactive_pages) * page_size
-            available_gb = available_bytes // (1024 ** 3)
+            available_gb = available_bytes // (1024**3)
 
         return total_gb, available_gb
 
@@ -290,15 +291,18 @@ def get_remote_memory_gb(host_name: str, host_config: Dict) -> Tuple[int, int]:
         if config_total:
             total_gb = config_total
         else:
-            ssh_cmd = ssh_cmd_base + [ssh_host, "sysctl -n hw.memsize 2>/dev/null || grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2 * 1024}'"]
+            ssh_cmd = ssh_cmd_base + [
+                ssh_host,
+                "sysctl -n hw.memsize 2>/dev/null || grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2 * 1024}'",
+            ]
             result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
             if result.returncode == 0 and result.stdout.strip():
                 bytes_total = int(result.stdout.strip())
-                total_gb = bytes_total // (1024 ** 3)
+                total_gb = bytes_total // (1024**3)
 
         # Get available memory (free + inactive) via vm_stat on macOS
         # Script to extract free and inactive pages and calculate available GB
-        vm_stat_script = '''
+        vm_stat_script = """
 pagesize=$(sysctl -n hw.pagesize 2>/dev/null || echo 4096)
 free=$(vm_stat 2>/dev/null | grep "Pages free:" | awk -F: '{gsub(/[^0-9]/,"",$2); print $2}')
 inactive=$(vm_stat 2>/dev/null | grep "Pages inactive:" | awk -F: '{gsub(/[^0-9]/,"",$2); print $2}')
@@ -309,7 +313,7 @@ elif [ -f /proc/meminfo ]; then
 else
     echo 4
 fi
-'''
+"""
         ssh_cmd = ssh_cmd_base + [ssh_host, vm_stat_script]
         result = subprocess.run(ssh_cmd, capture_output=True, text=True, timeout=15)
         if result.returncode == 0 and result.stdout.strip():
@@ -330,6 +334,7 @@ fi
 @dataclass
 class HostMemoryInfo:
     """Memory information for a host."""
+
     total_gb: int
     available_gb: int
 
@@ -394,6 +399,7 @@ def get_eligible_hosts_for_board(
 @dataclass
 class JobConfig:
     """Configuration for a single self-play job."""
+
     job_id: str
     host: str
     board_type: str
@@ -460,17 +466,19 @@ def generate_job_configs(
                 # Different seed per job for variety
                 job_seed = base_seed + job_idx * 1000
 
-                jobs.append(JobConfig(
-                    job_id=job_id,
-                    host=host,
-                    board_type=board_type,
-                    num_players=num_players,
-                    num_games=host_games,
-                    max_moves=max_moves,
-                    output_db=os.path.join(output_dir, f"selfplay_{config_id}_{host}.db"),
-                    log_jsonl=os.path.join(output_dir, f"selfplay_{config_id}_{host}.jsonl"),
-                    seed=job_seed,
-                ))
+                jobs.append(
+                    JobConfig(
+                        job_id=job_id,
+                        host=host,
+                        board_type=board_type,
+                        num_players=num_players,
+                        num_games=host_games,
+                        max_moves=max_moves,
+                        output_db=os.path.join(output_dir, f"selfplay_{config_id}_{host}.db"),
+                        log_jsonl=os.path.join(output_dir, f"selfplay_{config_id}_{host}.jsonl"),
+                        seed=job_seed,
+                    )
+                )
                 job_idx += 1
 
     return jobs
@@ -507,8 +515,7 @@ def run_local_job(job: JobConfig, ringrift_ai_dir: str) -> Tuple[str, bool, str]
     """Run a self-play job on the local machine."""
     cmd = build_soak_command(job)
 
-    print(f"[LOCAL] Starting job {job.job_id}: {job.num_games} games of "
-          f"{job.board_type} {job.num_players}p")
+    print(f"[LOCAL] Starting job {job.job_id}: {job.num_games} games of " f"{job.board_type} {job.num_players}p")
 
     try:
         result = subprocess.run(
@@ -554,15 +561,19 @@ def run_remote_job(job: JobConfig, host_config: Dict) -> Tuple[str, bool, str]:
 
     ssh_cmd = [
         "ssh",
-        "-o", "ConnectTimeout=10",
-        "-o", "ServerAliveInterval=60",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=60",
     ]
     if ssh_key:
         ssh_cmd.extend(["-i", os.path.expanduser(ssh_key)])
     ssh_cmd.extend([ssh_target, remote_cmd])
 
-    print(f"[{ssh_host.upper()}] Starting job {job.job_id}: {job.num_games} games of "
-          f"{job.board_type} {job.num_players}p")
+    print(
+        f"[{ssh_host.upper()}] Starting job {job.job_id}: {job.num_games} games of "
+        f"{job.board_type} {job.num_players}p"
+    )
 
     try:
         result = subprocess.run(
@@ -669,8 +680,10 @@ def run_parity_checks(db_paths: List[str], ringrift_ai_dir: str) -> Tuple[int, i
         try:
             result = subprocess.run(
                 [
-                    "python", "scripts/check_ts_python_replay_parity.py",
-                    "--db", db_path,
+                    "python",
+                    "scripts/check_ts_python_replay_parity.py",
+                    "--db",
+                    db_path,
                 ],
                 cwd=ringrift_ai_dir,
                 capture_output=True,
@@ -685,7 +698,7 @@ def run_parity_checks(db_paths: List[str], ringrift_ai_dir: str) -> Tuple[int, i
             else:
                 print(f"  ✗ FAILED")
                 # Print last few lines of error
-                error_lines = result.stderr.strip().split('\n')[-5:]
+                error_lines = result.stderr.strip().split("\n")[-5:]
                 for line in error_lines:
                     print(f"    {line}")
                 failed += 1
@@ -705,9 +718,7 @@ def run_parity_checks(db_paths: List[str], ringrift_ai_dir: str) -> Tuple[int, i
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run distributed self-play soaks across multiple machines"
-    )
+    parser = argparse.ArgumentParser(description="Run distributed self-play soaks across multiple machines")
     parser.add_argument(
         "--mode",
         type=str,
@@ -817,11 +828,10 @@ def main():
     print("Host memory configuration:")
     for host, mem_gb in sorted(host_memory.items(), key=lambda x: -x[1]):
         info = host_memory_details[host]
-        eligible_boards = [
-            board for board, req in BOARD_MEMORY_REQUIREMENTS.items()
-            if mem_gb >= req
-        ]
-        print(f"  {host}: {info.total_gb}GB total, {info.available_gb}GB available -> eligible for: {', '.join(eligible_boards)}")
+        eligible_boards = [board for board, req in BOARD_MEMORY_REQUIREMENTS.items() if mem_gb >= req]
+        print(
+            f"  {host}: {info.total_gb}GB total, {info.available_gb}GB available -> eligible for: {', '.join(eligible_boards)}"
+        )
     print()
 
     # Parse filters
@@ -857,8 +867,7 @@ def main():
     print("Job Summary:")
     print("-" * 60)
     for job in jobs:
-        print(f"  {job.job_id}: {job.board_type} {job.num_players}p x{job.num_games} "
-              f"-> {job.output_db}")
+        print(f"  {job.job_id}: {job.board_type} {job.num_players}p x{job.num_games} " f"-> {job.output_db}")
     print()
 
     if args.dry_run:
@@ -941,10 +950,7 @@ def main():
         "successful_jobs": successful,
         "failed_jobs": failed,
         "fetched_dbs": len(fetched_dbs),
-        "job_results": [
-            {"job_id": jid, "success": s}
-            for jid, s, _ in results
-        ],
+        "job_results": [{"job_id": jid, "success": s} for jid, s, _ in results],
     }
 
     if args.run_parity:

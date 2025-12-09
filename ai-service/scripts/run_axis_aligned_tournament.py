@@ -252,10 +252,7 @@ def play_single_game_pair(
         rng_seed=seed_p2,
     )
 
-    while (
-        game_state.game_status == GameStatus.ACTIVE
-        and move_count < max_moves
-    ):
+    while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player = game_state.current_player
         current_ai = ai_p1 if current_player == 1 else ai_p2
         current_ai.player_number = current_player
@@ -312,10 +309,7 @@ def load_axis_aligned_participants(
     participants: List[Participant] = []
 
     if not os.path.isdir(profiles_dir):
-        raise FileNotFoundError(
-            "Profiles dir does not exist or is not a directory: "
-            f"{profiles_dir!r}"
-        )
+        raise FileNotFoundError("Profiles dir does not exist or is not a directory: " f"{profiles_dir!r}")
 
     baseline_keys = set(BASE_V1_BALANCED_WEIGHTS.keys())
 
@@ -332,10 +326,7 @@ def load_axis_aligned_participants(
 
         weights_obj = payload.get("weights")
         if not isinstance(weights_obj, dict):
-            raise ValueError(
-                "Profile "
-                f"{path!r} is missing a 'weights' object or it is not a dict"
-            )
+            raise ValueError("Profile " f"{path!r} is missing a 'weights' object or it is not a dict")
 
         # Ensure schema compatibility with BASE_V1_BALANCED_WEIGHTS.
         weight_keys = set(weights_obj.keys())
@@ -343,14 +334,11 @@ def load_axis_aligned_participants(
             missing = sorted(baseline_keys - weight_keys)
             extra = sorted(weight_keys - baseline_keys)
             raise ValueError(
-                f"Profile {path!r} weight keys mismatch baseline schema: "
-                f"missing={missing}, extra={extra}"
+                f"Profile {path!r} weight keys mismatch baseline schema: " f"missing={missing}, extra={extra}"
             )
 
         # Normalise weights to float values.
-        weights: HeuristicWeights = {
-            str(k): float(v) for k, v in weights_obj.items()
-        }
+        weights: HeuristicWeights = {str(k): float(v) for k, v in weights_obj.items()}
 
         meta = payload.get("meta") or {}
         factor = meta.get("factor")
@@ -436,10 +424,7 @@ def run_axis_aligned_tournament(
     boards: List[Tuple[str, BoardType]] = []
     for name in board_names:
         if name not in BOARD_NAME_TO_TYPE:
-            raise ValueError(
-                f"Unknown board name {name!r}; expected one of "
-                f"{sorted(BOARD_NAME_TO_TYPE.keys())}"
-            )
+            raise ValueError(f"Unknown board name {name!r}; expected one of " f"{sorted(BOARD_NAME_TO_TYPE.keys())}")
         boards.append((name, BOARD_NAME_TO_TYPE[name]))
 
     games_per_direction = games_per_pair // 2
@@ -462,18 +447,14 @@ def run_axis_aligned_tournament(
     # Tournament loop
     for board_index, (board_label, board_type) in enumerate(boards):
         total_games_for_board = n_pairs * games_per_pair
-        print(
-            f"[{board_label}] Playing {total_games_for_board} games..."
-        )
+        print(f"[{board_label}] Playing {total_games_for_board} games...")
 
         for i in range(n_players):
             for j in range(i + 1, n_players):
                 p_i = participants[i]
                 p_j = participants[j]
 
-                print(
-                    f"  Pair ({p_i.id} vs {p_j.id}): {games_per_pair} games"
-                )
+                print(f"  Pair ({p_i.id} vs {p_j.id}): {games_per_pair} games")
 
                 # i as P1, j as P2
                 for _ in range(games_per_direction):
@@ -505,9 +486,7 @@ def run_axis_aligned_tournament(
                     global_game_index += 1
                     # Record game for progress reporting
                     game_duration = time.time() - game_start_time
-                    progress_reporter.record_game(
-                        moves=moves, duration_sec=game_duration
-                    )
+                    progress_reporter.record_game(moves=moves, duration_sec=game_duration)
 
                 # j as P1, i as P2
                 for _ in range(games_per_direction):
@@ -539,9 +518,7 @@ def run_axis_aligned_tournament(
                     global_game_index += 1
                     # Record game for progress reporting
                     game_duration = time.time() - game_start_time
-                    progress_reporter.record_game(
-                        moves=moves, duration_sec=game_duration
-                    )
+                    progress_reporter.record_game(moves=moves, duration_sec=game_duration)
 
     # Emit final progress summary
     progress_reporter.finish()
@@ -552,9 +529,7 @@ def run_axis_aligned_tournament(
             for id_j, stats in vs.items():
                 games = stats.get("games", 0)
                 total_moves = stats.pop("total_moves", 0)
-                stats["avg_moves"] = (
-                    float(total_moves) / games if games > 0 else 0.0
-                )
+                stats["avg_moves"] = float(total_moves) / games if games > 0 else 0.0
 
     created_at = datetime.utcnow().isoformat() + "Z"
 
@@ -584,18 +559,14 @@ def run_axis_aligned_tournament(
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run an axis-aligned heuristic tournament between diagnostic "
-            "profiles and an optional baseline."
+            "Run an axis-aligned heuristic tournament between diagnostic " "profiles and an optional baseline."
         )
     )
     parser.add_argument(
         "--profiles-dir",
         type=str,
         default=DEFAULT_PROFILES_DIR,
-        help=(
-            "Directory containing axis-aligned profile JSON files "
-            f"(default: {DEFAULT_PROFILES_DIR})."
-        ),
+        help=("Directory containing axis-aligned profile JSON files " f"(default: {DEFAULT_PROFILES_DIR})."),
     )
     parser.add_argument(
         "--boards",
@@ -610,27 +581,18 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--games-per-pair",
         type=int,
         default=20,
-        help=(
-            "Total games to play per unordered pair per board "
-            "(split evenly by colour). Default: 20."
-        ),
+        help=("Total games to play per unordered pair per board " "(split evenly by colour). Default: 20."),
     )
     parser.add_argument(
         "--max-moves",
         type=int,
         default=200,
-        help=(
-            "Maximum moves per game before declaring a draw "
-            "(default: 200)."
-        ),
+        help=("Maximum moves per game before declaring a draw " "(default: 200)."),
     )
     parser.add_argument(
         "--include-baseline",
         action="store_true",
-        help=(
-            "Include the baseline_v1_balanced participant using "
-            "BASE_V1_BALANCED_WEIGHTS."
-        ),
+        help=("Include the baseline_v1_balanced participant using " "BASE_V1_BALANCED_WEIGHTS."),
     )
     parser.add_argument(
         "--seed",
@@ -657,10 +619,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     boards = [b.strip() for b in args.boards.split(",") if b.strip()]
     for b in boards:
         if b not in BOARD_NAME_TO_TYPE:
-            raise SystemExit(
-                f"Unknown board {b!r}; expected one of "
-                f"{sorted(BOARD_NAME_TO_TYPE.keys())}"
-            )
+            raise SystemExit(f"Unknown board {b!r}; expected one of " f"{sorted(BOARD_NAME_TO_TYPE.keys())}")
 
     participants = load_axis_aligned_participants(
         args.profiles_dir,
@@ -686,10 +645,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     print()
 
     if len(participants) < 2:
-        print(
-            "Not enough participants for a tournament "
-            f"(found {len(participants)}). Exiting."
-        )
+        print("Not enough participants for a tournament " f"(found {len(participants)}). Exiting.")
         return
 
     payload = run_axis_aligned_tournament(
@@ -717,10 +673,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
 
-    print(
-        "Tournament complete. Results written to "
-        f"{output_path}"
-    )
+    print("Tournament complete. Results written to " f"{output_path}")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -111,10 +111,7 @@ def _validate_weight_keys(
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
-        raise ValueError(
-            f"{context} weight keys mismatch baseline schema: "
-            f"missing={missing}, extra={extra}"
-        )
+        raise ValueError(f"{context} weight keys mismatch baseline schema: " f"missing={missing}, extra={extra}")
 
 
 def _load_weights_payload(path: str) -> Tuple[HeuristicWeights, Dict[str, Any]]:
@@ -125,9 +122,7 @@ def _load_weights_payload(path: str) -> Tuple[HeuristicWeights, Dict[str, Any]]:
         payload = json.load(f)
     weights_obj = payload.get("weights")
     if not isinstance(weights_obj, dict):
-        raise ValueError(
-            f"Weights file {path!r} is missing a 'weights' object or it is not a dict"
-        )
+        raise ValueError(f"Weights file {path!r} is missing a 'weights' object or it is not a dict")
     weights: HeuristicWeights = {str(k): float(v) for k, v in weights_obj.items()}
     meta = payload.get("meta") or {}
     meta = dict(meta)
@@ -144,9 +139,7 @@ def load_candidate_profiles_from_dir(
     import glob
 
     if not os.path.isdir(dir_path):
-        raise FileNotFoundError(
-            f"Candidates dir does not exist or is not a directory: {dir_path!r}"
-        )
+        raise FileNotFoundError(f"Candidates dir does not exist or is not a directory: {dir_path!r}")
     candidates: List[CandidateProfile] = []
     paths = sorted(glob.glob(os.path.join(dir_path, pattern)))
     for path in paths:
@@ -154,11 +147,7 @@ def load_candidate_profiles_from_dir(
             continue
         weights, meta = _load_weights_payload(path)
         _validate_weight_keys(weights, baseline_keys, context=f"Candidate {path!r}")
-        profile_id = (
-            str(meta.get("id"))
-            if "id" in meta
-            else os.path.splitext(os.path.basename(path))[0]
-        )
+        profile_id = str(meta.get("id")) if "id" in meta else os.path.splitext(os.path.basename(path))[0]
         meta.setdefault("path", path)
         candidates.append(
             CandidateProfile(
@@ -179,11 +168,7 @@ def load_candidate_profiles_from_files(
     for path in paths:
         weights, meta = _load_weights_payload(path)
         _validate_weight_keys(weights, baseline_keys, context=f"Candidate {path!r}")
-        profile_id = (
-            str(meta.get("id"))
-            if "id" in meta
-            else os.path.splitext(os.path.basename(path))[0]
-        )
+        profile_id = str(meta.get("id")) if "id" in meta else os.path.splitext(os.path.basename(path))[0]
         meta.setdefault("path", path)
         candidates.append(
             CandidateProfile(
@@ -335,28 +320,19 @@ def compare_moves_on_states(
 
 def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Compare baseline HeuristicAI policy against candidate weight "
-            "profiles on a fixed state pool."
-        )
+        description=("Compare baseline HeuristicAI policy against candidate weight " "profiles on a fixed state pool.")
     )
     parser.add_argument(
         "--state-pool",
         type=str,
         default=DEFAULT_STATE_POOL,
-        help=(
-            "Path to JSONL file containing GameState records "
-            f"(default: {DEFAULT_STATE_POOL})."
-        ),
+        help=("Path to JSONL file containing GameState records " f"(default: {DEFAULT_STATE_POOL})."),
     )
     parser.add_argument(
         "--max-states",
         type=int,
         default=DEFAULT_MAX_STATES,
-        help=(
-            "Maximum number of states to sample from the pool "
-            f"(default: {DEFAULT_MAX_STATES})."
-        ),
+        help=("Maximum number of states to sample from the pool " f"(default: {DEFAULT_MAX_STATES})."),
     )
     parser.add_argument(
         "--baseline-weights",
@@ -371,10 +347,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "--candidates-dir",
         type=str,
         default="",
-        help=(
-            "Optional directory containing candidate weight JSON files "
-            "(schema: {'weights': {...}})."
-        ),
+        help=("Optional directory containing candidate weight JSON files " "(schema: {'weights': {...}})."),
     )
     parser.add_argument(
         "--weights-dir",
@@ -396,10 +369,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         type=str,
         action="append",
         default=None,
-        help=(
-            "Optional explicit candidate weights JSON file; may be "
-            "provided multiple times."
-        ),
+        help=("Optional explicit candidate weights JSON file; may be " "provided multiple times."),
     )
     parser.add_argument(
         "--output",
@@ -471,10 +441,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         candidates.extend(file_candidates)
 
     if not candidates:
-        raise SystemExit(
-            "No candidates found. Provide --candidates-dir and/or "
-            "--candidate-weights."
-        )
+        raise SystemExit("No candidates found. Provide --candidates-dir and/or " "--candidate-weights.")
 
     created_at = datetime.utcnow().isoformat() + "Z"
 
@@ -530,10 +497,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, sort_keys=True)
 
-    print(
-        "Diagnostic complete. Results written to "
-        f"{output_path}"
-    )
+    print("Diagnostic complete. Results written to " f"{output_path}")
 
 
 if __name__ == "__main__":  # pragma: no cover

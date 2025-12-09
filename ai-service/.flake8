@@ -3,6 +3,10 @@
 # so that linters do not complain about extra/missing blank lines.
 # E203: whitespace before ':' - black formats slices differently
 # E402: module level import not at top - some imports must be delayed to avoid circular imports
+# E501: line too long - allow long lines in comments/strings where breaking isn't helpful
+# F401: imported but unused - allow debug/utility imports in scripts
+# F541: f-string missing placeholders - allow f-strings for consistency
+# F811: redefinition of unused name - allow intentional shadowing
 # F841: local variable assigned but never used - allow underscore-prefixed vars
-extend-ignore = E3, E203, E402, F841
+extend-ignore = E3, E203, E402, E501, F401, F541, F811, F841
 max-line-length = 120

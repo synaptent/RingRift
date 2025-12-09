@@ -183,10 +183,7 @@ def play_single_game(
         move = ai.select_move(state)
         if move is None:
             termination_reason = "ai_returned_no_move"
-            logger.warning(
-                f"Seed {seed}: AI returned no move for player "
-                f"{current_player} at move {move_count}"
-            )
+            logger.warning(f"Seed {seed}: AI returned no move for player " f"{current_player} at move {move_count}")
             break
 
         try:
@@ -197,9 +194,7 @@ def play_single_game(
                 break
         except Exception as e:
             termination_reason = f"step_exception:{type(e).__name__}"
-            logger.error(
-                f"Seed {seed}: Step exception at move {move_count}: {e}"
-            )
+            logger.error(f"Seed {seed}: Step exception at move {move_count}: {e}")
             break
 
     # Determine winner from state
@@ -215,10 +210,7 @@ def worker_process(task: WorkerTask) -> List[GameResult]:
     This function runs in a separate process.
     """
     # Reconfigure logging for this worker process
-    log_fmt = (
-        f"%(asctime)s [Worker-{task.worker_id}] "
-        "%(levelname)s: %(message)s"
-    )
+    log_fmt = f"%(asctime)s [Worker-{task.worker_id}] " "%(levelname)s: %(message)s"
     logging.basicConfig(
         level=logging.INFO,
         format=log_fmt,
@@ -288,10 +280,7 @@ def worker_process(task: WorkerTask) -> List[GameResult]:
             # Continue with remaining games even if one fails
             continue
 
-    worker_logger.info(
-        f"Worker {task.worker_id} finished: "
-        f"{len(results)}/{len(task.game_indices)} games completed"
-    )
+    worker_logger.info(f"Worker {task.worker_id} finished: " f"{len(results)}/{len(task.game_indices)} games completed")
     return results
 
 
@@ -326,9 +315,7 @@ def aggregate_results(
         output_path,
         total_games=np.array([len(results)]),
         total_positions=np.array([total_positions]),
-        avg_game_length=np.array(
-            [total_game_length / len(results) if results else 0]
-        ),
+        avg_game_length=np.array([total_game_length / len(results) if results else 0]),
         wins_p1=np.array([winners[1]]),
         wins_p2=np.array([winners[2]]),
         draws=np.array([winners[None]]),
@@ -458,27 +445,17 @@ def run_parallel_self_play(
 
     # Get memory configuration from environment and divide by workers
     if memory_budget_gb is not None:
-        per_worker_memory_gb = divide_memory_budget(
-            memory_budget_gb, num_workers
-        )
+        per_worker_memory_gb = divide_memory_budget(memory_budget_gb, num_workers)
     else:
         try:
             total_memory_config = MemoryConfig.from_env()
-            per_worker_memory_gb = divide_memory_budget(
-                total_memory_config.max_memory_gb, num_workers
-            )
+            per_worker_memory_gb = divide_memory_budget(total_memory_config.max_memory_gb, num_workers)
         except Exception:
             # Default to 1GB per worker if no config available
             per_worker_memory_gb = 1.0
 
-    logger.info(
-        f"Starting parallel self-play: {num_games} games "
-        f"across {num_workers} workers"
-    )
-    logger.info(
-        f"AI type: {ai_type}, "
-        f"per-worker memory: {per_worker_memory_gb:.2f} GB"
-    )
+    logger.info(f"Starting parallel self-play: {num_games} games " f"across {num_workers} workers")
+    logger.info(f"AI type: {ai_type}, " f"per-worker memory: {per_worker_memory_gb:.2f} GB")
 
     # Create worker tasks
     tasks = create_worker_tasks(
@@ -498,15 +475,14 @@ def run_parallel_self_play(
     pbar = None
     try:
         from tqdm import tqdm
+
         pbar = tqdm(total=num_games, desc="Self-play games", unit="game")
     except ImportError:
         logger.warning("tqdm not installed, progress bar disabled")
 
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
         # Submit all tasks
-        future_to_task = {
-            executor.submit(worker_process, task): task for task in tasks
-        }
+        future_to_task = {executor.submit(worker_process, task): task for task in tasks}
 
         # Collect results as they complete
         for future in as_completed(future_to_task):
@@ -529,10 +505,7 @@ def run_parallel_self_play(
                     },
                 )
 
-                logger.info(
-                    f"Worker {task.worker_id} completed: "
-                    f"{games_completed} games"
-                )
+                logger.info(f"Worker {task.worker_id} completed: " f"{games_completed} games")
             except Exception as e:
                 failed_workers += 1
                 logger.error(
@@ -548,9 +521,7 @@ def run_parallel_self_play(
 
     elapsed = time.time() - start_time
     stats["elapsed_seconds"] = elapsed
-    stats["games_per_second"] = (
-        completed_games / elapsed if elapsed > 0 else 0
-    )
+    stats["games_per_second"] = completed_games / elapsed if elapsed > 0 else 0
     stats["failed_workers"] = failed_workers
 
     # Emit a final summary line from the shared progress reporter.
@@ -573,9 +544,7 @@ def run_parallel_self_play(
 
 def main():
     """Main entry point for parallel self-play script."""
-    parser = argparse.ArgumentParser(
-        description="Run parallel self-play games for training data generation"
-    )
+    parser = argparse.ArgumentParser(description="Run parallel self-play games for training data generation")
     parser.add_argument(
         "--num-games",
         type=int,

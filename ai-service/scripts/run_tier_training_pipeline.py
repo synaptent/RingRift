@@ -67,27 +67,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--run-dir",
         required=True,
-        help=(
-            "Output directory for training_report.json and status.json. "
-            "Will be created if it does not exist."
-        ),
+        help=("Output directory for training_report.json and status.json. " "Will be created if it does not exist."),
     )
     parser.add_argument(
         "--candidate-id",
         type=str,
         default=None,
-        help=(
-            "Optional explicit candidate id. When omitted an id is "
-            "generated based on tier/board/num_players."
-        ),
+        help=("Optional explicit candidate id. When omitted an id is " "generated based on tier/board/num_players."),
     )
     parser.add_argument(
         "--demo",
         action="store_true",
-        help=(
-            "Use extremely small/safe configs and avoid heavy training. "
-            "Intended for CI and local smoke tests."
-        ),
+        help=("Use extremely small/safe configs and avoid heavy training. " "Intended for CI and local smoke tests."),
     )
     parser.add_argument(
         "--seed",
@@ -121,9 +112,7 @@ def _generate_candidate_id(
     """
     tier_name = tier.upper()
     if not tier_name.startswith("D") or not tier_name[1:].isdigit():
-        raise ValueError(
-            f"Unsupported tier name {tier!r}; expected D2/D4/D6/D8."
-        )
+        raise ValueError(f"Unsupported tier name {tier!r}; expected D2/D4/D6/D8.")
     suffix = "demo" if demo else "cand"
     ts = now.strftime("%Y%m%d_%H%M%S")
     prefix = _board_prefix(board)
@@ -183,10 +172,7 @@ def _run_d2_training(
             "note": (
                 "demo mode; no real heuristic optimisation run"
                 if args.demo
-                else (
-                    "stub configuration; wire to "
-                    "run_cmaes_heuristic_optimization for full runs"
-                )
+                else ("stub configuration; wire to " "run_cmaes_heuristic_optimization for full runs")
             ),
         },
     }
@@ -218,9 +204,7 @@ def _run_d4_training(
         "training_steps": 0,
         "loss": None,
         "extra": {
-            "note": (
-                "demo mode; no real tournaments run; persona config only"
-            ),
+            "note": ("demo mode; no real tournaments run; persona config only"),
         },
     }
     return training_params, metrics
@@ -259,9 +243,9 @@ def _run_neural_tier_training(
         "train_config": {
             # Normalise to Enum name (e.g. "SQUARE8") for consistency with
             # env snapshots and tests that assert on the uppercase identifier.
-            "board_type": base_config.board_type.name
-            if hasattr(base_config.board_type, "name")
-            else str(base_config.board_type),
+            "board_type": (
+                base_config.board_type.name if hasattr(base_config.board_type, "name") else str(base_config.board_type)
+            ),
             "model_id": base_config.model_id,
             "batch_size": base_config.batch_size,
             "epochs_per_iter": base_config.epochs_per_iter,
@@ -279,10 +263,7 @@ def _run_neural_tier_training(
     if args.demo:
         # In demo mode we explicitly avoid invoking torch-based training to
         # keep CI runs fast and deterministic.
-        training_params["note"] = (
-            "demo mode; neural training loop not executed; model_id is "
-            "reserved only"
-        )
+        training_params["note"] = "demo mode; neural training loop not executed; model_id is " "reserved only"
         return training_params, metrics
 
     # Full (non-demo) run: call into train_model with a conservative config.
@@ -384,9 +365,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     tier_name = args.tier.upper()
     if tier_name not in {"D2", "D4", "D6", "D8"}:
-        raise SystemExit(
-            f"Unsupported tier {args.tier!r}; expected one of D2, D4, D6, D8."
-        )
+        raise SystemExit(f"Unsupported tier {args.tier!r}; expected one of D2, D4, D6, D8.")
 
     board_norm = args.board.lower()
     if board_norm not in {"square8", "sq8"}:
@@ -397,8 +376,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.num_players != 2:
         print(
-            f"Warning: num_players={args.num_players} is not supported; "
-            "this pipeline is designed for 2-player only."
+            f"Warning: num_players={args.num_players} is not supported; " "this pipeline is designed for 2-player only."
         )
 
     run_dir = os.path.abspath(args.run_dir)
@@ -424,9 +402,7 @@ def main(argv: list[str] | None = None) -> int:
     elif tier_name == "D4":
         training_params, metrics = _run_d4_training(args, candidate_id)
     elif tier_name in {"D6", "D8"}:
-        training_params, metrics = _run_neural_tier_training(
-            args, candidate_id, tier_name
-        )
+        training_params, metrics = _run_neural_tier_training(args, candidate_id, tier_name)
     else:  # pragma: no cover - guarded above
         raise SystemExit(f"Unsupported tier {tier_name!r}.")
 

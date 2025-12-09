@@ -48,15 +48,11 @@ def get_db_schema_version(db_path: str) -> int:
         ).fetchone()
 
         if has_metadata:
-            row = conn.execute(
-                "SELECT value FROM schema_metadata WHERE key = 'schema_version'"
-            ).fetchone()
+            row = conn.execute("SELECT value FROM schema_metadata WHERE key = 'schema_version'").fetchone()
             return int(row["value"]) if row else 1
         else:
             # Check if games table exists (v1 schema)
-            has_games = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='games'"
-            ).fetchone()
+            has_games = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='games'").fetchone()
             return 1 if has_games else 0
     finally:
         conn.close()
@@ -70,19 +66,15 @@ def get_db_stats(db_path: str) -> dict:
         stats = {}
 
         # Check tables exist
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()
+        tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         stats["tables"] = [row["name"] for row in tables]
 
         if "games" in stats["tables"]:
-            stats["game_count"] = conn.execute(
-                "SELECT COUNT(*) FROM games"
-            ).fetchone()[0]
+            stats["game_count"] = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
 
-            stats["move_count"] = conn.execute(
-                "SELECT COUNT(*) FROM game_moves"
-            ).fetchone()[0] if "game_moves" in stats["tables"] else 0
+            stats["move_count"] = (
+                conn.execute("SELECT COUNT(*) FROM game_moves").fetchone()[0] if "game_moves" in stats["tables"] else 0
+            )
 
         # Check which columns exist in game_moves
         if "game_moves" in stats["tables"]:

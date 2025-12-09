@@ -23,8 +23,15 @@ from typing import Any, Dict, List, Optional
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.models import (
-    AIConfig, BoardState, BoardType, GamePhase, GameState, GameStatus,
-    Move, Player, TimeControl,
+    AIConfig,
+    BoardState,
+    BoardType,
+    GamePhase,
+    GameState,
+    GameStatus,
+    Move,
+    Player,
+    TimeControl,
 )
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS, HEURISTIC_WEIGHT_KEYS
@@ -36,6 +43,7 @@ from app.training.env import get_theoretical_max_moves
 @dataclass
 class WeightResult:
     """Results for a single weight's sensitivity test."""
+
     weight_name: str
     weight_value: float
     wins: int = 0
@@ -145,6 +153,7 @@ def create_game_state(board_type_str: str) -> GameState:
 @dataclass
 class GameResult:
     """Result of a single game including move history for recording."""
+
     winner: int
     move_count: int
     initial_state: GameState
@@ -303,7 +312,10 @@ def run_sensitivity_test(
 
     total_weights = len(HEURISTIC_WEIGHT_KEYS)
     total_games = total_weights * games_per_weight
-    print(f"\nRunning sensitivity test: {total_weights} weights × {games_per_weight} games = {total_games} games", flush=True)
+    print(
+        f"\nRunning sensitivity test: {total_weights} weights × {games_per_weight} games = {total_games} games",
+        flush=True,
+    )
     print(f"Board: {board_type}, Max moves: {max_moves}", flush=True)
     if replay_db:
         print(f"Recording games to database", flush=True)
@@ -335,8 +347,13 @@ def run_sensitivity_test(
             # Alternate who plays first for fairness
             if g % 2 == 0:
                 game_result = play_game(
-                    weight_profile, zero_profile, board_type, max_moves, game_seed,
-                    verbose=verbose, use_true_random_baseline=use_true_random_baseline,
+                    weight_profile,
+                    zero_profile,
+                    board_type,
+                    max_moves,
+                    game_seed,
+                    verbose=verbose,
+                    use_true_random_baseline=use_true_random_baseline,
                     collect_moves=(replay_db is not None),
                 )
                 if isinstance(game_result, GameResult):
@@ -357,8 +374,13 @@ def run_sensitivity_test(
                     outcome = "D"
             else:
                 game_result = play_game(
-                    zero_profile, weight_profile, board_type, max_moves, game_seed,
-                    verbose=verbose, use_true_random_baseline=use_true_random_baseline,
+                    zero_profile,
+                    weight_profile,
+                    board_type,
+                    max_moves,
+                    game_seed,
+                    verbose=verbose,
+                    use_true_random_baseline=use_true_random_baseline,
                     collect_moves=(replay_db is not None),
                 )
                 if isinstance(game_result, GameResult):
@@ -404,8 +426,7 @@ def run_sensitivity_test(
                     raise
                 except Exception as exc:
                     print(
-                        f"    [record-db] Failed to record game: "
-                        f"{type(exc).__name__}: {exc}",
+                        f"    [record-db] Failed to record game: " f"{type(exc).__name__}: {exc}",
                         file=sys.stderr,
                     )
 
@@ -421,14 +442,20 @@ def run_sensitivity_test(
                 eta_str = f"{eta_seconds / 60:.1f}m" if eta_seconds < 3600 else f"{eta_seconds / 3600:.1f}h"
             else:
                 eta_str = "?"
-            print(f"    [{global_game_num:3d}/{total_games}] game {g+1}/{games_per_weight}: {outcome} in {moves} moves ({game_elapsed:.1f}s) | ETA: {eta_str}", flush=True)
+            print(
+                f"    [{global_game_num:3d}/{total_games}] game {g+1}/{games_per_weight}: {outcome} in {moves} moves ({game_elapsed:.1f}s) | ETA: {eta_str}",
+                flush=True,
+            )
 
         result.avg_game_length = sum(game_lengths) / len(game_lengths)
         results.append(result)
 
         # Weight summary
         status = "+" if result.win_rate > 0.6 else "-" if result.win_rate < 0.4 else "~"
-        print(f"  => [{i+1:2d}/{total_weights}] {weight_key:40s} | W:{result.wins:2d} L:{result.losses:2d} D:{result.draws:2d} | WR:{result.win_rate:.0%} {status}\n", flush=True)
+        print(
+            f"  => [{i+1:2d}/{total_weights}] {weight_key:40s} | W:{result.wins:2d} L:{result.losses:2d} D:{result.draws:2d} | WR:{result.win_rate:.0%} {status}\n",
+            flush=True,
+        )
 
     if replay_db:
         print(f"[record-db] Recorded {games_recorded}/{total_games} games", flush=True)
@@ -447,14 +474,14 @@ def main():
         "--use-true-random",
         action="store_true",
         help="Use uniform random move selection for zero-weight baseline instead of "
-             "deterministic 'first legal move' behavior",
+        "deterministic 'first legal move' behavior",
     )
     parser.add_argument(
         "--record-db",
         type=str,
         default="data/games/sensitivity.db",
         help="Path to SQLite database for recording game replays. "
-             "Default: data/games/sensitivity.db. Use --no-record-db to disable.",
+        "Default: data/games/sensitivity.db. Use --no-record-db to disable.",
     )
     parser.add_argument(
         "--no-record-db",
@@ -517,7 +544,9 @@ def main():
     print(f"\nSignificant weights ({len(significant_weights)}):")
     for name, wr, strength in significant_weights:
         print(f"  {strength:>15}: {name} ({wr:.0%})")
-    print(f"\nNeutral weights ({len(neutral_weights)}): {', '.join(neutral_weights[:5])}{'...' if len(neutral_weights) > 5 else ''}")
+    print(
+        f"\nNeutral weights ({len(neutral_weights)}): {', '.join(neutral_weights[:5])}{'...' if len(neutral_weights) > 5 else ''}"
+    )
 
     # Save results
     os.makedirs(os.path.dirname(args.output), exist_ok=True)

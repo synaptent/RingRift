@@ -11,10 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.utils.progress_reporter import SoakProgressReporter
 
-from app.models import (
-    GameState, BoardType, GamePhase, GameStatus, Player, TimeControl,
-    BoardState, AIConfig
-)
+from app.models import GameState, BoardType, GamePhase, GameStatus, Player, TimeControl, BoardState, AIConfig
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.minimax_ai import MinimaxAI
 from app.ai.mcts_ai import MCTSAI
@@ -22,22 +19,12 @@ from app.ai.random_ai import RandomAI
 from app.rules.default_engine import DefaultRulesEngine
 
 # Map string names to AI classes
-AI_CLASSES = {
-    "Random": RandomAI,
-    "Heuristic": HeuristicAI,
-    "Minimax": MinimaxAI,
-    "MCTS": MCTSAI
-}
+AI_CLASSES = {"Random": RandomAI, "Heuristic": HeuristicAI, "Minimax": MinimaxAI, "MCTS": MCTSAI}
 
-BOARD_TYPES = {
-    "Square8": BoardType.SQUARE8,
-    "Square19": BoardType.SQUARE19,
-    "Hex": BoardType.HEXAGONAL
-}
+BOARD_TYPES = {"Square8": BoardType.SQUARE8, "Square19": BoardType.SQUARE19, "Hex": BoardType.HEXAGONAL}
 
-def create_game_state(
-    board_type_str: str, p1_config: Dict, p2_config: Dict
-) -> GameState:
+
+def create_game_state(board_type_str: str, p1_config: Dict, p2_config: Dict) -> GameState:
     board_type = BOARD_TYPES.get(board_type_str, BoardType.SQUARE8)
 
     size = 8
@@ -46,14 +33,7 @@ def create_game_state(
     elif board_type == BoardType.HEXAGONAL:
         size = 5  # Standard hex size (radius 4)
 
-    board = BoardState(
-        type=board_type,
-        size=size,
-        stacks={},
-        markers={},
-        collapsedSpaces={},
-        eliminatedRings={}
-    )
+    board = BoardState(type=board_type, size=size, stacks={}, markers={}, collapsedSpaces={}, eliminatedRings={})
 
     players = [
         Player(
@@ -63,10 +43,10 @@ def create_game_state(
             playerNumber=1,
             isReady=True,
             timeRemaining=600000,
-            aiDifficulty=p1_config['difficulty'],
+            aiDifficulty=p1_config["difficulty"],
             ringsInHand=20,
             eliminatedRings=0,
-            territorySpaces=0
+            territorySpaces=0,
         ),
         Player(
             id="player2",
@@ -75,11 +55,11 @@ def create_game_state(
             playerNumber=2,
             isReady=True,
             timeRemaining=600000,
-            aiDifficulty=p2_config['difficulty'],
+            aiDifficulty=p2_config["difficulty"],
             ringsInHand=20,
             eliminatedRings=0,
-            territorySpaces=0
-        )
+            territorySpaces=0,
+        ),
     ]
 
     return GameState(
@@ -102,8 +82,9 @@ def create_game_state(
         territoryVictoryThreshold=10,
         chainCaptureState=None,
         mustMoveFromStackKey=None,
-        zobristHash=None
+        zobristHash=None,
     )
+
 
 def run_game(p1_ai, p2_ai, board_type: str) -> int:
     """
@@ -111,14 +92,8 @@ def run_game(p1_ai, p2_ai, board_type: str) -> int:
     Returns the winner (1 or 2), or 0 for draw.
     """
     # Create fresh game state
-    p1_config = {
-        "type": p1_ai.__class__.__name__.replace("AI", ""),
-        "difficulty": p1_ai.config.difficulty
-    }
-    p2_config = {
-        "type": p2_ai.__class__.__name__.replace("AI", ""),
-        "difficulty": p2_ai.config.difficulty
-    }
+    p1_config = {"type": p1_ai.__class__.__name__.replace("AI", ""), "difficulty": p1_ai.config.difficulty}
+    p2_config = {"type": p2_ai.__class__.__name__.replace("AI", ""), "difficulty": p2_ai.config.difficulty}
 
     game_state = create_game_state(board_type, p1_config, p2_config)
     rules_engine = DefaultRulesEngine()
@@ -126,15 +101,9 @@ def run_game(p1_ai, p2_ai, board_type: str) -> int:
     move_count = 0
     max_moves = 300  # Prevent infinite games
 
-    print(
-        f"Starting game: {p1_ai.__class__.__name__} (P1) vs "
-        f"{p2_ai.__class__.__name__} (P2) on {board_type}"
-    )
+    print(f"Starting game: {p1_ai.__class__.__name__} (P1) vs " f"{p2_ai.__class__.__name__} (P2) on {board_type}")
 
-    while (
-        game_state.game_status == GameStatus.ACTIVE
-        and move_count < max_moves
-    ):
+    while game_state.game_status == GameStatus.ACTIVE and move_count < max_moves:
         current_player_num = game_state.current_player
         current_ai = p1_ai if current_player_num == 1 else p2_ai
 
@@ -146,6 +115,7 @@ def run_game(p1_ai, p2_ai, board_type: str) -> int:
         except Exception as e:
             print(f"Error in AI select_move: {e}")
             import traceback
+
             traceback.print_exc()
             return 2 if current_player_num == 1 else 1
 
@@ -161,6 +131,7 @@ def run_game(p1_ai, p2_ai, board_type: str) -> int:
         except Exception as e:
             print(f"Error applying move: {e}")
             import traceback
+
             traceback.print_exc()
             return 2 if current_player_num == 1 else 1
 
@@ -176,6 +147,7 @@ def run_game(p1_ai, p2_ai, board_type: str) -> int:
 
     print(f"Game Over. Winner: Player {game_state.winner}")
     return game_state.winner if game_state.winner is not None else 0
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run AI Tournament")
@@ -204,30 +176,10 @@ def main():
 
     # Create AI instances
     # We use player number 1 for initialization, but it will be updated in run_game
-    ai1 = p1_class(
-        1,
-        AIConfig(
-            difficulty=args.p1_diff,
-            think_time=0,
-            randomness=0,
-            rngSeed=None
-        )
-    )
-    ai2 = p2_class(
-        2,
-        AIConfig(
-            difficulty=args.p2_diff,
-            think_time=0,
-            randomness=0,
-            rngSeed=None
-        )
-    )
+    ai1 = p1_class(1, AIConfig(difficulty=args.p1_diff, think_time=0, randomness=0, rngSeed=None))
+    ai2 = p2_class(2, AIConfig(difficulty=args.p2_diff, think_time=0, randomness=0, rngSeed=None))
 
-    stats = {
-        "p1_wins": 0,
-        "p2_wins": 0,
-        "draws": 0
-    }
+    stats = {"p1_wins": 0, "p2_wins": 0, "draws": 0}
 
     # Initialize progress reporter for time-based progress output (~10s intervals)
     progress_reporter = SoakProgressReporter(
@@ -255,9 +207,9 @@ def main():
             # run_game expects (p1_ai, p2_ai) where p1_ai plays as Player 1
             winner = run_game(ai2, ai1, args.board)
             if winner == 1:
-                stats["p2_wins"] += 1 # ai2 (P2 originally) won as Player 1
+                stats["p2_wins"] += 1  # ai2 (P2 originally) won as Player 1
             elif winner == 2:
-                stats["p1_wins"] += 1 # ai1 (P1 originally) won as Player 2
+                stats["p1_wins"] += 1  # ai1 (P1 originally) won as Player 2
             else:
                 stats["draws"] += 1
 
@@ -277,6 +229,7 @@ def main():
     print(f"  {args.p2} (P2): {stats['p2_wins']} wins")
     print(f"  Draws: {stats['draws']}")
     print("=" * 40)
+
 
 if __name__ == "__main__":
     main()

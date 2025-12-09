@@ -165,18 +165,13 @@ def _merge_single_db(
             stats["merged"] += 1
         except Exception as e:
             stats["errors"] += 1
-            print(
-                f"[merge_game_dbs] ERROR: Failed to merge game {game_meta['game_id']} "
-                f"from {src_label}: {e}"
-            )
+            print(f"[merge_game_dbs] ERROR: Failed to merge game {game_meta['game_id']} " f"from {src_label}: {e}")
 
     return stats
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Merge multiple GameReplayDB SQLite databases into one."
-    )
+    parser = argparse.ArgumentParser(description="Merge multiple GameReplayDB SQLite databases into one.")
     parser.add_argument(
         "--db",
         type=str,
@@ -236,4 +231,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

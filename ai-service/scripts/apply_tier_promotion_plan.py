@@ -77,18 +77,12 @@ def _parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--tier",
         default=None,
-        help=(
-            "Optional tier name (e.g. D4). When supplied, must match the "
-            "tier recorded in the promotion plan."
-        ),
+        help=("Optional tier name (e.g. D4). When supplied, must match the " "tier recorded in the promotion plan."),
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help=(
-            "Do not write changes to the registry; still validate the plan "
-            "and emit summary/patch guide."
-        ),
+        help=("Do not write changes to the registry; still validate the plan " "and emit summary/patch guide."),
     )
     return parser.parse_args(argv)
 
@@ -128,8 +122,7 @@ def _validate_plan_against_cli(
         tier_cli = str(tier_override).upper()
         if plan_tier and plan_tier != tier_cli:
             print(
-                "Error: tier mismatch between CLI and promotion plan: "
-                f"cli={tier_cli!r}, plan={plan_tier!r}",
+                "Error: tier mismatch between CLI and promotion plan: " f"cli={tier_cli!r}, plan={plan_tier!r}",
             )
             return "", "", 0
         tier = tier_cli
@@ -145,8 +138,7 @@ def _validate_plan_against_cli(
         plan_board = _normalise_board_label(str(plan_board_raw))
         if plan_board != board_cli:
             print(
-                "Error: board mismatch between CLI and promotion plan: "
-                f"cli={board_cli!r}, plan={plan_board!r}",
+                "Error: board mismatch between CLI and promotion plan: " f"cli={board_cli!r}, plan={plan_board!r}",
             )
             return "", "", 0
         board_label = plan_board
@@ -280,38 +272,24 @@ def _write_patch_guide(
 
     if decision == "promote":
         lines.append("ACTION REQUIRED (manual):")
+        lines.append("  - Open ai-service/app/config/ladder_config.py")
         lines.append(
-            "  - Open ai-service/app/config/ladder_config.py"
+            "  - In _build_default_square8_two_player_configs(), locate the " f"LadderTierConfig for tier {tier}."
         )
+        lines.append("  - Change model_id from " f'"{current_model_id}" to "{candidate_model_id}".')
         lines.append(
-            "  - In _build_default_square8_two_player_configs(), locate the "
-            f"LadderTierConfig for tier {tier}."
-        )
-        lines.append(
-            "  - Change model_id from "
-            f'"{current_model_id}" to "{candidate_model_id}".'
-        )
-        lines.append(
-            "  - Commit this change with a message referencing the "
-            "promotion plan and promotion_summary.json."
+            "  - Commit this change with a message referencing the " "promotion plan and promotion_summary.json."
         )
     else:
         lines.append("ACTION:")
-        lines.append(
-            "  - Decision is 'reject'; no ladder_config change is required."
-        )
-        lines.append(
-            "  - You may still keep the candidate in the registry for "
-            "historical tracking."
-        )
+        lines.append("  - Decision is 'reject'; no ladder_config change is required.")
+        lines.append("  - You may still keep the candidate in the registry for " "historical tracking.")
 
     lines.append("")
     lines.append("Registry:")
     lines.append(f"  - Updated registry at: {registry_path}")
     if dry_run:
-        lines.append(
-            "  - NOTE: --dry-run was used; registry file was not written."
-        )
+        lines.append("  - NOTE: --dry-run was used; registry file was not written.")
 
     out_path = os.path.join(out_dir, PROMOTION_PATCH_GUIDE_FILENAME)
     with open(out_path, "w", encoding="utf-8") as f:
@@ -346,16 +324,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     board_enum = _board_to_enum(board_label)
     if board_enum is None or resolved_num_players != 2:
         print(
-            "Error: only Square-8 2-player tiers are currently supported "
-            "by this helper.",
+            "Error: only Square-8 2-player tiers are currently supported " "by this helper.",
         )
         return 1
 
     decision = str(plan.get("decision") or "").lower()
     if decision not in {"promote", "reject"}:
         print(
-            "Error: promotion plan 'decision' must be 'promote' or "
-            f"'reject', got {plan.get('decision')!r}.",
+            "Error: promotion plan 'decision' must be 'promote' or " f"'reject', got {plan.get('decision')!r}.",
         )
         return 1
 

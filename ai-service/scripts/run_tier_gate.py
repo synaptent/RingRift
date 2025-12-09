@@ -52,17 +52,13 @@ def _get_heuristic_tier_spec(tier_id: str) -> HeuristicTierSpec:
         if spec.id == tier_id:
             return spec
     available = ", ".join(sorted(t.id for t in HEURISTIC_TIER_SPECS))
-    raise SystemExit(
-        f"Unknown heuristic tier id {tier_id!r}. "
-        f"Available ids: {available}"
-    )
+    raise SystemExit(f"Unknown heuristic tier id {tier_id!r}. " f"Available ids: {available}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Run a difficulty-tier gate (D2/D4/D6/D8) or a heuristic "
-            "eval-pool tier gate and emit a JSON summary."
+            "Run a difficulty-tier gate (D2/D4/D6/D8) or a heuristic " "eval-pool tier gate and emit a JSON summary."
         ),
     )
     mode_group = parser.add_mutually_exclusive_group(required=True)
@@ -72,10 +68,7 @@ def parse_args() -> argparse.Namespace:
     )
     mode_group.add_argument(
         "--tier-id",
-        help=(
-            "Heuristic eval-pool tier id "
-            "(e.g. sq8_heuristic_baseline_v1)."
-        ),
+        help=("Heuristic eval-pool tier id " "(e.g. sq8_heuristic_baseline_v1)."),
     )
 
     parser.add_argument(
@@ -106,10 +99,7 @@ def parse_args() -> argparse.Namespace:
         "--output-json",
         type=str,
         default=None,
-        help=(
-            "Optional path to write the JSON summary. When omitted, the "
-            "summary is printed to stdout only."
-        ),
+        help=("Optional path to write the JSON summary. When omitted, the " "summary is printed to stdout only."),
     )
     parser.add_argument(
         "--candidate-model-id",
@@ -211,16 +201,9 @@ def _print_difficulty_summary(
     print("Matchups:")
     for m in result.matchups:
         win_rate_pct = m.win_rate * 100.0
-        header = (
-            f"  vs {m.opponent_id} "
-            f"(difficulty {m.opponent_difficulty}, "
-            f"ai={m.opponent_ai_type})"
-        )
+        header = f"  vs {m.opponent_id} " f"(difficulty {m.opponent_difficulty}, " f"ai={m.opponent_ai_type})"
         print(header)
-        line = (
-            f"    W/D/L: {m.wins} / {m.draws} / {m.losses} "
-            f"(win-rate: {win_rate_pct:.1f}%)"
-        )
+        line = f"    W/D/L: {m.wins} / {m.draws} / {m.losses} " f"(win-rate: {win_rate_pct:.1f}%)"
         print(line)
 
     print()
@@ -254,16 +237,11 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
     tier_name = args.tier.upper()
     if tier_name not in TIER_EVAL_CONFIGS:
         available = ", ".join(sorted(TIER_EVAL_CONFIGS.keys()))
-        msg = (
-            f"Unknown difficulty tier '{args.tier}'. "
-            f"Available tiers: {available}"
-        )
+        msg = f"Unknown difficulty tier '{args.tier}'. " f"Available tiers: {available}"
         raise SystemExit(msg)
 
     if not args.candidate_model_id:
-        raise SystemExit(
-            "Difficulty-tier mode requires --candidate-model-id to be set."
-        )
+        raise SystemExit("Difficulty-tier mode requires --candidate-model-id to be set.")
 
     tier_config = get_tier_config(tier_name)
 
@@ -316,12 +294,8 @@ def _run_difficulty_mode(args: argparse.Namespace) -> int:
         ts = datetime.now(timezone.utc).isoformat()
         reason = {
             "overall_pass": result.overall_pass,
-            "win_rate_vs_baseline": payload["metrics"].get(
-                "win_rate_vs_baseline"
-            ),
-            "win_rate_vs_previous_tier": payload["metrics"].get(
-                "win_rate_vs_previous_tier"
-            ),
+            "win_rate_vs_baseline": payload["metrics"].get("win_rate_vs_baseline"),
+            "win_rate_vs_previous_tier": payload["metrics"].get("win_rate_vs_previous_tier"),
         }
         decision = "promote" if result.overall_pass else "reject"
         plan = {

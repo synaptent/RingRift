@@ -99,9 +99,7 @@ class WorkerStats:
             "total_games_played": self.total_games_played,
             "total_evaluation_time_sec": round(self.total_evaluation_time_sec, 2),
             "uptime_sec": round(uptime, 2),
-            "last_task_time": (
-                self.last_task_time.isoformat() if self.last_task_time else None
-            ),
+            "last_task_time": (self.last_task_time.isoformat() if self.last_task_time else None),
             "current_task_id": self.current_task_id,
         }
 
@@ -359,9 +357,7 @@ def handle_shutdown(signum: int, frame) -> None:
 def main() -> None:
     global WORKER_ID
 
-    parser = argparse.ArgumentParser(
-        description="Queue-based CMA-ES worker for cloud deployment"
-    )
+    parser = argparse.ArgumentParser(description="Queue-based CMA-ES worker for cloud deployment")
     parser.add_argument(
         "--worker-id",
         type=str,

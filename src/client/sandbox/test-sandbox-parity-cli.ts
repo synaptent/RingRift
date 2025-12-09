@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- testing CLI accesses internal engine state */
 import { ClientSandboxEngine } from './ClientSandboxEngine';
 import { GameState, Move, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
 import { readFileSync } from 'fs';

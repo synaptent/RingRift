@@ -21,6 +21,7 @@ from typing import List, Optional, Tuple
 
 # Add ai-service to path for imports
 import sys
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.db.game_replay import GameReplayDB, _compute_state_hash
@@ -72,7 +73,8 @@ def get_territory_moves(db_path: Path, limit: int = 50) -> List[Tuple[str, int, 
     cur = conn.cursor()
 
     try:
-        cur.execute("""
+        cur.execute(
+            """
             SELECT game_id, move_number, move_type, move_json
             FROM game_moves
             WHERE move_type IN (
@@ -82,7 +84,9 @@ def get_territory_moves(db_path: Path, limit: int = 50) -> List[Tuple[str, int, 
             )
             ORDER BY game_id, move_number
             LIMIT ?
-        """, (limit,))
+        """,
+            (limit,),
+        )
 
         results = cur.fetchall()
         return results
@@ -115,13 +119,11 @@ def summarize_python_state(db: GameReplayDB, game_id: str, move_index: int) -> O
         return StateSummary(
             move_index=move_index,
             current_player=state.current_player,
-            current_phase=state.current_phase.value
-            if hasattr(state.current_phase, "value")
-            else str(state.current_phase),
+            current_phase=(
+                state.current_phase.value if hasattr(state.current_phase, "value") else str(state.current_phase)
+            ),
             game_status=_canonicalize_status(
-                state.game_status.value
-                if hasattr(state.game_status, "value")
-                else str(state.game_status)
+                state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
             ),
             state_hash=_compute_state_hash(state),
         )
@@ -231,9 +233,7 @@ def main():
                 continue
             seen_positions.add(pos_key)
 
-            output_path = generate_fixture(
-                db_path, game_id, move_number, move_type, move_json, output_dir
-            )
+            output_path = generate_fixture(db_path, game_id, move_number, move_type, move_json, output_dir)
 
             if output_path:
                 generated += 1

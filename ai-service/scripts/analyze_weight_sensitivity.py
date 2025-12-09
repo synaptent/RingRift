@@ -32,6 +32,7 @@ from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS, HEURISTIC_WEIGHT_
 @dataclass
 class WeightClassification:
     """Classification result for a single weight."""
+
     weight_name: str
     win_rate: float
     original_value: float
@@ -65,9 +66,9 @@ def classify_weight(
             weight_name=weight_name,
             win_rate=win_rate,
             original_value=original_value,
-            classification='positive',
+            classification="positive",
             cmaes_seed_value=abs(original_value),
-            action=f"Keep positive (WR {win_rate:.0%} >= {positive_threshold:.0%})"
+            action=f"Keep positive (WR {win_rate:.0%} >= {positive_threshold:.0%})",
         )
     elif win_rate <= negative_threshold:
         # Strong negative signal - invert sign for CMA-ES
@@ -76,9 +77,9 @@ def classify_weight(
             weight_name=weight_name,
             win_rate=win_rate,
             original_value=original_value,
-            classification='negative',
+            classification="negative",
             cmaes_seed_value=-abs(original_value),
-            action=f"Invert sign (WR {win_rate:.0%} <= {negative_threshold:.0%}) - feature hurts when overweighted"
+            action=f"Invert sign (WR {win_rate:.0%} <= {negative_threshold:.0%}) - feature hurts when overweighted",
         )
     else:
         # Noise band - candidate for pruning or zero-initialization
@@ -86,9 +87,9 @@ def classify_weight(
             weight_name=weight_name,
             win_rate=win_rate,
             original_value=original_value,
-            classification='noise',
+            classification="noise",
             cmaes_seed_value=0.0,
-            action=f"Zero/prune (WR {win_rate:.0%} in noise band [{negative_threshold:.0%}, {positive_threshold:.0%}])"
+            action=f"Zero/prune (WR {win_rate:.0%} in noise band [{negative_threshold:.0%}, {positive_threshold:.0%}])",
         )
 
 
@@ -107,15 +108,15 @@ def analyze_sensitivity_results(
     Returns:
         List of WeightClassification objects sorted by win rate (descending)
     """
-    with open(results_path, 'r', encoding='utf-8') as f:
+    with open(results_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    results = data.get('results', [])
+    results = data.get("results", [])
     classifications: List[WeightClassification] = []
 
     for result in results:
-        weight_name = result['weight']
-        win_rate = result['win_rate']
+        weight_name = result["weight"]
+        win_rate = result["win_rate"]
         original_value = BASE_V1_BALANCED_WEIGHTS.get(weight_name, 1.0)
 
         classification = classify_weight(
@@ -149,7 +150,7 @@ def generate_cmaes_seed_weights(
     weights: Dict[str, float] = {}
 
     for c in classifications:
-        if c.classification == 'noise' and not include_noise:
+        if c.classification == "noise" and not include_noise:
             # For noise band, use small non-zero value to allow exploration
             weights[c.weight_name] = 0.1 * (1.0 if c.original_value >= 0 else -1.0)
         else:
@@ -170,9 +171,9 @@ def print_classification_report(classifications: List[WeightClassification]) -> 
     print("WEIGHT CLASSIFICATION REPORT")
     print("=" * 80)
 
-    positive = [c for c in classifications if c.classification == 'positive']
-    negative = [c for c in classifications if c.classification == 'negative']
-    noise = [c for c in classifications if c.classification == 'noise']
+    positive = [c for c in classifications if c.classification == "positive"]
+    negative = [c for c in classifications if c.classification == "negative"]
+    noise = [c for c in classifications if c.classification == "noise"]
 
     print(f"\n📈 STRONG POSITIVE SIGNAL ({len(positive)} weights) - Keep with positive sign:")
     print("-" * 80)
@@ -199,37 +200,24 @@ def print_classification_report(classifications: List[WeightClassification]) -> 
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Analyze weight sensitivity results and classify for CMA-ES"
-    )
-    parser.add_argument(
-        "--input",
-        type=str,
-        required=True,
-        help="Path to sensitivity test results JSON file"
-    )
+    parser = argparse.ArgumentParser(description="Analyze weight sensitivity results and classify for CMA-ES")
+    parser.add_argument("--input", type=str, required=True, help="Path to sensitivity test results JSON file")
     parser.add_argument(
         "--output",
         type=str,
         default="logs/axis_aligned/cmaes_seed_weights.json",
-        help="Output path for CMA-ES seed weights JSON"
+        help="Output path for CMA-ES seed weights JSON",
     )
     parser.add_argument(
-        "--positive-threshold",
-        type=float,
-        default=0.55,
-        help="Win rate threshold for positive signal (default: 0.55)"
+        "--positive-threshold", type=float, default=0.55, help="Win rate threshold for positive signal (default: 0.55)"
     )
     parser.add_argument(
-        "--negative-threshold",
-        type=float,
-        default=0.45,
-        help="Win rate threshold for negative signal (default: 0.45)"
+        "--negative-threshold", type=float, default=0.45, help="Win rate threshold for negative signal (default: 0.45)"
     )
     parser.add_argument(
         "--include-noise-zeros",
         action="store_true",
-        help="Include noise-band weights as exactly 0.0 (default: use small values for exploration)"
+        help="Include noise-band weights as exactly 0.0 (default: use small values for exploration)",
     )
 
     args = parser.parse_args()
@@ -259,7 +247,7 @@ def main():
     os.makedirs(os.path.dirname(args.output) or ".", exist_ok=True)
 
     # Load original input metadata
-    with open(args.input, 'r', encoding='utf-8') as f:
+    with open(args.input, "r", encoding="utf-8") as f:
         input_data = json.load(f)
 
     output_data = {
@@ -272,9 +260,9 @@ def main():
         },
         "weights": cmaes_weights,
         "classifications": {
-            "positive": [c.weight_name for c in classifications if c.classification == 'positive'],
-            "negative": [c.weight_name for c in classifications if c.classification == 'negative'],
-            "noise": [c.weight_name for c in classifications if c.classification == 'noise'],
+            "positive": [c.weight_name for c in classifications if c.classification == "positive"],
+            "negative": [c.weight_name for c in classifications if c.classification == "negative"],
+            "noise": [c.weight_name for c in classifications if c.classification == "noise"],
         },
         "details": [
             {
@@ -286,10 +274,10 @@ def main():
                 "action": c.action,
             }
             for c in classifications
-        ]
+        ],
     }
 
-    with open(args.output, 'w', encoding='utf-8') as f:
+    with open(args.output, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=2, sort_keys=True)
 
     print(f"\nCMA-ES seed weights saved to: {args.output}")

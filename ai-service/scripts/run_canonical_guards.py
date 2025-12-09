@@ -113,16 +113,10 @@ def run_parity_sample(max_games_per_db: int) -> bool:
         struct = int(summary.get("games_with_structural_issues", 0) or 0)
 
         if sem != 0 or struct != 0:
-            _log(
-                f"  Parity issues: semantic_divergence={sem}, "
-                f"structural_issues={struct}"
-            )
+            _log(f"  Parity issues: semantic_divergence={sem}, " f"structural_issues={struct}")
             all_ok = False
             break
-        _log(
-            f"  OK (checked {summary.get('total_games_checked', 0)} games; "
-            "no semantic or structural issues)."
-        )
+        _log(f"  OK (checked {summary.get('total_games_checked', 0)} games; " "no semantic or structural issues).")
 
     return all_ok
 
@@ -182,4 +176,3 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":  # pragma: no cover - CLI entrypoint
     raise SystemExit(main())
-

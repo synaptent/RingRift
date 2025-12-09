@@ -2,6 +2,7 @@
 Debug script to investigate 'No move found' scenarios
 Runs a single game and dumps state when AI fails to find a move
 """
+
 import sys
 import os
 import time
@@ -15,21 +16,37 @@ from app.ai.mcts_ai import MCTSAI
 from app.ai.descent_ai import DescentAI
 from app.board_manager import BoardManager
 
+
 def create_initial_state():
     return GameState(
         id="debug_game",
         boardType=BoardType.SQUARE8,
-        board=BoardState(
-            type=BoardType.SQUARE8,
-            size=8,
-            stacks={},
-            markers={},
-            collapsedSpaces={},
-            eliminatedRings={}
-        ),
+        board=BoardState(type=BoardType.SQUARE8, size=8, stacks={}, markers={}, collapsedSpaces={}, eliminatedRings={}),
         players=[
-            Player(id="p1", username="Descent", type="ai", playerNumber=1, isReady=True, timeRemaining=600, ringsInHand=18, eliminatedRings=0, territorySpaces=0, aiDifficulty=5),
-            Player(id="p2", username="MCTS", type="ai", playerNumber=2, isReady=True, timeRemaining=600, ringsInHand=18, eliminatedRings=0, territorySpaces=0, aiDifficulty=5)
+            Player(
+                id="p1",
+                username="Descent",
+                type="ai",
+                playerNumber=1,
+                isReady=True,
+                timeRemaining=600,
+                ringsInHand=18,
+                eliminatedRings=0,
+                territorySpaces=0,
+                aiDifficulty=5,
+            ),
+            Player(
+                id="p2",
+                username="MCTS",
+                type="ai",
+                playerNumber=2,
+                isReady=True,
+                timeRemaining=600,
+                ringsInHand=18,
+                eliminatedRings=0,
+                territorySpaces=0,
+                aiDifficulty=5,
+            ),
         ],
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=1,
@@ -43,8 +60,9 @@ def create_initial_state():
         totalRingsInPlay=36,
         totalRingsEliminated=0,
         victoryThreshold=19,
-        territoryVictoryThreshold=33
+        territoryVictoryThreshold=33,
     )
+
 
 def print_board_state(state: GameState):
     print("\n=== Board State Dump ===")
@@ -67,6 +85,7 @@ def print_board_state(state: GameState):
     print("\nCollapsed:")
     print(state.board.collapsed_spaces)
     print("========================\n")
+
 
 def run_debug_game():
     print("Running debug game: Descent (P1) vs MCTS (P2)")
@@ -93,6 +112,7 @@ def run_debug_game():
         except Exception as e:
             print(f"\nERROR in select_move: {e}")
             import traceback
+
             traceback.print_exc()
             print_board_state(state)
             return
@@ -120,11 +140,13 @@ def run_debug_game():
         except Exception as e:
             print(f"\nERROR applying move: {e}")
             import traceback
+
             traceback.print_exc()
             print_board_state(state)
             break
 
     print(f"Game ended. Winner: {state.winner}")
+
 
 if __name__ == "__main__":
     run_debug_game()

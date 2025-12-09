@@ -62,6 +62,7 @@ BOARD_TYPE_REVERSE = {
 @dataclass
 class GameSummary:
     """Summary of a single game."""
+
     game_id: str
     board_type: str
     winner: int
@@ -75,6 +76,7 @@ class GameSummary:
 @dataclass
 class OpeningPattern:
     """A common opening pattern across games."""
+
     sequence: Tuple[str, ...]
     count: int
     wins_for_player1: int
@@ -128,6 +130,7 @@ def get_board_type_from_meta(game_meta: dict) -> BoardType:
 # Export to PGN
 # =============================================================================
 
+
 def export_games_to_pgn(
     db_path: str,
     output_path: str,
@@ -142,9 +145,7 @@ def export_games_to_pgn(
     exported = 0
 
     with open(output_path, "w") as f:
-        for game_meta, initial_state, moves in load_games_from_db(
-            db_path, board_type, limit=limit
-        ):
+        for game_meta, initial_state, moves in load_games_from_db(db_path, board_type, limit=limit):
             bt = get_board_type_from_meta(game_meta)
 
             metadata = {
@@ -170,6 +171,7 @@ def export_games_to_pgn(
 # Opening Analysis
 # =============================================================================
 
+
 def analyze_openings(
     db_path: str,
     depth: int = 10,
@@ -190,13 +192,9 @@ def analyze_openings(
         List of OpeningPattern objects sorted by frequency
     """
     # Track opening sequences with outcomes
-    openings: Dict[Tuple[str, ...], Dict[str, int]] = defaultdict(
-        lambda: {"count": 0, "p1_wins": 0, "p2_wins": 0}
-    )
+    openings: Dict[Tuple[str, ...], Dict[str, int]] = defaultdict(lambda: {"count": 0, "p1_wins": 0, "p2_wins": 0})
 
-    for game_meta, initial_state, moves in load_games_from_db(
-        db_path, board_type, limit=limit
-    ):
+    for game_meta, initial_state, moves in load_games_from_db(db_path, board_type, limit=limit):
         bt = get_board_type_from_meta(game_meta)
         winner = game_meta.get("winner", 0)
 
@@ -214,12 +212,14 @@ def analyze_openings(
     patterns = []
     for seq, stats in openings.items():
         if stats["count"] >= min_frequency:
-            patterns.append(OpeningPattern(
-                sequence=seq,
-                count=stats["count"],
-                wins_for_player1=stats["p1_wins"],
-                wins_for_player2=stats["p2_wins"],
-            ))
+            patterns.append(
+                OpeningPattern(
+                    sequence=seq,
+                    count=stats["count"],
+                    wins_for_player1=stats["p1_wins"],
+                    wins_for_player2=stats["p2_wins"],
+                )
+            )
 
     # Sort by frequency
     patterns.sort(key=lambda p: -p.count)
@@ -230,9 +230,11 @@ def analyze_openings(
 # Move Statistics
 # =============================================================================
 
+
 @dataclass
 class MoveStats:
     """Statistics about moves in analyzed games."""
+
     total_games: int
     total_moves: int
     avg_game_length: float
@@ -254,9 +256,7 @@ def compute_move_stats(
     position_freq: Counter = Counter()
     first_moves: Dict[str, List[int]] = defaultdict(list)  # notation -> [winners]
 
-    for game_meta, initial_state, moves in load_games_from_db(
-        db_path, board_type, limit=limit
-    ):
+    for game_meta, initial_state, moves in load_games_from_db(db_path, board_type, limit=limit):
         bt = get_board_type_from_meta(game_meta)
         winner = game_meta.get("winner", 0)
         total_games += 1
@@ -302,6 +302,7 @@ def compute_move_stats(
 # Game Listing
 # =============================================================================
 
+
 def list_games(
     db_path: str,
     board_type: Optional[str] = None,
@@ -335,16 +336,18 @@ def list_games(
         # Get opening sequence in notation
         opening = moves_to_notation_list(moves[:6], bt)
 
-        summaries.append(GameSummary(
-            game_id=game_meta.get("game_id", "unknown"),
-            board_type=BOARD_TYPE_REVERSE.get(bt, "square8"),
-            winner=game_meta.get("winner", 0),
-            total_moves=len(moves),
-            termination_reason=game_meta.get("termination_reason", "unknown"),
-            p1_rings_eliminated=game_meta.get("p1_eliminated_rings", 0) or 0,
-            p2_rings_eliminated=game_meta.get("p2_eliminated_rings", 0) or 0,
-            opening_sequence=opening,
-        ))
+        summaries.append(
+            GameSummary(
+                game_id=game_meta.get("game_id", "unknown"),
+                board_type=BOARD_TYPE_REVERSE.get(bt, "square8"),
+                winner=game_meta.get("winner", 0),
+                total_moves=len(moves),
+                termination_reason=game_meta.get("termination_reason", "unknown"),
+                p1_rings_eliminated=game_meta.get("p1_eliminated_rings", 0) or 0,
+                p2_rings_eliminated=game_meta.get("p2_eliminated_rings", 0) or 0,
+                opening_sequence=opening,
+            )
+        )
         count += 1
 
     return summaries
@@ -353,6 +356,7 @@ def list_games(
 # =============================================================================
 # Pattern Detection
 # =============================================================================
+
 
 def find_pattern_games(
     db_path: str,
@@ -374,15 +378,13 @@ def find_pattern_games(
     matching_games = []
     pattern_len = len(pattern)
 
-    for game_meta, initial_state, moves in load_games_from_db(
-        db_path, board_type, limit=limit
-    ):
+    for game_meta, initial_state, moves in load_games_from_db(db_path, board_type, limit=limit):
         bt = get_board_type_from_meta(game_meta)
         notation_list = moves_to_notation_list(moves, bt)
 
         # Search for pattern as subsequence
         for i in range(len(notation_list) - pattern_len + 1):
-            if notation_list[i:i + pattern_len] == pattern:
+            if notation_list[i : i + pattern_len] == pattern:
                 matching_games.append(game_meta.get("game_id", "unknown"))
                 break
 
@@ -392,6 +394,7 @@ def find_pattern_games(
 # =============================================================================
 # CLI Commands
 # =============================================================================
+
 
 def cmd_export_pgn(args):
     """Export games to PGN format."""
@@ -417,7 +420,7 @@ def cmd_openings(args):
     print(f"\nOpening Analysis (depth={args.depth}, min_freq={args.min_freq})")
     print("=" * 80)
 
-    for i, p in enumerate(patterns[:args.top], 1):
+    for i, p in enumerate(patterns[: args.top], 1):
         seq_str = " ".join(p.sequence[:5])
         if len(p.sequence) > 5:
             seq_str += " ..."
@@ -451,10 +454,7 @@ def cmd_stats(args):
 
     if stats.win_rate_by_first_move:
         print(f"\nFirst Move Win Rates (top 10 by frequency):")
-        sorted_first = sorted(
-            stats.win_rate_by_first_move.items(),
-            key=lambda x: -x[1][0]
-        )[:10]
+        sorted_first = sorted(stats.win_rate_by_first_move.items(), key=lambda x: -x[1][0])[:10]
         for notation, (total, p1, p2) in sorted_first:
             p1_rate = 100 * p1 / total if total > 0 else 0
             p2_rate = 100 * p2 / total if total > 0 else 0
@@ -478,8 +478,10 @@ def cmd_list(args):
     for g in games:
         winner_str = f"P{g.winner}" if g.winner else "draw"
         opening = " ".join(g.opening_sequence[:4])
-        print(f"{g.game_id[:8]}... | {g.board_type:8s} | {g.total_moves:3d} moves | "
-              f"{winner_str:5s} | {g.termination_reason:20s} | {opening}")
+        print(
+            f"{g.game_id[:8]}... | {g.board_type:8s} | {g.total_moves:3d} moves | "
+            f"{winner_str:5s} | {g.termination_reason:20s} | {opening}"
+        )
 
 
 def cmd_export_game(args):

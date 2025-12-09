@@ -279,16 +279,18 @@ export function eventToMove(event: TurnEvent, player: number, moveNumber: number
  * @param moveHint Optional move being validated - used to ensure state includes relevant context
  */
 export function deriveStateFromGame(gameState: GameState, moveHint?: Move): TurnState {
-  // For bookkeeping moves, use the move's player instead of currentPlayer
-  // because these moves may be recorded at turn boundaries where the state's
-  // currentPlayer hasn't been updated yet.
-  const isBookkeepingMove =
+  // For bookkeeping moves and skip_placement, use the move's player instead of
+  // currentPlayer because these moves may be recorded at turn boundaries where
+  // the state's currentPlayer hasn't been updated yet.
+  const isBookkeepingOrSkipMove =
+    moveHint?.type === 'skip_placement' ||
     moveHint?.type === 'no_placement_action' ||
     moveHint?.type === 'no_movement_action' ||
     moveHint?.type === 'no_line_action' ||
     moveHint?.type === 'no_territory_action';
 
-  const player = isBookkeepingMove && moveHint?.player ? moveHint.player : gameState.currentPlayer;
+  const player =
+    isBookkeepingOrSkipMove && moveHint?.player ? moveHint.player : gameState.currentPlayer;
   const phase = gameState.currentPhase;
 
   switch (phase) {
@@ -1282,6 +1284,39 @@ export function isFSMTerminalState(gameState: GameState): boolean {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
+ * Decision surface information for hosts to construct valid decisions.
+ *
+ * When the FSM transitions to a phase requiring player decisions, this
+ * structure provides the concrete data needed to build the decision UI
+ * and valid move options.
+ */
+export interface FSMDecisionSurface {
+  /**
+   * Detected lines for the current player (line_processing phase).
+   * Empty if not in line_processing or no lines detected.
+   */
+  pendingLines: DetectedLine[];
+
+  /**
+   * Territory regions for the current player (territory_processing phase).
+   * Empty if not in territory_processing or no regions to process.
+   */
+  pendingRegions: DisconnectedRegion[];
+
+  /**
+   * Chain capture continuation targets (chain_capture phase).
+   * Empty if not in chain capture or no continuations available.
+   */
+  chainContinuations: Array<{ target: Position }>;
+
+  /**
+   * Forced elimination targets (forced_elimination phase).
+   * Number of rings that must be eliminated.
+   */
+  forcedEliminationCount: number;
+}
+
+/**
  * Result of FSM-driven orchestration.
  * Contains the derived phase, player, and any pending decision information.
  */
@@ -1302,6 +1337,12 @@ export interface FSMOrchestrationResult {
     | 'region_order_required'
     | 'no_territory_action_required'
     | 'forced_elimination';
+  /**
+   * Decision surface data for the pending decision.
+   * Contains the actual lines/regions/targets needed to construct valid moves.
+   * Only populated when pendingDecisionType is set.
+   */
+  decisionSurface?: FSMDecisionSurface;
   /** Error information if transition failed */
   error?: {
     code: string;
@@ -1405,27 +1446,68 @@ export function computeFSMOrchestration(
     nextPlayer = (nextState as { player: number }).player;
   }
 
-  // Determine pending decision type based on FSM state and options
+  // Determine pending decision type and build decision surface from FSM state
   let pendingDecisionType: FSMOrchestrationResult['pendingDecisionType'];
+  let decisionSurface: FSMDecisionSurface | undefined;
 
   if (nextPhase === 'chain_capture') {
     pendingDecisionType = 'chain_capture';
+    const chainState = nextState as ChainCaptureState;
+    decisionSurface = {
+      pendingLines: [],
+      pendingRegions: [],
+      chainContinuations: chainState.availableContinuations.map((c) => ({ target: c.target })),
+      forcedEliminationCount: 0,
+    };
   } else if (nextPhase === 'line_processing') {
-    const linesCount = options?.detectedLinesCount ?? 0;
+    const lineState = nextState as LineProcessingState;
+    const linesCount = lineState.detectedLines.length;
     if (linesCount > 0) {
       pendingDecisionType = 'line_order_required';
+      decisionSurface = {
+        pendingLines: lineState.detectedLines,
+        pendingRegions: [],
+        chainContinuations: [],
+        forcedEliminationCount: 0,
+      };
     } else if (!isLinePhaseMove(move.type)) {
       pendingDecisionType = 'no_line_action_required';
+      decisionSurface = {
+        pendingLines: [],
+        pendingRegions: [],
+        chainContinuations: [],
+        forcedEliminationCount: 0,
+      };
     }
   } else if (nextPhase === 'territory_processing') {
-    const regionsCount = options?.territoryRegionsCount ?? 0;
+    const territoryState = nextState as TerritoryProcessingState;
+    const regionsCount = territoryState.disconnectedRegions.length;
     if (regionsCount > 0) {
       pendingDecisionType = 'region_order_required';
+      decisionSurface = {
+        pendingLines: [],
+        pendingRegions: territoryState.disconnectedRegions,
+        chainContinuations: [],
+        forcedEliminationCount: 0,
+      };
     } else if (!isTerritoryPhaseMove(move.type)) {
       pendingDecisionType = 'no_territory_action_required';
+      decisionSurface = {
+        pendingLines: [],
+        pendingRegions: [],
+        chainContinuations: [],
+        forcedEliminationCount: 0,
+      };
     }
   } else if (nextPhase === 'forced_elimination') {
     pendingDecisionType = 'forced_elimination';
+    const feState = nextState as ForcedEliminationState;
+    decisionSurface = {
+      pendingLines: [],
+      pendingRegions: [],
+      chainContinuations: [],
+      forcedEliminationCount: feState.ringsOverLimit - feState.eliminationsDone,
+    };
   }
 
   const result: FSMOrchestrationResult = {
@@ -1436,9 +1518,12 @@ export function computeFSMOrchestration(
     debug,
   };
 
-  // Only set pendingDecisionType if defined (exactOptionalPropertyTypes compliance)
+  // Only set optional properties if defined (exactOptionalPropertyTypes compliance)
   if (pendingDecisionType) {
     result.pendingDecisionType = pendingDecisionType;
+  }
+  if (decisionSurface) {
+    result.decisionSurface = decisionSurface;
   }
 
   return result;

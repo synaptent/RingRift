@@ -312,7 +312,6 @@ def get_synthetic_scenarios() -> List[Dict[str, Any]]:
             "stacks": [{"x": 4, "y": 4, "height": 5, "player": 1}],
             "rings_in_hand": {1: 0, 2: 18},
         },
-
         # Multiple stack scenarios (smallest cap height selection)
         {
             "name": "multi_stack_cap_selection",
@@ -348,7 +347,6 @@ def get_synthetic_scenarios() -> List[Dict[str, Any]]:
             ],
             "rings_in_hand": {1: 0, 2: 18},
         },
-
         # Multi-player scenarios
         {
             "name": "three_player_fe",
@@ -366,7 +364,6 @@ def get_synthetic_scenarios() -> List[Dict[str, Any]]:
             "stacks": [{"x": 3, "y": 3, "height": 2, "player": 1}],
             "rings_in_hand": {1: 0, 2: 9, 3: 9, 4: 9},
         },
-
         # Near-victory threshold scenarios
         {
             "name": "near_victory_threshold",
@@ -386,7 +383,6 @@ def get_synthetic_scenarios() -> List[Dict[str, Any]]:
             "rings_in_hand": {1: 0, 2: 18},
             "eliminated": {1: 17},  # 17 + 2 = 19 = victory
         },
-
         # Edge position scenarios
         {
             "name": "edge_top",
@@ -494,11 +490,13 @@ def main():
         try:
             with open(p) as f:
                 data = json.load(f)
-                if data.get("move_type") == "forced_elimination" or \
-                   data.get("canonical_move", {}).get("type") == "forced_elimination" or \
-                   "forced_elimination" in str(data.get("purpose", "")):
+                if (
+                    data.get("move_type") == "forced_elimination"
+                    or data.get("canonical_move", {}).get("type") == "forced_elimination"
+                    or "forced_elimination" in str(data.get("purpose", ""))
+                ):
                     fe_count += 1
-        except:
+        except (json.JSONDecodeError, OSError):
             pass
 
     print(f"Total FE fixtures in directory: {fe_count}")

@@ -92,7 +92,7 @@ def find_latest_checkpoint(checkpoint_dir: str) -> Optional[Tuple[int, str]]:
         if not (name.startswith("checkpoint_gen") and name.endswith(".json")):
             continue
         try:
-            gen_str = name[len("checkpoint_gen"):-len(".json")]
+            gen_str = name[len("checkpoint_gen") : -len(".json")]
             gen_num = int(gen_str)
             if gen_num > latest_gen:
                 latest_gen = gen_num
@@ -113,7 +113,7 @@ def extract_fitness_history(checkpoint_dir: str) -> List[Tuple[int, float]]:
         if not (name.startswith("checkpoint_gen") and name.endswith(".json")):
             continue
         try:
-            gen_str = name[len("checkpoint_gen"):-len(".json")]
+            gen_str = name[len("checkpoint_gen") : -len(".json")]
             gen_num = int(gen_str)
             path = os.path.join(checkpoint_dir, name)
             fitness, _ = load_checkpoint_fitness(path)
@@ -178,20 +178,34 @@ def run_cmaes_iteration(
     cmd = [
         sys.executable,
         "scripts/run_cmaes_optimization.py",
-        "--generations", str(generations),
-        "--population-size", str(population_size),
-        "--games-per-eval", str(games_per_eval),
-        "--board", board,
-        "--eval-boards", board,
-        "--eval-mode", "multi-start",
-        "--state-pool-id", state_pool_id,
-        "--eval-randomness", str(eval_randomness),
-        "--seed", str(seed + iteration * 1000),
-        "--max-moves", str(max_moves),
-        "--num-players", str(num_players),
-        "--progress-interval-sec", str(progress_interval_sec),
-        "--sigma", str(sigma),
-        "--output", run_output,
+        "--generations",
+        str(generations),
+        "--population-size",
+        str(population_size),
+        "--games-per-eval",
+        str(games_per_eval),
+        "--board",
+        board,
+        "--eval-boards",
+        board,
+        "--eval-mode",
+        "multi-start",
+        "--state-pool-id",
+        state_pool_id,
+        "--eval-randomness",
+        str(eval_randomness),
+        "--seed",
+        str(seed + iteration * 1000),
+        "--max-moves",
+        str(max_moves),
+        "--num-players",
+        str(num_players),
+        "--progress-interval-sec",
+        str(progress_interval_sec),
+        "--sigma",
+        str(sigma),
+        "--output",
+        run_output,
     ]
 
     if baseline_path and os.path.exists(baseline_path):
@@ -522,9 +536,7 @@ def run_iterative_pipeline(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Iterative CMA-ES self-play improvement pipeline"
-    )
+    parser = argparse.ArgumentParser(description="Iterative CMA-ES self-play improvement pipeline")
     parser.add_argument(
         "--board",
         type=str,
@@ -556,7 +568,7 @@ def main() -> None:
         type=float,
         default=None,
         help="Minimum fitness (win rate) to promote as new baseline. "
-             "Default: 1/n + 0.05 (2p: 0.55, 3p: 0.383, 4p: 0.30)",
+        "Default: 1/n + 0.05 (2p: 0.55, 3p: 0.383, 4p: 0.30)",
     )
     parser.add_argument(
         "--plateau-generations",

@@ -362,11 +362,7 @@ def export_replay_dataset(
                 # States used as inputs in this exporter are:
                 #   state_before(move_index=m) = get_state_at_move(m-1)
                 # So we require (m-1) < (diverged_at - 1) → m <= diverged_at - 1.
-                if (
-                    not isinstance(game_id, str)
-                    or not isinstance(diverged_at, int)
-                    or diverged_at <= 0
-                ):
+                if not isinstance(game_id, str) or not isinstance(diverged_at, int) or diverged_at <= 0:
                     continue
 
                 safe_max_move = diverged_at - 1
@@ -557,10 +553,7 @@ def export_replay_dataset(
                     # runs. Only keep writing these when the existing file
                     # already has them to avoid shape mismatches with legacy
                     # datasets.
-                    has_mp = (
-                        "values_mp" in data
-                        and "num_players" in data
-                    )
+                    has_mp = "values_mp" in data and "num_players" in data
                     if has_mp:
                         existing_values_mp = data["values_mp"]
                         existing_num_players = data["num_players"]
@@ -597,8 +590,7 @@ def export_replay_dataset(
                         axis=0,
                     )
                     print(
-                        f"Appended to existing dataset at {output_path}; "
-                        f"new total samples: {values_arr.shape[0]}"
+                        f"Appended to existing dataset at {output_path}; " f"new total samples: {values_arr.shape[0]}"
                     )
         except Exception as exc:
             print(f"Warning: failed to append to existing {output_path}: {exc}")
@@ -624,10 +616,7 @@ def export_replay_dataset(
 
     np.savez_compressed(output_path, **save_kwargs)
 
-    print(
-        f"Exported {features_arr.shape[0]} samples "
-        f"from {games_processed} games into {output_path}"
-    )
+    print(f"Exported {features_arr.shape[0]} samples " f"from {games_processed} games into {output_path}")
 
 
 def _parse_args() -> argparse.Namespace:

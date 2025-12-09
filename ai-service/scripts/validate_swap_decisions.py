@@ -225,10 +225,7 @@ def play_game_from_state(
     Returns experiment result including whether P2 swapped and game outcome.
     """
     # Find P1's opening position
-    p1_stacks = [
-        s for s in initial_state.board.stacks.values()
-        if s.controlling_player == 1
-    ]
+    p1_stacks = [s for s in initial_state.board.stacks.values() if s.controlling_player == 1]
     if not p1_stacks:
         raise ValueError("No P1 stack found in initial state")
 
@@ -236,12 +233,8 @@ def play_game_from_state(
     p1_opening = (p1_pos.x, p1_pos.y)
 
     # Create AIs
-    ai1 = create_ai_with_weights(
-        1, weights, randomness, seed_base if seed_base else None
-    )
-    ai2 = create_ai_with_weights(
-        2, weights, randomness, (seed_base + 1) if seed_base else None
-    )
+    ai1 = create_ai_with_weights(1, weights, randomness, seed_base if seed_base else None)
+    ai2 = create_ai_with_weights(2, weights, randomness, (seed_base + 1) if seed_base else None)
 
     # Compute opening strength for P1's position
     opening_strength = ai2.compute_opening_strength(p1_pos, initial_state)
@@ -337,17 +330,13 @@ def analyze_results(
     swap_rate = games_swapped / games_played
 
     # P2 wins when winner == p2_final_player_number
-    p2_wins_overall = sum(
-        1 for r in results if r.winner == r.p2_player_number
-    )
+    p2_wins_overall = sum(1 for r in results if r.winner == r.p2_player_number)
     p2_win_rate_overall = p2_wins_overall / games_played
 
     # Win rate when swapped
     swapped_results = [r for r in results if r.p2_swapped]
     if swapped_results:
-        p2_wins_swapped = sum(
-            1 for r in swapped_results if r.winner == r.p2_player_number
-        )
+        p2_wins_swapped = sum(1 for r in swapped_results if r.winner == r.p2_player_number)
         p2_win_rate_swapped = p2_wins_swapped / len(swapped_results)
     else:
         p2_win_rate_swapped = 0.0
@@ -355,9 +344,7 @@ def analyze_results(
     # Win rate when not swapped
     not_swapped_results = [r for r in results if not r.p2_swapped]
     if not_swapped_results:
-        p2_wins_not_swapped = sum(
-            1 for r in not_swapped_results if r.winner == r.p2_player_number
-        )
+        p2_wins_not_swapped = sum(1 for r in not_swapped_results if r.winner == r.p2_player_number)
         p2_win_rate_not_swapped = p2_wins_not_swapped / len(not_swapped_results)
     else:
         p2_win_rate_not_swapped = 0.0
@@ -407,9 +394,7 @@ def run_position_sweep(
 
         for pos in positions:
             print(f"Running {num_games_per_position} games for position {pos}...")
-            results = run_experiment_for_position(
-                pos, num_games_per_position, weights, verbose
-            )
+            results = run_experiment_for_position(pos, num_games_per_position, weights, verbose)
             summary = analyze_results(results, category, pos)
             category_summaries.append(summary)
             print_summary(summary)
@@ -419,9 +404,7 @@ def run_position_sweep(
     return all_summaries
 
 
-def print_category_comparison(
-    summaries: Dict[str, List[SwapExperimentSummary]]
-) -> None:
+def print_category_comparison(summaries: Dict[str, List[SwapExperimentSummary]]) -> None:
     """Print a comparison table across position categories."""
     print("\n" + "=" * 80)
     print("CATEGORY COMPARISON")
@@ -443,27 +426,21 @@ def print_category_comparison(
         total_swaps = sum(s.games_swapped for s in cat_summaries)
         swap_rate = total_swaps / total_games
 
-        total_wins = sum(
-            s.p2_win_rate_overall * s.games_played for s in cat_summaries
-        ) / total_games
+        total_wins = sum(s.p2_win_rate_overall * s.games_played for s in cat_summaries) / total_games
 
         # Win rates conditional on swap
         swapped_games = sum(s.games_swapped for s in cat_summaries)
         not_swapped_games = sum(s.games_not_swapped for s in cat_summaries)
 
         if swapped_games > 0:
-            win_if_swap = sum(
-                s.p2_win_rate_when_swapped * s.games_swapped
-                for s in cat_summaries
-            ) / swapped_games
+            win_if_swap = sum(s.p2_win_rate_when_swapped * s.games_swapped for s in cat_summaries) / swapped_games
         else:
             win_if_swap = 0.0
 
         if not_swapped_games > 0:
-            win_if_no_swap = sum(
-                s.p2_win_rate_when_not_swapped * s.games_not_swapped
-                for s in cat_summaries
-            ) / not_swapped_games
+            win_if_no_swap = (
+                sum(s.p2_win_rate_when_not_swapped * s.games_not_swapped for s in cat_summaries) / not_swapped_games
+            )
         else:
             win_if_no_swap = 0.0
 
@@ -481,9 +458,7 @@ def print_category_comparison(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Validate swap decision weights through self-play"
-    )
+    parser = argparse.ArgumentParser(description="Validate swap decision weights through self-play")
     parser.add_argument(
         "--games",
         type=int,
@@ -569,9 +544,7 @@ def main():
 
         for pos in positions:
             print(f"Running {args.games} games for position {pos}...")
-            results = run_experiment_for_position(
-                pos, args.games, weights, args.verbose
-            )
+            results = run_experiment_for_position(pos, args.games, weights, args.verbose)
             summary = analyze_results(results, category, pos)
             print_summary(summary)
 

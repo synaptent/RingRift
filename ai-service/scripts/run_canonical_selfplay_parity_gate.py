@@ -37,7 +37,9 @@ from typing import Any, Dict, List
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run_cmd(cmd: list[str], cwd: Path | None = None, env_overrides: Dict[str, str] | None = None) -> subprocess.CompletedProcess:
+def _run_cmd(
+    cmd: list[str], cwd: Path | None = None, env_overrides: Dict[str, str] | None = None
+) -> subprocess.CompletedProcess:
     """Run a subprocess and return the completed process."""
     env = os.environ.copy()
     if env_overrides:

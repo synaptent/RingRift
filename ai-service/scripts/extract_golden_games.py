@@ -108,8 +108,7 @@ def extract_games(
         initial = src.get_initial_state(gid)
         if initial is None:
             print(
-                f"[extract_golden_games] WARNING: initial state missing for game_id {gid!r} "
-                f"in {source_db_path}",
+                f"[extract_golden_games] WARNING: initial state missing for game_id {gid!r} " f"in {source_db_path}",
             )
             continue
 
@@ -144,8 +143,7 @@ def extract_games(
         )
 
     print(
-        f"[extract_golden_games] Extraction complete. "
-        f"Destination DB: {dest_db_path}",
+        f"[extract_golden_games] Extraction complete. " f"Destination DB: {dest_db_path}",
     )
 
 

@@ -424,6 +424,7 @@ export const SandboxGameHost: React.FC = () => {
 
           // Human players with a single available option: auto-resolve the
           // choice without surfacing any blocking UI.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- polymorphic choice options access
           const rawOptions = (choice as any).options as TChoice['options'] | undefined;
           const autoOptions = (rawOptions as unknown[]) ?? [];
           if (autoOptions.length === 1) {
@@ -630,6 +631,7 @@ export const SandboxGameHost: React.FC = () => {
                 for (let i = 0; i < recordedMoves.length; i += 1) {
                   const move = recordedMoves[i];
 
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- canonical move replay accepts polymorphic move type
                   await replayEngine.applyCanonicalMoveForReplay(move as any);
                   appliedCount += 1;
                 }
@@ -1315,6 +1317,7 @@ export const SandboxGameHost: React.FC = () => {
   // aligned with backend games without requiring server-side timeout warnings.
   const sandboxDecisionTimeRemainingMs = React.useMemo(() => {
     if (!activePendingChoice) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing optional timeoutMs on polymorphic PlayerChoice
     const rawTimeout = (activePendingChoice as any).timeoutMs as number | undefined;
     if (typeof rawTimeout !== 'number' || Number.isNaN(rawTimeout)) {
       return null;
@@ -2660,6 +2663,7 @@ export const SandboxGameHost: React.FC = () => {
                       if (!skipMove) {
                         return;
                       }
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- canonical move accepts polymorphic move type
                       await sandboxEngine.applyCanonicalMove(skipMove as any);
                       setSandboxStateVersion((v) => v + 1);
                       clearSandboxSelection();
