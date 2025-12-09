@@ -797,6 +797,38 @@ describe('GameHUD', () => {
       expect(screen.queryByTestId('hud-decision-time-pressure')).toBeNull();
     });
 
+    it('renders critical decision time-pressure chip when only a few seconds remain', () => {
+      const gameState = createTestGameState({
+        currentPhase: 'line_processing',
+        currentPlayer: 1,
+      });
+      const choice: PlayerChoice = {
+        id: 'choice-critical-chip',
+        type: 'line_reward_option',
+        playerNumber: 1,
+        options: ['add_ring', 'add_stack'] as any,
+        timeoutMs: 30_000,
+      } as any;
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        pendingChoice: choice,
+        choiceDeadline: Date.now() + 2_500,
+        choiceTimeRemainingMs: 2_500,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      const chip = screen.getByTestId('hud-decision-time-pressure');
+      expect(chip).toBeInTheDocument();
+      expect(chip).toHaveAttribute('data-severity', 'critical');
+      expect(chip).toHaveTextContent('Your decision timer: 0:02');
+    });
+
     it('renders spectator-oriented decision banner when user is not acting player', () => {
       const gameState = createTestGameState({
         currentPhase: 'line_processing',

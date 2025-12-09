@@ -12,6 +12,7 @@ WORKERS_PER_INSTANCE=${WORKERS_PER_INSTANCE:-8}
 CYCLES=${CYCLES:-100}
 LAMBDA_HOST="lambda-gpu"
 LAMBDA_DATA_DIR="/home/ubuntu/ringrift/ai-service/data/collected"
+DISK_CLEANUP_THRESHOLD=${DISK_CLEANUP_THRESHOLD:-15}  # Cleanup when disk % free drops below this
 
 # Vast.ai instance SSH commands
 VAST_INSTANCES=(
@@ -52,15 +53,13 @@ run_batch_on_instance() {
     echo "[$(date '+%H:%M:%S')] Starting batch on $name ($workers workers, $GAMES_PER_BATCH games each)"
 
     # Start workers and wait for completion
+    # Use cycle-specific filenames to allow accumulation across cycles
     $ssh_cmd "
         cd ~/ringrift/ai-service
         source venv/bin/activate 2>/dev/null || true
         mkdir -p logs/selfplay data/games
 
-        # Clear old data
-        rm -f data/games/batch_*.db logs/selfplay/batch_*.jsonl
-
-        # Start workers
+        # Start workers with cycle-specific output files
         for i in \$(seq 1 $workers); do
             python3 scripts/run_self_play_soak.py \\
                 --num-games $GAMES_PER_BATCH \\
@@ -69,7 +68,7 @@ run_batch_on_instance() {
                 --num-players 2 \\
                 --max-moves 500 \\
                 --seed \$((${base_seed} + i)) \\
-                --log-jsonl logs/selfplay/batch_\${i}.jsonl \\
+                --log-jsonl logs/selfplay/c${cycle}_w\${i}.jsonl \\
                 --no-record-db \\
                 --include-training-data \\
                 >> logs/selfplay/batch.log 2>&1 &
@@ -79,8 +78,12 @@ run_batch_on_instance() {
         wait
         echo 'Batch complete'
 
-        # Show results
-        wc -l logs/selfplay/batch_*.jsonl 2>/dev/null | tail -1
+        # Show results for this cycle
+        wc -l logs/selfplay/c${cycle}_w*.jsonl 2>/dev/null | tail -1
+
+        # Show total accumulated
+        echo -n 'Total accumulated: '
+        wc -l logs/selfplay/*.jsonl 2>/dev/null | tail -1
     " 2>&1
 }
 
@@ -93,11 +96,12 @@ transfer_from_instance() {
 
     echo "[$(date '+%H:%M:%S')] Transferring data from $name to Lambda..."
 
-    # Create temp archive on vast instance
+    # Create temp archive on vast instance (all accumulated .jsonl files)
     $ssh_cmd "
         cd ~/ringrift/ai-service
-        tar czf /tmp/batch_data.tar.gz logs/selfplay/batch_*.jsonl 2>/dev/null || true
-        ls -lh /tmp/batch_data.tar.gz
+        # Archive all jsonl files (c*_w*.jsonl pattern from cycles)
+        tar czf /tmp/batch_data.tar.gz logs/selfplay/*.jsonl 2>/dev/null || true
+        ls -lh /tmp/batch_data.tar.gz 2>/dev/null || echo 'No archive created'
     " 2>&1
 
     # Transfer via local machine (vast -> local -> lambda)
@@ -119,11 +123,21 @@ cleanup_instance() {
     local ssh_cmd="${VAST_INSTANCES[$idx]}"
     local name="${VAST_NAMES[$idx]}"
 
-    $ssh_cmd "
-        cd ~/ringrift/ai-service
-        rm -f logs/selfplay/batch_*.jsonl data/games/batch_*.db /tmp/batch_data.tar.gz
-        echo 'Cleaned up'
-    " 2>&1 | head -1
+    # Check disk usage before deciding to cleanup
+    local disk_free=$($ssh_cmd "df / | tail -1 | awk '{print 100 - \$5}' | tr -d '%'" 2>&1 | grep -E '^[0-9]+$' | tail -1)
+
+    if [ -n "$disk_free" ] && [ "$disk_free" -lt "$DISK_CLEANUP_THRESHOLD" ]; then
+        echo "[$(date '+%H:%M:%S')] $name: Disk ${disk_free}% free (below ${DISK_CLEANUP_THRESHOLD}%), cleaning up..."
+        $ssh_cmd "
+            cd ~/ringrift/ai-service
+            rm -f logs/selfplay/*.jsonl data/games/*.db /tmp/batch_data.tar.gz
+            echo 'Cleaned up'
+        " 2>&1 | head -1
+    else
+        echo "[$(date '+%H:%M:%S')] $name: Disk ${disk_free}% free, keeping files for streaming"
+        # Just remove the temp archive
+        $ssh_cmd "rm -f /tmp/batch_data.tar.gz" 2>/dev/null || true
+    fi
 }
 
 # Main loop

@@ -809,6 +809,14 @@ def run_self_play_soak(
                         skipped = True
                         break
 
+                    # If the AI proposes swap_sides during ring_placement when the pie
+                    # rule is enabled, treat it as an illegal move for parity runs and
+                    # skip the game instead of recording a mis-ordered trace.
+                    if state.current_phase == GamePhase.RING_PLACEMENT and move.type == MoveType.SWAP_SIDES:
+                        termination_reason = "swap_sides_not_allowed_in_ring_placement"
+                        skipped = True
+                        break
+
                 if state.current_phase == GamePhase.FORCED_ELIMINATION and move.type != MoveType.FORCED_ELIMINATION:
                     termination_reason = "ai_move_not_forced_elimination"
                     skipped = True
