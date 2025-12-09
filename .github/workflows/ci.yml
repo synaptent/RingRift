@@ -156,68 +156,9 @@ jobs:
       - name: Run TS rules-engine Jest suites
         run: npm run test:ts-rules-engine
 
-  ts-fsm-legacy:
-    name: TS FSM Legacy Mode (off)
-    runs-on: ubuntu-latest
-    needs: [lint-and-typecheck]
-    # CI Safety: Legacy orchestration regression test
-    timeout-minutes: 20
-    env:
-      # Run with FSM orchestrator OFF to catch legacy regressions
-      # (until legacy code is fully removed)
-      RINGRIFT_RULES_MODE: ts
-      ORCHESTRATOR_ADAPTER_ENABLED: 'true'
-      ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-      # FSM Orchestrator OFF: use legacy phase transitions
-      RINGRIFT_FSM_ORCHESTRATOR_MODE: 'off'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests with FSM legacy mode (off)
-        run: npm test -- --testPathIgnorePatterns="load|e2e|integration"
-
-  ts-orchestrator-parity:
-    name: TS Orchestrator Parity (adapter-ON)
-    runs-on: ubuntu-latest
-    needs: [lint-and-typecheck]
-    # CI Safety: Focused orchestrator parity lane
-    timeout-minutes: 20
-    env:
-      # Orchestrator‑ON profile: shared TS engine + adapters are canonical.
-      RINGRIFT_RULES_MODE: ts
-      ORCHESTRATOR_ADAPTER_ENABLED: 'true'
-      ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-      # FSM Orchestrator shadow mode for parity detection
-      RINGRIFT_FSM_ORCHESTRATOR_MODE: shadow
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run orchestrator parity suite (TS)
-        run: npm run test:orchestrator-parity
+  # Note: ts-fsm-legacy and ts-orchestrator-parity jobs were removed.
+  # FSM is now the canonical orchestrator (active by default).
+  # Legacy orchestration code paths are no longer tested.
 
   ts-parity:
     name: TS Parity (trace-level & host parity)

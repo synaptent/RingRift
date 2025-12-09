@@ -195,61 +195,35 @@ export function isFSMValidationEnabled(): boolean {
  * FSM orchestrator mode selector.
  *
  * RINGRIFT_FSM_ORCHESTRATOR_MODE:
- *   - 'off'    : Legacy orchestration (manual phase branching)
- *   - 'shadow' : FSM transitions run in parallel, divergences logged
- *   - 'active' : FSM drives phase transitions directly
+ *   - 'active' : FSM drives phase transitions directly (default, canonical)
+ *   - 'off'    : Legacy orchestration (for debugging only, not recommended)
  *
- * For backwards compatibility, RINGRIFT_FSM_ORCHESTRATOR_SHADOW=1 is
- * equivalent to setting mode='shadow'.
+ * FSM is the canonical orchestrator. The 'off' mode is retained for
+ * debugging edge cases but is not used in CI or production.
  */
-export type FSMOrchestratorMode = 'off' | 'shadow' | 'active';
+export type FSMOrchestratorMode = 'off' | 'active';
 
 /**
  * Read the current FSM orchestrator mode from the environment.
- * Defaults to 'active' when unset or invalid (FSM is now the canonical orchestrator).
+ * Defaults to 'active' (FSM is the canonical orchestrator).
  *
- * To revert to legacy orchestration, explicitly set RINGRIFT_FSM_ORCHESTRATOR_MODE=off.
+ * To revert to legacy orchestration for debugging, set RINGRIFT_FSM_ORCHESTRATOR_MODE=off.
  */
 export function getFSMOrchestratorMode(): FSMOrchestratorMode {
-  // Explicit mode takes precedence
   const modeRaw = readEnv('RINGRIFT_FSM_ORCHESTRATOR_MODE');
-  if (modeRaw === 'shadow' || modeRaw === 'active' || modeRaw === 'off') {
-    return modeRaw;
+  if (modeRaw === 'off') {
+    return 'off';
   }
-
-  // Backwards compat: legacy shadow flag (for debugging/comparison)
-  if (flagEnabled('RINGRIFT_FSM_ORCHESTRATOR_SHADOW')) {
-    return 'shadow';
-  }
-
-  // FSM is now the canonical orchestrator by default
+  // FSM is the canonical orchestrator by default
   return 'active';
 }
 
 /**
- * True when FSM shadow orchestration checks are enabled.
- *
- * When enabled, the orchestrator will run the FSM transition logic in
- * parallel and log any divergences between FSM-derived phase/player and
- * the legacy orchestration result. This does not alter game behavior.
- */
-export function isFSMOrchestratorShadowEnabled(): boolean {
-  return getFSMOrchestratorMode() === 'shadow';
-}
-
-/**
- * True when FSM orchestrator is in active mode (FSM drives transitions).
+ * True when FSM orchestrator is active (FSM drives transitions).
+ * This is the default and canonical mode.
  */
 export function isFSMOrchestratorActive(): boolean {
   return getFSMOrchestratorMode() === 'active';
-}
-
-/**
- * True when any FSM orchestration mode is enabled (shadow or active).
- */
-export function isFSMOrchestratorEnabled(): boolean {
-  const mode = getFSMOrchestratorMode();
-  return mode === 'shadow' || mode === 'active';
 }
 
 /**
@@ -271,18 +245,12 @@ export function debugLog(condition: boolean, ...args: any[]): void {
 /**
  * FSM trace logging - only logs when FSM trace debugging is enabled.
  *
- * Logs are emitted when:
- * - RINGRIFT_FSM_TRACE_DEBUG=1 (explicit debug mode), OR
- * - FSM orchestrator is in shadow mode (for parity debugging)
- *
- * In active mode without trace debug, FSM logs are suppressed since
- * FSM behavior is canonical and divergences are expected (handled).
+ * Logs are emitted when RINGRIFT_FSM_TRACE_DEBUG=1 (explicit debug mode).
+ * In normal operation, FSM logs are suppressed since FSM behavior is canonical.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function fsmTraceLog(tag: string, ...args: any[]): void {
-  const shouldLog = flagEnabled('RINGRIFT_FSM_TRACE_DEBUG') || isFSMOrchestratorShadowEnabled();
-
-  if (shouldLog) {
+  if (flagEnabled('RINGRIFT_FSM_TRACE_DEBUG')) {
     // eslint-disable-next-line no-console
     console.log(tag, ...args);
   }
