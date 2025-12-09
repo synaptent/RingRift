@@ -524,6 +524,87 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
   - Ensure Python AI service correctly enumerates and evaluates recovery moves in position evaluation.
   - Add targeted regression tests that confirm: (a) recovery blocks forced elimination, (b) recovery resets LPS counter, (c) recovery prevents ANM classification.
 
+#### CCE‑009a – Recovery Option 1 vs Option 2 cost model edge cases
+
+- **RR‑CANON rules:** `R110–R115` (Recovery Action Option 1/2) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
+- **Interaction / edge case:** When a recovery slide creates an **overlength line** (longer than minimum collapse length), the recovering player must choose:
+  - **Option 1:** Collapse all markers in the line. Costs 1 buried ring (extracted from any opponent stack containing the player's buried ring).
+  - **Option 2:** Collapse only the minimum length. Free (no ring extraction).
+
+  Key edge cases:
+  1. **Single buried ring remaining:** If player has exactly 1 buried ring and creates an overlength line, Option 1 extracts that ring (costs recovery ability), while Option 2 preserves it.
+  2. **Option 1 extraction target selection:** When multiple opponent stacks contain buried rings, which stack is the extraction target?
+  3. **Option 2 marker selection:** For overlength lines, which subset of markers collapses?
+
+- **Intended behaviour (RR‑CANON):**
+  - Option 1 extracts the **bottommost buried ring** from a player-selected stack among eligible stacks.
+  - Option 2 collapses the **minimum length** of the line, preserving extra markers; collapsed subset is deterministic (lowest-indexed markers in line order).
+  - The choice between Option 1 and Option 2 is **always player-interactive** when both are available.
+
+- **Observed behaviour:**
+  - TS and Python implementations surface Option 1/2 as explicit `choose_line_option` decisions when applicable.
+  - Extraction target selection follows "player's bottommost buried ring" from the chosen stack.
+  - Option 2 marker selection uses deterministic line-scan order.
+
+- **Classification:** `Design‑intent match`.
+- **Severity:** `Low`.
+- **Scope:** All hosts where recovery with overlength lines can occur.
+- **Recommendation:** Add explicit test coverage for:
+  - Recovery with exactly 1 buried ring (Option 1 vs Option 2 strategic choice).
+  - Recovery with multiple extraction-eligible stacks (target selection).
+  - Recovery with maximum overlength lines (Option 2 marker subset).
+
+#### CCE‑009b – Recovery exhaustion and transition to permanent elimination
+
+- **RR‑CANON rules:** `R110–R115` (Recovery eligibility), `R175` (Permanent elimination) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
+- **Interaction / edge case:** A player exhausts all recovery capability:
+  1. All markers consumed by line collapses (no markers left to slide).
+  2. All buried rings extracted via Option 1 choices (no buried rings remain).
+  3. Opponent captures eliminate all buried rings.
+
+  What happens when recovery eligibility is lost?
+
+- **Intended behaviour (RR‑CANON):**
+  - Player transitions from "recovery-eligible" to either:
+    - **Temporarily eliminated** (still has rings somewhere in the game but no turn-material), or
+    - **Permanently eliminated** (zero rings anywhere—hand, controlled stacks, buried in opponent stacks).
+  - If temporarily eliminated, player may regain turn-material if their buried ring resurfaces (opponent's cap eliminated).
+  - If permanently eliminated, player is out of the game but turn rotation still includes them for LPS tracking per RR-CANON-R172.
+
+- **Observed behaviour:**
+  - Victory logic correctly distinguishes temporary vs permanent elimination.
+  - Turn rotation includes eliminated players for LPS round counting.
+  - Recovery eligibility check correctly returns false when markers OR buried rings are exhausted.
+
+- **Classification:** `Design‑intent match`.
+- **Severity:** `Low`.
+- **Scope:** All hosts for long games where recovery exhaustion can occur.
+- **Recommendation:** Add regression tests for:
+  - Player loses last marker (recovery unavailable, check if temporarily or permanently eliminated).
+  - Player loses last buried ring via Option 1 extraction (recovery unavailable).
+  - Player loses last buried ring via opponent capture (recovery unavailable).
+  - Transition from recovery-eligible → temporarily eliminated → regains turn-material via resurfacing ring.
+
+#### CCE‑009c – Recovery + territory chain scenarios
+
+- **RR‑CANON rules:** `R110–R115` (Recovery), `R120–R122` (Lines), `R140–R145` (Territory) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:301)).
+- **Interaction / edge case:** A recovery slide triggers a line collapse that creates a disconnected territory region. Can the recovering player (who has zero stacks) process territory?
+
+- **Intended behaviour (RR‑CANON):**
+  - Territory processing requires at least one controlled stack **outside** the region to pay self-elimination cost.
+  - A recovering player (zero stacks by definition) **cannot** process any territory regions.
+  - Any territory regions created by recovery line collapse remain on the board until the recovering player regains stacks or another player processes them.
+
+- **Observed behaviour:**
+  - `canProcessTerritoryRegion()` correctly requires `controlledStacksOutsideRegion > 0`.
+  - Recovering player has zero stacks, so territory processing is skipped.
+  - Line processing completes, territory regions are detected but not processed, turn advances normally.
+
+- **Classification:** `Design‑intent match`.
+- **Severity:** `Low`.
+- **Scope:** All hosts where recovery + territory chains can occur.
+- **Recommendation:** Add test coverage for recovery slide → line collapse → territory region created → territory processing skipped due to zero stacks.
+
 ### CCE‑010 – Capture and chain capture landing on markers
 
 - **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:255)).

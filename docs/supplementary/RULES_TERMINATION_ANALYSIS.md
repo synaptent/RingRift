@@ -55,9 +55,32 @@ The **Recovery Action** (`RR-CANON-R110–R115`) is available when a player has:
 A recovery slide moves a marker to complete a line. This action:
 
 - Always leaves a marker at the start cell: $\Delta M = +1$
-- May trigger line collapse (adds $+1$ to $E$), further increasing $S$
+- **Must** trigger line collapse (the slide is only legal if it completes a line): $\Delta E \geq +1$
 
-Since $\Delta S \geq +1$, recovery actions maintain the termination guarantee.
+Since $\Delta S \geq +2$, recovery actions maintain the termination guarantee with significant progress.
+
+#### 2.2.1.1 Recovery Option 1 vs Option 2 ($\Delta S$ Analysis)
+
+For **overlength lines** (lines longer than the minimum collapse length), the recovering player has a choice:
+
+| Recovery Option                 | Line Collapse       | Ring Cost               |          Net $\Delta M$          | Net $\Delta C$ |         Net $\Delta E$         | Net $\Delta S$ |
+| :------------------------------ | :------------------ | :---------------------- | :------------------------------: | :------------: | :----------------------------: | :------------: |
+| **Option 1** (collapse all)     | Full line           | 1 buried ring extracted |   +1 (start marker) - k (line)   |       +k       | +1 (collapse) + 1 (extraction) |     **+2**     |
+| **Option 2** (collapse minimum) | Minimum length only | Free (no extraction)    | +1 (start marker) - min_k (line) |     +min_k     |       +1 (collapse only)       |     **+1**     |
+
+Both options guarantee $\Delta S \geq +1$, preserving termination.
+
+#### 2.2.1.2 Recovery Exhaustion Bound
+
+Recovery actions are **self-limiting** because:
+
+1. **Buried rings are finite:** Each Option 1 recovery extracts one buried ring, depleting the recovery pool.
+2. **Markers are consumed:** Each line collapse converts markers to collapsed spaces, reducing future recovery slide sources.
+3. **Eligibility narrows:** Once all buried rings are extracted (via Option 1 choices or opponent captures), recovery becomes unavailable.
+
+**Theorem:** A player can perform at most $B$ recovery actions using Option 1, where $B$ = initial count of buried rings. After $B$ Option 1 recoveries, Option 2 (free) recoveries may continue until markers are exhausted, but each still increases $S$ by at least +1.
+
+This guarantees that recovery cannot extend games indefinitely. $\square$
 
 ### 2.3 The Placement Loophole Closure
 
@@ -185,19 +208,24 @@ When P's stack captures Q's rings and lands on markers:
 
 **Termination bound:** P's original cap ring count bounds how many marker landings can occur before control changes.
 
-#### 4.1.4 Termination Mechanism 3: Same-Color Analysis
+#### 4.1.4 Note: Stack Color Composition Is Irrelevant to Termination
 
-**Q: What if all rings (attacker + targets) belong to the same player?**
+**Q: Does stack color composition affect termination guarantees?**
 
-This scenario is **impossible by game rules**:
+**Answer: No.** Termination is guaranteed by mechanisms 1–3 above (finite targets, cap depletion, board geometry), and these mechanisms apply **regardless** of stack color composition.
 
-- Players have distinct ring colors
-- Captures target **opponent** stacks (controlled by different player)
-- A player cannot capture their own stacks
+**Key points:**
 
-The only way for an attacker's stack to contain only same-colored rings is if no captures have occurred (pure movement). Once captures begin, the stack necessarily contains mixed colors (attacker's cap + victim's rings).
+1. **Captures can target any stack (RR-CANON-R101).** The canonical rules explicitly allow capturing from stacks of "any owner", including same-color stacks. This is a legal and normal part of gameplay.
 
-**Conclusion:** The "same-color infinite cycle" scenario cannot arise.
+2. **Stack color does not affect the three termination mechanisms:**
+   - **Finite targets:** Each capture consumes one target stack, regardless of that stack's color composition.
+   - **Cap depletion:** Landing on markers eliminates rings from the attacker's cap, regardless of whether those rings are the same color as the captured ring or different.
+   - **Board geometry:** Path constraints and board size apply uniformly to all stacks regardless of their internal ring composition.
+
+3. **No special reasoning required for same-color scenarios.** Whether the attacker's stack is same-color, mixed-color, or transitions between these states during a chain does not affect the termination bound. The chain must terminate in at most $\min(T, C, B)$ capture segments as established in Section 4.1.6.
+
+**Conclusion:** Stack color composition is orthogonal to the termination proof and requires no special analysis beyond the three mechanisms already described.
 
 #### 4.1.5 Path Geometry Constraints
 
