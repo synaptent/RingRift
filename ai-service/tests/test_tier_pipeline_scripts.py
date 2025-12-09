@@ -581,6 +581,77 @@ def test_run_full_tier_gating_rejects_when_tier_mismatch(tmp_path, monkeypatch) 
         full_gate.main(gate_argv)
 
 
+def test_tier_training_pipeline_runs_preflight_by_default(tmp_path, monkeypatch) -> None:
+    """Training pipeline should invoke the canonical preflight unless skipped."""
+    run_dir = tmp_path / "d2_preflight"
+    called: dict[str, Any] = {}
+
+    def fake_run(cmd: list[str], cwd: str | None = None, text: bool | None = None):
+        called["cmd"] = cmd
+        called["cwd"] = cwd
+        called["text"] = text
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setattr(tier_train.subprocess, "run", fake_run)
+
+    argv = [
+        "--tier",
+        "D2",
+        "--board",
+        "square8",
+        "--num-players",
+        "2",
+        "--run-dir",
+        str(run_dir),
+        "--demo",
+    ]
+
+    rc = tier_train.main(argv)
+    assert rc == 0
+    assert "cmd" in called
+    assert any("training_preflight_check.py" in part for part in called["cmd"])
+    config_arg = called["cmd"][called["cmd"].index("--config") + 1]
+    assert os.path.isabs(config_arg)
+    assert called["cwd"] == tier_train.PROJECT_ROOT
+
+
+def test_tier_training_pipeline_skip_preflight(monkeypatch, tmp_path) -> None:
+    """--skip-preflight should bypass the preflight subprocess."""
+    run_dir = tmp_path / "d4_skip_preflight"
+    called = {"count": 0}
+
+    def fake_run(*_args, **_kwargs):
+        called["count"] += 1
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    monkeypatch.setattr(tier_train.subprocess, "run", fake_run)
+
+    argv = [
+        "--tier",
+        "D4",
+        "--board",
+        "square8",
+        "--num-players",
+        "2",
+        "--run-dir",
+        str(run_dir),
+        "--demo",
+        "--skip-preflight",
+    ]
+
+    rc = tier_train.main(argv)
+    assert rc == 0
+    assert called["count"] == 0
+
+
 def test_tier_training_pipeline_config_square8_2p_shape() -> None:
     """The canonical square8 2p tier pipeline config should be present and well-formed."""
     cfg_path = Path(ROOT) / "config" / "tier_training_pipeline.square8_2p.json"

@@ -271,7 +271,9 @@ describe('ClientSandboxEngine.getValidMoves – chain_capture (legacy sandbox pa
     const after = engine.getGameState();
 
     // After the chain completes there should be no continuation moves for
-    // the current player, regardless of phase.
+    // the current player, regardless of phase. The sandbox legacy helper
+    // performCaptureChainInternal advances through post-movement phases,
+    // so we intentionally do not assert a specific currentPhase here.
     const moves = engine.getValidMoves(after.currentPlayer);
     const chainMoves = moves.filter((m) => m.type === 'continue_capture_segment');
     expect(chainMoves.length).toBe(0);

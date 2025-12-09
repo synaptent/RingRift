@@ -1547,12 +1547,29 @@ class MutableGameState:
                 positions_to_collapse = list(line_positions)
 
         # Collapse each position
+        # IMPORTANT: TS's collapseLinePositions returns rings from any stacks
+        # on collapsed positions back to their owners' hands. We must do the
+        # same for parity.
         seen_keys: set = set()
         for pos in positions_to_collapse:
             key = pos.to_key()
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+
+            # Return rings from any stack at this position to their owners' hands.
+            # This matches TS LineAggregate.collapseLinePositions behavior.
+            stack = self._stacks.get(key)
+            if stack and stack.rings:
+                for ring_owner in stack.rings:
+                    if ring_owner in self._rings_in_hand:
+                        # Save previous value for undo if not already saved
+                        if ring_owner not in undo.prev_rings_in_hand:
+                            undo.prev_rings_in_hand[ring_owner] = self._rings_in_hand[ring_owner]
+                        self._rings_in_hand[ring_owner] += 1
+                # Remove the stack
+                undo.removed_stacks[key] = stack.copy()
+                del self._stacks[key]
 
             # Check if there was a marker
             marker = self._markers.get(key)

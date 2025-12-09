@@ -21,6 +21,7 @@ import type {
   MoveType,
   GamePhase,
 } from '../../types/game';
+import { positionToString } from '../../types/game';
 import {
   transition,
   type TurnEvent,
@@ -1493,48 +1494,103 @@ export function computeFSMOrchestration(
   const isCaptureMove =
     move.type === 'overtaking_capture' || move.type === 'continue_capture_segment';
 
-  if (isCaptureMove && move.to) {
-    // Use post-move state for chain capture check if available, otherwise fall back to pre-move state
-    const stateForChainCheck = options?.postMoveStateForChainCheck ?? gameState;
+  // Post-transition adjustment: after a pure movement, check whether the landing
+  // stack has any overtaking captures available. The FSM does not know about
+  // board-local capture availability, so without this check it would advance
+  // directly to line_processing even when Python's phase machine enters CAPTURE
+  // after MOVE_STACK.
+  if ((move.type === 'move_stack' || move.type === 'move_ring') && move.to) {
+    const stateForCaptureCheck = options?.postMoveStateForChainCheck ?? gameState;
 
-    // Build the chain capture snapshot with already-captured targets to avoid revisiting
-    const capturedThisChain = [...(move.captureChain ?? [])];
-    // Also include the current capture target if available
-    if (move.captureTarget) {
-      capturedThisChain.push(move.captureTarget);
+    // Enumerate initial (overtaking) captures from the landing position only.
+    // This mirrors Python GameEngine._get_capture_moves, which considers
+    // captures from the stack that just moved, not from all stacks.
+    const initialCaptures = enumerateChainCaptureSegments(
+      stateForCaptureCheck,
+      {
+        player: move.player,
+        currentPosition: move.to,
+        capturedThisChain: [],
+      },
+      {
+        kind: 'initial',
+      }
+    );
+
+    if (initialCaptures.length > 0) {
+      const landingKey = positionToString(move.to);
+      const pendingCaptures = initialCaptures
+        .filter((m) => m.from && positionToString(m.from) === landingKey)
+        .map((m) => ({
+          target: m.captureTarget!,
+          capturingPlayer: move.player,
+          isChainCapture: false,
+        }));
+
+      if (pendingCaptures.length > 0) {
+        nextState = {
+          phase: 'capture',
+          player: move.player,
+          pendingCaptures,
+          chainInProgress: false,
+          capturesMade: 0,
+        } as CaptureState;
+      }
     }
+  }
+
+  if (isCaptureMove && move.to) {
+    // Use post-move state for chain capture check if available, otherwise fall back to pre-move state.
+    // For RR‑CANON capture-chain semantics we must mirror Python's
+    // get_chain_capture_continuation_info_py, which:
+    //   - Always treats disallow_revisited_targets = False at rules level
+    //   - Uses an empty captured_this_chain snapshot when deciding whether
+    //     the chain must continue from the current landing position.
+    //
+    // The previous implementation incorrectly threaded move.captureChain and
+    // used disallowRevisitedTargets: true, which is intended only for search /
+    // analysis tooling. That could cause the FSM orchestrator to believe no
+    // continuations existed even when the shared capture aggregate reported a
+    // mandatory chain continuation, leading to premature transition to
+    // line_processing after an overtaking_capture.
+    const stateForChainCheck = options?.postMoveStateForChainCheck ?? gameState;
 
     const continuations = enumerateChainCaptureSegments(
       stateForChainCheck,
       {
         player: move.player,
         currentPosition: move.to,
-        capturedThisChain,
+        // Rules-level continuation check never filters revisited targets; the
+        // shared aggregate handles pathological cycles separately.
+        capturedThisChain: [],
       },
       {
         kind: 'continuation',
-        disallowRevisitedTargets: true,
       }
     );
 
     if (continuations.length > 0) {
-      // Chain captures are available - ensure we're in chain_capture phase
+      // Chain captures are available - ensure we're in chain_capture phase.
+      // Snapshot of capturedTargets is reconstructed from continuation moves
+      // only for diagnostics; rules semantics depend solely on the existence
+      // of at least one continuation.
       nextState = {
         phase: 'chain_capture',
         player: move.player,
         attackerPosition: move.to,
-        capturedTargets: capturedThisChain,
+        capturedTargets: [],
         availableContinuations: continuations.map((m) => ({
           target: m.captureTarget ?? m.to,
           capturingPlayer: move.player,
           isChainCapture: true,
         })),
-        segmentCount: capturedThisChain.length + 1,
+        segmentCount: 1,
         isFirstSegment: false,
       } as ChainCaptureState;
     } else if (nextState.phase === 'chain_capture') {
       // FSM optimistically said chain_capture, but no continuations exist
-      // Transition to line_processing instead
+      // according to the shared aggregate. Transition to line_processing
+      // instead so TS mirrors Python's phase_machine semantics.
       nextState = {
         phase: 'line_processing',
         player: move.player,

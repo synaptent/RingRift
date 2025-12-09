@@ -2073,7 +2073,16 @@ function processPostMovePhases(
 
   // Process lines
   if (stateMachine.currentPhase === 'line_processing') {
-    const lines = findAllLines(state.board).filter((l) => l.player === state.currentPlayer);
+    // RR-PARITY-FIX-2024-12-09: After ANY move in line_processing (including
+    // process_line), re-check for remaining lines. This mirrors Python's
+    // phase_machine.py which always checks remaining_lines after each
+    // process_line and stays in line_processing if more exist.
+    // IMPORTANT: Use stateMachine.gameState (updated after move application),
+    // not the stale `state` snapshot from function start.
+    const updatedStateForLines = stateMachine.gameState;
+    const lines = findAllLines(updatedStateForLines.board).filter(
+      (l) => l.player === updatedStateForLines.currentPlayer
+    );
 
     if (lines.length > 0) {
       // Core rules: never auto-generate or auto-apply process_line moves.
@@ -2089,7 +2098,7 @@ function processPostMovePhases(
       }));
       stateMachine.setPendingLines(detectedLines);
       return {
-        pendingDecision: createLineOrderDecision(state, detectedLines),
+        pendingDecision: createLineOrderDecision(updatedStateForLines, detectedLines),
       };
     }
 
@@ -2104,7 +2113,7 @@ function processPostMovePhases(
       return {
         pendingDecision: {
           type: 'no_line_action_required',
-          player: state.currentPlayer,
+          player: updatedStateForLines.currentPlayer,
           options: [],
           context: {
             description: 'No lines to process - explicit no_line_action required per RR-CANON-R075',
@@ -2115,8 +2124,8 @@ function processPostMovePhases(
 
     // Line-phase move was applied and no more lines; decide the next phase using
     // the canonical FSM helper so TS and Python share the same semantics.
-    const player = state.currentPlayer;
-    const regionsForPlayer = getProcessableTerritoryRegions(state.board, { player });
+    const player = updatedStateForLines.currentPlayer;
+    const regionsForPlayer = getProcessableTerritoryRegions(updatedStateForLines.board, { player });
     const hasTerritoryRegions = regionsForPlayer.length > 0;
     // Pass currentMove for parity with Python where move is in history during phase checks
     const hadAnyActionThisTurn = computeHadAnyActionThisTurn(

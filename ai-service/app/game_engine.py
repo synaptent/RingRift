@@ -3441,6 +3441,10 @@ class GameEngine:
         # 4. Apply collapses. TS's LineAggregate increments territorySpaces
         # by the number of collapsed marker positions (collapsedKeys.size).
         # We mirror that here.
+        #
+        # IMPORTANT: TS's collapseLinePositions also returns rings from any
+        # stacks on collapsed positions back to their owners' hands. We must
+        # do the same for parity.
         seen_keys = set()
         zobrist = ZobristHash()
         collapsed_count = 0
@@ -3449,6 +3453,19 @@ class GameEngine:
             if key in seen_keys:
                 continue
             seen_keys.add(key)
+
+            # Return rings from any stack at this position to their owners' hands.
+            # This matches TS LineAggregate.collapseLinePositions behavior.
+            stack = board.stacks.get(key)
+            if stack and stack.rings:
+                for ring_owner in stack.rings:
+                    for player_state in game_state.players:
+                        if player_state.player_number == ring_owner:
+                            player_state.rings_in_hand += 1
+                            break
+                # Remove the stack
+                del board.stacks[key]
+
             # Check if there was a marker there (should be for line formation)
             marker = board.markers.get(key)
             if marker:
