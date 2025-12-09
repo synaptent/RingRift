@@ -458,9 +458,9 @@ export default function LobbyPage() {
     getDifficultyDescriptor(5) ??
     DIFFICULTY_DESCRIPTORS.find((d) => d.id === 5);
 
-  const difficultyOptions = form.isCalibrationGame
+  const _difficultyOptions = form.isCalibrationGame
     ? DIFFICULTY_DESCRIPTORS.filter((d) => d.id === 2 || d.id === 4 || d.id === 6 || d.id === 8)
-    : DIFFICULTY_DESCRIPTORS;
+    : DIFFICULTY_DESCRIPTORS; // Reserved for future difficulty selection UI
 
   // Get current user ID
   useEffect(() => {

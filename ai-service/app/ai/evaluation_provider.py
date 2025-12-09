@@ -702,7 +702,7 @@ class HeuristicEvaluator:
         count = 0
 
         for i, m1 in enumerate(markers_to_check):
-            for m2 in markers_to_check[i + 1 :]:
+            for m2 in markers_to_check[i + 1:]:
                 dist = abs(m1.position.x - m2.position.x) + abs(
                     m1.position.y - m2.position.y
                 )

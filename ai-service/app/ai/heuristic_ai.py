@@ -280,7 +280,7 @@ class HeuristicAI(BaseAI):
     # Victory proximity threshold weights (previously hardcoded)
     WEIGHT_VICTORY_THRESHOLD_BONUS = 1000.0  # Bonus when at/near victory
     WEIGHT_RINGS_PROXIMITY_FACTOR = 50.0     # Factor for rings-based proximity
-    WEIGHT_TERRITORY_PROXIMITY_FACTOR = 50.0 # Factor for territory-based proximity
+    WEIGHT_TERRITORY_PROXIMITY_FACTOR = 50.0  # Factor for territory-based proximity
 
     # Line potential weights (previously hardcoded)
     WEIGHT_TWO_IN_ROW = 1.0        # Bonus for 2 markers in a row

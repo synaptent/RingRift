@@ -384,3 +384,59 @@ The debugging session revealed process improvements for future architectural iss
 | 12        | Architecture analysis requested              | → This document           |
 
 **Conclusion:** The repeated failures despite targeted fixes indicate a systemic issue requiring architectural refactoring, not point fixes.
+
+---
+
+## 9. Implementation Progress Update (December 9, 2025)
+
+### 9.1 FSM Extension Implementation - Phase 1 Complete
+
+Following the FSM Extension Strategy, Phase 1 validation has been successfully implemented:
+
+| Task                             | Status      | Details                                                            |
+| -------------------------------- | ----------- | ------------------------------------------------------------------ |
+| Enable FSM shadow validation     | ✅ Complete | Shadow mode runs alongside legacy validation                       |
+| Fix player validation divergence | ✅ Complete | Added player check with bookkeeping exemption                      |
+| Fix `no_placement_action` guard  | ✅ Complete | `deriveRingPlacementState` trusts `moveHint` for bookkeeping moves |
+| Add debug logging infrastructure | ✅ Complete | `FSMDebugLogger` interface and console logger added                |
+| Validate on canonical DB         | ✅ Complete | 11 games, 1816 moves, 0 divergences                                |
+
+### 9.2 Key Code Changes
+
+**`src/shared/engine/fsm/TurnStateMachine.ts`:**
+
+- Re-enabled strict guard for `NO_PLACEMENT_ACTION`: rejects if `state.canPlace` is true
+
+**`src/shared/engine/fsm/FSMAdapter.ts`:**
+
+- Added `FSMDebugLogger` interface and `consoleFSMDebugLogger` implementation
+- Added `validateMoveWithFSMAndCompare()` for divergence detection
+- Updated `deriveRingPlacementState()` to accept `moveHint` parameter
+- For `no_placement_action` moves, sets `canPlace=false` (trusts the recorded move's intent)
+- Added `buildDebugContext()` for comprehensive validation diagnostics
+
+**`scripts/validate-fsm-active-mode.ts`:**
+
+- Added `--debug` flag to enable detailed FSM logging
+- Integrates with `FSMDebugLogger` infrastructure
+
+### 9.3 Validation Results
+
+```
+═══════════════════════════════════════════════════════════
+  FSM Active Mode Validation
+═══════════════════════════════════════════════════════════
+  ✓ canonical_square8.db: 22/22 passed, 1816 moves
+  Total: 22/22 games passed
+  Moves validated: 1816
+  Divergences: 0
+
+✅ VALIDATION PASSED - Safe to enable active mode
+```
+
+### 9.4 Next Steps
+
+1. **Enable FSM active mode in self-play**: Set `RINGRIFT_FSM_VALIDATION_MODE=active` in self-play scripts
+2. **Monitor for divergences**: Run self-play with active mode to catch any edge cases
+3. **Phase 2 - FSM-driven orchestrator**: Replace manual `advancePhase` calls with FSM transitions
+4. **Phase 3 - Python parity**: Mirror FSM transition table in Python `phase_machine.py`

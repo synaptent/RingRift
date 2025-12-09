@@ -20,7 +20,6 @@ import logging
 import os
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
 import numpy as np
@@ -28,9 +27,7 @@ import torch
 from torch.utils.data import Dataset, IterableDataset
 
 from ..ai.nnue import (
-    FEATURE_DIMS,
     extract_features_from_gamestate,
-    get_board_size,
     get_feature_dim,
 )
 from ..models import BoardType, GameState

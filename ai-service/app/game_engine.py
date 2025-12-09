@@ -1261,7 +1261,7 @@ class GameEngine:
             candidate.player_number,
         )
         has_stacks = bool(stacks_for_candidate)
-        has_rings_in_hand = candidate.rings_in_hand > 0
+        _has_rings_in_hand = candidate.rings_in_hand > 0  # Reserved for future placement logic
 
         # Forced-elimination gating (RR-CANON-R070/R072/R100/R204):
         #
@@ -2278,7 +2278,7 @@ class GameEngine:
         Args:
             limit: If provided, return at most this many moves (for early-return checks).
         """
-        board = game_state.board
+        # Access board through game_state directly as needed
 
         # Determine attacker position
         if game_state.chain_capture_state:
@@ -3016,7 +3016,7 @@ class GameEngine:
 
                     to_key = to_pos.to_key()
                     dest_stack = board.stacks.get(to_key)
-                    dest_marker = board.markers.get(to_key)
+                    # Marker presence checked implicitly via stack/empty logic
 
                     if dest_stack is None or dest_stack.stack_height == 0:
                         # Empty cell or marker-only cell.
@@ -3713,9 +3713,7 @@ class GameEngine:
             )
             return
 
-        # 1c. Compute region key set for later checks (e.g., outside stacks)
-        #     and gather border markers.
-        region_keys = {p.to_key() for p in target_region.spaces}
+        # 1c. Gather border markers for territory elimination.
 
         border_markers = BoardManager.get_border_marker_positions(
             target_region.spaces,

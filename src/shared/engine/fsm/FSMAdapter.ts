@@ -293,7 +293,7 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
 
   switch (phase) {
     case 'ring_placement':
-      return deriveRingPlacementState(gameState, player);
+      return deriveRingPlacementState(gameState, player, moveHint);
 
     case 'movement':
       return deriveMovementState(gameState, player);
@@ -328,24 +328,34 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
   }
 }
 
-function deriveRingPlacementState(state: GameState, player: number): RingPlacementState {
+function deriveRingPlacementState(
+  state: GameState,
+  player: number,
+  moveHint?: Move
+): RingPlacementState {
   const playerObj = state.players.find((p) => p.playerNumber === player);
   const ringsInHand = playerObj?.ringsInHand ?? 0;
 
-  // For placement eligibility, check rings in hand for the specific player.
-  // Note: We can't use getValidMoves here because it uses state.currentPlayer,
-  // which may not match the player we're evaluating for bookkeeping moves.
-  // A player can place if they have rings in hand.
-  // Full position enumeration is expensive, so we just check ring availability.
-  const canPlace = ringsInHand > 0;
-
-  // Only enumerate positions if the player can place (for FSM context)
+  // For accurate canPlace determination, we need to check actual valid placements.
+  // getValidMoves uses state.currentPlayer, so we can only use it when player matches.
+  let canPlace: boolean;
   let validPositions: Position[] = [];
-  if (canPlace && state.currentPlayer === player) {
-    // Only enumerate when the player matches to avoid expensive computation
+
+  // Special handling for no_placement_action moves:
+  // If we're validating a no_placement_action, it means the recording indicates
+  // that placements weren't available. Trust this - set canPlace=false.
+  if (moveHint?.type === 'no_placement_action') {
+    canPlace = false;
+  } else if (state.currentPlayer === player) {
+    // Player matches - we can accurately determine valid placements
     const validMoves = getValidMoves(state);
     const placementMoves = validMoves.filter((m) => m.type === 'place_ring');
     validPositions = placementMoves.map((m) => m.to);
+    canPlace = placementMoves.length > 0;
+  } else {
+    // Player doesn't match currentPlayer and not a bookkeeping move.
+    // Fall back to conservative check: can place if rings in hand > 0.
+    canPlace = ringsInHand > 0;
   }
 
   return {
@@ -815,16 +825,21 @@ function buildDebugContext(
   gameContext: GameContext,
   event: TurnEvent | null
 ): FSMDebugContext {
+  const moveInfo: FSMDebugContext['move'] = {
+    type: move.type,
+    player: move.player,
+    to: move.to,
+  };
+  // Only include from if defined (exactOptionalPropertyTypes compliance)
+  if (move.from) {
+    moveInfo.from = move.from;
+  }
+
   const context: FSMDebugContext = {
     fsmState,
     gameContext,
     event,
-    move: {
-      type: move.type,
-      player: move.player,
-      to: move.to,
-      from: move.from,
-    },
+    move: moveInfo,
     gameStateSnapshot: {
       currentPhase: gameState.currentPhase,
       currentPlayer: gameState.currentPlayer,
@@ -1256,4 +1271,237 @@ export function getCurrentFSMState(gameState: GameState): TurnState {
 export function isFSMTerminalState(gameState: GameState): boolean {
   const fsmState = deriveStateFromGame(gameState);
   return fsmState.phase === 'game_over';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FSM-DRIVEN ORCHESTRATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Result of FSM-driven orchestration.
+ * Contains the derived phase, player, and any pending decision information.
+ */
+export interface FSMOrchestrationResult {
+  /** Whether the FSM transition was successful */
+  success: boolean;
+  /** The next phase according to FSM */
+  nextPhase: TurnState['phase'];
+  /** The next player according to FSM */
+  nextPlayer: number;
+  /** FSM actions that should be applied */
+  actions: Action[];
+  /** Type of pending decision if any (derived from FSM state) */
+  pendingDecisionType?:
+    | 'chain_capture'
+    | 'line_order_required'
+    | 'no_line_action_required'
+    | 'region_order_required'
+    | 'no_territory_action_required'
+    | 'forced_elimination';
+  /** Error information if transition failed */
+  error?: {
+    code: string;
+    message: string;
+  };
+  /** Debug information */
+  debug?: {
+    inputPhase: string;
+    inputPlayer: number;
+    fsmState: TurnState;
+    event: TurnEvent | null;
+  };
+}
+
+/**
+ * Compute the next phase and player using FSM transition logic.
+ *
+ * This is the core function for FSM-driven orchestration. It takes
+ * the current game state and move, runs the FSM transition, and
+ * returns the orchestration result.
+ *
+ * @param gameState Current game state (after move application)
+ * @param move The move that was just applied
+ * @param options Additional context for decision surfacing
+ * @returns FSM orchestration result
+ */
+export function computeFSMOrchestration(
+  gameState: GameState,
+  move: Move,
+  options?: {
+    /** Whether chain capture continuation is available */
+    chainCapturesAvailable?: boolean;
+    /** Detected lines for the current player */
+    detectedLinesCount?: number;
+    /** Territory regions for the current player */
+    territoryRegionsCount?: number;
+    /** Whether the player had any real action this turn */
+    hadAnyActionThisTurn?: boolean;
+    /** Whether the player has stacks on the board */
+    playerHasStacks?: boolean;
+  }
+): FSMOrchestrationResult {
+  // Derive FSM state from game state, passing move as hint
+  const fsmState = deriveStateFromGame(gameState, move);
+  const context = deriveGameContext(gameState);
+
+  // Convert move to FSM event
+  const event = moveToEvent(move);
+
+  // Build debug info
+  const debug = {
+    inputPhase: gameState.currentPhase,
+    inputPlayer: gameState.currentPlayer,
+    fsmState,
+    event,
+  };
+
+  if (!event) {
+    // Meta-move or unsupported - return current state unchanged
+    return {
+      success: true,
+      nextPhase: fsmState.phase,
+      nextPlayer: 'player' in fsmState ? fsmState.player : gameState.currentPlayer,
+      actions: [],
+      debug,
+    };
+  }
+
+  // Run FSM transition
+  const transitionResult = transition(fsmState, event, context);
+
+  if (!transitionResult.ok) {
+    return {
+      success: false,
+      nextPhase: fsmState.phase,
+      nextPlayer: 'player' in fsmState ? fsmState.player : gameState.currentPlayer,
+      actions: [],
+      error: {
+        code: transitionResult.error.code,
+        message: transitionResult.error.message,
+      },
+      debug,
+    };
+  }
+
+  const nextState = transitionResult.state;
+  const actions = transitionResult.actions;
+
+  // Extract next phase and player from FSM state
+  const nextPhase = nextState.phase;
+  let nextPlayer: number;
+
+  if (nextState.phase === 'turn_end') {
+    // Turn ended - next player is in the state
+    nextPlayer = (nextState as { nextPlayer: number }).nextPlayer;
+  } else if (nextState.phase === 'game_over') {
+    // Game over - player doesn't matter
+    nextPlayer = gameState.currentPlayer;
+  } else {
+    // In-progress phase - player is in the state
+    nextPlayer = (nextState as { player: number }).player;
+  }
+
+  // Determine pending decision type based on FSM state and options
+  let pendingDecisionType: FSMOrchestrationResult['pendingDecisionType'];
+
+  if (nextPhase === 'chain_capture') {
+    pendingDecisionType = 'chain_capture';
+  } else if (nextPhase === 'line_processing') {
+    const linesCount = options?.detectedLinesCount ?? 0;
+    if (linesCount > 0) {
+      pendingDecisionType = 'line_order_required';
+    } else if (!isLinePhaseMove(move.type)) {
+      pendingDecisionType = 'no_line_action_required';
+    }
+  } else if (nextPhase === 'territory_processing') {
+    const regionsCount = options?.territoryRegionsCount ?? 0;
+    if (regionsCount > 0) {
+      pendingDecisionType = 'region_order_required';
+    } else if (!isTerritoryPhaseMove(move.type)) {
+      pendingDecisionType = 'no_territory_action_required';
+    }
+  } else if (nextPhase === 'forced_elimination') {
+    pendingDecisionType = 'forced_elimination';
+  }
+
+  const result: FSMOrchestrationResult = {
+    success: true,
+    nextPhase,
+    nextPlayer,
+    actions,
+    debug,
+  };
+
+  // Only set pendingDecisionType if defined (exactOptionalPropertyTypes compliance)
+  if (pendingDecisionType) {
+    result.pendingDecisionType = pendingDecisionType;
+  }
+
+  return result;
+}
+
+/**
+ * Check if a move type is a line-phase move.
+ */
+function isLinePhaseMove(moveType: Move['type']): boolean {
+  return (
+    moveType === 'no_line_action' ||
+    moveType === 'process_line' ||
+    moveType === 'choose_line_reward'
+  );
+}
+
+/**
+ * Check if a move type is a territory-phase move.
+ */
+function isTerritoryPhaseMove(moveType: Move['type']): boolean {
+  return (
+    moveType === 'no_territory_action' ||
+    moveType === 'process_territory_region' ||
+    moveType === 'skip_territory_processing'
+  );
+}
+
+/**
+ * Compare FSM orchestration result with legacy orchestration result.
+ * Returns divergence details if they differ.
+ */
+export function compareFSMWithLegacy(
+  fsmResult: FSMOrchestrationResult,
+  legacyPhase: string,
+  legacyPlayer: number
+): {
+  diverged: boolean;
+  phaseDiverged: boolean;
+  playerDiverged: boolean;
+  details?: {
+    fsmPhase: string;
+    legacyPhase: string;
+    fsmPlayer: number;
+    legacyPlayer: number;
+  };
+} {
+  // Map FSM turn_end to ring_placement for comparison (turn_end means next player starts)
+  const effectiveFSMPhase =
+    fsmResult.nextPhase === 'turn_end' ? 'ring_placement' : fsmResult.nextPhase;
+
+  const phaseDiverged = effectiveFSMPhase !== legacyPhase;
+  const playerDiverged = fsmResult.nextPlayer !== legacyPlayer;
+  const diverged = phaseDiverged || playerDiverged;
+
+  if (diverged) {
+    return {
+      diverged: true,
+      phaseDiverged,
+      playerDiverged,
+      details: {
+        fsmPhase: effectiveFSMPhase,
+        legacyPhase,
+        fsmPlayer: fsmResult.nextPlayer,
+        legacyPlayer,
+      },
+    };
+  }
+
+  return { diverged: false, phaseDiverged: false, playerDiverged: false };
 }

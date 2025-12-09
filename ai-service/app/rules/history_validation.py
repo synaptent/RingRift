@@ -24,7 +24,6 @@ from app.db.game_replay import GameReplayDB
 from app.rules.history_contract import (
     CanonicalMoveCheckResult,
     phase_move_contract,
-    derive_phase_from_move_type,
     validate_canonical_move,
 )
 
@@ -57,7 +56,7 @@ def validate_canonical_history_for_game(db: GameReplayDB, game_id: str) -> Canon
     inferred from the move_type using derive_phase_from_move_type(). This
     allows validation of older DBs that predate phase tracking.
     """
-    phase_contract = phase_move_contract()
+    _phase_contract = phase_move_contract()  # Contract lookup, used via validate_canonical_move
     issues: List[CanonicalHistoryIssue] = []
 
     records = db.get_move_records(game_id)

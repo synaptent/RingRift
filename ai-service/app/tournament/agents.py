@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 
 from app.ai.heuristic_weights import (
     BASE_V1_BALANCED_WEIGHTS,
-    HEURISTIC_WEIGHT_KEYS,
     HeuristicWeights,
 )
 

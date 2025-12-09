@@ -13,6 +13,7 @@ from app.models import (
 )
 from app.game_engine import GameEngine, PhaseRequirementType
 from app.rules.default_engine import DefaultRulesEngine
+from app.rules.fsm import TurnFSM, get_fsm_mode
 from app.training.seed_utils import seed_all
 from app.training.tournament import infer_victory_reason
 
@@ -381,6 +382,17 @@ class RingRiftEnv:
             "RINGRIFT_FORCE_BOOKKEEPING_MOVES", ""
         ).lower() in {"1", "true", "yes", "on"}
 
+        # FSM validation for phase-to-move contract enforcement.
+        # Mode is controlled by RINGRIFT_FSM_VALIDATION_MODE environment variable:
+        # - "off" (default): No validation
+        # - "shadow": Logs violations but continues processing
+        # - "active": Raises FSMValidationError on violations (fail-fast)
+        self._fsm: Optional[TurnFSM] = None
+        fsm_mode = get_fsm_mode()
+        if fsm_mode != "off":
+            self._fsm = TurnFSM(mode=fsm_mode)
+            logger.info(f"FSM validation enabled in '{fsm_mode}' mode")
+
     def reset(self, seed: Optional[int] = None) -> GameState:
         """Reset the environment and return the initial observation.
 
@@ -416,6 +428,11 @@ class RingRiftEnv:
             num_players=self.num_players,
         )
         self._move_count = 0
+
+        # Reset FSM state for the new episode.
+        if self._fsm is not None:
+            self._fsm.reset()
+
         return self._state
 
     @property
@@ -564,6 +581,14 @@ class RingRiftEnv:
         # early during training and self-play.
         GameEngine._assert_phase_move_invariant(self.state, move)
 
+        # FSM validation: validate user-provided move against phase-to-move contract.
+        # In shadow mode, violations are logged but processing continues.
+        # In active mode, FSMValidationError is raised for fail-fast debugging.
+        if self._fsm is not None:
+            self._fsm.validate_and_send(
+                self.state.current_phase, move, self.state
+            )
+
         # Enforce turn ownership at the host boundary. This prevents
         # mis-attributed moves (wrong player) from being applied or
         # recorded during self-play and training.
@@ -572,10 +597,9 @@ class RingRiftEnv:
                 f"Move player {move.player} does not match current player {self.state.current_player}"
             )
 
-        # Track move_history length to detect any additional bookkeeping
-        # moves (e.g., no_territory_action) that may be appended by the
-        # surrounding host/rules stack.
-        prev_history_len = len(self._state.move_history) if self._state.move_history else 0
+        # Note: Move history length could be tracked here to detect any
+        # additional bookkeeping moves (e.g., no_territory_action) appended
+        # by the rules engine, but is currently unused.
 
         actor_player = self._state.current_player
 
@@ -606,6 +630,11 @@ class RingRiftEnv:
                 requirement,
                 self._state,
             )
+            # FSM validation for auto-generated bookkeeping moves.
+            if self._fsm is not None:
+                self._fsm.validate_and_send(
+                    self._state.current_phase, auto_move, self._state
+                )
             # Apply the synthesized move and continue checking for chained
             # requirements (e.g., entering territory_processing).
             self._state = (
@@ -675,6 +704,12 @@ class RingRiftEnv:
 
             if forced_move is None:
                 break
+
+            # FSM validation for forced bookkeeping moves.
+            if self._fsm is not None:
+                self._fsm.validate_and_send(
+                    self._state.current_phase, forced_move, self._state
+                )
 
             self._state = (
                 self._rules_engine.apply_move(self._state, forced_move)

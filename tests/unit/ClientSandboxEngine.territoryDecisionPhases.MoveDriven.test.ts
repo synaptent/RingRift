@@ -288,11 +288,18 @@ describe('ClientSandboxEngine territory decision phases (Move-driven)', () => {
     const hostAllMoves = engine.getValidMoves(movingPlayer);
     const hostRegionMoves = hostAllMoves.filter((m) => m.type === 'process_territory_region');
 
-    // In territory_processing phase, valid moves are process_territory_region and
-    // skip_territory_processing. We expect at least one region move.
+    // In territory_processing phase, valid moves are process_territory_region,
+    // skip_territory_processing, territory_elimination, and eliminate_rings_from_stack
+    // (for self-elimination). We expect at least one region move.
     expect(hostRegionMoves.length).toBeGreaterThan(0);
-    const validTerritoryMoveTypes = ['process_territory_region', 'skip_territory_processing'];
-    expect(hostAllMoves.every((m) => validTerritoryMoveTypes.includes(m.type))).toBe(true);
+    const validTerritoryMoveTypes = [
+      'process_territory_region',
+      'skip_territory_processing',
+      'territory_elimination',
+      'eliminate_rings_from_stack', // Self-elimination moves
+    ];
+    const unexpectedMoves = hostAllMoves.filter((m) => !validTerritoryMoveTypes.includes(m.type));
+    expect(unexpectedMoves.map((m) => m.type)).toEqual([]);
 
     // Normalise moves by player + region geometry to compare helper vs host.
     const keyFromMove = (m: Move): string => {

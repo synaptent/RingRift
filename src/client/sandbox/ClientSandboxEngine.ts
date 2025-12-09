@@ -3870,8 +3870,8 @@ export class ClientSandboxEngine {
       this.gameState.currentPhase = 'movement';
     }
 
-    // Capture move types for phase alignment
-    const captureMoveTypes: Move['type'][] = ['overtaking_capture', 'continue_capture_segment'];
+    // Capture move types for phase alignment (reserved for future capture phase handling)
+    const _captureMoveTypes: Move['type'][] = ['overtaking_capture', 'continue_capture_segment'];
 
     // NOTE: movement → capture alignment has been moved to applyCanonicalMoveForReplay
     // because it should only apply after move_stack, not after place_ring.

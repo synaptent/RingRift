@@ -64,19 +64,19 @@ import {
   flagEnabled,
   debugLog,
   getFSMValidationMode,
-  isFSMOrchestratorShadowEnabled,
+  getFSMOrchestratorMode,
+  isFSMOrchestratorActive,
 } from '../../utils/envFlags';
 
 // FSM validation imports
 import {
   validateMoveWithFSM,
   isMoveTypeValidForPhase,
-  transition as fsmTransition,
-  deriveStateFromGame as fsmDeriveState,
-  deriveGameContext as fsmDeriveContext,
-  moveToEvent as fsmMoveToEvent,
   onLineProcessingComplete,
   onTerritoryProcessingComplete,
+  // FSM orchestration
+  computeFSMOrchestration,
+  compareFSMWithLegacy,
 } from '../fsm';
 
 // Import from domain aggregates
@@ -124,6 +124,17 @@ import {
   applyRecoverySlide,
 } from '../aggregates/RecoveryAggregate';
 import type { RecoverySlideMove } from '../aggregates/RecoveryAggregate';
+
+/**
+ * Extended Move interface for cross-system interop (e.g., Python AI service).
+ * Python may use snake_case or different property names for recovery moves.
+ */
+interface ExtendedMoveProperties {
+  recoveryOption?: 1 | 2;
+  option?: 1 | 2;
+  collapsePositions?: Position[];
+  collapse_positions?: Position[];
+}
 
 import { isEligibleForRecovery } from '../playerStateHelpers';
 
@@ -1343,38 +1354,64 @@ export function processTurn(
     }
   }
 
-  // FSM orchestrator shadow check: run the FSM transition in parallel and log
-  // divergences between FSM-derived phase/player and the orchestration result.
-  if (isFSMOrchestratorShadowEnabled()) {
+  // FSM orchestrator mode check: run FSM orchestration and compare/apply results
+  const fsmOrchestratorMode = getFSMOrchestratorMode();
+  if (fsmOrchestratorMode !== 'off') {
     try {
-      const fsmState = fsmDeriveState(state);
-      const fsmContext = fsmDeriveContext(state);
-      const fsmEvent = fsmMoveToEvent(move);
+      // Compute FSM orchestration result
+      const fsmOrchResult = computeFSMOrchestration(state, move);
 
-      if (fsmEvent) {
-        const fsmResult = fsmTransition(fsmState, fsmEvent, fsmContext);
-        if (!fsmResult.ok) {
-          debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] ERROR', {
+      if (!fsmOrchResult.success) {
+        debugLog(true, '[FSM_ORCHESTRATOR] ERROR', {
+          moveType: move.type,
+          movePlayer: move.player,
+          error: fsmOrchResult.error,
+          gameId: state.id,
+          moveNumber: state.moveHistory.length + 1,
+          mode: fsmOrchestratorMode,
+        });
+      } else {
+        // Compare FSM result with legacy orchestration
+        const comparison = compareFSMWithLegacy(
+          fsmOrchResult,
+          finalState.currentPhase,
+          finalState.currentPlayer
+        );
+
+        if (comparison.diverged) {
+          debugLog(true, '[FSM_ORCHESTRATOR] DIVERGENCE', {
             moveType: move.type,
             movePlayer: move.player,
-            error: fsmResult.error,
+            fsmPhase: comparison.details?.fsmPhase,
+            fsmPlayer: comparison.details?.fsmPlayer,
+            legacyPhase: comparison.details?.legacyPhase,
+            legacyPlayer: comparison.details?.legacyPlayer,
+            phaseDiverged: comparison.phaseDiverged,
+            playerDiverged: comparison.playerDiverged,
             gameId: state.id,
             moveNumber: state.moveHistory.length + 1,
+            mode: fsmOrchestratorMode,
           });
-        } else {
-          const fsmPhase = fsmResult.state.phase;
-          const fsmPlayer =
-            (fsmResult.state as { player?: number }).player ?? finalState.currentPlayer;
-          const diverged =
-            fsmPhase !== finalState.currentPhase || fsmPlayer !== finalState.currentPlayer;
-          if (diverged) {
-            debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] DIVERGENCE', {
+
+          // In active mode, use FSM-derived state instead of legacy
+          if (isFSMOrchestratorActive()) {
+            // Map turn_end to ring_placement for next player
+            const effectivePhase =
+              fsmOrchResult.nextPhase === 'turn_end'
+                ? 'ring_placement'
+                : (fsmOrchResult.nextPhase as GamePhase);
+
+            finalState = {
+              ...finalState,
+              currentPhase: effectivePhase,
+              currentPlayer: fsmOrchResult.nextPlayer,
+            };
+
+            debugLog(true, '[FSM_ORCHESTRATOR] ACTIVE_OVERRIDE', {
               moveType: move.type,
               movePlayer: move.player,
-              fsmPhase,
-              fsmPlayer,
-              orchPhase: finalState.currentPhase,
-              orchPlayer: finalState.currentPlayer,
+              newPhase: effectivePhase,
+              newPlayer: fsmOrchResult.nextPlayer,
               gameId: state.id,
               moveNumber: state.moveHistory.length + 1,
             });
@@ -1382,12 +1419,13 @@ export function processTurn(
         }
       }
     } catch (err) {
-      debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] EXCEPTION', {
+      debugLog(true, '[FSM_ORCHESTRATOR] EXCEPTION', {
         moveType: move.type,
         movePlayer: move.player,
         error: err instanceof Error ? err.message : String(err),
         gameId: state.id,
         moveNumber: state.moveHistory.length + 1,
+        mode: fsmOrchestratorMode,
       });
     }
   }
@@ -1492,6 +1530,9 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         throw new Error('Move.from is required for recovery slide');
       }
 
+      // Cast to extended type for accessing Python-style properties
+      const extendedMove = move as Move & ExtendedMoveProperties;
+
       // Determine the option from the move's metadata
       const recoveryMove: RecoverySlideMove = {
         id: move.id,
@@ -1502,8 +1543,8 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         timestamp: move.timestamp,
         thinkTime: move.thinkTime,
         moveNumber: move.moveNumber,
-        option: (move as any).recoveryOption || (move as any).option || 1,
-        collapsePositions: (move as any).collapsePositions || (move as any).collapse_positions,
+        option: extendedMove.recoveryOption || extendedMove.option || 1,
+        collapsePositions: extendedMove.collapsePositions || extendedMove.collapse_positions,
         extractionStacks: [], // Will be determined during validation/application
       };
 

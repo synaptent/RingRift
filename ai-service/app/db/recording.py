@@ -329,7 +329,6 @@ def record_completed_game_with_parity_check(
     # Then validate parity if enabled
     from app.db.parity_validator import (
         validate_game_parity,
-        is_parity_validation_enabled,
         get_parity_mode,
         ParityMode,
         ParityValidationError,

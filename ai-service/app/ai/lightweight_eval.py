@@ -235,7 +235,7 @@ def evaluate_mobility_light(
         x, y = int(parts[0]), int(parts[1])
 
         # Check 8 directions for square boards
-        for dx, dy in [(-1,-1), (-1,0), (-1,1), (0,-1), (0,1), (1,-1), (1,0), (1,1)]:
+        for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]:
             nx, ny = x + dx, y + dy
             if 0 <= nx < board_size and 0 <= ny < board_size:
                 neighbor_key = f"{nx},{ny}"

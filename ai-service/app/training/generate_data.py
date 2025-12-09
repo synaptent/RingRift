@@ -17,7 +17,7 @@ from typing import Optional, List, Tuple
 import numpy as np
 
 from app.ai.descent_ai import DescentAI
-from app.ai.mcts_ai import MCTSAI, MCTSNode, MCTSNodeLite
+from app.ai.mcts_ai import MCTSAI
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI
 from app.db import GameReplayDB, get_or_create_db, record_completed_game
 from app.models import (
@@ -835,18 +835,18 @@ def generate_dataset(
             for pn in range(1, num_players + 1):
                 ai_players[pn] = _make_ai(pn, game_engine_type)
                 player_engines[pn] = game_engine_type
-            # Update legacy references
+            # Update legacy reference (players accessed via ai_players dict)
             ai_p1 = ai_players[1]
-            ai_p2 = ai_players.get(2, ai_p1)
+            _ = ai_players.get(2, ai_p1)  # P2 accessed via ai_players[pn]
         elif engine_mix == "per_player":
             # Select engine type independently for each player
             for pn in range(1, num_players + 1):
                 p_engine = _select_engine_for_player(pn, engine)
                 ai_players[pn] = _make_ai(pn, p_engine)
                 player_engines[pn] = p_engine
-            # Update legacy references
+            # Update legacy reference (players accessed via ai_players dict)
             ai_p1 = ai_players[1]
-            ai_p2 = ai_players.get(2, ai_p1)
+            _ = ai_players.get(2, ai_p1)  # P2 accessed via ai_players[pn]
             game_engine_type = "mixed"  # Sentinel for logging
         else:
             # Single mode: all players use the same engine (already initialized)

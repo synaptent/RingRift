@@ -66,7 +66,7 @@ class MovementValidator(Validator):
             return False
         # 9. Landing Check
         landing_stack = BoardManager.get_stack(move.to, state.board)
-        landing_marker = state.board.markers.get(move.to.to_key())
+        # Marker landing is handled by RR-CANON-R091/R092 below
 
         if landing_stack:
             # Cannot land on existing stack in simple movement

@@ -1,7 +1,6 @@
 """Tournament match execution and result aggregation."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import random
@@ -15,7 +14,7 @@ from app.models import BoardType, GameStatus
 
 from .agents import AIAgent, AIAgentRegistry
 from .elo import EloCalculator
-from .scheduler import Match, MatchStatus, TournamentScheduler
+from .scheduler import Match, TournamentScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +310,6 @@ class TournamentRunner:
         from app.ai.search import MinimaxSearch
         from app.board_manager import BoardManager
         from app.game_engine import GameEngine
-        from app.models import GameState
 
         start_time = time.time()
 

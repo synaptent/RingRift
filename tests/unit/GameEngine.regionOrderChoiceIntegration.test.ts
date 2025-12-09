@@ -129,7 +129,7 @@ describe('Region Order Integration', () => {
         { x: 1, y: 1 },
         { x: 1, y: 2 },
       ],
-      controllingPlayer: 0,
+      controllingPlayer: 1,
       isDisconnected: true,
     };
 
@@ -139,7 +139,7 @@ describe('Region Order Integration', () => {
         { x: 5, y: 5 },
         { x: 5, y: 6 },
       ],
-      controllingPlayer: 0,
+      controllingPlayer: 1,
       isDisconnected: true,
     };
 
@@ -282,7 +282,7 @@ describe('Region Order Integration', () => {
       // Small region (1 space)
       const smallRegion: Territory = {
         spaces: [{ x: 1, y: 1 }],
-        controllingPlayer: 0,
+        controllingPlayer: 1,
         isDisconnected: true,
       };
 
@@ -293,7 +293,7 @@ describe('Region Order Integration', () => {
           { x: 5, y: 6 },
           { x: 6, y: 5 },
         ],
-        controllingPlayer: 0,
+        controllingPlayer: 1,
         isDisconnected: true,
       };
 
@@ -328,7 +328,7 @@ describe('Region Order Integration', () => {
           { x: 1, y: 1 },
           { x: 1, y: 2 },
         ],
-        controllingPlayer: 0,
+        controllingPlayer: 1,
         isDisconnected: true,
       };
 
@@ -349,7 +349,7 @@ describe('Region Order Integration', () => {
 
       const region: Territory = {
         spaces: [{ x: 1, y: 1 }],
-        controllingPlayer: 0,
+        controllingPlayer: 1,
         isDisconnected: true,
       };
 

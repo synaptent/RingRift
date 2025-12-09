@@ -364,7 +364,7 @@ export const SandboxGameHost: React.FC = () => {
   // When a self-play scenario is loaded, this bridges the gameId into the
   // ReplayPanel so it can attempt to drive the board from the AI service's
   // /api/replay endpoints (Option A).
-  const [requestedReplayGameId, setRequestedReplayGameId] = useState<string | null>(null);
+  const [_requestedReplayGameId, setRequestedReplayGameId] = useState<string | null>(null);
 
   // Save state dialog (kept separate from scenarios hook)
   const [showSaveStateDialog, setShowSaveStateDialog] = useState(false);
@@ -567,8 +567,8 @@ export const SandboxGameHost: React.FC = () => {
     setHasHistorySnapshots,
     handleLoadScenario: hookHandleLoadScenario,
     handleForkFromReplay: hookHandleForkFromReplay,
-    handleResetScenario: hookHandleResetScenario,
-    clearScenarioContext,
+    handleResetScenario: _hookHandleResetScenario,
+    clearScenarioContext: _clearScenarioContext,
     originalScenarioRef,
   } = useSandboxScenarios<LoadableScenario>({
     initSandboxWithScenario,
@@ -583,7 +583,7 @@ export const SandboxGameHost: React.FC = () => {
     evaluationError: sandboxEvaluationError,
     isEvaluating: isSandboxAnalysisRunning,
     requestEvaluation: requestSandboxEvaluation,
-    clearHistory: clearEvaluationHistory,
+    clearHistory: _clearEvaluationHistory,
   } = useSandboxEvaluation({
     engine: sandboxEngine,
     developerToolsEnabled,
@@ -723,9 +723,9 @@ export const SandboxGameHost: React.FC = () => {
     gameSaveStatus,
     pendingLocalGames,
     syncState,
-    initialGameStateRef,
-    gameSavedRef,
-    cloneInitialGameState,
+    initialGameStateRef: _initialGameStateRef,
+    gameSavedRef: _gameSavedRef,
+    cloneInitialGameState: _cloneInitialGameState,
   } = useSandboxPersistence({
     engine: sandboxEngine,
     playerTypes: config.playerTypes as LocalPlayerType[],

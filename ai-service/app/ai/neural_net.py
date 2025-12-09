@@ -3137,7 +3137,7 @@ class NeuralNetAI(BaseAI):
 
         if territory_choice_base <= index < territory_choice_base + territory_choice_span:
             offset = index - territory_choice_base
-            player_idx = offset % TERRITORY_MAX_PLAYERS
+            _player_idx = offset % TERRITORY_MAX_PLAYERS  # noqa: F841 - reserved for future use
             offset //= TERRITORY_MAX_PLAYERS
             size_bucket = offset % TERRITORY_SIZE_BUCKETS
             pos_idx = offset // TERRITORY_SIZE_BUCKETS

@@ -285,6 +285,7 @@ async function main() {
   originalConsoleLog(`  Databases: ${databases.length}`);
   originalConsoleLog(`  Limit per DB: ${limit}`);
   originalConsoleLog(`  Modes: ${modes.join(', ')}`);
+  originalConsoleLog(`  Debug: ${debug}`);
   originalConsoleLog(`  Fail fast: ${failFast}`);
   originalConsoleLog('═══════════════════════════════════════════════════════════');
 

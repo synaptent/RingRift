@@ -191,6 +191,38 @@ export function isFSMValidationEnabled(): boolean {
 }
 
 /**
+ * FSM orchestrator mode selector.
+ *
+ * RINGRIFT_FSM_ORCHESTRATOR_MODE:
+ *   - 'off'    : Legacy orchestration (manual phase branching)
+ *   - 'shadow' : FSM transitions run in parallel, divergences logged
+ *   - 'active' : FSM drives phase transitions directly
+ *
+ * For backwards compatibility, RINGRIFT_FSM_ORCHESTRATOR_SHADOW=1 is
+ * equivalent to setting mode='shadow'.
+ */
+export type FSMOrchestratorMode = 'off' | 'shadow' | 'active';
+
+/**
+ * Read the current FSM orchestrator mode from the environment.
+ * Defaults to 'off' when unset or invalid.
+ */
+export function getFSMOrchestratorMode(): FSMOrchestratorMode {
+  // Explicit mode takes precedence
+  const modeRaw = readEnv('RINGRIFT_FSM_ORCHESTRATOR_MODE');
+  if (modeRaw === 'shadow' || modeRaw === 'active' || modeRaw === 'off') {
+    return modeRaw;
+  }
+
+  // Backwards compat: legacy shadow flag
+  if (flagEnabled('RINGRIFT_FSM_ORCHESTRATOR_SHADOW')) {
+    return 'shadow';
+  }
+
+  return 'off';
+}
+
+/**
  * True when FSM shadow orchestration checks are enabled.
  *
  * When enabled, the orchestrator will run the FSM transition logic in
@@ -198,7 +230,22 @@ export function isFSMValidationEnabled(): boolean {
  * the legacy orchestration result. This does not alter game behavior.
  */
 export function isFSMOrchestratorShadowEnabled(): boolean {
-  return flagEnabled('RINGRIFT_FSM_ORCHESTRATOR_SHADOW');
+  return getFSMOrchestratorMode() === 'shadow';
+}
+
+/**
+ * True when FSM orchestrator is in active mode (FSM drives transitions).
+ */
+export function isFSMOrchestratorActive(): boolean {
+  return getFSMOrchestratorMode() === 'active';
+}
+
+/**
+ * True when any FSM orchestration mode is enabled (shadow or active).
+ */
+export function isFSMOrchestratorEnabled(): boolean {
+  const mode = getFSMOrchestratorMode();
+  return mode === 'shadow' || mode === 'active';
 }
 
 /**

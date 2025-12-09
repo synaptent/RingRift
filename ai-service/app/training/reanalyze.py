@@ -1,7 +1,6 @@
 import os
 import numpy as np
-from app.ai.descent_ai import DescentAI
-from app.models import AIConfig
+
 
 def reanalyze_dataset(
     input_file="data/dataset.npz",
@@ -11,25 +10,38 @@ def reanalyze_dataset(
     """
     Re-analyze a dataset using the latest model and Descent search.
     Generates fresh targets (best_move, root_value) for existing states.
+
+    NOTE: This is a stub implementation. Full ReAnalyze requires raw GameStates,
+    not just feature tensors. The current dataset format only stores features,
+    which are lossy and cannot be reversed to reconstruct full game state.
+
+    To implement proper ReAnalyze:
+    1. Save raw GameStates (pickled) or replay logs during data generation
+    2. Load states, run DescentAI search to get fresh policy/value targets
+    3. Re-extract features and save updated dataset
+
+    Args:
+        input_file: Path to input dataset (npz format)
+        output_file: Path to output dataset (npz format)
+        model_path: Path to model weights for search
     """
+    # Suppress unused parameter warnings
+    _ = output_file
+    _ = model_path
+
     if not os.path.exists(input_file):
         print(f"Input file {input_file} not found.")
         return
 
-    print(f"Re-analyzing {input_file} with model {model_path}...")
+    print(f"Checking {input_file} format...")
 
     # Load data
     data = np.load(input_file, allow_pickle=True)
 
     # Handle both new and old formats
     if 'features' in data:
-        features = data['features']
-        globals_vec = data['globals']
-        # We don't need old values/policies, we'll generate new ones
-        # But we need to reconstruct GameStates to run search?
-        # Wait, DescentAI needs a GameState to run search.
-        # Our dataset only stores features.
-        # This is a problem for ReAnalyze if we don't store the full state.
+        # Feature-only format cannot be re-analyzed
+        # We would need full GameState to run search
 
         # "Simple AlphaZero" ReAnalyze usually works on stored trajectories (states).
         # If we only have features, we can't easily reconstruct the full GameState

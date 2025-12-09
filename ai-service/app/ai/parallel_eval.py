@@ -113,7 +113,7 @@ def _evaluate_chunk(
     This function is designed to be pickle-friendly and run in a separate process.
     """
     # Import here to avoid circular imports in worker processes
-    from .batch_eval import BoardArrays, batch_evaluate_positions
+    from .batch_eval import batch_evaluate_positions
 
     # Reconstruct BoardArrays from serialized data
     arrays = _reconstruct_board_arrays(state_data)

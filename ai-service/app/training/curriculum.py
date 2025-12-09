@@ -57,7 +57,6 @@ run's ``config.json`` for later analysis.
 
 import json
 import logging
-import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -66,15 +65,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import torch
 
-from app.ai.neural_net import NeuralNetAI, RingRiftCNN
-from app.models import AIConfig, BoardType, GameState
+from app.models import BoardType
 from app.training.config import TrainConfig
-from app.training.model_versioning import (
-    ModelVersionManager,
-    save_model_checkpoint,
-)
 
 logger = logging.getLogger(__name__)
 

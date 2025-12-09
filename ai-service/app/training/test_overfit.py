@@ -19,7 +19,7 @@ def test_overfit():
     # Fixed targets
     value_targets = torch.tensor([[1.0], [-1.0], [0.5], [-0.5]])
     policy_targets = torch.randn(batch_size, 55000)
-    policy_targets = torch.softmax(policy_targets, dim=1) # Normalize
+    policy_targets = torch.softmax(policy_targets, dim=1)  # Normalize
 
     # Model
     model = RingRiftCNN(board_size=8, in_channels=10, global_features=10)

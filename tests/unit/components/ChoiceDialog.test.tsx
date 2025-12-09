@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { ChoiceDialog, ChoiceDialogProps } from '../../../src/client/components/ChoiceDialog';
 import {
@@ -680,6 +681,36 @@ describe('ChoiceDialog', () => {
   });
 
   describe('accessibility', () => {
+    it('traps focus within the dialog when tabbing forward/backward', async () => {
+      const choice = createLineOrderChoice();
+      render(<ChoiceDialog {...defaultProps} choice={choice} />);
+
+      const dialog = screen.getByRole('dialog');
+      const optionButtons = screen.getAllByRole('option') as HTMLButtonElement[];
+      expect(optionButtons.length).toBeGreaterThan(1);
+
+      const cancelButton = screen.getByText('Cancel');
+
+      // Focus the last option and press Tab (should advance but remain within dialog focusables).
+      act(() => {
+        optionButtons[optionButtons.length - 1].focus();
+      });
+      act(() => {
+        fireEvent.keyDown(dialog, { key: 'Tab' });
+      });
+      const focusables = [...optionButtons, cancelButton];
+      expect(focusables).toContain(document.activeElement);
+
+      // Focus the first option and press Shift+Tab (should wrap within dialog focusables).
+      act(() => {
+        optionButtons[0].focus();
+      });
+      act(() => {
+        fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+      });
+      expect(focusables).toContain(document.activeElement);
+    });
+
     it('all option buttons have type="button"', () => {
       const choice = createLineOrderChoice();
       render(<ChoiceDialog {...defaultProps} choice={choice} />);

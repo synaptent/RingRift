@@ -48,8 +48,14 @@ export {
   describeActionEffects,
   // FSM-based validation
   validateMoveWithFSM,
+  validateMoveWithFSMAndCompare,
   isMoveTypeValidForPhase,
   type FSMValidationResult,
+  // Debug logging
+  setFSMDebugLogger,
+  consoleFSMDebugLogger,
+  type FSMDebugLogger,
+  type FSMDebugContext,
   // Orchestration integration
   determineNextPhaseFromFSM,
   attemptFSMTransition,
@@ -57,4 +63,8 @@ export {
   isFSMTerminalState,
   type PhaseTransitionContext,
   type FSMTransitionAttemptResult,
+  // FSM-driven orchestration
+  computeFSMOrchestration,
+  compareFSMWithLegacy,
+  type FSMOrchestrationResult,
 } from './FSMAdapter';

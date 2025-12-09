@@ -16,6 +16,14 @@ import {
 import { logger } from '../../utils/logger';
 import { getMetricsService, type AIChoiceOutcome } from '../../services/MetricsService';
 
+/** Type guard to extract aiErrorType from AI service errors */
+function getAIErrorType(error: unknown): string | undefined {
+  if (error && typeof error === 'object' && 'aiErrorType' in error) {
+    return (error as { aiErrorType: string }).aiErrorType;
+  }
+  return undefined;
+}
+
 /**
  * AIInteractionHandler
  *
@@ -147,7 +155,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         );
         outcome = 'fallback';
       } catch (error) {
-        const aiErrorType = (error as any)?.aiErrorType;
+        const aiErrorType = getAIErrorType(error);
         outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn('AI service unavailable for line_order; falling back to local heuristic', {
           gameId: choice.gameId,
@@ -233,7 +241,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         // Service is unavailable or misconfigured for this player. Log a
         // structured warning and fall back to the local heuristic; this is
         // treated as a degraded AI mode for non-move decisions.
-        const aiErrorType = (error as any)?.aiErrorType;
+        const aiErrorType = getAIErrorType(error);
         outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn(
           'AI service unavailable for line_reward_option; falling back to local heuristic',
@@ -329,7 +337,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       } catch (error) {
         // Service is unavailable or misconfigured for this player. Log a
         // structured warning and fall back to the local heuristic.
-        const aiErrorType = (error as any)?.aiErrorType;
+        const aiErrorType = getAIErrorType(error);
         outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn(
           'AI service unavailable for ring_elimination; falling back to local heuristic',
@@ -433,7 +441,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
       } catch (error) {
         // Service is unavailable or misconfigured for this player. Log a
         // structured warning and fall back to the local heuristic.
-        const aiErrorType = (error as any)?.aiErrorType;
+        const aiErrorType = getAIErrorType(error);
         outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn('AI service unavailable for region_order; falling back to local heuristic', {
           gameId: choice.gameId,
@@ -540,7 +548,7 @@ export class AIInteractionHandler implements PlayerInteractionHandler {
         );
         outcome = 'fallback';
       } catch (error) {
-        const aiErrorType = (error as any)?.aiErrorType;
+        const aiErrorType = getAIErrorType(error);
         outcome = aiErrorType === 'timeout' ? 'timeout' : 'fallback';
         logger.warn(
           'AI service unavailable for capture_direction; falling back to local heuristic',

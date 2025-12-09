@@ -16,7 +16,6 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from app.models import (
-    BoardType,
     GameState,
     GameStatus,
     Move,
