@@ -93,18 +93,25 @@ def has_phase_local_interactive_move(
     phase = state.current_phase
 
     if phase == GamePhase.RING_PLACEMENT:
-        if has_global_placement_action(state, player):
-            return True
-        skip_moves = GameEngine._get_skip_placement_moves(state, player)
-        return bool(skip_moves)
+        # During RING_PLACEMENT, the player ALWAYS has a valid move:
+        # either an interactive PLACE_RING/SKIP_PLACEMENT move,
+        # or a NO_PLACEMENT_ACTION bookkeeping move synthesized by the host.
+        # This prevents false positive ANM (Active No Moves) violations.
+        return True
+
+    if phase == GamePhase.MOVEMENT:
+        # During MOVEMENT, the player ALWAYS has a valid move:
+        # either an interactive MOVE_STACK/CAPTURE move,
+        # or a NO_MOVEMENT_ACTION bookkeeping move synthesized by the host.
+        # This prevents false positive ANM (Active No Moves) violations.
+        return True
 
     if phase in (
-        GamePhase.MOVEMENT,
         GamePhase.CAPTURE,
         GamePhase.CHAIN_CAPTURE,
     ):
-        if GameEngine._has_valid_movements(state, player):
-            return True
+        # CAPTURE and CHAIN_CAPTURE phases only occur when captures are
+        # available, so we check for actual capture moves here.
         if GameEngine._has_valid_captures(state, player):
             return True
         return False

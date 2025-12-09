@@ -1164,6 +1164,18 @@ export function processTurn(
     move.type === 'forced_elimination'
   ) {
     state = { ...state, currentPhase: 'forced_elimination' as GamePhase };
+  } else if (
+    // Replay-tolerance for TS/Python parity: When in line_processing and a capture
+    // move comes in, coerce the phase back to movement/chain_capture. This happens
+    // when Python records captures with the pre-move phase (movement) but TS's
+    // post-move processing has already advanced to line_processing.
+    state.gameStatus === 'active' &&
+    state.currentPhase === 'line_processing' &&
+    (move.type === 'overtaking_capture' || move.type === 'continue_capture_segment')
+  ) {
+    // Coerce to the appropriate capture phase based on move type
+    const targetPhase = move.type === 'continue_capture_segment' ? 'chain_capture' : 'movement';
+    state = { ...state, currentPhase: targetPhase as GamePhase };
   }
 
   // Enforce canonical phase→MoveType mapping for ACTIVE states. This ensures

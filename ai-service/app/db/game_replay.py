@@ -934,10 +934,13 @@ class GameReplayDB:
                     phase=phase_hint,
                 )
 
+                # Compute state after applying this move - always needed for
+                # correct phase tracking in subsequent moves, even if we're not
+                # storing full history entries.
+                state_after = GameEngine.apply_move(prev_state, move)
+
                 # Store history entry with before/after states (v4 feature)
                 if store_history_entries:
-                    # Compute state after applying this move
-                    state_after = GameEngine.apply_move(prev_state, move)
                     state_hash_after = _compute_state_hash(state_after)
 
                     self._store_history_entry_conn(
@@ -953,9 +956,11 @@ class GameReplayDB:
                         compress_states=compress_states,
                     )
 
-                    # Update for next iteration
-                    prev_state = state_after
                     prev_state_hash = state_hash_after
+
+                # Update prev_state for next iteration (always, regardless of
+                # store_history_entries, so phase_hint is correct for each move)
+                prev_state = state_after
 
             # Store choices
             for choice in choices:
