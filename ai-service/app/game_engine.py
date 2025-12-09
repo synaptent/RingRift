@@ -860,6 +860,7 @@ class GameEngine:
             if p.eliminated_rings >= game_state.victory_threshold:
                 game_state.game_status = GameStatus.COMPLETED
                 game_state.winner = p.player_number
+                game_state.current_player = p.player_number  # TS parity: winner stays current
                 game_state.current_phase = GamePhase.GAME_OVER
                 return
 
@@ -874,6 +875,7 @@ class GameEngine:
             if count >= game_state.territory_victory_threshold:
                 game_state.game_status = GameStatus.COMPLETED
                 game_state.winner = p_id
+                game_state.current_player = p_id  # TS parity: winner stays current
                 game_state.current_phase = GamePhase.GAME_OVER
                 return
 
@@ -914,6 +916,7 @@ class GameEngine:
             else:
                 game_state.game_status = GameStatus.COMPLETED
                 game_state.winner = candidate
+                game_state.current_player = candidate  # TS parity: winner stays current
                 game_state.current_phase = GamePhase.GAME_OVER
                 return
             board = game_state.board
@@ -938,6 +941,7 @@ class GameEngine:
             if not others_have_actions:
                 game_state.game_status = GameStatus.COMPLETED
                 game_state.winner = candidate
+                game_state.current_player = candidate  # TS parity: winner stays current
                 game_state.current_phase = GamePhase.GAME_OVER
                 return
 
@@ -1038,6 +1042,7 @@ class GameEngine:
             )
 
             game_state.winner = sorted_players[0].player_number
+            game_state.current_player = sorted_players[0].player_number  # TS parity: winner stays current
             game_state.current_phase = GamePhase.GAME_OVER
             return
 
