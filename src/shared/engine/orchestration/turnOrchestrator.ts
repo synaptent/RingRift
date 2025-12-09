@@ -2219,15 +2219,18 @@ function processPostMovePhases(
       // process_territory_region), re-check for remaining regions. This mirrors
       // Python's phase_machine.py which always checks remaining_regions after each
       // process_territory_region and stays in territory_processing if more exist.
-      const regions = getProcessableTerritoryRegions(state.board, {
-        player: state.currentPlayer,
+      // IMPORTANT: Use stateMachine.gameState (updated after move application),
+      // not the stale `state` snapshot from function start.
+      const updatedState = stateMachine.gameState;
+      const regions = getProcessableTerritoryRegions(updatedState.board, {
+        player: updatedState.currentPlayer,
       });
 
       if (regions.length > 1) {
         // Multiple regions: player must choose order via explicit
         // process_territory_region moves constructed by the host.
         return {
-          pendingDecision: createRegionOrderDecision(state, regions),
+          pendingDecision: createRegionOrderDecision(updatedState, regions),
         };
       } else if (regions.length === 1) {
         // Single region: per RR-CANON-R075/R076, the core rules layer does
@@ -2235,7 +2238,7 @@ function processPostMovePhases(
         // decision even when there is only one region; hosts may auto-select
         // the only option for live UX but must still emit the explicit move.
         return {
-          pendingDecision: createRegionOrderDecision(state, regions),
+          pendingDecision: createRegionOrderDecision(updatedState, regions),
         };
       } else {
         // regions.length === 0: No regions to process.
@@ -2252,7 +2255,7 @@ function processPostMovePhases(
           return {
             pendingDecision: {
               type: 'no_territory_action_required',
-              player: state.currentPlayer,
+              player: updatedState.currentPlayer,
               options: [],
               context: {
                 description:
