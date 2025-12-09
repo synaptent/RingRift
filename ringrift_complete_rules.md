@@ -1328,12 +1328,13 @@ _4. For a region to be processed as "disconnected", it must also lack representa
     - **Representation Definition:** A player has "representation" within a region if they control at least one **ring stack** located on a space within that region.
     - **Markers and Empty Spaces:** Markers or empty spaces within the region **do not** count as representation for this check.
     - **Active Players:** Only players who currently have rings on the board (not just in hand) are considered for this check.
+    - **Empty Regions:** A region containing no ring stacks (only empty spaces and/or markers) automatically lacks representation from **all** active players, which satisfies the color representation requirement. Such empty regions are fully eligible for processing, subject to the self-elimination prerequisite.
 
 • When you choose to **process** a region that meets both criteria above:
 
 - **Interior collapse:** Fill the region with collapsed spaces of the moving player's (your) color, removing all stacks and markers from the interior.
 - **Border-marker collapse:** Identify the markers of the single border color that participate in at least one minimal blocking path used to establish physical disconnection (i.e., they are actually part of a path that cuts off all adjacency routes from the region to the rest of the board). Collapse **only those** markers to your color. Markers of that same colour that do not participate in any such blocking path remain as markers.
-- **Ring elimination inside the region:** Eliminate all rings within the region (all rings in all stacks, regardless of colour); they are credited to you as Eliminated rings.
+- **Ring elimination inside the region:** Eliminate all rings within the region (all rings in all stacks, regardless of colour); they are credited to you as Eliminated rings. For empty regions (containing no ring stacks), this step eliminates zero rings, but processing is still valid.
 - **Self-Elimination Prerequisite Check (Per Region):** Before you process a specific disconnected region, you must already have at least one ring or stack cap under your control that is located _outside that particular region_.
   - Each such ring or cap can be used to process **exactly one** disconnected region.
   - Disconnected regions are processed one at a time, in any order you choose. Before processing each region, you re-check that you still have at least one ring or cap outside that region available for the mandatory self-elimination.

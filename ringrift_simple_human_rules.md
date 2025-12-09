@@ -261,12 +261,15 @@ After lines, inspect the board for **disconnected regions**:
 - The border can be formed by markers of any particular color plus collapsed spaces, but all the markers in the border must be of the same color.
 - There can be multiple disconnected regions that can exist simultaneously, and depending on which color marker is helping form the border, they can partially overlap.
 
-You can only process a disconencted region if you can afford self elimination for it. When you process a disconnected region:
+You can only process a disconnected region if you can afford self elimination for it. A region is eligible for processing when it lacks representation from at least one active player (meaning at least one player with rings on the board has no stack in that region). **Empty regions** (containing no stacks at all, only empty cells and/or markers) automatically lack representation from all players and are thus fully eligible for processing.
+
+When you process a disconnected region:
 
 1. **Eliminate all stacks inside the region**:
    - Every ring in those stacks, for all colours, is removed from the board.
    - These eliminations are credited to the **acting player** (the one whose
      turn it is).
+   - For empty regions (no stacks), this step eliminates zero rings, but processing is still valid.
 
 2. **Collapse the region**:
    - All spaces inside become **collapsed territory** for the acting player.

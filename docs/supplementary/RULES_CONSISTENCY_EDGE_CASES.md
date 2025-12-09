@@ -607,7 +607,7 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 
 ### CCE‑010 – Capture and chain capture landing on markers
 
-- **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:255)).
+- **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:255)).
 - **Code / tests:** [`TypeScript.CaptureAggregate.mutateCapture()`](src/shared/engine/aggregates/CaptureAggregate.ts:1) section 5 (landing marker handling), [`Python.game_engine.py`](ai-service/app/game_engine.py:1) (parallel implementation), [`tests/unit/captureLogic.shared.test.ts`](tests/unit/captureLogic.shared.test.ts:1), [`tests/unit/CaptureAggregate.chainCapture.shared.test.ts`](tests/unit/CaptureAggregate.chainCapture.shared.test.ts:1).
 - **Interaction / edge case:** During captures and chain captures, the attacker may land on any marker (own or opponent) as a valid landing position. This interaction triggers a 1-ring elimination cost.
 - **Intended behaviour (RR‑CANON):**
@@ -640,6 +640,29 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
 - **Recommendation:**
   - Ensure test coverage for multi-segment chain captures where multiple intermediate landings occur on markers (cumulative elimination cost).
   - Document in teaching materials that landing on markers during captures is a strategic trade-off (valid positioning vs ring loss).
+
+### CCE‑011 – Empty region processing (regions with no stacks)
+
+- **RR‑CANON rules:** `R040`, `R142`, `R145` ([`RULES_CANONICAL_SPEC.md`](../../RULES_CANONICAL_SPEC.md:143)).
+- **Code / tests:** [`TypeScript.territoryDetection.findDisconnectedRegions`](src/shared/engine/territoryDetection.ts:36), [`TypeScript.territoryProcessing.canProcessTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:99), [`TypeScript.territoryProcessing.applyTerritoryRegion()`](src/shared/engine/territoryProcessing.ts:172).
+- **Interaction / edge case:** A physically disconnected region contains no ring stacks at all—only empty cells and/or markers. Is such a region eligible for territory processing?
+- **Intended behaviour (RR‑CANON):**
+  - Per [`RR‑CANON‑R040`](../../RULES_CANONICAL_SPEC.md:143): "Regions may contain empty cells, markers, and stacks."
+  - Per [`RR‑CANON‑R142`](../../RULES_CANONICAL_SPEC.md:774): RegionColors is the set of players that control at least one stack in R. If a region contains no stacks, RegionColors = ∅ (empty set).
+  - Since the empty set is always a strict subset of any non-empty ActiveColors set, an empty region **automatically satisfies** the color-disconnection criterion.
+  - Per [`RR‑CANON‑R145`](../../RULES_CANONICAL_SPEC.md:800): When processing an empty region, the "eliminate internal rings" step eliminates zero rings, but processing remains valid.
+  - **Conclusion:** Empty regions are fully eligible for processing, subject to physical disconnection (R141) and the self-elimination prerequisite (R143). Processing an empty region yields territory (collapsed spaces) at the cost of the mandatory self-elimination from outside the region.
+- **Observed behaviour:**
+  - `RegionColors` computation correctly returns an empty set when no stacks exist in a region.
+  - `canProcessTerritoryRegion()` correctly evaluates empty RegionColors as a strict subset of ActiveColors.
+  - `applyTerritoryRegion()` handles zero internal stacks gracefully (eliminates zero rings, collapses all interior cells).
+  - Self-elimination is still required and correctly enforced.
+- **Classification:** `Design‑intent match`.
+- **Severity:** `Low` – edge case is rare but semantics are well-defined.
+- **Scope:** All hosts (backend, sandbox, Python) where territory processing is implemented.
+- **Recommendation:**
+  - Ensure test coverage for empty region scenarios (physically disconnected region containing only empty cells and/or markers).
+  - Document in teaching materials that empty regions can be claimed as territory at the cost of self-elimination.
 
 ## 5. Coverage of High‑Risk Areas from Prior Reports
 

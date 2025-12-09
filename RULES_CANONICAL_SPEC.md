@@ -776,6 +776,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - Let RegionColors be the set of players that control at least one stack (by top ring) whose cell lies in R.
   - R is **color-disconnected** if RegionColors is a **strict subset** of ActiveColors.
   - If RegionColors == ActiveColors, R is **never** treated as disconnected, regardless of physical barriers.
+  - **Empty regions:** If a region contains no stacks at all (only empty cells and/or markers), then RegionColors = ∅ (empty set). Since the empty set is always a strict subset of any non-empty ActiveColors set, an empty region automatically satisfies the color-disconnection criterion. Such regions are fully eligible for processing, subject to physical disconnection (RR-CANON-R141) and the self-elimination prerequisite (RR-CANON-R143).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.2; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.1–12.2, 15.4 Q10, Q15.
 
 - **[RR-CANON-R143] Self-elimination prerequisite.**
@@ -805,6 +806,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
        - Collapse those markers to P-owned collapsed spaces (they become part of P's Territory).
     3. **Eliminate internal rings:**
        - For every stack originally in R, remove all rings and credit them as eliminated to P.
+       - For empty regions (containing no stacks), this step eliminates zero rings, but processing remains valid.
     4. **Mandatory self-elimination:**
        - Eliminate one ring or entire cap from a P-controlled stack that lies outside R, as required by the self-elimination prerequisite.
     5. Update all counts and recompute regions.

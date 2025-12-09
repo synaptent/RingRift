@@ -386,6 +386,8 @@ For region `R`, define `RegionColors` = set of players that control at least one
 
 - At least one active player has no stack in `R`.
 
+**Empty regions:** If a region contains no stacks at all (only empty cells and/or markers), then `RegionColors = {}` (empty set). Since the empty set is always a proper subset of any non-empty `ActiveColors` set, an empty region automatically satisfies the color-disconnection criterion. Such regions are fully eligible for processing, subject to physical disconnection (Section 6.1) and the self-elimination prerequisite (Section 6.3).
+
 **Important rule:** If `RegionColors == ActiveColors` (all active players have representation in `R`), `R` is **never** disconnected, regardless of border.
 
 ### 6.3 Self-elimination prerequisite (per region)
@@ -420,7 +422,8 @@ After all line processing is complete:
    - For all markers of the border color `B` that lie on the border and participate in the disconnection (i.e., contiguous along the border path), collapse them as well to `P`’s color.
 
 3. **Eliminate rings inside `R`:**
-   - All rings from stacks originally inside the region are removed and counted as eliminated, contributing to `P`’s elimination total (they are attributed to `P` as the causing player).
+   - All rings from stacks originally inside the region are removed and counted as eliminated, contributing to `P`'s elimination total (they are attributed to `P` as the causing player).
+   - For empty regions (containing no stacks), this step eliminates zero rings, but processing remains valid.
 
 4. **Mandatory self-elimination:**
    - `P` must eliminate one of their remaining rings or one entire stack cap **outside** this region.
