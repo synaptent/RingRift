@@ -26,6 +26,12 @@ Merging strategy
   - With --on-conflict=rename, conflicting game_ids are replaced with a new
     UUID4 while keeping all other metadata and state identical.
 
+- Deduplication (--dedupe-by-game-id):
+  - When enabled, tracks all game_ids seen across ALL source DBs and skips
+    duplicates even if they don't exist in the destination yet. This is
+    useful for incremental syncs where the same games may appear in multiple
+    source databases.
+
 Usage examples
 --------------
 
@@ -43,6 +49,13 @@ From the ``ai-service`` root::
         --db data/games/selfplay.square8.db \\
         --db data/games/selfplay.square19.db \\
         --on-conflict rename
+
+    # Incremental merge with deduplication across sources
+    python scripts/merge_game_dbs.py \\
+        --output data/games/merged.db \\
+        --db worker1/selfplay.db \\
+        --db worker2/selfplay.db \\
+        --dedupe-by-game-id
 """
 
 from __future__ import annotations
@@ -51,7 +64,7 @@ import argparse
 import os
 import sys
 import uuid
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 # Allow imports from app/
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -92,10 +105,20 @@ def _merge_single_db(
     dest_db: GameReplayDB,
     src_path: str,
     on_conflict: str = "skip",
+    seen_game_ids: Set[str] | None = None,
 ) -> Dict[str, int]:
-    """Merge all games from a single source DB into the destination DB."""
+    """Merge all games from a single source DB into the destination DB.
+
+    Args:
+        dest_db: Destination database to merge into.
+        src_path: Path to source database.
+        on_conflict: Policy for game_id conflicts ("skip" or "rename").
+        seen_game_ids: Optional set of game_ids already seen across sources.
+            If provided, games with IDs in this set will be skipped (dedupe).
+            New game_ids will be added to this set.
+    """
     src_db = GameReplayDB(src_path)
-    stats = {"total": 0, "merged": 0, "skipped_conflict": 0, "errors": 0}
+    stats = {"total": 0, "merged": 0, "skipped_conflict": 0, "skipped_dedupe": 0, "errors": 0}
     src_label = os.path.basename(src_path)
 
     for game_meta, initial_state, moves in src_db.iterate_games():
@@ -106,7 +129,14 @@ def _merge_single_db(
             print(f"[merge_game_dbs] WARNING: Game without game_id in {src_path}, skipping")
             continue
 
-        # Conflict handling
+        # Cross-source deduplication
+        if seen_game_ids is not None:
+            if game_id in seen_game_ids:
+                stats["skipped_dedupe"] += 1
+                continue
+            seen_game_ids.add(game_id)
+
+        # Conflict handling (game already in destination)
         existing = dest_db.get_game_metadata(game_id)
         if existing is not None:
             if on_conflict == "skip":
@@ -119,6 +149,8 @@ def _merge_single_db(
                     f"{game_id} -> {new_game_id} from {src_label}"
                 )
                 game_id = new_game_id
+                if seen_game_ids is not None:
+                    seen_game_ids.add(game_id)
             else:
                 stats["errors"] += 1
                 print(
@@ -195,6 +227,15 @@ def main() -> None:
             "'skip' (default) or 'rename' to assign a new UUID."
         ),
     )
+    parser.add_argument(
+        "--dedupe-by-game-id",
+        action="store_true",
+        help=(
+            "Enable cross-source deduplication: track all game_ids seen across "
+            "source DBs and skip duplicates even if not in destination. "
+            "Useful for incremental syncs where games may appear in multiple sources."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -209,16 +250,24 @@ def main() -> None:
 
     dest_db = GameReplayDB(args.output)
 
-    total_stats = {"total": 0, "merged": 0, "skipped_conflict": 0, "errors": 0}
+    total_stats = {"total": 0, "merged": 0, "skipped_conflict": 0, "skipped_dedupe": 0, "errors": 0}
+
+    # Initialize cross-source deduplication set if enabled
+    seen_game_ids: Set[str] | None = set() if args.dedupe_by_game_id else None
 
     print(f"[merge_game_dbs] Merging {len(args.db)} database(s) into {args.output}")
+    if args.dedupe_by_game_id:
+        print("[merge_game_dbs] Cross-source deduplication enabled")
+
     for src in args.db:
         if not os.path.exists(src):
             print(f"[merge_game_dbs] WARNING: Source DB not found: {src}, skipping")
             continue
 
         print(f"[merge_game_dbs] Processing source DB: {src}")
-        stats = _merge_single_db(dest_db, src, on_conflict=args.on_conflict)
+        stats = _merge_single_db(
+            dest_db, src, on_conflict=args.on_conflict, seen_game_ids=seen_game_ids
+        )
         for key in total_stats:
             total_stats[key] += stats.get(key, 0)
 
@@ -226,6 +275,8 @@ def main() -> None:
     print(f"  Total games seen:     {total_stats['total']}")
     print(f"  Games merged:         {total_stats['merged']}")
     print(f"  Conflicts skipped:    {total_stats['skipped_conflict']}")
+    if args.dedupe_by_game_id:
+        print(f"  Duplicates skipped:   {total_stats['skipped_dedupe']}")
     print(f"  Errors during merge:  {total_stats['errors']}")
 
 
