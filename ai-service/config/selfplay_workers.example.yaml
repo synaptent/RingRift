@@ -1,0 +1,37 @@
+# Example selfplay worker configuration
+# Copy this to selfplay_workers.yaml and customize for your instance
+#
+# Usage:
+#   cp config/selfplay_workers.example.yaml config/selfplay_workers.yaml
+#   ./scripts/scale_selfplay_workers.sh --config config/selfplay_workers.yaml
+#
+# Or set environment variables:
+#   export SELFPLAY_2P_WORKERS=50
+#   ./scripts/scale_selfplay_workers.sh
+
+# Number of parallel workers per player count
+2p_workers: 10
+3p_workers: 5
+4p_workers: 3
+
+# Random seed base (each worker gets seed_base + worker_number)
+seed_base: 1000
+
+# Board type: square8, square19, hexagonal
+board_type: square8
+
+# Engine mode: descent-only, mixed
+engine_mode: descent-only
+
+# Games per worker (customize based on expected runtime)
+games_2p: 100
+games_3p: 80
+games_4p: 50
+
+# Maximum moves per game
+max_moves_2p: 500
+max_moves_3p: 600
+max_moves_4p: 700
+
+# Whether to disable NNUE neural net (for CPU-only instances)
+disable_nnue: false

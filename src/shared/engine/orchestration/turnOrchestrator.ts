@@ -1387,37 +1387,14 @@ export function processTurn(
   // global interactive moves remain (placements, movement, captures), treat the
   // position as terminal rather than advancing to another ring_placement loop.
   // This mirrors Python’s ANM/LPS termination observed in parity bundles.
-  if (finalStatus === 'complete' && finalState.gameStatus === 'active') {
-    const allZeroRings = finalState.players.every((p) => p.ringsInHand <= 0);
-    const anyPlayerHasActions = finalState.players.some((p) => {
-      const summary = computeGlobalLegalActionsSummary(finalState, p.playerNumber);
-      return (
-        summary.hasGlobalPlacementAction ||
-        summary.hasPhaseLocalInteractiveMove ||
-        summary.hasForcedEliminationAction
-      );
-    });
-
-    if (allZeroRings && !anyPlayerHasActions) {
-      const victory = toVictoryState(finalState);
-      if (victory.isGameOver) {
-        finalState = {
-          ...finalState,
-          currentPhase: 'game_over',
-          gameStatus: 'completed',
-          winner: victory.winner,
-        };
-        finalVictory = victory;
-      }
-    }
-  }
-
   // FSM orchestrator: compute and apply FSM-derived phase/player transitions.
   // FSM is now the canonical orchestrator - always apply FSM results.
   try {
-    // Compute FSM orchestration result using pre-move state for FSM transition,
-    // but pass post-move state for chain capture availability checking.
-    const fsmOrchResult = computeFSMOrchestration(state, move, {
+    // Compute FSM orchestration result using the post-move state for FSM
+    // transition. This keeps phase/player orchestration aligned with the
+    // canonical TS/Python phase machines and avoids re-interpreting moves
+    // against a stale pre-move snapshot.
+    const fsmOrchResult = computeFSMOrchestration(finalState, move, {
       postMoveStateForChainCheck: finalState,
     });
 
@@ -2329,27 +2306,6 @@ function processPostMovePhases(
       currentPhase: 'game_over',
     });
     return { victoryResult };
-  }
-
-  // Zero-rings/no-actions terminal guard: if all players are out of rings and
-  // none have any global interactive actions (placement, movement/capture,
-  // forced elimination), end the game to mirror Python ANM/LPS termination.
-  // Zero-rings/no-actions terminal guard: if all players are out of rings and
-  // the active player has no placement or movement/capture, end the game.
-  // Forced elimination is ignored when ringsInHand == 0 for all players.
-  const allZeroRings = stateMachine.gameState.players.every((p) => p.ringsInHand <= 0);
-  if (allZeroRings) {
-    const current = stateMachine.gameState.currentPlayer;
-    const hasActions = hasAnyGlobalActionZeroRingAware(stateMachine.gameState, current);
-    if (!hasActions) {
-      stateMachine.updateGameState({
-        ...stateMachine.gameState,
-        currentPhase: 'game_over',
-        gameStatus: 'completed',
-      });
-      const finalVictory = toVictoryState(stateMachine.gameState);
-      return finalVictory.isGameOver ? { victoryResult: finalVictory } : { victoryResult };
-    }
   }
 
   // All phases complete - advance to next player's turn

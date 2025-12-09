@@ -105,9 +105,11 @@ ai-service/parity_debug_*/
 ai-service/parity_failures/
 ai-service/parity_fixtures/**/*.json
 
-# Local cluster configuration (contains personal IPs)
+# Local cluster configuration (contains personal IPs/hostnames)
 ai-service/scripts/cluster_workers.txt
 ai-service/config/distributed_hosts.yaml
+ai-service/config/selfplay_workers.yaml
+ai-service/config/remote_hosts.yaml
 
 # SSH cluster configuration (contains personal hostnames)
 ssh-cluster.config
@@ -154,3 +156,6 @@ tests/load/results/
 # Local sync archives
 ai-service-sync.zip
 .env.staging
+
+# Large synced selfplay databases (too large for GitHub)
+ai-service/data/games/synced_*/

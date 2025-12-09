@@ -7,11 +7,13 @@ Hex boards use D6 symmetry augmentation (12 transformations).
 """
 
 import argparse
+import json
 import os
 import random as py_random
 import time
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, List, Tuple
 
 import numpy as np
@@ -1482,13 +1484,25 @@ def _parse_args() -> argparse.Namespace:
         "--record-db",
         type=str,
         default="data/games/training.db",
-        help="Path to SQLite database for recording game replays. "
-             "Default: data/games/training.db. Use --no-record-db to disable.",
+        help=(
+            "Path to SQLite database for recording game replays. "
+            "Default: data/games/training.db. Use --no-record-db to disable."
+        ),
     )
     parser.add_argument(
         "--no-record-db",
         action="store_true",
         help="Disable game recording to database (overrides --record-db).",
+    )
+    parser.add_argument(
+        "--allow-noncanonical-db",
+        action="store_true",
+        help=(
+            "Allow using a replay DB whose canonical self-play gate summary "
+            "reports canonical_ok == false or fe_territory_fixtures_ok == false. "
+            "Intended only for ad-hoc experiments; canonical training data "
+            "must use DBs listed as canonical in ai-service/TRAINING_DATA_REGISTRY.md."
+        ),
     )
     parser.add_argument(
         "--num-players",
@@ -1586,6 +1600,106 @@ def _board_type_from_str(name: str) -> BoardType:
     raise ValueError(f"Unknown board type: {name!r}")
 
 
+def _resolve_db_summary_path(db_path: Path) -> Optional[Path]:
+    """Best-effort resolution of a canonical self-play gate summary JSON.
+
+    Mirrors the conventions used by ``scripts/generate_canonical_selfplay.py``:
+
+    - ``db_health.<stem>.json`` in the same directory as the DB
+      (for example, ``db_health.canonical_square8.json`` for
+      ``data/games/canonical_square8.db``).
+    - ``<name>.db.summary.json`` as a generic fallback
+      (for example, ``canonical_square8.db.summary.json``).
+
+    Returns
+    -------
+    Optional[Path]
+        The first existing summary path, or ``None`` if no candidate exists.
+    """
+    # Candidate 1: db_health.<stem>.json (preferred convention).
+    candidate = db_path.with_name(f"db_health.{db_path.stem}.json")
+    if candidate.exists():
+        return candidate
+
+    # Candidate 2: <name>.db.summary.json (generic/fallback convention).
+    candidate = db_path.with_suffix(db_path.suffix + ".summary.json")
+    if candidate.exists():
+        return candidate
+
+    return None
+
+
+def _assert_db_is_canonical_if_summary_exists(
+    db_path: Path,
+    *,
+    allow_noncanonical: bool = False,
+) -> None:
+    """Assert that a replay DB is canonical when a gate summary is present.
+
+    This helper is intentionally **best-effort**:
+
+    - If no summary JSON can be found, it is a no-op.
+    - If a summary exists, it expects the shape written by
+      ``scripts/generate_canonical_selfplay.py``, including:
+
+      * ``canonical_ok`` (top-level boolean allowlist flag)
+      * ``fe_territory_fixtures_ok`` (boolean FE/territory gate flag)
+
+    Behaviour
+    ---------
+    - When ``canonical_ok`` is **True** and ``fe_territory_fixtures_ok`` is
+      **True** (or absent, defaulting to True), the check is a no-op.
+    - When either flag is false and ``allow_noncanonical`` is **False``, a
+      :class:`ValueError` is raised to prevent silent use of non-canonical DBs.
+    - When either flag is false and ``allow_noncanonical`` is **True``, a loud
+      warning is printed but execution continues. This is intended only for
+      ad-hoc experiments; canonical training runs should instead rely on DBs
+      listed as ``canonical`` in ``ai-service/TRAINING_DATA_REGISTRY.md``.
+    """
+    summary_path = _resolve_db_summary_path(db_path)
+    if summary_path is None or not summary_path.exists():
+        return
+
+    try:
+        with summary_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as exc:  # pragma: no cover - defensive guard
+        print(
+            "WARNING: generate_data could not read canonical gate summary "
+            f"{summary_path} for DB {db_path}: {exc}. "
+            "Proceeding without canonical_ok / FE-territory checks.",
+            flush=True,
+        )
+        return
+
+    canonical_ok = bool(data.get("canonical_ok", False))
+    fe_ok = bool(data.get("fe_territory_fixtures_ok", True))
+
+    # Fast path: canonical and FE/territory fixtures ok.
+    if canonical_ok and fe_ok:
+        return
+
+    if allow_noncanonical:
+        print(
+            "WARNING: generate_data is using a replay DB whose canonical self-play "
+            "gate summary marks it non-canonical "
+            f"(canonical_ok={canonical_ok}, fe_territory_fixtures_ok={fe_ok}) "
+            f"at {summary_path}. Proceeding only because "
+            "--allow-noncanonical-db was supplied. For canonical training, use "
+            "DBs listed as canonical in ai-service/TRAINING_DATA_REGISTRY.md.",
+            flush=True,
+        )
+        return
+
+    raise ValueError(
+        "Refusing to use replay DB with failing canonical self-play gate. "
+        f"DB path: {db_path}. Summary: {summary_path}. "
+        f"canonical_ok={canonical_ok}, fe_territory_fixtures_ok={fe_ok}. "
+        "Either regenerate the DB via scripts/generate_canonical_selfplay.py "
+        "or pass --allow-noncanonical-db for ad-hoc experiments."
+    )
+
+
 def main() -> None:
     """Entry point for CLI-based data generation."""
     args = _parse_args()
@@ -1608,6 +1722,17 @@ def main() -> None:
     # Initialize optional game recording database
     # --no-record-db flag overrides --record-db to disable recording
     record_db_path = None if args.no_record_db else args.record_db
+
+    # Best-effort canonical gate for replay DBs when a self-play summary exists.
+    # This prevents silently recording to clearly non-canonical DBs when a
+    # canonical gate summary has already been generated for that path, while
+    # keeping legacy/experimental flows (without summaries) untouched.
+    if record_db_path:
+        _assert_db_is_canonical_if_summary_exists(
+            Path(record_db_path),
+            allow_noncanonical=args.allow_noncanonical_db,
+        )
+
     replay_db = get_or_create_db(record_db_path) if record_db_path else None
 
     generate_dataset(

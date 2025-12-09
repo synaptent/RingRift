@@ -12,8 +12,9 @@ This script ties together three pieces for a single board type:
 
 A database is considered "canonical" for training only if:
   - The parity gate passes (no structural issues, no semantic divergence),
-  - The canonical history validator reports zero issues for all games, and
-  - At least one game was recorded.
+  - The canonical history validator reports zero issues for all games,
+  - At least one game was recorded, and
+  - The FE/territory fixture tests pass for this board type.
 
 Current implementation:
   - Uses scripts/run_canonical_selfplay_parity_gate.py for step (1) + (2).
@@ -32,6 +33,7 @@ The summary JSON includes:
   - board_type, db_path
   - parity_gate (raw summary from run_canonical_selfplay_parity_gate)
   - canonical_history (games_checked, non_canonical_games, sample_issues)
+  - fe_territory_fixtures_ok (boolean)
   - canonical_ok (boolean)
 """
 
@@ -50,7 +52,10 @@ from app.rules.history_validation import validate_canonical_history_for_game
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
 
-def _run_cmd(cmd: List[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
+def _run_cmd(
+    cmd: List[str],
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     # Ensure PYTHONPATH points at ai-service root when invoked from repo root.
     env.setdefault("PYTHONPATH", str(AI_SERVICE_ROOT))
@@ -165,6 +170,53 @@ def run_canonical_history_check(db_path: Path) -> Dict[str, Any]:
     }
 
 
+def run_fe_territory_fixtures(board_type: str) -> bool:
+    """
+    Run a small pytest subset that validates FE/territory fixtures for the
+    given board_type. Returns True if tests pass, False otherwise.
+
+    For board types without dedicated FE/territory fixtures, this is a no-op
+    gate that returns True.
+    """
+    if board_type == "square8":
+        test_args = ["tests/test_territory_fe_edge_fixture.py", "-q"]
+    elif board_type in {"hex", "hexagonal"}:
+        test_args = ["tests/test_hex_territory_fe_fixtures.py", "-q"]
+    else:
+        # No additional FE/territory fixtures defined yet for this board type.
+        msg = (
+            "[generate_canonical_selfplay] No FE/territory fixture tests "
+            "defined for "
+            f"board_type={board_type!r}; "
+            "treating as fe_territory_fixtures_ok=True."
+        )
+        print(msg)
+        return True
+
+    cmd = [sys.executable, "-m", "pytest", *test_args]
+    proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT)
+
+    if proc.returncode != 0:
+        joined_cmd = " ".join(cmd)
+        print(
+            "[generate_canonical_selfplay] FE/territory fixture tests FAILED "
+            f"for board_type={board_type!r} using command: {joined_cmd}"
+        )
+
+        output = (proc.stdout or "") + (proc.stderr or "")
+        lines = output.strip().splitlines()
+        if lines:
+            preview = "\n".join(lines[:20])
+            print(
+                "[generate_canonical_selfplay] Pytest output (truncated):\n"
+                f"{preview}"
+            )
+
+        return False
+
+    return True
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -195,7 +247,10 @@ def main(argv: List[str] | None = None) -> int:
         "--db",
         type=str,
         default=None,
-        help=("Path to the GameReplayDB SQLite file to write. " "Defaults to data/games/canonical_<board>.db."),
+        help=(
+            "Path to the GameReplayDB SQLite file to write. "
+            "Defaults to data/games/canonical_<board>.db."
+        ),
     )
     parser.add_argument(
         "--summary",
@@ -207,7 +262,10 @@ def main(argv: List[str] | None = None) -> int:
         "--hosts",
         type=str,
         default=None,
-        help="Comma-separated hosts for distributed self-play soak; when set, delegates to run_distributed_selfplay_soak.",
+        help=(
+            "Comma-separated hosts for distributed self-play soak; "
+            "when set, delegates to run_distributed_selfplay_soak."
+        ),
     )
 
     args = parser.parse_args(argv)
@@ -226,7 +284,13 @@ def main(argv: List[str] | None = None) -> int:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        parity_summary = run_selfplay_and_parity(board_type, num_games, db_path, num_players, hosts)
+        parity_summary = run_selfplay_and_parity(
+            board_type,
+            num_games,
+            db_path,
+            num_players,
+            hosts,
+        )
     except Exception as e:  # pragma: no cover - debug hook
         payload = {
             "board_type": board_type,
@@ -242,14 +306,33 @@ def main(argv: List[str] | None = None) -> int:
     passed_gate = bool(parity_summary.get("passed_canonical_parity_gate"))
     parity_rc = int(parity_summary.get("soak_returncode", 0) or 0)
 
-    canonical_history = {}
-    canonical_ok = False
+    base_ok = (
+        db_path.exists()
+        and passed_gate
+        and parity_rc == 0
+    )
 
-    if db_path.exists() and passed_gate and parity_rc == 0:
+    canonical_history: Dict[str, Any] = {}
+    games_checked = 0
+    non_canonical = 0
+
+    if base_ok:
         canonical_history = run_canonical_history_check(db_path)
-        games_checked = int(canonical_history.get("games_checked", 0) or 0)
-        non_canonical = int(canonical_history.get("non_canonical_games", 0) or 0)
-        canonical_ok = passed_gate and parity_rc == 0 and games_checked > 0 and non_canonical == 0
+        games_checked = int(
+            canonical_history.get("games_checked", 0) or 0
+        )
+        non_canonical = int(
+            canonical_history.get("non_canonical_games", 0) or 0
+        )
+
+    fe_territory_fixtures_ok = run_fe_territory_fixtures(board_type)
+
+    canonical_ok = (
+        base_ok
+        and games_checked > 0
+        and non_canonical == 0
+        and fe_territory_fixtures_ok
+    )
 
     summary: Dict[str, Any] = {
         "board_type": board_type,
@@ -258,6 +341,7 @@ def main(argv: List[str] | None = None) -> int:
         "num_games_requested": num_games,
         "parity_gate": parity_summary,
         "canonical_history": canonical_history,
+        "fe_territory_fixtures_ok": bool(fe_territory_fixtures_ok),
         "canonical_ok": bool(canonical_ok),
     }
 

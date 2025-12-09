@@ -35,12 +35,22 @@ def _is_no_action_bookkeeping_move(move_type: MoveType) -> bool:
     """Return True for forced no-op bookkeeping moves that do NOT count as actions.
 
     Mirrors the TS turnOrchestrator.isNoActionBookkeepingMove helper.
+
+    Per RR-CANON lpsTracking.ts lines 11-12:
+      "Non-real actions (that don't count for LPS): skip_placement, forced elimination,
+       line/territory processing decisions."
+
+    SKIP_PLACEMENT is included here because it does NOT represent real progress.
+    When a player skips placement but then has no movement/capture available,
+    the S-metric (markers + collapsed + eliminated) does not increase, and
+    forced elimination must trigger to ensure game termination.
     """
     return move_type in {
         MoveType.NO_PLACEMENT_ACTION,
         MoveType.NO_MOVEMENT_ACTION,
         MoveType.NO_LINE_ACTION,
         MoveType.NO_TERRITORY_ACTION,
+        MoveType.SKIP_PLACEMENT,  # Per LPS rules: skip_placement is NOT a real action
     }
 
 

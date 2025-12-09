@@ -4,11 +4,11 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ## Data Classification
 
-| Status                  | Meaning                                                                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **canonical**           | Generated and gated via `scripts/generate_canonical_selfplay.py` (parity gate **and** canonical history OK) |
-| **legacy_noncanonical** | Pre-dates 7-phase/FE/canonical-history fixes; **DO NOT** use for new training                               |
-| **pending_gate**        | Not yet validated; requires `generate_canonical_selfplay.py` (or equivalent gate) before any training use   |
+| Status                  | Meaning                                                                                                                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **canonical**           | Generated and gated via `scripts/generate_canonical_selfplay.py` with `canonical_ok == true` in the gate summary JSON (for supported boards this also implies FE/territory fixtures and canonical history/parity gate have all passed) |
+| **legacy_noncanonical** | Pre-dates 7-phase/FE/canonical-history fixes; **DO NOT** use for new training                                                                                                                                                         |
+| **pending_gate**        | Not yet validated; requires `generate_canonical_selfplay.py` (or equivalent gate) before any training use                                                                                                                             |
 
 ---
 
@@ -19,6 +19,8 @@ This document tracks the provenance and canonical status of all self-play databa
 | Database | Board Type | Players | Status | Gate Summary | Notes                                                                        |
 | -------- | ---------- | ------- | ------ | ------------ | ---------------------------------------------------------------------------- |
 | _None_   | –          | –       | –      | –            | Square8 regeneration is pending (see below); rerun the gate before training. |
+
+The `Status` column uses `canonical` only for DBs whose latest gate summary JSON has `canonical_ok == true`. For supported board types (currently `square8` and `hexagonal`), this also implies `fe_territory_fixtures_ok == true` as well as a passing parity gate and canonical phase history.
 
 ### Pending Re-Gate / Needs Regeneration
 
@@ -45,7 +47,7 @@ _None retained._ All legacy/non-canonical DBs were deleted as part of the 2025-1
 
 - Replayed `canonical_square8.db` and `canonical_square8_2p.db` via `check_canonical_phase_history.py`; both hit late-turn `Not your turn` failures (matching the parity gate structural errors). Treat them as pending re-generation.
 - `canonical_square19.db` currently has zero games despite an older parity gate artifact; regenerate and re-gate before use.
-- Hex assets remain deprecated until a radius-12 canonical DB is generated; keep the HexNeuralNet alias/import fix in mind when re-running the parity sweep.
+- Hex assets remain deprecated until a radius-12 canonical DB is generated. Only radius-12 hex DBs whose gate summary JSON reports `canonical_ok == true` and `fe_territory_fixtures_ok == true` **and** that are listed as `canonical` in this registry should be used for training hex models. Older radius-10/legacy hex DBs remain permanently non-canonical; see `docs/HEX_PARITY_AUDIT.md` and `ai-service/data/HEX_DATA_DEPRECATION_NOTICE.md` for deprecation and parity-audit context.
 - 2025-12-08 sandbox attempt to regenerate `canonical_square8.db` via `generate_canonical_selfplay.py` failed before the parity gate due to OpenMP shared-memory permissions (`OMP: Error #179: Function Can't open SHM2 failed`). The resulting `db_health.canonical_square8.json` has `canonical_ok=false` and an empty `canonical_history` block. Re-run the generator on a host with SHM permissions, then replace the DB and summaries.
 - 2025-12-09 local re-gate of `canonical_square8.db` via `generate_canonical_selfplay.py --board-type square8 --num-games 0 --num-players 2 --db data/games/canonical_square8.db --summary data/games/db_health.canonical_square8.json` (no new games requested) confirmed that the DB now contains 14 square8 2p `selfplay_soak` games and that canonical phase-history checks pass, but TS replay parity still reports 14 structural issues (all `[PHASE_MOVE_INVARIANT] Cannot apply move type 'place_ring' in phase 'territory_processing'` during second-player ring placements). Leave `canonical_square8.db` in **pending_gate** until this TS↔Python replay mismatch is resolved in a dedicated parity task.
 
@@ -96,10 +98,15 @@ Once canonical self-play DBs are generated and exported, retrain these models:
      --summary db_health.canonical_<board>.json
    ```
 
-   A DB is eligible for `Status = canonical` **only if**:
-   - `canonical_ok` in the generated summary is `true`, and
-   - `parity_gate.passed_canonical_parity_gate` is `true`, and
-   - `canonical_history.non_canonical_games == 0`.
+   A DB is eligible for `Status = canonical` **only if** its latest gate summary JSON (written by `scripts/generate_canonical_selfplay.py`) reports:
+
+   - `canonical_ok == true` (the top-level allowlist flag), and
+   - for supported board types (currently `square8` and `hexagonal`), this in turn implies:
+     - `parity_gate.passed_canonical_parity_gate == true`, and
+     - `canonical_history.games_checked > 0` and `canonical_history.non_canonical_games == 0`, and
+     - `fe_territory_fixtures_ok == true`.
+
+   For other board types, `fe_territory_fixtures_ok` may be `true` by construction until dedicated FE/territory fixtures are added; once such fixtures exist, `canonical_ok` will also encode their success.
 
    Older flows that called `run_canonical_selfplay_parity_gate.py` directly are
    considered **v1 gating** and SHOULD be migrated to the new script the next
@@ -137,7 +144,9 @@ its summary should be stored alongside this document (for example as
 `parity_summary.<label>.json` for ad-hoc debugging (for example,
 `parity_summary.canonical_square8.json`).
 
-Each gate summary contains:
+The example below shows the inner `parity_summary` structure used both in historical `parity_gate.*.json` artefacts and inside the newer canonical gate summaries emitted by `scripts/generate_canonical_selfplay.py` (under the `parity_gate` key alongside `canonical_history`, `fe_territory_fixtures_ok`, and `canonical_ok`).
+
+Each parity summary contains:
 
 ```json
 {
