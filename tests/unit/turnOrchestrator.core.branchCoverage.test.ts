@@ -31,12 +31,6 @@ import { positionToString } from '../../src/shared/types/game';
 import { isFSMOrchestratorActive } from '../../src/shared/utils/envFlags';
 
 describe('TurnOrchestrator core branch coverage', () => {
-  // Skip when FSM active mode is enabled - changes phase transitions
-  if (isFSMOrchestratorActive()) {
-    it.skip('Skipping - FSM orchestrator active mode changes phase transitions', () => {});
-    return;
-  }
-
   const createPlayer = (playerNumber: number, ringsInHand: number = 18): Player => ({
     id: `player-${playerNumber}`,
     username: `Player ${playerNumber}`,

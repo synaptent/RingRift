@@ -29,11 +29,6 @@ import { isFSMOrchestratorActive } from '../../src/shared/utils/envFlags';
  */
 
 describe('ClientSandboxEngine line processing', () => {
-  if (isFSMOrchestratorActive()) {
-    it.skip('Skipping - FSM orchestrator active mode changes phase transitions', () => {});
-    return;
-  }
-
   const boardType: BoardType = 'square8';
   // Effective line threshold is always 3 on square8 (per RR-CANON-R120),
   // regardless of player count.
@@ -304,7 +299,7 @@ describe('ClientSandboxEngine line processing', () => {
     expect(minCollapseForLong.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('canonical choose_line_reward Move collapses entire overlength line and auto-eliminates cap (sandbox flow)', async () => {
+  test('canonical choose_line_reward Move collapses entire overlength line (orchestrator flow)', async () => {
     const engine = createEngine();
     const engineAny = engine as any;
     const state: GameState = engineAny.gameState as GameState;
@@ -335,8 +330,6 @@ describe('ClientSandboxEngine line processing', () => {
     makeStack(1, stackHeight, stackPos, board);
 
     const playerBefore = state.players.find((p) => p.playerNumber === 1)!;
-    const initialEliminated = playerBefore.eliminatedRings;
-    const initialTotalEliminated = state.totalRingsEliminated;
     const initialTerritory = playerBefore.territorySpaces;
 
     // Construct a canonical choose_line_reward Move matching this line.
@@ -375,11 +368,16 @@ describe('ClientSandboxEngine line processing', () => {
       expect(finalBoard.stacks.has(key)).toBe(false);
     }
 
-    // For automatic sandbox flows, the sandbox immediately applies cap elimination
-    // when the shared helper reports pendingLineRewardElimination. The entire stack
-    // should be eliminated since collapse-all rewards grant mandatory elimination.
-    expect(playerAfter.eliminatedRings).toBe(initialEliminated + stackHeight);
-    expect(finalState.totalRingsEliminated).toBe(initialTotalEliminated + stackHeight);
+    // Under orchestrator-driven flow, elimination requires an explicit
+    // eliminate_rings_from_stack move. The choose_line_reward move only
+    // handles line collapse. Elimination is NOT automatic - it would be
+    // surfaced as a pending decision for explicit handling.
+    // The stack should still exist at this point (elimination not yet applied).
+    const stackAfter = finalBoard.stacks.get(positionToString(stackPos));
+    expect(stackAfter).toBeDefined();
+    if (stackAfter) {
+      expect(stackAfter.stackHeight).toBe(stackHeight);
+    }
 
     // Territory spaces should have increased by at least the line length.
     expect(playerAfter.territorySpaces).toBeGreaterThanOrEqual(

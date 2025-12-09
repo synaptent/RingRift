@@ -1320,17 +1320,23 @@ class GameReplayDB:
                     from app.models import GamePhase
                     state.current_phase = GamePhase.FORCED_ELIMINATION
                     break
-                # Need to inject NO_TERRITORY_ACTION to advance
-                no_territory_move = Move(
-                    id="auto-inject-no-territory",
-                    type=MoveType.NO_TERRITORY_ACTION,
-                    player=state.current_player,
-                    to=Position(x=0, y=0),
-                    timestamp=datetime.now(),
-                    thinkTime=0,
-                    moveNumber=0,
-                )
-                state = GameEngine.apply_move(state, no_territory_move, trace_mode=True)
+                # Check if the next move is already a territory action
+                # Only auto-inject if the next move ISN'T a territory action
+                if next_type not in ("no_territory_action", "process_territory_region"):
+                    # Need to inject NO_TERRITORY_ACTION to advance
+                    no_territory_move = Move(
+                        id="auto-inject-no-territory",
+                        type=MoveType.NO_TERRITORY_ACTION,
+                        player=state.current_player,
+                        to=Position(x=0, y=0),
+                        timestamp=datetime.now(),
+                        thinkTime=0,
+                        moveNumber=0,
+                    )
+                    state = GameEngine.apply_move(state, no_territory_move, trace_mode=True)
+                else:
+                    # The next move is a territory action, don't auto-inject
+                    break
             elif current_phase == "line_processing":
                 # Check if we need to inject NO_LINE_ACTION
                 # Only if the next move isn't already a line action
