@@ -1135,6 +1135,24 @@ export function processTurn(
       move.type === 'no_placement_action')
   ) {
     state = { ...state, currentPhase: 'ring_placement' as GamePhase };
+  } else if (
+    // Replay-tolerance for TS/Python parity: When in territory_processing and
+    // a placement move comes in for a different player, this indicates Python
+    // completed the turn via no_territory_action but TS's post-move processing
+    // didn't run. Coerce to ring_placement and update the current player.
+    // This handles cases where Python's phase machine implicitly advanced.
+    state.gameStatus === 'active' &&
+    state.currentPhase === 'territory_processing' &&
+    (move.type === 'place_ring' ||
+      move.type === 'skip_placement' ||
+      move.type === 'no_placement_action') &&
+    move.player !== state.currentPlayer
+  ) {
+    state = {
+      ...state,
+      currentPhase: 'ring_placement' as GamePhase,
+      currentPlayer: move.player,
+    };
   }
 
   // Enforce canonical phase→MoveType mapping for ACTIVE states. This ensures

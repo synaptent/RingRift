@@ -1210,8 +1210,17 @@ class GameReplayDB:
         # Replay moves 0..move_number (inclusive) with trace_mode=True so
         # that host-level forced elimination and decision phases behave
         # like the TS sandbox replay path used by the parity harness.
+        #
+        # RR-PARITY-FIX-2024-12: Auto-inject bookkeeping moves BEFORE each
+        # recorded move to handle phase transitions that weren't recorded
+        # in the database. For example, after NO_LINE_ACTION the state is
+        # in territory_processing, but if the next recorded move is PLACE_RING
+        # (for a different player), we need to inject NO_TERRITORY_ACTION
+        # first to advance through the territory phase.
         moves = self.get_moves(game_id, start=0, end=move_number + 1)
         for move in moves:
+            # Auto-inject any missing bookkeeping moves before the recorded move
+            state = self._auto_inject_before_move(state, move)
             state = GameEngine.apply_move(state, move, trace_mode=True)
 
         # RR-PARITY-FIX: Auto-inject bookkeeping moves to match TS replay
@@ -1256,6 +1265,73 @@ class GameReplayDB:
                 (game_id,),
             ).fetchone()
             return row["count"] if row else 0
+
+    def _auto_inject_before_move(self, state: GameState, next_move: "Move") -> GameState:
+        """Auto-inject bookkeeping moves BEFORE applying a recorded move.
+
+        This handles the case where the database recording is missing
+        intermediate no-action moves. For example, after NO_LINE_ACTION
+        the state is in territory_processing, but the next recorded move
+        might be PLACE_RING for a different player. We need to inject
+        NO_TERRITORY_ACTION to advance through the territory phase first.
+
+        This is different from _auto_inject_no_action_moves which runs
+        AFTER all moves have been applied (for end-of-game cleanup).
+
+        Args:
+            state: Current game state before the next recorded move.
+            next_move: The next move from the database that we're about to apply.
+
+        Returns:
+            Updated game state with any necessary bookkeeping moves applied.
+        """
+        from app.game_engine import GameEngine, MoveType, Move
+
+        # Limit iterations to prevent infinite loops
+        max_iterations = 10
+        iterations = 0
+
+        while iterations < max_iterations:
+            iterations += 1
+
+            current_phase = (
+                state.current_phase.value
+                if hasattr(state.current_phase, "value")
+                else str(state.current_phase)
+            )
+
+            # Check if we're in a no-action phase that needs auto-advancing
+            if current_phase == "territory_processing":
+                # Need to inject NO_TERRITORY_ACTION to advance
+                no_territory_move = Move(
+                    type=MoveType.NO_TERRITORY_ACTION,
+                    player=state.current_player,
+                    timestamp=0,
+                )
+                state = GameEngine.apply_move(state, no_territory_move, trace_mode=True)
+            elif current_phase == "line_processing":
+                # Check if we need to inject NO_LINE_ACTION
+                # Only if the next move isn't already a line action
+                next_type = (
+                    next_move.type.value
+                    if hasattr(next_move.type, "value")
+                    else str(next_move.type)
+                )
+                if next_type not in ("no_line_action", "process_line"):
+                    no_line_move = Move(
+                        type=MoveType.NO_LINE_ACTION,
+                        player=state.current_player,
+                        timestamp=0,
+                    )
+                    state = GameEngine.apply_move(state, no_line_move, trace_mode=True)
+                else:
+                    # The next move is a line action, don't auto-inject
+                    break
+            else:
+                # Not in a no-action phase, we're good
+                break
+
+        return state
 
     def _auto_inject_no_action_moves(self, state: GameState) -> GameState:
         """Auto-inject NO_LINE_ACTION and NO_TERRITORY_ACTION bookkeeping moves.

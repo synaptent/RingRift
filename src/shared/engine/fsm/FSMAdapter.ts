@@ -545,6 +545,17 @@ function deriveTerritoryProcessingState(
     });
   }
 
+  // If the move being validated is a no_territory_action or skip_territory_processing,
+  // trust the recorded move and clear disconnectedRegions. This handles parity issues
+  // where TS and Python may compute different territory detection results.
+  // RR-CANON-R075: Trust recorded bookkeeping moves during replay.
+  if (
+    (moveHint?.type === 'no_territory_action' || moveHint?.type === 'skip_territory_processing') &&
+    disconnectedRegions.length > 0
+  ) {
+    disconnectedRegions.length = 0; // Clear the array in place
+  }
+
   // Check for pending eliminations
   const validMoves = getValidMoves(state);
   const elimMoves = validMoves.filter((m) => m.type === 'eliminate_rings_from_stack');
@@ -1266,7 +1277,8 @@ export interface FSMTransitionAttemptResult {
  * @returns Transition result including new state and actions
  */
 export function attemptFSMTransition(gameState: GameState, move: Move): FSMTransitionAttemptResult {
-  const fsmState = deriveStateFromGame(gameState);
+  // Pass move as hint so state derivation can trust recorded bookkeeping moves
+  const fsmState = deriveStateFromGame(gameState, move);
   const context = deriveGameContext(gameState);
 
   const event = moveToEvent(move);

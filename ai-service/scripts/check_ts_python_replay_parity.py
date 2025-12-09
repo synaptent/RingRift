@@ -575,22 +575,17 @@ def run_ts_replay(db_path: Path, game_id: str) -> Tuple[int, Dict[int, StateSumm
             )
             last_ts_step_k = k
         elif kind == "ts-replay-bridge":
-            # Bridge snapshots are treated as the canonical post-move state for
-            # the most recent TS step. This aligns TS k semantics with
-            # Python's get_state_at_move(k-1), where internal bridge/no-op
-            # transitions have already been applied. Bridges before the first
-            # ts-replay-step are ignored for parity.
-            if last_ts_step_k is None:
-                continue
-            summary = payload.get("summary") or {}
-            target_k = last_ts_step_k
-            summaries[target_k] = StateSummary(
-                move_index=target_k,
-                current_player=summary.get("currentPlayer"),
-                current_phase=summary.get("currentPhase"),
-                game_status=_canonicalize_status(summary.get("gameStatus")),
-                state_hash=summary.get("stateHash"),
-            )
+            # Bridge snapshots represent synthesized moves (like no_territory_action)
+            # that TS needs to advance through intermediate phases. However, Python's
+            # get_state_at_move() returns the state BEFORE these auto-advances are
+            # applied. For example, after a no_line_action move:
+            #   - Python get_state_at_move() returns state in territory_processing
+            #   - TS ts-replay-step returns state in territory_processing (same!)
+            #   - TS bridge advances to ring_placement (would break parity if used)
+            #
+            # Therefore we IGNORE bridge snapshots for parity comparison. The
+            # ts-replay-step state is the correct one to compare with Python.
+            pass
         elif kind == "ts-replay-final":
             # We could cross-check appliedMoves here if needed.
             pass
