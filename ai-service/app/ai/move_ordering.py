@@ -174,6 +174,7 @@ class MovePriorityScorer:
             "chain_capture",
             "overtaking_capture",
             "continue_capture_segment",
+            "recovery_slide",  # RR-CANON-R110–R115: tactical marker recovery
         }
         return move_type in noisy_types
 

@@ -1,8 +1,9 @@
 # RingRift Task Tracker
 
-**Last Updated:** 2025-12-08
+**Last Updated:** 2025-12-08 (Assessment Update)
 **Project Health:** GREEN
 **Purpose:** Canonical task tracker for near- and mid-term work
+**Current Focus:** Production validation at scale, parity maintenance, client test coverage
 
 ---
 
@@ -560,39 +561,43 @@ SandboxGameHost integration requires mapping existing state to hooks:
 | Python AI service parity             | P0       | ✅ Complete |
 | Orchestrator production hardening    | P0       | ✅ Complete |
 
-### 3.1.1 Recovery Action Implementation (New Rule Feature)
+### 3.1.1 Recovery Action Implementation (New Rule Feature) ✅
 
 **Specification:** See [`docs/archive/plans/RECOVERY_ACTION_IMPLEMENTATION_PLAN.md`](docs/archive/plans/RECOVERY_ACTION_IMPLEMENTATION_PLAN.md) (comprehensive plan) and `RULES_CANONICAL_SPEC.md` §5.4 (RR-CANON-R110–R115).
 
 **Summary:** Recovery action allows temporarily eliminated players (no stacks, no rings in hand, but has markers and buried rings) to slide a marker to complete a line of **at least** `lineLength`. Overlength lines follow standard Option 1 / Option 2 semantics (collapse all and pay one buried ring, or collapse minimum and pay nothing). Exact-length lines require extracting a buried ring as self-elimination cost.
 
-**Implementation Status:**
+**Implementation Status: ✅ COMPLETE (Dec 2025)**
 
 - ✅ Rules specification complete (RR-CANON-R110–R115)
-- ⚠️ RecoveryAggregate.ts exists but needs Option 1/2 update (old graduated cost model)
-- ⚠️ Python recovery.py exists but needs Option 1/2 update
-- ❌ Not integrated into turn orchestrator / game_engine.py
-- ❌ LPS integration missing
-- ❌ Contract vectors missing
+- ✅ RecoveryAggregate.ts with Option 1/2 cost model
+- ✅ Python recovery.py with Option 1/2 cost model
+- ✅ Integrated into turn orchestrator and game_engine.py
+- ✅ LPS integration complete (recovery counts as real action)
+- ✅ Contract vectors created (recovery_action.vectors.json)
 
-| Task                                       | Priority | Status  | Notes                                                    |
-| ------------------------------------------ | -------- | ------- | -------------------------------------------------------- |
-| Update cost model to Option 1/2 (TS)       | P0       | Pending | RecoveryAggregate.ts has old graduated cost model        |
-| Update cost model to Option 1/2 (Python)   | P0       | Pending | recovery.py has old graduated cost model                 |
-| Integrate into turn orchestrator (TS)      | P0       | Pending | Wire into movement phase enumeration                     |
-| Integrate into game_engine.py (Python)     | P0       | Pending | Add `_get_recovery_moves()` call                         |
-| Update LPS `hasAnyRealAction` for recovery | P0       | Pending | Recovery counts as real action (RR-CANON-R110)           |
-| Add FSM event mapping                      | P1       | Pending | FSMAdapter.ts: map recovery_slide to event               |
-| Add RuleEngine validation case             | P1       | Pending | validateMove() case for recovery_slide                   |
-| Add recovery move notation                 | P1       | Pending | notation.ts: "Ra3-a4" format                             |
-| Create contract vectors                    | P0       | Pending | tests/fixtures/contract-vectors/v2/recovery.vectors.json |
-| Add TS/Python parity tests for recovery    | P0       | Pending | Contract vectors for recovery scenarios                  |
-| Update unit tests for Option 1/2 semantics | P1       | Pending | RecoveryAggregate.shared.test.ts, test_recovery.py       |
-| Add UI highlighting for recovery moves     | P2       | Pending | BoardView.tsx, sandboxMovement.ts                        |
-| Add Option 1/2 choice dialog               | P2       | Pending | ChoiceDialog.tsx: RecoveryLineOptionChoice               |
-| Update move history display                | P2       | Pending | MoveHistory.tsx: render recovery_slide                   |
-| Update teaching materials for recovery     | P2       | Pending | TeachingOverlay, teachingTopics, scenarios               |
-| Update AI move ordering for recovery       | P3       | Pending | move_ordering.py: recovery heuristics                    |
+| Task                                       | Priority | Status      | Notes                                           |
+| ------------------------------------------ | -------- | ----------- | ----------------------------------------------- |
+| Update cost model to Option 1/2 (TS)       | P0       | ✅ Complete | RecoveryAggregate.ts with Option 1/2            |
+| Update cost model to Option 1/2 (Python)   | P0       | ✅ Complete | recovery.py with Option 1/2                     |
+| Integrate into turn orchestrator (TS)      | P0       | ✅ Complete | Wired into movement phase enumeration           |
+| Integrate into game_engine.py (Python)     | P0       | ✅ Complete | `get_recovery_moves()` integrated               |
+| Update LPS `hasAnyRealAction` for recovery | P0       | ✅ Complete | Recovery counts as real action                  |
+| Add FSM event mapping                      | P1       | ✅ Complete | FSMAdapter.ts: RECOVERY_SLIDE event             |
+| Add RuleEngine validation case             | P1       | ✅ Complete | validateRecoverySlide() implemented             |
+| Add recovery move notation                 | P1       | ✅ Complete | notation.ts: "Rv" format + RRN "R{from}-{to}"   |
+| Create contract vectors                    | P0       | ✅ Complete | recovery_action.vectors.json (3 test cases)     |
+| Add TS/Python parity tests for recovery    | P0       | ✅ Complete | 20 parity tests passing                         |
+| Update unit tests for Option 1/2 semantics | P1       | ✅ Complete | RecoveryAggregate.shared.test.ts, test_recovery |
+| Add UI highlighting for recovery moves     | P2       | ✅ Complete | BoardView, sandboxMovement integrated           |
+| Add Option 1/2 choice dialog               | P2       | ✅ Complete | ChoiceDialog: RecoveryLineOptionChoice          |
+| Update move history display                | P2       | ✅ Complete | MoveHistory.tsx: recovery_slide renders         |
+| Update teaching materials for recovery     | P2       | ✅ Complete | TeachingOverlay, teachingTopics, scenarios      |
+| Update AI move ordering for recovery       | P3       | ✅ Complete | move_ordering.py: 500.0 priority weight         |
+| Neural network policy encoding             | P3       | ✅ Complete | neural_net.py: square + hex encoders            |
+| Minimax quiescence search                  | P3       | ✅ Complete | minimax_ai.py: 800.0 priority bonus             |
+| Heuristic evaluation for recovery          | P3       | ✅ Complete | heuristic_ai.py: recovery potential scoring     |
+| API schema validation                      | P2       | ✅ Complete | schemas.ts, validators.ts, prisma schema        |
 
 **Key Interactions:**
 

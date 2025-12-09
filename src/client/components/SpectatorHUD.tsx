@@ -83,6 +83,8 @@ function getMoveAnnotation(move: Move, playerNumber: number): string {
       return `${prefix} formed a line`;
     case 'territory_claim':
       return `${prefix} claimed territory`;
+    case 'recovery_slide':
+      return `${prefix} performed recovery`;
     default:
       return `${prefix} made a move`;
   }
@@ -116,33 +118,32 @@ export function SpectatorHUD({
   const phaseDisplay = getPhaseDisplay(phase);
   const phaseInfo = PHASE_INFO[phase];
 
-   // Get recent moves for annotation display
-   const recentMoves = moveHistory.slice(-5);
-  
-   // Build analysis for selected move
-   const hasSelectedMove =
-     selectedMoveIndex !== undefined && !!moveHistory[selectedMoveIndex];
-  
-   const evaluationForSelected =
-     hasSelectedMove && selectedMoveIndex !== undefined
-       ? evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex + 1)
-       : undefined;
-  
-   const prevEvaluationForSelected =
-     hasSelectedMove && selectedMoveIndex !== undefined && selectedMoveIndex > 0
-       ? evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex)
-       : undefined;
-  
-   const selectedAnalysis: MoveAnalysis | null =
-     hasSelectedMove && selectedMoveIndex !== undefined
-       ? {
-           move: moveHistory[selectedMoveIndex],
-           moveNumber: selectedMoveIndex + 1,
-           playerNumber: moveHistory[selectedMoveIndex].player,
-           ...(evaluationForSelected ? { evaluation: evaluationForSelected } : {}),
-           ...(prevEvaluationForSelected ? { prevEvaluation: prevEvaluationForSelected } : {}),
-         }
-       : null;
+  // Get recent moves for annotation display
+  const recentMoves = moveHistory.slice(-5);
+
+  // Build analysis for selected move
+  const hasSelectedMove = selectedMoveIndex !== undefined && !!moveHistory[selectedMoveIndex];
+
+  const evaluationForSelected =
+    hasSelectedMove && selectedMoveIndex !== undefined
+      ? evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex + 1)
+      : undefined;
+
+  const prevEvaluationForSelected =
+    hasSelectedMove && selectedMoveIndex !== undefined && selectedMoveIndex > 0
+      ? evaluationHistory.find((e) => e.moveNumber === selectedMoveIndex)
+      : undefined;
+
+  const selectedAnalysis: MoveAnalysis | null =
+    hasSelectedMove && selectedMoveIndex !== undefined
+      ? {
+          move: moveHistory[selectedMoveIndex],
+          moveNumber: selectedMoveIndex + 1,
+          playerNumber: moveHistory[selectedMoveIndex].player,
+          ...(evaluationForSelected ? { evaluation: evaluationForSelected } : {}),
+          ...(prevEvaluationForSelected ? { prevEvaluation: prevEvaluationForSelected } : {}),
+        }
+      : null;
 
   return (
     <div className={`space-y-3 ${className}`} data-testid="spectator-hud">

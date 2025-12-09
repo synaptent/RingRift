@@ -59,6 +59,8 @@ function getAnimationType(moveType: string): MoveAnimationData['type'] {
       return 'capture';
     case 'continue_capture_segment':
       return 'chain_capture';
+    case 'recovery_slide':
+      return 'move'; // Recovery slides markers like movement
     default:
       return 'move';
   }

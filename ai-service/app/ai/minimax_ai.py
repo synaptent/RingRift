@@ -347,6 +347,9 @@ class MinimaxAI(HeuristicAI):
                 priority_bonus = 2000.0
             elif move.type == "overtaking_capture":
                 priority_bonus = 1000.0
+            elif move.type == "recovery_slide":
+                # RR-CANON-R110–R115: Recovery is tactical (frees buried rings)
+                priority_bonus = 800.0
 
             next_state = self.rules_engine.apply_move(game_state, move)
             score = self.evaluate_position(next_state)

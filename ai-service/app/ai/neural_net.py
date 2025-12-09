@@ -2757,12 +2757,14 @@ class NeuralNetAI(BaseAI):
             return pos_idx * 3 + count_idx
 
         # Movement: 1083..53066
+        # Recovery_slide is encoded as movement since it has from/to positions
         if move.type in [
             "move_stack",
             "move_ring",
             "overtaking_capture",
             "chain_capture",
             "continue_capture_segment",
+            "recovery_slide",  # RR-CANON-R110–R115: marker slide to adjacent cell
         ]:
             # Base = 1083 (3 * 19 * 19)
             # Index = Base + (from_y * MAX_N + from_x) * (8 * (MAX_N-1)) +
@@ -3617,11 +3619,12 @@ class ActionEncoderHex:
 
             return pos_idx * 3 + (count - 1)
 
-        # --- Movement / capture ---
+        # --- Movement / capture / recovery ---
         if move.type in (
             MoveType.MOVE_STACK,
             MoveType.OVERTAKING_CAPTURE,
             MoveType.CONTINUE_CAPTURE_SEGMENT,
+            MoveType.RECOVERY_SLIDE,  # RR-CANON-R110–R115: marker slide
         ):
             if move.from_pos is None:
                 return INVALID_MOVE_INDEX

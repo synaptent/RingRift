@@ -524,6 +524,42 @@ Each entry below lists RR‑CANON references, code touchpoints, observed vs inte
   - Ensure Python AI service correctly enumerates and evaluates recovery moves in position evaluation.
   - Add targeted regression tests that confirm: (a) recovery blocks forced elimination, (b) recovery resets LPS counter, (c) recovery prevents ANM classification.
 
+### CCE‑010 – Capture and chain capture landing on markers
+
+- **RR‑CANON rules:** `R091–R092` (movement landing), `R101–R102` (capture landing) ([`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:255)).
+- **Code / tests:** [`TypeScript.CaptureAggregate.mutateCapture()`](src/shared/engine/aggregates/CaptureAggregate.ts:1) section 5 (landing marker handling), [`Python.game_engine.py`](ai-service/app/game_engine.py:1) (parallel implementation), [`tests/unit/captureLogic.shared.test.ts`](tests/unit/captureLogic.shared.test.ts:1), [`tests/unit/CaptureAggregate.chainCapture.shared.test.ts`](tests/unit/CaptureAggregate.chainCapture.shared.test.ts:1).
+- **Interaction / edge case:** During captures and chain captures, the attacker may land on any marker (own or opponent) as a valid landing position. This interaction triggers a 1-ring elimination cost.
+- **Intended behaviour (RR‑CANON):**
+  - Per [`RR‑CANON‑R091`](RULES_CANONICAL_SPEC.md:255): "Landing cell may contain any marker (own or opponent); landing on markers is always legal but incurs a cap‑elimination cost."
+  - Per [`RR‑CANON‑R092`](RULES_CANONICAL_SPEC.md:257): "At landing cell: If there is any marker (own or opponent), remove that marker (do NOT collapse it), then place the moving stack. If a marker was present (regardless of owner), immediately eliminate the top ring of the moving stack's cap and credit it to P."
+  - Per [`RR‑CANON‑R101`](RULES_CANONICAL_SPEC.md:295): "Landing is an empty cell or a cell with any marker (own or opponent)."
+  - Per [`RR‑CANON‑R102`](RULES_CANONICAL_SPEC.md:297): "If landing on any marker (own or opponent), remove the marker (do NOT collapse it), then land and immediately eliminate the top ring of the attacking stack's cap, crediting it to P (before line/territory processing)."
+- **Observed behaviour:**
+  - **TypeScript:** `CaptureAggregate.mutateCapture()` checks for `landingMarker` after capture application. If present: removes marker from board (does NOT collapse), eliminates top ring of attacker's cap, updates `totalRingsEliminated` and per-player `eliminatedRings` counts.
+  - **Python:** `GameEngine.apply_move()` contains parallel logic with `_eliminate_top_ring_at()` helper, removing marker and eliminating top ring with identical semantics.
+  - Both implementations correctly handle this for:
+    - Single capture segments landing on markers.
+    - Chain capture intermediate landings on markers (each segment that lands on a marker incurs the 1-ring cost).
+    - Chain capture final landings on markers.
+- **S‑invariant impact:** Each capture landing on a marker causes:
+  - ΔM = 0 (departure marker +1, landing marker removed -1)
+  - ΔC = 0
+  - ΔE = +1 (top ring of attacker eliminated)
+  - **Net ΔS = +1** (progress preserved; documented in [`RULES_TERMINATION_ANALYSIS.md`](RULES_TERMINATION_ANALYSIS.md:1) Section 2.2).
+- **Cyclic capture and 180° reversal termination:** Even when marker landings offset height gains (net ΔH = 0 per capture segment), infinite cyclic captures and 180° reversals are **impossible**. Both patterns are bounded by the **same three termination mechanisms**. See [`RULES_TERMINATION_ANALYSIS.md`](RULES_TERMINATION_ANALYSIS.md:1) Section 4.1 for deep analysis showing termination is guaranteed by:
+  1. **Finite capturable targets** – each capture consumes one enemy stack; chain length ≤ initial stack count.
+  2. **Control change via cap depletion** – marker landings eliminate top rings; eventually attacker loses control.
+  3. **Board geometry** – path constraints and marker accumulation bound traversable paths.
+
+  **180° reversals** (back-and-forth captures along a line) deposit markers at each endpoint. These markers cause cap eliminations on subsequent landings, accelerating control change. The same three bounds apply: captures consume targets, marker landings deplete cap rings, and board geometry limits traversable paths.
+
+- **Classification:** `Design‑intent match`.
+- **Severity:** `Low` – semantics are correctly implemented and preserve termination guarantees.
+- **Scope:** All hosts (backend, sandbox, Python) for captures/chain captures landing on any marker.
+- **Recommendation:**
+  - Ensure test coverage for multi-segment chain captures where multiple intermediate landings occur on markers (cumulative elimination cost).
+  - Document in teaching materials that landing on markers during captures is a strategic trade-off (valid positioning vs ring loss).
+
 ## 5. Coverage of High‑Risk Areas from Prior Reports
 
 High‑risk themes identified in [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:975) and [`archive/RULES_DYNAMIC_VERIFICATION.md`](../../archive/RULES_DYNAMIC_VERIFICATION.md:665) are addressed as follows:

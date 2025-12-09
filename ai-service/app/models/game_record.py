@@ -361,7 +361,14 @@ def _generate_rrn(record: MoveRecord, board_type: BoardType) -> str:
     
     elif t == MoveType.ELIMINATE_RINGS_FROM_STACK:
         return f"E{pos_to_str(record.to)}"
-    
+
+    elif t == MoveType.RECOVERY_SLIDE:
+        # Recovery slide: R{from}-{to} optionally with option indicator
+        base = f"R{pos_to_str(record.from_pos)}-{pos_to_str(record.to)}"
+        if hasattr(record, 'recovery_option') and record.recovery_option == 2:
+            base += "/2"  # Option 2 (free minimum collapse)
+        return base
+
     else:
         # Fallback for legacy/unknown move types
         return f"?{t}"
@@ -409,7 +416,15 @@ def parse_rrn_move(notation: str, board_type: BoardType) -> Tuple[MoveType, Opti
     
     if notation in ("O1", "O2"):
         return (MoveType.CHOOSE_LINE_REWARD, None, None)
-    
+
+    if notation.startswith("R"):
+        # Recovery slide: R{from}-{to} or R{from}-{to}/2
+        rest = notation[1:].replace("/2", "")  # Strip option indicator
+        parts = rest.split("-")
+        from_pos = RRNCoordinate.parse(parts[0], board_type)
+        to_pos = RRNCoordinate.parse(parts[1], board_type)
+        return (MoveType.RECOVERY_SLIDE, from_pos, to_pos)
+
     # Movement or capture: {from}-{to} or {from}x{target}-{to}
     if "x" in notation:
         # Capture

@@ -445,6 +445,12 @@ export interface Move {
    * the formed line). When omitted, defaults to collapsing all markers.
    */
   collapsePositions?: Position[];
+  /**
+   * For recovery slides: position keys (e.g., "3,4") of stacks from which
+   * buried rings are extracted for self-elimination cost. Option 1 requires
+   * exactly 1 extraction stack; Option 2 requires 0 (empty array).
+   */
+  extractionStacks?: string[];
 
   // Line formation specific
   /** Lines detected/processed as part of this action (if any). */

@@ -50,6 +50,8 @@ function getMoveTypeLabel(move: Move): string {
       return 'Forced Elim';
     case 'swap_sides':
       return 'Swap Sides';
+    case 'recovery_slide':
+      return 'Recovery';
     default:
       return move.type.replace(/_/g, ' ');
   }

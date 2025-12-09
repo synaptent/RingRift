@@ -50,6 +50,7 @@ export const MoveTypeSchema = {
     'move_ring',
     'overtaking_capture',
     'continue_capture_segment',
+    'recovery_slide', // RR-CANON-R110–R115: marker recovery action
     'process_line',
     'choose_line_reward',
     'process_territory_region',

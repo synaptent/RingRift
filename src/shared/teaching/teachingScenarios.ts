@@ -16,7 +16,8 @@ export type RulesConcept =
   | 'capture_chain_mandatory'
   | 'landing_on_own_marker'
   | 'structural_stalemate'
-  | 'last_player_standing';
+  | 'last_player_standing'
+  | 'recovery_marker_slide'; // RR-CANON-R110–R115: marker recovery action
 
 export type TeachingStepKind = 'guided' | 'interactive';
 

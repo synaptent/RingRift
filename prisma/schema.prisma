@@ -163,7 +163,10 @@ enum MoveType {
   // Territory processing decisions
   process_territory_region
   eliminate_rings_from_stack
-  
+
+  // Recovery action (RR-CANON-R110–R115)
+  recovery_slide
+
   // Legacy / experimental (kept for backward compatibility)
   line_formation
   territory_claim

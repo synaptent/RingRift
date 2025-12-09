@@ -506,7 +506,8 @@ def prepare_moves_for_batch(
 
         if move_type_str == "place_ring":
             move_type = 0
-        elif move_type_str == "move_stack":
+        elif move_type_str in ("move_stack", "recovery_slide"):
+            # recovery_slide is a marker movement (RR-CANON-R110–R115)
             move_type = 1
         elif move_type_str in ("overtaking_capture", "continue_capture_segment", "chain_capture"):
             move_type = 2

@@ -220,6 +220,7 @@ export const MoveSchema = z.object({
     'swap_sides',
     'line_formation',
     'territory_claim',
+    'recovery_slide', // RR-CANON-R110–R115: marker recovery action
   ]),
   position: z.union([
     z.string(),

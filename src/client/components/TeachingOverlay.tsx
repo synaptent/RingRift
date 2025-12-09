@@ -685,6 +685,8 @@ export function getTeachingTopicForMove(move: Move): TeachingTopic | null {
       return 'territory';
     case 'forced_elimination':
       return 'forced_elimination';
+    case 'recovery_slide':
+      return 'recovery_action';
     default:
       return null;
   }

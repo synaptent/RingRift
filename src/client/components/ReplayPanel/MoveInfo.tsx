@@ -28,6 +28,7 @@ function formatMoveType(moveType: string): string {
     chain_capture: 'Chain Capture',
     forced_elimination: 'Forced Elim.',
     swap_sides: 'Swap Sides',
+    recovery_slide: 'Recovery',
   };
   return map[moveType] ?? moveType.replace(/_/g, ' ');
 }

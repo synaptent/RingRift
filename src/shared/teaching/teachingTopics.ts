@@ -378,6 +378,7 @@ export const TOPIC_TO_CONCEPTS: Partial<Record<TeachingTopicId, RulesConcept[]>>
   line_bonus: ['line_vs_territory_multi_phase'],
   line_territory_order: ['line_vs_territory_multi_phase'],
   victory_stalemate: ['structural_stalemate', 'last_player_standing'],
+  recovery_action: ['recovery_marker_slide'], // RR-CANON-R110–R115
 };
 
 /**
