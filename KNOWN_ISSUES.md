@@ -664,6 +664,24 @@ These issues have been addressed but are kept here for context:
   - **Engine diagnostics**: `engine_eval` and `engine_depth` columns in
     `game_history_entries` for storing AI evaluation alongside state snapshots
   - All enhancements are backward-compatible with automatic migration
+- **ANM False Positive Fix (Dec 9, 2025)** –
+  Fixed `has_phase_local_interactive_move()` in `ai-service/app/rules/global_actions.py`
+  to return True for RING_PLACEMENT and MOVEMENT phases. These phases always have
+  valid moves (either interactive or host-synthesized bookkeeping moves like
+  NO_PLACEMENT_ACTION, NO_MOVEMENT_ACTION). This eliminates false positive
+  ACTIVE_NO_CANDIDATE_MOVES invariant violations during selfplay.
+  - **Before**: 12-17 ANM violations per game for certain seeds
+  - **After**: 0 ANM violations
+  - Commits: `9ac7c0ff`, `a35ddace`
+- **Training max_moves Increase (Dec 9, 2025)** –
+  Increased `THEORETICAL_MAX_MOVES` in `ai-service/app/training/env.py` to account
+  for canonical recording where each turn generates ~4-5 moves (RING_PLACEMENT,
+  MOVEMENT, LINE_PROCESSING, TERRITORY_PROCESSING phases plus captures):
+  - SQUARE8 2p: 150 → 400
+  - SQUARE19/HEXAGONAL 2p: 1000 → 2000
+  - Default `max_moves` in soak scripts: 200 → 400
+  - This resolves game non-termination issues where games hit the move limit
+    before reaching a natural victory condition.
 
 For a more narrative description of what works today vs what remains, see
 [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md).
