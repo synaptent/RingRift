@@ -605,6 +605,22 @@ The script:
   - A machine‑readable JSON summary.
   - A concise Markdown report suitable for pasting into W‑UX iteration docs.
 
+**Smoke / dry-run:** To validate the analyzer without live aggregates, run it against the fixture
+`tests/fixtures/rules_ux_hotspots/rules_ux_aggregates.square8_2p.sample.json`:
+
+```bash
+node scripts/analyze_rules_ux_telemetry.js \
+  --input tests/fixtures/rules_ux_hotspots/rules_ux_aggregates.square8_2p.sample.json \
+  --output-json /tmp/rules_ux_hotspots.sample.json \
+  --output-md /tmp/rules_ux_hotspots.sample.md \
+  --min-events 15 \
+  --top-k 2
+```
+
+The sample snapshot yields `anm_forced_elimination` and `structural_stalemate` as the top two contexts,
+marks the low-volume `territory_mini_region` as `sampleOk: false`, and sets `window.label` to `2025-12`.
+The Jest smoke test `tests/unit/RulesUxHotspotAnalysis.test.ts` exercises the same fixture and guards these expectations.
+
 ### 9.3 Interpreting the Output
 
 In the JSON and Markdown summary, focus on:

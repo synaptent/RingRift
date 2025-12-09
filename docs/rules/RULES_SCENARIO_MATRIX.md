@@ -6,7 +6,7 @@
 > - It intentionally focuses on **which tests cover which rules/FAQ scenarios**; it does **not** redefine rules semantics or engine APIs.
 > - For rules semantics SSoT, see:
 >   - [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md) (RR-CANON-RXXX invariants and formal rules).
->   - [`ringrift_complete_rules.md`](ringrift_complete_rules.md) and [`docs/rules/ringrift_compact_rules.md`](docs/rules/ringrift_compact_rules.md) for narrative and compact prose.
+>   - [`ringrift_complete_rules.md`](ringrift_complete_rules.md) and [`ringrift_compact_rules.md`](ringrift_compact_rules.md) for narrative and compact prose.
 > - For Move/decision/WebSocket lifecycle SSoT, see:
 >   - [`docs/CANONICAL_ENGINE_API.md` §§3.9–3.10, 6](docs/CANONICAL_ENGINE_API.md).
 >   - `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, and `src/shared/types/websocket.ts`.
@@ -76,7 +76,7 @@ It answers:
 It is meant to evolve alongside:
 
 - `ringrift_complete_rules.md`
-- `docs/rules/ringrift_compact_rules.md`
+- `ringrift_compact_rules.md`
 - `archive/RULES_ANALYSIS_PHASE2.md`
 - `tests/README.md`
 - `CURRENT_STATE_ASSESSMENT.md` / `KNOWN_ISSUES.md`
@@ -154,6 +154,12 @@ and are anchored by backend↔sandbox parity and Python metadata/snapshot checks
   - At least one test per choice type (line order, line reward, ring elimination, region order, capture direction) wiring: GameEngine → PlayerInteractionManager → WebSocket/AI/sandbox.
 - **Backend ↔ sandbox parity & S‑invariant (compact rules §9, §13.5):**
   - Seeded trace/AI-parallel suites where backend and sandbox traces remain in lockstep on actions, phases, hashes, and S, treated as CI gates once P0.2 gaps are closed.
+
+### Multi-phase turn scenarios
+
+| Focus                                               | Board(s)               | Tests / suites                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Status  |
+| --------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Chain → line → territory turn with multiple choices | square8, square19, hex | **Vectors:** `tests/fixtures/contract-vectors/v2/multi_phase_turn.vectors.json` (`multi_phase.full_sequence_with_territory*`, `multi_phase.line_then_multi_region_territory.{square8,square19,hex}.step{1,2,3}`) validated in `tests/scenarios/RulesMatrix.Comprehensive.test.ts` and executed end-to-end (initialMove + multi-region steps) in `tests/scenarios/MultiPhaseTurn.contractVectors.test.ts`. **Hosts:** orchestrator-backed host/sandbox multi-phase suites (`tests/scenarios/Orchestrator.Backend.multiPhase.test.ts`, `tests/scenarios/Orchestrator.Sandbox.multiPhase.test.ts`). **Parity:** Python parity/snapshot coverage in `ai-service/tests/parity/test_line_and_territory_scenario_parity.py` (square8/19/hex). Collectively exercise chain capture → line_processing (line_reward_option) → ring_elimination → territory_processing (region_order/skip_territory_processing) turn flows across all board types. | COVERED |
 
 > **Naming convention:** When adding new tests, prefer `describe` / `it` names that reference the rule or FAQ explicitly, e.g. `Q15_3_1_180_degree_reversal` or `Rules_11_2_LineReward_Option1VsOption2`.
 
@@ -387,7 +393,7 @@ The following sections break these down in more detail.
 
 **Rules/FAQ:**
 
-- Compact rules §9 (S invariant), progress commentary in `docs/rules/ringrift_compact_rules.md` §9
+- Compact rules §9 (S invariant), progress commentary in `ringrift_compact_rules.md` §9
 - `archive/RULES_ANALYSIS_PHASE2.md` §4 (Progress & Termination)
 
 | Coverage | Scenario / intent | Jest file(s) | Engines | Notes |

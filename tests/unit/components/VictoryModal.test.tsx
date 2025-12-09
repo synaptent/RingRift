@@ -536,6 +536,44 @@ describe('VictoryModal – weird state teaching link', () => {
       expect(territoryHeading).toBeInTheDocument();
     });
   });
+
+  it('shows forced-elimination weird-state banner copy for ANM/LPS explanation', () => {
+    const players = createPlayers();
+    const gameState = createGameState(players);
+    const gameResult = createGameResult(1, 'last_player_standing');
+    const explanation: GameEndExplanation = {
+      outcomeType: 'last_player_standing',
+      victoryReasonCode: 'victory_last_player_standing',
+      primaryConceptId: 'lps_real_actions',
+      uxCopy: {
+        shortSummaryKey: 'game_end.lps.with_anm_fe.short',
+        detailedSummaryKey: 'game_end.lps.with_anm_fe.detailed',
+      },
+      weirdStateContext: {
+        reasonCodes: ['LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS'],
+        primaryReasonCode: 'LAST_PLAYER_STANDING_EXCLUSIVE_REAL_ACTIONS',
+        rulesContextTags: ['anm_forced_elimination'],
+      },
+      boardType: 'square8',
+      numPlayers: 2,
+      winnerPlayerId: 'p1',
+    };
+
+    render(
+      <VictoryModal
+        isOpen
+        gameResult={gameResult}
+        players={players}
+        gameState={gameState}
+        gameEndExplanation={explanation}
+        onClose={jest.fn()}
+        onReturnToLobby={jest.fn()}
+      />
+    );
+
+    expect(screen.getByText(/What happened\?/i)).toBeInTheDocument();
+    expect(screen.getByText(/only player able to make real moves/i)).toBeInTheDocument();
+  });
 });
 
 describe('VictoryModal – action buttons', () => {

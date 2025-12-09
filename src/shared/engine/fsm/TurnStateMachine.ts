@@ -81,6 +81,8 @@ export type TurnState =
 export interface RingPlacementState {
   readonly phase: 'ring_placement';
   readonly player: number;
+  /** Rings currently in hand for the active player. */
+  readonly ringsInHand: number;
   readonly canPlace: boolean;
   readonly validPositions: Position[];
 }
@@ -221,7 +223,11 @@ export type Action =
   | { readonly type: 'MOVE_STACK'; readonly from: Position; readonly to: Position }
   | { readonly type: 'EXECUTE_CAPTURE'; readonly target: Position; readonly capturer: number }
   | { readonly type: 'COLLAPSE_LINE'; readonly positions: Position[] }
-  | { readonly type: 'APPLY_LINE_REWARD'; readonly choice: LineRewardChoice; readonly line: DetectedLine }
+  | {
+      readonly type: 'APPLY_LINE_REWARD';
+      readonly choice: LineRewardChoice;
+      readonly line: DetectedLine;
+    }
   | { readonly type: 'PROCESS_DISCONNECTION'; readonly region: DisconnectedRegion }
   | { readonly type: 'ELIMINATE_RINGS'; readonly target: Position; readonly count: number }
   | { readonly type: 'FORCED_ELIMINATE'; readonly target: Position; readonly player: number }
@@ -282,13 +288,21 @@ function handleRingPlacement(
   switch (event.type) {
     case 'PLACE_RING': {
       if (!state.canPlace) {
-        return guardFailed(state, event, 'Cannot place ring - no rings in hand or no valid positions');
+        return guardFailed(
+          state,
+          event,
+          'Cannot place ring - no rings in hand or no valid positions'
+        );
       }
       const isValidPosition = state.validPositions.some(
         (p) => p.x === event.to.x && p.y === event.to.y
       );
       if (!isValidPosition) {
-        return guardFailed(state, event, `Invalid placement position: (${event.to.x}, ${event.to.y})`);
+        return guardFailed(
+          state,
+          event,
+          `Invalid placement position: (${event.to.x}, ${event.to.y})`
+        );
       }
 
       return ok<MovementState>(
@@ -306,6 +320,13 @@ function handleRingPlacement(
     }
 
     case 'SKIP_PLACEMENT': {
+      if (state.ringsInHand <= 0) {
+        return guardFailed(
+          state,
+          event,
+          'Cannot skip placement when you have no rings in hand; use no_placement_action'
+        );
+      }
       if (state.canPlace) {
         return guardFailed(state, event, 'Cannot skip placement when valid placements exist');
       }
@@ -512,11 +533,7 @@ function handleChainCapture(
       // Only valid when no continuations are available
       // (captures are mandatory in a chain)
       if (state.availableContinuations.length > 0) {
-        return guardFailed(
-          state,
-          event,
-          'Cannot end chain - mandatory captures remain'
-        );
+        return guardFailed(state, event, 'Cannot end chain - mandatory captures remain');
       }
 
       // Chain complete - proceed to line processing
@@ -570,10 +587,9 @@ function handleLineProcessing(
       // No choice needed, proceed to next line or territory
       const nextIndex = event.lineIndex + 1;
       if (nextIndex < state.detectedLines.length) {
-        return ok<LineProcessingState>(
-          { ...state, currentLineIndex: nextIndex },
-          [{ type: 'COLLAPSE_LINE', positions: line.positions }]
-        );
+        return ok<LineProcessingState>({ ...state, currentLineIndex: nextIndex }, [
+          { type: 'COLLAPSE_LINE', positions: line.positions },
+        ]);
       }
 
       // All lines processed, move to territory
@@ -682,10 +698,9 @@ function handleTerritoryProcessing(
       // No eliminations, check for more regions
       const nextIndex = event.regionIndex + 1;
       if (nextIndex < state.disconnectedRegions.length) {
-        return ok<TerritoryProcessingState>(
-          { ...state, currentRegionIndex: nextIndex },
-          [{ type: 'PROCESS_DISCONNECTION', region }]
-        );
+        return ok<TerritoryProcessingState>({ ...state, currentRegionIndex: nextIndex }, [
+          { type: 'PROCESS_DISCONNECTION', region },
+        ]);
       }
 
       // All regions processed, check forced elimination or end turn
@@ -706,10 +721,9 @@ function handleTerritoryProcessing(
 
       const remaining = state.eliminationsPending.slice(1);
       if (remaining.length > 0) {
-        return ok<TerritoryProcessingState>(
-          { ...state, eliminationsPending: remaining },
-          [{ type: 'ELIMINATE_RINGS', target: event.target, count: event.count }]
-        );
+        return ok<TerritoryProcessingState>({ ...state, eliminationsPending: remaining }, [
+          { type: 'ELIMINATE_RINGS', target: event.target, count: event.count },
+        ]);
       }
 
       // All eliminations done, check for more regions
@@ -789,10 +803,9 @@ function handleForcedElimination(
       }
 
       // More eliminations needed
-      return ok<ForcedEliminationState>(
-        { ...state, eliminationsDone: newCount },
-        [{ type: 'FORCED_ELIMINATE', target: event.target, player: state.player }]
-      );
+      return ok<ForcedEliminationState>({ ...state, eliminationsDone: newCount }, [
+        { type: 'FORCED_ELIMINATE', target: event.target, player: state.player },
+      ]);
     }
 
     case 'RESIGN':
@@ -818,6 +831,7 @@ function handleTurnEnd(
         {
           phase: 'ring_placement',
           player: state.nextPlayer,
+          ringsInHand: 0,
           canPlace: true, // Will be computed
           validPositions: [], // Will be computed
         },
@@ -862,7 +876,10 @@ function guardFailed(state: TurnState, event: TurnEvent, message: string): Trans
   };
 }
 
-function handleResignation(_state: TurnState, _event: { type: 'RESIGN'; player: number }): TransitionResult {
+function handleResignation(
+  _state: TurnState,
+  _event: { type: 'RESIGN'; player: number }
+): TransitionResult {
   return ok<GameOverState>(
     {
       phase: 'game_over',
@@ -873,7 +890,10 @@ function handleResignation(_state: TurnState, _event: { type: 'RESIGN'; player: 
   );
 }
 
-function handleTimeout(_state: TurnState, _event: { type: 'TIMEOUT'; player: number }): TransitionResult {
+function handleTimeout(
+  _state: TurnState,
+  _event: { type: 'TIMEOUT'; player: number }
+): TransitionResult {
   return ok<GameOverState>(
     {
       phase: 'game_over',
@@ -962,6 +982,7 @@ export class TurnStateMachine {
     return {
       phase: 'ring_placement',
       player: startingPlayer,
+      ringsInHand: 0,
       canPlace: true,
       validPositions: [],
     };

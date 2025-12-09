@@ -345,3 +345,159 @@ export function cloneGameState(gameState: GameState): GameState {
     })
   );
 }
+
+// =============================================================================
+// SERVER MOCK FACTORIES
+// =============================================================================
+
+/**
+ * Mock PythonRulesClient interface for testing server components.
+ */
+export interface MockPythonRulesClient {
+  getAIMove: jest.Mock;
+  getValidMoves: jest.Mock;
+  validateMove: jest.Mock;
+  applyMove: jest.Mock;
+  getInitialState: jest.Mock;
+  evaluatePosition: jest.Mock;
+}
+
+/**
+ * Creates a mock PythonRulesClient with default implementations.
+ */
+export function createMockPythonRulesClient(
+  overrides: Partial<MockPythonRulesClient> = {}
+): MockPythonRulesClient {
+  return {
+    getAIMove: jest.fn().mockResolvedValue(null),
+    getValidMoves: jest.fn().mockResolvedValue([]),
+    validateMove: jest.fn().mockResolvedValue({ valid: true }),
+    applyMove: jest.fn().mockResolvedValue(createTestGameState()),
+    getInitialState: jest.fn().mockResolvedValue(createTestGameState()),
+    evaluatePosition: jest.fn().mockResolvedValue({ score: 0 }),
+    ...overrides,
+  };
+}
+
+/**
+ * Mock Socket interface for testing WebSocket handlers.
+ */
+export interface MockSocket {
+  id: string;
+  userId?: string;
+  username?: string;
+  handshake: {
+    auth: {
+      token?: string;
+    };
+  };
+  join: jest.Mock;
+  leave: jest.Mock;
+  emit: jest.Mock;
+  on: jest.Mock;
+  disconnect: jest.Mock;
+  rooms: Set<string>;
+}
+
+/**
+ * Creates a mock Socket.IO socket for testing.
+ */
+export function createMockSocket(overrides: Partial<MockSocket> = {}): MockSocket {
+  return {
+    id: `socket-${Math.random().toString(36).substring(7)}`,
+    handshake: {
+      auth: {
+        token: undefined,
+      },
+    },
+    join: jest.fn(),
+    leave: jest.fn(),
+    emit: jest.fn(),
+    on: jest.fn(),
+    disconnect: jest.fn(),
+    rooms: new Set(),
+    ...overrides,
+  };
+}
+
+/**
+ * Mock Socket.IO Server interface for testing.
+ */
+export interface MockSocketIOServer {
+  to: jest.Mock;
+  emit: jest.Mock;
+  in: jest.Mock;
+  sockets: {
+    sockets: Map<string, MockSocket>;
+  };
+}
+
+/**
+ * Creates a mock Socket.IO server for testing GameSession.
+ */
+export function createMockSocketIOServer(
+  sockets: Map<string, MockSocket> = new Map()
+): MockSocketIOServer {
+  const mockEmit = jest.fn();
+  const mockTo = jest.fn().mockReturnValue({ emit: mockEmit });
+  const mockIn = jest.fn().mockReturnValue({ emit: mockEmit });
+
+  return {
+    to: mockTo,
+    emit: mockEmit,
+    in: mockIn,
+    sockets: {
+      sockets,
+    },
+  };
+}
+
+/**
+ * Mock user sockets map for GameSession testing.
+ */
+export function createMockUserSockets(
+  users: Array<{ id: string; socketId: string }>
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const user of users) {
+    map.set(user.id, user.socketId);
+  }
+  return map;
+}
+
+/**
+ * Creates a mock Move for testing.
+ */
+export function createTestMove(
+  player: number = 1,
+  overrides: Partial<{
+    id: string;
+    type: string;
+    from: Position;
+    to: Position;
+    count: number;
+    moveNumber: number;
+  }> = {}
+): {
+  id: string;
+  type: string;
+  player: number;
+  from?: Position;
+  to: Position;
+  count?: number;
+  moveNumber: number;
+  timestamp: Date;
+  thinkTime: number;
+} {
+  return {
+    id: `move-${Math.random().toString(36).substring(7)}`,
+    type: 'place_ring',
+    player,
+    to: pos(3, 3),
+    count: 1,
+    moveNumber: 1,
+    timestamp: new Date(),
+    thinkTime: 0,
+    ...overrides,
+  };
+}

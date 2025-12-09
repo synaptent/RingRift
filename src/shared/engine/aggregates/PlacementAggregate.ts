@@ -385,12 +385,14 @@ export function validateSkipPlacement(
     return { valid: false, reason: 'Player not found', code: 'PLAYER_NOT_FOUND' };
   }
 
-  // 3. If player has no rings in hand, skip_placement is semantically fine -
-  // it means "I cannot/will not place, advance to movement phase". This allows
-  // the sandbox AI and other callers to use a uniform skip_placement move
-  // regardless of ring supply state.
-  // (Previously this was rejected, but that caused AI stalls when the sandbox
-  // AI issued skip_placement with ringsInHand=0.)
+  // 3. Supply: skip_placement is only valid when the player still holds rings.
+  if (player.ringsInHand <= 0) {
+    return {
+      valid: false,
+      reason: 'Cannot skip placement with no rings in hand; use no_placement_action',
+      code: 'NO_RINGS_IN_HAND',
+    };
+  }
 
   const boardView: MovementBoardView = {
     isValidPosition: (pos: Position) => isValidPosition(pos, state.board.type, state.board.size),
@@ -555,12 +557,16 @@ export function evaluateSkipPlacementEligibility(
     };
   }
 
-  // If player has no rings in hand, skip_placement is semantically fine -
-  // it means "I cannot/will not place, advance to movement phase". This allows
-  // the sandbox AI and other callers to use a uniform skip_placement move
-  // regardless of ring supply state.
-  // (Previously this was rejected, but that caused AI stalls when the sandbox
-  // AI issued skip_placement with ringsInHand=0.)
+  // Per canonical rules: when a player has zero rings in hand, they cannot
+  // voluntarily skip placement. The only legal bookkeeping move in that
+  // situation is `no_placement_action` (forced no-op).
+  if (playerObj.ringsInHand <= 0) {
+    return {
+      eligible: false,
+      reason: 'Cannot skip placement with no rings in hand',
+      code: 'NO_RINGS_IN_HAND',
+    };
+  }
 
   const boardView: MovementBoardView = {
     isValidPosition: (pos: Position) => isValidPosition(pos, state.board.type, state.board.size),

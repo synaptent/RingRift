@@ -166,6 +166,7 @@ def run_cmaes_iteration(
     workers: Optional[str] = None,
     discover_workers: bool = False,
     min_workers: int = 1,
+    mode: str = "local",
 ) -> Tuple[str, int]:
     """Run a single CMA-ES iteration.
 
@@ -211,6 +212,10 @@ def run_cmaes_iteration(
         if discover_workers:
             cmd.append("--discover-workers")
         cmd.extend(["--min-workers", str(min_workers)])
+
+    # Add deployment mode for host selection
+    if mode != "local":
+        cmd.extend(["--mode", mode])
 
     print(f"\n{'='*60}")
     print(f"ITERATION {iteration}")
@@ -336,6 +341,7 @@ def run_iterative_pipeline(
     workers: Optional[str] = None,
     discover_workers: bool = False,
     min_workers: int = 1,
+    mode: str = "local",
 ) -> None:
     """Run the iterative CMA-ES pipeline."""
 
@@ -419,6 +425,7 @@ def run_iterative_pipeline(
             workers=workers,
             discover_workers=discover_workers,
             min_workers=min_workers,
+            mode=mode,
         )
 
         if return_code != 0:
@@ -665,6 +672,18 @@ def main() -> None:
         default=1,
         help="Minimum number of workers required to start (default: 1)",
     )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["local", "lan", "aws", "hybrid"],
+        default="local",
+        help=(
+            "Deployment mode for host selection. 'local' runs locally only, "
+            "'lan' uses local Mac cluster workers, 'aws' uses AWS staging "
+            "workers (square8 only due to 16GB RAM limit), 'hybrid' uses both. "
+            "Default: local."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -696,6 +715,7 @@ def main() -> None:
         workers=args.workers,
         discover_workers=args.discover_workers,
         min_workers=args.min_workers,
+        mode=args.mode,
     )
 
 

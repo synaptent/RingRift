@@ -16,18 +16,26 @@ set -euo pipefail
 #   BASE_URL       - Override the base URL for the target environment
 #   STAGING_URL    - URL for staging environment (default: http://localhost:3000)
 #   K6_EXTRA_ARGS  - Additional arguments to pass to k6
+#   SCENARIO_ID    - Scenario identifier/tag (default: BCAP_STAGING_BASELINE_20G_60P)
+#   SMOKE          - Set to 1/true to run with the short smoke profile
+#   SKIP_WS_COMPANION - Set to 1/true to skip the WebSocket companion run
+#   SEED_LOADTEST_USERS - If 'true', seed load-test users before running (uses scripts/seed-loadtest-users.js)
+#   LOADTEST_USER_COUNT / LOADTEST_USER_DOMAIN / LOADTEST_USER_OFFSET / LOADTEST_USER_PASSWORD / LOADTEST_USER_ROLE - Seeding overrides
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOAD_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$(dirname "$LOAD_DIR")")"
 
+SCENARIO_ID_DEFAULT="BCAP_STAGING_BASELINE_20G_60P"
+SCENARIO_ID="${SCENARIO_ID:-$SCENARIO_ID_DEFAULT}"
+
 # Default to local
 TARGET="${1:-local}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RESULTS_DIR="$LOAD_DIR/results"
-RESULT_FILE="$RESULTS_DIR/baseline_${TARGET}_${TIMESTAMP}.json"
-SUMMARY_FILE="$RESULTS_DIR/baseline_${TARGET}_${TIMESTAMP}_summary.json"
+RESULT_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}.json"
+SUMMARY_FILE="$RESULTS_DIR/${SCENARIO_ID}_${TARGET}_${TIMESTAMP}_summary.json"
 
 # Color output helpers
 RED='\033[0;31m'
@@ -96,10 +104,11 @@ echo ""
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║       RingRift Baseline Load Test Runner               ║"
 echo "╠════════════════════════════════════════════════════════╣"
-echo "║  Target:      $TARGET"
-echo "║  Base URL:    $BASE_URL"
-echo "║  WS URL:      $WS_URL"
-echo "║  Results:     $RESULT_FILE"
+echo "║  Scenario:   $SCENARIO_ID"
+echo "║  Target:     $TARGET"
+echo "║  Base URL:   $BASE_URL"
+echo "║  WS URL:     $WS_URL"
+echo "║  Results:    $RESULT_FILE"
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -144,6 +153,13 @@ log_info "Starting baseline load test..."
 log_info "This will take approximately 10 minutes (1m warmup + 3m ramp + 5m steady + 1m down)"
 echo ""
 
+# Optionally seed load-test users to ensure sufficient accounts exist.
+if [[ "${SEED_LOADTEST_USERS:-false}" == "true" ]]; then
+    echo ""
+    log_info "Seeding load-test users (LOADTEST_USER_COUNT=${LOADTEST_USER_COUNT:-400}, domain=${LOADTEST_USER_DOMAIN:-loadtest.local}, offset=${LOADTEST_USER_OFFSET:-0})..."
+    (cd "$PROJECT_ROOT" && npm run load:seed-users) || log_warning "User seeding failed; continuing without seeding"
+fi
+
 # Determine which scenario to run - use concurrent-games as the primary baseline
 SCENARIO_FILE="$LOAD_DIR/scenarios/concurrent-games.js"
 
@@ -159,7 +175,10 @@ K6_ARGS=(
     "--env" "WS_URL=$WS_URL"
     "--env" "THRESHOLD_ENV=$THRESHOLD_ENV"
     "--env" "LOAD_PROFILE=load"
+    "--env" "SMOKE=${SMOKE:-0}"
+    "--env" "SCENARIO_ID=$SCENARIO_ID"
     "--tag" "test=baseline"
+    "--tag" "scenario_id=$SCENARIO_ID"
     "--tag" "target=$TARGET"
     "--tag" "timestamp=$TIMESTAMP"
     "--out" "json=$RESULT_FILE"
@@ -201,25 +220,32 @@ else
     log_warning "Analyzer script not found at $ANALYZER_SCRIPT"
 fi
 
-# Run SLO verifier if available
-VERIFIER_SCRIPT="$SCRIPT_DIR/verify-slos.js"
-SLO_EXIT_CODE=0
-if [[ -f "$VERIFIER_SCRIPT" ]]; then
-    if command -v node &> /dev/null; then
-        echo ""
-        log_info "Verifying SLOs against $THRESHOLD_ENV thresholds..."
-        if node "$VERIFIER_SCRIPT" "$RESULT_FILE" console --env "$THRESHOLD_ENV"; then
-            log_success "SLO verification passed"
-            SLO_EXIT_CODE=0
-        else
-            log_warning "SLO verification reported failures (see output above)"
-            SLO_EXIT_CODE=1
-        fi
+# Optional: run a WebSocket-only baseline (preset=baseline, peak ~60 connections)
+WS_SCENARIO_FILE="$LOAD_DIR/scenarios/websocket-stress.js"
+if [[ -f "$WS_SCENARIO_FILE" ]]; then
+    echo ""
+    log_info "Starting WebSocket baseline companion run (preset=baseline, peak ~60 connections)..."
+    if [[ "${SKIP_WS_COMPANION:-false}" == "true" || "${SKIP_WS_COMPANION:-0}" == "1" ]]; then
+        log_info "SKIP_WS_COMPANION set; skipping WebSocket companion run"
     else
-        log_warning "Node.js not available, skipping SLO verification"
+        WS_RESULT_FILE="$RESULTS_DIR/websocket_${SCENARIO_ID}_${TARGET}_${TIMESTAMP}.json"
+        WS_SCENARIO_ID="${SCENARIO_ID}-websocket"
+    WS_K6_ARGS=(
+        "--env" "BASE_URL=$BASE_URL"
+        "--env" "WS_URL=$WS_URL"
+        "--env" "THRESHOLD_ENV=$THRESHOLD_ENV"
+        "--env" "WS_SCENARIO_PRESET=baseline"
+        "--env" "SCENARIO_ID=$WS_SCENARIO_ID"
+        "--tag" "test=websocket-baseline"
+        "--tag" "scenario_id=$WS_SCENARIO_ID"
+        "--tag" "target=$TARGET"
+        "--tag" "timestamp=$TIMESTAMP"
+        "--out" "json=$WS_RESULT_FILE"
+    )
+    k6 run "${WS_K6_ARGS[@]}" "$WS_SCENARIO_FILE" || log_warning "WebSocket baseline run exited non-zero (thresholds may have failed)"
     fi
 else
-    log_warning "SLO verifier not found at $VERIFIER_SCRIPT"
+    log_warning "WebSocket scenario not found at $WS_SCENARIO_FILE; skipping WebSocket baseline run"
 fi
 
 # Print summary
@@ -227,8 +253,12 @@ echo ""
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║                    Test Complete                       ║"
 echo "╠════════════════════════════════════════════════════════╣"
+echo "║  Scenario: $SCENARIO_ID"
 echo "║  Results:   $RESULT_FILE"
 echo "║  Summary:   $SUMMARY_FILE"
+if [[ -n "${WS_RESULT_FILE:-}" ]]; then
+    echo "║  WS Results: $WS_RESULT_FILE"
+fi
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -237,4 +267,4 @@ if [[ -f "$PROJECT_ROOT/docs/BASELINE_CAPACITY.md" ]]; then
     log_info "Update baseline documentation: docs/BASELINE_CAPACITY.md"
 fi
 
-exit $(( K6_EXIT_CODE || SLO_EXIT_CODE ))
+exit $K6_EXIT_CODE

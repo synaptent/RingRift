@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import { GameHUD } from '../../src/client/components/GameHUD';
 import { toHUDViewModel } from '../../src/client/adapters/gameViewModels';
 import { GameState, Player, BoardState, PlayerChoice } from '../../src/shared/types/game';
+import type { GameEndExplanation } from '../../src/shared/engine/gameEndExplanation';
 
 // Helper to create a minimal test GameState
 function createTestGameState(overrides: Partial<GameState> = {}): GameState {
@@ -317,7 +318,9 @@ describe('GameHUD', () => {
     // Last Player Standing tooltip
     fireEvent.mouseEnter(lastPlayerTrigger);
     tooltip = screen.getByRole('tooltip');
-    expect(tooltip).toHaveTextContent('Last Player Standing requires three consecutive full rounds');
+    expect(tooltip).toHaveTextContent(
+      'Last Player Standing requires three consecutive full rounds'
+    );
     fireEvent.mouseLeave(lastPlayerTrigger);
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
@@ -701,6 +704,48 @@ describe('GameHUD', () => {
       expect(tooltip).toHaveTextContent(
         'On your turn: Select your stack, then click a destination'
       );
+    });
+
+    it('renders structural-stalemate weird-state banner using explanation-driven copy', () => {
+      const gameState = createTestGameState({
+        gameStatus: 'finished',
+      });
+
+      const explanation: GameEndExplanation = {
+        outcomeType: 'structural_stalemate',
+        victoryReasonCode: 'victory_structural_stalemate_tiebreak',
+        primaryConceptId: 'structural_stalemate',
+        uxCopy: {
+          shortSummaryKey: 'game_end.structural_stalemate.short',
+          detailedSummaryKey: 'game_end.structural_stalemate.detailed',
+        },
+        weirdStateContext: {
+          reasonCodes: ['STRUCTURAL_STALEMATE_TIEBREAK'],
+          rulesContextTags: ['structural_stalemate'],
+        },
+        boardType: 'square8',
+        numPlayers: 2,
+        winnerPlayerId: 'p1',
+      };
+
+      const hudViewModel = toHUDViewModel(gameState, {
+        instruction: undefined,
+        connectionStatus: 'connected',
+        lastHeartbeatAt: Date.now(),
+        isSpectator: false,
+        currentUserId: 'p1',
+        gameEndExplanation: explanation,
+      });
+
+      render(<GameHUD viewModel={hudViewModel} timeControl={gameState.timeControl} />);
+
+      expect(screen.getByText(/Structural stalemate/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          /No legal placements, movements, captures, or forced eliminations remain for any player/i
+        )
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('hud-weird-state-help')).toBeInTheDocument();
     });
 
     it('renders sandbox local-only banner when flagged by host', () => {

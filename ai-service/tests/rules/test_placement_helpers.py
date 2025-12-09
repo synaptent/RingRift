@@ -146,6 +146,38 @@ def test_skip_eligibility_true_when_stack_has_action() -> None:
     assert result.code is None
 
 
+def test_skip_eligibility_rejects_when_no_rings_in_hand() -> None:
+    """
+    Skip-placement is not allowed when the player has zero rings in hand.
+    `no_placement_action` must be recorded instead.
+    """
+    state = _make_base_game_state()
+    board = state.board
+
+    player = state.current_player
+    pos = Position(x=0, y=0)
+    pos_key = pos.to_key()
+
+    stack = RingStack(
+        position=pos,
+        rings=[player],
+        stackHeight=1,
+        capHeight=1,
+        controllingPlayer=player,
+    )
+    board.stacks[pos_key] = stack
+
+    # Exhaust rings in hand for the active player
+    for p in state.players:
+        if p.player_number == player:
+            p.rings_in_hand = 0
+
+    result = evaluate_skip_placement_eligibility_py(state, player)
+
+    assert result.eligible is False
+    assert result.code == "NO_RINGS_IN_HAND"
+
+
 def test_skip_eligibility_rejects_when_no_legal_actions(monkeypatch) -> None:
     """
     Skip-placement is rejected when stacks exist but have no actions.

@@ -28,6 +28,9 @@ import type {
  *   - "rules_weird_state_resign"       (legacy alias for resign‑after‑weird)
  *
  * The analyzer is resilient to additional keys and will ignore them.
+ *
+ * See `tests/fixtures/rules_ux_hotspots/rules_ux_aggregates.square8_2p.sample.json`
+ * for a dry-run fixture that exercises expected inputs/outputs in tests.
  */
 
 export type HotspotSeverity = 'HIGH' | 'MEDIUM' | 'LOW';

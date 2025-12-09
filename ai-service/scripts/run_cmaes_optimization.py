@@ -121,9 +121,76 @@ try:
         filter_healthy_workers,
         write_games_to_db,
     )
+    from app.distributed.hosts import (  # noqa: E402
+        HostConfig,
+        load_remote_hosts,
+    )
     DISTRIBUTED_AVAILABLE = True
 except ImportError:
     DISTRIBUTED_AVAILABLE = False
+
+# Deployment modes for host selection
+VALID_MODES = ["local", "lan", "aws", "hybrid"]
+
+
+def get_hosts_for_mode(
+    mode: str, hosts_config: Dict[str, "HostConfig"]
+) -> List[str]:
+    """Get list of host names based on deployment mode.
+
+    Args:
+        mode: Deployment mode ('local', 'lan', 'aws', 'hybrid')
+        hosts_config: Dict of host name to HostConfig from load_remote_hosts()
+
+    Returns:
+        List of host names to use for this mode
+    """
+    if mode == "local":
+        return []
+
+    lan_hosts: List[str] = []
+    aws_hosts: List[str] = []
+
+    for name, host in hosts_config.items():
+        # Classify host as AWS or LAN based on config hints
+        is_aws = (
+            host.ssh_user == "ubuntu"
+            or (host.work_directory and "/home/" in host.work_directory)
+            or "aws" in name.lower()
+        )
+        if is_aws:
+            aws_hosts.append(name)
+        else:
+            lan_hosts.append(name)
+
+    if mode == "lan":
+        return lan_hosts
+    elif mode == "aws":
+        return aws_hosts
+    elif mode == "hybrid":
+        return lan_hosts + aws_hosts
+    return []
+
+
+def get_worker_urls_from_hosts(host_names: List[str]) -> List[str]:
+    """Get worker HTTP URLs for the specified hosts.
+
+    Args:
+        host_names: List of host names from config
+
+    Returns:
+        List of worker HTTP URLs (e.g., 'http://192.168.1.10:8765')
+    """
+    if not DISTRIBUTED_AVAILABLE:
+        return []
+
+    hosts_config = load_remote_hosts()
+    urls = []
+    for name in host_names:
+        if name in hosts_config:
+            urls.append(hosts_config[name].http_worker_url)
+    return urls
+
 
 QUEUE_DISTRIBUTED_AVAILABLE = DISTRIBUTED_AVAILABLE
 
@@ -1420,6 +1487,8 @@ class CMAESConfig:
     # Queue-based distributed evaluation for cloud deployment
     queue_backend: Optional[str] = None  # None, "redis", or "sqs"
     queue_timeout: float = 600.0  # Timeout for collecting queue results
+    # Deployment mode for host selection (local, lan, aws, hybrid)
+    mode: str = "local"
 
 
 def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
@@ -1708,7 +1777,7 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
         print(f"  Queue backend: {config.queue_backend}")
         print(f"  Queue timeout: {config.queue_timeout}s")
 
-    # HTTP-based distributed evaluation (for local Mac cluster)
+    # HTTP-based distributed evaluation (for local Mac cluster or AWS)
     if config.distributed:
         if not DISTRIBUTED_AVAILABLE:
             raise RuntimeError(
@@ -1722,6 +1791,24 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             workers = parse_manual_workers(",".join(config.workers))
             worker_urls = [w.url for w in workers]
             print(f"  Using {len(worker_urls)} manually specified workers")
+        elif config.mode != "local":
+            # Mode-based host selection from distributed_hosts.yaml
+            hosts_config = load_remote_hosts()
+            if not hosts_config:
+                raise RuntimeError(
+                    f"No hosts configured. Copy config/distributed_hosts.template.yaml "
+                    f"to config/distributed_hosts.yaml and configure your hosts."
+                )
+            host_names = get_hosts_for_mode(config.mode, hosts_config)
+            if not host_names:
+                raise RuntimeError(
+                    f"No hosts found for mode '{config.mode}'. "
+                    f"Check config/distributed_hosts.yaml configuration."
+                )
+            worker_urls = get_worker_urls_from_hosts(host_names)
+            print(f"  Mode '{config.mode}': selected {len(worker_urls)} workers from config")
+            for url in worker_urls:
+                print(f"    - {url}")
         elif config.discover_workers:
             print(f"  Discovering workers (waiting for {config.min_workers} minimum)...")
             workers = wait_for_workers(
@@ -1739,7 +1826,8 @@ def run_cmaes_optimization(config: CMAESConfig) -> HeuristicWeights:
             print(f"  Discovered {len(worker_urls)} healthy workers")
         else:
             raise RuntimeError(
-                "Distributed mode requires --workers or --discover-workers"
+                "Distributed mode requires --workers, --mode (lan/aws/hybrid), "
+                "or --discover-workers"
             )
 
         if not worker_urls:
@@ -2386,6 +2474,19 @@ def main():
             "Increase for large populations or slow workers. Default: 600."
         ),
     )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["local", "lan", "aws", "hybrid"],
+        default="local",
+        help=(
+            "Deployment mode for host selection. 'local' runs locally only, "
+            "'lan' uses local Mac cluster workers, 'aws' uses AWS staging "
+            "workers (square8 only due to 16GB RAM limit), 'hybrid' uses both. "
+            "Use with --distributed to auto-discover workers from hosts config. "
+            "Default: local."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -2484,6 +2585,7 @@ def main():
         min_workers=args.min_workers,
         queue_backend=args.queue_backend,
         queue_timeout=args.queue_timeout,
+        mode=args.mode,
     )
 
     # Validate mutually exclusive modes

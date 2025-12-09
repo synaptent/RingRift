@@ -4,8 +4,23 @@ import {
   HUDViewModel,
   VictoryViewModel,
 } from '../../../src/client/adapters/gameViewModels';
-import { GameState, GameResult, Player, BoardState } from '../../../src/shared/types/game';
+import {
+  GameState,
+  GameResult,
+  Player,
+  BoardState,
+  PlayerChoice,
+} from '../../../src/shared/types/game';
 import { GameEndExplanation } from '../../../src/shared/engine/gameEndExplanation';
+import { getWeirdStateBanner } from '../../../src/client/utils/gameStateWeirdness';
+
+jest.mock('../../../src/client/utils/gameStateWeirdness', () => {
+  const actual = jest.requireActual('../../../src/client/utils/gameStateWeirdness');
+  return {
+    ...actual,
+    getWeirdStateBanner: jest.fn(actual.getWeirdStateBanner),
+  };
+});
 
 // Helper to create minimal game state
 function createTestGameState(players: Player[]): GameState {
@@ -71,6 +86,10 @@ function createPlayers(): Player[] {
 }
 
 describe('gameViewModels', () => {
+  afterEach(() => {
+    (getWeirdStateBanner as jest.Mock).mockClear();
+  });
+
   describe('toHUDViewModel - gameEndExplanation weirdState derivation', () => {
     it('derives structural-stalemate weirdState from explanation', () => {
       const players = createPlayers();
@@ -231,6 +250,80 @@ describe('gameViewModels', () => {
       });
 
       expect(vm.weirdState).toBeUndefined();
+    });
+  });
+
+  describe('toHUDViewModel - weird-state banners and decision phases', () => {
+    it('surfaces ANM/forced-elimination banner copy from legacy weird-state detection', () => {
+      const players = createPlayers();
+      const gameState = createTestGameState(players);
+      gameState.currentPlayer = 1;
+
+      (getWeirdStateBanner as jest.Mock).mockReturnValue({
+        type: 'active-no-moves-movement',
+        playerNumber: 1,
+      });
+
+      const vm = toHUDViewModel(gameState, {
+        connectionStatus: 'connected',
+        lastHeartbeatAt: null,
+        isSpectator: false,
+        gameEndExplanation: null,
+      });
+
+      expect(vm.weirdState).toBeDefined();
+      expect(vm.weirdState?.type).toBe('active-no-moves-movement');
+      expect(vm.weirdState?.tone).toBe('warning');
+      expect(vm.weirdState?.body).toContain('forced elimination');
+    });
+
+    it('sets decisionPhase.canSkip for territory region_order choices that include a skip option', () => {
+      const players = createPlayers();
+      const gameState = createTestGameState(players);
+      gameState.currentPhase = 'territory_processing';
+      gameState.board.territories = new Map([
+        [
+          'r1',
+          {
+            spaces: [{ x: 0, y: 0 }],
+            controllingPlayer: 1,
+            isDisconnected: true,
+          },
+        ],
+      ]);
+
+      const pendingChoice: PlayerChoice = {
+        id: 'choice-region-order',
+        gameId: gameState.id,
+        type: 'region_order',
+        playerNumber: 1,
+        prompt: 'Choose territory region',
+        options: [
+          {
+            regionId: 'r1',
+            size: 3,
+            moveId: 'm-keep',
+            representativePosition: { x: 0, y: 0 },
+          },
+          {
+            regionId: 'skip',
+            size: 0,
+            moveId: 'm-skip',
+            representativePosition: { x: 99, y: 99 },
+          },
+        ],
+      };
+
+      const vm = toHUDViewModel(gameState, {
+        connectionStatus: 'connected',
+        lastHeartbeatAt: null,
+        isSpectator: false,
+        pendingChoice,
+      });
+
+      expect(vm.decisionPhase).toBeDefined();
+      expect(vm.decisionPhase?.shortLabel).toBe('Territory region');
+      expect(vm.decisionPhase?.canSkip).toBe(true);
     });
   });
 

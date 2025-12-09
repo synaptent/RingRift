@@ -31,6 +31,20 @@ describe('MoveHistory', () => {
     } as Move;
   }
 
+  function createHistoryEntry(move: Move): GameHistoryEntry {
+    return {
+      moveNumber: move.moveNumber ?? 1,
+      action: move,
+      actor: move.player,
+      phaseBefore: 'movement',
+      phaseAfter: 'movement',
+      statusBefore: 'active',
+      statusAfter: 'active',
+      progressBefore: { markers: 0, collapsed: 0, eliminated: 0, S: 0 },
+      progressAfter: { markers: 0, collapsed: 0, eliminated: 0, S: 0 },
+    };
+  }
+
   describe('empty state', () => {
     it('should display empty message when no moves', () => {
       render(<MoveHistory moves={[]} boardType={boardType} />);
@@ -66,6 +80,20 @@ describe('MoveHistory', () => {
 
       expect(screen.getByText('1.')).toBeInTheDocument();
       expect(screen.getByText('2.')).toBeInTheDocument();
+    });
+
+    it('should render bookkeeping/no-op and forced_elimination moves with readable labels', () => {
+      const moves = [
+        createTestMove(0, 'no_line_action', 1),
+        createTestMove(1, 'no_territory_action', 2),
+        createTestMove(2, 'forced_elimination', 1),
+      ];
+
+      const { container } = render(<MoveHistory moves={moves} boardType={boardType} />);
+
+      expect(container.textContent).toContain('no_line_action');
+      expect(container.textContent).toContain('no_territory_action');
+      expect(container.textContent).toContain('forced_elimination');
     });
 
     it('should highlight current move', () => {
@@ -401,10 +429,14 @@ describe('MoveHistory', () => {
 describe('MoveHistoryFromEntries', () => {
   const boardType: BoardType = 'square8';
 
-  function createTestEntry(index: number, player: number): GameHistoryEntry {
+  function createTestEntry(
+    index: number,
+    player: number,
+    type: Move['type'] = 'place_ring'
+  ): GameHistoryEntry {
     const move: Move = {
       id: `move-${index}`,
-      type: 'place_ring',
+      type,
       player,
       to: { x: index % 8, y: Math.floor(index / 8) },
       timestamp: new Date(),
@@ -413,9 +445,15 @@ describe('MoveHistoryFromEntries', () => {
     };
 
     return {
+      moveNumber: index + 1,
       action: move,
-      stateBefore: {} as GameState,
-      stateAfter: {} as GameState,
+      actor: player,
+      phaseBefore: 'movement',
+      phaseAfter: 'movement',
+      statusBefore: 'active',
+      statusAfter: 'active',
+      progressBefore: { markers: 0, collapsed: 0, eliminated: 0, S: 0 },
+      progressAfter: { markers: 0, collapsed: 0, eliminated: 0, S: 0 },
     };
   }
 
@@ -446,5 +484,21 @@ describe('MoveHistoryFromEntries', () => {
 
     expect(screen.getByTestId('move-history')).toHaveClass('custom-class');
     expect(screen.getByRole('list')).toHaveClass('max-h-64');
+  });
+
+  it('renders bookkeeping and forced-elimination moves from history entries', () => {
+    const entries = [
+      createTestEntry(0, 1, 'no_line_action'),
+      createTestEntry(1, 2, 'no_territory_action'),
+      createTestEntry(2, 1, 'forced_elimination'),
+    ];
+
+    const { container } = render(
+      <MoveHistoryFromEntries entries={entries} boardType={boardType} />
+    );
+
+    expect(container.textContent).toContain('no_line_action');
+    expect(container.textContent).toContain('no_territory_action');
+    expect(container.textContent).toContain('forced_elimination');
   });
 });

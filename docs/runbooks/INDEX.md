@@ -15,6 +15,7 @@ This directory contains operational runbooks for deploying, managing, and troubl
 | [SECRETS_ROTATION_DRILL.md](./SECRETS_ROTATION_DRILL.md)                       | JWT and DB secrets rotation drill                     | Periodic security drills and pre-launch hardening                                 |
 | [AI_SERVICE_DEGRADATION_DRILL.md](./AI_SERVICE_DEGRADATION_DRILL.md)           | AI service degradation drill (staging)                | Staging drills for AI availability, fallbacks, dashboards, and alert validation   |
 | [ORCHESTRATOR_ROLLOUT_RUNBOOK.md](./ORCHESTRATOR_ROLLOUT_RUNBOOK.md)           | Orchestrator rollout, rollback, and incident handling | Changing orchestrator rollout phase or responding to orchestrator-specific alerts |
+| [FSM_VALIDATION_ROLLOUT.md](./FSM_VALIDATION_ROLLOUT.md)                       | FSM validation mode rollout and monitoring            | Enabling FSM validation (shadow or active mode) in production                     |
 
 ## Quick Reference
 

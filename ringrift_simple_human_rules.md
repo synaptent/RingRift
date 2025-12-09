@@ -47,12 +47,7 @@ There are three standard boards:
   - 64 spaces.
   - Each player has **18 rings**.
   - Territory victory: **>32** collapsed spaces.
-  - Lines:
-    - Geometrically, any 3+ markers in a row matter.
-    - For **2‑player games**, the _threshold_ for line processing is
-      **4 in a row** (see §5.1).
-    - For **3–4 player games**, lines of **3+** markers are already enough to
-      trigger line processing.
+  - Lines: **3+** markers in a row.
 
 - **19×19 square** (full version)
   - 361 spaces.
@@ -62,7 +57,7 @@ There are three standard boards:
 
 - **Hexagonal** (radius 12; 13 cells per side)
   - 469 spaces.
-  - **60 rings** per player.
+  - **72 rings** per player.
   - Territory victory: **>234** spaces.
   - Lines: **4+** markers along hex directions.
 
@@ -191,6 +186,27 @@ Forced elimination ensures that as long as any stacks exist on the board,
 **someone** always has a legal action: either movement/capture, placement, or
 forced elimination.
 
+### 3.5 Recovery action
+
+If you have been **temporarily eliminated** (no stacks, no rings in hand) but
+still have **markers on the board** and **buried rings** (your rings at the
+bottom of opponents' stacks), you may perform a **recovery action**:
+
+1. **Slide** one of your markers to an adjacent empty cell.
+2. The slide is legal **only if** it completes a line of exactly `lineLength`
+   of your markers (3 for 8×8, 4 for 19×19/Hex).
+   Overlength lines (longer than the required length) do **not** qualify.
+3. **Pay the self-elimination cost** by extracting your bottommost ring from
+   any stack containing your buried rings:
+   - That ring is permanently eliminated (credited to you).
+   - The stack shrinks by 1; its new top ring determines control.
+4. If the line collapse creates **territory regions**, you may claim them by
+   extracting additional buried rings (one per region, from stacks outside
+   each region).
+
+Recovery actions allow temporarily eliminated players to strike back from
+apparent defeat, turning buried rings into a strategic resource.
+
 ---
 
 ## 4. Post‑Movement Processing: Lines and Territory
@@ -207,10 +223,8 @@ handle the following **global effects** in this strict order:
 A **line** is a straight contiguous run of your **markers** of at least
 a certain length for the board:
 
-- 8×8:
-  - In **2‑player** games, you need to make 4 in a row.
-  - In **3–4 player** games, 3‑in‑a‑row is enough.
-- 19×19 and Hex: you need to make 4 in a row.
+- 8×8: **3+** markers in a row.
+- 19×19 and Hex: **4+** markers in a row.
 
 For each line that is eligible, you process it one at a time in an order
 **you choose**:
@@ -284,13 +298,13 @@ Thresholds (from the rulebook):
   - 3 players: >27.
   - 4 players: >36.
 - 19×19:
-  - 2 players: >36.
-  - 3 players: >54.
-  - 4 players: >72.
-- Hex (469 cells, 48 rings/player):
   - 2 players: >48.
   - 3 players: >72.
   - 4 players: >96.
+- Hex (469 cells, 72 rings/player):
+  - 2 players: >72.
+  - 3 players: >108.
+  - 4 players: >144.
 
 Your eliminated‑rings total includes:
 
@@ -335,6 +349,7 @@ you have at least one of:
 - A legal ring **placement**.
 - A legal non‑capture **movement**.
 - A legal **overtaking capture**.
+- A legal **recovery action** (see §3.5).
 
 Having **only forced elimination** available **does not** count as having a
 real action for LPS purposes.
@@ -423,6 +438,44 @@ When this happens:
 
 This ensures that even in a stalemate, there is a **single, well‑defined
 winner**.
+
+### 5.5 Final player rankings
+
+After the game ends, all players are ranked from 1st to Nth place.
+
+#### 5.5.1 Temporary vs permanent elimination
+
+During the game, players can lose the ability to act in two different ways:
+
+- **Temporarily eliminated**: A player who has no stacks on the board, no
+  rings in hand, but still has rings **buried** in mixed‑colour stacks
+  controlled by others. These players may regain activity if their buried
+  rings surface later.
+
+- **Permanently eliminated**: A player with **zero rings anywhere** in the
+  game—none controlled, none buried, none in hand. This is irreversible.
+
+The distinction matters for ranking: **only permanently eliminated players**
+receive an elimination rank at the turn they reach zero rings. Temporarily
+eliminated players remain "in contention" until they either recover or the
+game ends.
+
+#### 5.5.2 Ranking algorithm
+
+1. **Winner**: The player who triggered the victory condition (ring
+   elimination, territory, or LPS) is ranked 1st. In stalemate, the
+   tiebreaker winner is 1st.
+
+2. **Remaining players**: All non‑winners are ranked by the following
+   tiebreakers (in order):
+   1. Later permanent elimination turn (or never eliminated) beats earlier.
+   2. More collapsed spaces (territory).
+   3. More eliminated rings credited.
+   4. More markers on the board.
+   5. Later last valid turn action.
+
+Players with identical values across all tiebreakers share the same rank
+(standard 1‑2‑2‑4 competition ranking).
 
 ---
 

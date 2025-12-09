@@ -15,6 +15,52 @@
 | Infrastructure     | Docker Compose         |
 | Test Duration      | ~30 minutes total      |
 
+## How to run 10–25 game WebSocket baseline (staging)
+
+This harness uses the k6 `websocket-gameplay.js` scenario to drive a small swarm of human‑vs‑AI games over WebSockets against the staging stack.
+
+### Prerequisites
+
+- Staging stack running on the host (local Docker or the AWS staging instance):
+
+  ```bash
+  ./scripts/deploy-staging.sh --build
+  ```
+
+- `.env.staging` configured with real (non‑placeholder) secrets, as described in `docs/STAGING_ENVIRONMENT.md`.
+- At least one load‑test user present. The k6 auth helper defaults to `loadtest_user_1@loadtest.local` / `TestPassword123!`, which can be seeded via:
+
+  ```bash
+  LOADTEST_USER_PASSWORD=TestPassword123! node scripts/seed-loadtest-users.js
+  ```
+
+  Alternatively, set `LOADTEST_EMAIL` / `LOADTEST_PASSWORD` when running k6 to use a different account.
+
+### Command (10–25 concurrent games baseline)
+
+From the repo root, targeting the staging stack on `localhost`:
+
+```bash
+THRESHOLD_ENV=staging \
+RINGRIFT_ENV=staging \
+BASE_URL=http://localhost:3000 \
+WS_URL=ws://localhost:3001 \
+npm run load-test:baseline
+```
+
+This runs the `websocket-gameplay` scenario in `WS_GAMEPLAY_MODE=baseline`, clamping virtual users (and thus concurrent games) into the 10–25 range and enforcing WebSocket move‑RTT thresholds.
+
+### Outputs
+
+- k6 prints a human‑readable summary to stdout.
+- A JSON summary is written to:
+
+  ```text
+  results/load/websocket-gameplay.staging.summary.json
+  ```
+
+During the run, use the **Game Performance** and **System Health** Grafana dashboards for the staging stack to observe active games, move latency, HTTP error rates, and resource utilisation.
+
 ## Scenario Results Summary
 
 ### Scenario 1: Game Creation (`game-creation.js`) - ALL PASSED

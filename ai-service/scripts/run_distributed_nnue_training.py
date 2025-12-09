@@ -6,6 +6,13 @@ This script provides distributed NNUE training capabilities:
 - Collect training data from databases on multiple hosts
 - Track memory usage during training
 - Support training on heavy boards (square19, hexagonal)
+- Mode-based host selection (local, lan, aws, hybrid)
+
+Deployment Modes:
+    - local:  Train locally only (no remote hosts)
+    - lan:    Use local network Mac cluster hosts
+    - aws:    Use AWS cloud hosts only (limited to square8 due to 16GB memory)
+    - hybrid: Use both LAN and AWS hosts (maximum parallelism)
 
 Usage:
     # Train on local machine with local data
@@ -14,6 +21,14 @@ Usage:
     # Train on remote host (Mac Studio) with local data
     python scripts/run_distributed_nnue_training.py --db data/games/*.db \\
         --remote-host mac-studio --epochs 50
+
+    # Train using LAN cluster hosts (auto-selects best host)
+    python scripts/run_distributed_nnue_training.py --mode lan \\
+        --db data/games/*.db --epochs 50
+
+    # Train on AWS staging (square8 only due to 16GB memory)
+    python scripts/run_distributed_nnue_training.py --mode aws \\
+        --board square8 --db data/games/*.db --epochs 50
 
     # Collect data from multiple hosts and train remotely
     python scripts/run_distributed_nnue_training.py \\
@@ -29,6 +44,14 @@ Requirements:
     - config/distributed_hosts.yaml for remote operations
     - SSH key-based authentication for remote hosts
     - PyTorch installed on remote hosts
+
+AWS Configuration (in distributed_hosts.yaml):
+    aws-staging:
+      ssh_host: "3.236.54.231"
+      ssh_user: "ubuntu"
+      ssh_key: "~/.ssh/ringrift-staging-key.pem"
+      ringrift_path: "/home/ubuntu/ringrift"
+      memory_gb: 16
 """
 
 from __future__ import annotations
@@ -70,6 +93,48 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Deployment modes for host selection
+VALID_MODES = ["local", "lan", "aws", "hybrid"]
+
+
+def get_hosts_for_mode(mode: str, hosts_config: Dict[str, HostConfig]) -> List[str]:
+    """Get list of host names based on deployment mode.
+
+    Args:
+        mode: Deployment mode (local, lan, aws, hybrid)
+        hosts_config: Dict of host name -> HostConfig
+
+    Returns:
+        List of eligible host names for the given mode.
+    """
+    if mode == "local":
+        return []
+
+    # Categorize hosts as LAN or AWS based on configuration
+    lan_hosts: List[str] = []
+    aws_hosts: List[str] = []
+
+    for name, host in hosts_config.items():
+        # AWS hosts typically have ssh_user set (e.g., "ubuntu") or /home/ in work_dir
+        is_aws = (
+            host.ssh_user == "ubuntu"
+            or (host.work_directory and "/home/" in host.work_directory)
+            or "aws" in name.lower()
+        )
+        if is_aws:
+            aws_hosts.append(name)
+        else:
+            lan_hosts.append(name)
+
+    if mode == "lan":
+        return lan_hosts
+    elif mode == "aws":
+        return aws_hosts
+    elif mode == "hybrid":
+        return lan_hosts + aws_hosts
+
+    return []
+
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     """Parse command line arguments."""
@@ -100,9 +165,16 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
     # Remote execution
     parser.add_argument(
+        "--mode",
+        type=str,
+        default="lan",
+        choices=VALID_MODES,
+        help="Deployment mode: local (no remote), lan (Mac cluster), aws (cloud), hybrid (both)",
+    )
+    parser.add_argument(
         "--remote-host",
         type=str,
-        help="Run training on this remote host (e.g., mac-studio)",
+        help="Run training on this remote host (e.g., mac-studio). Overrides --mode",
     )
     parser.add_argument(
         "--local",
@@ -261,8 +333,10 @@ def collect_remote_databases(
             scp_cmd = ["scp", "-o", "ConnectTimeout=10"]
             if host.ssh_key:
                 scp_cmd.extend(["-i", host.ssh_key_path])
+            # Build remote target with optional ssh_user (e.g., ubuntu@host for AWS)
+            ssh_target = f"{host.ssh_user}@{host.ssh_host}" if host.ssh_user else host.ssh_host
             scp_cmd.extend([
-                f"{host.ssh_host}:{remote_path}",
+                f"{ssh_target}:{remote_path}",
                 local_path,
             ])
 
@@ -452,27 +526,44 @@ def run_local_training(
     return report
 
 
-def select_training_host(board_type: str) -> Optional[str]:
-    """Select the best host for training based on memory requirements.
+def select_training_host(board_type: str, mode: str = "lan") -> Optional[str]:
+    """Select the best host for training based on memory requirements and mode.
 
     Args:
         board_type: Board type being trained.
+        mode: Deployment mode (local, lan, aws, hybrid).
 
     Returns:
         Host name, or None to train locally.
     """
+    if mode == "local":
+        return None
+
     hosts_config = load_remote_hosts()
     if not hosts_config:
         return None
 
+    # Filter hosts by mode
+    mode_hosts = get_hosts_for_mode(mode, hosts_config)
+    if not mode_hosts:
+        logger.warning(f"No hosts available for mode '{mode}'")
+        return None
+
+    # Check memory requirements for AWS (16GB) vs board type
     required_memory = BOARD_MEMORY_REQUIREMENTS.get(board_type, 8)
-    host_names = list(hosts_config.keys())
+    if mode == "aws" and board_type != "square8":
+        logger.warning(
+            f"AWS mode only supports square8 (16GB RAM). "
+            f"Requested {board_type} requires {required_memory}GB. "
+            f"Training locally instead."
+        )
+        return None
 
     # Find hosts with enough memory
-    eligible = get_eligible_hosts_for_board(board_type, host_names)
+    eligible = get_eligible_hosts_for_board(board_type, mode_hosts)
 
     if not eligible:
-        logger.warning(f"No remote hosts have enough memory for {board_type}")
+        logger.warning(f"No {mode} hosts have enough memory for {board_type}")
         return None
 
     # Prefer high-memory hosts
@@ -524,8 +615,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     elif args.remote_host:
         training_host = args.remote_host
     else:
-        # Auto-select based on board type
-        training_host = select_training_host(args.board)
+        # Auto-select based on board type and mode
+        training_host = select_training_host(args.board, args.mode)
 
     if args.dry_run:
         logger.info(f"Dry run - would train on: {training_host or 'local'}")

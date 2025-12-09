@@ -65,10 +65,13 @@ class HostConfig:
     name: str
     ssh_host: str
     ssh_key: Optional[str] = None
+    ssh_user: Optional[str] = None
     memory_gb: Optional[int] = None
     work_dir: Optional[str] = None
     python_path: Optional[str] = None
     max_parallel_jobs: int = 1
+    worker_port: int = 8765  # Default HTTP worker port
+    worker_url: Optional[str] = None  # Optional explicit worker URL
     properties: Dict = field(default_factory=dict)
 
     @property
@@ -80,6 +83,13 @@ class HostConfig:
     def work_directory(self) -> str:
         """Get the working directory for remote execution."""
         return self.work_dir or "~/Development/RingRift/ai-service"
+
+    @property
+    def http_worker_url(self) -> str:
+        """Get the HTTP worker URL for this host."""
+        if self.worker_url:
+            return self.worker_url
+        return f"http://{self.ssh_host}:{self.worker_port}"
 
 
 # Global host configuration cache
@@ -142,10 +152,13 @@ def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, HostConfig
                     name=name,
                     ssh_host=host_data.get("ssh_host", name),
                     ssh_key=host_data.get("ssh_key"),
+                    ssh_user=host_data.get("ssh_user"),
                     memory_gb=host_data.get("memory_gb"),
-                    work_dir=host_data.get("work_dir"),
+                    work_dir=host_data.get("ringrift_path") or host_data.get("work_dir"),
                     python_path=host_data.get("python_path"),
                     max_parallel_jobs=host_data.get("max_parallel_jobs", 1),
+                    worker_port=host_data.get("worker_port", 8765),
+                    worker_url=host_data.get("worker_url"),
                     properties=host_data,
                 )
 

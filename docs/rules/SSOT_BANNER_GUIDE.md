@@ -5,7 +5,7 @@
 >
 > **SSoT alignment:** This guide is a derived meta‑doc over the existing SSoT layers:
 >
-> - **Rules/invariants semantics SSoT:** `RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` and `docs/rules/ringrift_compact_rules.md` as the normative rules spec, and the shared TS rules engine under `src/shared/engine/**` plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**` as its primary executable implementation.
+> - **Rules/invariants semantics SSoT:** `RULES_CANONICAL_SPEC.md` together with `ringrift_complete_rules.md` and `ringrift_compact_rules.md` as the normative rules spec, and the shared TS rules engine under `src/shared/engine/**` plus v2 contract vectors in `tests/fixtures/contract-vectors/v2/**` as its primary executable implementation.
 > - **Lifecycle/API SSoT:** `docs/CANONICAL_ENGINE_API.md` and the shared TS/WebSocket types under `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
 > - **TS↔Python parity & determinism SSoT:** `docs/PYTHON_PARITY_REQUIREMENTS.md` plus the TS and Python parity/determinism test suites.
 > - **AI/training SSoT:** `AI_ARCHITECTURE.md` and the executable training stack under `ai-service/app/training/**`.
@@ -72,7 +72,7 @@ This section defines recommended templates and required snippets per doc categor
 **Examples:**
 
 - `RULES_CANONICAL_SPEC.md` (RR‑CANON spec)
-- `ringrift_complete_rules.md`, `docs/rules/ringrift_compact_rules.md`
+- `ringrift_complete_rules.md`, `ringrift_compact_rules.md`
 - `RULES_ENGINE_ARCHITECTURE.md`
 - `RULES_IMPLEMENTATION_MAPPING.md`
 - `docs/RULES_ENGINE_SURFACE_AUDIT.md`
@@ -87,7 +87,7 @@ This section defines recommended templates and required snippets per doc categor
 >
 > **SSoT alignment:** This document is a derived architectural view over the **Rules/invariants semantics SSoT**, which is:
 
-- `RULES_CANONICAL_SPEC.md` and the player‑facing rulebooks `ringrift_complete_rules.md` / `docs/rules/ringrift_compact_rules.md`.
+- `RULES_CANONICAL_SPEC.md` and the player‑facing rulebooks `ringrift_complete_rules.md` / `ringrift_compact_rules.md`.
   > - The shared TypeScript rules engine at `src/shared/engine/**` plus v2 contract vectors under `tests/fixtures/contract-vectors/v2/**`.
   > - The parity and determinism test suites in TS and Python that lock in behaviour.
   >

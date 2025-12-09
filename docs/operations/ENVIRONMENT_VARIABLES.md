@@ -681,6 +681,76 @@ defaults, see:
 - The "Internal / Test harness APIs" section of
   [`API_REFERENCE.md`](./API_REFERENCE.md)
 
+### FSM Validation Mode
+
+These variables control the Finite State Machine (FSM) validation layer that enforces phase/type correctness for all moves.
+
+#### `RINGRIFT_FSM_VALIDATION_MODE`
+
+| Property | Value                     |
+| -------- | ------------------------- |
+| Type     | `enum`                    |
+| Values   | `off`, `shadow`, `active` |
+| Default  | `off`                     |
+| Required | No                        |
+
+Controls FSM validation behavior:
+
+- `off`: No FSM validation (legacy mode)
+- `shadow`: FSM runs in parallel, logs divergences without affecting behavior
+- `active`: FSM validation is authoritative, rejects invalid moves
+
+**Rollout Strategy:**
+
+1. Deploy with `shadow` mode first to monitor divergences
+2. Run validation script: `TS_NODE_PROJECT=tsconfig.server.json npx ts-node -T scripts/validate-fsm-active-mode.ts`
+3. Once validation passes with 0 divergences, switch to `active`
+
+**Related:**
+
+- Validation script: `scripts/validate-fsm-active-mode.ts`
+- FSM implementation: `src/shared/engine/fsm/`
+
+#### `RINGRIFT_FSM_STRUCTURED_LOGGING`
+
+| Property | Value       |
+| -------- | ----------- |
+| Type     | `boolean`   |
+| Values   | `1`, `true` |
+| Default  | `false`     |
+| Required | No          |
+
+Enable JSON structured logging for FSM validation events. When enabled, emits one JSON line per validated move with fields:
+
+```json
+{
+  "event": "fsm_validation",
+  "timestamp": "2025-12-07T...",
+  "mode": "shadow|active",
+  "gameId": "...",
+  "moveNumber": 42,
+  "moveType": "movement",
+  "currentPhase": "main_actions",
+  "fsmValid": true,
+  "divergence": false
+}
+```
+
+Use for production monitoring and metrics collection.
+
+#### `RINGRIFT_FSM_SHADOW_VALIDATION` (Legacy)
+
+| Property | Value          |
+| -------- | -------------- |
+| Type     | `boolean`      |
+| Default  | `false`        |
+| Required | No             |
+| Status   | **Deprecated** |
+
+Legacy flag for shadow validation. Setting this to `1` is equivalent to `RINGRIFT_FSM_VALIDATION_MODE=shadow`. Use `RINGRIFT_FSM_VALIDATION_MODE` instead.
+
+---
+
 ### Orchestrator rollout controls
 
 These variables control **automatic rollback** of the orchestrator in production.

@@ -28,6 +28,7 @@ import {
 } from '../../server/game/turn/TurnEngineAdapter';
 import { hashGameStateSHA256 } from '../engine';
 import { evaluateVictory, type VictoryResult } from '../engine';
+import { computeGlobalLegalActionsSummary } from '../engine/globalActions';
 import { createInitialGameState } from '../engine/initialState';
 import { deserializeGameState } from '../engine/contracts/serialization';
 
@@ -191,7 +192,9 @@ export class CanonicalReplayEngine {
    * Check if the game has ended.
    */
   isGameOver(): boolean {
-    return this.currentState.gameStatus === 'completed' || this.currentState.gameStatus === 'abandoned';
+    return (
+      this.currentState.gameStatus === 'completed' || this.currentState.gameStatus === 'abandoned'
+    );
   }
 
   /**
@@ -338,9 +341,32 @@ export class CanonicalReplayEngine {
    * Evaluate victory if the game appears to be in a terminal state.
    */
   private evaluateVictoryIfNeeded(): GameResult | undefined {
-    // Only evaluate if game status indicates completion
-    if (this.currentState.gameStatus !== 'completed' && this.currentState.gameStatus !== 'abandoned') {
-      return undefined;
+    // Fast path: explicit terminal status
+    if (
+      this.currentState.gameStatus !== 'completed' &&
+      this.currentState.gameStatus !== 'abandoned'
+    ) {
+      // Additional terminal guard for ANM/LPS: if all players have zero rings
+      // in hand and no global interactive moves remain, mark the game over to
+      // mirror Python parity endings in ANM loops.
+      const allZeroRings = this.currentState.players.every((p) => p.ringsInHand <= 0);
+      if (allZeroRings) {
+        const anyActions = this.currentState.players.some((p) => {
+          const summary = computeGlobalLegalActionsSummary(this.currentState, p.playerNumber);
+          return (
+            summary.hasGlobalPlacementAction ||
+            summary.hasPhaseLocalInteractiveMove ||
+            summary.hasForcedEliminationAction
+          );
+        });
+        if (!anyActions) {
+          this.currentState = {
+            ...this.currentState,
+            currentPhase: 'game_over',
+            gameStatus: 'completed',
+          };
+        }
+      }
     }
 
     return this.getVictoryResult() ?? undefined;

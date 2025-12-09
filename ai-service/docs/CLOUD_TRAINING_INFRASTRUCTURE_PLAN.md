@@ -1,8 +1,23 @@
 # Distributed Training Infrastructure Plan
 
 **Created:** 2025-12-02
-**Status:** Planning
+**Status:** Partial Implementation
 **Purpose:** Preparatory work for distributed CMA-ES and neural network training (local cluster + cloud)
+
+## Implementation Status
+
+| Component                 | Status      | Notes                                           |
+| ------------------------- | ----------- | ----------------------------------------------- |
+| Local Mac Cluster         | Implemented | See `DISTRIBUTED_SELFPLAY.md`                   |
+| `--mode` argument         | Implemented | Supports `local`, `lan`, `aws`, `hybrid`        |
+| Host configuration        | Implemented | `config/distributed_hosts.yaml`                 |
+| Memory-based filtering    | Implemented | Auto-filters hosts by board memory requirements |
+| CMA-ES distributed        | Implemented | `run_cmaes_optimization.py --distributed`       |
+| Iterative CMA-ES          | Implemented | `run_iterative_cmaes.py --distributed --mode`   |
+| Self-play distributed     | Implemented | `run_distributed_selfplay_soak.py --mode`       |
+| NNUE training distributed | Implemented | `run_distributed_nnue_training.py --mode`       |
+| Cloud auto-scaling        | Planned     | Terraform/CDK for dynamic scaling               |
+| GPU training              | Planned     | See Part 3 below                                |
 
 ---
 

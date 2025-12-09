@@ -599,7 +599,7 @@ function toAIInfoViewModel(player: Player): AIInfoViewModel {
 const BOARD_CONFIGS_LOCAL = {
   square8: { ringsPerPlayer: 18 },
   square19: { ringsPerPlayer: 48 },
-  hexagonal: { ringsPerPlayer: 60 },
+  hexagonal: { ringsPerPlayer: 72 },
 } as const;
 
 function calculateRingStats(player: Player, gameState: GameState): PlayerRingStatsViewModel {
@@ -886,7 +886,7 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
       weirdState = {
         type: 'forced-elimination', // Reuse FE styling for LPS-FE endings
         title: 'Last Player Standing (via Forced Elimination)',
-        body: 'The game ended because only one player could make real moves for a full round. Other players were blocked or forced to eliminate rings.',
+        body: 'The game ended because only one player could make real moves for three consecutive full rounds. Other players were blocked or forced to eliminate rings.',
         tone: 'warning',
       };
     }

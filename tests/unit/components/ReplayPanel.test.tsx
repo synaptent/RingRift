@@ -427,4 +427,124 @@ describe('ReplayPanel (backend multi-game replay browser)', () => {
       expect(screen.getAllByText(/Move 1/i).length).toBeGreaterThan(0);
     });
   });
+
+  it('supports keyboard controls: arrow keys step moves and Escape exits replay', async () => {
+    render(<ReplayPanel {...defaultProps} defaultCollapsed={false} />);
+
+    await waitFor(() => {
+      expect(mockGameListProps).toHaveBeenCalled();
+    });
+
+    const latestCall = mockGameListProps.mock.calls[mockGameListProps.mock.calls.length - 1][0] as {
+      onSelectGame: (gameId: string) => void;
+    };
+
+    await act(async () => {
+      latestCall.onSelectGame('game-1');
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Speed:')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Move 2/i).length).toBeGreaterThan(0);
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'ArrowLeft' });
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText(/Move 1/i).length).toBeGreaterThan(0);
+    });
+
+    mockOnReplayModeChange.mockClear();
+    mockOnStateChange.mockClear();
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Escape' });
+    });
+
+    expect(mockOnReplayModeChange).toHaveBeenCalledWith(false);
+    expect(mockOnStateChange).toHaveBeenCalledWith(null);
+  });
+
+  it('supports Home/End keyboard shortcuts to jump to start/end of replay', async () => {
+    render(<ReplayPanel {...defaultProps} defaultCollapsed={false} />);
+
+    await waitFor(() => {
+      expect(mockGameListProps).toHaveBeenCalled();
+    });
+
+    const latestCall = mockGameListProps.mock.calls[mockGameListProps.mock.calls.length - 1][0] as {
+      onSelectGame: (gameId: string) => void;
+    };
+
+    await act(async () => {
+      latestCall.onSelectGame('game-1');
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Speed:')).toBeInTheDocument();
+    });
+
+    // Clear initial reconstruct calls so we can assert on keyboard-driven ones.
+    mockReconstructStateAtMove.mockClear();
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'Home' });
+    });
+
+    await waitFor(() => {
+      expect(mockReconstructStateAtMove).toHaveBeenCalledWith(expect.any(Object), 0);
+    });
+
+    mockReconstructStateAtMove.mockClear();
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: 'End' });
+    });
+
+    await waitFor(() => {
+      expect(mockReconstructStateAtMove).toHaveBeenCalledWith(expect.any(Object), 2);
+    });
+  });
+
+  it('toggles play/pause via Space key and updates play button label', async () => {
+    render(<ReplayPanel {...defaultProps} defaultCollapsed={false} />);
+
+    await waitFor(() => {
+      expect(mockGameListProps).toHaveBeenCalled();
+    });
+
+    const latestCall = mockGameListProps.mock.calls[mockGameListProps.mock.calls.length - 1][0] as {
+      onSelectGame: (gameId: string) => void;
+    };
+
+    await act(async () => {
+      latestCall.onSelectGame('game-1');
+    });
+
+    // Play button should initially show "Play"
+    await waitFor(() => {
+      expect(screen.getByLabelText('Play')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: ' ' });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Pause')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.keyDown(window, { key: ' ' });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Play')).toBeInTheDocument();
+    });
+  });
 });

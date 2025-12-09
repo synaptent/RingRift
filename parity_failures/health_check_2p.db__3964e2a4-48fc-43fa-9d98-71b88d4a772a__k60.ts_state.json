@@ -1,0 +1,164 @@
+{
+  "gameId": "",
+  "board": {
+    "type": "square8",
+    "size": 8,
+    "stacks": {
+      "3,1": {
+        "position": {
+          "x": 3,
+          "y": 1,
+          "z": null
+        },
+        "rings": [2, 2, 2, 1, 1],
+        "stackHeight": 5,
+        "capHeight": 3,
+        "controllingPlayer": 2
+      },
+      "3,0": {
+        "position": {
+          "x": 3,
+          "y": 0,
+          "z": null
+        },
+        "rings": [2, 2, 2, 1],
+        "stackHeight": 4,
+        "capHeight": 3,
+        "controllingPlayer": 2
+      },
+      "2,1": {
+        "position": {
+          "x": 2,
+          "y": 1,
+          "z": null
+        },
+        "rings": [2, 2],
+        "stackHeight": 2,
+        "capHeight": 2,
+        "controllingPlayer": 2
+      },
+      "1,3": {
+        "position": {
+          "x": 1,
+          "y": 3,
+          "z": null
+        },
+        "rings": [2, 2, 1, 2],
+        "stackHeight": 4,
+        "capHeight": 2,
+        "controllingPlayer": 2
+      },
+      "7,5": {
+        "position": {
+          "x": 7,
+          "y": 5,
+          "z": null
+        },
+        "rings": [2, 2, 1],
+        "stackHeight": 3,
+        "capHeight": 2,
+        "controllingPlayer": 2
+      },
+      "6,2": {
+        "position": {
+          "x": 6,
+          "y": 2,
+          "z": null
+        },
+        "rings": [1, 1],
+        "stackHeight": 2,
+        "capHeight": 2,
+        "controllingPlayer": 1
+      }
+    },
+    "markers": {
+      "3,6": {
+        "position": {
+          "x": 3,
+          "y": 6,
+          "z": null
+        },
+        "player": 2,
+        "type": "regular"
+      },
+      "4,5": {
+        "position": {
+          "x": 4,
+          "y": 5,
+          "z": null
+        },
+        "player": 1,
+        "type": "regular"
+      },
+      "5,0": {
+        "position": {
+          "x": 5,
+          "y": 0,
+          "z": null
+        },
+        "player": 2,
+        "type": "regular"
+      },
+      "6,0": {
+        "position": {
+          "x": 6,
+          "y": 0,
+          "z": null
+        },
+        "player": 1,
+        "type": "regular"
+      }
+    },
+    "collapsedSpaces": {
+      "4,6": 2,
+      "3,4": 1,
+      "4,0": 1,
+      "4,1": 1,
+      "4,2": 1,
+      "1,2": 2,
+      "1,4": 1,
+      "1,7": 1,
+      "2,7": 1,
+      "3,7": 1,
+      "0,4": 1,
+      "0,3": 1,
+      "0,5": 1,
+      "5,3": 2,
+      "6,3": 2,
+      "7,3": 2
+    },
+    "eliminatedRings": {
+      "1": 3
+    },
+    "formedLines": []
+  },
+  "players": [
+    {
+      "playerNumber": 1,
+      "ringsInHand": 8,
+      "eliminatedRings": 3,
+      "territorySpaces": 10,
+      "isActive": true
+    },
+    {
+      "playerNumber": 2,
+      "ringsInHand": 5,
+      "eliminatedRings": 0,
+      "territorySpaces": 3,
+      "isActive": true
+    }
+  ],
+  "currentPlayer": 1,
+  "currentPhase": "territory_processing",
+  "turnNumber": 1,
+  "moveHistory": [],
+  "gameStatus": "active",
+  "victoryThreshold": 19,
+  "territoryVictoryThreshold": 33,
+  "totalRingsEliminated": 3,
+  "chainCapturePosition": {
+    "x": 1,
+    "y": 4,
+    "z": null
+  }
+}

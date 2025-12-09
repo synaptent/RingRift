@@ -1,0 +1,73 @@
+{
+  "timestamp": "2025-12-08T21:06:22.801Z",
+  "source_file": "baseline_staging_20251208_144949.json",
+  "duration_minutes": 13.04,
+  "requests": {
+    "total": 16600,
+    "failed": 0,
+    "success_rate": 100,
+    "error_rate": 0
+  },
+  "latency": {
+    "samples": 16600,
+    "min": 2.062,
+    "max": 288.127,
+    "avg": 6.397772048192733,
+    "p50": 6.68,
+    "p95": 9.946,
+    "p99": 11.399
+  },
+  "capacity": {
+    "max_concurrent_games": 1,
+    "avg_concurrent_games": 0.18081180811808117
+  },
+  "throughput": {
+    "rps": "21.22"
+  },
+  "classification": {
+    "contract_failures": 0,
+    "capacity_failures": 0,
+    "lifecycle_mismatches": 0
+  },
+  "slo": {
+    "p95_latency": {
+      "target_ms": 500,
+      "actual_ms": 9.946,
+      "passed": true,
+      "margin_pct": "98.0"
+    },
+    "p99_latency": {
+      "target_ms": 2000,
+      "actual_ms": 11.399,
+      "passed": true,
+      "margin_pct": "99.4"
+    },
+    "error_rate": {
+      "target_percent": 1,
+      "actual_percent": 0,
+      "passed": true
+    },
+    "contract_failures": {
+      "target": 0,
+      "actual": 0,
+      "passed": true
+    },
+    "all_passed": true
+  },
+  "passed": true,
+  "targets": {
+    "concurrent_games": 100,
+    "concurrent_players": 300,
+    "p95_latency_ms": 500,
+    "p99_latency_ms": 2000,
+    "error_rate_percent": 1,
+    "ws_connection_success_percent": 99
+  },
+  "recommendations": [
+    {
+      "severity": "medium",
+      "area": "capacity",
+      "message": "Max concurrent games (1) is below target (100). Consider scaling resources."
+    }
+  ]
+}

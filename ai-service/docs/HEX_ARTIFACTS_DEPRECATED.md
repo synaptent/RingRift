@@ -6,7 +6,7 @@ This file documents **hexagonal** artifacts that were produced under the **old**
 - **331 cells**
 - **36 rings per player**
 
-The current “ultimate hex” specification is **radius 12 (13‑side board)** with **469 cells** and **48 rings per player**, embedded in a **25×25** grid. All hex artifacts listed below are **deprecated** and **must not** be used for training, evaluation, or parity after the geometry change.
+The current "ultimate hex" specification is **radius 12 (13‑side board)** with **469 cells** and **72 rings per player**, embedded in a **25×25** grid. All hex artifacts listed below are **deprecated** and **must not** be used for training, evaluation, or parity after the geometry change.
 
 ## Deprecated hex artifacts (old geometry, now deleted)
 
@@ -21,5 +21,5 @@ The current “ultimate hex” specification is **radius 12 (13‑side board)** 
 ## Policy going forward
 
 - These artifacts were removed from the repo. Use historical git commits only for forensic/historical inspection; do **not** retrain or evaluate models with them.
-- Regenerate new hex training data, parity fixtures, and models under the **radius 12 / 469‑cell / 48‑ring / 25×25** geometry.
+- Regenerate new hex training data, parity fixtures, and models under the **radius 12 / 469‑cell / 72‑ring / 25×25** geometry.
 - Any hex model trained on the old geometry is also **deprecated**; it cannot ingest the new 25×25 encoding or action space (`P_HEX = 91,876`).

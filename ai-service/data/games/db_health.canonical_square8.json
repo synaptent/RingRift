@@ -3,7 +3,7 @@
   "canonical_history": {},
   "canonical_ok": false,
   "db_path": "/Users/armand/Development/RingRift/ai-service/data/games/canonical_square8.db",
-  "num_games_requested": 1,
+  "num_games_requested": 4,
   "num_players": 2,
   "parity_gate": {
     "board_type": "square8",
@@ -13,23 +13,17 @@
     ],
     "hosts": null,
     "max_moves": 200,
-    "num_games": 1,
+    "num_games": 4,
     "num_players": 2,
     "parity_summary": {
-      "end_of_game_only_divergences": [],
-      "games_with_end_of_game_only_divergence": 0,
-      "games_with_semantic_divergence": 0,
-      "games_with_structural_issues": 0,
-      "mismatch_counts_by_dimension": {},
-      "returncode": 0,
-      "semantic_divergences": [],
-      "structural_issues": [],
-      "total_databases": 1,
-      "total_games_checked": 0
+      "error": "failed_to_parse_parity_summary",
+      "returncode": -6,
+      "stderr": "OMP: Error #179: Function Can't open SHM2 failed:\nOMP: System error #1: Operation not permitted\n",
+      "stdout": ""
     },
     "passed_canonical_parity_gate": false,
     "returncode": 0,
     "seed": 42,
-    "soak_returncode": 0
+    "soak_returncode": -6
   }
 }

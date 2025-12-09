@@ -200,15 +200,23 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
       GameEngine._end_turn(game_state, trace_mode=trace_mode)
 
   elif last_move.type == MoveType.PROCESS_TERRITORY_REGION:
-    # After processing a disconnected territory region via an explicit
-    # PROCESS_TERRITORY_REGION decision, rotate to the next seat and
-    # start them in the ring_placement phase without applying forced
-    # elimination gating. This mirrors the TS orchestrator behaviour
-    # exercised by the v2 territory_processing contract vectors.
-    # Note: We still need to skip players who are fully eliminated
-    # (no stacks and no rings in hand) even though we don't apply
-    # forced elimination for this transition.
-    GameEngine._rotate_to_next_active_player(game_state)
+    # After processing a disconnected territory region, re-evaluate whether
+    # more territory decisions remain for the **same player**. This mirrors
+    # the TS orchestrator which stays in territory_processing until all
+    # regions are resolved.
+    remaining_regions = GameEngine._get_territory_processing_moves(
+      game_state,
+      current_player,
+    )
+
+    if remaining_regions:
+      # Stay in territory_processing and keep the current player; hosts will
+      # surface the next process_territory_region decision.
+      game_state.current_phase = GamePhase.TERRITORY_PROCESSING
+    else:
+      # No further territory decisions remain; rotate to the next player
+      # without applying forced elimination gating (mirrors TS turn end).
+      GameEngine._rotate_to_next_active_player(game_state)
 
   elif last_move.type == MoveType.NO_TERRITORY_ACTION:
     # Forced no-op: player entered territory_processing but had no

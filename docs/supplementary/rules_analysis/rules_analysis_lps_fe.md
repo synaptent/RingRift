@@ -13,16 +13,19 @@ The current definition of Last Player Standing (LPS)—which excludes Forced Eli
 ### Current LPS Definition (RR-CANON-R172)
 
 A "real action" for LPS purposes means any legal:
+
 - Ring placement (RR-CANON-R080–R082)
 - Non-capture movement (RR-CANON-R090–R092)
 - Overtaking capture segment or chain (RR-CANON-R100–R103)
 
 **Forced Elimination explicitly does NOT count** (RR-CANON-R205, R207):
+
 > "Phase-level forced elimination is treated as a global legal action for ANM purposes... but is NOT a 'real action' for Last-Player-Standing under RR-CANON-R172."
 
 ### LPS Victory Condition (RR-CANON-R172)
 
 Player P wins by LPS if:
+
 1. **First round:** P takes at least one real action; all other players have NO real actions available.
 2. **Second round:** P remains the only player who has taken any real action and takes at least one real action.
 3. **Third round:** P remains the only player who has taken any real action and takes at least one real action.
@@ -31,6 +34,7 @@ Player P wins by LPS if:
 ### Forced Elimination Mechanic (RR-CANON-R100)
 
 When FE is triggered (no legal placement, movement, or capture):
+
 > "P must choose one controlled stack and eliminate its **entire cap** (all consecutive top rings of P on that stack)."
 
 This is crucial: FE removes **all consecutive top rings of your color** from a chosen stack—potentially 1 to many rings at once. A stack with capHeight 5 loses all 5 rings in one FE action.
@@ -41,15 +45,15 @@ This is crucial: FE removes **all consecutive top rings of your color** from a c
 
 ### Current Rule (FE is NOT a Real Action)
 
-* **Philosophy:** Distinguishes between **constructive agency** (placing, moving, capturing) and **destructive obligation** (being forced to consume one's own material to pass the turn).
-* **Effect:** Recognizes that a player who can *only* self-destruct has effectively lost control of the board. If this state persists for three full rounds, the game acknowledges their defeat.
-* **Chess Analogy:** Similar to *Zugzwang*, where being forced to move is a disadvantage. The current rule treats a player in permanent Zugzwang as defeated, rather than forcing the opponent to capture every last piece.
+- **Philosophy:** Distinguishes between **constructive agency** (placing, moving, capturing) and **destructive obligation** (being forced to consume one's own material to pass the turn).
+- **Effect:** Recognizes that a player who can _only_ self-destruct has effectively lost control of the board. If this state persists for three full rounds, the game acknowledges their defeat.
+- **Chess Analogy:** Similar to _Zugzwang_, where being forced to move is a disadvantage. The current rule treats a player in permanent Zugzwang as defeated, rather than forcing the opponent to capture every last piece.
 
 ### Proposed Rule (FE IS a Real Action)
 
-* **Philosophy:** As long as a player has material on the board, they are "alive" and participating.
-* **Effect:** A player completely trapped must be whittled down cap-by-cap until they have no stacks left.
-* **Consequence:** LPS becomes functionally identical to "Eliminate all opponent rings," just with a different trigger. It removes the unique "checkmate by immobilization" victory path.
+- **Philosophy:** As long as a player has material on the board, they are "alive" and participating.
+- **Effect:** A player completely trapped must be whittled down cap-by-cap until they have no stacks left.
+- **Consequence:** LPS becomes functionally identical to "Eliminate all opponent rings," just with a different trigger. It removes the unique "checkmate by immobilization" victory path.
 
 ---
 
@@ -57,12 +61,12 @@ This is crucial: FE removes **all consecutive top rings of your color** from a c
 
 The fact that FE removes the **entire cap** (not just one ring) has important implications:
 
-| Aspect | Impact |
-|--------|--------|
-| **Speed of resolution** | FE-only positions resolve quickly; 3 tall stacks can be eliminated in 3 turns |
+| Aspect                               | Impact                                                                                         |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| **Speed of resolution**              | FE-only positions resolve quickly; 3 tall stacks can be eliminated in 3 turns                  |
 | **Cap management becomes strategic** | Tall caps = powerful for captures BUT vulnerable to FE; Split stacks = FE-resilient BUT weaker |
-| **FE is punishing** | Losing an entire cap per turn creates urgent pressure to escape |
-| **Games don't stall** | The "attrition" concern is mitigated—FE-only positions don't drag on indefinitely |
+| **FE is punishing**                  | Losing an entire cap per turn creates urgent pressure to escape                                |
+| **Games don't stall**                | The "attrition" concern is mitigated—FE-only positions don't drag on indefinitely              |
 
 ### Strategic Cap Trade-off (Current Rule Creates)
 
@@ -86,23 +90,23 @@ If FE counted as a real action, this trade-off becomes less meaningful—being t
 
 ### Goal: "Exciting, tense, and strategically non-trivial games"
 
-* **Current Rule:** Creates high tension. A player trapped is on a "death clock". They must use their forced eliminations strategically to break the trap *now*. If they fail to open a line of play within three rounds, they lose. This creates dramatic "breakout" moments.
-* **Proposed Rule:** Deflates tension. The trapped player passively burns caps for turns. The dominant player must execute a containment squeeze to force ring-elimination victory. This leads to "zombie" gameplay where a defeated player drags out the match.
+- **Current Rule:** Creates high tension. A player trapped is on a "death clock". They must use their forced eliminations strategically to break the trap _now_. If they fail to open a line of play within three rounds, they lose. This creates dramatic "breakout" moments.
+- **Proposed Rule:** Deflates tension. The trapped player passively burns caps for turns. The dominant player must execute a containment squeeze to force ring-elimination victory. This leads to "zombie" gameplay where a defeated player drags out the match.
 
 ### Goal: "High emergent complexity from simple rules"
 
-* **Current Rule:** Adds a strategic layer: **Mobility is a resource.** You can win by material (Ring Elimination), space (Territory), or *mobility* (LPS). This supports diverse strategies (e.g., a low-material "containment" strategy that wins by trapping a material-heavy opponent).
-* **Proposed Rule:** Collapses Mobility into Material. If FE counts as an action, then Mobility is just a function of having rings to burn. The strategy simplifies to "have more stuff," reducing the viability of clever containment plays.
+- **Current Rule:** Adds a strategic layer: **Mobility is a resource.** You can win by material (Ring Elimination), space (Territory), or _mobility_ (LPS). This supports diverse strategies (e.g., a low-material "containment" strategy that wins by trapping a material-heavy opponent).
+- **Proposed Rule:** Collapses Mobility into Material. If FE counts as an action, then Mobility is just a function of having rings to burn. The strategy simplifies to "have more stuff," reducing the viability of clever containment plays.
 
 ### Goal: "Progress & Termination Guarantee"
 
-* **Current Rule:** Accelerates termination in "won" positions. Once a player is locked down for three rounds, the game ends decisively.
-* **Proposed Rule:** Guarantees termination (eventually rings run out), but maximizes the length of the "cleanup" phase.
+- **Current Rule:** Accelerates termination in "won" positions. Once a player is locked down for three rounds, the game ends decisively.
+- **Proposed Rule:** Guarantees termination (eventually rings run out), but maximizes the length of the "cleanup" phase.
 
 ### Goal: "Human-AI competitive balance"
 
-* **Current Rule:** Creates interesting positional puzzles—can you force opponents into FE-only positions? Can you escape such a position? These are strategic skills that reward human intuition.
-* **Proposed Rule:** Reduces incentive to trap opponents. The strategic depth of position-based domination diminishes.
+- **Current Rule:** Creates interesting positional puzzles—can you force opponents into FE-only positions? Can you escape such a position? These are strategic skills that reward human intuition.
+- **Proposed Rule:** Reduces incentive to trap opponents. The strategic depth of position-based domination diminishes.
 
 ---
 
@@ -111,6 +115,7 @@ If FE counted as a real action, this trade-off becomes less meaningful—being t
 ### Current Rule Creates Alliance Incentives
 
 In 3-4 player games:
+
 - If Player A dominates and B, C are FE-only, B and C have urgent incentive to cooperate
 - B might sacrifice material to free C's mobility (and vice versa)
 - This creates the "social dynamics and coalition forming" that the design goals emphasize
@@ -131,9 +136,9 @@ Imagine Player A has trapped Player B's large stack (capHeight 5) in a corner. P
 
 1. **Turn 1:** B performs FE, loses entire cap (5 rings). Stack may now be height 0-N depending on buried rings.
 2. **Turn 2:** If still blocked, B performs another FE (if stacks remain). A has completed round 1 as only player with real actions.
-3. **Turn 3+:** If B remains blocked through round 2, A wins by LPS.
+3. **Turn 3+:** If B remains blocked through rounds 2 and 3, A wins by LPS after the third consecutive round.
 
-**Result:** Strategic victory for A's positioning. Game ends decisively after ~2 rounds.
+**Result:** Strategic victory for A's positioning. Game ends decisively after ~3 rounds (per RR-CANON-R172).
 
 ### Under Proposed Rules
 
@@ -153,7 +158,7 @@ Imagine Player A has trapped Player B's large stack (capHeight 5) in a corner. P
 
 ### "FE changes the board state significantly"
 
-**Response:** True—entire-cap removal can eliminate 1-5+ rings. But the *direction* of change is backwards (removing your own material). Real actions advance your position; FE retreats from it.
+**Response:** True—entire-cap removal can eliminate 1-5+ rings. But the _direction_ of change is backwards (removing your own material). Real actions advance your position; FE retreats from it.
 
 ### "Games might stall with FE-only players"
 
@@ -163,9 +168,10 @@ Imagine Player A has trapped Player B's large stack (capHeight 5) in a corner. P
 
 ## 7. Conclusion
 
-The proposed change would weaken the identity of RingRift as a game of *maneuver*. By equating "destroying one's own position" with "making a move," it devalues the strategic achievement of immobilizing an opponent.
+The proposed change would weaken the identity of RingRift as a game of _maneuver_. By equating "destroying one's own position" with "making a move," it devalues the strategic achievement of immobilizing an opponent.
 
 The current rule correctly identifies that:
+
 1. A player who can only self-destruct is **no longer playing the same game** as one who is moving and capturing
 2. The LPS condition provides a **merciful and decisive end** to such states
 3. The "entire cap" elimination mechanic ensures **FE-only positions resolve quickly** anyway

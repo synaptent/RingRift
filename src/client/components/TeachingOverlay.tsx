@@ -197,9 +197,9 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
     description: TEACHING_TOPICS_COPY.victory_stalemate.body,
     tips: [
       // === Last Player Standing (LPS) ===
-      'LAST PLAYER STANDING: You win if you are the only player who can make real moves (placements, movements, or captures) for TWO consecutive complete rounds.',
-      // Two-round requirement emphasis
-      'LPS requires TWO rounds: First round, you must have and take at least one real action while all others have none. Second round, you remain the only player with real actions. Victory is declared after the second round completes.',
+      'LAST PLAYER STANDING: You win if you are the only player who can make real moves (placements, movements, or captures) for THREE consecutive complete rounds.',
+      // Three-round requirement emphasis
+      'LPS requires THREE rounds: First round, you must have and take at least one real action while all others have none. Second and third rounds, you remain the only player with real actions. Victory is declared after the third round completes.',
       // GAP-LPS-03: Emphasize FE ≠ real action
       'Forced elimination is NOT a real action: even if you are forced to eliminate caps, that does not count as a move for LPS purposes. If your opponent has real moves and you only have forced eliminations, they have not lost yet.',
       // === Structural Stalemate ===
@@ -283,7 +283,7 @@ export function TeachingOverlay({
   const [currentFlowId, setCurrentFlowId] = useState<string | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null);
   const [teachingFlowId, setTeachingFlowId] = useState<string | null>(null);
- 
+
   const lastWeirdStateContextRef = useRef<WeirdStateOverlayContext | null>(null);
   const hasShownForSessionRef = useRef<string | null>(null);
   const hasDismissedForSessionRef = useRef<string | null>(null);

@@ -269,11 +269,7 @@ def evaluate_skip_placement_eligibility_py(
     """
     Evaluate canonical skip-placement eligibility for `player` in `state`.
 
-    Mirrors TS PlacementAggregate.evaluateSkipPlacementEligibility,
-    but is intentionally agnostic about `rings_in_hand`. Hosts that
-    expose an explicit SKIP_PLACEMENT move (backend, sandbox, or
-    Python rules validators) are expected to layer any additional
-    `ringsInHand > 0` gating on top of this helper.
+    Mirrors TS PlacementAggregate.evaluateSkipPlacementEligibility.
     """
     from app.models import GamePhase
 
@@ -302,6 +298,15 @@ def evaluate_skip_placement_eligibility_py(
             eligible=False,
             reason="Player not found",
             code="PLAYER_NOT_FOUND",
+        )
+
+    # Canonical rule: when rings_in_hand == 0, skip_placement is not a valid
+    # voluntary action. Players must emit `no_placement_action` instead.
+    if player_obj.rings_in_hand <= 0:
+        return SkipPlacementEligibilityResultPy(
+            eligible=False,
+            reason="Cannot skip placement with no rings in hand",
+            code="NO_RINGS_IN_HAND",
         )
 
     from app.game_engine import GameEngine

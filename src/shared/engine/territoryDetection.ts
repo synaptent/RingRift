@@ -114,9 +114,10 @@ function findRegionsWithBorderColor(
     const representedPlayers = getRepresentedPlayers(region, board);
 
     if (representedPlayers.size < activePlayers.size) {
+      // Region is bounded by borderColor markers; attribute control to that player.
       disconnectedRegions.push({
         spaces: region,
-        controllingPlayer: 0, // Will be set by caller/processor
+        controllingPlayer: borderColor,
         isDisconnected: true,
       });
     }
@@ -154,11 +155,16 @@ function findRegionsWithoutMarkerBorder(
     const representedPlayers = getRepresentedPlayers(region, board);
 
     if (representedPlayers.size < activePlayers.size) {
-      disconnectedRegions.push({
-        spaces: region,
-        controllingPlayer: 0,
-        isDisconnected: true,
-      });
+      // If exactly one player is represented inside, attribute control to that player.
+      // Otherwise skip this ambiguous region to avoid non-canonical neutral territories.
+      if (representedPlayers.size === 1) {
+        const [solePlayer] = Array.from(representedPlayers);
+        disconnectedRegions.push({
+          spaces: region,
+          controllingPlayer: solePlayer,
+          isDisconnected: true,
+        });
+      }
     }
   }
 

@@ -107,8 +107,8 @@ This resolves the earlier ambiguity where engines played to completion and relie
 **Sources**
 
 - [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:61) – RR-CANON-R020 rings per player; [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:218) RR-CANON-R081 and [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md:225) RR-CANON-R082 reference a per-player `ringsPerPlayer` maximum when placing.
-- [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1 version table – defines `ringsPerPlayer` = 18 (square8), 36 (square19), or 48 (hexagonal radius 12).
-- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:342) §3.2.1 – states "Each player has 48 rings for hexagonal (radius 12), 36 for 19x19, 18 for 8x8".
+- [`ringrift_compact_rules.md`](ringrift_compact_rules.md:18) §1.1 version table – defines `ringsPerPlayer` = 18 (square8), 48 (square19), or 72 (hexagonal radius 12).
+- [`ringrift_complete_rules.md`](ringrift_complete_rules.md:342) §3.2.1 – states "Each player has 72 rings for hexagonal (radius 12), 48 for 19x19, 18 for 8x8".
 - [`archive/RULES_STATIC_VERIFICATION.md`](../../archive/RULES_STATIC_VERIFICATION.md:755) §2.3.3 – describes the current implementation approximation: per-player ring cap counts **all rings in stacks controlled by a player**, including captured rings of other colours, when deciding whether further placements are allowed (CCE-002).
 - [`docs/supplementary/RULES_CONSISTENCY_EDGE_CASES.md`](RULES_CONSISTENCY_EDGE_CASES.md:365) CCE-002 – classifies this as an "implementation compromise" and recommends either canonising or tightening it.
 

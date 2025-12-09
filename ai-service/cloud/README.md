@@ -136,6 +136,28 @@ When a spot instance is terminated:
 3. Checkpoint is saved locally (or to persistent volume)
 4. Next instance can resume from checkpoint
 
+## Deployment Modes
+
+All distributed training scripts support a `--mode` argument for selecting worker hosts:
+
+| Mode     | Description                                     | Use Case                   |
+| -------- | ----------------------------------------------- | -------------------------- |
+| `local`  | Run on local machine only (no remote workers)   | Development, quick tests   |
+| `lan`    | Use local Mac cluster workers from hosts config | Zero-cost distributed runs |
+| `aws`    | Use AWS cloud workers                           | Cloud burst capacity       |
+| `hybrid` | Use both LAN and AWS workers                    | Maximum parallelism        |
+
+```bash
+# Run distributed self-play on LAN cluster
+python scripts/run_distributed_selfplay_soak.py --mode lan --num-games 100
+
+# Run CMA-ES optimization on AWS
+python scripts/run_cmaes_optimization.py --distributed --mode aws
+
+# Run iterative CMA-ES with hybrid workers
+python scripts/run_iterative_cmaes.py --distributed --mode hybrid
+```
+
 ## Environment Variables
 
 | Variable                         | Description              | Default             |

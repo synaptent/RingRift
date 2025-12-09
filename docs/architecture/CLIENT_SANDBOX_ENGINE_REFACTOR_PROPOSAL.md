@@ -1,14 +1,22 @@
-> **Doc Status (2025-12-07): Proposal / Not Started**
+> **Doc Status (2025-12-07): Proposal / Partially Superseded**
 > **Role:** Architectural proposal for reducing ClientSandboxEngine.ts file size through state machine extraction.
 >
-> **Status (2025-12-07):** This is a **deferred proposal** documenting a potential refactor. No decision has been made to proceed.
+> **Status (2025-12-07):** This is a **deferred proposal**. The core parity testing concern has been addressed by `CanonicalReplayEngine` (426 lines), which provides coercion-free replay without any ClientSandboxEngine dependencies.
+>
+> **Architecture Update (Dec 2025):**
+>
+> - `CanonicalReplayEngine` now powers FSM validation and DB replay scripts
+> - ClientSandboxEngine coercions (~250 lines) remain only for interactive play and legacy recording replay
+> - 20 parity test files still use ClientSandboxEngine with `traceMode: true`; migration to CanonicalReplayEngine is tracked in `TODO.md`
 >
 > **Related Docs:**
 >
 > - `docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md` (completed consolidation)
+> - `src/shared/replay/CanonicalReplayEngine.ts` (new clean replay engine)
 > - `src/client/sandbox/ClientSandboxEngine.ts` (target file)
 > - `src/client/sandbox/sandboxDecisionMapping.ts` (already extracted)
 > - `src/client/sandbox/boardViewFactory.ts` (already extracted)
+> - `docs/runbooks/FSM_VALIDATION_ROLLOUT.md` (FSM validation using CanonicalReplayEngine)
 
 # ClientSandboxEngine State Machine Refactor Proposal
 

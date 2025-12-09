@@ -161,6 +161,116 @@ describe('RulesUxHotspotAnalysis – happy path', () => {
     expect(md).toContain('Help opens per 100 games: 2.27');
     expect(md).toContain('help_reopen: 70 (reopen rate: 0.35)');
   });
+
+  it('smoke fixture: respects top-k ranking and min-events gating for dry-run usage', async () => {
+    const fixturePath = path.resolve(
+      __dirname,
+      '../fixtures/rules_ux_hotspots/rules_ux_aggregates.square8_2p.sample.json'
+    );
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rules-ux-hotspots-smoke-'));
+    const jsonOutPath = path.join(tmpDir, 'summary.json');
+    const mdOutPath = path.join(tmpDir, 'summary.md');
+
+    const exitCode = await main([
+      'node',
+      'analyze_rules_ux_telemetry.ts',
+      '--input',
+      fixturePath,
+      '--output-json',
+      jsonOutPath,
+      '--output-md',
+      mdOutPath,
+      '--min-events',
+      '15',
+      '--top-k',
+      '2',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(jsonOutPath)).toBe(true);
+    expect(fs.existsSync(mdOutPath)).toBe(true);
+
+    const summary = JSON.parse(fs.readFileSync(jsonOutPath, 'utf8')) as any;
+
+    // Basic shape derived from the fixture metadata.
+    expect(summary.board).toBe('square8');
+    expect(summary.num_players).toBe(2);
+    expect(summary.games.started).toBe(600);
+    expect(summary.games.completed).toBe(500);
+    expect(summary.window.label).toBe('2025-12');
+    expect(summary.contexts).toHaveLength(4);
+
+    // Ranking should surface the two highest-help contexts.
+    expect(summary.topByHelpOpensPer100Games).toEqual([
+      'anm_forced_elimination',
+      'structural_stalemate',
+    ]);
+
+    const territoryCtx = summary.contexts.find(
+      (c: any) => c.rulesContext === 'territory_mini_region'
+    );
+    expect(territoryCtx).toBeDefined();
+    expect(territoryCtx.sources[0].sampleOk).toBe(false); // below minEvents threshold
+    expect(territoryCtx.hotspotSeverity).toBe('LOW');
+
+    const anmCtx = summary.contexts.find((c: any) => c.rulesContext === 'anm_forced_elimination');
+    expect(anmCtx.sources.every((s: any) => s.sampleOk)).toBe(true);
+    expect(anmCtx.hotspotSeverity).toBe('HIGH');
+    expect(anmCtx.sumHelpOpens).toBe(70);
+    expect(anmCtx.helpOpensPer100Games).toBeCloseTo((70 / 500) * 100, 4);
+    expect(anmCtx.maxHelpReopenRate).toBeCloseTo(20 / 60, 4);
+    expect(anmCtx.maxResignAfterWeirdRate).toBeCloseTo(24 / 120, 4);
+
+    const structuralCtx = summary.contexts.find(
+      (c: any) => c.rulesContext === 'structural_stalemate'
+    );
+    expect(structuralCtx).toBeDefined();
+    expect(structuralCtx.hotspotSeverity).toBe('MEDIUM');
+    expect(structuralCtx.helpOpensPer100Games).toBeCloseTo((35 / 500) * 100, 4);
+
+    const lineProcessing = summary.contexts.find((c: any) => c.rulesContext === 'line_processing');
+    expect(lineProcessing).toBeDefined();
+    expect(lineProcessing!.hotspotSeverity).toBe('MEDIUM');
+    expect(lineProcessing!.sources[0].sampleOk).toBe(true);
+    expect(lineProcessing!.helpOpensPer100Games).toBeCloseTo((8 / 500) * 100, 4);
+
+    const md = fs.readFileSync(mdOutPath, 'utf8');
+    expect(md).toContain('Rules UX Hotspots – square8 2-player');
+    expect(md).toContain('Context: anm_forced_elimination');
+    expect(md).toContain('Context: structural_stalemate');
+  });
+
+  it('skips Markdown output when --output-md is an empty string', async () => {
+    const fixturePath = path.resolve(
+      __dirname,
+      '../fixtures/rules_ux_hotspots/rules_ux_aggregates.square8_2p.sample.json'
+    );
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rules-ux-hotspots-nomd-'));
+    const jsonOutPath = path.join(tmpDir, 'summary.json');
+    const mdOutPath = path.join(tmpDir, 'summary.md');
+
+    const exitCode = await main([
+      'node',
+      'analyze_rules_ux_telemetry.ts',
+      '--input',
+      fixturePath,
+      '--output-json',
+      jsonOutPath,
+      '--output-md',
+      '',
+      '--min-events',
+      '10',
+      '--top-k',
+      '3',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(fs.existsSync(jsonOutPath)).toBe(true);
+    expect(fs.existsSync(mdOutPath)).toBe(false);
+
+    const summary = JSON.parse(fs.readFileSync(jsonOutPath, 'utf8')) as any;
+    expect(summary.topByHelpOpensPer100Games.length).toBeGreaterThan(0);
+  });
 });
 
 describe('RulesUxHotspotAnalysis – validation failures', () => {

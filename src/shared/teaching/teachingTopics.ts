@@ -68,14 +68,14 @@ export interface EnhancedTeachingContent {
 export const VICTORY_STALEMATE_TIPS: TeachingTip[] = [
   // === Last Player Standing (LPS) ===
   {
-    text: 'LAST PLAYER STANDING: You win if you are the only player who can make real moves (placements, movements, or captures) for TWO consecutive complete rounds.',
+    text: 'LAST PLAYER STANDING: You win if you are the only player who can make real moves (placements, movements, or captures) for THREE consecutive complete rounds.',
     category: 'lps',
     emphasis: 'important',
     addressesGap: 'GAP-LPS-02',
   },
-  // Two-round requirement emphasis
+  // Three-round requirement emphasis
   {
-    text: 'LPS requires TWO rounds: First round, you must have and take at least one real action while all others have none. Second round, you remain the only player with real actions. Victory is declared after the second round completes.',
+    text: 'LPS requires THREE rounds: First round, you must have and take at least one real action while all others have none. Second and third rounds, you remain the only player with real actions. Victory is declared after the third round completes.',
     category: 'lps',
     emphasis: 'critical',
     addressesGap: 'GAP-LPS-02',
@@ -299,19 +299,19 @@ export const TERRITORY_TIPS: TeachingTip[] = [
  */
 export const LPS_FIRST_OCCURRENCE_TIPS: TeachingTip[] = [
   {
-    text: 'LAST PLAYER STANDING ALERT: When you are the only player with real moves for a full round, the LPS countdown begins. One more round of exclusive actions wins the game!',
+    text: 'LAST PLAYER STANDING ALERT: When you are the only player with real moves for a full round, the LPS countdown begins. Two more rounds of exclusive actions wins the game!',
     category: 'first_occurrence',
     emphasis: 'critical',
     addressesGap: 'GAP-LPS-01',
   },
   {
-    text: 'Watch the LPS indicator in the HUD – it shows when the two-round countdown is active and how close you are to victory (or defeat).',
+    text: 'Watch the LPS indicator in the HUD – it shows when the three-round countdown is active and how close you are to victory (or defeat).',
     category: 'indicator',
     emphasis: 'important',
     addressesGap: 'GAP-LPS-01',
   },
   {
-    text: 'If you regain real moves before the second round completes, the LPS countdown resets. Fight back by opening up movement options!',
+    text: 'If you regain real moves before the third round completes, the LPS countdown resets. Fight back by opening up movement options!',
     category: 'recovery',
     emphasis: 'normal',
     addressesGap: 'GAP-LPS-01',

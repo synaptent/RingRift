@@ -24,7 +24,7 @@ The game rewards both careful planning and bold plays. You'll form temporary all
 
 > **At a glance (where to go next)**
 >
-> - Need crisp, implementation-ready semantics? See `docs/rules/ringrift_compact_rules.md` and `RULES_CANONICAL_SPEC.md`.
+> - Need crisp, implementation-ready semantics? See `ringrift_compact_rules.md` and `RULES_CANONICAL_SPEC.md`.
 > - Want tests that correspond to FAQs/scenarios? See `docs/rules/RULES_SCENARIO_MATRIX.md`.
 > - Building or validating engines? Defer to the shared TS engine under `src/shared/engine/**` as the executable SSoT.
 
@@ -73,16 +73,16 @@ The rule documentation is structured to facilitate different learning approaches
 - **Tactical Players**: Dive into the [Strategy Guide](#14-strategy-guide-all-versions) and [FAQ](#154-frequently-asked-questions)
 - **Rules Enthusiasts**: Explore the full hex and [19×19 Version](#3-core-game-elements-19×19-full-version) details
 - **Looking for Specific Answers**: Check the [FAQ](#154-frequently-asked-questions) or use the [Quick Reference Guide](#162-core-mechanics-reference-all-versions)
-- **Engine Implementers**: For terse, implementation-ready semantics, pair this doc with `docs/rules/ringrift_compact_rules.md` and `RULES_CANONICAL_SPEC.md`.
+- **Engine Implementers**: For terse, implementation-ready semantics, pair this doc with `ringrift_compact_rules.md` and `RULES_CANONICAL_SPEC.md`.
   > **Note on Diagrams**: This document includes visual diagrams to illustrate concepts. If you're reading a printed or plain-text version, you can skip these sections without losing essential information—the text descriptions stand alone.
 
 ## Table of Contents
 
 - [RingRift Complete Rules](#ringrift-complete-rules)
-    - [What is RingRift?](#what-is-ringrift)
-    - [Ruleset Design Goals \& Rationale](#ruleset-design-goals--rationale)
-    - [Learning and Playing RingRift](#learning-and-playing-ringrift)
-    - [How to Navigate This Document](#how-to-navigate-this-document)
+  - [What is RingRift?](#what-is-ringrift)
+  - [Ruleset Design Goals \& Rationale](#ruleset-design-goals--rationale)
+  - [Learning and Playing RingRift](#learning-and-playing-ringrift)
+  - [How to Navigate This Document](#how-to-navigate-this-document)
   - [Table of Contents](#table-of-contents)
   - [1. Introduction (All Versions)](#1-introduction-all-versions)
     - [What is RingRift?](#what-is-ringrift-1)
@@ -116,7 +116,8 @@ The rule documentation is structured to facilitate different learning approaches
       - [4.2.1 Basic Movement Requirements](#421-basic-movement-requirements)
     - [4.3 Capture Phase](#43-capture-phase)
     - [4.4 Forced Elimination When Blocked](#44-forced-elimination-when-blocked)
-    - [4.5 Post-Movement Processing](#45-post-movement-processing)
+    - [4.5 Recovery Action](#45-recovery-action)
+    - [4.6 Post-Movement Processing](#46-post-movement-processing)
   - [5. Ring Stack Mechanics (Basics - All Versions)](#5-ring-stack-mechanics-basics---all-versions)
     - [5.1 Stack Height](#51-stack-height)
     - [5.2 Cap Height](#52-cap-height)
@@ -146,7 +147,7 @@ The rule documentation is structured to facilitate different learning approaches
   - [11. Line Formation \& Collapse (All Versions)](#11-line-formation--collapse-all-versions)
     - [11.1 Line Formation Rules](#111-line-formation-rules)
     - [11.2 Collapse Process](#112-collapse-process)
-      - [Exact-length lines (3 markers on 8×8 in 3-4p games, 4 on 8×8 2p/19×19/Hex)](#exact-length-lines-3-markers-on-88-in-3-4p-games-4-on-88-2p1919hex)
+      - [Exact-length lines (3 markers on 8×8, 4 on 19×19/Hex)](#exact-length-lines-3-markers-on-88-4-on-1919hex)
       - [Longer lines give you a choice](#longer-lines-give-you-a-choice)
       - [About collapsed spaces](#about-collapsed-spaces)
       - [Important processing notes](#important-processing-notes)
@@ -247,7 +248,7 @@ Three versions of the game exist, offering different strategic landscapes while 
 
 - **8×8 Simplified Version**: A smaller square grid (64 spaces) for faster games and easier learning. Uses 18 rings per player.
 - **19×19 Full Version**: The original, larger square grid (361 spaces) offering maximum tactical complexity. Uses 48 rings per player.
-- **Hexagonal Version**: A regular hexagonal grid with 13 spaces per side (469 total spaces), providing the deepest strategic landscape and the fullest realization of the design vision. Uses 60 rings per player.
+- **Hexagonal Version**: A regular hexagonal grid with 13 spaces per side (469 total spaces), providing the deepest strategic landscape and the fullest realization of the design vision. Uses 72 rings per player.
 
 ### 1.1 Game Overview
 
@@ -273,8 +274,8 @@ The game's rich strategic depth, tension and drama emerge from the interplay bet
 | Feature                  | 19×19 Full Version                           | 8×8 Simplified Version                       | Hexagonal Version                            |
 | ------------------------ | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
 | Board Size               | 361 spaces (19×19)                           | 64 spaces (8×8)                              | 469 spaces (13 per side)                     |
-| Rings per Player         | 48 rings                                     | 18 rings                                     | 60 rings                                     |
-| Victory Threshold (3p)   | >72 rings                                    | >27 rings                                    | >90 rings                                    |
+| Rings per Player         | 48 rings                                     | 18 rings                                     | 72 rings                                     |
+| Victory Threshold (3p)   | >72 rings                                    | >27 rings                                    | >108 rings                                   |
 | Movement Adjacency       | Moore (8-direction)                          | Moore (8-direction)                          | Hexagonal (6-direction)                      |
 | Line Formation Adjacency | Moore (8-direction)                          | Moore (8-direction)                          | Hexagonal (6-direction)                      |
 | Territory Adjacency      | Von Neumann (4-direction)                    | Von Neumann (4-direction)                    | Hexagonal (6-direction)                      |
@@ -293,7 +294,7 @@ RingRift is a territory control and ring elimination game where you'll build sta
 
 - Eliminate more than 50% of the total rings in play
 - Control more than 50% of the board as territory
- - Win by last-player-standing: be the only player with legal actions for **three consecutive full rounds**, taking at least one real action on each of your turns while all other players have no real actions (see Section 13.3 for details)
+- Win by last-player-standing: be the only player with legal actions for **three consecutive full rounds**, taking at least one real action on each of your turns while all other players have no real actions (see Section 13.3 for details)
 
 #### Start With The Simpler Version
 
@@ -301,7 +302,7 @@ We recommend beginning with the **8×8 version** - it has simpler rules but pres
 
 #### Setup in 30 Seconds
 
-- Each player takes the appropriate number of rings of their own color for the chosen version (18 for 8×8, 48 for 19×19, 60 for Hexagonal); this is their entire personal ring supply for the game.
+- Each player takes the appropriate number of rings of their own color for the chosen version (18 for 8×8, 48 for 19×19, 72 for Hexagonal); this is their entire personal ring supply for the game.
 - No rings start on the board - players place and move them during play.
 - Decide turn order and begin!
 
@@ -324,7 +325,7 @@ Each turn follows the same rhythm. Here's the short version:
    - Once you start capturing, you must keep going until no more captures are possible
 
 4. **CLAIM TERRITORY** _(automatic)_
-   - Lines of your markers collapse into permanent territory (see Section 11 for thresholds: 3‑in‑a‑row on 8×8 in 3–4 player games, 4‑in‑a‑row on 8×8 in 2‑player games, and 4‑in‑a‑row on 19×19/Hex)
+   - Lines of your markers collapse into permanent territory (see Section 11 for thresholds: 3‑in‑a‑row on 8×8, 4‑in‑a‑row on 19×19/Hex)
    - Surrounded areas that lack representation from all active players can also become your territory
    - Both line collapses and territory captures remove rings from the game, counting toward victory
 
@@ -429,7 +430,7 @@ Before diving into the detailed rules, it's helpful to understand some core conc
 
 #### 3.2.1 Rings (19×19 Full Version)
 
-• Quantity: Each player has a fixed personal supply of rings of their own colour: 48 in the 19×19 version, 60 in the Hexagonal version, 18 in the 8×8 version.
+• Quantity: Each player has a fixed personal supply of rings of their own colour: 48 in the 19×19 version, 72 in the Hexagonal version, 18 in the 8×8 version.
 • Supply limit: At any time, the total number of rings of a player's colour that are in play (on the board in any stack, regardless of who controls those stacks, plus in that player's hand) can never exceed this limit. Captured rings of other colours in stacks you control do not count against your own supply—they still belong, by colour, to their original owner for conservation and victory accounting. A quick check: `ringsInHand + ringsOnBoardOfColor` must always equal the starting supply for that board size.
 • Characteristics:
 • Begin "in hand" (off the board)
@@ -554,22 +555,52 @@ This option is available **only once**, immediately after Player 1's first turn,
 • **Control-Flip Edge Case:** If the player's only control over a stack was a cap of height 1 (a single ring of their color on top of opponent rings), forced elimination removes that cap and flips stack control to the opponent. If this causes the player to have **zero controlled stacks** and **zero rings in hand**, they become "temporarily inactive" (see Section 13.3) immediately. Turn rotation should then skip that player and proceed to the next player who has material; the player's turn effectively ends at the moment of forced elimination without any further action.
 • **Ensuring the Game Continues:** As long as **any stacks remain on the board**, the game cannot reach a state where no player has any available action. If no player has a legal placement, movement, or capture but at least one stack exists, the player whose turn it is must perform a forced elimination. Successive forced eliminations continue (possibly cycling through multiple players) until **no stacks remain**; only then can the game reach an endgame state resolved by the stalemate rules in Section 13.4.
 • **Phase & recording:** Forced elimination is its own phase (`forced_elimination`) with an explicit move; never apply it silently during territory or line processing.
-• **Last Player Standing:** LPS is determined after post-processing/FE when only one player has turn-material (controlled stack or rings in hand); forced eliminations can trigger LPS by exhausting a player’s material.
+• **Last Player Standing:** LPS is determined after post-processing/FE when only one player has turn-material (controlled stack or rings in hand); forced eliminations can trigger LPS by exhausting a player's material.
 
-### 4.5 Post-Movement Processing
+### 4.5 Recovery Action
+
+A **recovery action** allows a player who has been temporarily eliminated (no stacks, no rings in hand, but still has markers and buried rings) to take meaningful action during their turn.
+
+• **Prerequisites:** A player may perform a recovery action during the movement phase if and only if **all** of the following conditions are met:
+
+- The player controls **zero stacks** on the board.
+- The player has **zero rings in hand**.
+- The player has **at least one marker** of their colour on the board.
+- The player has **at least one buried ring** (a ring of their colour at a non-top position in some stack controlled by another player).
+
+• **Marker Slide:** The player moves one of their markers to an adjacent empty cell (using Moore neighbourhood adjacency for square boards, or hex-adjacency for hexagonal boards).
+
+• **Line Requirement:** The marker slide is legal **only if** it completes a line of **exactly** `lineLength` consecutive markers of the player's colour. Overlength lines (longer than `lineLength`) do **not** satisfy this requirement; the slide must complete a line of exactly the required length. The slide must create the line; it cannot merely extend or modify an existing line. (For `lineLength`, use the same threshold as for normal line processing: 4 for 8×8 2-player, 3 for 8×8 3–4 player, 4 for 19×19 and Hex.)
+
+• **Buried Ring Extraction (Self-Elimination Payment):** To pay the mandatory self-elimination cost for the line collapse:
+
+- The player selects any stack containing at least one of their buried rings.
+- The player's **bottommost ring** in that stack is extracted and permanently eliminated (removed from the game and credited to the player's eliminated rings total).
+- The stack's height decreases by 1. Remaining rings shift down. Stack control is determined by the new top ring.
+- If the stack becomes empty, it is removed from the board.
+
+• **Cascade Processing:** If the line collapse creates disconnected territory regions (per Section 12), process them normally:
+
+- For each territory region the player chooses to claim, all rings inside are eliminated (credited to the player).
+- For each territory's self-elimination cost, the player must extract another buried ring from a stack **outside** that region.
+- If the player has no buried rings remaining outside claimable regions, they cannot claim those territories.
+
+• **Victory Check:** After all processing, check victory conditions as normal. A well-positioned recovery action can trigger dramatic comebacks, potentially winning the game through ring elimination or territory thresholds.
+
+• **Phase and Recording:** Recovery action is recorded as move type `recovery_slide` with the marker's original position, destination, and the stack from which the buried ring was extracted.
+
+• **Strategic Note:** Recovery actions transform temporarily eliminated players from passive spectators into latent threats. Buried rings become a strategic resource, and marker placement during active play gains importance even in losing positions.
+
+### 4.6 Post-Movement Processing
 
 • **After movement and any captures are complete (and after any same-color marker removal upon landing), check for**:
 
 1.  **Line formations (board-specific thresholds)**
-    - On the **8×8 board**:
-      - Geometric lines are runs of **3 or more** consecutive markers of one colour.
-      - For **2‑player games**, line rewards / processing only trigger from **4‑in‑a‑row**; 3‑in‑a‑row still matters tactically, but does not trigger line collapse.
-      - For **3–4 player games**, line rewards / processing trigger from **3‑in‑a‑row**.
-    - On the **19×19** and **Hexagonal** boards, line rewards / processing trigger from **4‑in‑a‑row**.
+    - On the **8×8 board**, lines of **3+ markers** trigger line processing.
+    - On the **19×19** and **Hexagonal** boards, lines of **4+ markers** trigger line processing.
     - Process each **eligible** line one at a time, with the moving player selecting which line to process first.
     - For rules that depend on the _required_ line length, use:
-      - 3 for 8×8 in 3–4 player games;
-      - 4 for 8×8 in 2‑player games;
+      - 3 for 8×8;
       - 4 for 19×19 and Hexagonal.
     - For each eligible line:
       - **For lines of exactly the required length:**
@@ -702,7 +733,7 @@ _In these examples, the Blue player controls both stacks (as Blue is on top). Ex
 
 ### 6.2 Placement on Empty Spaces
 
-- You may place **1–3 rings** on any empty, non-collapsed space, forming a stack. The exact number is constrained by both your remaining rings in hand and your supply limit for the board type (18 for 8×8, 48 for 19×19, 60 for Hexagonal): the total number of rings of your color currently on the board in any stack, plus in your hand, must not exceed this limit. Captured opponent-color rings in stacks you control do not reduce this capacity.
+- You may place **1–3 rings** on any empty, non-collapsed space, forming a stack. The exact number is constrained by both your remaining rings in hand and your supply limit for the board type (18 for 8×8, 48 for 19×19, 72 for Hexagonal): the total number of rings of your color currently on the board in any stack, plus in your hand, must not exceed this limit. Captured opponent-color rings in stacks you control do not reduce this capacity.
   • Before a placement is legal, the resulting stack must have at least one legal move or capture available according to the standard movement and capture rules (the **no-dead-placement** rule).
   • Must move the newly placed stack immediately.
   • The placed stack's movement follows standard rules for its initial height (e.g., placing 3 rings requires moving at least 3 spaces).
@@ -939,8 +970,8 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 • **When Occurs:** Rings are permanently removed from the board in these situations:
 
 1.  **Line Formation:** When a player forms an **eligible line of markers** (as defined in Section 11.1) they must Eliminate one of their rings or the entire cap of one of their controlled ring stacks for each distinct line formed, unless they choose Option 2 for longer lines. Concretely:
-    - On **8×8**, geometric lines are runs of 3+ markers; in 3–4 player games, line rewards / processing trigger from 3‑in‑a‑row, while in 2‑player games they only trigger from 4‑in‑a‑row.
-    - On **19×19** and **Hexagonal** boards, line rewards / processing trigger from 4‑in‑a‑row.
+    - On **8×8**, lines of **3+ markers** trigger line processing.
+    - On **19×19** and **Hexagonal** boards, lines of **4+ markers** trigger line processing.
 2.  **Surrounded Territory:** When a player collapses (claims) an area by disconnecting it, they must Eliminate one of their rings or the entire cap of one of their controlled ring stacks per each collapsed area.
 3.  **Disconnected Regions:** When a region becomes disconnected (see Section 12 and Section 15.4, Q15 for detailed criteria), all spaces within the region are collapsed and claimed in the color of the player moving, all rings within that region are Eliminated from play. The player who caused the disconnection must also Eliminate one of their rings or the entire cap of one of their ring stacks (subject to prerequisite check), and all Eliminated rings count toward their victory condition.
 
@@ -997,7 +1028,7 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 
 • A line is formed when the required number of consecutive markers of the same color are aligned in a straight line:
 
-- **8×8 Version:** 3+ markers (3–4 player games) or 4+ markers (2-player games)
+- **8×8 Version:** 3+ markers
 - **19×19 & Hexagonal Versions:** 4+ markers
   • Can be orthogonal or diagonal on square grids (Moore neighborhood), or along one of the 3 main axes on the hexagonal grid.
   • Must consist only of consecutive, contiguous, non-collapsed markers of your color (cannot be interrupted by empty spaces, opponent markers, collapsed spaces of any color, or rings/stacks).
@@ -1008,7 +1039,7 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 
 When you form an eligible line, you convert it to permanent territory—but there's a cost.
 
-#### Exact-length lines (3 markers on 8×8 in 3-4p games, 4 on 8×8 2p/19×19/Hex)
+#### Exact-length lines (3 markers on 8×8, 4 on 19×19/Hex)
 
 - All markers in the line become collapsed spaces (your territory)
 - You must sacrifice one ring: either a standalone ring OR the entire cap from one of your stacks
@@ -1389,7 +1420,7 @@ RingRift offers three distinct paths to victory, with clear resolution mechanics
 
 • Threshold:
 • A player wins by achieving more than 50% of the total rings in play as Eliminated rings
-• Threshold examples (more than half of rings initially in play): - **8×8 Version:** 19 (2p), 28 (3p), 37 (4p) - **19×19 Version:** 49 (2p), 73 (3p), 97 (4p) - **Hexagonal Version:** 61 (2p), 91 (3p), 121 (4p)
+• Threshold examples (more than half of rings initially in play): - **8×8 Version:** 19 (2p), 28 (3p), 37 (4p) - **19×19 Version:** 49 (2p), 73 (3p), 97 (4p) - **Hexagonal Version:** 73 (2p), 109 (3p), 145 (4p)
 • What Counts Toward Victory:
 • Rings Self-Eliminated through line formations (your own rings removed when collapsing lines)
 • Rings Self-Eliminated through claiming disconnected territory (your own rings removed when claiming areas)
@@ -1407,7 +1438,7 @@ Note: With more than 50% of rings required for victory, simultaneous victory of 
 
 • Threshold:
 • A player wins by controlling more than 50% of the total board spaces as collapsed territory claimed in their color.
-• Thresholds: >180 spaces (19×19), >165 spaces (Hexagonal), >32 spaces (8×8).
+• Thresholds: >180 spaces (19×19), >234 spaces (Hexagonal), >32 spaces (8×8).
 
 Note: With more than 50% of territory required for victory, simultaneous victory of multiple players is impossible. This creates a clear, unambiguous victory condition regardless of player count.
 
@@ -1415,7 +1446,7 @@ Note: With more than 50% of territory required for victory, simultaneous victory
 
 • **Last-player-standing Victory:** Last Player Standing is a third victory condition, alongside Ring Elimination and Territory victories.
 
-• **Real actions vs forced elimination:** For Last Player Standing purposes, a player P has a **real action** on their own turn if they have at least one legal ring placement, non-capture movement, or overtaking capture available at the start of their action. Having only forced elimination available (Section 4.4) does **not** count as having a real action.
+• **Real actions vs forced elimination:** For Last Player Standing purposes, a player P has a **real action** on their own turn if they have at least one legal ring placement, non-capture movement, overtaking capture, or recovery action (Section 4.5) available at the start of their action. Having only forced elimination available (Section 4.4) does **not** count as having a real action.
 
 • **Full-round condition:** A player P wins by Last Player Standing if all of the following are true:
 
@@ -1486,6 +1517,87 @@ Since `S` is non-decreasing and bounded, there can only be **finitely many** tur
 
 This ensures that every game of RingRift will reach a definite conclusion with a winner, regardless of how the players choose to play.
 
+### 13.6 Final Player Rankings (All Versions)
+
+When the game ends (by any victory condition), all players receive a **final rank** from 1st (winner) to Nth (last place). This section defines the canonical ranking algorithm used for leaderboards, statistics, AI training, and tournament scoring.
+
+#### 13.6.1 Key Definitions
+
+**Turn-material:** A player P has **turn-material** if and only if:
+
+- P controls at least one stack on the board (a stack whose top ring is P's colour), OR
+- `ringsInHand[P] > 0`
+
+Rings that are **buried** (not on top of a stack) do **not** grant turn-material to their owner.
+
+**Temporarily eliminated:** A player P is **temporarily eliminated** at turn T if:
+
+- At the start of turn T, P has no turn-material (no controlled stacks AND no rings in hand), BUT
+- P still has at least one ring somewhere in the game (buried in another player's stack, for example).
+
+Temporary elimination is **reversible**: if stack control changes later reveal P's buried ring on top of a stack, P regains turn-material and is no longer eliminated.
+
+**Permanently eliminated:** A player P is **permanently eliminated** at turn T if P has **no ring material of any kind remaining anywhere in the game**:
+
+- `ringsInHand[P] == 0`, AND
+- P controls no stacks (no stack has P's ring on top), AND
+- P has no rings buried in any stack on the board (no ring of P's colour exists anywhere in any stack).
+
+Permanent elimination is **irreversible**: once a player has zero rings in the game, they cannot regain material.
+
+**Elimination turn for ranking:** `eliminationTurn[P]` = the first turn number T at which player P was **permanently eliminated** (i.e., had zero rings anywhere). This is distinct from temporary elimination.
+
+- If P is never permanently eliminated (still has rings in any form at game end), `eliminationTurn[P] = NEVER_ELIMINATED` (∞).
+- A player who was temporarily eliminated but later regained turn-material has `eliminationTurn[P] = NEVER_ELIMINATED` if they still have rings at game end.
+
+#### 13.6.2 Winner Determination (1st Place)
+
+The winner (rank 1) is determined by whichever victory condition triggered:
+
+1. **Ring-elimination victory (Section 13.1):** The player who reached the elimination threshold is 1st.
+2. **Territory-control victory (Section 13.2):** The player who reached the territory threshold is 1st.
+3. **Last-player-standing victory (Section 13.3):** The sole player with real actions for 3 consecutive rounds is 1st.
+4. **Stalemate (Section 13.4):** The player ranked highest by the tiebreaker cascade is 1st.
+
+#### 13.6.3 Ranking Remaining Players (2nd through Nth)
+
+For all players except the winner, compute a **ranking score** using the following tiebreaker cascade. Players are sorted in descending order (higher values are better):
+
+| Priority | Criterion                  | Description                                                        | Comparison                             |
+| -------- | -------------------------- | ------------------------------------------------------------------ | -------------------------------------- |
+| 1        | Territory                  | Collapsed spaces controlled by P                                   | More is better                         |
+| 2        | Eliminated rings           | Rings credited to P as eliminated (including stalemate conversion) | More is better                         |
+| 3        | Markers on board           | Markers of P's colour on the board at game end                     | More is better                         |
+| 4        | Permanent elimination turn | Turn when P was **permanently** eliminated (∞ if never)            | Later is better (∞ > any finite value) |
+
+**Tie handling:** If two or more players are exactly equal on all four criteria, they share the same rank. For example, if Players 2 and 3 are tied for 2nd place, both receive rank 2, and the next player receives rank 4 (not 3). This is called **standard competition ranking** (1224 ranking).
+
+**Note:** Player ID (seat number) is explicitly **not** used as a tiebreaker. Ties on all criteria result in shared ranks.
+
+#### 13.6.4 Ranking Examples
+
+**Example 1 (Ring-elimination victory, 3 players):**
+
+- P1 reaches the victory threshold eliminated rings → P1 wins (rank 1).
+- P2: territory=5, elimRings=10, markers=3, never permanently eliminated.
+- P3: territory=5, elimRings=10, markers=2, never permanently eliminated.
+- Cascade: P2 and P3 tie on territory and elimRings; P2 has more markers → P2 rank 2, P3 rank 3.
+
+**Example 2 (LPS victory, 4 players):**
+
+- P2 wins by last-player-standing → P2 rank 1.
+- P1: territory=0, elimRings=5, markers=0, permanently eliminated turn 20 (zero rings anywhere).
+- P3: territory=0, elimRings=5, markers=0, permanently eliminated turn 15 (zero rings anywhere).
+- P4: territory=0, elimRings=5, markers=0, never permanently eliminated (still has buried rings).
+- Cascade: P4 never permanently eliminated → P4 rank 2. P1 permanently eliminated later than P3 → P1 rank 3, P3 rank 4.
+
+**Example 3 (Temporary vs permanent elimination):**
+
+- P1 loses all controlled stacks on turn 30 but has 2 rings buried under P2's stacks → **temporarily eliminated** (no turn-material, but rings exist).
+- On turn 45, P2's capture eliminates a ring from that stack, revealing P1's ring on top → P1 regains turn-material and is no longer eliminated.
+- P1 later loses all rings (none controlled, none buried, none in hand) on turn 60 → **permanently eliminated**.
+- `eliminationTurn[P1] = 60` (the permanent elimination turn, not the temporary one).
+
 ## 14. Strategy Guide (All Versions)
 
 ### 14.1 Stack Management Principles
@@ -1510,7 +1622,7 @@ This ensures that every game of RingRift will reach a definite conclusion with a
 
 1. Marker Placement
    • Set up future flips strategically
-   • Create potential lines (runs of **3+ markers on 8×8** and **4+ markers on 19×19/Hex**). Remember that on 8×8, 2‑player games only **process** lines for rewards from 4‑in‑a‑row, while 3–4 player games already process from 3‑in‑a‑row.
+   • Create potential lines (runs of **3+ markers on 8×8** and **4+ markers on 19×19/Hex**).
    • Position markers to enable future disconnected regions
    • Create markers of your own color to collapse later by jumping over them
    • Plan marker placement to maximize territory control opportunities
@@ -1976,8 +2088,8 @@ Note that by definition, any stack you control must have at least one ring of yo
 | Feature                  | 19×19 Full Version                           | 8×8 Simplified Version                       | Hexagonal Version                            |
 | ------------------------ | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
 | Board Size               | 361 spaces (19×19)                           | 64 spaces (8×8)                              | 469 spaces (13 per side)                     |
-| Rings per Player         | 48 rings                                     | 18 rings                                     | 60 rings                                     |
-| Victory Threshold (3p)   | >72 rings                                    | >27 rings                                    | >90 rings                                    |
+| Rings per Player         | 48 rings                                     | 18 rings                                     | 72 rings                                     |
+| Victory Threshold (3p)   | >72 rings                                    | >27 rings                                    | >108 rings                                   |
 | Movement Adjacency       | Moore (8-direction)                          | Moore (8-direction)                          | Hexagonal (6-direction)                      |
 | Line Formation Adjacency | Moore (8-direction)                          | Moore (8-direction)                          | Hexagonal (6-direction)                      |
 | Territory Adjacency      | Von Neumann (4-direction)                    | Von Neumann (4-direction)                    | Hexagonal (6-direction)                      |
@@ -1999,7 +2111,7 @@ Note that by definition, any stack you control must have at least one ring of yo
 
 **Victory Conditions:**
 
-- Eliminate >50% of total rings (>54 for 3 players in 19×19, >27 for 3 players in 8×8, >72 for 3 players in Hexagonal)
+- Eliminate >50% of total rings (>54 for 3 players in 19×19, >27 for 3 players in 8×8, >108 for 3 players in Hexagonal)
 - Control >50% of board as collapsed territory (>180 spaces in 19×19, >32 in 8×8)
 - Be the last player able to make legal moves
 
@@ -2161,7 +2273,7 @@ Below are the 19×19 full rules in comparison with the simplified 8×8 version.
 • Board: 19×19 intersections, with Moore adjacency for movement & lines of 4+, but Von Neumann adjacency for territory disconnection.
 • Movement: Minimum distance = stack height. Landing after markers allows landing on any valid space beyond them meeting the distance requirement (no mandatory stop at first).
 • Captures: "Overtaking" vs. "Elimination," as introduced, with partial ring capture.
-• Victory: Eliminate more than half of all rings (>54 for 3 players, >72 for 4 players on 19×19; >72 for 3 players, >96 for 4 players on Hex), or last standing, or stalemate tiebreak.
+• Victory: Eliminate more than half of all rings (>54 for 3 players, >72 for 4 players on 19×19; >108 for 3 players, >144 for 4 players on Hex), or last standing, or stalemate tiebreak.
 
 #### 16.9.1 Major Differences from 8×8
 
@@ -2382,7 +2494,7 @@ In practice, territory disconnection on the 19×19 board works exactly like the 
 Hexagonal Version:
 • Regular hexagon with 13 spaces per side (469 total spaces).
 • 6-direction hexagonal adjacency used for movement, line formation, AND territory connectivity.
-• 60 rings/player, victory at >50% of total rings.
+• 72 rings/player, victory at >50% of total rings.
 • Movement landing rule: Min distance, any valid space beyond markers (Unified rule).
 • Capture landing rule: Min distance, any empty beyond target (same as 19×19).
 • Unique spatial dynamics due to 6-directional movement and 3 line axes.

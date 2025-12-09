@@ -438,7 +438,7 @@ class SSHClusterManager:
         worker_urls = []
         for host_name in eligible:
             host = self._hosts[host_name]
-            worker_urls.append(f"http://{host.ssh_host}:{self.worker_port}")
+            worker_urls.append(host.http_worker_url)
 
         cmd = [
             "python", "scripts/run_cmaes_optimization.py",
@@ -483,7 +483,7 @@ class SSHClusterManager:
         worker_urls = []
         for host_name in eligible:
             host = self._hosts[host_name]
-            worker_urls.append(f"http://{host.ssh_host}:{self.worker_port}")
+            worker_urls.append(host.http_worker_url)
 
         cmd = [
             "python", "scripts/run_distributed_selfplay_soak.py",

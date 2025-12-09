@@ -623,6 +623,10 @@ export class AIServiceClient {
       'before dispatching AIServiceClient.getLineRewardChoice'
     );
 
+    const startTime = performance.now();
+    const difficultyLabel = String(difficulty ?? 'n/a');
+    const metrics = getMetricsService();
+
     try {
       const request: LineRewardChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -644,6 +648,11 @@ export class AIServiceClient {
         request
       );
 
+      const duration = performance.now() - startTime;
+      metrics.recordAIRequest('success');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, 'success');
+
       logger.info('AI line_reward_option choice received', {
         playerNumber,
         difficulty: response.data.difficulty,
@@ -657,6 +666,18 @@ export class AIServiceClient {
         playerNumber,
         error,
       });
+      const duration = performance.now() - startTime;
+      const errorWithType = error as Error & { aiErrorType?: string };
+      const aiErrorType = errorWithType.aiErrorType;
+      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
+        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      metrics.recordAIRequest('error');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      if (aiErrorType === 'timeout') {
+        metrics.recordAIRequestTimeout();
+      }
+
       throw new Error(
         `AI Service failed to choose line_reward_option: ${
           error instanceof Error ? error.message : 'Unknown error'
@@ -682,6 +703,10 @@ export class AIServiceClient {
       'before dispatching AIServiceClient.getRingEliminationChoice'
     );
 
+    const startTime = performance.now();
+    const difficultyLabel = String(difficulty ?? 'n/a');
+    const metrics = getMetricsService();
+
     try {
       const request: RingEliminationChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -703,6 +728,11 @@ export class AIServiceClient {
         request
       );
 
+      const duration = performance.now() - startTime;
+      metrics.recordAIRequest('success');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, 'success');
+
       logger.info('AI ring_elimination choice received', {
         playerNumber,
         difficulty: response.data.difficulty,
@@ -716,6 +746,18 @@ export class AIServiceClient {
         playerNumber,
         error,
       });
+      const duration = performance.now() - startTime;
+      const errorWithType = error as Error & { aiErrorType?: string };
+      const aiErrorType = errorWithType.aiErrorType;
+      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
+        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      metrics.recordAIRequest('error');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      if (aiErrorType === 'timeout') {
+        metrics.recordAIRequestTimeout();
+      }
+
       throw new Error(
         `AI Service failed to choose ring_elimination: ${
           error instanceof Error ? error.message : 'Unknown error'
@@ -741,6 +783,10 @@ export class AIServiceClient {
       'before dispatching AIServiceClient.getRegionOrderChoice'
     );
 
+    const startTime = performance.now();
+    const difficultyLabel = String(difficulty ?? 'n/a');
+    const metrics = getMetricsService();
+
     try {
       const request: RegionOrderChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -762,6 +808,11 @@ export class AIServiceClient {
         request
       );
 
+      const duration = performance.now() - startTime;
+      metrics.recordAIRequest('success');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, 'success');
+
       logger.info('AI region_order choice received', {
         playerNumber,
         difficulty: response.data.difficulty,
@@ -775,6 +826,18 @@ export class AIServiceClient {
         playerNumber,
         error,
       });
+      const duration = performance.now() - startTime;
+      const errorWithType = error as Error & { aiErrorType?: string };
+      const aiErrorType = errorWithType.aiErrorType;
+      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
+        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      metrics.recordAIRequest('error');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      if (aiErrorType === 'timeout') {
+        metrics.recordAIRequestTimeout();
+      }
+
       throw new Error(
         `AI Service failed to choose region_order: ${
           error instanceof Error ? error.message : 'Unknown error'
@@ -798,6 +861,10 @@ export class AIServiceClient {
     // dependency call and should not proceed when canceled.
     requestOptions?.token?.throwIfCanceled('before dispatching AIServiceClient.getLineOrderChoice');
 
+    const startTime = performance.now();
+    const difficultyLabel = String(difficulty ?? 'n/a');
+    const metrics = getMetricsService();
+
     try {
       const request: LineOrderChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -819,6 +886,11 @@ export class AIServiceClient {
         request
       );
 
+      const duration = performance.now() - startTime;
+      metrics.recordAIRequest('success');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, 'success');
+
       logger.info('AI line_order choice received', {
         playerNumber,
         difficulty: response.data.difficulty,
@@ -832,6 +904,18 @@ export class AIServiceClient {
         playerNumber,
         error,
       });
+      const duration = performance.now() - startTime;
+      const errorWithType = error as Error & { aiErrorType?: string };
+      const aiErrorType = errorWithType.aiErrorType;
+      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
+        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      metrics.recordAIRequest('error');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      if (aiErrorType === 'timeout') {
+        metrics.recordAIRequestTimeout();
+      }
+
       throw new Error(
         `AI Service failed to choose line_order: ${
           error instanceof Error ? error.message : 'Unknown error'
@@ -857,6 +941,10 @@ export class AIServiceClient {
       'before dispatching AIServiceClient.getCaptureDirectionChoice'
     );
 
+    const startTime = performance.now();
+    const difficultyLabel = String(difficulty ?? 'n/a');
+    const metrics = getMetricsService();
+
     try {
       const request: CaptureDirectionChoiceRequestPayload = {
         ...(gameState && { game_state: gameState }),
@@ -878,6 +966,11 @@ export class AIServiceClient {
         request
       );
 
+      const duration = performance.now() - startTime;
+      metrics.recordAIRequest('success');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, 'success');
+
       logger.info('AI capture_direction choice received', {
         playerNumber,
         difficulty: response.data.difficulty,
@@ -891,6 +984,18 @@ export class AIServiceClient {
         playerNumber,
         error,
       });
+      const duration = performance.now() - startTime;
+      const errorWithType = error as Error & { aiErrorType?: string };
+      const aiErrorType = errorWithType.aiErrorType;
+      const latencyOutcome: 'success' | 'fallback' | 'timeout' | 'error' =
+        aiErrorType === 'timeout' ? 'timeout' : 'error';
+      metrics.recordAIRequest('error');
+      metrics.recordAIRequestDuration('python', difficultyLabel, duration / 1000);
+      metrics.recordAIRequestLatencyMs(duration, latencyOutcome);
+      if (aiErrorType === 'timeout') {
+        metrics.recordAIRequestTimeout();
+      }
+
       throw new Error(
         `AI Service failed to choose capture_direction: ${
           error instanceof Error ? error.message : 'Unknown error'

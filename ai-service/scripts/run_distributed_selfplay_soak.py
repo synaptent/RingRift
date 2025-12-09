@@ -5,13 +5,36 @@ Runs mixed-AI self-play across multiple machines (local + remote SSH hosts)
 for all board types and player counts. Records games to SQLite databases
 for subsequent parity validation.
 
+Supports multiple deployment modes:
+- local:  Run only on localhost
+- lan:    Run on localhost + local network Mac cluster
+- aws:    Run on localhost + AWS staging server (square8 only - 16GB RAM limit)
+- hybrid: Run on localhost + LAN + AWS (maximum parallelism)
+
 Example usage (from ai-service/):
 
-    # Run 100 games per configuration across local + m1-pro
+    # Run using LAN mode (local + Mac cluster)
+    python scripts/run_distributed_selfplay_soak.py \
+        --mode lan \
+        --games-per-config 100 \
+        --output-dir data/games/distributed_soak
+
+    # Run with explicit host list
     python scripts/run_distributed_selfplay_soak.py \
         --games-per-config 100 \
         --hosts local,m1-pro \
         --output-dir data/games/distributed_soak
+
+    # Run with AWS (square8 only due to 16GB memory limit)
+    python scripts/run_distributed_selfplay_soak.py \
+        --mode aws \
+        --board-types square8 \
+        --games-per-config 50
+
+    # Hybrid mode for maximum parallelism
+    python scripts/run_distributed_selfplay_soak.py \
+        --mode hybrid \
+        --games-per-config 100
 
     # Dry run to see what would be executed
     python scripts/run_distributed_selfplay_soak.py \
@@ -68,6 +91,9 @@ BOARD_MEMORY_REQUIREMENTS: Dict[str, int] = {
 CONFIG_FILE_PATH = "config/distributed_hosts.yaml"
 TEMPLATE_CONFIG_PATH = "config/distributed_hosts.template.yaml"
 
+# Deployment modes
+VALID_MODES = ["local", "lan", "aws", "hybrid"]
+
 
 def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, Dict]:
     """Load remote host configuration from YAML file.
@@ -121,6 +147,46 @@ def load_remote_hosts(config_path: Optional[str] = None) -> Dict[str, Dict]:
 
 # Remote hosts loaded at module init (can be overridden by load_remote_hosts)
 REMOTE_HOSTS: Dict[str, Dict] = {}
+
+
+def get_hosts_for_mode(mode: str, remote_hosts: Dict[str, Dict]) -> List[str]:
+    """Get list of hosts based on deployment mode.
+
+    Args:
+        mode: One of 'local', 'lan', 'aws', 'hybrid'
+        remote_hosts: Dict of configured remote hosts
+
+    Returns:
+        List of host names to use
+    """
+    hosts = ["local"]
+
+    if mode == "local":
+        return hosts
+
+    # Identify LAN hosts (those without explicit ssh_user or with macOS-style paths)
+    lan_hosts = []
+    aws_hosts = []
+
+    for name, config in remote_hosts.items():
+        # AWS hosts typically have ssh_user set and use /home paths
+        ssh_user = config.get("ssh_user", "")
+        work_dir = config.get("ringrift_path", config.get("work_dir", ""))
+
+        if ssh_user == "ubuntu" or "/home/" in work_dir:
+            aws_hosts.append(name)
+        else:
+            lan_hosts.append(name)
+
+    if mode == "lan":
+        hosts.extend(lan_hosts)
+    elif mode == "aws":
+        hosts.extend(aws_hosts)
+    elif mode == "hybrid":
+        hosts.extend(lan_hosts)
+        hosts.extend(aws_hosts)
+
+    return hosts
 
 
 def get_local_memory_gb() -> Tuple[int, int]:
@@ -474,9 +540,13 @@ def run_local_job(job: JobConfig, ringrift_ai_dir: str) -> Tuple[str, bool, str]
 def run_remote_job(job: JobConfig, host_config: Dict) -> Tuple[str, bool, str]:
     """Run a self-play job on a remote machine via SSH."""
     ssh_host = host_config["ssh_host"]
-    ringrift_path = host_config["ringrift_path"]
-    venv_activate = host_config["venv_activate"]
+    ssh_user = host_config.get("ssh_user")
+    ringrift_path = host_config.get("ringrift_path") or host_config.get("work_dir", "~/Development/RingRift")
+    venv_activate = host_config.get("venv_activate", "source venv/bin/activate")
     ssh_key = host_config.get("ssh_key")
+
+    # Build SSH target (user@host or just host)
+    ssh_target = f"{ssh_user}@{ssh_host}" if ssh_user else ssh_host
 
     # Build remote command
     soak_cmd = build_soak_command(job, is_remote=True)
@@ -489,7 +559,7 @@ def run_remote_job(job: JobConfig, host_config: Dict) -> Tuple[str, bool, str]:
     ]
     if ssh_key:
         ssh_cmd.extend(["-i", os.path.expanduser(ssh_key)])
-    ssh_cmd.extend([ssh_host, remote_cmd])
+    ssh_cmd.extend([ssh_target, remote_cmd])
 
     print(f"[{ssh_host.upper()}] Starting job {job.job_id}: {job.num_games} games of "
           f"{job.board_type} {job.num_players}p")
@@ -541,18 +611,22 @@ def fetch_remote_results(jobs: List[JobConfig], output_dir: str) -> List[str]:
         if job.host != "local" and job.host in REMOTE_HOSTS:
             host_config = REMOTE_HOSTS[job.host]
             ssh_host = host_config["ssh_host"]
+            ssh_user = host_config.get("ssh_user")
             ssh_key = host_config.get("ssh_key")
-            ringrift_path = host_config["ringrift_path"]
+            ringrift_path = host_config.get("ringrift_path") or host_config.get("work_dir", "~/Development/RingRift")
+
+            # Build SSH target (user@host or just host)
+            ssh_target = f"{ssh_user}@{ssh_host}" if ssh_user else ssh_host
 
             remote_db = f"{ringrift_path}/ai-service/{job.output_db}"
             local_db = os.path.join(output_dir, os.path.basename(job.output_db))
 
-            print(f"Fetching {remote_db} from {ssh_host}...")
+            print(f"Fetching {remote_db} from {ssh_target}...")
 
             scp_cmd = ["scp"]
             if ssh_key:
                 scp_cmd.extend(["-i", os.path.expanduser(ssh_key)])
-            scp_cmd.extend([f"{ssh_host}:{remote_db}", local_db])
+            scp_cmd.extend([f"{ssh_target}:{remote_db}", local_db])
 
             try:
                 subprocess.run(
@@ -635,6 +709,13 @@ def main():
         description="Run distributed self-play soaks across multiple machines"
     )
     parser.add_argument(
+        "--mode",
+        type=str,
+        choices=VALID_MODES,
+        default=None,
+        help="Deployment mode: local, lan, aws, or hybrid. Overrides --hosts if specified.",
+    )
+    parser.add_argument(
         "--games-per-config",
         type=int,
         default=100,
@@ -656,7 +737,7 @@ def main():
         "--hosts",
         type=str,
         default="local",
-        help="Comma-separated list of hosts to use (local, m1-pro). Default: local",
+        help="Comma-separated list of hosts to use (local, m1-pro, aws-staging). Default: local. Ignored if --mode is specified.",
     )
     parser.add_argument(
         "--output-dir",
@@ -704,8 +785,13 @@ def main():
     global REMOTE_HOSTS
     REMOTE_HOSTS = load_remote_hosts(args.config)
 
-    # Parse hosts
-    hosts = [h.strip() for h in args.hosts.split(",")]
+    # Determine hosts based on mode or explicit --hosts
+    if args.mode:
+        hosts = get_hosts_for_mode(args.mode, REMOTE_HOSTS)
+        print(f"Using mode '{args.mode}' with hosts: {', '.join(hosts)}")
+    else:
+        # Parse hosts from command line
+        hosts = [h.strip() for h in args.hosts.split(",")]
 
     # Validate hosts
     for host in hosts:

@@ -207,4 +207,220 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'error');
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
   });
+
+  it('records success metrics for ring_elimination choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    mockAxiosPost.mockResolvedValue({
+      data: {
+        selectedOption: {
+          stackPosition: { x: 0, y: 0 },
+          moveId: 'm1',
+          capHeight: 1,
+          totalHeight: 2,
+        },
+        aiType: 'heuristic',
+        difficulty: 3,
+      },
+    });
+
+    await client.getRingEliminationChoice(null, 1, 3, undefined, [
+      { stackPosition: { x: 0, y: 0 }, moveId: 'm1', capHeight: 1, totalHeight: 2 },
+    ]);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('success');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '3', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
+    expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+  });
+
+  it('records timeout metrics for ring_elimination choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    const timeoutError: any = new Error('Choice timeout');
+    timeoutError.aiErrorType = 'timeout';
+    mockAxiosPost.mockRejectedValue(timeoutError);
+
+    await expect(
+      client.getRingEliminationChoice(null, 1, 3, undefined, [
+        { stackPosition: { x: 0, y: 0 }, moveId: 'm1', capHeight: 1, totalHeight: 2 },
+      ])
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('error');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '3', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
+    expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+  });
+
+  it('records success metrics for region_order choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    mockAxiosPost.mockResolvedValue({
+      data: {
+        selectedOption: {
+          regionId: 'r1',
+          moveId: 'm1',
+          size: 3,
+          representativePosition: { x: 0, y: 0 },
+        },
+        aiType: 'heuristic',
+        difficulty: 4,
+      },
+    });
+
+    await client.getRegionOrderChoice(null, 1, 4, undefined, [
+      { regionId: 'r1', moveId: 'm1', size: 3, representativePosition: { x: 0, y: 0 } },
+    ]);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('success');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '4', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
+    expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+  });
+
+  it('records timeout metrics for region_order choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    const timeoutError: any = new Error('Region choice timeout');
+    timeoutError.aiErrorType = 'timeout';
+    mockAxiosPost.mockRejectedValue(timeoutError);
+
+    await expect(
+      client.getRegionOrderChoice(null, 1, 4, undefined, [
+        { regionId: 'r1', moveId: 'm1', size: 3, representativePosition: { x: 0, y: 0 } },
+      ])
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('error');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '4', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
+    expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+  });
+
+  it('records success metrics for line_order choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    mockAxiosPost.mockResolvedValue({
+      data: {
+        selectedOption: { lineId: 'l1', markerPositions: [], moveId: 'm1' },
+        aiType: 'heuristic',
+        difficulty: 2,
+      },
+    });
+
+    await client.getLineOrderChoice(null, 1, 2, undefined, [
+      { lineId: 'l1', markerPositions: [], moveId: 'm1' },
+    ]);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('success');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '2', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
+    expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+  });
+
+  it('records timeout metrics for line_order choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    const timeoutError: any = new Error('Line order timeout');
+    timeoutError.aiErrorType = 'timeout';
+    mockAxiosPost.mockRejectedValue(timeoutError);
+
+    await expect(
+      client.getLineOrderChoice(null, 1, 2, undefined, [
+        { lineId: 'l1', markerPositions: [], moveId: 'm1' },
+      ])
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('error');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '2', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
+    expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+  });
+
+  it('records success metrics for line_reward_option choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    mockAxiosPost.mockResolvedValue({
+      data: {
+        selectedOption: 'option_2_min_collapse_no_elimination',
+        aiType: 'heuristic',
+        difficulty: 5,
+      },
+    });
+
+    await client.getLineRewardChoice(null, 1, 5, undefined, [
+      'option_1_collapse_all_and_eliminate',
+      'option_2_min_collapse_no_elimination',
+    ]);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('success');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '5', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
+    expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+  });
+
+  it('records timeout metrics for line_reward_option choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    const timeoutError: any = new Error('Line reward timeout');
+    timeoutError.aiErrorType = 'timeout';
+    mockAxiosPost.mockRejectedValue(timeoutError);
+
+    await expect(
+      client.getLineRewardChoice(null, 1, 5, undefined, [
+        'option_1_collapse_all_and_eliminate',
+        'option_2_min_collapse_no_elimination',
+      ])
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('error');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '5', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
+    expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+  });
+
+  it('records success metrics for capture_direction choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    mockAxiosPost.mockResolvedValue({
+      data: {
+        selectedOption: {
+          targetPosition: { x: 1, y: 1 },
+          landingPosition: { x: 2, y: 2 },
+          capturedCapHeight: 1,
+        },
+        aiType: 'heuristic',
+        difficulty: 6,
+      },
+    });
+
+    await client.getCaptureDirectionChoice(null, 1, 6, undefined, [
+      { targetPosition: { x: 1, y: 1 }, landingPosition: { x: 2, y: 2 }, capturedCapHeight: 1 },
+    ]);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('success');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '6', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'success');
+    expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+  });
+
+  it('records timeout metrics for capture_direction choice selection', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    const timeoutError: any = new Error('Capture direction timeout');
+    timeoutError.aiErrorType = 'timeout';
+    mockAxiosPost.mockRejectedValue(timeoutError);
+
+    await expect(
+      client.getCaptureDirectionChoice(null, 1, 6, undefined, [
+        { targetPosition: { x: 1, y: 1 }, landingPosition: { x: 2, y: 2 }, capturedCapHeight: 1 },
+      ])
+    ).rejects.toBeInstanceOf(Error);
+
+    expect(mockRecordAIRequest).toHaveBeenCalledWith('error');
+    expect(mockRecordAIRequestDuration).toHaveBeenCalledWith('python', '6', expect.any(Number));
+    expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'timeout');
+    expect(mockRecordAIRequestTimeout).toHaveBeenCalled();
+  });
 });

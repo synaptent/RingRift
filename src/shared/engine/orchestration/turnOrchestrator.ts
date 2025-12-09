@@ -61,10 +61,22 @@ import type {
 } from './types';
 
 import { PhaseStateMachine, createTurnProcessingState } from './phaseStateMachine';
-import { flagEnabled, debugLog } from '../../utils/envFlags';
+import {
+  flagEnabled,
+  debugLog,
+  getFSMValidationMode,
+  isFSMOrchestratorShadowEnabled,
+} from '../../utils/envFlags';
 
-// FSM shadow validation imports
-import { validateMoveWithFSM, isMoveTypeValidForPhase } from '../fsm';
+// FSM validation imports
+import {
+  validateMoveWithFSM,
+  isMoveTypeValidForPhase,
+  transition as fsmTransition,
+  deriveStateFromGame as fsmDeriveState,
+  deriveGameContext as fsmDeriveContext,
+  moveToEvent as fsmMoveToEvent,
+} from '../fsm';
 
 // Import from domain aggregates
 import {
@@ -1108,12 +1120,19 @@ export function processTurn(
   // no-action move per RR-CANON-R075.
   assertPhaseMoveInvariant(state, move);
 
-  // FSM Shadow Validation: Run FSM-based validation in parallel with existing
-  // validation and log any divergences. This is gated by RINGRIFT_FSM_SHADOW_VALIDATION
-  // flag and does not affect game behavior - it only logs potential issues.
-  const FSM_SHADOW_ENABLED = flagEnabled('RINGRIFT_FSM_SHADOW_VALIDATION');
-  if (FSM_SHADOW_ENABLED) {
-    performFSMShadowValidation(state, move);
+  // FSM Validation: Run FSM-based validation either in shadow mode (log only)
+  // or active mode (enforce validation). Controlled by RINGRIFT_FSM_VALIDATION_MODE.
+  const fsmMode = getFSMValidationMode();
+  if (fsmMode !== 'off') {
+    const fsmValidationResult = performFSMValidation(state, move, fsmMode);
+
+    // In active mode, reject invalid moves based on FSM validation
+    if (fsmMode === 'active' && !fsmValidationResult.valid) {
+      const reason = fsmValidationResult.reason || `FSM validation rejected ${move.type} move`;
+      throw new Error(
+        `[FSM] Invalid move: ${reason} (phase=${fsmValidationResult.currentPhase}, errorCode=${fsmValidationResult.errorCode})`
+      );
+    }
   }
 
   const sInvariantBefore = computeSInvariant(state);
@@ -1239,24 +1258,34 @@ export function processTurn(
     finalState.gameStatus === 'active' &&
     !suppressForcedEliminationForTerritory
   ) {
-    const player = finalState.currentPlayer;
-    const summary = computeGlobalLegalActionsSummary(finalState, player);
+    // Only surface forced elimination after territory processing or when
+    // already in the forced_elimination phase. This avoids jumping straight
+    // to forced elimination from ring_placement when no placements exist; we
+    // still need to traverse movement/line/territory phases per RR-CANON-R075.
+    const canSurfaceForcedElimination =
+      finalState.currentPhase === 'territory_processing' ||
+      finalState.currentPhase === 'forced_elimination';
 
-    if (
-      summary.hasTurnMaterial &&
-      summary.hasForcedEliminationAction &&
-      !summary.hasGlobalPlacementAction &&
-      !summary.hasPhaseLocalInteractiveMove
-    ) {
-      const forcedDecision = createForcedEliminationDecision(finalState);
-      if (forcedDecision && forcedDecision.options.length > 0) {
-        // Transition to forced_elimination phase (7th phase in the state machine)
-        finalState = {
-          ...finalState,
-          currentPhase: 'forced_elimination' as GamePhase,
-        };
-        finalPendingDecision = forcedDecision;
-        finalStatus = 'awaiting_decision';
+    if (canSurfaceForcedElimination) {
+      const player = finalState.currentPlayer;
+      const summary = computeGlobalLegalActionsSummary(finalState, player);
+
+      if (
+        summary.hasTurnMaterial &&
+        summary.hasForcedEliminationAction &&
+        !summary.hasGlobalPlacementAction &&
+        !summary.hasPhaseLocalInteractiveMove
+      ) {
+        const forcedDecision = createForcedEliminationDecision(finalState);
+        if (forcedDecision && forcedDecision.options.length > 0) {
+          // Transition to forced_elimination phase (7th phase in the state machine)
+          finalState = {
+            ...finalState,
+            currentPhase: 'forced_elimination' as GamePhase,
+          };
+          finalPendingDecision = forcedDecision;
+          finalStatus = 'awaiting_decision';
+        }
       }
     }
   }
@@ -1271,6 +1300,84 @@ export function processTurn(
     finalState = resolved.nextState;
     if (resolved.victoryResult) {
       finalVictory = resolved.victoryResult;
+    }
+  }
+
+  // Additional terminal guard: if all players have zero rings in hand and no
+  // global interactive moves remain (placements, movement, captures), treat the
+  // position as terminal rather than advancing to another ring_placement loop.
+  // This mirrors Python’s ANM/LPS termination observed in parity bundles.
+  if (finalStatus === 'complete' && finalState.gameStatus === 'active') {
+    const allZeroRings = finalState.players.every((p) => p.ringsInHand <= 0);
+    const anyPlayerHasActions = finalState.players.some((p) => {
+      const summary = computeGlobalLegalActionsSummary(finalState, p.playerNumber);
+      return (
+        summary.hasGlobalPlacementAction ||
+        summary.hasPhaseLocalInteractiveMove ||
+        summary.hasForcedEliminationAction
+      );
+    });
+
+    if (allZeroRings && !anyPlayerHasActions) {
+      const victory = toVictoryState(finalState);
+      if (victory.isGameOver) {
+        finalState = {
+          ...finalState,
+          currentPhase: 'game_over',
+          gameStatus: 'completed',
+          winner: victory.winner,
+        };
+        finalVictory = victory;
+      }
+    }
+  }
+
+  // FSM orchestrator shadow check: run the FSM transition in parallel and log
+  // divergences between FSM-derived phase/player and the orchestration result.
+  if (isFSMOrchestratorShadowEnabled()) {
+    try {
+      const fsmState = fsmDeriveState(state);
+      const fsmContext = fsmDeriveContext(state);
+      const fsmEvent = fsmMoveToEvent(move);
+
+      if (fsmEvent) {
+        const fsmResult = fsmTransition(fsmState, fsmEvent, fsmContext);
+        if (!fsmResult.ok) {
+          debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] ERROR', {
+            moveType: move.type,
+            movePlayer: move.player,
+            error: fsmResult.error,
+            gameId: state.id,
+            moveNumber: state.moveHistory.length + 1,
+          });
+        } else {
+          const fsmPhase = fsmResult.state.phase;
+          const fsmPlayer =
+            (fsmResult.state as { player?: number }).player ?? finalState.currentPlayer;
+          const diverged =
+            fsmPhase !== finalState.currentPhase || fsmPlayer !== finalState.currentPlayer;
+          if (diverged) {
+            debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] DIVERGENCE', {
+              moveType: move.type,
+              movePlayer: move.player,
+              fsmPhase,
+              fsmPlayer,
+              orchPhase: finalState.currentPhase,
+              orchPlayer: finalState.currentPlayer,
+              gameId: state.id,
+              moveNumber: state.moveHistory.length + 1,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      debugLog(true, '[FSM_ORCHESTRATOR_SHADOW] EXCEPTION', {
+        moveType: move.type,
+        movePlayer: move.player,
+        error: err instanceof Error ? err.message : String(err),
+        gameId: state.id,
+        moveNumber: state.moveHistory.length + 1,
+      });
     }
   }
 
@@ -1565,71 +1672,188 @@ function assertPhaseMoveInvariant(state: GameState, move: Move): void {
 }
 
 /**
- * Perform FSM shadow validation on a move.
+ * FSM validation result type.
+ */
+interface FSMValidationInternalResult {
+  valid: boolean;
+  currentPhase?: string | undefined;
+  errorCode?: string | undefined;
+  reason?: string | undefined;
+}
+
+/**
+ * Structured FSM validation event for production monitoring.
+ * Emits JSON logs that can be easily parsed by log aggregators.
+ */
+interface FSMValidationEvent {
+  event: 'fsm_validation';
+  timestamp: string;
+  mode: 'shadow' | 'active';
+  gameId: string;
+  moveNumber: number;
+  moveType: string;
+  movePlayer: number;
+  currentPhase: string;
+  fsmValid: boolean;
+  existingValid?: boolean | undefined;
+  divergence: boolean;
+  errorCode?: string | undefined;
+  reason?: string | undefined;
+  durationMs?: number | undefined;
+}
+
+/**
+ * Emit a structured FSM validation event for monitoring.
+ * In production, these can be aggregated to track:
+ * - Divergence rate between FSM and existing validation
+ * - FSM rejection rate in active mode
+ * - Validation performance
+ */
+function emitFSMValidationEvent(event: FSMValidationEvent): void {
+  // Only emit if FSM logging is enabled
+  if (!flagEnabled('RINGRIFT_FSM_STRUCTURED_LOGGING')) {
+    return;
+  }
+
+  // Emit as JSON line for log aggregation
+  // eslint-disable-next-line no-console
+  console.log(JSON.stringify(event));
+}
+
+/**
+ * Perform FSM validation on a move.
  *
- * This runs the FSM-based validation in parallel with existing validation
- * and logs any divergences. It does NOT affect game behavior - it only logs
- * potential issues for debugging and incremental FSM integration.
+ * In shadow mode: runs FSM validation in parallel with existing validation
+ * and logs any divergences without affecting game behavior.
+ *
+ * In active mode: returns the FSM validation result for the caller to enforce.
  *
  * @param state - The current game state
  * @param move - The move to validate
+ * @param mode - 'shadow' for logging only, 'active' for enforcement
+ * @returns FSM validation result
  */
-function performFSMShadowValidation(state: GameState, move: Move): void {
+function performFSMValidation(
+  state: GameState,
+  move: Move,
+  mode: 'shadow' | 'active'
+): FSMValidationInternalResult {
+  const startTime = Date.now();
+  const moveNumber = state.moveHistory.length + 1;
+
   try {
     // Run FSM validation
     const fsmResult = validateMoveWithFSM(state, move);
 
-    // Run existing validation for comparison
-    const existingResult = validateMove(state, move);
+    // In shadow mode, also run existing validation for comparison and log divergences
+    let existingValid: boolean | undefined;
+    let divergence = false;
 
-    // Check for divergences between FSM and existing validation
-    const fsmValid = fsmResult.valid;
-    const existingValid = existingResult.valid;
+    if (mode === 'shadow') {
+      const existingResult = validateMove(state, move);
+      existingValid = existingResult.valid;
+      divergence = fsmResult.valid !== existingResult.valid;
 
-    // Log divergence if FSM and existing disagree
-    if (fsmValid !== existingValid) {
-      debugLog(true, '[FSM_SHADOW_VALIDATION] DIVERGENCE DETECTED', {
-        moveType: move.type,
-        movePlayer: move.player,
-        currentPhase: state.currentPhase,
-        fsmResult: {
-          valid: fsmResult.valid,
-          currentPhase: fsmResult.currentPhase,
-          errorCode: fsmResult.errorCode,
-          reason: fsmResult.reason,
-        },
-        existingResult: {
-          valid: existingResult.valid,
-          reason: existingResult.reason,
-        },
-        gameId: state.id,
-        moveNumber: state.moveHistory.length + 1,
-      });
+      // Log divergence if FSM and existing disagree
+      if (divergence) {
+        debugLog(true, '[FSM_SHADOW_VALIDATION] DIVERGENCE DETECTED', {
+          moveType: move.type,
+          movePlayer: move.player,
+          currentPhase: state.currentPhase,
+          fsmResult: {
+            valid: fsmResult.valid,
+            currentPhase: fsmResult.currentPhase,
+            errorCode: fsmResult.errorCode,
+            reason: fsmResult.reason,
+          },
+          existingResult: {
+            valid: existingResult.valid,
+            reason: existingResult.reason,
+          },
+          gameId: state.id,
+          moveNumber,
+        });
+      }
+
+      // Also check phase validity
+      const fsmPhaseValid = isMoveTypeValidForPhase(state, move.type);
+      const existingPhaseValid = isPhaseValidForMoveType(state.currentPhase, move.type);
+
+      if (fsmPhaseValid !== existingPhaseValid) {
+        debugLog(true, '[FSM_SHADOW_VALIDATION] PHASE_VALIDITY_DIVERGENCE', {
+          moveType: move.type,
+          currentPhase: state.currentPhase,
+          fsmPhaseValid,
+          existingPhaseValid,
+          gameId: state.id,
+          moveNumber,
+        });
+      }
     }
 
-    // Also check phase validity
-    const fsmPhaseValid = isMoveTypeValidForPhase(state, move.type);
-    const existingPhaseValid = isPhaseValidForMoveType(state.currentPhase, move.type);
+    // Emit structured event for monitoring
+    emitFSMValidationEvent({
+      event: 'fsm_validation',
+      timestamp: new Date().toISOString(),
+      mode,
+      gameId: state.id,
+      moveNumber,
+      moveType: move.type,
+      movePlayer: move.player,
+      currentPhase: state.currentPhase,
+      fsmValid: fsmResult.valid,
+      existingValid,
+      divergence,
+      errorCode: fsmResult.errorCode,
+      reason: fsmResult.reason,
+      durationMs: Date.now() - startTime,
+    });
 
-    if (fsmPhaseValid !== existingPhaseValid) {
-      debugLog(true, '[FSM_SHADOW_VALIDATION] PHASE_VALIDITY_DIVERGENCE', {
-        moveType: move.type,
-        currentPhase: state.currentPhase,
-        fsmPhaseValid,
-        existingPhaseValid,
-        gameId: state.id,
-        moveNumber: state.moveHistory.length + 1,
-      });
-    }
+    return {
+      valid: fsmResult.valid,
+      currentPhase: fsmResult.currentPhase,
+      errorCode: fsmResult.errorCode,
+      reason: fsmResult.reason,
+    };
   } catch (error) {
-    // Log FSM validation errors but don't propagate - shadow validation
-    // should never break the game
-    debugLog(true, '[FSM_SHADOW_VALIDATION] ERROR', {
+    // Log FSM validation errors
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    debugLog(true, '[FSM_VALIDATION] ERROR', {
       moveType: move.type,
       currentPhase: state.currentPhase,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
       gameId: state.id,
+      mode,
     });
+
+    // Emit error event
+    emitFSMValidationEvent({
+      event: 'fsm_validation',
+      timestamp: new Date().toISOString(),
+      mode,
+      gameId: state.id,
+      moveNumber,
+      moveType: move.type,
+      movePlayer: move.player,
+      currentPhase: state.currentPhase,
+      fsmValid: false,
+      divergence: false,
+      errorCode: 'FSM_ERROR',
+      reason: errorMessage,
+      durationMs: Date.now() - startTime,
+    });
+
+    // In shadow mode, don't propagate errors - just mark as valid to continue
+    // In active mode, treat errors as validation failures
+    if (mode === 'shadow') {
+      return { valid: true };
+    }
+    return {
+      valid: false,
+      currentPhase: state.currentPhase,
+      errorCode: 'FSM_ERROR',
+      reason: errorMessage,
+    };
   }
 }
 
@@ -1915,6 +2139,48 @@ function processPostMovePhases(
         // Territory phase move was applied and no more regions, proceed to victory/turn advancement.
       }
     }
+
+    // If territory processing completed and the player is blocked with stacks
+    // (no placements anywhere, no movement/capture, but has material), surface
+    // forced elimination as the next phase instead of rotating turns.
+    const summary = computeGlobalLegalActionsSummary(
+      stateMachine.gameState,
+      stateMachine.gameState.currentPlayer
+    );
+    if (
+      summary.hasTurnMaterial &&
+      summary.hasForcedEliminationAction &&
+      !summary.hasGlobalPlacementAction &&
+      !summary.hasPhaseLocalInteractiveMove
+    ) {
+      stateMachine.transitionTo('forced_elimination');
+      const forcedDecision = createForcedEliminationDecision(stateMachine.gameState);
+      if (forcedDecision && forcedDecision.options.length > 0) {
+        return {
+          pendingDecision: forcedDecision,
+        };
+      }
+      // Stay in forced_elimination; caller must supply explicit move.
+      // No decision options were constructed; stay in forced_elimination and
+      // let the caller supply a forced_elimination move.
+      return {};
+    }
+
+    // If no forced elimination, advance explicitly to next player's ring_placement.
+    const currentState = stateMachine.gameState;
+    const players = currentState.players;
+    const currentPlayerIndex = players.findIndex(
+      (p) => p.playerNumber === currentState.currentPlayer
+    );
+    const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+    const nextPlayer = players[nextPlayerIndex].playerNumber;
+
+    stateMachine.updateGameState({
+      ...currentState,
+      currentPlayer: nextPlayer,
+      currentPhase: 'ring_placement',
+    });
+    return {};
   }
 
   // Check victory

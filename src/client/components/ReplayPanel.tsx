@@ -126,22 +126,26 @@ function buildReplayMoveRecords(
   const result: ReplayMoveRecord[] = [];
 
   for (let i = 0; i < length; i += 1) {
-    const rec = record.moves[i] as any;
+    const rec = record.moves[i];
     const hist = history.moves[i];
 
-    const metadata = (rec && typeof rec === 'object' && rec.metadata) || {};
+    // MoveRecord has thinkTimeMs directly; fallback to moveData for backend history
+    const histMoveData = hist.moveData as Record<string, unknown> | undefined;
     const thinkTimeMs: number | null =
-      typeof metadata.thinkTimeMs === 'number'
-        ? metadata.thinkTimeMs
-        : typeof (hist as any).thinkTimeMs === 'number'
-          ? (hist as any).thinkTimeMs
+      typeof rec.thinkTimeMs === 'number'
+        ? rec.thinkTimeMs
+        : typeof histMoveData?.thinkTimeMs === 'number'
+          ? histMoveData.thinkTimeMs
           : null;
+
+    // Phase info may be in moveData for backend history entries
+    const phase = (histMoveData?.phase as string | undefined) ?? 'main';
 
     result.push({
       moveNumber: hist.moveNumber,
       turnNumber: hist.moveNumber,
       player: rec.player ?? 0,
-      phase: (metadata.phase as string) ?? 'main',
+      phase,
       moveType: hist.moveType,
       move: hist.moveData,
       timestamp: hist.timestamp ?? null,
@@ -811,6 +815,10 @@ export function ReplayPanel({
                     <span className="mx-1">|</span>
                     <kbd className="px-1 py-0.5 bg-slate-800 rounded">←</kbd>{' '}
                     <kbd className="px-1 py-0.5 bg-slate-800 rounded">→</kbd> step
+                    <span className="mx-1">|</span>
+                    <kbd className="px-1 py-0.5 bg-slate-800 rounded">Home</kbd> start
+                    <span className="mx-1">|</span>
+                    <kbd className="px-1 py-0.5 bg-slate-800 rounded">End</kbd> end
                     <span className="mx-1">|</span>
                     <kbd className="px-1 py-0.5 bg-slate-800 rounded">Esc</kbd> exit
                   </div>

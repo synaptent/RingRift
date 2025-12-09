@@ -30,16 +30,44 @@ function extractPercentiles(metricName, data) {
   }
 
   const values = metric.values;
-  const p95 = values['p(95)'];
-  const p99 = values['p(99)'];
+  const count =
+    typeof values.count === 'number'
+      ? values.count
+      : null;
+  const hasSamples = count === null ? null : count > 0;
 
-  if (typeof p95 !== 'number' && typeof p99 !== 'number') {
+  const rawP95 = values['p(95)'];
+  const rawP99 = values['p(99)'];
+
+  // When there are no samples, explicitly report null percentiles and a
+  // hasSamples=false flag so consumers can distinguish "no data" from "0ms".
+  if (hasSamples === false) {
+    return {
+      p95: null,
+      p99: null,
+      hasSamples,
+    };
+  }
+
+  const p95 = typeof rawP95 === 'number' ? rawP95 : null;
+  const p99 = typeof rawP99 === 'number' ? rawP99 : null;
+
+  if (p95 === null && p99 === null && hasSamples !== null) {
+    return {
+      p95: null,
+      p99: null,
+      hasSamples,
+    };
+  }
+
+  if (p95 === null && p99 === null) {
     return null;
   }
 
   return {
-    p95: typeof p95 === 'number' ? p95 : null,
-    p99: typeof p99 === 'number' ? p99 : null,
+    p95,
+    p99,
+    hasSamples,
   };
 }
 
@@ -170,6 +198,7 @@ export function computeScenarioSloStatus(scenarioName, environmentLabel, data) {
    *   limit: number | null;
    *   value: number | null;
    *   passed: boolean;
+   *   hasSamples: boolean | null;
    * }>} */
   const thresholdStatuses = [];
 
@@ -181,14 +210,31 @@ export function computeScenarioSloStatus(scenarioName, environmentLabel, data) {
     const metricThresholds = metric.thresholds;
     const values = metric.values || {};
 
+    const sampleCount =
+      typeof values.count === 'number'
+        ? values.count
+        : null;
+    const hasSamplesForMetric = sampleCount === null ? null : sampleCount > 0;
+
     for (const [expr, result] of Object.entries(metricThresholds)) {
       const parsed = parseThresholdExpression(expr);
       const valueFromThreshold =
         result && typeof result.actual === 'number' ? result.actual : null;
-      const value =
+      const metricValue =
         valueFromThreshold !== null
           ? valueFromThreshold
           : resolveMetricValueFromStatistic(values, parsed.statistic);
+
+      let value = typeof metricValue === 'number' ? metricValue : null;
+      let passed = Boolean(result && result.ok);
+
+      // When a metric has no samples at all, treat its thresholds as "not
+      // evaluated" and force passed=false with value=null. This prevents
+      // zero-sample metrics from silently "passing" SLOs with p95=0.
+      if (hasSamplesForMetric === false) {
+        value = null;
+        passed = false;
+      }
 
       thresholdStatuses.push({
         metric: metricName,
@@ -196,20 +242,34 @@ export function computeScenarioSloStatus(scenarioName, environmentLabel, data) {
         statistic: parsed.statistic,
         comparison: parsed.comparison,
         limit: parsed.limit,
-        value: typeof value === 'number' ? value : null,
-        passed: Boolean(result && result.ok),
+        value,
+        passed,
+        hasSamples: hasSamplesForMetric,
       });
     }
   }
 
+  const metricsWithNoSamples = Array.from(
+    new Set(
+      thresholdStatuses
+        .filter((t) => t.hasSamples === false)
+        .map((t) => t.metric)
+    )
+  );
+  const anyNoSamples = metricsWithNoSamples.length > 0;
+
   const overallPass =
-    thresholdStatuses.length > 0 ? thresholdStatuses.every((t) => t.passed) : false;
+    thresholdStatuses.length > 0 && !anyNoSamples
+      ? thresholdStatuses.every((t) => t.passed)
+      : false;
 
   return {
     scenario: scenarioName,
     environment: environmentLabel,
     thresholds: thresholdStatuses,
     overallPass,
+    noSamplesForMetrics: metricsWithNoSamples,
+    overallReason: anyNoSamples ? 'no_samples_for_key_metric' : null,
   };
 }
 
@@ -240,6 +300,12 @@ function buildSummaryObject(scenarioName, environmentLabel, thresholdsEnvLabel, 
     ),
     websocket_connection_success_rate: extractRate('websocket_connection_success_rate', data),
     websocket_handshake_success_rate: extractRate('websocket_handshake_success_rate', data),
+
+    // Gameplay-focused WebSocket metrics (present when scenarios emit them).
+    ws_move_rtt_ms: extractPercentiles('ws_move_rtt_ms', data),
+    ws_move_success_rate: extractRate('ws_move_success_rate', data),
+    ws_moves_attempted_total: extractCounterSummary('ws_moves_attempted_total', data),
+    ws_move_stalled_total: extractCounterSummary('ws_move_stalled_total', data),
   };
 
   const ai = {
@@ -263,6 +329,9 @@ function buildSummaryObject(scenarioName, environmentLabel, thresholdsEnvLabel, 
     stalled_moves_total: extractCounterSummary('stalled_moves_total', data),
     websocket_connection_errors: extractCounterSummary('websocket_connection_errors', data),
     websocket_protocol_errors: extractCounterSummary('websocket_protocol_errors', data),
+
+    // Auth lifecycle classifications used by long-running load tests.
+    auth_token_expired_total: extractCounterSummary('auth_token_expired_total', data),
   };
 
   const raw = {

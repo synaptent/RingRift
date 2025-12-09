@@ -1,0 +1,145 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "RingRift BCAP v1 Scenarios",
+  "description": "Canonical v1 baseline capacity (BCAP) scenarios for load harness and SLO verification.",
+  "version": "1.0.0",
+  "lastUpdated": "2025-12-08",
+  "scenarios": {
+    "BCAP_STAGING_BASELINE_20G_60P": {
+      "id": "BCAP_STAGING_BASELINE_20G_60P",
+      "label": "Staging baseline 20 games / 60 players",
+      "environment": "staging",
+      "k6": {
+        "script": "concurrent-games",
+        "concurrentGames": {
+          "description": "Mixed-board staging baseline with ~20 concurrent games and a 5 minute steady window.",
+          "stages": [
+            { "name": "warmup", "duration": "1m", "targetVUs": 10 },
+            { "name": "rampToTarget", "duration": "3m", "targetVUs": 20 },
+            { "name": "steadyBaseline", "duration": "5m", "targetVUs": 20 },
+            { "name": "rampDown", "duration": "1m", "targetVUs": 0 }
+          ],
+          "steadyWindowMinutes": 5
+        }
+      },
+      "capacityTargets": {
+        "minConcurrentGames": 20,
+        "minConcurrentPlayers": 60
+      },
+      "sloPolicies": {
+        "sloEnvironments": {
+          "default": "staging"
+        },
+        "latencyRules": {
+          "perSlo": {
+            "latency_api_p95": {
+              "coverageMin": 0.8,
+              "maxMultipleOfTarget": 2.0
+            },
+            "latency_move_e2e": {
+              "coverageMin": 0.8,
+              "maxMultipleOfTarget": 2.0
+            },
+            "latency_move_server": {
+              "coverageMin": 0.8,
+              "maxMultipleOfTarget": 2.0
+            },
+            "latency_ai_response": {
+              "coverageMin": 0.8,
+              "maxMultipleOfTarget": 2.0
+            }
+          }
+        }
+      }
+    },
+    "BCAP_SQ8_3P_TARGET_100G_300P": {
+      "id": "BCAP_SQ8_3P_TARGET_100G_300P",
+      "label": "Target scale 100 games / 300 players (square8, 3p, 1 AI)",
+      "environment": "staging",
+      "k6": {
+        "script": "concurrent-games",
+        "concurrentGames": {
+          "description": "Primary launch-blocking target scale test with 100 concurrent 3p square8 games and a 10 minute steady window at 300 players.",
+          "stages": [
+            { "name": "warmup", "duration": "2m", "targetVUs": 30 },
+            { "name": "rampToHalf", "duration": "5m", "targetVUs": 150 },
+            { "name": "steadyHalf", "duration": "5m", "targetVUs": 150 },
+            { "name": "rampToFull", "duration": "5m", "targetVUs": 300 },
+            { "name": "steadyFull", "duration": "10m", "targetVUs": 300 },
+            { "name": "rampDown", "duration": "3m", "targetVUs": 0 }
+          ],
+          "steadyWindowMinutes": 10
+        }
+      },
+      "capacityTargets": {
+        "minConcurrentGames": 100,
+        "minConcurrentPlayers": 300
+      },
+      "sloPolicies": {
+        "sloEnvironments": {
+          "default": "production"
+        },
+        "latencyRules": {
+          "perSlo": {
+            "latency_api_p95": {
+              "coverageMin": 0.9,
+              "maxMultipleOfTarget": 1.5
+            },
+            "latency_move_e2e": {
+              "coverageMin": 0.9,
+              "maxMultipleOfTarget": 1.5
+            },
+            "latency_move_server": {
+              "coverageMin": 0.9,
+              "maxMultipleOfTarget": 1.5
+            },
+            "latency_ai_response": {
+              "coverageMin": 0.9,
+              "maxMultipleOfTarget": 1.5
+            }
+          }
+        }
+      }
+    },
+    "BCAP_SQ8_4P_AI_HEAVY_75G_300P": {
+      "id": "BCAP_SQ8_4P_AI_HEAVY_75G_300P",
+      "label": "AI-heavy probe 75 games / 300 players (square8, 4p, 3 AI)",
+      "environment": "staging",
+      "k6": {
+        "script": "concurrent-games",
+        "concurrentGames": {
+          "description": "AI-heavy capacity probe with ~75 concurrent 4p square8 games and a 5 minute steady window, 3 AI seats per game.",
+          "stages": [
+            { "name": "warmup", "duration": "2m", "targetVUs": 25 },
+            { "name": "rampToTarget", "duration": "3m", "targetVUs": 75 },
+            { "name": "steadyAiHeavy", "duration": "5m", "targetVUs": 75 },
+            { "name": "rampDown", "duration": "3m", "targetVUs": 0 }
+          ],
+          "steadyWindowMinutes": 5
+        }
+      },
+      "capacityTargets": {
+        "minConcurrentGames": 75,
+        "minConcurrentPlayers": 300
+      },
+      "sloPolicies": {
+        "sloEnvironments": {
+          "default": "staging",
+          "overrides": {
+            "latency_ai_response": "production",
+            "latency_ai_response_p99": "production",
+            "ai_fallback_rate": "production"
+          }
+        },
+        "latencyRules": {
+          "perSlo": {
+            "latency_ai_response": {
+              "coverageMin": 0.9,
+              "maxMultipleOfTarget": 1.5
+            }
+          }
+        }
+      }
+    }
+  }
+}

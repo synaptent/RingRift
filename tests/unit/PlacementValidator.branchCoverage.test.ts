@@ -687,8 +687,8 @@ describe('PlacementValidator branch coverage', () => {
       });
     });
 
-    describe('rings in hand (allowed with 0)', () => {
-      it('allows skip placement when player has 0 rings in hand', () => {
+    describe('rings in hand (0 forces no_placement_action)', () => {
+      it('rejects skip placement when player has 0 rings in hand', () => {
         const state = makeGameState();
         state.players[0].ringsInHand = 0;
         addStack(state.board, pos(3, 3), 1, [1, 1]);
@@ -700,7 +700,8 @@ describe('PlacementValidator branch coverage', () => {
 
         const result = validateSkipPlacement(state, action);
 
-        expect(result.valid).toBe(true);
+        expect(result.valid).toBe(false);
+        expect(result.reason).toMatch(/no rings in hand/i);
       });
     });
   });

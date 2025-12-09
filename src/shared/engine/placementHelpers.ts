@@ -305,6 +305,15 @@ export function evaluateSkipPlacementEligibility(
     };
   }
 
+  // Supply gate: skip_placement is only valid when the player has rings in hand.
+  if (playerObj.ringsInHand <= 0) {
+    return {
+      canSkip: false,
+      reason: 'Cannot skip placement with no rings in hand; use no_placement_action',
+      code: 'NO_RINGS_IN_HAND',
+    };
+  }
+
   // Build a movement board view for checking legal moves/captures
   const boardView: MovementBoardView = {
     isValidPosition: (pos: Position) => isValidPosition(pos, state.board.type, state.board.size),

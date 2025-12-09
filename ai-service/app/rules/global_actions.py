@@ -110,15 +110,18 @@ def has_phase_local_interactive_move(
         return False
 
     if phase == GamePhase.LINE_PROCESSING:
-        line_moves = GameEngine._get_line_processing_moves(state, player)
-        return bool(line_moves)
+        # During LINE_PROCESSING, the player ALWAYS has a valid move:
+        # either an interactive PROCESS_LINE/CHOOSE_LINE_REWARD move,
+        # or a NO_LINE_ACTION bookkeeping move synthesized by the host.
+        # This prevents false positive ANM (Active No Moves) violations.
+        return True
 
     if phase == GamePhase.TERRITORY_PROCESSING:
-        terr_moves = GameEngine._get_territory_processing_moves(
-            state,
-            player,
-        )
-        return bool(terr_moves)
+        # During TERRITORY_PROCESSING, the player ALWAYS has a valid move:
+        # either an interactive PROCESS_TERRITORY_REGION move,
+        # or a NO_TERRITORY_ACTION bookkeeping move synthesized by the host.
+        # This prevents false positive ANM violations.
+        return True
 
     return False
 

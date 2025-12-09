@@ -891,7 +891,7 @@ export const BOARD_CONFIGS = {
   hexagonal: {
     size: 13, // Radius of hexagonal board (size - 1 = 12)
     totalSpaces: 469,
-    ringsPerPlayer: 60,
+    ringsPerPlayer: 72,
     lineLength: 4, // Minimum line length for collapse (hex)
     movementAdjacency: 'hexagonal' as AdjacencyType, // 6-direction movement
     lineAdjacency: 'hexagonal' as AdjacencyType, // 6-direction line formation

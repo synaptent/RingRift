@@ -134,6 +134,16 @@ export function filterProcessableTerritoryRegions(
     return [];
   }
 
+  // Canonical guard: disconnected regions must be attributed to a player.
+  // A controllingPlayer of 0 indicates a non-canonical detection/recording.
+  regions.forEach((region) => {
+    if (region.controllingPlayer === 0) {
+      throw new Error(
+        'Non-canonical territory region: controllingPlayer=0 during territory processing'
+      );
+    }
+  });
+
   return regions.filter((region) => canProcessTerritoryRegion(board, region, ctx));
 }
 

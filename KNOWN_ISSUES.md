@@ -622,7 +622,7 @@ These issues have been addressed but are kept here for context:
   - P18.3-\*: Decision lifecycle and timeout semantics
   - P18.4-\*: Orchestrator Phase 4 (100% rollout)
   - P18.5-\*: Extended contract vectors (54 cases, 0 mismatches) and swap_sides parity
-    See [WEAKNESS_ASSESSMENT_REPORT.md](./WEAKNESS_ASSESSMENT_REPORT.md) Section 3 for details.
+    See [WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md](./WEAKNESS_AND_HARDEST_PROBLEM_REPORT.md) Section 3 for details.
 - **Python ELIMINATE_RINGS_FROM_STACK Phase Handling (Dec 2025)** –
   Fixed Python engine phase transitions after ELIMINATE_RINGS_FROM_STACK moves
   in `ai-service/app/game_engine.py`. The fix distinguishes terminal vs

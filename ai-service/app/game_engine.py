@@ -38,8 +38,17 @@ import os
 import json
 import time
 from .models import (
-    GameState, Move, Position, BoardType, GamePhase, RingStack, MarkerInfo,
-    GameStatus, MoveType, BoardState
+    GameState,
+    Move,
+    Position,
+    BoardType,
+    GamePhase,
+    RingStack,
+    MarkerInfo,
+    GameStatus,
+    MoveType,
+    BoardState,
+    Territory,
 )
 from .board_manager import BoardManager
 
@@ -2046,9 +2055,9 @@ class GameEngine:
         """
         Enumerate legal SKIP_PLACEMENT moves.
 
-        Mirrors TS RuleEngine.validateSkipPlacement semantics:
+        Mirrors TS PlacementAggregate.validateSkipPlacement semantics:
         - Only during RING_PLACEMENT phase.
-        - Player must have rings in hand and at least one stack.
+        - Player must have at least one stack.
         - At least one controlled stack must have a legal move or capture
           in the current board state.
         """
@@ -2063,7 +2072,12 @@ class GameEngine:
             ),
             None,
         )
-        if not player or player.rings_in_hand <= 0:
+        if not player:
+            return []
+
+        # Canonical rule: with zero rings in hand, skip_placement is invalid.
+        # Players must record an explicit no_placement_action instead.
+        if player.rings_in_hand <= 0:
             return []
 
         board = game_state.board
@@ -2839,13 +2853,26 @@ class GameEngine:
         if eligible_regions:
             for idx, region in enumerate(eligible_regions):
                 rep = region.spaces[0]
+                # Canonical guard: controlling_player should not be 0. If the
+                # detector returned a neutral region, attribute it to the active
+                # player to keep the recording canonical with TS expectations.
+                controlling_player = (
+                    region.controlling_player if region.controlling_player != 0 else player_number
+                )
+                # Mutate the region as well to keep downstream parity tools consistent.
+                region.controlling_player = controlling_player
+                safe_region = Territory(
+                    spaces=region.spaces,
+                    controlling_player=controlling_player,
+                    is_disconnected=region.is_disconnected,
+                )
                 moves.append(
                     Move(
                         id=f"process-region-{idx}-{rep.to_key()}",
                         type=MoveType.PROCESS_TERRITORY_REGION,
                         player=player_number,
                         to=rep,
-                        disconnected_regions=(region,),  # type: ignore[arg-type]
+                        disconnected_regions=(safe_region,),  # type: ignore[arg-type]
                         timestamp=game_state.last_move_at,
                         thinkTime=0,
                         moveNumber=len(game_state.move_history) + 1,

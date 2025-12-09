@@ -5,17 +5,22 @@
 # Runs self-play soaks across multiple machines via SSH.
 # Each machine gets a subset of board/player combinations.
 #
-# Workers are specified in cluster_workers.txt (one host per line).
-# Local machine is always included.
-#
 # Usage (from ai-service/):
 #   chmod +x scripts/run_distributed_selfplay_matrix.sh
-#   PYTHONPATH=. scripts/run_distributed_selfplay_matrix.sh
+#   PYTHONPATH=. scripts/run_distributed_selfplay_matrix.sh [MODE]
+#
+# Modes:
+#   lan      - Local Mac cluster only (default)
+#   aws      - AWS staging only (suitable for square8 games only - 16GB RAM limit)
+#   hybrid   - Both LAN and AWS workers (maximum parallelism)
+#   local    - Localhost only (no remote workers)
 #
 # Environment variables:
 #   CLUSTER_WORKERS_FILE - path to workers file (default: scripts/cluster_workers.txt)
-#   LOCAL_ONLY           - set to 1 to skip remote workers
+#   LOCAL_ONLY           - set to 1 to skip remote workers (overrides mode)
 #   REMOTE_PROJECT_DIR   - project dir on remote machines (default: ~/Development/RingRift)
+#   AWS_PROJECT_DIR      - project dir on AWS (default: /home/ubuntu/ringrift)
+#   AWS_SSH_KEY          - SSH key for AWS (default: ~/.ssh/ringrift-staging-key.pem)
 #
 # All other variables from run_selfplay_matrix.sh are supported.
 
@@ -24,32 +29,81 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}/.."
 
+# Parse mode argument
+MODE="${1:-lan}"
+
 CLUSTER_WORKERS_FILE="${CLUSTER_WORKERS_FILE:-${SCRIPT_DIR}/cluster_workers.txt}"
 LOCAL_ONLY="${LOCAL_ONLY:-0}"
 REMOTE_PROJECT_DIR="${REMOTE_PROJECT_DIR:-~/Development/RingRift}"
+
+# AWS configuration
+AWS_HOST="3.236.54.231"
+AWS_USER="ubuntu"
+AWS_PROJECT_DIR="${AWS_PROJECT_DIR:-/home/ubuntu/ringrift}"
+AWS_SSH_KEY="${AWS_SSH_KEY:-~/.ssh/ringrift-staging-key.pem}"
 
 # Limit threads
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 
-# Load worker list
+# Load worker list based on mode
 declare -a WORKERS=()
-WORKERS+=("localhost")  # Always include local
+declare -A WORKER_PROJECT_DIRS=()
+declare -A WORKER_SSH_KEYS=()
 
-if [[ "${LOCAL_ONLY}" != "1" ]] && [[ -f "${CLUSTER_WORKERS_FILE}" ]]; then
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip comments and empty lines
-        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-        line="${line%%#*}"  # Remove inline comments
-        line="${line//[[:space:]]/}"  # Trim whitespace
-        [[ -n "$line" ]] && WORKERS+=("$line")
-    done < "${CLUSTER_WORKERS_FILE}"
-fi
+case "$MODE" in
+    local)
+        WORKERS+=("localhost")
+        ;;
+    lan)
+        WORKERS+=("localhost")
+        if [[ "${LOCAL_ONLY}" != "1" ]] && [[ -f "${CLUSTER_WORKERS_FILE}" ]]; then
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+                line="${line%%#*}"
+                line="${line//[[:space:]]/}"
+                # Skip AWS entries (those with :8766 port)
+                [[ "$line" == *":8766" ]] && continue
+                [[ -n "$line" ]] && WORKERS+=("$line")
+            done < "${CLUSTER_WORKERS_FILE}"
+        fi
+        ;;
+    aws)
+        WORKERS+=("localhost")
+        WORKERS+=("${AWS_USER}@${AWS_HOST}")
+        WORKER_PROJECT_DIRS["${AWS_USER}@${AWS_HOST}"]="${AWS_PROJECT_DIR}"
+        WORKER_SSH_KEYS["${AWS_USER}@${AWS_HOST}"]="${AWS_SSH_KEY}"
+        ;;
+    hybrid)
+        WORKERS+=("localhost")
+        # Add LAN workers
+        if [[ "${LOCAL_ONLY}" != "1" ]] && [[ -f "${CLUSTER_WORKERS_FILE}" ]]; then
+            while IFS= read -r line || [[ -n "$line" ]]; do
+                [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+                line="${line%%#*}"
+                line="${line//[[:space:]]/}"
+                [[ "$line" == *":8766" ]] && continue
+                [[ -n "$line" ]] && WORKERS+=("$line")
+            done < "${CLUSTER_WORKERS_FILE}"
+        fi
+        # Add AWS worker
+        WORKERS+=("${AWS_USER}@${AWS_HOST}")
+        WORKER_PROJECT_DIRS["${AWS_USER}@${AWS_HOST}"]="${AWS_PROJECT_DIR}"
+        WORKER_SSH_KEYS["${AWS_USER}@${AWS_HOST}"]="${AWS_SSH_KEY}"
+        ;;
+    *)
+        echo "Unknown mode: $MODE"
+        echo "Usage: $0 [local|lan|aws|hybrid]"
+        exit 1
+        ;;
+esac
 
 NUM_WORKERS="${#WORKERS[@]}"
-echo "Distributed selfplay matrix with ${NUM_WORKERS} worker(s):"
+echo "Distributed selfplay matrix"
+echo "  Mode: ${MODE}"
+echo "  Workers (${NUM_WORKERS}):"
 for w in "${WORKERS[@]}"; do
-    echo "  - ${w}"
+    echo "    - ${w}"
 done
 echo
 
@@ -132,8 +186,20 @@ run_job() {
             --summary-json "${summary_json}" \
             --record-db "${record_db}"
     else
+        # Determine project directory and SSH key for this worker
+        local project_dir="${REMOTE_PROJECT_DIR}"
+        local ssh_opts=""
+
+        if [[ -n "${WORKER_PROJECT_DIRS[$worker]:-}" ]]; then
+            project_dir="${WORKER_PROJECT_DIRS[$worker]}"
+        fi
+
+        if [[ -n "${WORKER_SSH_KEYS[$worker]:-}" ]]; then
+            ssh_opts="-i ${WORKER_SSH_KEYS[$worker]}"
+        fi
+
         # Run via SSH on remote worker
-        ssh "${worker}" "cd ${REMOTE_PROJECT_DIR}/ai-service && \
+        ssh ${ssh_opts} "${worker}" "cd ${project_dir}/ai-service && \
             source venv/bin/activate && \
             RINGRIFT_SKIP_SHADOW_CONTRACTS=true \
             PYTHONPATH=. \
@@ -150,11 +216,20 @@ run_job() {
                 --summary-json ${summary_json} \
                 --record-db ${record_db}"
 
-        # Copy results back from remote
+        # Copy results back from remote (use same SSH options)
         echo "[${worker}] Copying results back..."
-        scp "${worker}:${REMOTE_PROJECT_DIR}/ai-service/${log_jsonl}" "${log_jsonl}.remote_${worker}" 2>/dev/null || true
-        scp "${worker}:${REMOTE_PROJECT_DIR}/ai-service/${summary_json}" "${summary_json}.remote_${worker}" 2>/dev/null || true
-        scp "${worker}:${REMOTE_PROJECT_DIR}/ai-service/${record_db}" "${record_db}.remote_${worker}" 2>/dev/null || true
+        local scp_opts=""
+        if [[ -n "${WORKER_SSH_KEYS[$worker]:-}" ]]; then
+            scp_opts="-i ${WORKER_SSH_KEYS[$worker]}"
+        fi
+
+        # Clean worker name for file suffix (replace @ and . with _)
+        local worker_suffix="${worker//@/_}"
+        worker_suffix="${worker_suffix//./_}"
+
+        scp ${scp_opts} "${worker}:${project_dir}/ai-service/${log_jsonl}" "${log_jsonl}.remote_${worker_suffix}" 2>/dev/null || true
+        scp ${scp_opts} "${worker}:${project_dir}/ai-service/${summary_json}" "${summary_json}.remote_${worker_suffix}" 2>/dev/null || true
+        scp ${scp_opts} "${worker}:${project_dir}/ai-service/${record_db}" "${record_db}.remote_${worker_suffix}" 2>/dev/null || true
     fi
 
     echo "[${worker}] Completed ${board} ${players}p"

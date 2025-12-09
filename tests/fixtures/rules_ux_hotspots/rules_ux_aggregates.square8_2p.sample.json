@@ -1,0 +1,84 @@
+{
+  "board": "square8",
+  "num_players": 2,
+  "window": {
+    "start": "2025-12-01T00:00:00Z",
+    "end": "2025-12-28T23:59:59Z"
+  },
+  "games": {
+    "started": 600,
+    "completed": 500
+  },
+  "contexts": [
+    {
+      "rulesContext": "anm_forced_elimination",
+      "sources": [
+        {
+          "source": "hud",
+          "events": {
+            "help_open": 60,
+            "help_reopen": 20,
+            "weird_state_banner_impression": 120,
+            "weird_state_details_open": 70,
+            "resign_after_weird_state": 24
+          }
+        },
+        {
+          "source": "victory_modal",
+          "events": {
+            "help_open": 10,
+            "help_reopen": 2,
+            "weird_state_banner_impression": 20,
+            "weird_state_details_open": 10,
+            "resign_after_weird_state": 3
+          }
+        }
+      ]
+    },
+    {
+      "rulesContext": "structural_stalemate",
+      "sources": [
+        {
+          "source": "hud",
+          "events": {
+            "help_open": 35,
+            "help_reopen": 5,
+            "weird_state_banner_impression": 40,
+            "weird_state_details_open": 18,
+            "resign_after_weird_state": 6
+          }
+        }
+      ]
+    },
+    {
+      "rulesContext": "territory_mini_region",
+      "sources": [
+        {
+          "source": "sandbox",
+          "events": {
+            "help_open": 4,
+            "help_reopen": 0,
+            "weird_state_banner_impression": 8,
+            "weird_state_details_open": 2,
+            "resign_after_weird_state": 0
+          }
+        }
+      ]
+    },
+    {
+      "rulesContext": "line_processing",
+      "sources": [
+        {
+          "source": "hud",
+          "events": {
+            "help_open": 8,
+            "help_reopen": 1,
+            "weird_state_banner_impression": 12,
+            "weird_state_details_open": 4,
+            "resign_after_weird_state": 1
+          }
+        }
+      ]
+    }
+  ]
+}

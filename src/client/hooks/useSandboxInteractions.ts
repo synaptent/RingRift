@@ -388,8 +388,7 @@ export function useSandboxInteractions({
 
         const after = engine.getGameState();
         if (after.gameStatus === 'active' && after.currentPhase === 'chain_capture') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing internal engine method
-          const ctx = (engine as any).getChainCaptureContextForCurrentPlayer?.() ?? null;
+          const ctx = engine.getChainCaptureContextForCurrentPlayer();
           if (ctx) {
             setSelected(ctx.from);
             setValidTargets(ctx.landings);
@@ -443,8 +442,7 @@ export function useSandboxInteractions({
 
             const after = engine.getGameState();
             if (after.gameStatus === 'active' && after.currentPhase === 'chain_capture') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing internal engine method
-              const ctx = (engine as any).getChainCaptureContextForCurrentPlayer?.() ?? null;
+              const ctx = engine.getChainCaptureContextForCurrentPlayer();
               if (ctx) {
                 setSelected(ctx.from);
                 setValidTargets(ctx.landings);
@@ -509,8 +507,7 @@ export function useSandboxInteractions({
 
         const after = engine.getGameState();
         if (after.gameStatus === 'active' && after.currentPhase === 'chain_capture') {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing internal engine method
-          const ctx = (engine as any).getChainCaptureContextForCurrentPlayer?.() ?? null;
+          const ctx = engine.getChainCaptureContextForCurrentPlayer();
           if (ctx) {
             setSelected(ctx.from);
             setValidTargets(ctx.landings);

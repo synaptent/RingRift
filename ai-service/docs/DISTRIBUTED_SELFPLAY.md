@@ -1,6 +1,44 @@
 # Distributed Self-Play Setup
 
-This guide explains how to set up distributed self-play across multiple local Macs.
+This guide explains how to set up distributed self-play across multiple local Macs and AWS cloud workers.
+
+## Deployment Modes
+
+All distributed scripts support a `--mode` argument for selecting worker hosts:
+
+| Mode     | Description                                      | Use Case                   |
+| -------- | ------------------------------------------------ | -------------------------- |
+| `local`  | Run on local machine only (no remote workers)    | Development, quick tests   |
+| `lan`    | Use local Mac cluster workers from hosts config  | Zero-cost distributed runs |
+| `aws`    | Use AWS staging workers (square8 only, 16GB RAM) | Cloud burst capacity       |
+| `hybrid` | Use both LAN and AWS workers                     | Maximum parallelism        |
+
+### Cloud Configuration
+
+Configure cloud workers in `config/distributed_hosts.yaml` (copy from template):
+
+```bash
+cp config/distributed_hosts.template.yaml config/distributed_hosts.yaml
+```
+
+Example cloud host configuration:
+
+```yaml
+hosts:
+  aws-staging:
+    ssh_host: <your-ec2-ip>
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/your-key.pem
+    work_dir: /home/ubuntu/ringrift
+    memory_gb: 16 # Determines eligible board types
+    worker_port: 8766
+```
+
+**Memory requirements by board type:**
+
+- **square8**: 8GB minimum
+- **square19**: 48GB minimum
+- **hexagonal**: 48GB minimum
 
 ## Quick Start
 

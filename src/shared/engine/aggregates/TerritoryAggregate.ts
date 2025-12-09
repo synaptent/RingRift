@@ -969,6 +969,15 @@ export function applyProcessTerritoryRegionDecision(
     };
   }
 
+  // Canonical guard: controllingPlayer should never be 0 (neutral) for a
+  // processable disconnected region. Such regions indicate a non-canonical
+  // recording or territory detection bug and must fail fast.
+  if (region.controllingPlayer === 0) {
+    throw new Error(
+      `Non-canonical territory region: controllingPlayer=0 for process_territory_region (move ${move.id ?? ''})`
+    );
+  }
+
   // Enforce the self-elimination prerequisite
   if (!canProcessTerritoryRegion(state.board, region, { player })) {
     const representative = region.spaces[0];
