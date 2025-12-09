@@ -126,6 +126,8 @@ export type MoveType =
   // a marker to complete a line. Cost is paid with buried rings. Only valid
   // in recovery_action phase. See RR-CANON-R110–R115.
   | 'recovery_slide'
+  // Game termination: player forfeits the game. Valid from any phase.
+  | 'resign'
   // Legacy / experimental move types (not used by the unified Move model).
   | 'line_formation'
   | 'territory_claim'

@@ -1440,9 +1440,8 @@ export function processTurn(
           // For 2-player games, winner is the non-resigning player
           winner:
             finalState.players.length === 2
-              ? (finalState.players.find((p) => p.playerNumber !== move.player)?.playerNumber ??
-                null)
-              : null,
+              ? finalState.players.find((p) => p.playerNumber !== move.player)?.playerNumber
+              : undefined,
         };
       } else {
         // Map turn_end to ring_placement for next player
