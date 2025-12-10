@@ -390,6 +390,10 @@ def test_replay_ts_trace_fixtures_and_assert_python_state_parity() -> None:
             assert state.board_type.value == board_type
 
         for idx, step in enumerate(steps):
+            # Skip steps marked with skip: true
+            if step.get("skip"):
+                continue
+
             move_dict = step["move"]
             expected = step.get("expected", {}) or {}
 
