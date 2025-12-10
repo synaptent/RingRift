@@ -920,11 +920,15 @@ class RingRiftDataset(Dataset):
             dummy_count = 100
             # Use board-appropriate policy size instead of hardcoded value
             dummy_policy_size = get_policy_size_for_board(self.board_type)
+            # Model expects 14 base channels × 4 frames = 56 input channels
+            dummy_input_channels = 56
+            # Model expects 20 global features (see neural_net.py global_features default)
+            dummy_global_features = 20
             self.data = {
                 'features': np.random.rand(
-                    dummy_count, 40, 8, 8
+                    dummy_count, dummy_input_channels, 8, 8
                 ).astype(np.float32),
-                'globals': np.random.rand(dummy_count, 10).astype(np.float32),
+                'globals': np.random.rand(dummy_count, dummy_global_features).astype(np.float32),
                 'values': np.random.choice(
                     [1.0, 0.0, -1.0],
                     size=dummy_count,

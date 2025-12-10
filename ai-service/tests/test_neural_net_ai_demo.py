@@ -37,6 +37,13 @@ def test_neural_demo_select_move_smoke(
       nn_model_id and default NeuralNetAI behaviour.
     - Verifies that select_move returns a non-None, legal move.
     """
+    # Suppress torch.compile/dynamo errors which can fail on some platforms
+    # (e.g., macOS missing libc++.1.dylib for inductor)
+    try:
+        import torch._dynamo
+        torch._dynamo.config.suppress_errors = True
+    except ImportError:
+        pass  # torch._dynamo not available
 
     # Enable the experimental neural engine and force CPU usage for stability.
     monkeypatch.setenv("AI_ENGINE_NEURAL_DEMO_ENABLED", "1")
