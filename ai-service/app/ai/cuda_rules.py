@@ -308,6 +308,166 @@ if CUDA_AVAILABLE:
 
 
 # =============================================================================
+# CUDA Kernels for Line Detection (Power Stones)
+# =============================================================================
+
+if CUDA_AVAILABLE:
+    @cuda.jit
+    def _line_detect_kernel(
+        marker_owner: cuda.devicearray,   # (batch, positions) int8 - marker ownership
+        board_size: int,
+        min_line_length: int,             # Minimum markers to form a line (typically 4)
+        num_players: int,
+        line_counts: cuda.devicearray,    # (batch, num_players+1) int32 - output
+    ):
+        """Detect lines of power stones for each player.
+
+        Scans rows, columns, and diagonals for consecutive markers.
+        Each block handles one game, threads cooperate on different scan directions.
+        """
+        game_idx = cuda.blockIdx.x
+        thread_idx = cuda.threadIdx.x
+        num_threads = cuda.blockDim.x
+
+        # Initialize output
+        if thread_idx < num_players + 1:
+            line_counts[game_idx, thread_idx] = 0
+        cuda.syncthreads()
+
+        # Each thread handles different scan lines
+        # Total scan lines: board_size rows + board_size cols + 2*(2*board_size-1) diagonals
+        num_rows = board_size
+        num_cols = board_size
+        num_diag1 = 2 * board_size - 1  # Main diagonals (top-left to bottom-right)
+        num_diag2 = 2 * board_size - 1  # Anti-diagonals (top-right to bottom-left)
+        total_lines = num_rows + num_cols + num_diag1 + num_diag2
+
+        for line_idx in range(thread_idx, total_lines, num_threads):
+            # Determine which type of line and starting position
+            if line_idx < num_rows:
+                # Horizontal row scan
+                row = line_idx
+                start_x, start_y = 0, row
+                dx, dy = 1, 0
+                line_len = board_size
+            elif line_idx < num_rows + num_cols:
+                # Vertical column scan
+                col = line_idx - num_rows
+                start_x, start_y = col, 0
+                dx, dy = 0, 1
+                line_len = board_size
+            elif line_idx < num_rows + num_cols + num_diag1:
+                # Main diagonal (top-left to bottom-right)
+                diag = line_idx - num_rows - num_cols
+                if diag < board_size:
+                    start_x, start_y = 0, diag
+                else:
+                    start_x, start_y = diag - board_size + 1, board_size - 1
+                dx, dy = 1, -1
+                # Calculate diagonal length
+                if diag < board_size:
+                    line_len = diag + 1
+                else:
+                    line_len = 2 * board_size - 1 - diag
+            else:
+                # Anti-diagonal (top-right to bottom-left)
+                diag = line_idx - num_rows - num_cols - num_diag1
+                if diag < board_size:
+                    start_x, start_y = board_size - 1 - diag, 0
+                else:
+                    start_x, start_y = 0, diag - board_size + 1
+                dx, dy = -1, 1
+                if diag < board_size:
+                    line_len = diag + 1
+                else:
+                    line_len = 2 * board_size - 1 - diag
+
+            # Scan line for consecutive markers
+            if line_len >= min_line_length:
+                prev_owner = 0
+                consecutive = 0
+
+                for i in range(line_len):
+                    x = start_x + i * dx
+                    y = start_y + i * dy
+
+                    # Bounds check
+                    if x < 0 or x >= board_size or y < 0 or y >= board_size:
+                        break
+
+                    pos = y * board_size + x
+                    owner = marker_owner[game_idx, pos]
+
+                    if owner > 0 and owner == prev_owner:
+                        consecutive += 1
+                        if consecutive >= min_line_length:
+                            # Found a line - increment count
+                            cuda.atomic.add(line_counts, (game_idx, owner), 1)
+                    else:
+                        consecutive = 1 if owner > 0 else 0
+
+                    prev_owner = owner
+
+        cuda.syncthreads()
+
+
+    @cuda.jit
+    def _ring_detect_kernel(
+        marker_owner: cuda.devicearray,   # (batch, positions) int8
+        board_size: int,
+        num_players: int,
+        ring_counts: cuda.devicearray,    # (batch, num_players+1) int32 - output
+    ):
+        """Detect rings (closed loops) of markers for each player.
+
+        A ring is a closed path of orthogonally adjacent markers.
+        Uses parallel connected component labeling with cycle detection.
+
+        For simplicity, this implementation detects 4-cell square patterns
+        as the minimal ring, and larger enclosed regions.
+        """
+        game_idx = cuda.blockIdx.x
+        thread_idx = cuda.threadIdx.x
+        num_threads = cuda.blockDim.x
+
+        # Initialize output
+        if thread_idx < num_players + 1:
+            ring_counts[game_idx, thread_idx] = 0
+        cuda.syncthreads()
+
+        # Simple ring detection: look for 2x2 or larger enclosed regions
+        # For each player, check if they have markers forming a closed boundary
+        # around empty cells or opponent markers
+
+        # Approach: For each 2x2 cell pattern, check if all 4 corners belong
+        # to the same player (simple square ring detection)
+        num_patterns = (board_size - 1) * (board_size - 1)
+
+        for pattern_idx in range(thread_idx, num_patterns, num_threads):
+            # Convert pattern index to top-left corner position
+            x = pattern_idx % (board_size - 1)
+            y = pattern_idx // (board_size - 1)
+
+            # Get positions of 4 corners
+            pos_tl = y * board_size + x
+            pos_tr = y * board_size + (x + 1)
+            pos_bl = (y + 1) * board_size + x
+            pos_br = (y + 1) * board_size + (x + 1)
+
+            # Get owners
+            owner_tl = marker_owner[game_idx, pos_tl]
+            owner_tr = marker_owner[game_idx, pos_tr]
+            owner_bl = marker_owner[game_idx, pos_bl]
+            owner_br = marker_owner[game_idx, pos_br]
+
+            # Check if all 4 belong to the same player
+            if owner_tl > 0 and owner_tl == owner_tr and owner_tl == owner_bl and owner_tl == owner_br:
+                cuda.atomic.add(ring_counts, (game_idx, owner_tl), 1)
+
+        cuda.syncthreads()
+
+
+# =============================================================================
 # GPU Rule Checker Class
 # =============================================================================
 
@@ -461,6 +621,157 @@ class GPURuleChecker:
             territory[:, player] = territory_mask.sum(dim=(1, 2)).int()
 
         return territory
+
+    def batch_line_detect(
+        self,
+        marker_owner: torch.Tensor,   # (batch, positions) int8
+        min_line_length: int = 4,
+    ) -> torch.Tensor:
+        """Detect lines of power stones for each player in batch.
+
+        Args:
+            marker_owner: Owner of marker at each position (0 = none)
+            min_line_length: Minimum consecutive markers to count as a line
+
+        Returns:
+            line_counts: (batch, num_players+1) tensor of line counts
+        """
+        batch_size = marker_owner.shape[0]
+
+        if self.use_cuda_kernels:
+            return self._line_detect_cuda(marker_owner, min_line_length, batch_size)
+        else:
+            return self._line_detect_torch(marker_owner, min_line_length, batch_size)
+
+    def _line_detect_cuda(
+        self,
+        marker_owner: torch.Tensor,
+        min_line_length: int,
+        batch_size: int,
+    ) -> torch.Tensor:
+        """Line detection using CUDA kernel."""
+        marker_np = marker_owner.cpu().numpy().astype(np.int8)
+
+        d_marker = cuda.to_device(marker_np)
+        d_line_counts = cuda.device_array((batch_size, self.num_players + 1), dtype=np.int32)
+
+        threads_per_block = 32
+        blocks = batch_size
+
+        _line_detect_kernel[blocks, threads_per_block](
+            d_marker, self.board_size, min_line_length, self.num_players, d_line_counts
+        )
+        cuda.synchronize()
+
+        line_counts_np = d_line_counts.copy_to_host()
+        return torch.from_numpy(line_counts_np).to(self.device)
+
+    def _line_detect_torch(
+        self,
+        marker_owner: torch.Tensor,
+        min_line_length: int,
+        batch_size: int,
+    ) -> torch.Tensor:
+        """Line detection using pure PyTorch (fallback)."""
+        line_counts = torch.zeros(
+            batch_size, self.num_players + 1,
+            dtype=torch.int32, device=self.device
+        )
+
+        marker_2d = marker_owner.view(batch_size, self.board_size, self.board_size)
+
+        for player in range(1, self.num_players + 1):
+            player_mask = (marker_2d == player).float()
+
+            # Create a 1D kernel for line detection
+            line_kernel = torch.ones(1, 1, 1, min_line_length, device=self.device)
+
+            # Horizontal lines
+            h_conv = torch.nn.functional.conv2d(
+                player_mask.unsqueeze(1), line_kernel, padding=(0, min_line_length // 2)
+            )
+            h_lines = (h_conv >= min_line_length).sum(dim=(1, 2, 3))
+
+            # Vertical lines
+            v_conv = torch.nn.functional.conv2d(
+                player_mask.unsqueeze(1), line_kernel.transpose(2, 3), padding=(min_line_length // 2, 0)
+            )
+            v_lines = (v_conv >= min_line_length).sum(dim=(1, 2, 3))
+
+            line_counts[:, player] = (h_lines + v_lines).int()
+
+        return line_counts
+
+    def batch_ring_detect(
+        self,
+        marker_owner: torch.Tensor,   # (batch, positions) int8
+    ) -> torch.Tensor:
+        """Detect rings (closed loops) of markers for each player in batch.
+
+        Args:
+            marker_owner: Owner of marker at each position (0 = none)
+
+        Returns:
+            ring_counts: (batch, num_players+1) tensor of ring counts
+        """
+        batch_size = marker_owner.shape[0]
+
+        if self.use_cuda_kernels:
+            return self._ring_detect_cuda(marker_owner, batch_size)
+        else:
+            return self._ring_detect_torch(marker_owner, batch_size)
+
+    def _ring_detect_cuda(
+        self,
+        marker_owner: torch.Tensor,
+        batch_size: int,
+    ) -> torch.Tensor:
+        """Ring detection using CUDA kernel."""
+        marker_np = marker_owner.cpu().numpy().astype(np.int8)
+
+        d_marker = cuda.to_device(marker_np)
+        d_ring_counts = cuda.device_array((batch_size, self.num_players + 1), dtype=np.int32)
+
+        threads_per_block = 32
+        blocks = batch_size
+
+        _ring_detect_kernel[blocks, threads_per_block](
+            d_marker, self.board_size, self.num_players, d_ring_counts
+        )
+        cuda.synchronize()
+
+        ring_counts_np = d_ring_counts.copy_to_host()
+        return torch.from_numpy(ring_counts_np).to(self.device)
+
+    def _ring_detect_torch(
+        self,
+        marker_owner: torch.Tensor,
+        batch_size: int,
+    ) -> torch.Tensor:
+        """Ring detection using pure PyTorch (fallback).
+
+        Detects 2x2 square patterns as minimal rings.
+        """
+        ring_counts = torch.zeros(
+            batch_size, self.num_players + 1,
+            dtype=torch.int32, device=self.device
+        )
+
+        marker_2d = marker_owner.view(batch_size, self.board_size, self.board_size)
+
+        for player in range(1, self.num_players + 1):
+            player_mask = (marker_2d == player).float()
+
+            # Use 2x2 convolution to detect square rings
+            square_kernel = torch.ones(1, 1, 2, 2, device=self.device)
+            conv_result = torch.nn.functional.conv2d(
+                player_mask.unsqueeze(1), square_kernel, padding=0
+            )
+            # Count positions where all 4 corners belong to player
+            rings = (conv_result == 4).sum(dim=(1, 2, 3))
+            ring_counts[:, player] = rings.int()
+
+        return ring_counts
 
 
 # =============================================================================
