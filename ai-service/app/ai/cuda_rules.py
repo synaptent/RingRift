@@ -250,21 +250,41 @@ if CUDA_AVAILABLE:
                 # Count region size
                 cuda.atomic.add(region_sizes, rid, 1)
 
-                # Check neighbors for bordering markers
+                # Check neighbors for bordering markers explicitly
                 x = pos % board_size
                 y = pos // board_size
 
-                neighbors = [
-                    (x - 1, y), (x + 1, y),
-                    (x, y - 1), (x, y + 1)
-                ]
+                # Neighbor 0: left (x-1, y)
+                nx, ny = x - 1, y
+                if 0 <= nx < board_size and 0 <= ny < board_size:
+                    n_pos = ny * board_size + nx
+                    owner = marker_owner[game_idx, n_pos]
+                    if owner > 0 and owner <= num_players:
+                        region_borders[rid, owner] = True
 
-                for nx, ny in neighbors:
-                    if 0 <= nx < board_size and 0 <= ny < board_size:
-                        n_pos = ny * board_size + nx
-                        owner = marker_owner[game_idx, n_pos]
-                        if owner > 0 and owner <= num_players:
-                            region_borders[rid, owner] = True
+                # Neighbor 1: right (x+1, y)
+                nx, ny = x + 1, y
+                if 0 <= nx < board_size and 0 <= ny < board_size:
+                    n_pos = ny * board_size + nx
+                    owner = marker_owner[game_idx, n_pos]
+                    if owner > 0 and owner <= num_players:
+                        region_borders[rid, owner] = True
+
+                # Neighbor 2: up (x, y-1)
+                nx, ny = x, y - 1
+                if 0 <= nx < board_size and 0 <= ny < board_size:
+                    n_pos = ny * board_size + nx
+                    owner = marker_owner[game_idx, n_pos]
+                    if owner > 0 and owner <= num_players:
+                        region_borders[rid, owner] = True
+
+                # Neighbor 3: down (x, y+1)
+                nx, ny = x, y + 1
+                if 0 <= nx < board_size and 0 <= ny < board_size:
+                    n_pos = ny * board_size + nx
+                    owner = marker_owner[game_idx, n_pos]
+                    if owner > 0 and owner <= num_players:
+                        region_borders[rid, owner] = True
 
         cuda.syncthreads()
 
