@@ -2185,6 +2185,23 @@ function performFSMValidation(state: GameState, move: Move): FSMValidationIntern
 
 /**
  * Process post-move phases (lines, territory, victory check).
+ *
+ * @deprecated This function is being replaced by FSM-driven orchestration.
+ * FSM (`computeFSMOrchestration`) now handles:
+ * - Phase transitions per RR-CANON-R070/R071
+ * - Decision timing via `pendingDecisionType`
+ * - Player rotation
+ *
+ * This function is retained for backward compatibility during the FSM
+ * integration transition. The decision derivation in `processTurn` now
+ * uses `derivePendingDecisionFromFSM()` with fallback to this function.
+ *
+ * Future work: Once FSM orchestration handles all state mutations
+ * (currently performed here via stateMachine.updateGameState/transitionTo),
+ * this function can be removed.
+ *
+ * @see computeFSMOrchestration in FSMAdapter.ts
+ * @see derivePendingDecisionFromFSM in this file
  */
 function processPostMovePhases(
   stateMachine: PhaseStateMachine,

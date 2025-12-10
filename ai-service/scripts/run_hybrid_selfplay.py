@@ -93,6 +93,54 @@ def check_disk_space(logger, output_dir: str) -> str:
         return "warning"
     return "ok"
 
+
+def derive_victory_type(game_state, max_moves: int) -> str:
+    """Derive the victory type from the final game state.
+
+    Per GAME_RECORD_SPEC.md, canonical termination reasons are:
+    - "ring_elimination": Winner reached ring elimination threshold
+    - "territory": Winner reached territory threshold
+    - "timeout": Game hit max_moves limit
+    - "stalemate": Last-player-standing or trapped stalemate
+
+    Args:
+        game_state: The final GameState after game completion
+        max_moves: The max_moves limit used for this game
+
+    Returns:
+        One of: "ring_elimination", "territory", "timeout", "stalemate"
+    """
+    winner = game_state.winner
+    move_count = len(game_state.move_history) if game_state.move_history else 0
+
+    # Check timeout first (max_moves reached without victory)
+    if max_moves and move_count >= max_moves and winner is None:
+        return "timeout"
+
+    # If no winner, it's a stalemate (trapped or drawn)
+    if winner is None:
+        return "stalemate"
+
+    # Check ring elimination victory
+    for p in game_state.players:
+        if p.player_number == winner:
+            if p.eliminated_rings >= game_state.victory_threshold:
+                return "ring_elimination"
+            break
+
+    # Check territory victory
+    territory_counts = {}
+    for p_id in game_state.board.collapsed_spaces.values():
+        territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
+
+    winner_territory = territory_counts.get(winner, 0)
+    if winner_territory >= game_state.territory_victory_threshold:
+        return "territory"
+
+    # Otherwise it's a stalemate victory (last-player-standing)
+    return "stalemate"
+
+
 # Add app/ to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -272,6 +320,9 @@ def run_hybrid_selfplay(
             else:
                 wins_by_player[winner] = wins_by_player.get(winner, 0) + 1
 
+            # Derive victory type per GAME_RECORD_SPEC.md
+            victory_type = derive_victory_type(game_state, max_moves)
+
             record = {
                 "game_id": game_idx,
                 "board_type": board_type,
@@ -279,6 +330,7 @@ def run_hybrid_selfplay(
                 "winner": winner,
                 "move_count": move_count,
                 "status": game_state.game_status,
+                "victory_type": victory_type,
                 "game_time_seconds": game_time,
                 "timestamp": datetime.now().isoformat(),
             }
