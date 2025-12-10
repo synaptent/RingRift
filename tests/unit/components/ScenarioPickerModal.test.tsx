@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import { ScenarioPickerModal } from '../../../src/client/components/ScenarioPickerModal';
@@ -520,13 +520,15 @@ describe('ScenarioPickerModal', () => {
     it('should show error when loading fails', async () => {
       mockLoadCuratedScenarios.mockRejectedValue(new Error('Network error'));
 
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await act(async () => {
+        render(
+          <ScenarioPickerModal
+            isOpen={true}
+            onClose={mockOnClose}
+            onSelectScenario={mockOnSelectScenario}
+          />
+        );
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Failed to load scenarios')).toBeInTheDocument();
@@ -537,13 +539,15 @@ describe('ScenarioPickerModal', () => {
       const user = userEvent.setup();
       mockLoadCuratedScenarios.mockRejectedValue(new Error('Network error'));
 
-      render(
-        <ScenarioPickerModal
-          isOpen={true}
-          onClose={mockOnClose}
-          onSelectScenario={mockOnSelectScenario}
-        />
-      );
+      await act(async () => {
+        render(
+          <ScenarioPickerModal
+            isOpen={true}
+            onClose={mockOnClose}
+            onSelectScenario={mockOnSelectScenario}
+          />
+        );
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Failed to load scenarios')).toBeInTheDocument();

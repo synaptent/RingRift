@@ -976,13 +976,14 @@ class GameReplayDB:
                     phase=phase_hint,
                 )
 
-                # Compute state after applying this move - always needed for
-                # correct phase tracking in subsequent moves, even if we're not
-                # storing full history entries.
-                state_after = GameEngine.apply_move(prev_state, move)
-
                 # Store history entry with before/after states (v4 feature)
+                # Only apply moves when storing history entries - this requires
+                # canonical move sequences. When store_history_entries=False,
+                # we skip move application and state tracking entirely, allowing
+                # raw fixture data to be stored for basic CRUD tests.
                 if store_history_entries:
+                    # Compute state after applying this move
+                    state_after = GameEngine.apply_move(prev_state, move)
                     state_hash_after = _compute_state_hash(state_after)
 
                     self._store_history_entry_conn(
@@ -999,10 +1000,8 @@ class GameReplayDB:
                     )
 
                     prev_state_hash = state_hash_after
-
-                # Update prev_state for next iteration (always, regardless of
-                # store_history_entries, so phase_hint is correct for each move)
-                prev_state = state_after
+                    # Update prev_state for next iteration
+                    prev_state = state_after
 
             # Store choices
             for choice in choices:

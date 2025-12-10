@@ -58,7 +58,7 @@ from app.models.core import (
     GamePhase,
     GameState,
     GameStatus,
-    Marker,
+    MarkerInfo,
     Move,
     MoveType,
     Player,

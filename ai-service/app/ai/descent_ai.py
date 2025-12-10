@@ -272,7 +272,13 @@ class DescentAI(BaseAI):
                         children_values.items(),
                         key=lambda x: x[1][1],
                     )[0]
-                return children_values[best_move_key][0]
+                best_move = children_values[best_move_key][0]
+                # Validate the move is still legal for the current state.
+                # The transposition table may contain stale moves from hash
+                # collisions or previous games.
+                if best_move in valid_moves:
+                    return best_move
+                # Fall through to random fallback if TT move is invalid
 
         # Log transposition table stats at end of search
         if logger.isEnabledFor(logging.DEBUG):
@@ -360,7 +366,13 @@ class DescentAI(BaseAI):
                         children_values.items(),
                         key=lambda x: x[1][1],
                     )[0]
-                return children_values[best_move_key][0]
+                best_move = children_values[best_move_key][0]
+                # Validate the move is still legal for the current state.
+                # The transposition table may contain stale moves from hash
+                # collisions or previous games.
+                if best_move in valid_moves:
+                    return best_move
+                # Fall through to random fallback if TT move is invalid
 
         # Log transposition table stats at end of search
         if logger.isEnabledFor(logging.DEBUG):

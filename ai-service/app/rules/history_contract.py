@@ -38,6 +38,8 @@ def phase_move_contract() -> Dict[CanonicalPhase, Tuple[str, ...]]:
             "skip_placement",
             # RR‑CANON‑R075: forced no‑op when no placement is possible.
             "no_placement_action",
+            # Pie rule (2‑player): Player 2 may swap sides after P1's first placement.
+            "swap_sides",
         ),
         "movement": (
             "move_stack",

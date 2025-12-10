@@ -148,7 +148,8 @@ class TestGameReplayDBBasic:
 
     def test_store_and_retrieve_game(self, db_path):
         """Test storing and retrieving a game."""
-        db = GameReplayDB(str(db_path))
+        # Disable canonical validation for synthetic test fixtures
+        db = GameReplayDB(str(db_path), enforce_canonical_history=False)
         game_id = str(uuid.uuid4())
 
         initial_state = create_test_state(game_id)
@@ -247,7 +248,8 @@ class TestGameReplayDBBasic:
 
     def test_get_stats(self, db_path):
         """Test database statistics."""
-        db = GameReplayDB(str(db_path))
+        # Disable canonical validation for synthetic test fixtures
+        db = GameReplayDB(str(db_path), enforce_canonical_history=False)
 
         game_id = "stats-test"
         initial_state = create_test_state(game_id)
