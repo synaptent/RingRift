@@ -284,6 +284,22 @@ This document tracks the FSM extension roadmap, now largely complete.
 
 ## Implementation Guidelines
 
+### Line Processing Moves and `lineIndex`
+
+**Requirement:** All line processing moves (`process_line`, `choose_line_reward`, `choose_line_option`) MUST include a valid `lineIndex` field that references a formed line in `board.formedLines`.
+
+| Field       | Type     | Description                                              |
+| ----------- | -------- | -------------------------------------------------------- |
+| `lineIndex` | `number` | Index into `board.formedLines` array (0-based, required) |
+| Validation  | -        | Must be `>= 0` and `< formedLines.length`                |
+| Ownership   | -        | Referenced line must be owned by the moving player       |
+
+This requirement applies to both TS (`validateProcessLine`) and Python (`LineValidator`).
+
+**Why:** When multiple lines exist on the board (including opponent lines), the engine must know which specific line the player is choosing to process. Without `lineIndex`, the move is ambiguous.
+
+**Parity:** Python `Move.line_index` maps to TS `action.lineIndex` via the `lineIndex` JSON alias.
+
 ### Adding FSM Events
 
 1. Define event type in `TurnStateMachine.ts`
