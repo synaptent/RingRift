@@ -163,10 +163,12 @@ if [[ -z "${LOADTEST_EMAIL:-}" || -z "${LOADTEST_PASSWORD:-}" ]]; then
     exit 1
 fi
 
+# Use jq to safely construct JSON payload (avoids shell escaping issues with special chars like !)
+LOGIN_PAYLOAD=$(jq -n --arg email "$LOADTEST_EMAIL" --arg pass "$LOADTEST_PASSWORD" '{email: $email, password: $pass}')
 LOGIN_STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
   -X POST "${BASE_URL}/api/auth/login" \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"${LOADTEST_EMAIL}\",\"password\":\"${LOADTEST_PASSWORD}\"}") || LOGIN_STATUS=000
+  -d "$LOGIN_PAYLOAD") || LOGIN_STATUS=000
 
 if [[ "$LOGIN_STATUS" != "200" ]]; then
     log_error "Login pre-flight failed (status=${LOGIN_STATUS}) for ${LOADTEST_EMAIL} at ${BASE_URL}/api/auth/login"
