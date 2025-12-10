@@ -123,6 +123,10 @@ function createMovementBoardView(state: GameState): MovementBoardView {
  * capture exists for `player` somewhere on the board, irrespective of
  * state.currentPhase. This is used when evaluating forced-elimination
  * preconditions (R072/R100/R205).
+ *
+ * When `state.mustMoveFromStackKey` is set (after a place_ring), only the
+ * specified stack can move/capture this turn. This matches Python's
+ * must_move_from_stack_key semantics for TS/Python parity.
  */
 export function hasAnyGlobalMovementOrCapture(state: GameState, player: number): boolean {
   const playerState = state.players.find((p) => p.playerNumber === player);
@@ -135,6 +139,13 @@ export function hasAnyGlobalMovementOrCapture(state: GameState, player: number):
 
   for (const stack of state.board.stacks.values()) {
     if (stack.controllingPlayer !== player || stack.stackHeight <= 0) {
+      continue;
+    }
+
+    // When mustMoveFromStackKey is set, only that stack can move/capture.
+    // This constraint is active after a place_ring until the turn ends.
+    const stackKey = positionToString(stack.position);
+    if (state.mustMoveFromStackKey && stackKey !== state.mustMoveFromStackKey) {
       continue;
     }
 

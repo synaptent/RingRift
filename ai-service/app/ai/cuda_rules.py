@@ -2121,6 +2121,314 @@ class GPURuleChecker:
 
         return types, sources, targets, counts
 
+    # =========================================================================
+    # Move Application Methods
+    # =========================================================================
+
+    def apply_placement_moves(
+        self,
+        move_targets: torch.Tensor,           # (batch,) int16
+        stack_owner: torch.Tensor,            # (batch, positions) int8 - in/out
+        stack_height: torch.Tensor,           # (batch, positions) int8 - in/out
+        cap_height: torch.Tensor,             # (batch, positions) int8 - in/out
+        ring_count: torch.Tensor,             # (batch, num_players+1) int8 - in/out
+        players: torch.Tensor,                # (batch,) int8 - player for each game
+    ) -> None:
+        """Apply placement moves in-place for per-game players.
+
+        Modifies stack_owner, stack_height, cap_height, ring_count in place.
+        """
+        batch_size = move_targets.shape[0]
+
+        if self.use_cuda_kernels:
+            self._apply_placement_cuda(
+                move_targets, stack_owner, stack_height, cap_height, ring_count, players, batch_size
+            )
+        else:
+            self._apply_placement_torch(
+                move_targets, stack_owner, stack_height, cap_height, ring_count, players, batch_size
+            )
+
+    def _apply_placement_cuda(
+        self,
+        move_targets: torch.Tensor,
+        stack_owner: torch.Tensor,
+        stack_height: torch.Tensor,
+        cap_height: torch.Tensor,
+        ring_count: torch.Tensor,
+        players: torch.Tensor,
+        batch_size: int,
+    ) -> None:
+        """Apply placement moves using CUDA kernel."""
+        targets_np = move_targets.cpu().numpy().astype(np.int16)
+        owner_np = stack_owner.cpu().numpy().astype(np.int8)
+        height_np = stack_height.cpu().numpy().astype(np.int8)
+        cap_np = cap_height.cpu().numpy().astype(np.int8)
+        ring_np = ring_count.cpu().numpy().astype(np.int8)
+        players_np = players.cpu().numpy().astype(np.int8)
+
+        d_targets = cuda.to_device(targets_np)
+        d_owner = cuda.to_device(owner_np)
+        d_height = cuda.to_device(height_np)
+        d_cap = cuda.to_device(cap_np)
+        d_ring = cuda.to_device(ring_np)
+        d_players = cuda.to_device(players_np)
+
+        _apply_placement_kernel[batch_size, 1](
+            d_targets, d_owner, d_height, d_cap, d_ring, d_players, self.board_size
+        )
+        cuda.synchronize()
+
+        # Copy back to tensors
+        stack_owner.copy_(torch.from_numpy(d_owner.copy_to_host()).to(self.device))
+        stack_height.copy_(torch.from_numpy(d_height.copy_to_host()).to(self.device))
+        cap_height.copy_(torch.from_numpy(d_cap.copy_to_host()).to(self.device))
+        ring_count.copy_(torch.from_numpy(d_ring.copy_to_host()).to(self.device))
+
+    def _apply_placement_torch(
+        self,
+        move_targets: torch.Tensor,
+        stack_owner: torch.Tensor,
+        stack_height: torch.Tensor,
+        cap_height: torch.Tensor,
+        ring_count: torch.Tensor,
+        players: torch.Tensor,
+        batch_size: int,
+    ) -> None:
+        """Apply placement moves using pure PyTorch."""
+        for b in range(batch_size):
+            target = int(move_targets[b].item())
+            player = int(players[b].item())
+            if target >= 0:
+                stack_owner[b, target] = player
+                stack_height[b, target] = 1
+                cap_height[b, target] = 1
+                ring_count[b, player] -= 1
+
+    def apply_movement_moves(
+        self,
+        move_sources: torch.Tensor,           # (batch,) int16
+        move_targets: torch.Tensor,           # (batch,) int16
+        stack_owner: torch.Tensor,            # (batch, positions) int8 - in/out
+        stack_height: torch.Tensor,           # (batch, positions) int8 - in/out
+        cap_height: torch.Tensor,             # (batch, positions) int8 - in/out
+        marker_owner: torch.Tensor,           # (batch, positions) int8 - in/out
+    ) -> None:
+        """Apply movement moves in-place.
+
+        Modifies all tensor arguments in place.
+        """
+        batch_size = move_sources.shape[0]
+
+        if self.use_cuda_kernels:
+            self._apply_movement_cuda(
+                move_sources, move_targets, stack_owner, stack_height, cap_height, marker_owner, batch_size
+            )
+        else:
+            self._apply_movement_torch(
+                move_sources, move_targets, stack_owner, stack_height, cap_height, marker_owner, batch_size
+            )
+
+    def _apply_movement_cuda(
+        self,
+        move_sources: torch.Tensor,
+        move_targets: torch.Tensor,
+        stack_owner: torch.Tensor,
+        stack_height: torch.Tensor,
+        cap_height: torch.Tensor,
+        marker_owner: torch.Tensor,
+        batch_size: int,
+    ) -> None:
+        """Apply movement moves using CUDA kernel."""
+        sources_np = move_sources.cpu().numpy().astype(np.int16)
+        targets_np = move_targets.cpu().numpy().astype(np.int16)
+        owner_np = stack_owner.cpu().numpy().astype(np.int8)
+        height_np = stack_height.cpu().numpy().astype(np.int8)
+        cap_np = cap_height.cpu().numpy().astype(np.int8)
+        marker_np = marker_owner.cpu().numpy().astype(np.int8)
+
+        d_sources = cuda.to_device(sources_np)
+        d_targets = cuda.to_device(targets_np)
+        d_owner = cuda.to_device(owner_np)
+        d_height = cuda.to_device(height_np)
+        d_cap = cuda.to_device(cap_np)
+        d_marker = cuda.to_device(marker_np)
+
+        _apply_movement_kernel[batch_size, 1](
+            d_sources, d_targets, d_owner, d_height, d_cap, d_marker, self.board_size
+        )
+        cuda.synchronize()
+
+        # Copy back to tensors
+        stack_owner.copy_(torch.from_numpy(d_owner.copy_to_host()).to(self.device))
+        stack_height.copy_(torch.from_numpy(d_height.copy_to_host()).to(self.device))
+        cap_height.copy_(torch.from_numpy(d_cap.copy_to_host()).to(self.device))
+        marker_owner.copy_(torch.from_numpy(d_marker.copy_to_host()).to(self.device))
+
+    def _apply_movement_torch(
+        self,
+        move_sources: torch.Tensor,
+        move_targets: torch.Tensor,
+        stack_owner: torch.Tensor,
+        stack_height: torch.Tensor,
+        cap_height: torch.Tensor,
+        marker_owner: torch.Tensor,
+        batch_size: int,
+    ) -> None:
+        """Apply movement moves using pure PyTorch."""
+        for b in range(batch_size):
+            source = int(move_sources[b].item())
+            target = int(move_targets[b].item())
+            if source >= 0 and target >= 0:
+                src_owner = int(stack_owner[b, source].item())
+                src_height = int(stack_height[b, source].item())
+                src_cap = int(cap_height[b, source].item())
+                dest_height = int(stack_height[b, target].item())
+
+                if dest_height == 0:
+                    stack_owner[b, target] = src_owner
+                    stack_height[b, target] = src_height
+                    cap_height[b, target] = src_cap
+                else:
+                    stack_owner[b, target] = src_owner
+                    stack_height[b, target] = dest_height + src_height
+                    cap_height[b, target] = src_cap
+                    marker_owner[b, target] = src_owner
+
+                # Clear source
+                stack_owner[b, source] = 0
+                stack_height[b, source] = 0
+                cap_height[b, source] = 0
+                marker_owner[b, source] = src_owner
+
+    def apply_batch_moves(
+        self,
+        move_types: torch.Tensor,             # (batch,) int8 - 0=placement, 1=movement
+        move_sources: torch.Tensor,           # (batch,) int16
+        move_targets: torch.Tensor,           # (batch,) int16
+        players: torch.Tensor,                # (batch,) int8
+        stack_owner: torch.Tensor,            # (batch, positions) int8 - in/out
+        stack_height: torch.Tensor,           # (batch, positions) int8 - in/out
+        cap_height: torch.Tensor,             # (batch, positions) int8 - in/out
+        marker_owner: torch.Tensor,           # (batch, positions) int8 - in/out
+        ring_count: torch.Tensor,             # (batch, num_players+1) int8 - in/out
+    ) -> None:
+        """Apply a batch of mixed moves (placement and movement) in-place.
+
+        Each game in batch has one move to apply, which can be either placement or movement.
+        """
+        batch_size = move_types.shape[0]
+
+        if self.use_cuda_kernels:
+            self._apply_batch_moves_cuda(
+                move_types, move_sources, move_targets, players,
+                stack_owner, stack_height, cap_height, marker_owner, ring_count, batch_size
+            )
+        else:
+            self._apply_batch_moves_torch(
+                move_types, move_sources, move_targets, players,
+                stack_owner, stack_height, cap_height, marker_owner, ring_count, batch_size
+            )
+
+    def _apply_batch_moves_cuda(
+        self,
+        move_types: torch.Tensor,
+        move_sources: torch.Tensor,
+        move_targets: torch.Tensor,
+        players: torch.Tensor,
+        stack_owner: torch.Tensor,
+        stack_height: torch.Tensor,
+        cap_height: torch.Tensor,
+        marker_owner: torch.Tensor,
+        ring_count: torch.Tensor,
+        batch_size: int,
+    ) -> None:
+        """Apply batch moves using CUDA kernel."""
+        types_np = move_types.cpu().numpy().astype(np.int8)
+        sources_np = move_sources.cpu().numpy().astype(np.int16)
+        targets_np = move_targets.cpu().numpy().astype(np.int16)
+        players_np = players.cpu().numpy().astype(np.int8)
+        owner_np = stack_owner.cpu().numpy().astype(np.int8)
+        height_np = stack_height.cpu().numpy().astype(np.int8)
+        cap_np = cap_height.cpu().numpy().astype(np.int8)
+        marker_np = marker_owner.cpu().numpy().astype(np.int8)
+        ring_np = ring_count.cpu().numpy().astype(np.int8)
+
+        d_types = cuda.to_device(types_np)
+        d_sources = cuda.to_device(sources_np)
+        d_targets = cuda.to_device(targets_np)
+        d_players = cuda.to_device(players_np)
+        d_owner = cuda.to_device(owner_np)
+        d_height = cuda.to_device(height_np)
+        d_cap = cuda.to_device(cap_np)
+        d_marker = cuda.to_device(marker_np)
+        d_ring = cuda.to_device(ring_np)
+
+        _batch_apply_moves_kernel[batch_size, 1](
+            d_types, d_sources, d_targets, d_players,
+            d_owner, d_height, d_cap, d_marker, d_ring, self.board_size
+        )
+        cuda.synchronize()
+
+        # Copy back to tensors
+        stack_owner.copy_(torch.from_numpy(d_owner.copy_to_host()).to(self.device))
+        stack_height.copy_(torch.from_numpy(d_height.copy_to_host()).to(self.device))
+        cap_height.copy_(torch.from_numpy(d_cap.copy_to_host()).to(self.device))
+        marker_owner.copy_(torch.from_numpy(d_marker.copy_to_host()).to(self.device))
+        ring_count.copy_(torch.from_numpy(d_ring.copy_to_host()).to(self.device))
+
+    def _apply_batch_moves_torch(
+        self,
+        move_types: torch.Tensor,
+        move_sources: torch.Tensor,
+        move_targets: torch.Tensor,
+        players: torch.Tensor,
+        stack_owner: torch.Tensor,
+        stack_height: torch.Tensor,
+        cap_height: torch.Tensor,
+        marker_owner: torch.Tensor,
+        ring_count: torch.Tensor,
+        batch_size: int,
+    ) -> None:
+        """Apply batch moves using pure PyTorch."""
+        for b in range(batch_size):
+            move_type = int(move_types[b].item())
+            source = int(move_sources[b].item())
+            target = int(move_targets[b].item())
+            player = int(players[b].item())
+
+            if target < 0:
+                continue
+
+            if move_type == 0 and player > 0:
+                # Placement
+                stack_owner[b, target] = player
+                stack_height[b, target] = 1
+                cap_height[b, target] = 1
+                ring_count[b, player] -= 1
+            elif move_type == 1 and source >= 0:
+                # Movement
+                src_owner = int(stack_owner[b, source].item())
+                src_height = int(stack_height[b, source].item())
+                src_cap = int(cap_height[b, source].item())
+                dest_height = int(stack_height[b, target].item())
+
+                if dest_height == 0:
+                    stack_owner[b, target] = src_owner
+                    stack_height[b, target] = src_height
+                    cap_height[b, target] = src_cap
+                else:
+                    stack_owner[b, target] = src_owner
+                    stack_height[b, target] = dest_height + src_height
+                    cap_height[b, target] = src_cap
+                    marker_owner[b, target] = src_owner
+
+                # Clear source
+                stack_owner[b, source] = 0
+                stack_height[b, source] = 0
+                cap_height[b, source] = 0
+                marker_owner[b, source] = src_owner
+
 
 # =============================================================================
 # Convenience Functions
@@ -2863,6 +3171,250 @@ def benchmark_heuristic_evaluator(
     return results
 
 
+# =============================================================================
+# CUDA Kernels for Move Application
+# =============================================================================
+
+if CUDA_AVAILABLE:
+    @cuda.jit
+    def _apply_placement_kernel(
+        move_targets: cuda.devicearray,       # (batch,) int16 - target positions
+        stack_owner: cuda.devicearray,        # (batch, positions) int8 - in/out
+        stack_height: cuda.devicearray,       # (batch, positions) int8 - in/out
+        cap_height: cuda.devicearray,         # (batch, positions) int8 - in/out
+        ring_count: cuda.devicearray,         # (batch, num_players+1) int8 - in/out
+        players: cuda.devicearray,            # (batch,) int8 - player for each game
+        board_size: int,
+    ):
+        """Apply placement moves in-place.
+
+        Each block handles one game. Places a ring at target position for player.
+        """
+        game_idx = cuda.blockIdx.x
+
+        target = move_targets[game_idx]
+        if target < 0:
+            return
+
+        player = numba.int32(players[game_idx])
+
+        # Place ring (stack height 1, cap height 1)
+        stack_owner[game_idx, target] = players[game_idx]
+        stack_height[game_idx, target] = 1
+        cap_height[game_idx, target] = 1
+
+        # Decrement ring count (safe: one thread per game)
+        ring_count[game_idx, player] = ring_count[game_idx, player] - 1
+
+
+    @cuda.jit
+    def _apply_movement_kernel(
+        move_sources: cuda.devicearray,       # (batch,) int16 - source positions
+        move_targets: cuda.devicearray,       # (batch,) int16 - target positions
+        stack_owner: cuda.devicearray,        # (batch, positions) int8 - in/out
+        stack_height: cuda.devicearray,       # (batch, positions) int8 - in/out
+        cap_height: cuda.devicearray,         # (batch, positions) int8 - in/out
+        marker_owner: cuda.devicearray,       # (batch, positions) int8 - in/out
+        board_size: int,
+    ):
+        """Apply movement moves in-place.
+
+        Moves stack from source to target. If target has a stack, the moving
+        stack lands on top (capture). If target is empty, stack moves there.
+        """
+        game_idx = cuda.blockIdx.x
+
+        source = move_sources[game_idx]
+        target = move_targets[game_idx]
+
+        if source < 0 or target < 0:
+            return
+
+        src_owner = stack_owner[game_idx, source]
+        src_height = stack_height[game_idx, source]
+        src_cap = cap_height[game_idx, source]
+
+        dest_height = stack_height[game_idx, target]
+
+        if dest_height == 0:
+            # Move to empty position
+            stack_owner[game_idx, target] = src_owner
+            stack_height[game_idx, target] = src_height
+            cap_height[game_idx, target] = src_cap
+        else:
+            # Capture - stack on top
+            stack_owner[game_idx, target] = src_owner
+            stack_height[game_idx, target] = dest_height + src_height
+            cap_height[game_idx, target] = src_cap
+
+            # Leave marker at destination's old position
+            marker_owner[game_idx, target] = src_owner
+
+        # Clear source position
+        stack_owner[game_idx, source] = 0
+        stack_height[game_idx, source] = 0
+        cap_height[game_idx, source] = 0
+
+        # Leave marker at source
+        marker_owner[game_idx, source] = src_owner
+
+
+    @cuda.jit
+    def _apply_collapse_kernel(
+        stack_height: cuda.devicearray,       # (batch, positions) int8
+        collapsed: cuda.devicearray,          # (batch, positions) bool - in/out
+        collapse_threshold: int,
+        board_size: int,
+    ):
+        """Check and apply collapse for stacks exceeding threshold.
+
+        Collapses any stack taller than threshold.
+        """
+        game_idx = cuda.blockIdx.x
+        thread_idx = cuda.threadIdx.x
+        num_threads = cuda.blockDim.x
+        num_positions = board_size * board_size
+
+        for pos in range(thread_idx, num_positions, num_threads):
+            if stack_height[game_idx, pos] > collapse_threshold:
+                collapsed[game_idx, pos] = True
+                stack_height[game_idx, pos] = 0
+
+
+    @cuda.jit
+    def _batch_apply_placement_kernel(
+        move_targets: cuda.devicearray,       # (batch,) int16 - target positions
+        stack_owner: cuda.devicearray,        # (batch, positions) int8 - in/out
+        stack_height: cuda.devicearray,       # (batch, positions) int8 - in/out
+        cap_height: cuda.devicearray,         # (batch, positions) int8 - in/out
+        ring_count: cuda.devicearray,         # (batch, num_players+1) int8 - in/out
+        players: cuda.devicearray,            # (batch,) int8 - player per game
+        board_size: int,
+    ):
+        """Apply placement moves for varying players per game."""
+        game_idx = cuda.blockIdx.x
+
+        target = move_targets[game_idx]
+        player = players[game_idx]
+
+        if target < 0 or player <= 0:
+            return
+
+        # Place ring
+        stack_owner[game_idx, target] = player
+        stack_height[game_idx, target] = 1
+        cap_height[game_idx, target] = 1
+
+        # Decrement ring count
+        cuda.atomic.add(ring_count, (game_idx, player), -1)
+
+
+    @cuda.jit
+    def _batch_apply_movement_kernel(
+        move_sources: cuda.devicearray,       # (batch,) int16
+        move_targets: cuda.devicearray,       # (batch,) int16
+        stack_owner: cuda.devicearray,        # (batch, positions) int8 - in/out
+        stack_height: cuda.devicearray,       # (batch, positions) int8 - in/out
+        cap_height: cuda.devicearray,         # (batch, positions) int8 - in/out
+        marker_owner: cuda.devicearray,       # (batch, positions) int8 - in/out
+        board_size: int,
+    ):
+        """Apply movement moves for batch of games."""
+        game_idx = cuda.blockIdx.x
+
+        source = move_sources[game_idx]
+        target = move_targets[game_idx]
+
+        if source < 0 or target < 0:
+            return
+
+        src_owner = stack_owner[game_idx, source]
+        src_height = stack_height[game_idx, source]
+        src_cap = cap_height[game_idx, source]
+
+        dest_height = stack_height[game_idx, target]
+
+        if dest_height == 0:
+            # Move to empty position
+            stack_owner[game_idx, target] = src_owner
+            stack_height[game_idx, target] = src_height
+            cap_height[game_idx, target] = src_cap
+        else:
+            # Capture - stack on top
+            stack_owner[game_idx, target] = src_owner
+            stack_height[game_idx, target] = dest_height + src_height
+            cap_height[game_idx, target] = src_cap
+            marker_owner[game_idx, target] = src_owner
+
+        # Clear source
+        stack_owner[game_idx, source] = 0
+        stack_height[game_idx, source] = 0
+        cap_height[game_idx, source] = 0
+
+        # Leave marker at source
+        marker_owner[game_idx, source] = src_owner
+
+
+    @cuda.jit
+    def _batch_apply_moves_kernel(
+        move_types: cuda.devicearray,         # (batch,) int8 - 0=placement, 1=movement
+        move_sources: cuda.devicearray,       # (batch,) int16
+        move_targets: cuda.devicearray,       # (batch,) int16
+        players: cuda.devicearray,            # (batch,) int8
+        stack_owner: cuda.devicearray,        # (batch, positions) int8 - in/out
+        stack_height: cuda.devicearray,       # (batch, positions) int8 - in/out
+        cap_height: cuda.devicearray,         # (batch, positions) int8 - in/out
+        marker_owner: cuda.devicearray,       # (batch, positions) int8 - in/out
+        ring_count: cuda.devicearray,         # (batch, num_players+1) int8 - in/out
+        board_size: int,
+    ):
+        """Apply mixed moves (placement or movement) for batch of games.
+
+        Each game in the batch has one move to apply.
+        """
+        game_idx = cuda.blockIdx.x
+
+        move_type = move_types[game_idx]
+        source = move_sources[game_idx]
+        target = move_targets[game_idx]
+        player = players[game_idx]
+        player_idx = numba.int32(player)
+
+        if target < 0:
+            return
+
+        if move_type == 0:
+            # Placement
+            if player > 0:
+                stack_owner[game_idx, target] = player
+                stack_height[game_idx, target] = 1
+                cap_height[game_idx, target] = 1
+                ring_count[game_idx, player_idx] = ring_count[game_idx, player_idx] - 1
+        elif move_type == 1 and source >= 0:
+            # Movement
+            src_owner = stack_owner[game_idx, source]
+            src_height = stack_height[game_idx, source]
+            src_cap = cap_height[game_idx, source]
+
+            dest_height = stack_height[game_idx, target]
+
+            if dest_height == 0:
+                stack_owner[game_idx, target] = src_owner
+                stack_height[game_idx, target] = src_height
+                cap_height[game_idx, target] = src_cap
+            else:
+                stack_owner[game_idx, target] = src_owner
+                stack_height[game_idx, target] = dest_height + src_height
+                cap_height[game_idx, target] = src_cap
+                marker_owner[game_idx, target] = src_owner
+
+            # Clear source
+            stack_owner[game_idx, source] = 0
+            stack_height[game_idx, source] = 0
+            cap_height[game_idx, source] = 0
+            marker_owner[game_idx, source] = src_owner
+
+
 def benchmark_move_generation(
     batch_sizes: List[int] = [100, 500, 1000, 2000],
     board_size: int = 8,
@@ -2932,6 +3484,119 @@ def benchmark_move_generation(
     # Print summary
     logger.info("=" * 60)
     logger.info("MOVE GENERATION BENCHMARK RESULTS")
+    logger.info("=" * 60)
+    logger.info(f"Device: {device}")
+    logger.info(f"Board: {board_size}x{board_size}, Players: {num_players}")
+    logger.info("")
+
+    for method_name, method_results in results["methods"].items():
+        logger.info(f"{method_name}:")
+        for i, batch_size in enumerate(batch_sizes):
+            gps = method_results["games_per_second"][i]
+            ms = method_results["times_ms"][i]
+            logger.info(f"  Batch {batch_size}: {gps/1e6:.2f}M games/sec ({ms:.2f}ms)")
+        logger.info("")
+
+    return results
+
+
+def benchmark_move_application(
+    batch_sizes: List[int] = [100, 500, 1000, 2000],
+    board_size: int = 8,
+    num_players: int = 2,
+    num_iterations: int = 10,
+) -> dict:
+    """Benchmark GPU move application kernels.
+
+    Returns:
+        Dictionary with benchmark results for each move application method
+    """
+    import time
+
+    if not TORCH_AVAILABLE:
+        return {"error": "PyTorch not available"}
+
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    checker = GPURuleChecker(board_size, num_players, device)
+    num_positions = board_size * board_size
+
+    results = {
+        "device": device,
+        "board_size": board_size,
+        "num_players": num_players,
+        "batch_sizes": batch_sizes,
+        "methods": {},
+    }
+
+    for batch_size in batch_sizes:
+        # Create test game state tensors (these will be modified in-place)
+        def create_test_state():
+            stack_owner = (torch.rand(batch_size, num_positions, device=device) * (num_players + 1)).to(torch.int8)
+            stack_height = (torch.rand(batch_size, num_positions, device=device) * 3 + 1).to(torch.int8)
+            cap_height = torch.ones(batch_size, num_positions, dtype=torch.int8, device=device)
+            marker_owner = stack_owner.clone()
+            ring_count = torch.ones(batch_size, num_players + 1, dtype=torch.int8, device=device) * 5
+            return stack_owner, stack_height, cap_height, marker_owner, ring_count
+
+        # Create move targets (random valid positions for each game)
+        placement_targets = torch.randint(0, num_positions, (batch_size,), device=device)
+        movement_sources = torch.randint(0, num_positions, (batch_size,), device=device)
+        movement_targets = torch.randint(0, num_positions, (batch_size,), device=device)
+        players = (torch.randint(1, num_players + 1, (batch_size,), device=device)).to(torch.int8)
+
+        methods = {}
+
+        # Apply placement benchmark
+        def bench_placement():
+            so, sh, ch, mo, rc = create_test_state()
+            checker.apply_placement_moves(placement_targets, so, sh, ch, rc, players)
+            return so
+
+        methods["apply_placement"] = bench_placement
+
+        # Apply movement benchmark
+        def bench_movement():
+            so, sh, ch, mo, rc = create_test_state()
+            checker.apply_movement_moves(movement_sources, movement_targets, so, sh, ch, mo)
+            return so
+
+        methods["apply_movement"] = bench_movement
+
+        # Apply batch (mixed) benchmark
+        def bench_batch():
+            so, sh, ch, mo, rc = create_test_state()
+            move_types = torch.randint(0, 2, (batch_size,), dtype=torch.int8, device=device)
+            checker.apply_batch_moves(move_types, movement_sources, movement_targets, players, so, sh, ch, mo, rc)
+            return so
+
+        methods["apply_batch"] = bench_batch
+
+        for method_name, method_func in methods.items():
+            if method_name not in results["methods"]:
+                results["methods"][method_name] = {"times_ms": [], "games_per_second": []}
+
+            # Warmup
+            _ = method_func()
+            if device != 'cpu':
+                torch.cuda.synchronize()
+
+            # Benchmark
+            start = time.perf_counter()
+            for _ in range(num_iterations):
+                _ = method_func()
+                if device != 'cpu':
+                    torch.cuda.synchronize()
+            elapsed = time.perf_counter() - start
+
+            avg_ms = (elapsed / num_iterations) * 1000
+            games_per_sec = batch_size / (elapsed / num_iterations)
+
+            results["methods"][method_name]["times_ms"].append(avg_ms)
+            results["methods"][method_name]["games_per_second"].append(games_per_sec)
+
+    # Print summary
+    logger.info("=" * 60)
+    logger.info("MOVE APPLICATION BENCHMARK RESULTS")
     logger.info("=" * 60)
     logger.info(f"Device: {device}")
     logger.info(f"Board: {board_size}x{board_size}, Players: {num_players}")

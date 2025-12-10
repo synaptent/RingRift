@@ -136,14 +136,6 @@ export function isPythonRulesMode(): boolean {
 }
 
 /**
- * @deprecated Shadow mode has been removed. FSM is now canonical.
- * This function always returns false. Remove usages and delete this function.
- */
-export function isRulesShadowMode(): boolean {
-  return false;
-}
-
-/**
  * FSM validation mode selector.
  *
  * RINGRIFT_FSM_VALIDATION_MODE:

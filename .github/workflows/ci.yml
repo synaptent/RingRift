@@ -86,13 +86,11 @@ jobs:
     timeout-minutes: 30
     env:
       # TS shared engine is authoritative; orchestrator adapter is ON by default.
-      # Legacy/SHADOW modes run only in explicit diagnostic jobs.
+      # FSM is now canonical (shadow mode removed).
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
-      ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-      # FSM Orchestrator is now active by default (canonical orchestrator).
-      # No explicit mode needed - defaults to 'active'.
+      # NOTE: ORCHESTRATOR_ROLLOUT_PERCENTAGE and ORCHESTRATOR_SHADOW_MODE_ENABLED
+      # have been removed - FSM is now canonical.
 
     steps:
       - name: Checkout code
@@ -137,8 +135,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-      # FSM Orchestrator is now active by default (canonical orchestrator).
+            # FSM Orchestrator is now active by default (canonical orchestrator).
 
     steps:
       - name: Checkout code
@@ -171,8 +168,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -200,8 +196,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -229,8 +224,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -257,8 +251,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -285,8 +278,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -459,8 +451,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-
+      
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -743,8 +734,7 @@ jobs:
       RINGRIFT_RULES_MODE: ts
       ORCHESTRATOR_ADAPTER_ENABLED: 'true'
       ORCHESTRATOR_ROLLOUT_PERCENTAGE: 100
-      ORCHESTRATOR_SHADOW_MODE_ENABLED: 'false'
-      # Database and Redis URLs for E2E tests
+            # Database and Redis URLs for E2E tests
       DATABASE_URL: postgresql://ringrift:ringrift@localhost:5432/ringrift_test
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: e2e-test-jwt-secret

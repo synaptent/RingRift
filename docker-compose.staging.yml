@@ -46,10 +46,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - LOG_FORMAT=json
       # Orchestrator configuration (production posture)
+      # NOTE: FSM is now canonical; shadow mode has been removed
       - RINGRIFT_RULES_MODE=ts
       - RINGRIFT_APP_TOPOLOGY=single
       - ORCHESTRATOR_ADAPTER_ENABLED=true
-      - ORCHESTRATOR_SHADOW_MODE_ENABLED=false
       - ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED=true
       - ORCHESTRATOR_ERROR_THRESHOLD_PERCENT=5
       - ORCHESTRATOR_ERROR_WINDOW_SECONDS=300

@@ -1154,6 +1154,7 @@ function buildTerritoryLineOverlongSquare8Vectors(): ContractTestVector[] {
     type: 'process_line',
     player: 1,
     to: { x: 0, y: 3 }, // first position of line
+    lineIndex: 0, // FSM requires explicit line index
     formedLines: board0.formedLines,
     timestamp: new Date(0),
     thinkTime: 0,

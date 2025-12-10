@@ -1512,11 +1512,16 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         count: move.placementCount ?? 1,
       };
       const newState = mutatePlacement(state, action);
-      // After placement, advance to movement phase
+      // After placement, advance to movement phase.
+      // Also set mustMoveFromStackKey to enforce that only the updated stack
+      // can move/capture this turn. This matches Python's must_move_from_stack_key
+      // semantics for TS/Python parity.
+      const placementKey = move.to ? positionToString(move.to) : undefined;
       return {
         nextState: {
           ...newState,
           currentPhase: 'movement' as GamePhase,
+          mustMoveFromStackKey: placementKey,
         },
       };
     }
@@ -1568,7 +1573,20 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         to: move.to,
         player: move.player,
       });
-      return { nextState: outcome.nextState };
+      // Update mustMoveFromStackKey to track the landing position when the
+      // move originated from the must-move stack. This matches Python's
+      // must_move_from_stack_key semantics for TS/Python parity.
+      const fromKey = positionToString(move.from);
+      let nextMustMove = outcome.nextState.mustMoveFromStackKey;
+      if (state.mustMoveFromStackKey && fromKey === state.mustMoveFromStackKey && move.to) {
+        nextMustMove = positionToString(move.to);
+      }
+      return {
+        nextState: {
+          ...outcome.nextState,
+          mustMoveFromStackKey: nextMustMove,
+        },
+      };
     }
 
     case 'no_movement_action': {
@@ -1644,15 +1662,27 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         landing: move.to,
         player: move.player,
       });
+      // Update mustMoveFromStackKey to track the landing position when the
+      // move originated from the must-move stack. This matches Python's
+      // must_move_from_stack_key semantics for TS/Python parity.
+      const fromKey = positionToString(move.from);
+      let nextMustMove = outcome.nextState.mustMoveFromStackKey;
+      if (state.mustMoveFromStackKey && fromKey === state.mustMoveFromStackKey && move.to) {
+        nextMustMove = positionToString(move.to);
+      }
+      const updatedState = {
+        ...outcome.nextState,
+        mustMoveFromStackKey: nextMustMove,
+      };
       // Return chain capture info so the orchestrator can set state machine flags
       if (outcome.chainContinuationRequired) {
         return {
-          nextState: outcome.nextState,
+          nextState: updatedState,
           chainCaptureRequired: true,
           chainCapturePosition: move.to,
         };
       }
-      return { nextState: outcome.nextState };
+      return { nextState: updatedState };
     }
 
     case 'process_line': {
