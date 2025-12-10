@@ -46,26 +46,29 @@ This mirrors normal line reward semantics (RR-CANON-R130–R134).
 
 ### 2.1 LPS (Last Player Standing)
 
-**Classification:** Recovery is a **"real action"** for LPS purposes.
+**Classification:** Recovery is **NOT** a "real action" for LPS purposes.
 
 ```
-Real Actions = {placement, non-capture_movement, overtaking_capture, recovery_slide}
-NOT Real Actions = {forced_elimination, skip_placement, no_* bookkeeping moves}
+Real Actions = {placement, non-capture_movement, overtaking_capture}
+NOT Real Actions = {recovery_slide, forced_elimination, skip_placement, no_* bookkeeping moves}
 ```
+
+This creates strategic tension: rings in hand become a "survival budget" - players can use recovery moves but must place at least one ring every 3 rounds to avoid LPS loss.
 
 **Impact on LPS Victory:**
 
-| Scenario                                            | Without Recovery   | With Recovery                                 |
-| --------------------------------------------------- | ------------------ | --------------------------------------------- |
-| Player A dominates, Player B has only FE            | B cannot block LPS | B cannot block LPS (FE ≠ real action)         |
-| Player A dominates, Player B has recovery available | N/A                | B **CAN** block LPS by taking recovery action |
-| Only A has real actions for 3 rounds                | A wins LPS         | If B takes recovery → LPS counter resets      |
+| Scenario                                            | Without Recovery   | With Recovery                                       |
+| --------------------------------------------------- | ------------------ | --------------------------------------------------- |
+| Player A dominates, Player B has only FE            | B cannot block LPS | B cannot block LPS (FE ≠ real action)               |
+| Player A dominates, Player B has recovery available | N/A                | B **cannot** block LPS with recovery (not real)     |
+| Player B has recovery + rings in hand               | N/A                | B can block LPS by **placing a ring** every 3 turns |
+| Only A has real actions for 3 rounds                | A wins LPS         | A wins LPS (recovery doesn't count)                 |
 
 **Strategic Implications:**
 
-- LPS becomes harder to achieve against players with markers + buried rings
-- Dominant player must now eliminate opponent's buried rings OR markers to secure LPS
-- "Temporarily eliminated" players remain threats for LPS blocking
+- LPS victory is achievable against players with only markers + buried rings (no rings in hand)
+- Players with rings in hand have a "survival budget" - must place periodically to reset LPS
+- Recovery provides survival but not LPS defense; creates interesting resource management
 
 **Example:**
 
@@ -92,10 +95,10 @@ Question: Does B have a valid recovery slide?
 
 | Aspect          | Forced Elimination                         | Recovery Action                                       |
 | --------------- | ------------------------------------------ | ----------------------------------------------------- |
-| **Trigger**     | Has stacks but no legal moves              | Has NO stacks, no rings, has markers + buried rings   |
+| **Trigger**     | Has stacks but no legal moves              | Has NO stacks, has markers + buried rings             |
 | **Cost Source** | Cap elimination (top rings of your stacks) | Buried ring extraction (rings inside opponent stacks) |
 | **Result**      | Stack height decreases, may lose control   | Buried ring exhumed → eliminated (credited to you)    |
-| **LPS Status**  | NOT a real action                          | IS a real action                                      |
+| **LPS Status**  | NOT a real action                          | NOT a real action                                     |
 | **Mandatory?**  | Yes, when triggered                        | Yes, if it's your only legal action                   |
 
 **State Transition:**
@@ -106,9 +109,11 @@ Active (has stacks)
     → All stacks eliminated
         ├─ No markers OR no buried rings → Fully eliminated (skipped)
         └─ Has markers AND buried rings → Temporarily eliminated
-            ├─ Valid recovery slide exists → Takes recovery (real action)
+            ├─ Valid recovery slide exists → Takes recovery (NOT real action)
             └─ No valid recovery slide → Effectively fully eliminated this turn
 ```
+
+**Note:** Even when recovery is available, the player has no "real action" for LPS purposes. If they have rings in hand, they can place to create a real action.
 
 ---
 

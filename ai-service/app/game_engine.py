@@ -2565,17 +2565,24 @@ class GameEngine:
 
     @staticmethod
     def _has_valid_captures(game_state: GameState, player_number: int) -> bool:
-        """True if the player has any legal overtaking capture from ANY controlled stack.
+        """True if the player has any legal overtaking capture from controlled stacks.
 
-        For FE eligibility checks (RR-CANON-R072/R100/R205), we must check captures
-        from ALL stacks controlled by the player, not just the last move's position.
+        When must_move_from_stack_key is set, only that stack can capture.
+        This constraint is active after a place_ring until the turn ends.
         This matches the TS hasAnyGlobalMovementOrCapture behaviour.
         """
         from app.rules.capture_chain import enumerate_capture_moves_py
 
+        must_move_key = game_state.must_move_from_stack_key
+
         # Check each controlled stack for potential captures
         for stack in game_state.board.stacks.values():
             if stack.controlling_player != player_number or stack.stack_height <= 0:
+                continue
+
+            # When must_move_from_stack_key is set, only that stack can capture
+            stack_key = stack.position.to_key()
+            if must_move_key and stack_key != must_move_key:
                 continue
 
             # Check captures from this stack position
@@ -2601,15 +2608,15 @@ class GameEngine:
         capture, or recovery action exists for the player, forced elimination
         is not permitted.
 
-        For FE eligibility, we ignore must_move_from_stack_key since that's a
-        per-turn constraint that doesn't apply when evaluating whether a player
-        COULD have any moves on a hypothetical fresh turn.
+        When must_move_from_stack_key is set, only that stack can move/capture.
+        This constraint is active after a place_ring until the turn ends, and
+        must be respected when evaluating whether forced elimination is available.
+        This aligns with TS globalActions.hasAnyGlobalMovementOrCapture.
         """
         if GameEngine._has_valid_placements(game_state, player_number):
             return True
-        # FE checks: ignore must_move_key since we're asking about potential
-        # moves on a fresh turn, not constrained by current turn's placement.
-        if GameEngine._has_valid_movements(game_state, player_number, ignore_must_move_key=True):
+        # Respect must_move_from_stack_key constraint - only that stack can move/capture
+        if GameEngine._has_valid_movements(game_state, player_number, ignore_must_move_key=False):
             return True
         if GameEngine._has_valid_captures(game_state, player_number):
             return True

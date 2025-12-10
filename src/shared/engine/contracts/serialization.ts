@@ -71,6 +71,12 @@ export interface SerializedGameState {
   currentPhase: string;
   /** Chain capture position during chain_capture phase */
   chainCapturePosition?: Position;
+  /**
+   * When present, restricts movement/capture/chain_capture so that only actions
+   * originating from the keyed stack are legal for the remainder of the current
+   * turn. This is set after place_ring and cleared at turn end.
+   */
+  mustMoveFromStackKey?: string;
   turnNumber: number;
   moveHistory: Move[];
   gameStatus: string;
@@ -238,6 +244,11 @@ export function serializeGameState(state: GameState): SerializedGameState {
     serialized.chainCapturePosition = { ...state.chainCapturePosition };
   }
 
+  // Include mustMoveFromStackKey if present (constrains movement/capture to one stack)
+  if (state.mustMoveFromStackKey) {
+    serialized.mustMoveFromStackKey = state.mustMoveFromStackKey;
+  }
+
   return serialized;
 }
 
@@ -284,6 +295,7 @@ export function deserializeGameState(data: SerializedGameState): GameState {
     currentPlayer: data.currentPlayer,
     currentPhase: data.currentPhase as GameState['currentPhase'],
     chainCapturePosition: data.chainCapturePosition,
+    mustMoveFromStackKey: data.mustMoveFromStackKey,
     moveHistory: data.moveHistory?.map((m) => ({ ...m })) || [],
     history: [],
     gameStatus: data.gameStatus as GameState['gameStatus'],

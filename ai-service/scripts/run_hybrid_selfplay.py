@@ -248,6 +248,7 @@ def run_hybrid_selfplay(
     wins_by_player = {i: 0 for i in range(1, num_players + 1)}
     draws = 0
     victory_type_counts: Dict[str, int] = {}  # Track victory type distribution
+    game_lengths: List[int] = []  # Track individual game lengths for detailed stats
     game_records = []
 
     games_file = os.path.join(output_dir, "games.jsonl")
@@ -351,6 +352,7 @@ def run_hybrid_selfplay(
             total_time += game_time
             total_moves += move_count
             total_games += 1
+            game_lengths.append(move_count)  # Track individual game length
 
             # Record result
             winner = game_state.winner or 0
@@ -412,6 +414,7 @@ def run_hybrid_selfplay(
         "evaluator_stats": eval_stats,
         "timestamp": datetime.now().isoformat(),
         "seed": seed,
+        "game_lengths": game_lengths,  # Individual game lengths for detailed analysis
     }
 
     # Add win rates

@@ -17,8 +17,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -34,6 +36,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 LOG_DIR = Path(__file__).parent.parent / "logs" / "orchestrator"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 STATE_FILE = LOG_DIR / "cluster_state.json"
+LOCKFILE = Path("/tmp/cluster_orchestrator.lock")
+
+# Mac Studio sync configuration
+MAC_STUDIO_HOST = os.environ.get("MAC_STUDIO_HOST", "mac-studio")
+MAC_STUDIO_DATA_DIR = "~/Development/RingRift/ai-service/data/games"
+SYNC_INTERVAL = 6  # Sync every 6 iterations (30 minutes at 5-min interval)
 
 
 @dataclass
@@ -453,22 +461,175 @@ def save_state(state: ClusterState):
     }, indent=2))
 
 
+def acquire_lock() -> bool:
+    """Acquire lockfile to prevent multiple instances."""
+    if LOCKFILE.exists():
+        try:
+            pid = int(LOCKFILE.read_text().strip())
+            # Check if process is still running
+            os.kill(pid, 0)
+            return False  # Process still running
+        except (ValueError, ProcessLookupError, PermissionError):
+            pass  # Stale lockfile, proceed
+
+    LOCKFILE.write_text(str(os.getpid()))
+    return True
+
+
+def release_lock():
+    """Release lockfile."""
+    try:
+        LOCKFILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def sync_to_mac_studio(hosts: List[HostConfig], dry_run: bool = False) -> bool:
+    """Sync selfplay data from all reachable hosts directly to Mac Studio.
+
+    Uses this machine as a relay: pulls data from cloud hosts, then pushes to Mac Studio.
+    This avoids storing large amounts of data on the laptop.
+    """
+    log("Starting data sync to Mac Studio...")
+
+    # Check Mac Studio reachability
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
+             MAC_STUDIO_HOST, "echo ok"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            log(f"Mac Studio unreachable: {result.stderr}", "ERROR")
+            return False
+    except Exception as e:
+        log(f"Mac Studio connection failed: {e}", "ERROR")
+        return False
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    mac_studio_sync_dir = f"{MAC_STUDIO_DATA_DIR}/synced_{timestamp}"
+
+    if not dry_run:
+        # Create sync directory on Mac Studio
+        subprocess.run(
+            ["ssh", MAC_STUDIO_HOST, f"mkdir -p {mac_studio_sync_dir}"],
+            capture_output=True, timeout=30
+        )
+
+    synced_count = 0
+
+    # Sync from each cloud host (skip local Macs and Mac Studio itself)
+    cloud_hosts = [h for h in hosts if h.enabled and
+                   "mac" not in h.name.lower() and
+                   h.ssh_host and h.role != "training"]
+
+    for host in cloud_hosts:
+        try:
+            log(f"Syncing from {host.name} to Mac Studio...")
+
+            # Create temp directory for relay
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                # Pull from cloud host
+                rsync_src = [
+                    "rsync", "-avz", "--progress",
+                    "-e", f"ssh -p {host.ssh_port} -o ConnectTimeout=15"
+                ]
+
+                # Try to sync .db files
+                db_cmd = rsync_src + [
+                    f"{host.ssh_user}@{host.ssh_host}:{host.ringrift_path}/data/games/*.db",
+                    f"{tmp_dir}/"
+                ]
+
+                if dry_run:
+                    log(f"  [DRY-RUN] Would sync from {host.name}")
+                    continue
+
+                result = subprocess.run(db_cmd, capture_output=True, text=True, timeout=300)
+
+                # Check if any files were synced
+                synced_files = list(Path(tmp_dir).glob("*.db"))
+                if not synced_files:
+                    log(f"  {host.name}: No .db files found")
+                    continue
+
+                # Push to Mac Studio
+                dest_subdir = f"{mac_studio_sync_dir}/{host.name}"
+                subprocess.run(
+                    ["ssh", MAC_STUDIO_HOST, f"mkdir -p {dest_subdir}"],
+                    capture_output=True, timeout=30
+                )
+
+                push_cmd = [
+                    "rsync", "-avz", "--progress",
+                    f"{tmp_dir}/",
+                    f"{MAC_STUDIO_HOST}:{dest_subdir}/"
+                ]
+                result = subprocess.run(push_cmd, capture_output=True, text=True, timeout=300)
+
+                if result.returncode == 0:
+                    log(f"  {host.name}: Synced {len(synced_files)} file(s) to Mac Studio")
+                    synced_count += 1
+                else:
+                    log(f"  {host.name}: Failed to push to Mac Studio: {result.stderr}", "WARN")
+
+        except subprocess.TimeoutExpired:
+            log(f"  {host.name}: Sync timeout", "WARN")
+        except Exception as e:
+            log(f"  {host.name}: Sync error: {e}", "WARN")
+
+    if synced_count > 0:
+        log(f"Data sync complete: {synced_count} host(s) synced to Mac Studio")
+    else:
+        log("Data sync: No data synced (hosts may be unreachable or have no data)")
+
+    return synced_count > 0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Enhanced Cluster Orchestrator")
     parser.add_argument("--dry-run", action="store_true", help="Don't execute commands")
     parser.add_argument("--status-only", action="store_true", help="Just show status and exit")
     parser.add_argument("--interval", type=int, default=300, help="Check interval in seconds")
     parser.add_argument("--once", action="store_true", help="Run once and exit")
+    parser.add_argument("--sync-now", action="store_true", help="Force sync to Mac Studio immediately")
+    parser.add_argument("--no-sync", action="store_true", help="Disable periodic sync to Mac Studio")
     args = parser.parse_args()
+
+    # Acquire lockfile to prevent multiple instances
+    if not acquire_lock():
+        log("Another instance is already running (lockfile exists with active PID)", "ERROR")
+        sys.exit(1)
+
+    # Register cleanup handlers
+    def cleanup(signum=None, frame=None):
+        log("Shutting down...")
+        release_lock()
+        if signum:
+            sys.exit(0)
+
+    atexit.register(release_lock)
+    signal.signal(signal.SIGTERM, cleanup)
+    signal.signal(signal.SIGINT, cleanup)
 
     log("=" * 60)
     log("CLUSTER ORCHESTRATOR STARTING")
+    log(f"PID: {os.getpid()}")
     log("=" * 60)
 
     hosts = load_hosts_config()
     log(f"Loaded {len(hosts)} host configurations")
 
     state = load_state()
+
+    # Force sync if requested
+    if args.sync_now:
+        log("Forcing sync to Mac Studio...")
+        if sync_to_mac_studio(hosts, args.dry_run):
+            state.last_sync = datetime.now().isoformat()
+            save_state(state)
+        return
 
     while True:
         state.iteration += 1
@@ -518,6 +679,12 @@ def main():
                 action = check_training_status(host, status)
                 if action and action != "running":
                     start_training(host, action, args.dry_run)
+
+        # Periodic sync to Mac Studio (every SYNC_INTERVAL iterations)
+        if not args.no_sync and state.iteration % SYNC_INTERVAL == 0:
+            log(f"Starting periodic sync (every {SYNC_INTERVAL} iterations)...")
+            if sync_to_mac_studio(hosts, args.dry_run):
+                state.last_sync = datetime.now().isoformat()
 
         save_state(state)
 

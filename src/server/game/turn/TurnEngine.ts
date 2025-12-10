@@ -334,8 +334,8 @@ function hasValidMovements(
 
 /**
  * Check if player has any valid recovery slides (RR-CANON-R110–R115).
- * Evaluated in movement context; recovery is a real action and should
- * block forced elimination.
+ * Evaluated in movement context. Note: recovery is NOT a "real action" for LPS,
+ * but it does block forced elimination (player has a valid move).
  */
 function hasValidRecovery(
   gameState: GameState,

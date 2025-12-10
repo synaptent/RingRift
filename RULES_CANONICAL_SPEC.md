@@ -414,6 +414,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - Non-capture movements (RR-CANON-R090–R092).
     - Overtaking capture segments and chains (RR-CANON-R100–R103).
     - Pure forced-elimination actions from RR-CANON-R100 do **not** count as real actions for the purposes of RR-CANON-R172.
+    - Recovery actions (RR-CANON-R110–R115) do **not** count as real actions for LPS. Recovery is a survival mechanism, not an offensive play.
   - For ANM invariants and termination analysis:
     - Forced-elimination actions **do** count as global legal actions (RR-CANON-R200–R203); sequences in which forced elimination is the only available action are legal but must strictly increase the eliminated-ring component `E` of the progress metric `S = M + C + E` in RR-CANON-R191.
     - Because each forced elimination removes at least one ring from the acting player's cap and total rings are finite, any segment of play in which some player is repeatedly forced to eliminate caps must terminate in finitely many steps.
@@ -594,7 +595,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - P has **at least one buried ring**: a ring of P's colour that is **not** at the top position of any stack (i.e., it is underneath at least one other ring).
   - Recovery eligibility is independent of rings in hand. Players with rings may choose recovery over placement.
   - A player meeting these conditions may use recovery to regain board control even if they still have rings in hand.
-  - Recovery action is a **real action** for Last-Player-Standing purposes (RR-CANON-R172) because it is an interactive, voluntary move—unlike forced elimination which is mandatory.
+  - Recovery action is **NOT** a real action for Last-Player-Standing purposes (RR-CANON-R172). Like forced elimination, recovery does not reset the LPS countdown. Only ring placements and stack movements/captures count as real actions.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.
 
 - **[RR-CANON-R111] Recovery action marker slide.**

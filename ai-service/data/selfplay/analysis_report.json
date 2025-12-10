@@ -1,0 +1,1248 @@
+{
+  "timestamp": "2025-12-10T17:38:14.596171+00:00",
+  "summary": {
+    "total_games": 1200,
+    "total_moves": 24970,
+    "data_sources": 6
+  },
+  "configurations": {
+    "square8_2p": {
+      "board_type": "square8",
+      "num_players": 2,
+      "total_games": 520,
+      "total_moves": 2355,
+      "moves_per_game": 4.528846153846154,
+      "total_time_seconds": 24.713382959365845,
+      "games_per_second": 21.041231014588032,
+      "wins_by_player": {
+        "2": 277,
+        "1": 232
+      },
+      "win_rates": {
+        "1": 0.4461538461538462,
+        "2": 0.5326923076923077
+      },
+      "victory_types": {
+        "territory": 18,
+        "ring_elimination": 2
+      },
+      "victory_type_rates": {
+        "territory": 0.03461538461538462,
+        "ring_elimination": 0.0038461538461538464
+      },
+      "draws": 0,
+      "games_with_recovery": 0,
+      "games_with_fe": 0
+    },
+    "hexagonal_2p": {
+      "board_type": "hexagonal",
+      "num_players": 2,
+      "total_games": 300,
+      "total_moves": 0,
+      "moves_per_game": 0.0,
+      "total_time_seconds": 0.0,
+      "games_per_second": 0.0,
+      "wins_by_player": {
+        "2": 23,
+        "1": 17
+      },
+      "win_rates": {
+        "1": 0.056666666666666664,
+        "2": 0.07666666666666666
+      },
+      "victory_types": {},
+      "victory_type_rates": {},
+      "draws": 0,
+      "games_with_recovery": 0,
+      "games_with_fe": 0
+    },
+    "square8_4p": {
+      "board_type": "square8",
+      "num_players": 4,
+      "total_games": 30,
+      "total_moves": 5984,
+      "moves_per_game": 199.46666666666667,
+      "total_time_seconds": 55.427939891815186,
+      "games_per_second": 0.5412432801679857,
+      "wins_by_player": {
+        "1": 5,
+        "2": 6,
+        "3": 12,
+        "4": 7
+      },
+      "win_rates": {
+        "1": 0.16666666666666666,
+        "2": 0.2,
+        "3": 0.4,
+        "4": 0.23333333333333334
+      },
+      "victory_types": {
+        "lps": 9,
+        "territory": 19,
+        "stalemate": 2
+      },
+      "victory_type_rates": {
+        "lps": 0.3,
+        "territory": 0.6333333333333333,
+        "stalemate": 0.06666666666666667
+      },
+      "draws": 0,
+      "games_with_recovery": 0,
+      "games_with_fe": 0
+    },
+    "square19_2p": {
+      "board_type": "square19",
+      "num_players": 2,
+      "total_games": 50,
+      "total_moves": 16631,
+      "moves_per_game": 332.62,
+      "total_time_seconds": 1121.5424571037292,
+      "games_per_second": 0.04458145983088325,
+      "wins_by_player": {
+        "1": 20,
+        "2": 30
+      },
+      "win_rates": {
+        "1": 0.4,
+        "2": 0.6
+      },
+      "victory_types": {
+        "stalemate": 44,
+        "territory": 4,
+        "ring_elimination": 2
+      },
+      "victory_type_rates": {
+        "stalemate": 0.88,
+        "territory": 0.08,
+        "ring_elimination": 0.04
+      },
+      "draws": 0,
+      "games_with_recovery": 0,
+      "games_with_fe": 0
+    },
+    "square8_3p": {
+      "board_type": "square8",
+      "num_players": 3,
+      "total_games": 300,
+      "total_moves": 0,
+      "moves_per_game": 0.0,
+      "total_time_seconds": 0.0,
+      "games_per_second": 0.0,
+      "wins_by_player": {
+        "2": 111,
+        "3": 94,
+        "1": 79
+      },
+      "win_rates": {
+        "1": 0.2633333333333333,
+        "2": 0.37,
+        "3": 0.31333333333333335
+      },
+      "victory_types": {},
+      "victory_type_rates": {},
+      "draws": 0,
+      "games_with_recovery": 0,
+      "games_with_fe": 0
+    }
+  },
+  "recovery_analysis": {
+    "total_games": 92,
+    "games_with_fe": 22,
+    "games_with_recovery": 0,
+    "games_with_errors": 2,
+    "states_analyzed": 30446,
+    "condition_frequencies": {
+      "zero_rings_in_hand": 1940,
+      "zero_controlled_stacks": 7668,
+      "has_markers": 27161,
+      "has_buried_rings": 23009
+    },
+    "conditions_met_distribution": {
+      "4_conditions": 63,
+      "3_conditions": 6790,
+      "2_conditions": 16211,
+      "1_condition": 6734,
+      "0_conditions": 648
+    },
+    "condition_combos": {
+      "no_stacks": 919,
+      "none": 648,
+      "has_markers": 5321,
+      "has_buried,has_markers,no_stacks": 5317,
+      "has_buried,has_markers": 14795,
+      "has_buried,no_stacks": 882,
+      "has_buried": 480,
+      "has_markers,no_stacks": 144,
+      "has_buried,has_markers,zero_rings": 1134,
+      "has_markers,zero_rings": 383,
+      "has_buried,has_markers,no_stacks,zero_rings": 63,
+      "zero_rings": 14,
+      "has_markers,no_stacks,zero_rings": 4,
+      "has_buried,zero_rings": 3,
+      "has_buried,no_stacks,zero_rings": 335,
+      "no_stacks,zero_rings": 4
+    },
+    "near_misses": [
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 5,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 6,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 7,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 8,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 9,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 10,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 11,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 12,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 17,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 1,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 13,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 14,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 15,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 16,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 17,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 18,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 19,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 20,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 16,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 2,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 22,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 15,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 3,
+        "phase": "chain_capture"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 24,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 15,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 3,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 25,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 15,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 3,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 26,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 15,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 3,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 31,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 14,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 4,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 32,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 14,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 4,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 33,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 14,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 4,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 34,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 14,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 4,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 39,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 13,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 40,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 13,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 41,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 13,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 42,
+        "player": 1,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 13,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 55,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 12,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "chain_capture"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 56,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 12,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 57,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 12,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 58,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 12,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 5,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 63,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 11,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 6,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 64,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 11,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 6,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 65,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 11,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 6,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 66,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 11,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 6,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 71,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 10,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 7,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 72,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 10,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 7,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 73,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 10,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 7,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 74,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 10,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 7,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 79,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 9,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 80,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 9,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 81,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 9,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 82,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 9,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 84,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 8,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 85,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 8,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 86,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 8,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 87,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 8,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 88,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 8,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/test_recovery/games.jsonl",
+        "game_index": 0,
+        "move_index": 89,
+        "player": 2,
+        "missing_condition": "zero_rings",
+        "rings_in_hand": 8,
+        "controls_stacks": false,
+        "has_markers": true,
+        "buried_rings": 8,
+        "phase": "territory_processing"
+      }
+    ],
+    "eligible_states": [
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 0,
+        "move_index": 354,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 23,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 0,
+        "move_index": 355,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 23,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 0,
+        "move_index": 356,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 23,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 1,
+        "move_index": 328,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 1,
+        "move_index": 329,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 1,
+        "move_index": 330,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 2,
+        "move_index": 326,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 31,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 2,
+        "move_index": 406,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 20,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 2,
+        "move_index": 407,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 20,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 2,
+        "move_index": 408,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 20,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 2,
+        "move_index": 409,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 20,
+        "phase": "game_over"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 3,
+        "move_index": 377,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 27,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 4,
+        "move_index": 329,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 30,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 4,
+        "move_index": 330,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 30,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 4,
+        "move_index": 331,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 30,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 5,
+        "move_index": 310,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 30,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 5,
+        "move_index": 317,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 29,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 5,
+        "move_index": 318,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 29,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 5,
+        "move_index": 319,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 29,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 6,
+        "move_index": 322,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 26,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 7,
+        "move_index": 319,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 28,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 7,
+        "move_index": 320,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 28,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 7,
+        "move_index": 321,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 28,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 8,
+        "move_index": 312,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 32,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 8,
+        "move_index": 313,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 32,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 8,
+        "move_index": 314,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 32,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 10,
+        "move_index": 364,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 27,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 10,
+        "move_index": 365,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 27,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 10,
+        "move_index": 366,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 27,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 302,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 303,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 304,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 305,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 306,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 307,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 308,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 11,
+        "move_index": 309,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 33,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 13,
+        "move_index": 306,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 17,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 13,
+        "move_index": 307,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 17,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 13,
+        "move_index": 308,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 17,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 13,
+        "move_index": 309,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 17,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 13,
+        "move_index": 310,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 17,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 13,
+        "move_index": 311,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 17,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 31,
+        "move_index": 267,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 1,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 31,
+        "move_index": 268,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 1,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 31,
+        "move_index": 269,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 1,
+        "phase": "ring_placement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 31,
+        "move_index": 270,
+        "player": 1,
+        "rings_in_hand": 0,
+        "buried_rings": 1,
+        "phase": "movement"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 31,
+        "move_index": 271,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 1,
+        "phase": "line_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 31,
+        "move_index": 272,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 1,
+        "phase": "territory_processing"
+      },
+      {
+        "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+        "game_index": 31,
+        "move_index": 273,
+        "player": 2,
+        "rings_in_hand": 0,
+        "buried_rings": 1,
+        "phase": "movement"
+      }
+    ],
+    "board_type_games": {
+      "square8": 78,
+      "square19": 14
+    },
+    "player_count_games": {
+      "2": 74,
+      "3": 18
+    }
+  }
+}

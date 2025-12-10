@@ -1,0 +1,34 @@
+{
+  "total_games": 50,
+  "total_moves": 16631,
+  "total_time_seconds": 1121.5424571037292,
+  "games_per_second": 0.04458145983088325,
+  "moves_per_game": 332.62,
+  "wins_by_player": {
+    "1": 20,
+    "2": 30
+  },
+  "draws": 0,
+  "draw_rate": 0.0,
+  "victory_type_counts": {
+    "stalemate": 44,
+    "territory": 4,
+    "ring_elimination": 2
+  },
+  "board_type": "square19",
+  "num_players": 2,
+  "max_moves": 2500,
+  "device": "mps",
+  "evaluator_stats": {
+    "eval_count": 3353031,
+    "total_eval_time": 118.27085651093512,
+    "cpu_time": 935.0136982803087,
+    "gpu_time": 39.05694727318769,
+    "evals_per_second": 28350.44151126093,
+    "gpu_fraction": 0.3302330635406919
+  },
+  "timestamp": "2025-12-10T09:35:59.719094",
+  "seed": 11113,
+  "p1_win_rate": 0.4,
+  "p2_win_rate": 0.6
+}

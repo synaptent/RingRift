@@ -1,0 +1,72 @@
+{
+  "total_games": 70,
+  "total_states": 18974,
+  "eligible_on_turn": 8,
+  "eligible_on_turn_in_movement": 0,
+  "recovery_moves_available": 0,
+  "actual_opportunities": [],
+  "eligible_but_not_movement": [
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 11,
+      "move_index": 302,
+      "player": 1,
+      "phase": "line_processing"
+    },
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 11,
+      "move_index": 303,
+      "player": 1,
+      "phase": "territory_processing"
+    },
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 17,
+      "move_index": 297,
+      "player": 1,
+      "phase": "line_processing"
+    },
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 17,
+      "move_index": 298,
+      "player": 1,
+      "phase": "territory_processing"
+    },
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 42,
+      "move_index": 311,
+      "player": 2,
+      "phase": "line_processing"
+    },
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 42,
+      "move_index": 312,
+      "player": 2,
+      "phase": "territory_processing"
+    },
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 49,
+      "move_index": 291,
+      "player": 1,
+      "phase": "line_processing"
+    },
+    {
+      "game_file": "data/selfplay/recovery_analysis/games.jsonl",
+      "game_index": 49,
+      "move_index": 292,
+      "player": 1,
+      "phase": "territory_processing"
+    }
+  ],
+  "phase_breakdown": {
+    "eligible_in_line_processing": 4,
+    "eligible_in_territory_processing": 4
+  },
+  "alt_eligible_on_turn": 1420,
+  "alt_eligible_on_turn_in_movement": 0
+}

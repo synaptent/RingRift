@@ -322,45 +322,57 @@ export const LPS_FIRST_OCCURRENCE_TIPS: TeachingTip[] = [
 /**
  * Teaching tips for recovery action (RR-CANON-R110–R115).
  * Recovery allows temporarily eliminated players to stay active by sliding
- * markers to complete lines.
+ * markers to complete lines or reposition.
  */
 export const RECOVERY_ACTION_TIPS: TeachingTip[] = [
   // Eligibility
   {
-    text: 'RECOVERY ACTION: When you have no stacks and no rings in hand, but still have markers AND buried rings, you can perform a recovery action instead of passing.',
+    text: 'RECOVERY ACTION: When you control no stacks but still have markers AND buried rings, you can perform a recovery action. Recovery is available even if you have rings in hand.',
     category: 'eligibility',
     emphasis: 'critical',
   },
   {
-    text: 'Recovery eligibility requires: (1) No stacks you control, (2) Zero rings in hand, (3) At least one marker on the board, (4) At least one buried ring in any stack.',
+    text: 'Recovery eligibility requires: (1) No stacks you control, (2) At least one marker on the board, (3) At least one buried ring in any stack. Rings in hand do NOT prevent recovery.',
     category: 'eligibility',
     emphasis: 'important',
   },
-  // Action mechanics
+  // Two recovery modes
   {
-    text: 'HOW IT WORKS: Slide one of your markers to an adjacent empty cell. The slide must complete a line of at least the minimum length (usually 3 or 4 markers depending on board/players).',
-    category: 'action',
-    emphasis: 'important',
+    text: 'TWO RECOVERY MODES: (a) LINE RECOVERY - slide a marker to complete a line of required length, OR (b) FALLBACK RECOVERY - if no line-forming slide exists, slide any marker to an adjacent empty cell that does not disconnect territory.',
+    category: 'modes',
+    emphasis: 'critical',
   },
+  // Line recovery mechanics
   {
-    text: 'The cost is self-elimination: extract your bottommost buried ring from a stack of your choice. This ring is eliminated, not returned to your hand.',
-    category: 'cost',
-    emphasis: 'normal',
+    text: 'LINE RECOVERY: Slide a marker to an adjacent empty cell to complete a line. The line collapses to territory. Cost: extract your bottommost buried ring from a stack of your choice.',
+    category: 'line_recovery',
+    emphasis: 'important',
   },
   // Option 1/2 for overlength
   {
-    text: 'OVERLENGTH LINES: If your slide creates a line longer than the minimum, you have a choice! Option 1: Collapse all markers (costs 1 buried ring). Option 2: Collapse only the minimum length (FREE, no extraction).',
+    text: 'OVERLENGTH LINES: If your slide creates a line longer than minimum, you choose: Option 1 - collapse ALL markers (costs 1 buried ring). Option 2 - collapse only the minimum length (FREE, remaining markers stay on board).',
     category: 'overlength',
     emphasis: 'important',
   },
   {
-    text: 'Option 2 is useful when you have few buried rings left. You gain less territory but preserve your recovery capability for future turns.',
+    text: 'Option 2 is useful when buried rings are scarce. You gain less territory but preserve recovery capability for future turns.',
     category: 'strategy',
+    emphasis: 'normal',
+  },
+  // Fallback recovery mechanics
+  {
+    text: 'FALLBACK RECOVERY: When no line-forming slide exists, you may slide any marker to an adjacent empty cell, as long as it does not cause territory disconnection. Cost: 1 buried ring extraction.',
+    category: 'fallback',
+    emphasis: 'important',
+  },
+  {
+    text: 'Fallback is a last resort - it costs a buried ring but does not form territory. Use it to reposition markers for a future line-forming opportunity.',
+    category: 'fallback',
     emphasis: 'normal',
   },
   // LPS interaction
   {
-    text: 'Recovery does NOT count as a real action for Last Player Standing. If recovery is your only option, the LPS countdown still advances. You must place rings or make other moves to reset LPS - your rings in hand are a "survival budget."',
+    text: 'Recovery does NOT count as a real action for Last Player Standing (LPS). If recovery is your only option, the LPS countdown still advances. You must place rings or make stack moves to reset LPS.',
     category: 'lps',
     emphasis: 'important',
   },

@@ -55,9 +55,10 @@ Per the game designer (conversation 2025-12-08):
 A player P is **eligible for recovery** if ALL of the following hold:
 
 1. P controls **no stacks** on the board (no stack has P's color as top ring)
-2. P has **zero rings in hand** (`ringsInHand[P] == 0`)
-3. P owns at least one **marker** on the board
-4. P has at least one **buried ring** (a ring of P's color inside any stack, but not as the top ring)
+2. P owns at least one **marker** on the board
+3. P has at least one **buried ring** (a ring of P's color inside any stack, but not as the top ring)
+
+**Note:** Rings in hand do **NOT** prevent recovery eligibility. A player with rings in hand but no stacks may still use recovery if the above conditions are met.
 
 ### RR-CANON-R111: Marker Slide Adjacency
 
@@ -134,7 +135,7 @@ type RecoverySlideMove = {
 };
 ```
 
-**LPS Classification:** Recovery slides **ARE "real actions"** for Last Player Standing purposes.
+**LPS Classification:** Recovery slides are **NOT "real actions"** for Last Player Standing purposes. Like forced elimination, recovery is a survival mechanism that does not reset the LPS countdown.
 
 ---
 

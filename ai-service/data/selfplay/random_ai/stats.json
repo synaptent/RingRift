@@ -1,0 +1,15 @@
+{
+  "total_games": 500,
+  "board_type": "square8",
+  "num_players": 2,
+  "games_with_recovery_opportunities": 0,
+  "total_recovery_opportunities": 0,
+  "wins_by_player": {
+    "2": 262,
+    "1": 227
+  },
+  "victory_types": {},
+  "elapsed_seconds": 91.48266291618347,
+  "games_per_second": 5.4655164602947846,
+  "timestamp": "2025-12-10T09:50:56.606230"
+}

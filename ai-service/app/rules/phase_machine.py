@@ -241,9 +241,9 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         GameEngine._advance_to_line_processing(game_state, trace_mode=trace_mode)
 
     elif last_move.type == MoveType.RECOVERY_SLIDE:
-        # Recovery slide is a movement-phase real action. After applying it,
-        # we proceed to line_processing to record phase traversal (even if
-        # no further line decisions remain because collapse was applied).
+        # Recovery slide is a movement-phase action (but NOT a "real action" for LPS).
+        # After applying it, we proceed to line_processing to record phase traversal
+        # (even if no further line decisions remain because collapse was applied).
         game_state.chain_capture_state = None
         GameEngine._advance_to_line_processing(game_state, trace_mode=trace_mode)
 
