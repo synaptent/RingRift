@@ -1,8 +1,17 @@
 import type { GameState, Move } from '../../src/shared/types/game';
-import { positionToString } from '../../src/shared/types/game';
 import { createTestBoard, createTestGameState, pos, addStack } from '../utils/fixtures';
 import { getValidMoves } from '../../src/shared/engine/orchestration/turnOrchestrator';
 import { validateMoveWithFSM, getCurrentFSMState } from '../../src/shared/engine/fsm/FSMAdapter';
+import {
+  computeGlobalLegalActionsSummary,
+  isANMState,
+} from '../../src/shared/engine/globalActions';
+import {
+  makeAnmScen01_MovementNoMovesButFEAvailable,
+  makeAnmScen02_MovementPlacementsOnly,
+  makeAnmScen03_MovementCurrentPlayerFullyEliminated,
+  makeMovementMustMoveFromStackKeyConstrainedState,
+} from '../fixtures/anmFixtures';
 
 /**
  * Movement ANM / no_movement_action parity tests.
@@ -16,34 +25,20 @@ import { validateMoveWithFSM, getCurrentFSMState } from '../../src/shared/engine
  *
  * They are a TS-side analogue of the Python GameEngine.get_valid_moves /
  * get_phase_requirement contract for MOVEMENT and RR‑CANON‑R075/R076.
+ *
+ * Additional ANM coverage (ANM-SCEN-01/02/03 + mustMoveFromStackKey) checks
+ * the R200 global legal action summary and ANM predicate from
+ * src/shared/engine/globalActions.ts.
  */
 describe('Movement ANM / no_movement_action parity', () => {
+  /**
+   * ANM-SCEN-01 – Movement phase, no moves but forced elimination available.
+   *
+   * This forwards to the shared ANM fixture so movement tests stay aligned
+   * with the canonical global-actions catalogue.
+   */
   function makeForcedAnmState(): GameState {
-    const board = createTestBoard('square8');
-    const origin = pos(3, 3);
-    const player = 1;
-
-    const originKey = positionToString(origin);
-
-    // Single stack for player 1 at origin.
-    addStack(board, origin, player, 1);
-
-    // Collapse every other space so the stack is completely stuck:
-    // no simple movement and no captures are possible.
-    for (let x = 0; x < board.size; x += 1) {
-      for (let y = 0; y < board.size; y += 1) {
-        const key = positionToString({ x, y });
-        if (key === originKey) continue;
-        board.collapsedSpaces.set(key, player);
-      }
-    }
-
-    return createTestGameState({
-      boardType: 'square8',
-      board,
-      currentPlayer: player,
-      currentPhase: 'movement',
-    });
+    return makeAnmScen01_MovementNoMovesButFEAvailable();
   }
 
   function makeNonAnmStateWithMovement(): GameState {
@@ -119,5 +114,119 @@ describe('Movement ANM / no_movement_action parity', () => {
     expect(fsmState.phase).toBe('movement');
     expect(fsmState.player).toBe(1);
     expect(fsmState.canMove).toBe(true);
+  });
+
+  /**
+   * ANM-SCEN-01 – Movement phase, no movement/capture, FE available.
+   *
+   * Global legal action expectations:
+   * - hasTurnMaterial            === true
+   * - hasPhaseLocalInteractiveMove === false  (no movement/capture)
+   * - hasGlobalPlacementAction   === false
+   * - hasForcedEliminationAction === true
+   * - isANMState(state)          === false (FE is a global action)
+   */
+  test('ANM-SCEN-01: movement no moves but forced elimination available is not ANM', () => {
+    const state = makeAnmScen01_MovementNoMovesButFEAvailable();
+    const currentPlayer = state.currentPlayer;
+
+    const summary = computeGlobalLegalActionsSummary(state, currentPlayer);
+
+    expect(summary.hasTurnMaterial).toBe(true);
+    expect(summary.hasPhaseLocalInteractiveMove).toBe(false);
+    expect(summary.hasGlobalPlacementAction).toBe(false);
+    expect(summary.hasForcedEliminationAction).toBe(true);
+    expect(isANMState(state)).toBe(false);
+  });
+
+  /**
+   * ANM-SCEN-02 – Movement phase, placements-only global actions.
+   *
+   * Global legal action expectations:
+   * - hasTurnMaterial            === true (rings in hand)
+   * - hasPhaseLocalInteractiveMove === false  (no movement/capture)
+   * - hasGlobalPlacementAction   === true
+   * - hasForcedEliminationAction === false
+   * - isANMState(state)          === false (placements exist globally)
+   */
+  test('ANM-SCEN-02: movement with placements-only global actions is not ANM', () => {
+    const state = makeAnmScen02_MovementPlacementsOnly();
+    const currentPlayer = state.currentPlayer;
+
+    const summary = computeGlobalLegalActionsSummary(state, currentPlayer);
+
+    expect(summary.hasTurnMaterial).toBe(true);
+    expect(summary.hasPhaseLocalInteractiveMove).toBe(false);
+    expect(summary.hasGlobalPlacementAction).toBe(true);
+    expect(summary.hasForcedEliminationAction).toBe(false);
+    expect(isANMState(state)).toBe(false);
+  });
+
+  /**
+   * ANM-SCEN-03 – Movement phase with a fully eliminated current player.
+   *
+   * Global legal action expectations:
+   * - hasTurnMaterial            === false
+   * - hasGlobalPlacementAction   === false
+   * - hasPhaseLocalInteractiveMove === false
+   * - hasForcedEliminationAction === false
+   * - isANMState(state)          === false (ANM is defined only for players with material)
+   */
+  test('ANM-SCEN-03: fully eliminated current player is not classified as ANM', () => {
+    const state = makeAnmScen03_MovementCurrentPlayerFullyEliminated();
+    const currentPlayer = state.currentPlayer;
+
+    const summary = computeGlobalLegalActionsSummary(state, currentPlayer);
+
+    expect(summary.hasTurnMaterial).toBe(false);
+    expect(summary.hasGlobalPlacementAction).toBe(false);
+    expect(summary.hasPhaseLocalInteractiveMove).toBe(false);
+    expect(summary.hasForcedEliminationAction).toBe(false);
+    expect(isANMState(state)).toBe(false);
+  });
+
+  /**
+   * Edge case: mustMoveFromStackKey constrains movement surface.
+   *
+   * Scenario:
+   * - Player 1 controls two stacks:
+   *   - A "stuck" stack surrounded by collapsed territory (no legal moves).
+   *   - A "free" stack that would have legal moves if unconstrained.
+   * - state.mustMoveFromStackKey is set to the stuck stack.
+   *
+   * Expectations:
+   * - With mustMoveFromStackKey set:
+   *     hasPhaseLocalInteractiveMove === false for P1 in MOVEMENT.
+   * - With the constraint removed:
+   *     hasPhaseLocalInteractiveMove === true for P1.
+   * - In both cases placements remain available, so isANMState(state) === false.
+   *
+   * This guards against regressions where movement constraints cause
+   * movement-only ANM mis-classification.
+   */
+  test('mustMoveFromStackKey-constrained movement surface does not mis-classify ANM', () => {
+    const constrained = makeMovementMustMoveFromStackKeyConstrainedState();
+    const currentPlayer = constrained.currentPlayer;
+
+    const constrainedSummary = computeGlobalLegalActionsSummary(constrained, currentPlayer);
+    expect(constrainedSummary.hasTurnMaterial).toBe(true);
+    expect(constrainedSummary.hasGlobalPlacementAction).toBe(true);
+    // Movement/capture surface is empty when constrained to the stuck stack.
+    expect(constrainedSummary.hasPhaseLocalInteractiveMove).toBe(false);
+    expect(isANMState(constrained)).toBe(false);
+
+    // Remove mustMoveFromStackKey while keeping the same board so that the free
+    // stack can move; this simulates the unconstrained global reachability check.
+    const unconstrained: GameState = {
+      ...constrained,
+      mustMoveFromStackKey: undefined,
+    };
+
+    const unconstrainedSummary = computeGlobalLegalActionsSummary(unconstrained, currentPlayer);
+    expect(unconstrainedSummary.hasTurnMaterial).toBe(true);
+    expect(unconstrainedSummary.hasGlobalPlacementAction).toBe(true);
+    // With the constraint removed, movement/capture should now be available.
+    expect(unconstrainedSummary.hasPhaseLocalInteractiveMove).toBe(true);
+    expect(isANMState(unconstrained)).toBe(false);
   });
 });

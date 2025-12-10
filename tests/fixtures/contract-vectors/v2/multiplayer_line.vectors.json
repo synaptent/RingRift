@@ -1,0 +1,283 @@
+{
+  "version": "v2",
+  "generated": "2025-12-10T04:00:00.000Z",
+  "count": 3,
+  "categories": ["line_detection", "multiplayer"],
+  "description": "Contract vectors for multi-player line detection with 3-marker threshold per RR-CANON-R001",
+  "vectors": [
+    {
+      "id": "multiplayer.line.3marker_forms_line_3p",
+      "version": "v2",
+      "category": "line_detection",
+      "description": "3-player game: 3 collinear markers forms a line (lineLength=3 for 3-4p per RR-CANON-R001)",
+      "tags": ["multiplayer", "line_detection", "3player", "canonical"],
+      "source": "manual",
+      "createdAt": "2025-12-10T04:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-3p-line-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,4": {
+                "position": { "x": 3, "y": 4 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "5,5": {
+                "position": { "x": 5, "y": 5 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "6,6": {
+                "position": { "x": 6, "y": 6 },
+                "rings": [3],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 3
+              }
+            },
+            "markers": {
+              "3,2": { "position": { "x": 3, "y": 2 }, "player": 1, "type": "regular" },
+              "3,3": { "position": { "x": 3, "y": 3 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0, "3": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 16,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 3,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 4,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 28,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-3p-line",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 3, "y": 4 },
+          "to": { "x": 3, "y": 1 },
+          "timestamp": "2025-12-10T04:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 4
+        }
+      },
+      "expectedOutput": {
+        "status": "awaiting_decision",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "line_processing",
+          "gameStatus": "active",
+          "pendingDecisionType": "select_line_to_process"
+        }
+      }
+    },
+    {
+      "id": "multiplayer.line.2marker_no_line_3p",
+      "version": "v2",
+      "category": "line_detection",
+      "description": "3-player game: 2 collinear markers does NOT form a line (need 3 for lineLength=3)",
+      "tags": ["multiplayer", "line_detection", "3player", "canonical"],
+      "source": "manual",
+      "createdAt": "2025-12-10T04:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-3p-noline-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,3": {
+                "position": { "x": 3, "y": 3 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "5,5": {
+                "position": { "x": 5, "y": 5 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              },
+              "6,6": {
+                "position": { "x": 6, "y": 6 },
+                "rings": [3],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 3
+              }
+            },
+            "markers": {
+              "3,2": { "position": { "x": 3, "y": 2 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0, "3": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 16,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 3,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 4,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 28,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-3p-noline",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 3, "y": 3 },
+          "to": { "x": 3, "y": 1 },
+          "timestamp": "2025-12-10T04:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 4
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "currentPlayer": 2,
+          "currentPhase": "ring_placement",
+          "gameStatus": "active",
+          "markerCount": 2
+        }
+      }
+    },
+    {
+      "id": "multiplayer.line.4marker_line_in_2p",
+      "version": "v2",
+      "category": "line_detection",
+      "description": "2-player game: requires 4 markers for line (lineLength=4 for 2p per RR-CANON-R001)",
+      "tags": ["line_detection", "2player", "canonical"],
+      "source": "manual",
+      "createdAt": "2025-12-10T04:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "test-2p-line-001",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "3,5": {
+                "position": { "x": 3, "y": 5 },
+                "rings": [1],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 1
+              },
+              "5,5": {
+                "position": { "x": 5, "y": 5 },
+                "rings": [2],
+                "stackHeight": 1,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {
+              "3,2": { "position": { "x": 3, "y": 2 }, "player": 1, "type": "regular" },
+              "3,3": { "position": { "x": 3, "y": 3 }, "player": 1, "type": "regular" },
+              "3,4": { "position": { "x": 3, "y": 4 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {},
+            "eliminatedRings": { "1": 0, "2": 0 }
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 14,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 17,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "turnNumber": 5,
+          "moveHistory": [],
+          "gameStatus": "active",
+          "victoryThreshold": 19,
+          "territoryVictoryThreshold": 33
+        },
+        "move": {
+          "id": "move-2p-line",
+          "type": "move_stack",
+          "player": 1,
+          "from": { "x": 3, "y": 5 },
+          "to": { "x": 3, "y": 1 },
+          "timestamp": "2025-12-10T04:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 5
+        }
+      },
+      "expectedOutput": {
+        "status": "awaiting_decision",
+        "assertions": {
+          "currentPlayer": 1,
+          "currentPhase": "line_processing",
+          "gameStatus": "active",
+          "pendingDecisionType": "select_line_to_process"
+        }
+      }
+    }
+  ]
+}
