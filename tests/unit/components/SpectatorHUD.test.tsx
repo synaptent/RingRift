@@ -408,3 +408,182 @@ describe('SpectatorHUD', () => {
     expect(screen.getByText('2 terr')).toBeInTheDocument();
   });
 });
+
+describe('SpectatorHUD - Connection Status', () => {
+  it('shows live indicator when connected', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        connectionStatus="connected"
+      />
+    );
+
+    // Should have the animated live dot (emerald colored)
+    const liveIndicator = screen.getByTestId('spectator-hud').querySelector('.animate-ping');
+    expect(liveIndicator).toBeInTheDocument();
+  });
+
+  it('shows reconnecting banner when reconnecting', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        connectionStatus="reconnecting"
+      />
+    );
+
+    expect(screen.getByText('Reconnecting...')).toBeInTheDocument();
+  });
+
+  it('shows disconnected banner when disconnected', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        connectionStatus="disconnected"
+      />
+    );
+
+    expect(screen.getByText('Disconnected')).toBeInTheDocument();
+  });
+
+  it('shows connecting banner when connecting', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        connectionStatus="connecting"
+      />
+    );
+
+    expect(screen.getByText('Connecting...')).toBeInTheDocument();
+  });
+});
+
+describe('SpectatorHUD - Active Choice Banner', () => {
+  it('shows choice banner when activeChoice is provided', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        activeChoice={{
+          type: 'capture_direction',
+          playerNumber: 1,
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('spectator-choice-banner')).toBeInTheDocument();
+    expect(screen.getByText('is deciding:')).toBeInTheDocument();
+    expect(screen.getByText('Capture Direction')).toBeInTheDocument();
+  });
+
+  it('shows player name in choice banner', () => {
+    const players = createPlayers();
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={players}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        activeChoice={{
+          type: 'line_reward',
+          playerNumber: 1,
+        }}
+      />
+    );
+
+    // Alice is player 1 - appears in both choice banner and player list
+    const aliceElements = screen.getAllByText('Alice');
+    expect(aliceElements.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Line Reward')).toBeInTheDocument();
+  });
+
+  it('shows countdown timer when timeRemaining is provided', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        activeChoice={{
+          type: 'territory_action',
+          playerNumber: 2,
+          timeRemaining: 25,
+        }}
+      />
+    );
+
+    expect(screen.getByText('25s')).toBeInTheDocument();
+  });
+
+  it('shows urgency styling when time is low', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+        activeChoice={{
+          type: 'elimination_choice',
+          playerNumber: 1,
+          timeRemaining: 5,
+        }}
+      />
+    );
+
+    const timer = screen.getByText('5s');
+    expect(timer).toHaveClass('text-red-400');
+  });
+
+  it('does not show choice banner when activeChoice is undefined', () => {
+    render(
+      <SpectatorHUD
+        phase="movement"
+        players={createPlayers()}
+        currentPlayerNumber={1}
+        turnNumber={1}
+        moveNumber={1}
+        moveHistory={[]}
+        evaluationHistory={[]}
+      />
+    );
+
+    expect(screen.queryByTestId('spectator-choice-banner')).not.toBeInTheDocument();
+  });
+});
