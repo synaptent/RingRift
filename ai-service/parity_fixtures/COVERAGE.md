@@ -4,14 +4,15 @@ This document tracks the TS↔Python parity fixture coverage for the RingRift ga
 
 ## Summary
 
-| Metric                                       | Count | Target | Status     |
-| -------------------------------------------- | ----- | ------ | ---------- |
-| **Total Fixtures**                           | 274   | 100+   | ✅ Exceeds |
-| Main directory (`parity_fixtures/*.json`)    | 274   | -      | -          |
-| Generated (`generated/*.json`)               | 5     | -      | -          |
-| Test vectors (`tests/parity/vectors/*.json`) | 7     | -      | -          |
+| Metric                                                 | Count | Target | Status     |
+| ------------------------------------------------------ | ----- | ------ | ---------- |
+| **Total Fixtures**                                     | 334   | 100+   | ✅ Exceeds |
+| Main directory (`parity_fixtures/*.json`)              | 274   | -      | -          |
+| Generated (`generated/*.json`)                         | 5     | -      | -          |
+| Territory/FE expanded (`territory_fe_expanded/*.json`) | 60    | -      | NEW        |
+| Test vectors (`tests/parity/vectors/*.json`)           | 7     | -      | -          |
 
-**Last Updated:** 2025-12-07
+**Last Updated:** 2025-12-10
 
 ## Board Type Distribution
 
@@ -37,27 +38,30 @@ All three primary board types are well represented.
 
 | Move Type                  | Fixtures | Description                |
 | -------------------------- | -------- | -------------------------- |
-| `move_stack`               | 153      | Basic stack movement       |
+| `move_stack`               | 213+     | Basic stack movement       |
 | `overtaking_capture`       | 61       | Capture mechanics          |
 | `continue_capture_segment` | 48       | Chain capture continuation |
-| `process_territory_region` | 5        | Territory processing       |
-| `forced_elimination`       | 4        | Forced elimination events  |
+| `process_territory_region` | 19+      | Territory processing       |
+| `forced_elimination`       | 7+       | Forced elimination events  |
 | `swap_sides`               | 2        | Side swap moves            |
 | `place_ring`               | 1        | Ring placement phase       |
+
+Note: 60 new fixtures added via `territory_fe_expanded/` generation on 2025-12-10 from
+`canonical_square8_2p.db` (30 vectors) and `canonical_square8_3p.db` (30 vectors).
 
 ## Phase Coverage
 
 ### Python Engine Phases
 
-| Phase                  | Occurrences | Status          |
-| ---------------------- | ----------- | --------------- |
-| `chain_capture`        | 65          | ✅ Covered      |
-| `capture`              | 63          | ✅ Covered      |
-| `movement`             | 48          | ✅ Covered      |
-| `ring_placement`       | 48          | ✅ Covered      |
-| `line_processing`      | 48          | ✅ Covered      |
-| `territory_processing` | 2           | ⚠️ Low coverage |
-| `forced_elimination`   | 4           | ⚠️ Low coverage |
+| Phase                  | Occurrences | Status      |
+| ---------------------- | ----------- | ----------- |
+| `chain_capture`        | 65          | ✅ Covered  |
+| `capture`              | 63          | ✅ Covered  |
+| `movement`             | 108+        | ✅ Covered  |
+| `ring_placement`       | 48          | ✅ Covered  |
+| `line_processing`      | 78+         | ✅ Covered  |
+| `territory_processing` | 16+         | ✅ Improved |
+| `forced_elimination`   | 7+          | ✅ Improved |
 
 ### TypeScript Engine Phases
 
@@ -83,23 +87,23 @@ Based on typical FAQ scenarios (Q1-Q24 style):
 
 | Category                         | Scenarios           | Coverage Status  |
 | -------------------------------- | ------------------- | ---------------- |
-| **Basic Movement (Q1-Q3)**       | Movement, placement | ✅ 202+ fixtures |
+| **Basic Movement (Q1-Q3)**       | Movement, placement | ✅ 262+ fixtures |
 | **Capture Mechanics (Q4-Q7)**    | Captures, chains    | ✅ 109+ fixtures |
-| **Line Formation (Q8-Q10)**      | Line scoring        | ✅ 48+ fixtures  |
-| **Territory Control (Q11-Q14)**  | Territory claims    | ✅ 7+ fixtures   |
-| **Forced Elimination (Q15-Q17)** | FE events           | ⚠️ 4 fixtures    |
-| **Multi-player (Q18-Q21)**       | 3p/4p games         | ✅ 111+ fixtures |
+| **Line Formation (Q8-Q10)**      | Line scoring        | ✅ 78+ fixtures  |
+| **Territory Control (Q11-Q14)**  | Territory claims    | ✅ 21+ fixtures  |
+| **Forced Elimination (Q15-Q17)** | FE events           | ✅ 7+ fixtures   |
+| **Multi-player (Q18-Q21)**       | 3p/4p games         | ✅ 141+ fixtures |
 | **Game End (Q22-Q24)**           | Victory conditions  | ✅ 59+ fixtures  |
 
 ### Key Position Types
 
-| Position Type        | Status     | Notes                                   |
-| -------------------- | ---------- | --------------------------------------- |
-| Captures             | ✅ Good    | 109+ fixtures with capture moves        |
-| Chain captures       | ✅ Good    | 48 `continue_capture_segment` moves     |
-| Territory processing | ⚠️ Limited | Only 5 `process_territory_region` moves |
-| Forced elimination   | ⚠️ Limited | 4 fixtures, consider expansion          |
-| Game endings         | ✅ Good    | 59+ completed/finished states           |
+| Position Type        | Status  | Notes                                |
+| -------------------- | ------- | ------------------------------------ |
+| Captures             | ✅ Good | 109+ fixtures with capture moves     |
+| Chain captures       | ✅ Good | 48 `continue_capture_segment` moves  |
+| Territory processing | ✅ Good | 19+ `process_territory_region` moves |
+| Forced elimination   | ✅ Good | 7+ fixtures with FE moves            |
+| Game endings         | ✅ Good | 59+ completed/finished states        |
 
 ## Fixture Sources
 
@@ -130,8 +134,8 @@ Fixtures are organized by source database prefix:
 
 ### Areas Needing More Coverage
 
-- ⚠️ **Territory processing**: Only 5 fixtures with `process_territory_region` moves
-- ⚠️ **Forced elimination**: Only 4 fixtures with FE moves
+- ✅ **Territory processing**: Improved to 19+ fixtures (was 5)
+- ✅ **Forced elimination**: Improved to 7+ fixtures (was 4)
 - ⚠️ **LPS (Last Player Standing) rounds**: Not explicitly tracked
 
 ### Canonical Gating
@@ -180,18 +184,18 @@ cd ai-service
 python -m pytest tests/parity/test_hash_parity.py tests/parity/test_chain_capture_parity.py tests/parity/test_forced_elimination_sequences_parity.py tests/parity/test_line_and_territory_scenario_parity.py -v
 ```
 
-### Latest Test Results (2025-12-07)
+### Latest Test Results (2025-12-10)
 
 | Test Suite                | Passed | Failed | Notes       |
 | ------------------------- | ------ | ------ | ----------- |
 | Hash parity               | 7      | 0      | ✅ All pass |
 | Chain capture parity      | 11     | 0      | ✅ All pass |
 | Forced elimination parity | 11     | 0      | ✅ All pass |
-| Line & territory parity   | 16     | 0      | ✅ All pass |
-| **Total**                 | **45** | **0**  | 100% pass   |
+| Line & territory parity   | 15     | 0      | ✅ All pass |
+| **Total**                 | **44** | **0**  | 100% pass   |
 
 Note: The full fixture regression tests (`test_replay_parity_fixtures_regression.py`) are currently marked as `xfail` because they capture known divergences between TS and Python engines that are being addressed.
 
 ---
 
-_Generated: 2025-12-07_
+_Generated: 2025-12-10_
