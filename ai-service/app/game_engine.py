@@ -2967,9 +2967,15 @@ class GameEngine:
             (p for p in game_state.players if p.player_number == move.player),
             None,
         )
-        if not player or player.rings_in_hand < placement_count:
-            # No-op: cannot place rings the player doesn't have.
-            return
+        if not player:
+            raise ValueError(
+                f"Cannot place ring - player {move.player} not found in game state"
+            )
+        if player.rings_in_hand < placement_count:
+            raise ValueError(
+                f"Cannot place ring - player {move.player} has {player.rings_in_hand} "
+                f"rings in hand but tried to place {placement_count}"
+            )
 
         existing = board.stacks.get(pos_key)
         zobrist = ZobristHash()
