@@ -415,19 +415,19 @@ class PreflightChecker:
 
             net = RingRiftCNN_v2(board_size=8)
             # Create dummy input: batch=1, channels=40 (10*4), 8x8 board
-            # Plus global features (10)
+            # Plus global features (20) - must match model's global_features parameter
             batch_size = 2
             in_channels = net.total_in_channels  # 40 by default
             dummy_spatial = torch.randn(batch_size, in_channels, 8, 8)
-            dummy_global = torch.randn(batch_size, 10)
+            dummy_global = torch.randn(batch_size, net.global_features)
 
             with torch.no_grad():
                 # Network returns (value, policy)
                 value, policy = net(dummy_spatial, dummy_global)
 
-            # Check output shapes
-            assert value.shape == (batch_size, 1), "Value shape mismatch"
-            assert policy.shape == (batch_size, 55000), "Policy shape mismatch"
+            # Check output shapes (multi-player value head)
+            assert value.shape == (batch_size, net.num_players), f"Value shape mismatch: {value.shape} != {(batch_size, net.num_players)}"
+            assert policy.shape == (batch_size, net.policy_size), f"Policy shape mismatch: {policy.shape} != {(batch_size, net.policy_size)}"
 
             # Check for NaN
             assert not torch.isnan(value).any(), "Value contains NaN"
@@ -859,7 +859,7 @@ class PreflightChecker:
             batch_size = 4
             in_channels = net.total_in_channels
             dummy_spatial = torch.randn(batch_size, in_channels, 8, 8)
-            dummy_global = torch.randn(batch_size, 10)
+            dummy_global = torch.randn(batch_size, net.global_features)
             target_value = torch.randn(batch_size, 1)
 
             # Forward pass

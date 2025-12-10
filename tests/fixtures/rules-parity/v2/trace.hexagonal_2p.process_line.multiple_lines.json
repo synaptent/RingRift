@@ -160,6 +160,7 @@
         "id": "fixture-hexagonal-2p-process-line-multiple",
         "type": "process_line",
         "player": 1,
+        "lineIndex": 1,
         "to": {
           "x": 0,
           "y": 1,

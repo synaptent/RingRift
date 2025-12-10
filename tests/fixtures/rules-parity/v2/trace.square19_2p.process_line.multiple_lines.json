@@ -148,6 +148,7 @@
         "id": "fixture-square19-2p-process-line-multiple",
         "type": "process_line",
         "player": 1,
+        "lineIndex": 1,
         "to": {
           "x": 9,
           "y": 8
