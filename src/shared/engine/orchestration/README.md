@@ -35,8 +35,51 @@ processTurn(state, move)
 ## Key Files
 
 - **turnOrchestrator.ts** - Main `processTurn` and `processTurnAsync` entry points
-- **phaseStateMachine.ts** - Manages game phase transitions
+- **phaseStateMachine.ts** - Manages game phase transitions (deprecated, being replaced by FSM)
 - **types.ts** - Type definitions for orchestration layer
+- **../fsm/FSMAdapter.ts** - FSM-based validation and orchestration (canonical)
+
+## FSM Integration
+
+The turn orchestrator uses FSM (Finite State Machine) as the **canonical** source for:
+
+1. **Move validation** - `validateMoveWithFSM()` validates moves per RR-CANON-R070/R075
+2. **Phase transitions** - `computeFSMOrchestration()` determines next phase and player
+3. **Decision timing** - FSM's `pendingDecisionType` drives when decisions are needed
+
+### Validation
+
+FSM validation is enforced in `processTurn`. The legacy `validateMove()` function is deprecated:
+
+```typescript
+// Preferred: Use FSM validation directly
+import { validateMoveWithFSM } from '../fsm';
+
+const result = validateMoveWithFSM(gameState, move);
+if (!result.valid) {
+  console.error('Invalid move:', result.reason, 'errorCode:', result.errorCode);
+}
+
+// Deprecated: Legacy validation (maintained for backward compatibility)
+import { validateMove } from './orchestration/turnOrchestrator';
+const validation = validateMove(gameState, proposedMove); // @deprecated
+```
+
+### FSMDecisionSurface
+
+`ProcessTurnResult` includes an optional `fsmDecisionSurface` field exposing raw FSM orchestration data:
+
+```typescript
+interface FSMDecisionSurface {
+  pendingDecisionType?: 'chain_capture' | 'line_order_required' | ...;
+  pendingLines?: Array<{ positions: Position[]; player?: number }>;
+  pendingRegions?: Array<{ positions: Position[]; eliminationsRequired?: number }>;
+  chainContinuations?: Array<{ target: Position }>;
+  forcedEliminationCount?: number;
+}
+```
+
+This is useful for advanced host implementations that need direct access to FSM data.
 
 ## Usage
 
@@ -135,6 +178,10 @@ interface ProcessTurnResult {
 
   // Processing metadata (timings, phases traversed, etc.)
   metadata: ProcessingMetadata;
+
+  // FSM-derived decision surface (for advanced host implementations)
+  // Contains raw FSM orchestration data for debugging or custom handling
+  fsmDecisionSurface?: FSMDecisionSurface;
 }
 ```
 
