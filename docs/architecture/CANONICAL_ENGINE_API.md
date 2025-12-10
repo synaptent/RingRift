@@ -657,6 +657,14 @@ interface ProcessTurnResult {
 
   /** Debug/diagnostic metadata (phases traversed, S-invariant, etc.) */
   metadata: ProcessingMetadata;
+
+  /**
+   * FSM-derived decision surface (optional, for advanced host implementations).
+   * Contains the raw FSM orchestration data for decisions.
+   * The `pendingDecision` field is derived from this surface.
+   * Hosts can use this for debugging or custom decision handling.
+   */
+  fsmDecisionSurface?: FSMDecisionSurface;
 }
 
 type DecisionType =
@@ -722,6 +730,59 @@ interface PendingDecision {
 > and territory-control victories, last-player-standing, and `game_completed` remain anchored
 > to `evaluateVictory(...)` in the shared engine; adapters may layer additional host-level
 > reasons without redefining rules.
+
+**FSM (Finite State Machine) Integration:**
+
+The orchestrator uses the FSM (`src/shared/engine/fsm/FSMAdapter.ts`) as the **canonical source** for:
+
+1. **Move validation** – `validateMoveWithFSM()` is the canonical validator used by `processTurn`. The legacy `validateMove()` function is deprecated.
+2. **Phase transitions** – `computeFSMOrchestration()` determines the next phase and player according to RR-CANON-R070/R071.
+3. **Decision timing** – FSM's `pendingDecisionType` drives when decisions are needed.
+
+```typescript
+// Preferred: Use FSM validation directly
+import { validateMoveWithFSM } from '@shared/engine/fsm';
+
+const result = validateMoveWithFSM(gameState, move);
+if (!result.valid) {
+  console.error('Invalid move:', result.reason, 'errorCode:', result.errorCode);
+}
+
+// Deprecated: Legacy validation (maintained for backward compatibility)
+import { validateMove } from './orchestration/turnOrchestrator';
+const validation = validateMove(gameState, proposedMove); // @deprecated
+```
+
+**FSMDecisionSurface type:**
+
+The `fsmDecisionSurface` field in `ProcessTurnResult` exposes raw FSM orchestration data for advanced host implementations:
+
+```typescript
+interface FSMDecisionSurface {
+  /** Type of pending decision if any */
+  pendingDecisionType?:
+    | 'chain_capture'
+    | 'line_order_required'
+    | 'no_line_action_required'
+    | 'region_order_required'
+    | 'no_territory_action_required'
+    | 'forced_elimination';
+
+  /** Detected lines for the current player (line_processing phase) */
+  pendingLines?: Array<{ positions: Position[]; player?: number }>;
+
+  /** Territory regions for the current player (territory_processing phase) */
+  pendingRegions?: Array<{ positions: Position[]; eliminationsRequired?: number }>;
+
+  /** Chain capture continuation targets (chain_capture phase) */
+  chainContinuations?: Array<{ target: Position }>;
+
+  /** Number of rings that must be eliminated (forced_elimination phase) */
+  forcedEliminationCount?: number;
+}
+```
+
+The `PendingDecision` interface (used by hosts) is derived from `FSMDecisionSurface` via the internal `derivePendingDecisionFromFSM()` helper. This separation allows FSM to be the authoritative source for decision timing while maintaining backward compatibility with existing host code.
 
 **Decision surfaces and PlayerChoice mapping:**
 

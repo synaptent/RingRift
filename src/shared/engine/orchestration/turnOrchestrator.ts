@@ -1559,6 +1559,9 @@ export function processTurn(
         moveNumber: state.moveHistory.length + 1,
       });
     } else {
+      const isTerritoryPhaseMove =
+        move.type === 'process_territory_region' || move.type === 'no_territory_action';
+
       // Handle game_over transition (e.g., from resign)
       if (fsmOrchResult.nextPhase === 'game_over') {
         finalState = {
@@ -1572,7 +1575,7 @@ export function processTurn(
               ? finalState.players.find((p) => p.playerNumber !== move.player)?.playerNumber
               : undefined,
         };
-      } else {
+      } else if (!isTerritoryPhaseMove) {
         // Map turn_end to ring_placement for next player
         const effectivePhase =
           fsmOrchResult.nextPhase === 'turn_end'
@@ -1589,7 +1592,9 @@ export function processTurn(
 
       // Phase 1: Use FSM decision surface as the canonical source for pending decisions.
       // Derive PendingDecision from FSM orchestration result.
-      const fsmDerivedDecision = derivePendingDecisionFromFSM(finalState, fsmOrchResult);
+      const fsmDerivedDecision = !isTerritoryPhaseMove
+        ? derivePendingDecisionFromFSM(finalState, fsmOrchResult)
+        : undefined;
 
       // Compare FSM-derived decision with legacy decision for debugging.
       // This comparison logging helps verify FSM decision parity during the transition.
