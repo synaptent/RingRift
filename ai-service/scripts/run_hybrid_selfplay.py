@@ -228,6 +228,7 @@ def run_hybrid_selfplay(
     total_time = 0.0
     wins_by_player = {i: 0 for i in range(1, num_players + 1)}
     draws = 0
+    victory_type_counts: Dict[str, int] = {}  # Track victory type distribution
     game_records = []
 
     games_file = os.path.join(output_dir, "games.jsonl")
@@ -322,6 +323,7 @@ def run_hybrid_selfplay(
 
             # Derive victory type per GAME_RECORD_SPEC.md
             victory_type = derive_victory_type(game_state, max_moves)
+            victory_type_counts[victory_type] = victory_type_counts.get(victory_type, 0) + 1
 
             record = {
                 "game_id": game_idx,

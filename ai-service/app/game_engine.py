@@ -1320,12 +1320,13 @@ class GameEngine:
         When ``STRICT_NO_MOVE_INVARIANT`` is enabled, any ACTIVE state must
         expose at least one legal action (interactive move **or** pending
         phase requirement) for ``current_player``, after accounting for the
-        defensive rotation used for fully-eliminated players.
+        defensive rotation used for temporarily eliminated players.
 
         Concretely:
-        - Fully eliminated players (no stacks and no rings in hand) are **not**
-          skipped; they still take turns and must record no-action/FE moves.
-          The ANM invariant is checked on the current_player as-is.
+        - Per RR-CANON-R201, players without turn-material (no stacks AND no
+          rings in hand) are "temporarily eliminated for turn rotation" and
+          are skipped. If current_player has no turn-material, we rotate to
+          the next player with turn-material via _end_turn.
         - For the resulting ``current_player``, if
           ``GameEngine.get_valid_moves(game_state, current_player)`` returns
           at least one move, the invariant holds.
