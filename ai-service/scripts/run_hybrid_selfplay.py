@@ -322,10 +322,29 @@ def run_hybrid_selfplay(
 
                 # Apply move (CPU - full rules)
                 game_state = GameEngine.apply_move(game_state, best_move)
-                moves_played.append({
+
+                # Record full move data for training
+                move_record = {
                     "type": best_move.type.value if hasattr(best_move.type, 'value') else str(best_move.type),
                     "player": best_move.player,
-                })
+                }
+                # Add position data if available
+                if hasattr(best_move, 'to') and best_move.to is not None:
+                    move_record["to"] = {"x": best_move.to.x, "y": best_move.to.y}
+                if hasattr(best_move, 'from_pos') and best_move.from_pos is not None:
+                    move_record["from"] = {"x": best_move.from_pos.x, "y": best_move.from_pos.y}
+                if hasattr(best_move, 'capture_target') and best_move.capture_target is not None:
+                    move_record["capture_target"] = {"x": best_move.capture_target.x, "y": best_move.capture_target.y}
+                # Add capture chain for multi-captures
+                if hasattr(best_move, 'capture_chain') and best_move.capture_chain:
+                    move_record["capture_chain"] = [{"x": p.x, "y": p.y} for p in best_move.capture_chain]
+                # Add line/territory data if present
+                if hasattr(best_move, 'formed_lines') and best_move.formed_lines:
+                    move_record["formed_lines"] = len(best_move.formed_lines)
+                if hasattr(best_move, 'claimed_territory') and best_move.claimed_territory:
+                    move_record["claimed_territory"] = len(best_move.claimed_territory)
+
+                moves_played.append(move_record)
                 move_count += 1
 
             game_time = time.time() - game_start
@@ -352,6 +371,7 @@ def run_hybrid_selfplay(
                 "move_count": move_count,
                 "status": game_state.game_status,
                 "victory_type": victory_type,
+                "moves": moves_played,  # Full move history for training
                 "game_time_seconds": game_time,
                 "timestamp": datetime.now().isoformat(),
             }
