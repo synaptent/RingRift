@@ -406,37 +406,6 @@ const PHASE_ORDER: GamePhase[] = [
 ];
 
 /**
- * Check if a player has turn-material (stacks or rings in hand).
- * Players without turn-material should be skipped during turn rotation.
- * This mirrors Python fsm._player_has_turn_material and TS turnLogic.ts skip logic.
- */
-function playerHasTurnMaterial(state: GameState, playerNumber: number): boolean {
-  const player = state.players.find((p) => p.playerNumber === playerNumber);
-  if (!player) return false;
-
-  // Check if player has rings in hand
-  if (player.ringsInHand > 0) return true;
-
-  // Check if player controls any stacks (has a stack with their color on top)
-  const stacks = state.board.stacks || [];
-  for (const stack of stacks) {
-    if (stack.controllingPlayer === playerNumber) return true;
-  }
-
-  return false;
-}
-
-/**
- * Get the next player number in round-robin order.
- */
-function getNextPlayerNumber(state: GameState, currentPlayer: number): number {
-  const players = state.players;
-  const currentIndex = players.findIndex((p) => p.playerNumber === currentPlayer);
-  const nextIndex = (currentIndex + 1) % players.length;
-  return players[nextIndex].playerNumber;
-}
-
-/**
  * Get the bookkeeping move type for a phase that has no recorded action.
  *
  * For movement, this consults the same phase-local movement surface used by
@@ -572,52 +541,6 @@ function synthesizeBookkeepingMoves(
           moveNumber: moveNumberBase + synthesized.length,
         });
       }
-    }
-
-    // After completing current player's turn, check if there are intermediate
-    // players without turn-material that Python would have skipped silently.
-    // We need to synthesize empty turns for them to match Python's behavior.
-    const numPlayers = currentState.players.length;
-    let nextPlayer = getNextPlayerNumber(currentState, currentPlayer);
-    let skipsAttempted = 0;
-
-    while (nextPlayer !== nextMove.player && skipsAttempted < numPlayers) {
-      if (!playerHasTurnMaterial(currentState, nextPlayer)) {
-        // This player has no turn-material and would be skipped by Python.
-        // Synthesize their entire empty turn (all phases with bookkeeping).
-        // Note: We use currentState which may not reflect the exact state after
-        // previous synthesized moves, but for turn-material checking this should
-        // be sufficient since turn-material only changes via actual moves.
-
-        // Determine starting phase per RR-CANON-R073:
-        // - ring_placement if ringsInHand > 0
-        // - movement if ringsInHand == 0
-        const playerData = currentState.players.find((p) => p.playerNumber === nextPlayer);
-        const hasRingsInHand = playerData && playerData.ringsInHand > 0;
-        const startPhaseIdx = hasRingsInHand ? 0 : 1; // 0 = ring_placement, 1 = movement
-
-        for (let phaseIdx = startPhaseIdx; phaseIdx < PHASE_ORDER.length; phaseIdx++) {
-          const phase = PHASE_ORDER[phaseIdx];
-          // Skip forced_elimination for players with no stacks
-          if (phase === 'forced_elimination') continue;
-
-          const bookkeepingType = getBookkeepingMoveType(phase, currentState, nextPlayer);
-          if (bookkeepingType) {
-            synthesized.push({
-              id: `synthesized-${bookkeepingType}-${moveNumberBase + synthesized.length}`,
-              type: bookkeepingType,
-              player: nextPlayer,
-              to: { x: 0, y: 0 },
-              timestamp: new Date(),
-              thinkTime: 0,
-              moveNumber: moveNumberBase + synthesized.length,
-            });
-          }
-        }
-      }
-      // Move to the next player in rotation
-      nextPlayer = getNextPlayerNumber(currentState, nextPlayer);
-      skipsAttempted++;
     }
   } else {
     // Same player - check if we need to bridge phases
@@ -828,6 +751,28 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
           moveType: move.type,
           currentPhase: currentState.currentPhase,
           reason: 'no_line_action is only valid in line_processing phase',
+        })
+      );
+      continue;
+    }
+
+    // Skip redundant no_movement_action moves recorded during phases where movement
+    // doesn't occur (e.g., territory_processing, line_processing). These are legacy
+    // recording artifacts from older Python versions.
+    if (
+      move.type === 'no_movement_action' &&
+      currentState.currentPhase !== 'movement' &&
+      currentState.currentPhase !== 'capture' &&
+      currentState.currentPhase !== 'chain_capture'
+    ) {
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({
+          kind: 'ts-replay-skip-redundant',
+          db_move_index: i,
+          moveType: move.type,
+          currentPhase: currentState.currentPhase,
+          reason: 'no_movement_action is only valid in movement/capture phases',
         })
       );
       continue;
