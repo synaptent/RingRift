@@ -256,27 +256,6 @@ export class RulesBackendFacade {
   }
 
   /**
-   * Internal helper: call the Python rules engine in shadow for the
-   * given pre-move GameState and canonical Move, then compare:
-   *
-   *   - validation verdicts
-   *   - post-move state hash
-   *   - S-invariant
-   *   - gameStatus
-   *
-   * Discrepancies increment Prometheus counters and emit structured
-   * logs via logRulesMismatch.
-   */
-  private async runPythonShadow(
-    tsBefore: GameState,
-    move: Move,
-    tsResult: RulesResult
-  ): Promise<void> {
-    const py = await this.pythonClient.evaluateMove(tsBefore, move);
-    this.compareTsAndPython(tsResult, py);
-  }
-
-  /**
    * Expose a snapshot of Python-rules diagnostics for observability and
    * tests. The returned object is a shallow clone to prevent external
    * mutation of internal counters.
@@ -288,22 +267,14 @@ export class RulesBackendFacade {
   /**
    * Internal helper: compare a TS RulesResult against a Python
    * RulesEvalResponse and increment parity metrics / logs on mismatch.
-   *
-   * This is used both in TS-authoritative shadow mode and in
-   * python-authoritative mode (where TS runs in reverse shadow after a
-   * Python verdict).
+   * Used in python-authoritative mode to track parity.
    */
   private compareTsAndPython(tsResult: RulesResult, py: RulesEvalResponse): void {
     const tsValid = tsResult.success;
     const pyValid = py.valid;
 
     const mode = getRulesMode();
-    const suite =
-      mode === 'python'
-        ? 'runtime_python_mode'
-        : isRulesShadowMode()
-          ? 'runtime_shadow'
-          : 'runtime_ts';
+    const suite = mode === 'python' ? 'runtime_python_mode' : 'runtime_ts';
 
     if (tsValid !== pyValid) {
       rulesParityMetrics.validMismatch.inc();

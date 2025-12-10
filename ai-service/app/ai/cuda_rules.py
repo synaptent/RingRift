@@ -82,9 +82,9 @@ if CUDA_AVAILABLE:
         next_size = cuda.shared.array(1, dtype=int32)
         current_region = cuda.shared.array(1, dtype=int32)
 
-        game_idx = blockIdx.x
-        thread_idx = threadIdx.x
-        num_threads = blockDim.x
+        game_idx = cuda.blockIdx.x
+        thread_idx = cuda.threadIdx.x
+        num_threads = cuda.blockDim.x
         num_positions = board_size * board_size
 
         # Initialize
@@ -133,28 +133,58 @@ if CUDA_AVAILABLE:
                     x = pos % board_size
                     y = pos // board_size
 
-                    # Check 4 neighbors (up, down, left, right)
-                    neighbors = [
-                        (x - 1, y), (x + 1, y),
-                        (x, y - 1), (x, y + 1)
-                    ]
+                    # Check 4 neighbors explicitly (left, right, up, down)
+                    # Neighbor 0: left (x-1, y)
+                    nx, ny = x - 1, y
+                    if 0 <= nx < board_size and 0 <= ny < board_size:
+                        n_pos = ny * board_size + nx
+                        if (not visited[game_idx, n_pos] and
+                            not collapsed[game_idx, n_pos] and
+                            marker_owner[game_idx, n_pos] != border_player):
+                            old_idx = cuda.atomic.add(next_size, 0, 1)
+                            if old_idx < 64:
+                                next_frontier[old_idx] = n_pos
+                                visited[game_idx, n_pos] = True
+                                region_id[game_idx, n_pos] = current_region[0]
 
-                    for nx, ny in neighbors:
-                        if 0 <= nx < board_size and 0 <= ny < board_size:
-                            n_pos = ny * board_size + nx
+                    # Neighbor 1: right (x+1, y)
+                    nx, ny = x + 1, y
+                    if 0 <= nx < board_size and 0 <= ny < board_size:
+                        n_pos = ny * board_size + nx
+                        if (not visited[game_idx, n_pos] and
+                            not collapsed[game_idx, n_pos] and
+                            marker_owner[game_idx, n_pos] != border_player):
+                            old_idx = cuda.atomic.add(next_size, 0, 1)
+                            if old_idx < 64:
+                                next_frontier[old_idx] = n_pos
+                                visited[game_idx, n_pos] = True
+                                region_id[game_idx, n_pos] = current_region[0]
 
-                            # Check if neighbor is valid to expand to
-                            if (not visited[game_idx, n_pos] and
-                                not collapsed[game_idx, n_pos] and
-                                marker_owner[game_idx, n_pos] != border_player):
+                    # Neighbor 2: up (x, y-1)
+                    nx, ny = x, y - 1
+                    if 0 <= nx < board_size and 0 <= ny < board_size:
+                        n_pos = ny * board_size + nx
+                        if (not visited[game_idx, n_pos] and
+                            not collapsed[game_idx, n_pos] and
+                            marker_owner[game_idx, n_pos] != border_player):
+                            old_idx = cuda.atomic.add(next_size, 0, 1)
+                            if old_idx < 64:
+                                next_frontier[old_idx] = n_pos
+                                visited[game_idx, n_pos] = True
+                                region_id[game_idx, n_pos] = current_region[0]
 
-                                # Atomic add to next frontier
-                                # Use atomic operation to avoid race conditions
-                                old_idx = cuda.atomic.add(next_size, 0, 1)
-                                if old_idx < 64:  # Bounds check
-                                    next_frontier[old_idx] = n_pos
-                                    visited[game_idx, n_pos] = True
-                                    region_id[game_idx, n_pos] = current_region[0]
+                    # Neighbor 3: down (x, y+1)
+                    nx, ny = x, y + 1
+                    if 0 <= nx < board_size and 0 <= ny < board_size:
+                        n_pos = ny * board_size + nx
+                        if (not visited[game_idx, n_pos] and
+                            not collapsed[game_idx, n_pos] and
+                            marker_owner[game_idx, n_pos] != border_player):
+                            old_idx = cuda.atomic.add(next_size, 0, 1)
+                            if old_idx < 64:
+                                next_frontier[old_idx] = n_pos
+                                visited[game_idx, n_pos] = True
+                                region_id[game_idx, n_pos] = current_region[0]
 
                 cuda.syncthreads()
 
@@ -191,9 +221,9 @@ if CUDA_AVAILABLE:
         1. It's bounded only by player P's markers and board edges
         2. It contains no other players' markers
         """
-        game_idx = blockIdx.x
-        thread_idx = threadIdx.x
-        num_threads = blockDim.x
+        game_idx = cuda.blockIdx.x
+        thread_idx = cuda.threadIdx.x
+        num_threads = cuda.blockDim.x
         num_positions = board_size * board_size
 
         # Shared memory for region analysis
