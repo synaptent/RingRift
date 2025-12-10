@@ -10,6 +10,7 @@
 # Options:
 #   --merge           After syncing, merge all DBs into a single merged.db
 #   --to-mac-studio   Also sync merged DB to Mac Studio for training
+#   --to-lambda       Also sync merged DB to Lambda GPU for training
 #   --config FILE     Use custom config file (default: config/remote_hosts.yaml)
 #   --dry-run         Show what would be synced without actually syncing
 #   -h, --help        Show this help message
@@ -49,12 +50,14 @@ log_section() { echo -e "\n${CYAN}=== $1 ===${NC}"; }
 # Parse arguments
 DO_MERGE=false
 TO_MAC_STUDIO=false
+TO_LAMBDA=false
 DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --merge) DO_MERGE=true; shift ;;
         --to-mac-studio) TO_MAC_STUDIO=true; shift ;;
+        --to-lambda) TO_LAMBDA=true; shift ;;
         --config) CONFIG_FILE="$2"; shift 2 ;;
         --dry-run) DRY_RUN=true; shift ;;
         --help|-h)
@@ -357,6 +360,19 @@ if [[ "$DO_MERGE" == "true" ]]; then
                 log_success "Synced to Mac Studio"
             else
                 log_error "Failed to sync to Mac Studio"
+            fi
+        fi
+
+        # Optionally sync to Lambda GPU (ubuntu@209.20.157.81)
+        if [[ "$TO_LAMBDA" == "true" ]]; then
+            log_section "Syncing to Lambda GPU"
+            if [[ "$DRY_RUN" == "true" ]]; then
+                echo "[DRY-RUN] rsync -avz $MERGED_DB ubuntu@209.20.157.81:~/ringrift/ai-service/data/games/"
+            elif rsync -avz --progress "$MERGED_DB" \
+                ubuntu@209.20.157.81:~/ringrift/ai-service/data/games/; then
+                log_success "Synced to Lambda GPU"
+            else
+                log_error "Failed to sync to Lambda GPU"
             fi
         fi
     else

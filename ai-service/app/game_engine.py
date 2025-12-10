@@ -3909,13 +3909,11 @@ class GameEngine:
                 f"Cannot apply forced elimination - no stack at {pos.to_key()} "
                 f"for player {move.player}"
             )
-        if stack.cap_height <= 0:
-            raise ValueError(
-                f"Cannot apply forced elimination - stack at {pos.to_key()} has "
-                f"cap_height {stack.cap_height} <= 0 for player {move.player}"
-            )
-
-        cap_height = stack.cap_height
+        # Per TS parity (globalActions.ts line 458): use max(1, cap_height) to
+        # handle degenerate legacy states where cap_height metadata is 0 or
+        # missing but the stack has rings. This matches:
+        #   eliminatedRings: [{ player, count: Math.max(1, chosenStack.capHeight || 0) }]
+        cap_height = max(1, stack.cap_height or 0)
         for _ in range(cap_height):
             GameEngine._eliminate_top_ring_at(
                 game_state,
