@@ -4,51 +4,10 @@
   "initialState": {
     "boardType": "square8",
     "id": "rules-parity-square8-2p",
-    "rngSeed": 857804475,
+    "rngSeed": 128989956,
     "board": {
       "stacks": {},
-      "markers": {
-        "0,0": {
-          "player": 1,
-          "position": {
-            "x": 0,
-            "y": 0
-          },
-          "type": "regular"
-        },
-        "0,1": {
-          "player": 1,
-          "position": {
-            "x": 0,
-            "y": 1
-          },
-          "type": "regular"
-        },
-        "0,2": {
-          "player": 1,
-          "position": {
-            "x": 0,
-            "y": 2
-          },
-          "type": "regular"
-        },
-        "0,3": {
-          "player": 1,
-          "position": {
-            "x": 0,
-            "y": 3
-          },
-          "type": "regular"
-        },
-        "0,4": {
-          "player": 1,
-          "position": {
-            "x": 0,
-            "y": 4
-          },
-          "type": "regular"
-        }
-      },
+      "markers": {},
       "collapsedSpaces": {},
       "territories": {},
       "formedLines": [
@@ -125,8 +84,8 @@
       "increment": 5,
       "type": "blitz"
     },
-    "createdAt": "2025-12-06T02:08:04.224Z",
-    "lastMoveAt": "2025-12-06T02:08:04.224Z",
+    "createdAt": "2025-12-10T12:35:21.370Z",
+    "lastMoveAt": "2025-12-10T12:35:21.370Z",
     "isRated": false,
     "maxPlayers": 2,
     "totalRingsInPlay": 0,
@@ -141,7 +100,6 @@
         "id": "fixture-square8-2p-choose-line-reward-collapse-all",
         "type": "choose_line_reward",
         "player": 1,
-        "lineIndex": 0,
         "to": {
           "x": 0,
           "y": 0
@@ -205,12 +163,8 @@
         "moveNumber": 1
       },
       "expected": {
-        "tsValid": true,
-        "tsStateHash": "1:line_processing:waiting#1:18:0:5|2:18:0:0###0,0:1|0,1:1|0,2:1|0,3:1|0,4:1",
-        "tsS": 5
-      },
-      "stateHash": "1:line_processing:waiting#1:18:0:5|2:18:0:0###0,0:1|0,1:1|0,2:1|0,3:1|0,4:1",
-      "sInvariant": 5
+        "tsValid": false
+      }
     }
   ]
 }

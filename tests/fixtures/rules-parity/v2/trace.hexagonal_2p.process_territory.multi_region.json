@@ -4,7 +4,7 @@
   "initialState": {
     "boardType": "hexagonal",
     "id": "rules-parity-hexagonal-2p-v2",
-    "rngSeed": 1353681029,
+    "rngSeed": 230781532,
     "board": {
       "stacks": {
         "7,7": {
@@ -83,7 +83,7 @@
         "1": 0,
         "2": 0
       },
-      "size": 11,
+      "size": 13,
       "type": "hexagonal"
     },
     "players": [
@@ -94,7 +94,7 @@
         "playerNumber": 1,
         "isReady": false,
         "timeRemaining": 600000,
-        "ringsInHand": 36,
+        "ringsInHand": 72,
         "eliminatedRings": 0,
         "territorySpaces": 0
       },
@@ -105,7 +105,7 @@
         "playerNumber": 2,
         "isReady": false,
         "timeRemaining": 600000,
-        "ringsInHand": 36,
+        "ringsInHand": 72,
         "eliminatedRings": 0,
         "territorySpaces": 0
       }
@@ -121,14 +121,14 @@
       "increment": 5,
       "type": "blitz"
     },
-    "createdAt": "2025-12-06T02:08:04.231Z",
-    "lastMoveAt": "2025-12-06T02:08:04.231Z",
+    "createdAt": "2025-12-10T12:35:21.388Z",
+    "lastMoveAt": "2025-12-10T12:35:21.388Z",
     "isRated": false,
     "maxPlayers": 2,
     "totalRingsInPlay": 0,
     "totalRingsEliminated": 0,
-    "victoryThreshold": 37,
-    "territoryVictoryThreshold": 166
+    "victoryThreshold": 73,
+    "territoryVictoryThreshold": 235
   },
   "steps": [
     {
@@ -163,10 +163,10 @@
       },
       "expected": {
         "tsValid": true,
-        "tsStateHash": "1:territory_processing:waiting#1:36:0:2|2:36:0:0#6,6:2:1:1|7,7:1:2:2##3,3:1|3,4:1",
+        "tsStateHash": "1:territory_processing:waiting#1:72:0:2|2:72:0:0#6,6:2:1:1|7,7:1:2:2##3,3:1|3,4:1",
         "tsS": 2
       },
-      "stateHash": "1:territory_processing:waiting#1:36:0:2|2:36:0:0#6,6:2:1:1|7,7:1:2:2##3,3:1|3,4:1",
+      "stateHash": "1:territory_processing:waiting#1:72:0:2|2:72:0:0#6,6:2:1:1|7,7:1:2:2##3,3:1|3,4:1",
       "sInvariant": 2
     }
   ]

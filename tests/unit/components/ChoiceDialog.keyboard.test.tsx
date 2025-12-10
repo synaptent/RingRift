@@ -185,4 +185,44 @@ describe('ChoiceDialog keyboard + cancel interactions', () => {
     expect(cancelFocusSpy).toHaveBeenCalled();
     cancelFocusSpy.mockRestore();
   });
+
+  it('resets focused option when the choice changes', async () => {
+    const { rerender } = render(
+      <ChoiceDialog
+        choice={lineOrderChoice}
+        choiceViewModel={undefined}
+        deadline={Date.now() + 12_000}
+        timeRemainingMs={12_000}
+        isServerCapped={false}
+        onSelectOption={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const options = screen.getAllByRole('option');
+
+    // Move focus to the second option via focus event (invokes onFocus handler).
+    await act(async () => {
+      fireEvent.focus(options[1]);
+    });
+    expect(options[1]).toHaveAttribute('aria-selected', 'true');
+
+    // Rerender with a new choice id should reset selection to first option.
+    const newChoice = { ...lineOrderChoice, id: 'choice-line-order-2' };
+    rerender(
+      <ChoiceDialog
+        choice={newChoice}
+        choiceViewModel={undefined}
+        deadline={Date.now() + 12_000}
+        timeRemainingMs={12_000}
+        isServerCapped={false}
+        onSelectOption={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    const newOptions = screen.getAllByRole('option');
+    expect(newOptions[0]).toHaveAttribute('aria-selected', 'true');
+  });
 });

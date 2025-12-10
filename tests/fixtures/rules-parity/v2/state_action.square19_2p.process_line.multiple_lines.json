@@ -6,99 +6,10 @@
   "state": {
     "boardType": "square19",
     "id": "rules-parity-square19-2p-v2",
-    "rngSeed": 1883725888,
+    "rngSeed": 1263553095,
     "board": {
       "stacks": {},
-      "markers": {
-        "8,9": {
-          "player": 1,
-          "position": {
-            "x": 8,
-            "y": 9
-          },
-          "type": "regular"
-        },
-        "9,9": {
-          "player": 1,
-          "position": {
-            "x": 9,
-            "y": 9
-          },
-          "type": "regular"
-        },
-        "10,9": {
-          "player": 1,
-          "position": {
-            "x": 10,
-            "y": 9
-          },
-          "type": "regular"
-        },
-        "11,9": {
-          "player": 1,
-          "position": {
-            "x": 11,
-            "y": 9
-          },
-          "type": "regular"
-        },
-        "9,8": {
-          "player": 1,
-          "position": {
-            "x": 9,
-            "y": 8
-          },
-          "type": "regular"
-        },
-        "9,10": {
-          "player": 1,
-          "position": {
-            "x": 9,
-            "y": 10
-          },
-          "type": "regular"
-        },
-        "9,11": {
-          "player": 1,
-          "position": {
-            "x": 9,
-            "y": 11
-          },
-          "type": "regular"
-        },
-        "5,5": {
-          "player": 2,
-          "position": {
-            "x": 5,
-            "y": 5
-          },
-          "type": "regular"
-        },
-        "6,6": {
-          "player": 2,
-          "position": {
-            "x": 6,
-            "y": 6
-          },
-          "type": "regular"
-        },
-        "7,7": {
-          "player": 2,
-          "position": {
-            "x": 7,
-            "y": 7
-          },
-          "type": "regular"
-        },
-        "8,8": {
-          "player": 2,
-          "position": {
-            "x": 8,
-            "y": 8
-          },
-          "type": "regular"
-        }
-      },
+      "markers": {},
       "collapsedSpaces": {},
       "territories": {},
       "formedLines": [
@@ -196,7 +107,7 @@
         "playerNumber": 1,
         "isReady": false,
         "timeRemaining": 600000,
-        "ringsInHand": 36,
+        "ringsInHand": 48,
         "eliminatedRings": 0,
         "territorySpaces": 0
       },
@@ -207,7 +118,7 @@
         "playerNumber": 2,
         "isReady": false,
         "timeRemaining": 600000,
-        "ringsInHand": 36,
+        "ringsInHand": 48,
         "eliminatedRings": 0,
         "territorySpaces": 0
       }
@@ -223,20 +134,19 @@
       "increment": 5,
       "type": "blitz"
     },
-    "createdAt": "2025-12-06T02:08:04.231Z",
-    "lastMoveAt": "2025-12-06T02:08:04.231Z",
+    "createdAt": "2025-12-10T12:35:21.388Z",
+    "lastMoveAt": "2025-12-10T12:35:21.388Z",
     "isRated": false,
     "maxPlayers": 2,
     "totalRingsInPlay": 0,
     "totalRingsEliminated": 0,
-    "victoryThreshold": 37,
+    "victoryThreshold": 49,
     "territoryVictoryThreshold": 181
   },
   "move": {
     "id": "fixture-square19-2p-process-line-multiple",
     "type": "process_line",
     "player": 1,
-    "lineIndex": 1,
     "to": {
       "x": 9,
       "y": 8
@@ -274,24 +184,11 @@
     "moveNumber": 1
   },
   "expected": {
-    "tsValid": true,
+    "tsValid": false,
     "tsValidation": {
-      "valid": true
-    },
-    "tsNext": {
-      "boardType": "square19",
-      "currentPhase": "line_processing",
-      "currentPlayer": 1,
-      "gameStatus": "waiting",
-      "totalRingsInPlay": 0,
-      "totalRingsEliminated": 0,
-      "victoryThreshold": 37,
-      "territoryVictoryThreshold": 181,
-      "markers": 0,
-      "collapsed": 4,
-      "eliminated": 0,
-      "S": 4,
-      "stateHash": "1:line_processing:waiting#1:36:0:4|2:36:0:0###9,10:1|9,11:1|9,8:1|9,9:1"
+      "valid": false,
+      "reason": "Line position does not have a marker on the board",
+      "code": "MISSING_MARKER"
     }
   }
 }

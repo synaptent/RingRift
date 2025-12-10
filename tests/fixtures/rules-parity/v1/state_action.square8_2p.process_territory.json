@@ -6,7 +6,7 @@
   "state": {
     "boardType": "square8",
     "id": "rules-parity-square8-2p",
-    "rngSeed": 857804475,
+    "rngSeed": 128989956,
     "board": {
       "stacks": {
         "7,7": {
@@ -77,8 +77,8 @@
       "increment": 5,
       "type": "blitz"
     },
-    "createdAt": "2025-12-06T02:08:04.224Z",
-    "lastMoveAt": "2025-12-06T02:08:04.224Z",
+    "createdAt": "2025-12-10T12:35:21.370Z",
+    "lastMoveAt": "2025-12-10T12:35:21.370Z",
     "isRated": false,
     "maxPlayers": 2,
     "totalRingsInPlay": 0,
