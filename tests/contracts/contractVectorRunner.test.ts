@@ -7,6 +7,12 @@
  * These tests validate that the engine produces expected outputs for
  * well-defined input scenarios.
  *
+ * FSM Validation:
+ * - All contract vectors are validated through FSM (Finite State Machine)
+ * - FSM validation is active by default (RINGRIFT_FSM_VALIDATION_MODE=active)
+ * - Invalid phase-to-move combinations will be rejected by the FSM
+ * - See tests/setup-env.ts for FSM environment configuration
+ *
  * The same vectors can be run against the Python AI rules engine for
  * parity validation.
  */

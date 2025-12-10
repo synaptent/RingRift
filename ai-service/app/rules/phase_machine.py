@@ -3,6 +3,12 @@ from __future__ import annotations
 """
 Phase state machine for the Python GameEngine.
 
+.. deprecated::
+    This module is **deprecated** in favor of the FSM module (``app.rules.fsm``).
+    FSM is now the canonical game state orchestrator (RR-CANON compliance).
+    The ``advance_phases()`` function remains in use by ``GameEngine._update_phase()``
+    for backward compatibility, but new code should prefer ``compute_fsm_orchestration()``.
+
 This module centralises phase and turn transitions, mirroring the
 TypeScript phaseStateMachine + TurnOrchestrator behaviour:
 
@@ -15,6 +21,9 @@ TypeScript phaseStateMachine + TurnOrchestrator behaviour:
   phase requirements and constructed by hosts.
 
 All logic here operates directly on a mutable GameState instance.
+
+See Also:
+    :mod:`app.rules.fsm` - The canonical FSM module for phase transitions.
 """
 
 from dataclasses import dataclass
