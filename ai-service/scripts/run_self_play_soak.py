@@ -35,13 +35,13 @@ Example usage
 From ``ai-service/``::
 
     # 100 mixed-engine 2p games on square8, invariant enabled
+    # max-moves auto-derived: 400 for square8/2p, 2000 for hexagonal/2p
     RINGRIFT_STRICT_NO_MOVE_INVARIANT=1 \
     python scripts/run_self_play_soak.py \
         --num-games 100 \
         --board-type square8 \
         --engine-mode mixed \
         --num-players 2 \
-        --max-moves 400 \
         --seed 42 \
         --log-jsonl logs/selfplay/soak.square8_2p.mixed.jsonl \
         --summary-json logs/selfplay/soak.square8_2p.mixed.summary.json
@@ -52,7 +52,6 @@ From ``ai-service/``::
         --board-type square8 \
         --engine-mode descent-only \
         --num-players 3 \
-        --max-moves 500 \
         --seed 123
 """
 
@@ -473,7 +472,10 @@ def run_self_play_soak(
     board_type = _parse_board_type(args.board_type)
     num_games = args.num_games
     num_players = args.num_players
+    # Auto-derive max_moves from board type and player count if not specified
     max_moves = args.max_moves
+    if max_moves is None:
+        max_moves = get_theoretical_max_moves(board_type, num_players)
     engine_mode = args.engine_mode
     base_seed = args.seed
     difficulty_band = getattr(args, "difficulty_band", "canonical")
@@ -1856,9 +1858,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=400,
+        default=None,
         help=(
-            "Maximum moves per game before treating as a cutoff (default: 400). "
+            "Maximum moves per game before treating as a cutoff. If not specified, "
+            "uses the theoretical max for the board type and player count (e.g., "
+            "400 for square8/2p, 2000 for hexagonal/2p). "
             "Note: With canonical recording, each turn generates ~4-5 moves."
         ),
     )
