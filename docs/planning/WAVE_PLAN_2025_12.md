@@ -165,7 +165,7 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
 | LineAggregate.ts       | 85%+   | 83.44%   | P1       | ✅ Done (exceeds 70%)      |
 | FSMAdapter.ts          | 63%    | 59.49%   | P2       | ✅ Acceptable (45%→59.49%) |
 | testVectorGenerator.ts | 11%    | 0%       | P1       | Deferred (test utility)    |
-| weirdStateReasons.ts   | 52%    | 39%      | P1       |                            |
+| weirdStateReasons.ts   | 100%   | 100%     | P1       | ✅ Done (39%→100%)         |
 | PlacementAggregate.ts  | 73%    | 57%      | P2       |                            |
 | turnOrchestrator.ts    | 69%    | 66%      | P2       |                            |
 
