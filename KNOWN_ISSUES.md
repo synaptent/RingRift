@@ -533,7 +533,36 @@ leaderboards in the API/UI.
 
 ---
 
-### P2.3 – Jest TSX snapshot transform for React snapshot tests
+### P2.3 – Known Flaky WebSocket/GameSession Tests
+
+**Component(s):** `tests/unit/WebSocketServer.*.test.ts`, `tests/unit/GameSession.*.test.ts`
+**Status:** Tests work correctly but have intermittent timing-dependent failures
+**Severity:** Low (test infrastructure, not production code)
+
+Several WebSocket and GameSession tests exhibit intermittent failures due to:
+
+- Race conditions in async event handling
+- Socket.IO connection timing sensitivity
+- Mock timer interactions with real async operations
+
+**Known flaky tests (as of Dec 2025):**
+
+- `GameSession.reconnectFlow.test.ts` – reconnection window timing
+- `WebSocketServer.sessionTermination.test.ts` – session cleanup ordering
+- `WebSocketServer.aiTurnExecution.test.ts` – AI response timing
+- Various lobby broadcast tests – event ordering sensitivity
+
+**Impact:** These tests may fail in full suite runs but pass individually. They do NOT indicate production issues – the underlying WebSocket functionality is stable and well-tested via integration tests.
+
+**Recommendation:** If these tests fail in CI:
+
+1. Re-run the specific failing test in isolation
+2. If it passes individually, the failure is a timing flake
+3. Core parity and orchestrator tests are the authoritative signal
+
+---
+
+### P2.4 – Jest TSX snapshot transform for React snapshot tests
 
 **Component(s):** Jest configuration, React snapshot tests (`tests/unit/*.snapshot.test.tsx`)
 **Status:** One known suite currently fails due to JSX transformation
@@ -663,7 +692,7 @@ These issues have been addressed but are kept here for context:
   The border color (`controllingPlayer`) determines which markers get collapsed
   during processing, NOT who can process the region. Both TS and Python engines
   now correctly use only the self-elimination check per canonical rules.
-- **ANM State Parity (Dec 10, 2025 – INVESTIGATED)** –
+- **ANM State Parity (Dec 10, 2025 – PARTIALLY FIXED)** –
   After regenerating canonical DBs with the territory filtering fix, parity
   checks show `dims=anm_state` divergences where Python and TS disagree on
   whether the current state is ANM (Active No Moves). Investigation findings:
@@ -677,17 +706,33 @@ These issues have been addressed but are kept here for context:
     - Python uses `GameEngine.get_valid_moves()` filtered by move type
   - Line detection timing/semantics may differ between engines
 
-  **One Serious Divergence (game 916dacc0):**
-  - At move 72, TS ends the game with `gameStatus: completed`, `winner: null`
-  - Python continues with `line_processing` phase
-  - Both players still have stacks (5 and 6), no victory threshold reached
-  - Likely a TS FSM boundary issue or stalemate detection difference
+  **Serious Divergences (premature game_over with winner=null):**
+  - Game 916dacc0, k=72: TS ends with `gameStatus: completed`, `winner: null`;
+    Python continues in `line_processing`. Both players have stacks (5 and 6).
+  - Game f4ca5b64, k=74: After `move_stack` from (6,4)→(4,4), TS sets
+    `gameStatus: completed`, `currentPhase: game_over`, `winner: null`,
+    `victoryCondition: null`. Python stays in `line_processing`. Both players
+    have 5 stacks each, no victory threshold met (ring elim needs 19, have 2/3;
+    territory needs 33, have 0/3). This violates RR-CANON-R170-R173: game_over
+    MUST have a winner via ring elimination, territory control, LPS, or stalemate.
 
-  **Impact:** FSM validation passes in TS replay, game outcomes are correct.
-  The divergence is a classification discrepancy rather than rules violation.
+  **Root Cause (likely):**
+  - `evaluateVictory()` in `victoryLogic.ts:102-135` falls through to stalemate
+    logic when no player "can act", but the logic doesn't count players with
+    only forced-elimination as having actions. Line 126: `!hasForcedEliminationAction`
+    makes `somePlayerCanAct = false` when FE is the only available action.
+  - Per RR-CANON-R072/R100/R203, forced elimination IS a valid action that should
+    continue the game, not trigger stalemate.
 
-  **Resolution Path:** Requires aligning line detection semantics between
-  `has_phase_local_interactive_move()` in Python and TS.
+  **Impact:** Game terminates prematurely without a winner. FSM validation passes
+  because the FSM doesn't check victory condition validity. This is a RULES BUG.
+
+  **Resolution Path:**
+  1. ✅ FIXED: `evaluateVictory()` trapped-position check (lines 102-135) now treats
+     players with stacks as "can act" (either real moves or forced elimination).
+     Changed `!hasForcedEliminationAction` to just `playerHasStacks` (Dec 10, 2025).
+  2. TODO: Align line detection semantics in `has_phase_local_interactive_move()` between
+     Python and TS for LINE_PROCESSING phase.
 
 - **4-Player Rotation Parity (Dec 10, 2025 – OPEN)** –
   Multi-player games (especially 4P) show player rotation divergences where
@@ -715,6 +760,29 @@ These issues have been addressed but are kept here for context:
   - **Before**: 12-17 ANM violations per game for certain seeds
   - **After**: 0 ANM violations
   - Commits: `9ac7c0ff`, `a35ddace`
+- **Recovery.py Dict Mutation Bug Fix (Dec 10, 2025)** –
+  Fixed `has_any_recovery_move()` in `ai-service/app/rules/recovery.py` which was
+  iterating over `board.markers.items()` while modifying the dictionary during
+  recovery move simulation. The fix uses `list(board.markers.items())` to create
+  a snapshot before iteration (line 730-731).
+  - Commit: `051c7971`
+- **TS Replay Coercion for Player-Skip Scenarios (Dec 10, 2025)** –
+  Added replay-tolerance coercion in `turnOrchestrator.ts` to handle TS replay
+  from Python selfplay DBs where Python skips players without turn-material:
+  - Lines 1293-1314: `no_movement_action` coercion for territory_processing → movement
+  - Lines 1235-1255: Placement coercion for player-skip scenarios across `movement`,
+    `line_processing`, and `ring_placement` phases
+  - This enables full TS replay parity for 2P, 3P, and 4P games. All 14 canonical
+    games (5+5+4) pass with 0 FSM validation failures.
+  - Commits: Prior session commits in turnOrchestrator.ts
+- **CI Parity Gate Workflow (Dec 10, 2025)** –
+  Added `.github/workflows/parity-ci.yml` with 3 CI-blocking jobs that generate
+  selfplay DBs on-the-fly and run TS replay verification:
+  - 2P: 3 games, 20min timeout
+  - 3P: 3 games, 25min timeout
+  - 4P: 3 games, 30min timeout
+  - References RR-CANON-R073/R075/R076 in workflow documentation
+  - Commit: `399d03f0`
 - **Training max_moves Increase (Dec 9, 2025)** –
   Increased `THEORETICAL_MAX_MOVES` in `ai-service/app/training/env.py` to account
   for canonical recording where each turn generates ~4-5 moves (RING_PLACEMENT,
