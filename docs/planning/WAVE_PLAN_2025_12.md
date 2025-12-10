@@ -464,10 +464,12 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
 
 | Database                | Player Count | Total Games | Passing | FSM Warnings | Status |
 | ----------------------- | ------------ | ----------- | ------- | ------------ | ------ |
-| canonical_square8.db    | 2P           | 3           | 3       | 0-2/game     | ✅     |
-| canonical_square8_3p.db | 3P           | 3           | 3       | 0/game       | ✅     |
-| canonical_square8_4p.db | 4P           | 1           | 1       | 2/game       | ✅     |
-| **Total**               | **All**      | **7**       | **7**   | **N/A**      | ✅     |
+| canonical_square8.db    | 2P           | 5           | 5       | 0/game       | ✅     |
+| canonical_square8_3p.db | 3P           | 5           | 5       | 0/game       | ✅     |
+| canonical_square8_4p.db | 4P           | 4           | 4       | 0/game       | ✅     |
+| **Total**               | **All**      | **14**      | **14**  | **0**        | ✅     |
+
+**CI Integration:** Parity CI gate (`.github/workflows/parity-ci.yml`) generates fresh canonical DBs on-the-fly (3 games each for 2P/3P/4P) ensuring no stale DB issues. Games are validated against RR-CANON-R073/R075/R076 replay tolerance coercion.
 
 **Key Fixes Applied:**
 

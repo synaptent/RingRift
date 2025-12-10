@@ -4,19 +4,23 @@
 # code. It ensures that changes to the rules engine don't introduce semantic
 # divergences between the TypeScript and Python implementations.
 #
-# The check uses canonical databases (small, pre-verified databases) for fast
-# feedback:
+# The check generates fresh canonical databases on-the-fly (3 games each):
 #   - canonical_square8.db (2-player)
 #   - canonical_square8_3p.db (3-player)
 #   - canonical_square8_4p.db (4-player)
+#
+# This approach ensures:
+#   - Fresh games test the current codebase (no stale DB issues)
+#   - DBs are gitignored (not stored in repo)
+#   - Replay tolerance coercion is validated (RR-CANON-R073/R075/R076)
 #
 # The full parity healthcheck (contract vectors, plateau snapshots) runs as
 # part of the existing python-parity-healthcheck job in ci.yml.
 #
 # Related documentation:
+#   - RULES_CANONICAL_SPEC.md (canonical rules SSOT)
 #   - docs/PARITY_VERIFICATION_RUNBOOK.md
 #   - ai-service/TRAINING_DATA_REGISTRY.md
-#   - AGENTS.md (section 4)
 #
 # Exit codes:
 #   0 = All games pass parity
@@ -53,8 +57,8 @@ jobs:
   replay-parity-check:
     name: TS↔Python Replay Parity
     runs-on: ubuntu-latest
-    # CI Safety: Parity check with TS subprocess should complete within 15 minutes
-    timeout-minutes: 15
+    # CI Safety: Game generation + parity check should complete within 20 minutes
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -82,8 +86,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Generate canonical DB on-the-fly (gitignored, not stored in repo)
+      # This ensures fresh games are tested and avoids stale DB issues
+      - name: Generate canonical 2P games
+        working-directory: ai-service
+        env:
+          PYTHONPATH: '.'
+          RINGRIFT_SKIP_SHADOW_CONTRACTS: 'true'
+        run: |
+          mkdir -p data/games
+          python scripts/run_self_play_soak.py \
+            --board-type square8 \
+            --num-players 2 \
+            --num-games 3 \
+            --record-db data/games/canonical_square8.db \
+            --log-jsonl /tmp/canonical_2p.jsonl \
+            --engine-mode mixed \
+            --difficulty-band light
+
       # Run the replay parity check on canonical_square8.db
-      # This is the fastest canonical DB (~2MB, ~12 games)
       - name: Run TS↔Python replay parity check
         working-directory: ai-service
         env:
@@ -110,7 +131,8 @@ jobs:
   replay-parity-check-3p:
     name: TS↔Python Replay Parity (3-player)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 3P games take longer to generate
+    timeout-minutes: 25
 
     steps:
       - name: Checkout code
@@ -136,20 +158,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Generate canonical 3P DB on-the-fly
+      - name: Generate canonical 3P games
+        working-directory: ai-service
+        env:
+          PYTHONPATH: '.'
+          RINGRIFT_SKIP_SHADOW_CONTRACTS: 'true'
+        run: |
+          mkdir -p data/games
+          python scripts/run_self_play_soak.py \
+            --board-type square8 \
+            --num-players 3 \
+            --num-games 3 \
+            --record-db data/games/canonical_square8_3p.db \
+            --log-jsonl /tmp/canonical_3p.jsonl \
+            --engine-mode mixed \
+            --difficulty-band light
+
       - name: Run TS↔Python replay parity check (3-player)
         working-directory: ai-service
         env:
           PYTHONPATH: '.'
           TS_NODE_PROJECT: '../tsconfig.server.json'
         run: |
-          if [ -f data/games/canonical_square8_3p.db ]; then
-            python scripts/check_ts_python_replay_parity.py \
-              --db data/games/canonical_square8_3p.db \
-              --fail-on-divergence \
-              --summary-json results/parity_ci_3p_summary.json
-          else
-            echo "canonical_square8_3p.db not found, skipping 3-player parity check"
-          fi
+          python scripts/check_ts_python_replay_parity.py \
+            --db data/games/canonical_square8_3p.db \
+            --fail-on-divergence \
+            --summary-json results/parity_ci_3p_summary.json
 
       - name: Upload parity check summary (3-player)
         if: always()
@@ -164,7 +199,8 @@ jobs:
   replay-parity-check-4p:
     name: TS↔Python Replay Parity (4-player)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 4P games take longest to generate
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -190,20 +226,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # Generate canonical 4P DB on-the-fly
+      - name: Generate canonical 4P games
+        working-directory: ai-service
+        env:
+          PYTHONPATH: '.'
+          RINGRIFT_SKIP_SHADOW_CONTRACTS: 'true'
+        run: |
+          mkdir -p data/games
+          python scripts/run_self_play_soak.py \
+            --board-type square8 \
+            --num-players 4 \
+            --num-games 3 \
+            --record-db data/games/canonical_square8_4p.db \
+            --log-jsonl /tmp/canonical_4p.jsonl \
+            --engine-mode mixed \
+            --difficulty-band light
+
       - name: Run TS↔Python replay parity check (4-player)
         working-directory: ai-service
         env:
           PYTHONPATH: '.'
           TS_NODE_PROJECT: '../tsconfig.server.json'
         run: |
-          if [ -f data/games/canonical_square8_4p.db ]; then
-            python scripts/check_ts_python_replay_parity.py \
-              --db data/games/canonical_square8_4p.db \
-              --fail-on-divergence \
-              --summary-json results/parity_ci_4p_summary.json
-          else
-            echo "canonical_square8_4p.db not found, skipping 4-player parity check"
-          fi
+          python scripts/check_ts_python_replay_parity.py \
+            --db data/games/canonical_square8_4p.db \
+            --fail-on-divergence \
+            --summary-json results/parity_ci_4p_summary.json
 
       - name: Upload parity check summary (4-player)
         if: always()
