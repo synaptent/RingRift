@@ -2503,31 +2503,29 @@ function processPostMovePhases(
 
     if (phaseAfterTerritory === 'forced_elimination') {
       // Player had no actions in any phase this turn but still controls stacks.
-      // Only surface forced_elimination when it is the sole interactive option,
-      // matching the ANM/FE invariants used by Python.
-      const summary = computeGlobalLegalActionsSummary(stateMachine.gameState, currentPlayer);
-      if (
-        summary.hasTurnMaterial &&
-        summary.hasForcedEliminationAction &&
-        !summary.hasGlobalPlacementAction &&
-        !summary.hasPhaseLocalInteractiveMove
-      ) {
-        stateMachine.transitionTo('forced_elimination');
-        const forcedDecision = createForcedEliminationDecision(stateMachine.gameState);
-        if (forcedDecision && forcedDecision.options.length > 0) {
-          return {
-            pendingDecision: forcedDecision,
-          };
-        }
-        // If, unexpectedly, no concrete forced_elimination options could be
-        // constructed, remain in forced_elimination and let the caller drive
-        // the next move via getValidMoves()/processTurn. ANM guards below will
-        // still prevent leaking an unresolved ANM state.
-        return {};
+      // Per RR-CANON-R072/R100, enter forced_elimination when:
+      // 1. hadAnyActionThisTurn is false (no real actions: placement, movement, capture)
+      // 2. playerHasStacks is true (controls at least one stack)
+      //
+      // RR-PARITY-FIX-2024-12-10: Removed the additional summary checks that were
+      // blocking forced_elimination when the player still had rings in hand. The
+      // canonical rules (RR-CANON-R072) only require checking whether the player
+      // had any actions THIS TURN, not whether they could potentially place in
+      // the future. A player who did skip_placement (voluntary skip with rings
+      // in hand) and then had no movement/capture must enter forced_elimination,
+      // matching Python's _on_territory_processing_complete behavior.
+      stateMachine.transitionTo('forced_elimination');
+      const forcedDecision = createForcedEliminationDecision(stateMachine.gameState);
+      if (forcedDecision && forcedDecision.options.length > 0) {
+        return {
+          pendingDecision: forcedDecision,
+        };
       }
-      // Fallback: if summary indicates that forced_elimination is not actually
-      // available, treat this as a normal turn-end and fall through to the
-      // generic rotation logic below. Canonical states should not hit this path.
+      // If, unexpectedly, no concrete forced_elimination options could be
+      // constructed, remain in forced_elimination and let the caller drive
+      // the next move via getValidMoves()/processTurn. ANM guards below will
+      // still prevent leaking an unresolved ANM state.
+      return {};
     }
 
     // phaseAfterTerritory === 'turn_end' – either the player took at least one
