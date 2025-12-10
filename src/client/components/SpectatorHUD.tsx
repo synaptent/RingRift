@@ -26,6 +26,14 @@ export interface SpectatorHUDProps {
   onMoveSelect?: (moveIndex: number) => void;
   /** Number of spectators watching */
   spectatorCount?: number;
+  /** WebSocket connection status */
+  connectionStatus?: 'connected' | 'connecting' | 'reconnecting' | 'disconnected';
+  /** Active choice/decision being made (if any) */
+  activeChoice?: {
+    type: string;
+    playerNumber: number;
+    timeRemaining?: number;
+  };
   /** Additional CSS classes */
   className?: string;
 }
@@ -90,6 +98,35 @@ function getMoveAnnotation(move: Move, playerNumber: number): string {
   }
 }
 /**
+ * Get choice type display info
+ */
+function getChoiceDisplay(choiceType: string): { label: string; description: string } {
+  const choiceLabels: Record<string, { label: string; description: string }> = {
+    capture_direction: {
+      label: 'Capture Direction',
+      description: 'Choosing which direction to capture',
+    },
+    line_reward: {
+      label: 'Line Reward',
+      description: 'Selecting line formation reward',
+    },
+    territory_action: {
+      label: 'Territory',
+      description: 'Processing territory control',
+    },
+    collapse_option: {
+      label: 'Stack Collapse',
+      description: 'Choosing how to collapse stack',
+    },
+    elimination_choice: {
+      label: 'Elimination',
+      description: 'Selecting rings to eliminate',
+    },
+  };
+  return choiceLabels[choiceType] ?? { label: choiceType, description: 'Making a decision' };
+}
+
+/**
  * Dedicated HUD for spectators watching a game.
  * Shows enhanced game state, move annotations, and integrated analysis.
  */
@@ -104,6 +141,8 @@ export function SpectatorHUD({
   selectedMoveIndex,
   onMoveSelect,
   spectatorCount = 0,
+  connectionStatus = 'connected',
+  activeChoice,
   className = '',
 }: SpectatorHUDProps) {
   const [showAnalysis, setShowAnalysis] = useState(true);
@@ -145,12 +184,90 @@ export function SpectatorHUD({
         }
       : null;
 
+  // Connection status styling
+  const connectionStatusConfig = {
+    connected: { color: 'text-emerald-400', bg: 'bg-emerald-500', label: 'Live' },
+    connecting: { color: 'text-yellow-400', bg: 'bg-yellow-500', label: 'Connecting...' },
+    reconnecting: { color: 'text-amber-400', bg: 'bg-amber-500', label: 'Reconnecting...' },
+    disconnected: { color: 'text-red-400', bg: 'bg-red-500', label: 'Disconnected' },
+  };
+  const connConfig = connectionStatusConfig[connectionStatus];
+
+  // Active choice player info
+  const choicePlayer = activeChoice
+    ? players.find((p) => p.playerNumber === activeChoice.playerNumber)
+    : null;
+  const choicePlayerColors = activeChoice
+    ? (PLAYER_COLORS[activeChoice.playerNumber as keyof typeof PLAYER_COLORS] ?? {
+        ring: 'bg-slate-300',
+        hex: '#64748b',
+      })
+    : null;
+  const choiceDisplay = activeChoice ? getChoiceDisplay(activeChoice.type) : null;
+
   return (
     <div className={`space-y-3 ${className}`} data-testid="spectator-hud">
+      {/* Connection Status Banner (when not connected) */}
+      {connectionStatus !== 'connected' && (
+        <div
+          className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border ${
+            connectionStatus === 'disconnected'
+              ? 'border-red-500/40 bg-red-900/30'
+              : 'border-amber-500/40 bg-amber-900/30'
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className={`w-2 h-2 rounded-full ${connConfig.bg} animate-pulse`} />
+          <span className={`text-sm font-medium ${connConfig.color}`}>{connConfig.label}</span>
+        </div>
+      )}
+
+      {/* Active Choice/Decision Banner */}
+      {activeChoice && choiceDisplay && choicePlayerColors && (
+        <div
+          className="border border-amber-500/50 rounded-lg bg-amber-900/30 p-3 animate-pulse"
+          role="status"
+          aria-live="polite"
+          data-testid="spectator-choice-banner"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-3 h-3 rounded-full ${choicePlayerColors.ring}`}
+                aria-hidden="true"
+              />
+              <span className="text-sm font-semibold text-amber-100">
+                {choicePlayer?.username ?? `Player ${activeChoice.playerNumber}`}
+              </span>
+              <span className="text-xs text-amber-200/70">is deciding:</span>
+              <span className="text-sm font-medium text-amber-200">{choiceDisplay.label}</span>
+            </div>
+            {activeChoice.timeRemaining !== undefined && (
+              <span
+                className={`text-sm font-mono ${
+                  activeChoice.timeRemaining <= 10 ? 'text-red-400' : 'text-amber-300'
+                }`}
+              >
+                {activeChoice.timeRemaining}s
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-amber-200/60 mt-1">{choiceDisplay.description}</p>
+        </div>
+      )}
+
       {/* Spectator Mode Header */}
       <div className="border border-purple-500/40 rounded-lg bg-purple-900/30 p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
+            {/* Live indicator dot */}
+            {connectionStatus === 'connected' && (
+              <span className="relative flex h-2 w-2" aria-hidden="true">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+            )}
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"
@@ -167,11 +284,13 @@ export function SpectatorHUD({
             </svg>
             <span className="text-sm font-semibold text-purple-100">Spectator Mode</span>
           </div>
-          {spectatorCount > 0 && (
-            <span className="text-xs text-purple-200/70">
-              {spectatorCount} {spectatorCount === 1 ? 'viewer' : 'viewers'}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {spectatorCount > 0 && (
+              <span className="text-xs text-purple-200/70">
+                {spectatorCount} {spectatorCount === 1 ? 'viewer' : 'viewers'}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
