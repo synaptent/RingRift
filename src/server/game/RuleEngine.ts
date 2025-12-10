@@ -42,6 +42,7 @@ import {
   enumerateRecoverySlideTargets,
 } from '../../shared/engine';
 import { getMovementDirectionsForBoardType } from '../../shared/engine/core';
+import { validateMoveWithFSM } from '../../shared/engine/fsm/FSMAdapter';
 import { flagEnabled, debugLog } from '../../shared/utils/envFlags';
 import { BoardManager } from './BoardManager';
 
@@ -73,9 +74,20 @@ export class RuleEngine {
   }
 
   /**
-   * Validates a move according to RingRift rules
+   * Validates a move according to RingRift rules.
+   *
+   * @deprecated Use `validateMoveWithFSM` from `../../shared/engine/fsm/FSMAdapter`
+   * for canonical FSM-based validation per RR-CANON-R070. This method is maintained
+   * for backward compatibility but FSM validation is the authoritative validator.
    */
   validateMove(move: Move, gameState: GameState): boolean {
+    // Use FSM validation as the canonical source (RR-CANON-R070)
+    const fsmResult = validateMoveWithFSM(gameState, move);
+    if (!fsmResult.valid) {
+      return false;
+    }
+
+    // Legacy detailed validation kept for additional checks
     // Basic validation
     if (!this.isValidPlayer(move.player, gameState)) {
       return false;

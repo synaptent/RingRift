@@ -18,10 +18,10 @@ import { hashGameState } from '../../shared/engine';
 import type { GameEndExplanation } from '../../shared/engine/gameEndExplanation';
 import {
   processTurn,
-  validateMove,
   getValidMoves,
   type ProcessTurnOptions,
 } from '../../shared/engine/orchestration/turnOrchestrator';
+import { validateMoveWithFSM } from '../../shared/engine/fsm/FSMAdapter';
 import type {
   ProcessTurnResult,
   PendingDecision,
@@ -217,7 +217,7 @@ export class SandboxOrchestratorAdapter {
 
     try {
       // Validate the move first against the current state
-      const validation = validateMove(initialState, move);
+      const validation = validateMoveWithFSM(initialState, move);
       if (!validation.valid) {
         return {
           success: false,
@@ -471,7 +471,7 @@ export class SandboxOrchestratorAdapter {
     const hashBefore = hashGameState(state);
 
     try {
-      const validation = validateMove(state, move);
+      const validation = validateMoveWithFSM(state, move);
       if (!validation.valid) {
         return {
           success: false,
@@ -541,7 +541,7 @@ export class SandboxOrchestratorAdapter {
   } {
     const state = this.stateAccessor.getGameState();
 
-    const validation = validateMove(state, move);
+    const validation = validateMoveWithFSM(state, move);
     if (!validation.valid) {
       return {
         nextState: state,
@@ -565,10 +565,11 @@ export class SandboxOrchestratorAdapter {
 
   /**
    * Validate a move without applying it.
+   * Uses FSM validation as the canonical validator per RR-CANON-R070.
    */
   public validateMove(move: Move): { valid: boolean; reason?: string } {
     const state = this.stateAccessor.getGameState();
-    return validateMove(state, move);
+    return validateMoveWithFSM(state, move);
   }
 
   /**

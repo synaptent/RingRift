@@ -30,10 +30,10 @@ import type {
 } from '../../../shared/engine/orchestration/types';
 import {
   processTurnAsync,
-  validateMove,
   getValidMoves,
   hasValidMoves,
 } from '../../../shared/engine/orchestration/turnOrchestrator';
+import { validateMoveWithFSM } from '../../../shared/engine/fsm/FSMAdapter';
 import { flagEnabled } from '../../../shared/utils/envFlags';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -294,9 +294,10 @@ export class TurnEngineAdapter {
 
   /**
    * Validate a move without applying it.
+   * Uses FSM validation as the canonical validator per RR-CANON-R070.
    */
   validateMoveOnly(state: GameState, move: Move): { valid: boolean; reason: string | undefined } {
-    const result = validateMove(state, move);
+    const result = validateMoveWithFSM(state, move);
     return {
       valid: result.valid,
       reason: result.reason ?? undefined,
