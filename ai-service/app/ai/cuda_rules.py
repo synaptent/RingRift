@@ -43,7 +43,8 @@ except ImportError:
     logger.warning("PyTorch not available for CUDA rules")
 
 try:
-    from numba import cuda
+    import numba
+    from numba import cuda, int32, int8, boolean
     from numba.cuda import threadIdx, blockIdx, blockDim, gridDim
     from numba.cuda import shared, syncthreads
     import numba.cuda as cuda_module
@@ -75,11 +76,11 @@ if CUDA_AVAILABLE:
         """
         # Shared memory for current and next wavefront
         # Max 64 positions for 8x8 board
-        current_frontier = cuda.shared.array(64, dtype=numba.int32)
-        next_frontier = cuda.shared.array(64, dtype=numba.int32)
-        frontier_size = cuda.shared.array(1, dtype=numba.int32)
-        next_size = cuda.shared.array(1, dtype=numba.int32)
-        current_region = cuda.shared.array(1, dtype=numba.int32)
+        current_frontier = cuda.shared.array(64, dtype=int32)
+        next_frontier = cuda.shared.array(64, dtype=int32)
+        frontier_size = cuda.shared.array(1, dtype=int32)
+        next_size = cuda.shared.array(1, dtype=int32)
+        current_region = cuda.shared.array(1, dtype=int32)
 
         game_idx = blockIdx.x
         thread_idx = threadIdx.x
@@ -198,8 +199,8 @@ if CUDA_AVAILABLE:
         # Shared memory for region analysis
         # Track which players border each region
         max_regions = 64
-        region_borders = cuda.shared.array((64, 5), dtype=numba.bool_)  # region -> player borders
-        region_sizes = cuda.shared.array(64, dtype=numba.int32)
+        region_borders = cuda.shared.array((64, 5), dtype=boolean)  # region -> player borders
+        region_sizes = cuda.shared.array(64, dtype=int32)
 
         # Initialize
         for r in range(thread_idx, max_regions, num_threads):
