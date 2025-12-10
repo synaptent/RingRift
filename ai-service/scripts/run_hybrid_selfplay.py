@@ -56,7 +56,7 @@ def run_hybrid_selfplay(
     num_players: int = 2,
     num_games: int = 100,
     output_dir: str = "data/selfplay/hybrid",
-    max_moves: int = 500,
+    max_moves: int | None = None,  # Auto-calculated based on board type
     seed: int = 42,
     use_numba: bool = True,
 ) -> Dict[str, Any]:
@@ -89,6 +89,16 @@ def run_hybrid_selfplay(
     np.random.seed(seed)
 
     board_size = {"square8": 8, "square19": 19, "hex": 25}.get(board_type.lower(), 8)
+
+    # Auto-calculate max_moves based on board type if not specified
+    # Larger boards need more moves (multiple actions per turn are counted)
+    if max_moves is None:
+        max_moves_defaults = {
+            "square8": 500,    # 8x8 games typically complete in ~100-300 moves
+            "square19": 2500,  # 19x19 needs ~5x more headroom
+            "hex": 2500,       # Hex boards also need higher limits
+        }
+        max_moves = max_moves_defaults.get(board_type.lower(), 2500)
     board_type_enum = getattr(BoardType, board_type.upper(), BoardType.SQUARE8)
     device = get_device()
 
@@ -156,10 +166,12 @@ def run_hybrid_selfplay(
                             requirement, game_state
                         )
                         if best_move is None:
-                            # Failed to synthesize - break to avoid infinite loop
+                            # Failed to synthesize - check for endgame
+                            GameEngine._check_victory(game_state)
                             break
                     else:
-                        # No valid moves and no phase requirement - game should be over
+                        # No valid moves and no phase requirement - trigger victory check
+                        GameEngine._check_victory(game_state)
                         break
                 else:
                     # Evaluate moves (hybrid CPU/GPU)
@@ -416,8 +428,8 @@ def main():
     parser.add_argument(
         "--max-moves",
         type=int,
-        default=500,
-        help="Maximum moves per game",
+        default=None,
+        help="Maximum moves per game (default: 500 for square8, 2500 for square19/hex)",
     )
     parser.add_argument(
         "--output-dir",
