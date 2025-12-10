@@ -14,7 +14,7 @@
 import http from 'k6/http';
 import ws from 'k6/ws';
 import { check, sleep } from 'k6';
-import { Trend, Rate, Counter } from 'k6/metrics';
+import { Trend, Rate, Counter, Gauge } from 'k6/metrics';
 import { getValidToken, loginAndGetToken } from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
@@ -34,6 +34,8 @@ const wsErrorMoveRejected = new Counter('ws_error_move_rejected_total');
 const wsErrorAccessDenied = new Counter('ws_error_access_denied_total');
 const wsErrorInternalError = new Counter('ws_error_internal_error_total');
 const authTokenExpired = new Counter('auth_token_expired_total');
+
+const concurrentActiveGames = new Gauge('concurrent_active_games');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment configuration
@@ -57,7 +59,12 @@ const WS_URL = (() => {
 // legacy ENABLE_WS_GAMEPLAY_THROUGHPUT flag for compatibility.
 const MODE = (() => {
   const explicit = String(__ENV.WS_GAMEPLAY_MODE || '').toLowerCase();
-  if (explicit === 'smoke' || explicit === 'baseline' || explicit === 'throughput') {
+  if (
+    explicit === 'smoke' ||
+    explicit === 'baseline' ||
+    explicit === 'throughput' ||
+    explicit === 'target'
+  ) {
     return explicit;
   }
 
@@ -122,7 +129,7 @@ const baselineScenario = {
   gracefulRampDown: '30s',
 };
 
-// Throughput scenario is intended for higher-scale P-01 runs.
+ // Throughput scenario is intended for higher-scale P-01 runs.
 const throughputScenario = {
   executor: 'ramping-vus',
   startVUs: 0,
@@ -136,12 +143,29 @@ const throughputScenario = {
   gracefulRampDown: '1m',
 };
 
+// Target-scale scenario: align with target-scale.json (100 games / 300 players).
+const targetScenario = {
+  executor: 'ramping-vus',
+  startVUs: 0,
+  stages: [
+    { duration: '2m', target: 30 },
+    { duration: '5m', target: 150 },
+    { duration: '5m', target: 150 },
+    { duration: '5m', target: 300 },
+    { duration: '10m', target: 300 },
+    { duration: '3m', target: 0 },
+  ],
+  gracefulRampDown: '1m',
+};
+
 // Select scenarios based on MODE.
 const scenarios = {};
 if (MODE === 'baseline') {
   scenarios.websocket_gameplay_baseline = baselineScenario;
 } else if (MODE === 'throughput') {
   scenarios.websocket_gameplay_throughput = throughputScenario;
+} else if (MODE === 'target') {
+  scenarios.websocket_gameplay_target = targetScenario;
 } else {
   // Default to the original smoke profile for dev/CI.
   scenarios.websocket_gameplay_smoke = smokeScenario;
@@ -320,6 +344,21 @@ let myMovesInCurrentGame = 0;
 let myGameCreatedAt = 0;
 let gamesCompletedByVu = 0;
 let myLastObservedMoveNumberForPlayer = 0;
+let hasActiveGame = false;
+
+function markGameActive() {
+  if (!hasActiveGame) {
+    hasActiveGame = true;
+    concurrentActiveGames.add(1);
+  }
+}
+
+function markGameInactive() {
+  if (hasActiveGame) {
+    hasActiveGame = false;
+    concurrentActiveGames.add(-1);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main VU function
@@ -620,6 +659,7 @@ export default function (data) {
     myMovesInCurrentGame >= GAME_MAX_MOVES ||
     shouldRetireGame
   ) {
+    markGameInactive();
     console.log(
       `VU ${__VU}: Retiring game ${myGameId} after ${myMovesInCurrentGame} moves and ${Math.round(
         lifetimeMs / 1000
@@ -684,6 +724,10 @@ function handleGameStateMessage({
   const status = gameState.gameStatus;
   const isTerminal = TERMINAL_GAME_STATUSES.indexOf(status) !== -1;
   const now = Date.now();
+
+  if (!isTerminal) {
+    markGameActive();
+  }
 
   // Determine this user's player number within the game.
   if (myPlayerNumberInGame == null && Array.isArray(gameState.players)) {

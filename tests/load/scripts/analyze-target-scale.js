@@ -234,11 +234,15 @@ function calculateStatistics(metrics) {
         vusValues.length > 0
           ? vusValues.reduce((a, b) => a + b, 0) / vusValues.length
           : 0,
-      max_concurrent_games: concurrentGamesValues.length > 0 ? Math.max(...concurrentGamesValues) : 0,
+      max_concurrent_games:
+        concurrentGamesValues.length > 0 ? Math.max(...concurrentGamesValues) : 0,
       avg_concurrent_games:
         concurrentGamesValues.length > 0
           ? concurrentGamesValues.reduce((a, b) => a + b, 0) / concurrentGamesValues.length
           : 0,
+      // Explicit sample flags so callers can distinguish "metric missing" from "0".
+      has_concurrent_vus_samples: vusValues.length > 0,
+      has_concurrent_games_samples: concurrentGamesValues.length > 0,
     },
 
     throughput: {
@@ -269,25 +273,51 @@ function formatDuration(ms) {
  * Validate against target scale requirements
  */
 function validateTargetScale(stats) {
+  const hasConcurrentVusSamples =
+    typeof stats.capacity.has_concurrent_vus_samples === 'boolean'
+      ? stats.capacity.has_concurrent_vus_samples
+      : stats.capacity.max_concurrent_vus > 0;
+
+  const hasConcurrentGamesSamples =
+    typeof stats.capacity.has_concurrent_games_samples === 'boolean'
+      ? stats.capacity.has_concurrent_games_samples
+      : stats.capacity.max_concurrent_games > 0;
+
   const validation = {
     concurrent_players: {
       target: TARGET_SCALE.concurrent_players,
       actual: stats.capacity.max_concurrent_vus,
-      passed: stats.capacity.max_concurrent_vus >= TARGET_SCALE.concurrent_players,
+      passed:
+        hasConcurrentVusSamples &&
+        stats.capacity.max_concurrent_vus >= TARGET_SCALE.concurrent_players,
       margin_percent:
         ((stats.capacity.max_concurrent_vus - TARGET_SCALE.concurrent_players) /
           TARGET_SCALE.concurrent_players) *
         100,
+      has_samples: hasConcurrentVusSamples,
+      reason: hasConcurrentVusSamples
+        ? stats.capacity.max_concurrent_vus >= TARGET_SCALE.concurrent_players
+          ? 'target_met'
+          : 'target_not_met'
+        : 'missing_metric',
     },
 
     concurrent_games: {
       target: TARGET_SCALE.concurrent_games,
       actual: stats.capacity.max_concurrent_games,
-      passed: stats.capacity.max_concurrent_games >= TARGET_SCALE.concurrent_games,
+      passed:
+        hasConcurrentGamesSamples &&
+        stats.capacity.max_concurrent_games >= TARGET_SCALE.concurrent_games,
       margin_percent:
         ((stats.capacity.max_concurrent_games - TARGET_SCALE.concurrent_games) /
           TARGET_SCALE.concurrent_games) *
         100,
+      has_samples: hasConcurrentGamesSamples,
+      reason: hasConcurrentGamesSamples
+        ? stats.capacity.max_concurrent_games >= TARGET_SCALE.concurrent_games
+          ? 'target_met'
+          : 'target_not_met'
+        : 'missing_metric',
     },
 
     p95_latency: {
@@ -324,7 +354,12 @@ function validateTargetScale(stats) {
   };
 
   validation.all_passed = Object.values(validation)
-    .filter((v) => typeof v === 'object' && 'passed' in v)
+    .filter(
+      (v) =>
+        v &&
+        typeof v === 'object' &&
+        Object.prototype.hasOwnProperty.call(v, 'passed')
+    )
     .every((r) => r.passed);
 
   // Classify overall result
@@ -392,11 +427,21 @@ function printReport(stats, validation) {
       console.log('    → Ensure server can handle more connections.');
     }
     if (!validation.concurrent_games.passed) {
-      console.log(
-        `  • Concurrent games (${stats.capacity.max_concurrent_games}) did not reach target (${TARGET_SCALE.concurrent_games}).`
-      );
-      console.log('    → Check game creation rate and lifecycle.');
-      console.log('    → Investigate if games are being cleaned up too quickly.');
+      if (validation.concurrent_games.has_samples === false) {
+        console.log(
+          '  • concurrent_active_games metric was missing from k6 output; capacity analysis could not determine max concurrent games.'
+        );
+        console.log('    → Ensure the load scenario emits the concurrent_active_games gauge.');
+        console.log(
+          '    → Verify that the intended scenario (e.g. concurrent-games or websocket-gameplay) was actually executed.'
+        );
+      } else {
+        console.log(
+          `  • Concurrent games (${stats.capacity.max_concurrent_games}) did not reach target (${TARGET_SCALE.concurrent_games}).`
+        );
+        console.log('    → Check game creation rate and lifecycle.');
+        console.log('    → Investigate if games are being cleaned up too quickly.');
+      }
     }
     if (!validation.p95_latency.passed) {
       console.log(
@@ -466,12 +511,22 @@ function generateRecommendations(stats, validation) {
   }
 
   if (!validation.concurrent_games.passed) {
-    recommendations.push({
-      severity: 'high',
-      area: 'capacity',
-      target: 'concurrent_games',
-      message: `Max concurrent games (${stats.capacity.max_concurrent_games}) did not reach target (${TARGET_SCALE.concurrent_games}). Check game lifecycle and cleanup timing.`,
-    });
+    if (validation.concurrent_games.has_samples === false) {
+      recommendations.push({
+        severity: 'high',
+        area: 'capacity',
+        target: 'concurrent_games',
+        message:
+          'Metric concurrent_active_games was missing from k6 output; verify load harness instrumentation and that the intended scenario emitted this gauge.',
+      });
+    } else {
+      recommendations.push({
+        severity: 'high',
+        area: 'capacity',
+        target: 'concurrent_games',
+        message: `Max concurrent games (${stats.capacity.max_concurrent_games}) did not reach target (${TARGET_SCALE.concurrent_games}). Check game lifecycle and cleanup timing.`,
+      });
+    }
   }
 
   if (!validation.p95_latency.passed) {

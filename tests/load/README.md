@@ -332,18 +332,28 @@ This scenario is implemented in [`websocket-gameplay.js`](scenarios/websocket-ga
 **Usage Modes:**
 
 - **Smoke mode (dev/CI):**
-  - Enabled by default when `ENABLE_WS_GAMEPLAY_THROUGHPUT` is unset or false.
+  - Selected with `WS_GAMEPLAY_MODE=smoke` (or by leaving both `WS_GAMEPLAY_MODE` and `ENABLE_WS_GAMEPLAY_THROUGHPUT` unset).
   - Low VU count (1–2) and short duration.
   - Each VU plays a small number of human-vs-AI games to completion.
   - Intended as a quick sanity check that:
     - The canonical WebSocket move path (auth → game creation → WebSocket connect → `join_game` → `player_move_by_id`) is healthy.
     - [`websocket-gameplay.js`](scenarios/websocket-gameplay.js:1) is emitting the expected custom metrics.
 
+- **Baseline mode (staging baselines, 10–25 games):**
+  - Selected with `WS_GAMEPLAY_MODE=baseline`.
+  - Uses a ramped VU profile that clamps concurrent VUs into the 10–25 range.
+  - Intended for 10–25 game WebSocket gameplay baselines in staging (aligned with `load-test:baseline`).
+
 - **Throughput mode (staging/perf):**
-  - Enabled when `ENABLE_WS_GAMEPLAY_THROUGHPUT=true` (or `1`, `yes`, `on`) in the environment.
+  - Selected with `WS_GAMEPLAY_MODE=throughput`, or when `ENABLE_WS_GAMEPLAY_THROUGHPUT=true` (or `1`, `yes`, `on`) in the environment for legacy compatibility.
   - Higher VU counts (20–40) with a longer steady-state duration.
   - Each VU plays multiple short games, generating many overlapping move streams.
   - Intended for P‑01-style concurrency testing of WebSocket gameplay in staging or dedicated perf environments.
+
+- **Target-scale mode (~100 games / 300 players, perf/pre‑prod):**
+  - Selected with `WS_GAMEPLAY_MODE=target`.
+  - Uses a VU shape aligned with [`target-scale.json`](config/../configs/target-scale.json:1) (≈300 concurrent VUs at peak).
+  - Intended for explicit target-scale validation of WebSocket gameplay without changing default smoke/baseline runs.
 
 **Environment Variables:**
 
@@ -351,11 +361,12 @@ This scenario uses the same base variables as other WebSocket tests plus a few g
 
 - `BASE_URL` – HTTP base URL for API calls (for example `http://localhost:3000` or `http://localhost:3001` depending on how you run dev / Docker).
 - `WS_URL` – WebSocket base URL used to derive the `/socket.io` endpoint. When omitted, [`websocket-gameplay.js`](scenarios/websocket-gameplay.js:1) derives this from `BASE_URL` by swapping `http` → `ws` and `https` → `wss` (for example `ws://localhost:3000`).
+- `WS_GAMEPLAY_MODE` – Explicit mode selector: one of `smoke`, `baseline`, `throughput`, or `target`. When not set, the scenario defaults to `smoke`, unless `ENABLE_WS_GAMEPLAY_THROUGHPUT` is truthy (in which case it falls back to `throughput` for legacy flows).
 - Optional tuning:
   - `GAME_MAX_MOVES` – Maximum moves per game before the scenario retires it (default `40`).
   - `GAME_MAX_LIFETIME_S` – Maximum lifetime of a single game in seconds before forced retirement (default `600`).
-  - `VU_MAX_GAMES` – Maximum games per VU before it idles (default `3` in smoke mode, higher in throughput mode).
-  - `ENABLE_WS_GAMEPLAY_THROUGHPUT` – When set to a truthy value (for example `true`, `1`, `yes`, `on`), enables the throughput scenario alongside the default smoke configuration.
+  - `VU_MAX_GAMES` – Maximum games per VU before it idles (default `3` in smoke mode, higher in throughput/target modes).
+  - `ENABLE_WS_GAMEPLAY_THROUGHPUT` – Legacy boolean toggle. When set to a truthy value (for example `true`, `1`, `yes`, `on`) and `WS_GAMEPLAY_MODE` is not set, enables the throughput scenario alongside the default smoke configuration.
 
 **Example Commands:**
 
@@ -364,19 +375,40 @@ Smoke (local dev / CI, from the repository root):
 ```bash
 BASE_URL=http://localhost:3000 \
 WS_URL=ws://localhost:3000 \
+WS_GAMEPLAY_MODE=smoke \
 npx k6 run tests/load/scenarios/websocket-gameplay.js
 ```
 
-By default, only the smoke configuration is active; the throughput configuration remains disabled unless `ENABLE_WS_GAMEPLAY_THROUGHPUT` is set to a truthy value.
+Baseline (10–25 games, staging baseline run):
+
+```bash
+THRESHOLD_ENV=staging \
+RINGRIFT_ENV=staging \
+BASE_URL=http://localhost:3000 \
+WS_URL=ws://localhost:3000 \
+WS_GAMEPLAY_MODE=baseline \
+npx k6 run tests/load/scenarios/websocket-gameplay.js
+```
 
 Throughput (staging/perf):
 
 ```bash
 BASE_URL=https://staging-api.ringrift.example \
 WS_URL=wss://staging-ws.ringrift.example \
-ENABLE_WS_GAMEPLAY_THROUGHPUT=true \
+WS_GAMEPLAY_MODE=throughput \
 npx k6 run tests/load/scenarios/websocket-gameplay.js
 ```
+
+Target-scale WebSocket gameplay (~300 players / 100 games, perf/pre‑prod):
+
+```bash
+BASE_URL=https://perf-api.ringrift.example \
+WS_URL=wss://perf-ws.ringrift.example \
+WS_GAMEPLAY_MODE=target \
+npx k6 run tests/load/scenarios/websocket-gameplay.js
+```
+
+By default, only the smoke configuration is active; higher-intensity modes are enabled explicitly via `WS_GAMEPLAY_MODE` (preferred) or the legacy `ENABLE_WS_GAMEPLAY_THROUGHPUT` toggle.
 
 The concrete URLs and TLS configuration depend on your deployment topology (for example, whether WebSocket and HTTP traffic are served from the same origin). See [`DEPLOYMENT_REQUIREMENTS.md`](../../docs/DEPLOYMENT_REQUIREMENTS.md:1) and the topology notes in [`TOPOLOGY_MODES.md`](../../docs/architecture/TOPOLOGY_MODES.md:1) for environment-specific details.
 
