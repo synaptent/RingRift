@@ -10,7 +10,7 @@ Game records are the canonical format for storing completed games, supporting:
 Mirrors TypeScript types from src/shared/types/gameRecord.ts
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict, Tuple, Literal
 from enum import Enum
 from datetime import datetime
@@ -57,8 +57,7 @@ class PlayerRecordInfo(BaseModel):
     ai_difficulty: Optional[int] = Field(None, alias="aiDifficulty")
     ai_type: Optional[str] = Field(None, alias="aiType")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class MoveRecord(BaseModel):
@@ -94,9 +93,7 @@ class MoveRecord(BaseModel):
     # Optional RingRift Notation representation
     rrn: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
-        frozen = True
+    model_config = ConfigDict(populate_by_name=True, frozen=True)
 
     @classmethod
     def from_move(cls, move: Move) -> "MoveRecord":
@@ -133,8 +130,7 @@ class GameRecordMetadata(BaseModel):
     # - None: FSM validation not performed (legacy data)
     fsm_validated: Optional[bool] = Field(None, alias="fsmValidated")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FinalScore(BaseModel):
@@ -143,8 +139,7 @@ class FinalScore(BaseModel):
     territory_spaces: Dict[int, int] = Field(alias="territorySpaces")
     rings_remaining: Dict[int, int] = Field(alias="ringsRemaining")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class GameRecord(BaseModel):
@@ -198,8 +193,7 @@ class GameRecord(BaseModel):
         None, alias="progressSnapshots"
     )
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     def to_jsonl_line(self) -> str:
         """Serialize to a single JSONL line for training data pipelines."""
