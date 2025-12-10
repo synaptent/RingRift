@@ -35,7 +35,9 @@ import { getRematchService } from '../services/RematchService';
 import type {
   RematchRequestClientPayload,
   RematchResponseClientPayload,
+  MatchmakingJoinPayload,
 } from '../../shared/types/websocket';
+import { MatchmakingService } from '../services/MatchmakingService';
 
 /**
  * Extract only the keys from ServerToClientEvents that have defined (non-optional) handlers.
@@ -137,6 +139,7 @@ export class WebSocketServer {
   private gameRooms: Map<string, Set<string>> = new Map();
   private userSockets: Map<string, string> = new Map();
   private sessionManager: GameSessionManager;
+  private matchmakingService: MatchmakingService;
   private static LOBBY_ROOM = 'lobby';
 
   // Track users who have disconnected but might reconnect
@@ -180,6 +183,7 @@ export class WebSocketServer {
     });
 
     this.sessionManager = new GameSessionManager(this.io, this.userSockets);
+    this.matchmakingService = new MatchmakingService(this);
 
     this.setupMiddleware();
     this.setupEventHandlers();
@@ -356,6 +360,60 @@ export class WebSocketServer {
           socketId: socket.id,
           userId: socket.userId,
         });
+      });
+
+      // Matchmaking handlers
+      socket.on('matchmaking:join', async (data: unknown) => {
+        if (!socket.userId) {
+          const errorPayload: WebSocketErrorPayload = {
+            type: 'error',
+            code: 'ACCESS_DENIED',
+            event: 'matchmaking:join',
+            message: 'Authentication required to join matchmaking',
+          };
+          socket.emit('error', errorPayload);
+          return;
+        }
+
+        try {
+          const payload = data as MatchmakingJoinPayload;
+          // Get user rating from database
+          const prisma = getDatabaseClient();
+          const user = prisma
+            ? await prisma.user.findUnique({
+                where: { id: socket.userId },
+                select: { rating: true },
+              })
+            : null;
+
+          const rating = user?.rating ?? 1200;
+
+          this.matchmakingService.addToQueue(socket.userId, socket.id, payload.preferences, rating);
+
+          logger.info('User joined matchmaking queue', {
+            userId: socket.userId,
+            preferences: payload.preferences,
+          });
+        } catch (error) {
+          logger.error('Failed to join matchmaking queue', {
+            userId: socket.userId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          const errorPayload: WebSocketErrorPayload = {
+            type: 'error',
+            code: 'INTERNAL_ERROR',
+            event: 'matchmaking:join',
+            message: 'Failed to join matchmaking queue',
+          };
+          socket.emit('error', errorPayload);
+        }
+      });
+
+      socket.on('matchmaking:leave', () => {
+        if (socket.userId) {
+          this.matchmakingService.removeFromQueue(socket.userId);
+          logger.info('User left matchmaking queue', { userId: socket.userId });
+        }
       });
 
       // Handle player moves (geometry-based)
@@ -1223,6 +1281,11 @@ export class WebSocketServer {
       gameId: socket.gameId,
     });
 
+    // Remove from matchmaking queue if user was in queue
+    if (socket.userId) {
+      this.matchmakingService.removeFromQueue(socket.userId);
+    }
+
     // Remove from user socket mapping immediately
     // (will be re-added if they reconnect)
     if (socket.userId) {
@@ -1468,7 +1531,9 @@ export class WebSocketServer {
       for (const gameId of gameIds) {
         const session = this.sessionManager.getSession(gameId);
         // Check if session has terminate method (not part of public interface)
-        const sessionWithTerminate = session as typeof session & { terminate?: (reason: string) => void };
+        const sessionWithTerminate = session as typeof session & {
+          terminate?: (reason: string) => void;
+        };
         if (sessionWithTerminate && typeof sessionWithTerminate.terminate === 'function') {
           try {
             sessionWithTerminate.terminate('session_cleanup');

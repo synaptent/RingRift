@@ -43,6 +43,13 @@ export interface MatchFoundPayload {
 }
 
 /**
+ * Payload for joining the matchmaking queue.
+ */
+export interface MatchmakingJoinPayload {
+  preferences: MatchmakingPreferences;
+}
+
+/**
  * Error codes used in structured WebSocket error payloads.
  *
  * These are emitted by WebSocketServer and consumed by the client
@@ -514,6 +521,10 @@ export interface ClientToServerEvents {
   // Lobby subscription
   'lobby:subscribe': () => void;
   'lobby:unsubscribe': () => void;
+
+  // Matchmaking
+  'matchmaking:join': (payload: MatchmakingJoinPayload) => void;
+  'matchmaking:leave': () => void;
 }
 
 /**

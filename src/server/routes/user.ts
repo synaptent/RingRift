@@ -336,8 +336,21 @@ router.get(
     // Calculate win rate
     const winRate = user.gamesPlayed > 0 ? (user.gamesWon / user.gamesPlayed) * 100 : 0;
 
-    // Get rating history (placeholder - would need a separate table in production)
-    const ratingHistory = [{ date: new Date(), rating: user.rating }];
+    // Get rating history from database (last 30 entries)
+    const { history: ratingHistoryData } = await RatingService.getRatingHistory(userId, 30, 0);
+
+    // Map to expected format (date/rating for charting)
+    const ratingHistory = ratingHistoryData.map((entry) => ({
+      date: entry.timestamp,
+      rating: entry.newRating,
+      change: entry.change,
+      gameId: entry.gameId,
+    }));
+
+    // If no history yet, include current rating as starting point
+    if (ratingHistory.length === 0) {
+      ratingHistory.push({ date: new Date(), rating: user.rating, change: 0, gameId: null });
+    }
 
     const stats = {
       rating: user.rating,

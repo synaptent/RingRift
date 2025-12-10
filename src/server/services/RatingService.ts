@@ -312,6 +312,25 @@ export class RatingService {
             where: { id: player2Id },
             data: player2Data,
           }),
+          // Create rating history entries
+          prisma.ratingHistory.create({
+            data: {
+              userId: player1Id,
+              gameId: gameId,
+              oldRating: player1.rating,
+              newRating: newRating1,
+              change: newRating1 - player1.rating,
+            },
+          }),
+          prisma.ratingHistory.create({
+            data: {
+              userId: player2Id,
+              gameId: gameId,
+              oldRating: player2.rating,
+              newRating: newRating2,
+              change: newRating2 - player2.rating,
+            },
+          }),
         ]);
 
         results.push(
@@ -356,8 +375,8 @@ export class RatingService {
 
         const newRatings = this.calculateMultiplayerRatings(playersWithRanks);
 
-        // Build update transactions
-        const updates = players.map((player) => {
+        // Build update transactions for users
+        const userUpdates = players.map((player) => {
           const newRating = newRatings.get(player.id) ?? player.rating;
           const updateData: {
             rating: number;
@@ -376,7 +395,21 @@ export class RatingService {
           });
         });
 
-        await prisma.$transaction(updates);
+        // Build rating history entries
+        const historyCreates = players.map((player) => {
+          const newRating = newRatings.get(player.id) ?? player.rating;
+          return prisma.ratingHistory.create({
+            data: {
+              userId: player.id,
+              gameId: gameId,
+              oldRating: player.rating,
+              newRating: newRating,
+              change: newRating - player.rating,
+            },
+          });
+        });
+
+        await prisma.$transaction([...userUpdates, ...historyCreates]);
 
         // Build results
         for (const player of players) {
@@ -532,6 +565,63 @@ export class RatingService {
       });
     } catch (error) {
       logger.error('Failed to get leaderboard count', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get rating history for a player.
+   *
+   * @param userId ID of the user
+   * @param limit Maximum number of entries to return (default 30)
+   * @param offset Offset for pagination (default 0)
+   * @returns Rating history entries and total count
+   */
+  static async getRatingHistory(
+    userId: string,
+    limit: number = 30,
+    offset: number = 0
+  ): Promise<{
+    history: Array<{
+      id: string;
+      gameId: string | null;
+      oldRating: number;
+      newRating: number;
+      change: number;
+      timestamp: Date;
+    }>;
+    total: number;
+  }> {
+    const prisma = getDatabaseClient();
+    if (!prisma) {
+      throw new Error('Database not available');
+    }
+
+    try {
+      const [history, total] = await Promise.all([
+        prisma.ratingHistory.findMany({
+          where: { userId },
+          orderBy: { timestamp: 'desc' },
+          take: limit,
+          skip: offset,
+          select: {
+            id: true,
+            gameId: true,
+            oldRating: true,
+            newRating: true,
+            change: true,
+            timestamp: true,
+          },
+        }),
+        prisma.ratingHistory.count({ where: { userId } }),
+      ]);
+
+      return { history, total };
+    } catch (error) {
+      logger.error('Failed to get rating history', {
+        userId,
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;

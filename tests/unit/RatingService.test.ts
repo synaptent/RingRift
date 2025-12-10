@@ -337,6 +337,11 @@ describe('RatingService', () => {
           findMany: jest.fn(),
           update: jest.fn(),
         },
+        ratingHistory: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          count: jest.fn(),
+        },
         $transaction: jest.fn(),
       };
       (getDatabaseClient as jest.Mock).mockReturnValue(mockPrisma);
@@ -981,6 +986,11 @@ describe('RatingService', () => {
           findMany: jest.fn(),
           update: jest.fn(),
         },
+        ratingHistory: {
+          create: jest.fn(),
+          findMany: jest.fn(),
+          count: jest.fn(),
+        },
         $transaction: jest.fn(),
       };
       (getDatabaseClient as jest.Mock).mockReturnValue(mockPrisma);
@@ -1130,6 +1140,121 @@ describe('RatingService', () => {
         'Failed to get leaderboard count',
         expect.objectContaining({
           error: 'Count failed',
+        })
+      );
+    });
+  });
+
+  describe('getRatingHistory', () => {
+    let mockPrisma: any;
+
+    beforeEach(() => {
+      mockPrisma = {
+        ratingHistory: {
+          findMany: jest.fn(),
+          count: jest.fn(),
+        },
+      };
+      (getDatabaseClient as jest.Mock).mockReturnValue(mockPrisma);
+    });
+
+    it('should throw error when database is not available', async () => {
+      (getDatabaseClient as jest.Mock).mockReturnValue(null);
+
+      await expect(RatingService.getRatingHistory('user1')).rejects.toThrow(
+        'Database not available'
+      );
+    });
+
+    it('should return rating history entries for a user', async () => {
+      const mockHistory = [
+        {
+          id: 'entry1',
+          gameId: 'game1',
+          oldRating: 1200,
+          newRating: 1216,
+          change: 16,
+          timestamp: new Date('2025-01-01'),
+        },
+        {
+          id: 'entry2',
+          gameId: 'game2',
+          oldRating: 1216,
+          newRating: 1200,
+          change: -16,
+          timestamp: new Date('2025-01-02'),
+        },
+      ];
+      mockPrisma.ratingHistory.findMany.mockResolvedValue(mockHistory);
+      mockPrisma.ratingHistory.count.mockResolvedValue(2);
+
+      const result = await RatingService.getRatingHistory('user1');
+
+      expect(result.history).toEqual(mockHistory);
+      expect(result.total).toBe(2);
+    });
+
+    it('should apply limit and offset for pagination', async () => {
+      mockPrisma.ratingHistory.findMany.mockResolvedValue([]);
+      mockPrisma.ratingHistory.count.mockResolvedValue(0);
+
+      await RatingService.getRatingHistory('user1', 10, 5);
+
+      expect(mockPrisma.ratingHistory.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 10,
+          skip: 5,
+        })
+      );
+    });
+
+    it('should use default limit of 30 and offset of 0', async () => {
+      mockPrisma.ratingHistory.findMany.mockResolvedValue([]);
+      mockPrisma.ratingHistory.count.mockResolvedValue(0);
+
+      await RatingService.getRatingHistory('user1');
+
+      expect(mockPrisma.ratingHistory.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 30,
+          skip: 0,
+        })
+      );
+    });
+
+    it('should handle empty history', async () => {
+      mockPrisma.ratingHistory.findMany.mockResolvedValue([]);
+      mockPrisma.ratingHistory.count.mockResolvedValue(0);
+
+      const result = await RatingService.getRatingHistory('newuser');
+
+      expect(result.history).toEqual([]);
+      expect(result.total).toBe(0);
+    });
+
+    it('should log error and throw on database failure', async () => {
+      mockPrisma.ratingHistory.findMany.mockRejectedValue(new Error('Query failed'));
+
+      await expect(RatingService.getRatingHistory('user1')).rejects.toThrow('Query failed');
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to get rating history',
+        expect.objectContaining({
+          userId: 'user1',
+          error: 'Query failed',
+        })
+      );
+    });
+
+    it('should handle non-Error thrown in getRatingHistory catch block', async () => {
+      mockPrisma.ratingHistory.findMany.mockRejectedValue('String error');
+
+      await expect(RatingService.getRatingHistory('user1')).rejects.toBe('String error');
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'Failed to get rating history',
+        expect.objectContaining({
+          error: 'String error',
         })
       );
     });

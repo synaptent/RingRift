@@ -70,6 +70,7 @@ import {
   analyzeInvalidMove as analyzeInvalid,
 } from '../hooks/useInvalidMoveFeedback';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useGameSoundEffects } from '../hooks/useGameSoundEffects';
 import type { PlayerChoice } from '../../shared/types/game';
 import type {
   DecisionAutoResolvedMeta,
@@ -612,8 +613,17 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
 
   // Derived HUD state
   const currentPlayer = gameState?.players.find((p) => p.playerNumber === gameState.currentPlayer);
-  const isPlayer = !!gameState?.players.some((p) => p.id === user?.id);
+  const myPlayer = gameState?.players.find((p) => p.id === user?.id);
+  const isPlayer = !!myPlayer;
   const isMyTurn = currentPlayer?.id === user?.id;
+
+  // Sound effects for game events (phase changes, turns, moves, game end)
+  useGameSoundEffects({
+    gameState,
+    victoryState,
+    currentUserId: user?.id,
+    myPlayerNumber: myPlayer?.playerNumber,
+  });
   const isConnectionActive = connectionStatus === 'connected';
   const boardInteractionMessage = (() => {
     if (!isPlayer) {

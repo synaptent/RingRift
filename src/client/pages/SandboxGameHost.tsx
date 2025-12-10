@@ -64,6 +64,7 @@ import { useBoardOverlays } from '../hooks/useBoardViewProps';
 import { useSandboxPersistence } from '../hooks/useSandboxPersistence';
 import { useSandboxEvaluation } from '../hooks/useSandboxEvaluation';
 import { useSandboxScenarios, type LoadedScenario } from '../hooks/useSandboxScenarios';
+import { useGameSoundEffects } from '../hooks/useGameSoundEffects';
 
 const BOARD_PRESETS: Array<{
   value: BoardType;
@@ -1031,6 +1032,15 @@ export const SandboxGameHost: React.FC = () => {
     currentPlayerForAnnouncements?.username || `Player ${sandboxGameState?.currentPlayer ?? 1}`;
   // In sandbox, player 1 is typically the local human player
   const isLocalPlayerTurn = sandboxGameState?.currentPlayer === 1;
+
+  // Sound effects for game events (phase changes, turns, moves, game end)
+  // In sandbox mode, player 1 is the local human player
+  useGameSoundEffects({
+    gameState: sandboxGameState,
+    victoryState: sandboxVictoryResult,
+    currentUserId: undefined, // No user auth in sandbox
+    myPlayerNumber: 1, // Local human is always player 1 in sandbox
+  });
 
   // Map victory reason to the type expected by GameAnnouncements
   const mapVictoryCondition = (

@@ -43,6 +43,7 @@ model User {
   refreshTokens  RefreshToken[]
   chatMessages   ChatMessage[]
   rematchRequests RematchRequest[] @relation("RematchRequester")
+  ratingHistory  RatingHistory[]
 
   // Index for efficient soft-delete filtering queries
   @@index([deletedAt])
@@ -234,4 +235,20 @@ enum RematchRequestStatus {
   accepted
   declined
   expired
+}
+
+// Rating history for tracking player rating changes over time
+model RatingHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gameId    String?  // Reference to the game that caused this change (null for initial rating)
+  oldRating Int
+  newRating Int
+  change    Int      // newRating - oldRating
+  timestamp DateTime @default(now())
+
+  @@index([userId, timestamp])
+  @@index([gameId])
+  @@map("rating_history")
 }
