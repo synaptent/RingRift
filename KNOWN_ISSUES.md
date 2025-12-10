@@ -789,37 +789,30 @@ These issues have been addressed but are kept here for context:
   affected player had a `forced_elimination` move earlier but is still taking
   turns. Investigation pending; may be related to LPS rotation logic or ANM
   round tracking.
-- **LPS Victory Parity (Dec 10, 2025 – OPEN)** –
-  Round-based Last-Player-Standing (LPS) victory detection diverges between
-  Python and TS engines when stacks remain on the board:
+- **LPS Victory Parity (Dec 10, 2025 – FIXED)** –
+  Round-based Last-Player-Standing (LPS) victory detection was diverging between
+  Python and TS engines when stacks remain on the board.
 
   **Root Cause:**
   - Python implements full LPS tracking in `GameEngine._check_victory()` (lines
     935-1000 of `ai-service/app/game_engine.py`), using `lps_consecutive_exclusive_rounds`
     and `lps_consecutive_exclusive_player` state fields.
   - TypeScript has a complete `lpsTracking.ts` module with `evaluateLpsVictory()` but
-    the TS replay script uses `evaluateVictory()` from `victoryLogic.ts` which returns
-    `{ isGameOver: false }` at line 108 if `state.board.stacks.size > 0`, bypassing
+    the TS replay script was using only `evaluateVictory()` from `victoryLogic.ts` which
+    returns `{ isGameOver: false }` at line 108 if `state.board.stacks.size > 0`, bypassing
     round-based LPS entirely.
-  - The result: Python declares LPS victory after 3 consecutive rounds where one player
-    is the exclusive real-action holder, while TS continues the game.
+  - The result: Python declared LPS victory after 3 consecutive rounds where one player
+    is the exclusive real-action holder, while TS continued the game.
 
-  **Example Divergence (game 7ab05bd4-d850-4c90-a8e9-26dd53d7527c):**
-  - Python: `game_status: completed`, `current_phase: game_over`, winner=1 via LPS
-  - TS: `game_status: active`, `current_phase: territory_processing`
-  - Board states match exactly (7 stacks: P1=4, P2=3; identical rings/territory counts)
-  - State hashes differ due to gameStatus/currentPhase fields
-
-  **Impact:** Games that should end via LPS continue indefinitely in TS replay, causing
-  parity check failures. The canonical rules (RR-CANON-R172) specify that LPS victory
-  can occur while stacks remain on the board.
-
-  **Resolution Path:**
-  1. Integrate `evaluateLpsVictory()` from `lpsTracking.ts` into the TS replay script's
-     turn orchestration, matching the Python engine's LPS check timing.
-  2. Ensure TS `victoryLogic.ts` does not return early when stacks exist if LPS conditions
-     are met (requires passing LPS tracking state to `evaluateVictory()`).
-  3. Add parity test vectors specifically for LPS victory scenarios.
+  **Resolution (Dec 10, 2025):**
+  1. ✅ FIXED: Integrated `evaluateLpsVictory()` from `lpsTracking.ts` into the TS replay
+     script (`scripts/selfplay-db-ts-replay.ts`):
+     - Added LPS tracking state initialization before replay loop
+     - Added LPS tracking update after each move in interactive phases
+     - Extended final victory evaluation to check LPS victory alongside `evaluateVictory()`
+  2. LPS tracking now matches Python's behavior: round-based tracking with real-action
+     detection and 3-consecutive-round victory condition per RR-CANON-R172.
+  3. All 286 turn orchestrator and LPS tracking tests pass with the fix.
 
 - **Recording Format Enhancements Schema v6 (Dec 4, 2025)** –
   Enhanced game history entries with available moves enumeration and engine
@@ -918,6 +911,28 @@ These issues have been addressed but are kept here for context:
   test fixtures in `test_recovery_parity.py` and `recovery_action.vectors.json`
   to work with correct behavior. All 136 parity tests pass, all recovery
   contract vectors pass.
+
+- **TS Ring Array Convention Fix (Dec 10, 2025)** –
+  Fixed multiple TS code locations using incorrect ring array index convention.
+  Per `src/shared/types/game.ts:283`, `rings[0]` is the top/controlling ring,
+  not `rings[rings.length-1]`.
+
+  **Root Cause:** Several TS files used `slice(0,-1)` or `rings[rings.length-1]`
+  to exclude/access the top ring, which is backwards. The canonical convention
+  is `rings[0]` = top ring (controlling player).
+
+  **Fixes Applied (commit `8532116c`):**
+  - `RecoveryAggregate.ts`: Removed buggy local `calculateCapHeight()` function
+    that used `rings[rings.length-1]`; now imports from `core.ts`. Fixed two
+    buried ring checks from `slice(0,-1)` to `slice(1)`.
+  - `playerStateHelpers.ts`: Fixed `countBuriedRings()` loop to start at index 1
+    instead of 0, properly excluding the top ring.
+  - `turnOrchestrator.ts`: Fixed buried ring check from `slice(0,-1)` to `slice(1)`.
+    Added `recoveryMode` and `extractionStacks` propagation for Python replay.
+
+  **Impact:** Resolves "Player is not eligible for recovery action" parity
+  failures when replaying Python-generated games through TS engine. 4 of 5
+  fresh soak games now pass TS replay with 0 FSM validation failures.
 
 For a more narrative description of what works today vs what remains, see
 [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md).

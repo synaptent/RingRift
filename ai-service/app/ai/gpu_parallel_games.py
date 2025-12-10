@@ -25,7 +25,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import numpy as np
 import torch
@@ -81,12 +81,18 @@ class BatchGameState:
     rings_in_hand: torch.Tensor
     territory_count: torch.Tensor
     is_eliminated: torch.Tensor    # bool
+    eliminated_rings: torch.Tensor # Rings eliminated by this player
 
     # Game metadata: (batch_size,)
     current_player: torch.Tensor   # 1-4
     move_count: torch.Tensor
     game_status: torch.Tensor      # GameStatus enum
     winner: torch.Tensor           # 0=none, 1-4=player
+
+    # Move history: (batch_size, max_moves, 6) - [move_type, player, from_y, from_x, to_y, to_x]
+    # -1 indicates unused slot
+    move_history: torch.Tensor
+    max_history_moves: int
 
     # Configuration
     device: torch.device
@@ -101,6 +107,7 @@ class BatchGameState:
         board_size: int = 8,
         num_players: int = 2,
         device: Optional[torch.device] = None,
+        max_history_moves: int = 500,
     ) -> "BatchGameState":
         """Create a batch of initialized game states.
 
@@ -109,6 +116,7 @@ class BatchGameState:
             board_size: Board dimension (8, 19)
             num_players: Number of players (2-4)
             device: GPU device (auto-detected if None)
+            max_history_moves: Maximum moves to track in history
 
         Returns:
             Initialized BatchGameState with all games ready to start
@@ -126,6 +134,15 @@ class BatchGameState:
         rings = torch.zeros(shape_players, dtype=torch.int16, device=device)
         rings[:, 1:num_players+1] = starting_rings
 
+        # Move history: (batch_size, max_moves, 6) - [move_type, player, from_y, from_x, to_y, to_x]
+        # Initialize with -1 to indicate unused slots
+        move_history = torch.full(
+            (batch_size, max_history_moves, 6),
+            -1,
+            dtype=torch.int16,
+            device=device,
+        )
+
         return cls(
             stack_owner=torch.zeros(shape_board, dtype=torch.int8, device=device),
             stack_height=torch.zeros(shape_board, dtype=torch.int8, device=device),
@@ -135,10 +152,13 @@ class BatchGameState:
             rings_in_hand=rings,
             territory_count=torch.zeros(shape_players, dtype=torch.int16, device=device),
             is_eliminated=torch.zeros(shape_players, dtype=torch.bool, device=device),
+            eliminated_rings=torch.zeros(shape_players, dtype=torch.int16, device=device),
             current_player=torch.ones(batch_size, dtype=torch.int8, device=device),
             move_count=torch.zeros(batch_size, dtype=torch.int32, device=device),
             game_status=torch.zeros(batch_size, dtype=torch.int8, device=device),
             winner=torch.zeros(batch_size, dtype=torch.int8, device=device),
+            move_history=move_history,
+            max_history_moves=max_history_moves,
             device=device,
             batch_size=batch_size,
             board_size=board_size,
@@ -199,6 +219,135 @@ class BatchGameState:
             features[i, 13] = self.current_player[i].float() / self.num_players
 
         return features
+
+    def extract_move_history(self, game_idx: int) -> List[Dict[str, Any]]:
+        """Extract move history for a single game as list of dicts.
+
+        Args:
+            game_idx: Index of game in batch
+
+        Returns:
+            List of move dicts in format compatible with training data:
+            [{'type': str, 'player': int, 'to': {'x': int, 'y': int}, ...}, ...]
+        """
+        moves = []
+        num_moves = min(self.move_count[game_idx].item(), self.max_history_moves)
+
+        # Move type names for output
+        move_type_names = {
+            MoveType.PLACEMENT: "ring_placement",
+            MoveType.MOVEMENT: "movement",
+            MoveType.CAPTURE: "capture",
+            MoveType.LINE_FORMATION: "line_formation",
+            MoveType.TERRITORY_CLAIM: "territory_claim",
+            MoveType.SKIP: "skip",
+        }
+
+        for i in range(num_moves):
+            history_row = self.move_history[game_idx, i].cpu().tolist()
+            move_type_code, player, from_y, from_x, to_y, to_x = history_row
+
+            if move_type_code < 0:  # -1 indicates unused slot
+                break
+
+            move_dict = {
+                "type": move_type_names.get(move_type_code, f"unknown_{move_type_code}"),
+                "player": int(player),
+            }
+
+            # Add positions based on move type
+            if move_type_code == MoveType.PLACEMENT:
+                move_dict["to"] = {"x": int(to_x), "y": int(to_y)}
+            else:
+                if from_x >= 0 and from_y >= 0:
+                    move_dict["from"] = {"x": int(from_x), "y": int(from_y)}
+                if to_x >= 0 and to_y >= 0:
+                    move_dict["to"] = {"x": int(to_x), "y": int(to_y)}
+
+            moves.append(move_dict)
+
+        return moves
+
+    def derive_victory_type(self, game_idx: int, max_moves: int) -> Tuple[str, Optional[str]]:
+        """Derive victory type for a single game.
+
+        Based on final game state, determines the victory type following
+        GAME_RECORD_SPEC.md categories:
+        - ring_elimination: All opponents eliminated
+        - territory: Territory threshold reached
+        - timeout: Max moves reached (draw/stalemate)
+        - lps: No valid moves available
+        - stalemate: Draw by other means
+
+        Args:
+            game_idx: Index of game in batch
+            max_moves: Maximum moves limit used
+
+        Returns:
+            Tuple of (victory_type, stalemate_tiebreaker or None)
+        """
+        status = self.game_status[game_idx].item()
+        winner = self.winner[game_idx].item()
+        move_count = self.move_count[game_idx].item()
+
+        # Check for max moves reached
+        if status == GameStatus.MAX_MOVES or move_count >= max_moves:
+            if winner == 0:
+                return ("timeout", None)
+            # Winner by tiebreaker
+            return ("stalemate", self._determine_tiebreaker(game_idx))
+
+        # Check for draw
+        if status == GameStatus.DRAW or winner == 0:
+            return ("stalemate", self._determine_tiebreaker(game_idx))
+
+        # Check victory conditions
+        if winner > 0:
+            # Check territory victory threshold
+            victory_threshold = 33 if self.board_size == 8 else 100
+            if self.territory_count[game_idx, winner].item() >= victory_threshold:
+                return ("territory", None)
+
+            # Check if opponent has no stacks (elimination)
+            opponents_have_stacks = False
+            for p in range(1, self.num_players + 1):
+                if p != winner:
+                    if (self.stack_owner[game_idx] == p).any():
+                        opponents_have_stacks = True
+                        break
+
+            if not opponents_have_stacks:
+                return ("ring_elimination", None)
+
+            # Default to ring_elimination if winner but unclear reason
+            return ("ring_elimination", None)
+
+        return ("unknown", None)
+
+    def _determine_tiebreaker(self, game_idx: int) -> str:
+        """Determine tiebreaker used for stalemate/timeout games.
+
+        Returns one of: 'territory', 'eliminated_rings', 'markers', 'last_actor'
+        """
+        # Check if territory counts differ
+        territory_counts = self.territory_count[game_idx, 1:self.num_players+1].cpu().tolist()
+        if len(set(territory_counts)) > 1:
+            return "territory"
+
+        # Check eliminated rings
+        eliminated_counts = self.eliminated_rings[game_idx, 1:self.num_players+1].cpu().tolist()
+        if len(set(eliminated_counts)) > 1:
+            return "eliminated_rings"
+
+        # Check marker counts
+        marker_counts = []
+        for p in range(1, self.num_players + 1):
+            marker_counts.append((self.marker_owner[game_idx] == p).sum().item())
+        if len(set(marker_counts)) > 1:
+            return "markers"
+
+        # Default to last_actor
+        return "last_actor"
 
 
 # =============================================================================
@@ -322,6 +471,19 @@ def apply_placement_moves_batch(
         y = moves.from_y[global_idx].item()
         x = moves.from_x[global_idx].item()
         player = state.current_player[g].item()
+        move_type = moves.move_type[global_idx].item()
+
+        # Record move in history before incrementing move_count
+        move_idx = state.move_count[g].item()
+        if move_idx < state.max_history_moves:
+            # Format: [move_type, player, from_y, from_x, to_y, to_x]
+            # For placement, from and to are same position
+            state.move_history[g, move_idx, 0] = move_type
+            state.move_history[g, move_idx, 1] = player
+            state.move_history[g, move_idx, 2] = y
+            state.move_history[g, move_idx, 3] = x
+            state.move_history[g, move_idx, 4] = y  # to_y same as from for placement
+            state.move_history[g, move_idx, 5] = x  # to_x same as from for placement
 
         # Apply placement
         state.stack_owner[g, y, x] = player
@@ -512,10 +674,24 @@ class ParallelGameRunner:
         self._total_moves += self.state.move_count.sum().item()
         self._total_time += elapsed
 
+        # Extract move histories and victory types for each game
+        move_histories = []
+        victory_types = []
+        stalemate_tiebreakers = []
+
+        for g in range(self.batch_size):
+            move_histories.append(self.state.extract_move_history(g))
+            vtype, tiebreaker = self.state.derive_victory_type(g, max_moves)
+            victory_types.append(vtype)
+            stalemate_tiebreakers.append(tiebreaker)
+
         return {
             "winners": self.state.winner.cpu().tolist(),
             "move_counts": self.state.move_count.cpu().tolist(),
             "status": self.state.game_status.cpu().tolist(),
+            "move_histories": move_histories,
+            "victory_types": victory_types,
+            "stalemate_tiebreakers": stalemate_tiebreakers,
             "elapsed_seconds": elapsed,
             "games_per_second": self.batch_size / elapsed,
         }

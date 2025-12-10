@@ -40,7 +40,16 @@ import {
   hashGameStateSHA256,
   getEffectiveLineLengthThreshold,
   evaluateVictory,
+  hasAnyRealAction,
+  playerHasMaterial,
 } from '../src/shared/engine';
+import {
+  createLpsTrackingState,
+  updateLpsTracking,
+  evaluateLpsVictory,
+  isLpsActivePhase,
+  type LpsTrackingState,
+} from '../src/shared/engine/lpsTracking';
 import { serializeGameState } from '../src/shared/engine/contracts/serialization';
 import { validateMoveWithFSM, computeFSMOrchestration } from '../src/shared/engine/fsm/FSMAdapter';
 import { getValidMoves } from '../src/shared/engine/orchestration/turnOrchestrator';
@@ -724,6 +733,30 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
   // Track the last DB move index we've emitted a "complete" state for
   let lastEmittedDbMoveComplete = -1;
 
+  // LPS (Last-Player-Standing) tracking for R172 victory condition.
+  // This must be kept in sync across move applications to detect when one
+  // player has been the exclusive real-action holder for 3 consecutive rounds.
+  const lpsState = createLpsTrackingState();
+
+  // Helper to build action availability delegates for hasAnyRealAction
+  const buildActionDelegates = (state: GameState) => {
+    const validMoves = getValidMoves(state);
+    return {
+      hasPlacement: (pn: number) =>
+        validMoves.some(
+          (m) => m.player === pn && (m.type === 'place_ring' || m.type === 'skip_placement')
+        ),
+      hasMovement: (pn: number) =>
+        validMoves.some(
+          (m) =>
+            m.player === pn &&
+            (m.type === 'move_stack' || m.type === 'move_ring' || m.type === 'build_stack')
+        ),
+      hasCapture: (pn: number) =>
+        validMoves.some((m) => m.player === pn && m.type === 'overtaking_capture'),
+    };
+  };
+
   for (let i = 0; i < recordedMoves.length; i++) {
     const move = recordedMoves[i];
 
@@ -981,6 +1014,48 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
     const state = engine.getState();
 
+    // Update LPS tracking after each move for R172 victory condition.
+    // This must happen at interactive phase transitions when a player starts their turn.
+    const stateTyped = state as GameState;
+    if (isLpsActivePhase(stateTyped.currentPhase) && stateTyped.gameStatus === 'active') {
+      const activePlayers = stateTyped.players
+        .filter((p) => playerHasMaterial(stateTyped, p.playerNumber))
+        .map((p) => p.playerNumber);
+      const delegates = buildActionDelegates(stateTyped);
+      const hasReal = hasAnyRealAction(stateTyped, stateTyped.currentPlayer, delegates);
+
+      updateLpsTracking(lpsState, {
+        currentPlayer: stateTyped.currentPlayer,
+        activePlayers,
+        hasRealAction: hasReal,
+      });
+
+      // Check for LPS victory after updating tracking
+      const lpsResult = evaluateLpsVictory({
+        gameState: stateTyped,
+        lps: lpsState,
+        hasAnyRealAction: (pn) => hasAnyRealAction(stateTyped, pn, delegates),
+        hasMaterial: (pn) => playerHasMaterial(stateTyped, pn),
+      });
+
+      if (lpsResult.isVictory && lpsResult.winner !== undefined) {
+        // LPS victory detected - update the engine state to reflect game over
+        // This keeps parity with Python's LPS detection
+        console.log(
+          JSON.stringify({
+            kind: 'ts-replay-lps-victory',
+            k: applied,
+            winner: lpsResult.winner,
+            lpsState: {
+              consecutiveExclusiveRounds: lpsState.consecutiveExclusiveRounds,
+              consecutiveExclusivePlayer: lpsState.consecutiveExclusivePlayer,
+              roundIndex: lpsState.roundIndex,
+            },
+          })
+        );
+      }
+    }
+
     // FSM orchestration trace: compute what the FSM would do after this move
     // This provides action traces for parity analysis and debugging
     const fsmOrchestration = computeFSMOrchestration(state as GameState, move, {
@@ -1067,13 +1142,48 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
   // bare-board stalemate tie-breakers (territory → eliminated → markers →
   // last actor) are applied even when legacy logs omit a winner, and keeps
   // parity with the shared VictoryAggregate semantics.
+  //
+  // IMPORTANT: Also check LPS (Last-Player-Standing) victory (R172) since
+  // evaluateVictory() does not include round-based LPS detection. Python
+  // implements full LPS tracking and may declare victory when one player has
+  // been the exclusive real-action holder for 3 consecutive rounds.
   const verdict = evaluateVictory(engine.getState() as any);
   let finalState = engine.getState() as GameState;
-  if (verdict.isGameOver) {
+  let finalWinner: number | undefined = verdict.winner;
+  let finalIsGameOver = verdict.isGameOver;
+
+  // Check LPS victory if the base verdict didn't already end the game
+  if (!finalIsGameOver && finalState.gameStatus === 'active') {
+    const delegates = buildActionDelegates(finalState);
+    const lpsVerdict = evaluateLpsVictory({
+      gameState: finalState,
+      lps: lpsState,
+      hasAnyRealAction: (pn) => hasAnyRealAction(finalState, pn, delegates),
+      hasMaterial: (pn) => playerHasMaterial(finalState, pn),
+    });
+
+    if (lpsVerdict.isVictory && lpsVerdict.winner !== undefined) {
+      finalIsGameOver = true;
+      finalWinner = lpsVerdict.winner;
+      console.log(
+        JSON.stringify({
+          kind: 'ts-replay-lps-victory-final',
+          winner: lpsVerdict.winner,
+          lpsState: {
+            consecutiveExclusiveRounds: lpsState.consecutiveExclusiveRounds,
+            consecutiveExclusivePlayer: lpsState.consecutiveExclusivePlayer,
+            roundIndex: lpsState.roundIndex,
+          },
+        })
+      );
+    }
+  }
+
+  if (finalIsGameOver) {
     finalState = {
       ...finalState,
       gameStatus: 'completed',
-      winner: verdict.winner,
+      winner: finalWinner,
       currentPhase: 'game_over',
     };
   }
