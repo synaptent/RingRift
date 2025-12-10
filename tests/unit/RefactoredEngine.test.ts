@@ -526,10 +526,31 @@ describe('Refactored GameEngine', () => {
     });
 
     it('allows CHOOSE_LINE_REWARD MINIMUM_COLLAPSE for overlength lines and collapses only the chosen subset', () => {
-      initialState = createInitialGameState('choose-line-reward', 'square8', players, timeControl);
+      // Use 3 players so line length = 3 per RR-CANON-R120 (square8 2p uses line length 4)
+      const threePlayers: Player[] = [
+        { ...players[0] },
+        { ...players[1] },
+        {
+          id: 'p3',
+          username: 'Player 3',
+          type: 'human',
+          playerNumber: 3,
+          isReady: true,
+          timeRemaining: 600,
+          ringsInHand: 0,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+      ];
+      initialState = createInitialGameState(
+        'choose-line-reward',
+        'square8',
+        threePlayers,
+        timeControl
+      );
 
       // Set up a single overlength line for player 1 on row 0: 5 markers.
-      // For square8, lineLength = 3 (minimum), so this is an overlength line.
+      // For square8 3-player, lineLength = 3 (minimum), so this is an overlength line.
       const linePositions = [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
@@ -582,14 +603,30 @@ describe('Refactored GameEngine', () => {
     });
 
     it('rejects CHOOSE_LINE_REWARD MINIMUM_COLLAPSE when positions are non-consecutive', () => {
+      // Use 3 players so line length = 3 per RR-CANON-R120 (square8 2p uses line length 4)
+      const threePlayers: Player[] = [
+        { ...players[0] },
+        { ...players[1] },
+        {
+          id: 'p3',
+          username: 'Player 3',
+          type: 'human',
+          playerNumber: 3,
+          isReady: true,
+          timeRemaining: 600,
+          ringsInHand: 0,
+          eliminatedRings: 0,
+          territorySpaces: 0,
+        },
+      ];
       initialState = createInitialGameState(
         'choose-line-reward-invalid',
         'square8',
-        players,
+        threePlayers,
         timeControl
       );
 
-      // For square8, lineLength = 3. A 4-marker line is overlength,
+      // For square8 3-player, lineLength = 3. A 4-marker line is overlength,
       // so MINIMUM_COLLAPSE is a valid selection option.
       const linePositions = [
         { x: 0, y: 0 },
