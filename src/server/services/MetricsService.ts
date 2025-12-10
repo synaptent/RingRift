@@ -16,8 +16,6 @@
 import client, { Registry, Counter, Histogram, Gauge } from 'prom-client';
 import { logger } from '../utils/logger';
 import { DegradationLevel, ServiceName, ServiceHealthStatus } from './ServiceStatusManager';
-import { shadowComparator } from './ShadowModeComparator';
-import type { ShadowMetrics } from './ShadowModeComparator';
 import type { RulesUxEventPayload } from '../../shared/telemetry/rulesUxEvents';
 import type { DifficultyCalibrationEventPayload } from '../../shared/telemetry/difficultyCalibrationEvents';
 
@@ -238,31 +236,6 @@ export class MetricsService {
    *   'runtime_python_mode', 'contract_vectors_v2').
    */
   public readonly rulesParityMismatchesTotal: Counter<'mismatch_type' | 'suite'>;
-
-  // ===================
-  // Orchestrator Shadow Mode Metrics
-  // ===================
-
-  /** Gauge: Current number of shadow mode comparisons held in memory */
-  public readonly orchestratorShadowComparisonsCurrent: Gauge<string>;
-
-  /** Gauge: Current number of mismatches observed in shadow mode */
-  public readonly orchestratorShadowMismatchesCurrent: Gauge<string>;
-
-  /** Gauge: Current shadow mode mismatch rate (0.0–1.0) */
-  public readonly orchestratorShadowMismatchRate: Gauge<string>;
-
-  /** Gauge: Current number of orchestrator errors observed in shadow mode */
-  public readonly orchestratorShadowOrchestratorErrorsCurrent: Gauge<string>;
-
-  /** Gauge: Current orchestrator error rate in shadow mode (0.0–1.0) */
-  public readonly orchestratorShadowOrchestratorErrorRate: Gauge<string>;
-
-  /** Gauge: Average legacy engine latency in shadow comparisons (ms, rolling window) */
-  public readonly orchestratorShadowAvgLegacyLatencyMs: Gauge<string>;
-
-  /** Gauge: Average orchestrator latency in shadow comparisons (ms, rolling window) */
-  public readonly orchestratorShadowAvgOrchestratorLatencyMs: Gauge<string>;
 
   // ===================
   // Orchestrator Rollout Metrics
