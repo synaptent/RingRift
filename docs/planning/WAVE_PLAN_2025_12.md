@@ -157,17 +157,17 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
 
 **Coverage Analysis Results (shared engine) - Updated 2025-12-10:**
 
-| File                   | Lines  | Branches | Priority | Status                     |
-| ---------------------- | ------ | -------- | -------- | -------------------------- |
-| TerritoryAggregate.ts  | 92.35% | 78.64%   | P0       | ✅ Done (exceeds 70%)      |
-| TurnStateMachine.ts    | 89.44% | 82.47%   | P0       | ✅ Done (exceeds 80%)      |
-| validators.ts          | 97.58% | 81.81%   | P1       | ✅ Done (exceeds 50%)      |
-| LineAggregate.ts       | 85%+   | 83.44%   | P1       | ✅ Done (exceeds 70%)      |
-| FSMAdapter.ts          | 63%    | 59.49%   | P2       | ✅ Acceptable (45%→59.49%) |
-| testVectorGenerator.ts | 11%    | 0%       | P1       | Deferred (test utility)    |
-| weirdStateReasons.ts   | 100%   | 100%     | P1       | ✅ Done (39%→100%)         |
-| PlacementAggregate.ts  | 94.49% | 88.88%   | P2       | ✅ NO WORK NEEDED (>70%)   |
-| turnOrchestrator.ts    | 69%    | 66%      | P2       |                            |
+| File                   | Lines  | Branches | Priority | Status                      |
+| ---------------------- | ------ | -------- | -------- | --------------------------- |
+| TerritoryAggregate.ts  | 92.35% | 78.64%   | P0       | ✅ Done (exceeds 70%)       |
+| TurnStateMachine.ts    | 89.44% | 82.47%   | P0       | ✅ Done (exceeds 80%)       |
+| validators.ts          | 97.58% | 81.81%   | P1       | ✅ Done (exceeds 50%)       |
+| LineAggregate.ts       | 85%+   | 83.44%   | P1       | ✅ Done (exceeds 70%)       |
+| FSMAdapter.ts          | 63%    | 59.49%   | P2       | ✅ Acceptable (45%→59.49%)  |
+| testVectorGenerator.ts | 11%    | 0%       | P1       | Deferred (test utility)     |
+| weirdStateReasons.ts   | 100%   | 100%     | P1       | ✅ Done (39%→100%)          |
+| PlacementAggregate.ts  | 94.49% | 88.88%   | P2       | ✅ NO WORK NEEDED (>70%)    |
+| turnOrchestrator.ts    | 66.21% | 60.64%   | P2       | ✅ Improved (47.52%→60.64%) |
 
 **Note:** `serialization.ts` removed - file does not exist (stale entry).
 
