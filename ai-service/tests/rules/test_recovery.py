@@ -251,8 +251,9 @@ class TestEnumerateRecoverySlideTargets:
 
     def test_finds_valid_slide_completing_line(self):
         state = create_test_state()
-        # P1 has markers that can form a horizontal line
-        # Markers at (2,3), (3,3) - need one more at (4,3) or (1,3)
+        # P1 has markers that can form a horizontal line of 4 (required for square8 2-player per RR-CANON-R112)
+        # Markers at (1,3), (2,3), (3,3) - need one more at (4,3) or (0,3)
+        add_marker(state, Position(x=1, y=3), 1)
         add_marker(state, Position(x=2, y=3), 1)
         add_marker(state, Position(x=3, y=3), 1)
         # P1 has a slideable marker that can complete the line
@@ -261,7 +262,7 @@ class TestEnumerateRecoverySlideTargets:
         add_stack(state, Position(x=0, y=0), [1, 2])
 
         targets = enumerate_recovery_slide_targets(state, 1)
-        # Should find the slide from (4,2) to (4,3) completing the line
+        # Should find the slide from (4,2) to (4,3) completing the 4-marker line
         assert len(targets) > 0
         slide_to_4_3 = [t for t in targets if t.to_pos.x == 4 and t.to_pos.y == 3]
         assert len(slide_to_4_3) > 0
@@ -276,10 +277,11 @@ class TestHasAnyRecoveryMove:
 
     def test_returns_true_when_eligible_with_valid_moves(self):
         state = create_test_state()
-        # Setup for valid recovery
+        # Setup for valid recovery - need 4 markers for square8 2-player per RR-CANON-R112
+        add_marker(state, Position(x=1, y=3), 1)
         add_marker(state, Position(x=2, y=3), 1)
         add_marker(state, Position(x=3, y=3), 1)
-        add_marker(state, Position(x=4, y=2), 1)
+        add_marker(state, Position(x=4, y=2), 1)  # Can slide to (4,3)
         add_stack(state, Position(x=0, y=0), [1, 2])
 
         assert has_any_recovery_move(state, 1) is True
@@ -334,9 +336,11 @@ class TestValidateRecoverySlide:
 
     def test_valid_slide_completing_line(self):
         state = create_test_state()
+        # Need 4 markers for square8 2-player per RR-CANON-R112
+        add_marker(state, Position(x=1, y=3), 1)
         add_marker(state, Position(x=2, y=3), 1)
         add_marker(state, Position(x=3, y=3), 1)
-        add_marker(state, Position(x=4, y=2), 1)
+        add_marker(state, Position(x=4, y=2), 1)  # Will slide to (4,3)
         add_stack(state, Position(x=0, y=0), [1, 2])
 
         move = Move(
@@ -352,7 +356,7 @@ class TestValidateRecoverySlide:
 
         result = validate_recovery_slide(state, move)
         assert result.valid is True
-        assert result.markers_in_line >= 3
+        assert result.markers_in_line >= 4  # 4 markers for square8 2-player
         assert result.cost >= 1
 
 
@@ -361,9 +365,11 @@ class TestApplyRecoverySlide:
 
     def test_moves_marker(self):
         state = create_test_state()
+        # Need 4 markers for square8 2-player per RR-CANON-R112
+        add_marker(state, Position(x=1, y=3), 1)
         add_marker(state, Position(x=2, y=3), 1)
         add_marker(state, Position(x=3, y=3), 1)
-        add_marker(state, Position(x=4, y=2), 1)
+        add_marker(state, Position(x=4, y=2), 1)  # Will slide to (4,3)
         add_stack(state, Position(x=0, y=0), [1, 2])
 
         move = Move(
@@ -386,9 +392,11 @@ class TestApplyRecoverySlide:
 
     def test_extracts_buried_rings(self):
         state = create_test_state()
+        # Need 4 markers for square8 2-player per RR-CANON-R112
+        add_marker(state, Position(x=1, y=3), 1)
         add_marker(state, Position(x=2, y=3), 1)
         add_marker(state, Position(x=3, y=3), 1)
-        add_marker(state, Position(x=4, y=2), 1)
+        add_marker(state, Position(x=4, y=2), 1)  # Will slide to (4,3)
         add_stack(state, Position(x=0, y=0), [1, 2])
 
         initial_buried = count_buried_rings(state.board, 1)
@@ -428,9 +436,11 @@ class TestGetRecoveryMoves:
 
     def test_returns_moves_with_correct_type(self):
         state = create_test_state()
+        # Need 4 markers for square8 2-player per RR-CANON-R112
+        add_marker(state, Position(x=1, y=3), 1)
         add_marker(state, Position(x=2, y=3), 1)
         add_marker(state, Position(x=3, y=3), 1)
-        add_marker(state, Position(x=4, y=2), 1)
+        add_marker(state, Position(x=4, y=2), 1)  # Can slide to (4,3)
         add_stack(state, Position(x=0, y=0), [1, 2])
 
         moves = get_recovery_moves(state, 1)
