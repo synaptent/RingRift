@@ -2174,7 +2174,13 @@ class GameEngine:
     @staticmethod
     def _get_capture_moves(game_state: GameState, player_number: int, limit: int | None = None) -> List[Move]:
         """
-        Enumerate legal overtaking capture segments for the current attacker.
+        Enumerate legal overtaking capture segments for the player.
+
+        During CHAIN_CAPTURE phase (when chain_capture_state is set), enumerate
+        captures only from the chain's current position.
+
+        During MOVEMENT phase (no chain_capture_state), enumerate captures from
+        ALL of the player's stacks, mirroring TS's enumerateAllCaptureMoves.
 
         Adapter over rules.capture_chain.enumerate_capture_moves_py, which
         mirrors TS CaptureAggregate.enumerateCaptureMoves.
@@ -2182,26 +2188,52 @@ class GameEngine:
         Args:
             limit: If provided, return at most this many moves (for early-return checks).
         """
-        # Access board through game_state directly as needed
+        moves: List[Move] = []
+        move_number = len(game_state.move_history) + 1
 
-        # Determine attacker position
         if game_state.chain_capture_state:
+            # Chain capture in progress - enumerate only from the chain position
             attacker_pos = game_state.chain_capture_state.current_position
-            kind = "continuation"
+            moves = enumerate_capture_moves_py(
+                game_state,
+                player_number,
+                attacker_pos,
+                move_number=move_number,
+                kind="continuation",
+            )
         else:
-            last_move = game_state.move_history[-1] if game_state.move_history else None
-            if not last_move or not last_move.to:
-                return []
-            attacker_pos = last_move.to
-            kind = "initial"
+            # Movement phase - enumerate captures from ALL player's stacks
+            # This mirrors TS's enumerateAllCaptureMoves which iterates over
+            # all stacks controlled by the player.
+            #
+            # When must_move_from_stack_key is set (after place_ring on a stack),
+            # only captures from that specific stack are valid. This mirrors TS's
+            # filtering by mustMoveFromStackKey in getValidMoves.
+            board = game_state.board
+            must_move_key = game_state.must_move_from_stack_key
 
-        moves = enumerate_capture_moves_py(
-            game_state,
-            player_number,
-            attacker_pos,
-            move_number=len(game_state.move_history) + 1,
-            kind=kind,  # type: ignore[arg-type]
-        )
+            for stack in board.stacks.values():
+                if stack.controlling_player != player_number:
+                    continue
+                if stack.stack_height <= 0:
+                    continue
+
+                # Filter by must_move_from_stack_key if set
+                if must_move_key is not None and stack.position.to_key() != must_move_key:
+                    continue
+
+                stack_captures = enumerate_capture_moves_py(
+                    game_state,
+                    player_number,
+                    stack.position,
+                    move_number=move_number,
+                    kind="initial",
+                )
+                moves.extend(stack_captures)
+
+                # Early return if limit is reached
+                if limit is not None and len(moves) >= limit:
+                    return moves[:limit]
 
         # Apply limit if specified (for early-return optimization)
         if limit is not None and len(moves) > limit:

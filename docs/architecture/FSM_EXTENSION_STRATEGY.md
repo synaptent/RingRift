@@ -156,18 +156,18 @@ This document tracks the FSM extension roadmap, now largely complete.
 - `toFSMDecisionSurfaceViewModel()` transforms FSM orchestration results for HUD consumption
 - `extractFSMTelemetryFields()` prepares low-cardinality metrics for telemetry emission
 
-### Phase 6: Testing & Fixtures (P2) 🔄 IN PROGRESS
+### Phase 6: Testing & Fixtures (P2) ✅ COMPLETE
 
 **Goal:** Comprehensive FSM test coverage.
 
-| Task                                  | Status  | Files                                   |
-| ------------------------------------- | ------- | --------------------------------------- |
-| Property-based random event sequences | ✅ Done | `tests/unit/fsm/FSM.property.test.ts`   |
-| Cross-language fixture generation     | 🔜 Planned |                                      |
-| FE entry/exit targeted tests          | 🔜 Planned |                                      |
-| Territory loop tests                  | 🔜 Planned |                                      |
+| Task                                  | Status  | Files                                           |
+| ------------------------------------- | ------- | ----------------------------------------------- |
+| Property-based random event sequences | ✅ Done | `tests/unit/fsm/FSM.property.test.ts`           |
+| Cross-language fixture generation     | ✅ Done | `tests/fixtures/fsm-parity/v1/`                 |
+| FE entry/exit targeted tests          | ✅ Done | `tests/unit/fsm/FSM.forcedElimination.test.ts`  |
+| Territory loop tests                  | ✅ Done | `tests/unit/fsm/FSM.territoryLoop.test.ts`      |
 
-**Outcome (partial):**
+**Outcome:**
 
 - Property-based FSM tests with fast-check cover:
   - State invariants (valid phases, player rotation, actions array)
@@ -176,6 +176,23 @@ This document tracks the FSM extension roadmap, now largely complete.
   - Phase progression invariants (correct next phases)
   - TurnStateMachine class invariants (history growth, canSend consistency)
   - Global events (RESIGN, TIMEOUT → game_over)
+- Forced Elimination (FE) targeted tests (31 tests):
+  - Multi-elimination sequences (ringsOverLimit > 1)
+  - Entry conditions from territory/line processing
+  - FE counter invariants and boundary cases
+  - Global event handling (RESIGN/TIMEOUT)
+  - Player rotation across 2p and 4p games
+- Territory loop tests (31 tests):
+  - Multi-region processing loops
+  - Elimination sequences within regions
+  - Territory → FE transition
+  - Region index bounds checking
+  - Action emission verification
+- Cross-language fixture generation:
+  - JSON fixtures at `tests/fixtures/fsm-parity/v1/fsm_transitions.vectors.json`
+  - 23 test vectors covering all FSM phases and transitions
+  - TypeScript loader at `tests/unit/fsm/FSM.crossLanguageFixtures.test.ts`
+  - Fixtures can be consumed by Python tests for parity validation
 
 ### Phase 7: Data Pipeline (P2) ✅ COMPLETE
 

@@ -43,10 +43,10 @@ import {
 } from '../src/shared/engine';
 import { serializeGameState } from '../src/shared/engine/contracts/serialization';
 import { validateMoveWithFSM, type FSMValidationResult } from '../src/shared/engine/fsm/FSMAdapter';
+import { getValidMoves } from '../src/shared/engine/orchestration/turnOrchestrator';
 import { connectDatabase, disconnectDatabase } from '../src/server/database/connection';
 import type { PrismaClient } from '@prisma/client';
 import { CanonicalReplayEngine } from '../src/shared/replay/CanonicalReplayEngine';
-import { hasAnyGlobalMovementOrCapture } from '../src/shared/engine/globalActions';
 
 // Known-bad recordings that should be skipped until regenerated.
 const DEFAULT_SKIP_GAME_IDS = new Set<string>([
@@ -406,11 +406,11 @@ const PHASE_ORDER: GamePhase[] = [
 /**
  * Get the bookkeeping move type for a phase that has no recorded action.
  *
- * For movement, this consults the canonical global movement/capture predicate
- * so that we only synthesize a forced no_movement_action bridge when TS also
- * agrees there are no legal moves for the current player. This keeps the
- * replay bridge aligned with Python's ANM semantics and the FSM guard on
- * NO_MOVEMENT_ACTION.
+ * For movement, this consults the same phase-local movement surface used by
+ * the shared engine and Python GameEngine when deciding whether
+ * NO_MOVEMENT_ACTION is required: getValidMoves in a synthetic MOVEMENT
+ * state for the target player. This keeps the replay bridge aligned with
+ * canonical ANM semantics and the FSM guard on NO_MOVEMENT_ACTION.
  */
 function getBookkeepingMoveType(
   phase: GamePhase,
@@ -422,11 +422,25 @@ function getBookkeepingMoveType(
       return 'no_placement_action';
     case 'movement': {
       // Only synthesize a forced no_movement_action bridge when there are no
-      // legal non-capture movements or overtaking captures for this player.
+      // legal movement/capture/recovery moves for this player in MOVEMENT.
       // If any such moves exist, the movement phase must be played out via
       // explicit DB moves and we must not auto-skip it via bookkeeping.
-      const canMove = hasAnyGlobalMovementOrCapture(state, player);
-      if (canMove) {
+      const syntheticState: GameState = {
+        ...state,
+        currentPhase: 'movement',
+        currentPlayer: player,
+      };
+      const validMoves = getValidMoves(syntheticState);
+      const movementLike = validMoves.filter(
+        (m) =>
+          m.player === player &&
+          (m.type === 'move_stack' ||
+            m.type === 'move_ring' ||
+            m.type === 'overtaking_capture' ||
+            m.type === 'continue_capture_segment' ||
+            m.type === 'recovery_slide')
+      );
+      if (movementLike.length > 0) {
         return null;
       }
       return 'no_movement_action';
@@ -739,11 +753,11 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
       break;
     }
     const bridgeMoves = synthesizeBookkeepingMoves(currentState, move, applied + 1);
-
+ 
     // Apply any synthesized bookkeeping moves first
     for (const bridgeMove of bridgeMoves) {
       synthesizedCount += 1;
-
+ 
       // FSM parity validation for bridge moves
       const bridgeStateBeforeMove = engine.getState() as GameState;
       const bridgeFsmValidation = validateMoveWithFSM(bridgeStateBeforeMove, bridgeMove);
@@ -763,8 +777,12 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
             reason: bridgeFsmValidation.reason,
           })
         );
+        // Do not apply this bridge move or any subsequent ones for this DB move.
+        // Falling back to a non-bridge path avoids desynchronising TS phase/player
+        // relative to the DB history when the FSM rejects a synthesized move.
+        break;
       }
-
+ 
       const bridgeResult = await engine.applyMove(bridgeMove);
       if (!bridgeResult.success) {
         console.error(
@@ -777,8 +795,9 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
             stateSummary: summarizeState('bridge-error', engine.getState() as GameState),
           })
         );
-        // Don't throw - try to continue with the original move
-        break;
+        // Abort replay for this game to avoid applying further DB moves from a
+        // desynchronised state after a failed bridge application.
+        return;
       }
       const dbMoveIndexForBridge = applied > 0 ? applied - 1 : 0;
       // eslint-disable-next-line no-console

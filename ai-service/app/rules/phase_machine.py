@@ -210,6 +210,13 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
         # CONTINUE_CAPTURE_SEGMENT (continuation).
         game_state.chain_capture_state = None
         capture_moves = GameEngine._get_capture_moves(game_state, current_player)
+        # DEBUG: trace capture enumeration after move_stack
+        import os
+        if os.environ.get("RINGRIFT_TRACE_DEBUG"):
+            import sys
+            last_to = last_move.to
+            stacks_summary = {k: (s.controlling_player, s.cap_height) for k, s in game_state.board.stacks.items()}
+            print(f"[DEBUG phase_machine] MOVE_STACK landed at {last_to}, player={current_player}, captures={len(capture_moves)}, stacks={stacks_summary}", file=sys.stderr)
         if capture_moves:
             game_state.current_phase = GamePhase.CAPTURE
         else:

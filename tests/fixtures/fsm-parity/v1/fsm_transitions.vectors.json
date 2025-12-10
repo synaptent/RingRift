@@ -1,0 +1,546 @@
+{
+  "version": "v1",
+  "generated": "2025-12-09",
+  "description": "Cross-language FSM transition test vectors for TypeScript and Python parity testing",
+  "count": 23,
+  "categories": ["ring_placement", "movement", "line_processing", "territory_processing", "forced_elimination", "capture", "chain_capture", "turn_end"],
+  "vectors": [
+    {
+      "id": "fsm.ring_placement.place_ring_to_movement",
+      "category": "ring_placement",
+      "description": "PLACE_RING transitions from ring_placement to movement",
+      "input": {
+        "currentPhase": "ring_placement",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "PLACE_RING",
+          "to": {"x": 3, "y": 3}
+        },
+        "stateContext": {
+          "ringsInHand": 5,
+          "canPlace": true,
+          "validPositions": [{"x": 3, "y": 3}]
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "movement",
+        "nextPlayer": 1,
+        "actions": ["PLACE_RING", "LEAVE_MARKER"]
+      }
+    },
+    {
+      "id": "fsm.ring_placement.skip_placement_to_movement",
+      "category": "ring_placement",
+      "description": "SKIP_PLACEMENT transitions from ring_placement to movement when no valid positions",
+      "input": {
+        "currentPhase": "ring_placement",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "SKIP_PLACEMENT"
+        },
+        "stateContext": {
+          "ringsInHand": 5,
+          "canPlace": false,
+          "validPositions": []
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "movement",
+        "nextPlayer": 1
+      }
+    },
+    {
+      "id": "fsm.ring_placement.no_placement_action",
+      "category": "ring_placement",
+      "description": "NO_PLACEMENT_ACTION transitions from ring_placement to movement",
+      "input": {
+        "currentPhase": "ring_placement",
+        "currentPlayer": 2,
+        "numPlayers": 2,
+        "event": {
+          "type": "NO_PLACEMENT_ACTION"
+        },
+        "stateContext": {
+          "ringsInHand": 0,
+          "canPlace": false
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "movement",
+        "nextPlayer": 2
+      }
+    },
+    {
+      "id": "fsm.movement.move_stack_to_line_processing",
+      "category": "movement",
+      "description": "MOVE_STACK transitions to line_processing (FSM always goes to line_processing after movement)",
+      "input": {
+        "currentPhase": "movement",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "MOVE_STACK",
+          "from": {"x": 2, "y": 2},
+          "to": {"x": 4, "y": 4}
+        },
+        "stateContext": {
+          "canMove": true
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "line_processing",
+        "nextPlayer": 1,
+        "actions": ["MOVE_STACK"]
+      }
+    },
+    {
+      "id": "fsm.movement.no_movement_action",
+      "category": "movement",
+      "description": "NO_MOVEMENT_ACTION transitions to line_processing",
+      "input": {
+        "currentPhase": "movement",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "NO_MOVEMENT_ACTION"
+        },
+        "stateContext": {
+          "canMove": false
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "line_processing",
+        "nextPlayer": 1
+      }
+    },
+    {
+      "id": "fsm.capture.capture_to_chain_capture",
+      "category": "capture",
+      "description": "CAPTURE transitions to chain_capture",
+      "input": {
+        "currentPhase": "capture",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "CAPTURE",
+          "target": {"x": 5, "y": 5}
+        },
+        "stateContext": {
+          "pendingCaptures": [{"target": {"x": 5, "y": 5}}]
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "chain_capture",
+        "nextPlayer": 1,
+        "actions": ["EXECUTE_CAPTURE"]
+      }
+    },
+    {
+      "id": "fsm.capture.end_chain_to_line_processing",
+      "category": "capture",
+      "description": "END_CHAIN from capture skips to line_processing",
+      "input": {
+        "currentPhase": "capture",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "END_CHAIN"
+        },
+        "stateContext": {
+          "pendingCaptures": []
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "line_processing",
+        "nextPlayer": 1
+      }
+    },
+    {
+      "id": "fsm.chain_capture.continue_chain",
+      "category": "chain_capture",
+      "description": "CONTINUE_CHAIN stays in chain_capture",
+      "input": {
+        "currentPhase": "chain_capture",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "CONTINUE_CHAIN",
+          "target": {"x": 6, "y": 6}
+        },
+        "stateContext": {
+          "availableContinuations": [{"target": {"x": 6, "y": 6}}]
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "chain_capture",
+        "nextPlayer": 1,
+        "actions": ["EXECUTE_CAPTURE"]
+      }
+    },
+    {
+      "id": "fsm.chain_capture.end_chain",
+      "category": "chain_capture",
+      "description": "END_CHAIN with no continuations transitions to line_processing",
+      "input": {
+        "currentPhase": "chain_capture",
+        "currentPlayer": 2,
+        "numPlayers": 2,
+        "event": {
+          "type": "END_CHAIN"
+        },
+        "stateContext": {
+          "availableContinuations": []
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "line_processing",
+        "nextPlayer": 2
+      }
+    },
+    {
+      "id": "fsm.line_processing.no_line_action_to_territory",
+      "category": "line_processing",
+      "description": "NO_LINE_ACTION transitions to territory_processing",
+      "input": {
+        "currentPhase": "line_processing",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "NO_LINE_ACTION"
+        },
+        "stateContext": {
+          "detectedLines": [],
+          "hasDisconnectedRegions": true
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "territory_processing",
+        "nextPlayer": 1
+      }
+    },
+    {
+      "id": "fsm.line_processing.process_line_more_lines",
+      "category": "line_processing",
+      "description": "PROCESS_LINE with more lines stays in line_processing",
+      "input": {
+        "currentPhase": "line_processing",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "PROCESS_LINE",
+          "lineIndex": 0
+        },
+        "stateContext": {
+          "detectedLines": [
+            {"positions": [{"x": 0, "y": 0}]},
+            {"positions": [{"x": 1, "y": 1}]}
+          ],
+          "currentLineIndex": 0
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "line_processing",
+        "nextPlayer": 1,
+        "actions": ["COLLAPSE_LINE"]
+      }
+    },
+    {
+      "id": "fsm.line_processing.process_last_line_to_territory",
+      "category": "line_processing",
+      "description": "PROCESS_LINE on last line transitions to territory_processing",
+      "input": {
+        "currentPhase": "line_processing",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "PROCESS_LINE",
+          "lineIndex": 0
+        },
+        "stateContext": {
+          "detectedLines": [{"positions": [{"x": 0, "y": 0}]}],
+          "currentLineIndex": 0
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "territory_processing",
+        "nextPlayer": 1,
+        "actions": ["COLLAPSE_LINE"]
+      }
+    },
+    {
+      "id": "fsm.territory_processing.no_territory_action_to_turn_end",
+      "category": "territory_processing",
+      "description": "NO_TERRITORY_ACTION transitions to turn_end",
+      "input": {
+        "currentPhase": "territory_processing",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "NO_TERRITORY_ACTION"
+        },
+        "stateContext": {
+          "disconnectedRegions": []
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "turn_end",
+        "nextPlayer": 2,
+        "actions": ["CHECK_VICTORY"]
+      }
+    },
+    {
+      "id": "fsm.territory_processing.process_region_more_regions",
+      "category": "territory_processing",
+      "description": "PROCESS_REGION with more regions stays in territory_processing",
+      "input": {
+        "currentPhase": "territory_processing",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "PROCESS_REGION",
+          "regionIndex": 0
+        },
+        "stateContext": {
+          "disconnectedRegions": [
+            {"positions": [{"x": 0, "y": 0}], "eliminationsRequired": 0},
+            {"positions": [{"x": 1, "y": 1}], "eliminationsRequired": 0}
+          ],
+          "currentRegionIndex": 0
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "territory_processing",
+        "nextPlayer": 1,
+        "actions": ["PROCESS_DISCONNECTION"]
+      }
+    },
+    {
+      "id": "fsm.territory_processing.process_last_region_to_turn_end",
+      "category": "territory_processing",
+      "description": "PROCESS_REGION on last region transitions to turn_end",
+      "input": {
+        "currentPhase": "territory_processing",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "PROCESS_REGION",
+          "regionIndex": 0
+        },
+        "stateContext": {
+          "disconnectedRegions": [
+            {"positions": [{"x": 0, "y": 0}], "eliminationsRequired": 0}
+          ],
+          "currentRegionIndex": 0
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "turn_end",
+        "nextPlayer": 2,
+        "actions": ["PROCESS_DISCONNECTION", "CHECK_VICTORY"]
+      }
+    },
+    {
+      "id": "fsm.forced_elimination.single_elimination_to_turn_end",
+      "category": "forced_elimination",
+      "description": "FORCED_ELIMINATE completes when ringsOverLimit=1",
+      "input": {
+        "currentPhase": "forced_elimination",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "FORCED_ELIMINATE",
+          "target": {"x": 3, "y": 3}
+        },
+        "stateContext": {
+          "ringsOverLimit": 1,
+          "eliminationsDone": 0
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "turn_end",
+        "nextPlayer": 2,
+        "actions": ["FORCED_ELIMINATE", "CHECK_VICTORY"]
+      }
+    },
+    {
+      "id": "fsm.forced_elimination.multi_elimination_stays",
+      "category": "forced_elimination",
+      "description": "FORCED_ELIMINATE stays in FE when more eliminations needed",
+      "input": {
+        "currentPhase": "forced_elimination",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "FORCED_ELIMINATE",
+          "target": {"x": 3, "y": 3}
+        },
+        "stateContext": {
+          "ringsOverLimit": 3,
+          "eliminationsDone": 0
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "forced_elimination",
+        "nextPlayer": 1,
+        "actions": ["FORCED_ELIMINATE"],
+        "newEliminationsDone": 1
+      }
+    },
+    {
+      "id": "fsm.forced_elimination.final_elimination_to_turn_end",
+      "category": "forced_elimination",
+      "description": "FORCED_ELIMINATE transitions to turn_end on final elimination",
+      "input": {
+        "currentPhase": "forced_elimination",
+        "currentPlayer": 2,
+        "numPlayers": 2,
+        "event": {
+          "type": "FORCED_ELIMINATE",
+          "target": {"x": 4, "y": 4}
+        },
+        "stateContext": {
+          "ringsOverLimit": 3,
+          "eliminationsDone": 2
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "turn_end",
+        "nextPlayer": 1,
+        "actions": ["FORCED_ELIMINATE", "CHECK_VICTORY"]
+      }
+    },
+    {
+      "id": "fsm.turn_end.advance_turn_2p",
+      "category": "turn_end",
+      "description": "_ADVANCE_TURN rotates player in 2p game",
+      "input": {
+        "currentPhase": "turn_end",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "_ADVANCE_TURN"
+        },
+        "stateContext": {
+          "completedPlayer": 1,
+          "nextPlayer": 2
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "ring_placement",
+        "nextPlayer": 2,
+        "actions": ["ADVANCE_PLAYER"]
+      }
+    },
+    {
+      "id": "fsm.turn_end.advance_turn_4p_wraparound",
+      "category": "turn_end",
+      "description": "_ADVANCE_TURN wraps around in 4p game",
+      "input": {
+        "currentPhase": "turn_end",
+        "currentPlayer": 4,
+        "numPlayers": 4,
+        "event": {
+          "type": "_ADVANCE_TURN"
+        },
+        "stateContext": {
+          "completedPlayer": 4,
+          "nextPlayer": 1
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "ring_placement",
+        "nextPlayer": 1,
+        "actions": ["ADVANCE_PLAYER"]
+      }
+    },
+    {
+      "id": "fsm.global.resign_from_movement",
+      "category": "movement",
+      "description": "RESIGN from any phase transitions to game_over",
+      "input": {
+        "currentPhase": "movement",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "RESIGN",
+          "player": 1
+        },
+        "stateContext": {}
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "game_over",
+        "reason": "resignation",
+        "winner": null
+      }
+    },
+    {
+      "id": "fsm.global.timeout_from_forced_elimination",
+      "category": "forced_elimination",
+      "description": "TIMEOUT from any phase transitions to game_over",
+      "input": {
+        "currentPhase": "forced_elimination",
+        "currentPlayer": 2,
+        "numPlayers": 2,
+        "event": {
+          "type": "TIMEOUT",
+          "player": 2
+        },
+        "stateContext": {
+          "ringsOverLimit": 2,
+          "eliminationsDone": 0
+        }
+      },
+      "expectedOutput": {
+        "ok": true,
+        "nextPhase": "game_over",
+        "reason": "timeout",
+        "winner": null
+      }
+    },
+    {
+      "id": "fsm.error.invalid_event_for_phase",
+      "category": "ring_placement",
+      "description": "MOVE_STACK in ring_placement returns error",
+      "input": {
+        "currentPhase": "ring_placement",
+        "currentPlayer": 1,
+        "numPlayers": 2,
+        "event": {
+          "type": "MOVE_STACK",
+          "from": {"x": 0, "y": 0},
+          "to": {"x": 1, "y": 1}
+        },
+        "stateContext": {}
+      },
+      "expectedOutput": {
+        "ok": false,
+        "errorCode": "INVALID_EVENT",
+        "errorCurrentPhase": "ring_placement",
+        "errorEventType": "MOVE_STACK"
+      }
+    }
+  ]
+}

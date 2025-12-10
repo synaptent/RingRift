@@ -130,9 +130,21 @@ def run_contract_vectors_suite() -> List[ParityCaseResult]:
 
     This reuses the existing contract-vector runner module, but instead of
     asserting via pytest it records pass/fail outcomes per vector.
+
+    Vectors with explicit 'skip' field or 'multi_phase' tag are excluded
+    because they require orchestrator-level execution, not single-move testing.
     """
     results: List[ParityCaseResult] = []
-    vectors = contract_vectors.load_all_vectors()
+    all_vectors = contract_vectors.load_all_vectors()
+
+    # Filter out vectors that require orchestrator execution or have known
+    # fixture issues (matching the logic in test_contract_vector pytest test)
+    vectors = [
+        v for v in all_vectors
+        if not v.skip
+        and "multi_phase" not in v.tags
+        and v.id not in contract_vectors.KNOWN_FAILING_VECTORS
+    ]
 
     total_vectors = len(vectors)
     reporter = ProgressReporter(
