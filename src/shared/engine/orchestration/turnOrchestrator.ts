@@ -2000,17 +2000,20 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
     case 'skip_territory_processing': {
       // Explicit skip in territory_processing phase when player opts out of
       // processing available regions. Rotate to next player and start their
-      // turn in ring_placement phase. Clear mustMoveFromStackKey for new turn.
+      // turn. Per RR-CANON-R073: ring_placement if ringsInHand > 0, else movement.
+      // Clear mustMoveFromStackKey for new turn.
       const players = state.players;
       const currentPlayerIndex = players.findIndex((p) => p.playerNumber === state.currentPlayer);
       const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
       const nextPlayer = players[nextPlayerIndex].playerNumber;
+      const nextPlayerRingsInHand = players[nextPlayerIndex].ringsInHand;
+      const nextPhase = nextPlayerRingsInHand > 0 ? 'ring_placement' : 'movement';
 
       return {
         nextState: {
           ...state,
           currentPlayer: nextPlayer,
-          currentPhase: 'ring_placement' as GamePhase,
+          currentPhase: nextPhase as GamePhase,
           mustMoveFromStackKey: undefined, // Clear for new turn
         },
       };
@@ -2256,14 +2259,20 @@ function processPostMovePhases(
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     const nextPlayer = players[nextPlayerIndex].playerNumber;
 
-    // Always begin the next turn in ring_placement. When no legal placements exist
-    // (including ringsInHand == 0), hosts must emit a NO_PLACEMENT_ACTION bookkeeping
-    // move based on the phase requirements. This matches Python's _end_turn behavior.
+    // Per RR-CANON-R073: Next player's starting phase depends on their ringsInHand:
+    // - ring_placement if ringsInHand > 0
+    // - movement if ringsInHand == 0 (they must move an existing stack)
+    // When no legal placements exist (ringsInHand == 0), hosts must emit a
+    // NO_PLACEMENT_ACTION bookkeeping move. But if ringsInHand is already 0,
+    // we start directly in movement phase to match Python's _end_turn behavior.
+    const nextPlayerRingsInHand = players[nextPlayerIndex].ringsInHand;
+    const nextPhase = nextPlayerRingsInHand > 0 ? 'ring_placement' : 'movement';
+
     // Clear mustMoveFromStackKey for new turn.
     stateMachine.updateGameState({
       ...currentState,
       currentPlayer: nextPlayer,
-      currentPhase: 'ring_placement',
+      currentPhase: nextPhase,
       mustMoveFromStackKey: undefined, // Clear for new turn
     });
 
@@ -2552,7 +2561,8 @@ function processPostMovePhases(
       return { victoryResult: territoryVictoryResult };
     }
 
-    // Advance explicitly to the next player's ring_placement phase.
+    // Advance explicitly to the next player's starting phase.
+    // Per RR-CANON-R073: ring_placement if ringsInHand > 0, else movement.
     // Clear mustMoveFromStackKey as it only applies within a single turn.
     const currentState = stateMachine.gameState;
     const players = currentState.players;
@@ -2561,11 +2571,13 @@ function processPostMovePhases(
     );
     const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
     const nextPlayer = players[nextPlayerIndex].playerNumber;
+    const nextPlayerRingsInHand = players[nextPlayerIndex].ringsInHand;
+    const nextPhase = nextPlayerRingsInHand > 0 ? 'ring_placement' : 'movement';
 
     stateMachine.updateGameState({
       ...currentState,
       currentPlayer: nextPlayer,
-      currentPhase: 'ring_placement',
+      currentPhase: nextPhase,
       mustMoveFromStackKey: undefined, // Clear for new turn
     });
     return {};
@@ -2591,12 +2603,14 @@ function processPostMovePhases(
   );
   const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
   const nextPlayer = players[nextPlayerIndex].playerNumber;
-  // Always begin the next turn in ring_placement. When no legal placements
-  // exist for that player, hosts must emit an explicit no_placement_action
-  // bookkeeping move (or advance directly to movement via shared turnLogic);
-  // the core orchestrator no longer fabricates this move itself.
+  // Per RR-CANON-R073: ring_placement if ringsInHand > 0, else movement.
+  // When no legal placements exist (ringsInHand == 0), hosts must emit an
+  // explicit no_placement_action bookkeeping move (or advance directly to
+  // movement via shared turnLogic); the core orchestrator no longer
+  // fabricates this move itself.
   // Clear mustMoveFromStackKey for new turn.
-  const nextPhase: GamePhase = 'ring_placement';
+  const nextPlayerRingsInHand = players[nextPlayerIndex].ringsInHand;
+  const nextPhase: GamePhase = nextPlayerRingsInHand > 0 ? 'ring_placement' : 'movement';
 
   stateMachine.updateGameState({
     ...currentState,

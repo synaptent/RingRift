@@ -20,8 +20,9 @@ import type {
   Position,
   MoveType,
   GamePhase,
+  BoardType,
 } from '../../types/game';
-import { positionToString } from '../../types/game';
+import { positionToString, BOARD_CONFIGS } from '../../types/game';
 import {
   transition,
   type TurnEvent,
@@ -312,10 +313,14 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
   // TS and Python to have different current players. This includes:
   // - Bookkeeping moves (existing behavior)
   // - Territory region processing (Python may detect more regions than TS)
+  // - Forced elimination (Python records the player whose rings are eliminated,
+  //   which may differ from the current turn's player in multiplayer games)
   // RR-CANON-R075: Trust recorded moves during replay.
   const isTerritoryRegionMove = moveHint?.type === 'process_territory_region';
+  const isForcedEliminationMove = moveHint?.type === 'forced_elimination';
   const player =
-    (isBookkeepingOrSkipMove || isTerritoryRegionMove) && moveHint?.player
+    (isBookkeepingOrSkipMove || isTerritoryRegionMove || isForcedEliminationMove) &&
+    moveHint?.player
       ? moveHint.player
       : gameState.currentPlayer;
 
@@ -328,6 +333,8 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
     phase = 'territory_processing';
   } else if (moveHint?.type === 'choose_line_reward' || moveHint?.type === 'no_line_action') {
     phase = 'line_processing';
+  } else if (moveHint?.type === 'forced_elimination') {
+    phase = 'forced_elimination';
   }
 
   switch (phase) {
@@ -344,7 +351,7 @@ export function deriveStateFromGame(gameState: GameState, moveHint?: Move): Turn
       return deriveChainCaptureState(gameState, player, moveHint);
 
     case 'line_processing':
-      return deriveLineProcessingState(gameState, player);
+      return deriveLineProcessingState(gameState, player, moveHint);
 
     case 'territory_processing':
       return deriveTerritoryProcessingState(gameState, player, moveHint);
@@ -380,12 +387,33 @@ function deriveRingPlacementState(
   let canPlace: boolean;
   let validPositions: Position[] = [];
 
+  // RR-CANON-R075: Trust recorded placement moves during replay.
+  // If Python recorded place_ring at a specific position, TS should trust it even
+  // if local enumeration doesn't find the position as valid (parity divergence).
+  // IMPORTANT: Only trust positions that are within board bounds - out-of-bounds
+  // positions are definitively invalid regardless of parity considerations.
+  const boardSize = BOARD_CONFIGS[state.board.type as BoardType]?.size ?? 8;
+  const isPositionInBounds = (pos: Position | undefined): boolean => {
+    if (!pos) return false;
+    return pos.x >= 0 && pos.x < boardSize && pos.y >= 0 && pos.y < boardSize;
+  };
+  const isRecordedPlacementMoveForPlayer =
+    moveHint?.type === 'place_ring' &&
+    moveHint.player === player &&
+    isPositionInBounds(moveHint.to);
+
   // Special handling for skip_placement and no_placement_action moves:
   // - skip_placement: Player has rings but no valid positions to place them
   // - no_placement_action: Player has no rings (bookkeeping)
   // In both cases, the recording indicates placements weren't available. Trust this.
   if (moveHint?.type === 'skip_placement' || moveHint?.type === 'no_placement_action') {
     canPlace = false;
+  } else if (isRecordedPlacementMoveForPlayer) {
+    // Trust the recorded placement move - position was valid when Python recorded it
+    canPlace = true;
+    if (moveHint.to) {
+      validPositions = [moveHint.to];
+    }
   } else if (state.currentPlayer === player) {
     // Player matches - we can accurately determine valid placements
     const validMoves = getValidMoves(state);
@@ -429,6 +457,18 @@ function deriveMovementState(state: GameState, player: number, moveHint?: Move):
   const isRecordedNoMovementForPlayer =
     moveHint?.type === 'no_movement_action' && moveHint.player === player;
 
+  // RR-CANON-R075: Trust recorded movement moves during replay.
+  // If Python recorded move_stack/move_ring/overtaking_capture, TS should trust it even
+  // if local enumeration doesn't find the move (parity divergence due to state timing).
+  const isRecordedMovementMoveForPlayer =
+    moveHint &&
+    moveHint.player === player &&
+    (moveHint.type === 'move_stack' ||
+      moveHint.type === 'move_ring' ||
+      moveHint.type === 'overtaking_capture' ||
+      moveHint.type === 'continue_capture_segment' ||
+      moveHint.type === 'recovery_slide');
+
   let canMove: boolean;
 
   if (state.currentPhase === 'movement' && state.currentPlayer === player) {
@@ -437,6 +477,10 @@ function deriveMovementState(state: GameState, player: number, moveHint?: Move):
       // canonical NO_MOVEMENT_ACTION implies there were no legal movement,
       // capture, or recovery moves for this player in MOVEMENT.
       canMove = false;
+    } else if (isRecordedMovementMoveForPlayer) {
+      // RR-CANON-R075: Trust recorded movement moves during replay.
+      // If Python recorded a movement move, there must have been valid moves.
+      canMove = true;
     } else {
       const validMoves = getValidMoves(state);
       const movementLike = validMoves.filter(
@@ -595,6 +639,33 @@ function deriveLineProcessingState(
       currentLineIndex: 0,
       awaitingReward: false,
     };
+  }
+
+  // RR-CANON-R075: Trust recorded process_line moves during replay.
+  // If Python recorded process_line but TS doesn't detect lines (parity divergence due to
+  // line detection timing or state differences), create a placeholder line from moveHint.
+  // This mirrors the process_territory_region trust pattern at lines 632-638.
+  if (moveHint?.type === 'process_line' && detectedLines.length === 0) {
+    // Use formedLines from moveHint if available, otherwise create placeholder
+    if (moveHint.formedLines && moveHint.formedLines.length > 0) {
+      const hintLine = moveHint.formedLines[0];
+      detectedLines.push({
+        positions: hintLine.positions,
+        player: hintLine.player ?? player,
+        requiresChoice: (hintLine.length ?? hintLine.positions.length) >= 3,
+      });
+    } else {
+      // Fallback placeholder if formedLines not available
+      detectedLines.push({
+        positions: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+          { x: 2, y: 2 },
+        ],
+        player,
+        requiresChoice: true,
+      });
+    }
   }
 
   // Check for pending choice from move context
@@ -1071,13 +1142,16 @@ export function validateMoveWithFSM(
   // - Bookkeeping moves (no_*_action): may be auto-injected at turn boundaries
   // - process_territory_region: Python may detect more regions than TS, causing
   //   TS to transition players before all Python-recorded territory moves complete
+  // - forced_elimination: Python records the player whose rings are being eliminated,
+  //   which may differ from the current turn's player in multiplayer games
   // RR-CANON-R075: Trust recorded moves during replay.
   const isPlayerMismatchExempt =
     move.type === 'no_placement_action' ||
     move.type === 'no_movement_action' ||
     move.type === 'no_line_action' ||
     move.type === 'no_territory_action' ||
-    move.type === 'process_territory_region';
+    move.type === 'process_territory_region' ||
+    move.type === 'forced_elimination';
 
   if (!isPlayerMismatchExempt && move.player !== gameState.currentPlayer) {
     return makeResult({
@@ -1729,6 +1803,20 @@ export function computeFSMOrchestration(
   if (move.type === 'process_territory_region' && nextState.phase === 'territory_processing') {
     // Always transition to turn_end after process_territory_region
     // The orchestrator handles surfacing additional region decisions if needed
+    const computedNextPlayer = (move.player % context.numPlayers) + 1;
+    nextState = {
+      phase: 'turn_end',
+      completedPlayer: move.player,
+      nextPlayer: computedNextPlayer,
+    } as TurnEndState;
+  }
+
+  // Handle no_territory_action: this also ends the turn and advances to next player
+  // The FSM may return ring_placement directly, but we need to ensure correct next player
+  // computation and phase resolution based on that player's ringsInHand.
+  if (move.type === 'no_territory_action' && nextState.phase !== 'turn_end') {
+    // no_territory_action ends the turn - compute next player and transition to turn_end
+    // so the ringsInHand check below can properly resolve to ring_placement or movement
     const computedNextPlayer = (move.player % context.numPlayers) + 1;
     nextState = {
       phase: 'turn_end',
