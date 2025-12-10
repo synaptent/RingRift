@@ -2549,11 +2549,12 @@ function processPostMovePhases(
             pendingDecision: forcedDecision,
           };
         }
-        // If, unexpectedly, no concrete forced_elimination options could be
-        // constructed, remain in forced_elimination and let the caller drive
-        // the next move via getValidMoves()/processTurn. ANM guards below will
-        // still prevent leaking an unresolved ANM state.
-        return {};
+        // If no concrete forced_elimination options could be constructed,
+        // fall through to the turn rotation logic below. This ensures that
+        // multi-player games (3-4 players) correctly rotate to the next player
+        // even when FE was computed but no valid options exist.
+        // RR-PARITY-FIX-2025-12-10: Fixes 4-player no_territory_action turn
+        // rotation where TS would remain on the same player while Python rotated.
       }
       // Fallback: if summary indicates that forced_elimination is not actually
       // available, treat this as a normal turn-end and fall through to the
