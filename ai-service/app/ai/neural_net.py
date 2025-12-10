@@ -2205,6 +2205,21 @@ class NeuralNetAI(BaseAI):
                     )
                 self.model.eval()
 
+        # Apply torch.compile() optimization for faster inference on CUDA
+        # This provides 2-3x speedup for batch inference
+        try:
+            from .gpu_batch import compile_model
+            if self.device != "cpu" and self.device != "mps":
+                self.model = compile_model(
+                    self.model,
+                    device=torch.device(self.device) if isinstance(self.device, str) else self.device,
+                    mode="reduce-overhead",
+                )
+        except ImportError:
+            pass  # gpu_batch not available, skip compilation
+        except Exception as e:
+            logger.debug(f"torch.compile() skipped: {e}")
+
         # Cache the model for reuse
         _MODEL_CACHE[cache_key] = self.model
         self._initialized_board_type = board_type

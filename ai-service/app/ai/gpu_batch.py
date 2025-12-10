@@ -112,6 +112,100 @@ def clear_gpu_memory(device: Optional[torch.device] = None) -> None:
 
 
 # =============================================================================
+# Model Compilation (torch.compile optimization)
+# =============================================================================
+
+
+def compile_model(
+    model: nn.Module,
+    device: Optional[torch.device] = None,
+    mode: str = "reduce-overhead",
+    fullgraph: bool = False,
+) -> nn.Module:
+    """Apply torch.compile() optimization to a model for faster inference.
+
+    torch.compile() provides 2-3x speedup for inference by:
+    - Fusing operations into optimized kernels
+    - Reducing Python overhead
+    - Enabling GPU-specific optimizations (TensorRT-like)
+
+    Args:
+        model: PyTorch model to compile
+        device: Target device (used to check compatibility)
+        mode: Compilation mode:
+            - "default": Good balance of compile time and speedup
+            - "reduce-overhead": Minimize Python overhead (best for inference)
+            - "max-autotune": Maximum optimization (longer compile time)
+        fullgraph: If True, require entire model in single graph (stricter)
+
+    Returns:
+        Compiled model (or original if compilation fails/unsupported)
+
+    Note:
+        - Compilation happens on first forward pass (lazy)
+        - MPS has limited torch.compile() support (will skip gracefully)
+        - Requires PyTorch 2.0+
+    """
+    # Check PyTorch version
+    torch_version = tuple(int(x) for x in torch.__version__.split(".")[:2])
+    if torch_version < (2, 0):
+        logger.debug(f"torch.compile() requires PyTorch 2.0+, got {torch.__version__}")
+        return model
+
+    # MPS has limited compile support - skip for now
+    if device is not None and device.type == "mps":
+        logger.debug("Skipping torch.compile() on MPS (limited support)")
+        return model
+
+    # Check if already compiled
+    if hasattr(model, "_compiled") and model._compiled:
+        return model
+
+    try:
+        compiled = torch.compile(
+            model,
+            mode=mode,
+            fullgraph=fullgraph,
+            dynamic=True,  # Support dynamic batch sizes
+        )
+        # Mark as compiled to avoid re-compilation
+        compiled._compiled = True
+        logger.info(f"Applied torch.compile(mode={mode}) to model")
+        return compiled
+    except Exception as e:
+        logger.warning(f"torch.compile() failed, using uncompiled model: {e}")
+        return model
+
+
+def warmup_compiled_model(
+    model: nn.Module,
+    sample_input: torch.Tensor,
+    num_warmup: int = 3,
+) -> None:
+    """Warmup a compiled model to trigger JIT compilation.
+
+    The first few forward passes of a compiled model are slow due to
+    JIT compilation. This function runs warmup passes to "pay" this
+    cost upfront.
+
+    Args:
+        model: Compiled model to warmup
+        sample_input: Representative input tensor
+        num_warmup: Number of warmup passes
+    """
+    model.eval()
+    with torch.no_grad():
+        for _ in range(num_warmup):
+            _ = model(sample_input)
+
+    # Sync GPU
+    if sample_input.device.type == "cuda":
+        torch.cuda.synchronize()
+
+    logger.debug(f"Completed {num_warmup} warmup passes for compiled model")
+
+
+# =============================================================================
 # GPU Tensor Utilities
 # =============================================================================
 

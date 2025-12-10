@@ -442,6 +442,20 @@ def load_nnue_model(
     model = model.to(device)
     model.eval()
 
+    # Apply torch.compile() optimization for faster inference on CUDA
+    try:
+        from .gpu_batch import compile_model
+        if device not in ("cpu", "mps"):
+            model = compile_model(
+                model,
+                device=torch.device(device) if isinstance(device, str) else device,
+                mode="reduce-overhead",
+            )
+    except ImportError:
+        pass  # gpu_batch not available
+    except Exception as e:
+        logger.debug(f"torch.compile() skipped for NNUE: {e}")
+
     # Cache the model
     _NNUE_CACHE[cache_key] = model
 
