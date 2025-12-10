@@ -128,6 +128,9 @@ interface ExtendedMoveProperties {
   option?: 1 | 2;
   collapsePositions?: Position[];
   collapse_positions?: Position[];
+  recoveryMode?: 'line' | 'fallback';
+  extractionStacks?: string[];
+  extraction_stacks?: string[];
 }
 
 import { isEligibleForRecovery } from '../playerStateHelpers';
@@ -1944,8 +1947,9 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // Cast to extended type for accessing Python-style properties
       const extendedMove = move as Move & ExtendedMoveProperties;
 
-      // Determine the option from the move's metadata
+      // Determine the option and mode from the move's metadata
       const collapsePos = extendedMove.collapsePositions || extendedMove.collapse_positions;
+      const moveExtractionStacks = extendedMove.extractionStacks || extendedMove.extraction_stacks;
       const recoveryMove: RecoverySlideMove = {
         id: move.id,
         type: 'recovery_slide',
@@ -1957,14 +1961,18 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
         moveNumber: move.moveNumber,
         option: extendedMove.recoveryOption || extendedMove.option || 1,
         ...(collapsePos && { collapsePositions: collapsePos }),
-        extractionStacks: [], // Will be determined during validation/application
+        ...(extendedMove.recoveryMode && { recoveryMode: extendedMove.recoveryMode }),
+        extractionStacks: moveExtractionStacks || [], // Use provided stacks or empty
       };
 
-      // For Option 1, need to select an extraction stack
-      // For now, auto-select the first stack with a buried ring
-      if (recoveryMove.option === 1) {
+      // For Option 1 or fallback, need to select an extraction stack if not already provided
+      // Only auto-select if no extraction stacks were provided in the move
+      if (
+        recoveryMove.extractionStacks.length === 0 &&
+        (recoveryMove.option === 1 || recoveryMove.recoveryMode === 'fallback')
+      ) {
         for (const [stackKey, stack] of state.board.stacks) {
-          const hasBuriedRing = stack.rings.slice(0, -1).includes(move.player);
+          const hasBuriedRing = stack.rings.slice(1).includes(move.player); // rings[0] is top, check all except top
           if (hasBuriedRing) {
             recoveryMove.extractionStacks = [stackKey];
             break;

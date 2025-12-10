@@ -35,6 +35,7 @@ import { BOARD_CONFIGS, positionToString, stringToPosition } from '../../types/g
 
 import { getEffectiveLineLengthThreshold } from '../rulesConfig';
 import { isEligibleForRecovery, countBuriedRings } from '../playerStateHelpers';
+import { calculateCapHeight } from '../core';
 
 // ===============================================================================
 // Types
@@ -479,7 +480,7 @@ export function validateRecoverySlide(
       };
     }
     const hasBuriedRing = stack.rings
-      .slice(0, -1) // All except top
+      .slice(1) // All except top (rings[0] is top)
       .some((ringPlayer) => ringPlayer === player);
     if (!hasBuriedRing) {
       return {
@@ -581,7 +582,7 @@ export function validateRecoverySlide(
 
     // Check stack has player's buried ring
     const hasBuriedRing = stack.rings
-      .slice(0, -1) // All except top
+      .slice(1) // All except top (rings[0] is top)
       .includes(player);
     if (!hasBuriedRing) {
       return {
@@ -1124,23 +1125,6 @@ function collectLinePositions(
   }
 
   return positions;
-}
-
-/**
- * Calculate cap height for a ring array.
- */
-function calculateCapHeight(rings: number[]): number {
-  if (rings.length === 0) return 0;
-  const topPlayer = rings[rings.length - 1];
-  let capHeight = 1;
-  for (let i = rings.length - 2; i >= 0; i--) {
-    if (rings[i] === topPlayer) {
-      capHeight++;
-    } else {
-      break;
-    }
-  }
-  return capHeight;
 }
 
 /**

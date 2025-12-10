@@ -191,7 +191,8 @@ export function countBuriedRings(board: BoardState, playerNumber: number): numbe
     if (stack.controllingPlayer === playerNumber) continue;
 
     // Count rings belonging to this player (excluding top ring)
-    for (let i = 0; i < stack.rings.length - 1; i++) {
+    // rings[0] is the top ring (controlling player), so start from index 1
+    for (let i = 1; i < stack.rings.length; i++) {
       if (stack.rings[i] === playerNumber) {
         count++;
       }
