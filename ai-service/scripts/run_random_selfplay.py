@@ -12,9 +12,16 @@ from datetime import datetime
 from typing import List, Optional
 import argparse
 
+import sys
+import os
+
+# Add app/ to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from app.models import GameState, Move, MoveType, GamePhase, GameStatus
 from app.game_engine import GameEngine
 from app.training.generate_data import create_initial_state
+from app.utils.victory_type import derive_victory_type
 
 
 def play_random_game(
@@ -81,19 +88,20 @@ def play_random_game(
 
     # Determine winner
     winner = None
-    victory_type = None
     if state.game_status == GameStatus.COMPLETED:
         if hasattr(state, 'winner'):
             winner = state.winner
-        if hasattr(state, 'victory_type'):
-            victory_type = state.victory_type
+
+    # Derive standardized victory type using shared module
+    vtype, stalemate_tb = derive_victory_type(state, max_moves)
 
     return {
         'board_type': board_type,
         'num_players': num_players,
         'moves': moves_played,
         'winner': winner,
-        'victory_type': victory_type.value if victory_type else None,
+        'victory_type': vtype,
+        'stalemate_tiebreaker': stalemate_tb,
         'total_moves': len(moves_played),
         'recovery_opportunities': recovery_opportunities,
         'completed': state.game_status == GameStatus.COMPLETED,
@@ -121,6 +129,7 @@ def main():
     games_with_recovery = 0
     wins = {}
     victory_types = {}
+    stalemate_tiebreakers = {}
 
     print(f"Running {args.num_games} random AI games on {args.board_type} {args.num_players}p...")
 
@@ -145,6 +154,8 @@ def main():
                 wins[game['winner']] = wins.get(game['winner'], 0) + 1
             if game['victory_type']:
                 victory_types[game['victory_type']] = victory_types.get(game['victory_type'], 0) + 1
+            if game.get('stalemate_tiebreaker'):
+                stalemate_tiebreakers[game['stalemate_tiebreaker']] = stalemate_tiebreakers.get(game['stalemate_tiebreaker'], 0) + 1
 
             if (i + 1) % 10 == 0:
                 print(f"  Completed {i+1}/{args.num_games} games, {games_with_recovery} had recovery opportunities")
@@ -159,6 +170,7 @@ def main():
         'total_recovery_opportunities': total_recovery,
         'wins_by_player': wins,
         'victory_types': victory_types,
+        'stalemate_tiebreakers': stalemate_tiebreakers,
         'elapsed_seconds': elapsed,
         'games_per_second': args.num_games / elapsed,
         'timestamp': datetime.now().isoformat(),

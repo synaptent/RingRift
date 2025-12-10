@@ -114,6 +114,7 @@ from app.db import (  # noqa: E402
     ParityValidationError,
 )
 from app.ai.neural_net import clear_model_cache  # noqa: E402
+from app.utils.victory_type import derive_victory_type  # noqa: E402
 
 
 VIOLATION_TYPE_TO_INVARIANT_ID: Dict[str, str] = {
@@ -148,6 +149,9 @@ class GameRecord:
     # and whether the pie rule was exercised at least once.
     swap_sides_moves: int = 0
     used_pie_rule: bool = False
+    # Standardized victory type categorization per GAME_RECORD_SPEC.md
+    victory_type: Optional[str] = None
+    stalemate_tiebreaker: Optional[str] = None
     # Training data: moves and initial state for reconstructing games from JSONL
     # These are optional and only included when --include-training-data is set
     moves: Optional[List[Dict[str, Any]]] = None
@@ -1298,6 +1302,9 @@ def run_self_play_soak(
                 # Serialize initial state
                 training_initial_state = initial_state_for_recording.model_dump(mode="json")
 
+            # Derive standardized victory type using shared module
+            vtype, stalemate_tb = derive_victory_type(state, max_moves)
+
             rec = GameRecord(
                 index=game_idx,
                 num_players=num_players,
@@ -1312,6 +1319,8 @@ def run_self_play_soak(
                 invariant_violations_by_type=per_game_violations,
                 swap_sides_moves=swap_sides_moves_for_game,
                 used_pie_rule=swap_sides_moves_for_game > 0,
+                victory_type=vtype,
+                stalemate_tiebreaker=stalemate_tb,
                 moves=training_moves,
                 initial_state=training_initial_state,
             )
