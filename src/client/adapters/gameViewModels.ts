@@ -33,6 +33,10 @@ import type {
   PlayerChoice,
   PlayerChoiceType,
 } from '../../shared/types/game';
+import type {
+  FSMDecisionSurface,
+  FSMOrchestrationResult,
+} from '../../shared/engine/fsm';
 import { positionToString, positionsEqual } from '../../shared/types/game';
 import type { ConnectionStatus } from '../domain/GameAPI';
 import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModels';
@@ -1742,4 +1746,186 @@ function getVictoryMessage(
         titleColorClass,
       };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FSM Decision Surface View Model (Phase 5: UI/Telemetry Integration)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * View model for FSM decision surface data.
+ *
+ * This interface bridges the FSMDecisionSurface (from the FSM module) with
+ * UI components and telemetry, providing a presentation-ready summary of
+ * pending decisions.
+ */
+export interface FSMDecisionSurfaceViewModel {
+  /** Whether a decision surface is currently active */
+  isActive: boolean;
+
+  /** FSM phase that generated this decision surface */
+  phase: GamePhase;
+
+  /** Type of pending decision */
+  decisionType?: FSMOrchestrationResult['pendingDecisionType'];
+
+  /** Number of pending lines (line_processing phase) */
+  pendingLineCount: number;
+
+  /** Number of pending regions (territory_processing phase) */
+  pendingRegionCount: number;
+
+  /** Number of chain capture continuations available */
+  chainContinuationCount: number;
+
+  /** Number of forced eliminations required */
+  forcedEliminationCount: number;
+
+  /**
+   * Human-readable summary of the decision surface.
+   * E.g., "2 lines to process", "Choose continuation target", "3 regions pending"
+   */
+  summary: string;
+
+  /**
+   * Action hint for the current decision type.
+   * Used by UI components to guide the player.
+   */
+  actionHint: string;
+}
+
+/**
+ * Extract FSM decision surface view model from game state and optional
+ * FSM orchestration result.
+ *
+ * This adapter transforms FSM-internal decision surface data into a
+ * UI-friendly format for display in GameHUD, telemetry emission, and
+ * teaching overlays.
+ *
+ * @param gameState Current game state
+ * @param fsmResult Optional FSM orchestration result containing decision surface
+ * @returns FSMDecisionSurfaceViewModel for UI consumption
+ */
+export function toFSMDecisionSurfaceViewModel(
+  gameState: GameState,
+  fsmResult?: FSMOrchestrationResult | null
+): FSMDecisionSurfaceViewModel {
+  const phase = gameState.currentPhase;
+  const decisionSurface = fsmResult?.decisionSurface;
+  const decisionType = fsmResult?.pendingDecisionType;
+
+  const pendingLineCount = decisionSurface?.pendingLines?.length ?? 0;
+  const pendingRegionCount = decisionSurface?.pendingRegions?.length ?? 0;
+  const chainContinuationCount = decisionSurface?.chainContinuations?.length ?? 0;
+  const forcedEliminationCount = decisionSurface?.forcedEliminationCount ?? 0;
+
+  const isActive = !!(
+    decisionType ||
+    pendingLineCount > 0 ||
+    pendingRegionCount > 0 ||
+    chainContinuationCount > 0 ||
+    forcedEliminationCount > 0
+  );
+
+  // Generate human-readable summary based on decision type
+  let summary = '';
+  let actionHint = '';
+
+  switch (decisionType) {
+    case 'line_order_required':
+      summary =
+        pendingLineCount === 1
+          ? '1 line to process'
+          : `${pendingLineCount} lines to process`;
+      actionHint = 'Choose which line to process first, then select your reward';
+      break;
+    case 'no_line_action_required':
+      summary = 'No lines to process';
+      actionHint = 'Phase will advance automatically';
+      break;
+    case 'region_order_required':
+      summary =
+        pendingRegionCount === 1
+          ? '1 region to resolve'
+          : `${pendingRegionCount} regions to resolve`;
+      actionHint = 'Choose which disconnected region to process first';
+      break;
+    case 'no_territory_action_required':
+      summary = 'No territory regions to process';
+      actionHint = 'Phase will advance automatically';
+      break;
+    case 'chain_capture':
+      summary =
+        chainContinuationCount === 1
+          ? '1 capture continuation available'
+          : `${chainContinuationCount} capture continuations available`;
+      actionHint = 'Choose your next capture target to continue the chain';
+      break;
+    case 'forced_elimination':
+      summary =
+        forcedEliminationCount === 1
+          ? '1 ring must be eliminated'
+          : `${forcedEliminationCount} rings must be eliminated`;
+      actionHint = 'Select a stack to eliminate rings from';
+      break;
+    default:
+      if (phase === 'line_processing' && pendingLineCount > 0) {
+        summary = `${pendingLineCount} line${pendingLineCount !== 1 ? 's' : ''} detected`;
+        actionHint = 'Process detected lines for rewards';
+      } else if (phase === 'territory_processing' && pendingRegionCount > 0) {
+        summary = `${pendingRegionCount} region${pendingRegionCount !== 1 ? 's' : ''} detected`;
+        actionHint = 'Resolve disconnected territory regions';
+      } else if (phase === 'chain_capture' && chainContinuationCount > 0) {
+        summary = 'Chain capture in progress';
+        actionHint = 'Continue capturing or end chain if no targets';
+      } else if (phase === 'forced_elimination') {
+        summary = 'Forced elimination required';
+        actionHint = 'You have stacks but no legal moves - must eliminate';
+      } else {
+        summary = '';
+        actionHint = '';
+      }
+      break;
+  }
+
+  return {
+    isActive,
+    phase,
+    decisionType,
+    pendingLineCount,
+    pendingRegionCount,
+    chainContinuationCount,
+    forcedEliminationCount,
+    summary,
+    actionHint,
+  };
+}
+
+/**
+ * Extract telemetry-ready FSM decision surface metrics from a view model.
+ *
+ * This helper extracts the low-cardinality counts and types suitable for
+ * inclusion in RulesUxEventPayload.
+ *
+ * @param vm FSM decision surface view model
+ * @returns Object with FSM telemetry fields
+ */
+export function extractFSMTelemetryFields(vm: FSMDecisionSurfaceViewModel): {
+  fsmPhase: string;
+  fsmDecisionType?: FSMOrchestrationResult['pendingDecisionType'];
+  fsmPendingLineCount?: number;
+  fsmPendingRegionCount?: number;
+  fsmChainContinuationCount?: number;
+  fsmForcedEliminationCount?: number;
+} {
+  return {
+    fsmPhase: vm.phase,
+    fsmDecisionType: vm.decisionType,
+    fsmPendingLineCount: vm.pendingLineCount > 0 ? vm.pendingLineCount : undefined,
+    fsmPendingRegionCount: vm.pendingRegionCount > 0 ? vm.pendingRegionCount : undefined,
+    fsmChainContinuationCount:
+      vm.chainContinuationCount > 0 ? vm.chainContinuationCount : undefined,
+    fsmForcedEliminationCount:
+      vm.forcedEliminationCount > 0 ? vm.forcedEliminationCount : undefined,
+  };
 }

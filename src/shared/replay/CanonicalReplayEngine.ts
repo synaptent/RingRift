@@ -250,25 +250,18 @@ export class CanonicalReplayEngine {
       // logic. The orchestrator's computeHadAnyActionThisTurn relies on moveHistory
       // to decide whether to enter forced_elimination phase. Without this, replay
       // would incorrectly think no actions were taken this turn.
-      // DEBUG: Log before spread
-      if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
+      // DEBUG: trace mustMoveFromStackKey
+      if (process.env.RINGRIFT_TRACE_DEBUG === '1' && move.type === 'place_ring') {
         // eslint-disable-next-line no-console
-        console.log('[CanonicalReplayEngine] before spread mustMoveFromStackKey:', {
-          moveType: move.type,
-          currentStateMustMoveFromStackKey: this.currentState.mustMoveFromStackKey,
-        });
+        console.log('[CanonicalReplayEngine] BEFORE spread, mustMoveFromStackKey:', this.currentState.mustMoveFromStackKey);
       }
       this.currentState = {
         ...this.currentState,
         moveHistory: [...this.currentState.moveHistory, move],
       };
-      // DEBUG: Log after spread
-      if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
+      if (process.env.RINGRIFT_TRACE_DEBUG === '1' && move.type === 'place_ring') {
         // eslint-disable-next-line no-console
-        console.log('[CanonicalReplayEngine] after spread mustMoveFromStackKey:', {
-          moveType: move.type,
-          currentStateMustMoveFromStackKey: this.currentState.mustMoveFromStackKey,
-        });
+        console.log('[CanonicalReplayEngine] AFTER spread, mustMoveFromStackKey:', this.currentState.mustMoveFromStackKey);
       }
 
       this.debugHook?.(`after-applyMove-${this.appliedMoveCount}`, this.currentState);

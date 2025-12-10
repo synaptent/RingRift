@@ -185,16 +185,29 @@ def validate_move_for_phase(
 
     if move.type == MoveType.NO_MOVEMENT_ACTION:
         # NO_MOVEMENT_ACTION is only valid when there are no movement/capture moves
+        # Per RR-CANON-R070 (7-phase model) and TS FSMAdapter.deriveMovementState,
+        # we must use get_valid_moves() to check the phase-local interactive surface,
+        # NOT the global _has_valid_movements/_has_valid_captures helpers (which are
+        # for FE eligibility checks). This ensures the FSM guard aligns with what
+        # moves the env/host would actually surface to the player.
         if game_state is not None:
             from app.game_engine import GameEngine
 
-            has_moves = GameEngine._has_valid_movements(
+            valid_moves = GameEngine.get_valid_moves(
                 game_state, game_state.current_player
             )
-            has_captures = GameEngine._has_valid_captures(
-                game_state, game_state.current_player
-            )
-            if has_moves or has_captures:
+            # Filter to movement-like moves (same filtering as TS FSMAdapter)
+            movement_like = [
+                m for m in valid_moves
+                if m.type in (
+                    MoveType.MOVE_STACK,
+                    MoveType.MOVE_RING,
+                    MoveType.OVERTAKING_CAPTURE,
+                    MoveType.CONTINUE_CAPTURE_SEGMENT,
+                    MoveType.RECOVERY_SLIDE,
+                )
+            ]
+            if movement_like:
                 return FSMValidationResult(
                     ok=False,
                     code="CANNOT_SKIP_MOVEMENT_WITH_MOVES",

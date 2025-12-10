@@ -36,7 +36,11 @@ export type RulesUxEventType =
   | 'sandbox_scenario_completed'
   | 'teaching_step_started'
   | 'teaching_step_completed'
-  | 'doc_link_clicked';
+  | 'doc_link_clicked'
+  // FSM decision surface events (Phase 5: UI/Telemetry Integration)
+  | 'fsm_decision_surface_shown'
+  | 'fsm_decision_made'
+  | 'fsm_phase_transition';
 
 /**
  * Coarse classification of weird rules states as surfaced in the HUD.
@@ -254,6 +258,51 @@ export interface RulesUxEventPayload {
    * integers, and short strings – never raw board state or free‑text.
    */
   payload?: Record<string, unknown>;
+
+  // ────────────────────────────────────────────────────────────────────────
+  // FSM Decision Surface telemetry (Phase 5: UI/Telemetry Integration)
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * FSM phase that triggered this event. Low-cardinality phase name from the
+   * FSM state machine (e.g., 'line_processing', 'territory_processing').
+   */
+  fsmPhase?: string;
+
+  /**
+   * Type of pending decision from FSM orchestration result.
+   * Matches FSMOrchestrationResult.pendingDecisionType.
+   */
+  fsmDecisionType?:
+    | 'chain_capture'
+    | 'line_order_required'
+    | 'no_line_action_required'
+    | 'region_order_required'
+    | 'no_territory_action_required'
+    | 'forced_elimination';
+
+  /**
+   * Count of pending lines in FSM decision surface (line_processing phase).
+   * Used to measure complexity of line processing decisions.
+   */
+  fsmPendingLineCount?: number;
+
+  /**
+   * Count of pending regions in FSM decision surface (territory_processing phase).
+   * Used to measure complexity of territory processing decisions.
+   */
+  fsmPendingRegionCount?: number;
+
+  /**
+   * Count of chain capture continuations available (chain_capture phase).
+   * Used to measure complexity of chain capture decisions.
+   */
+  fsmChainContinuationCount?: number;
+
+  /**
+   * Count of forced eliminations required (forced_elimination phase).
+   */
+  fsmForcedEliminationCount?: number;
 }
 
 /**
@@ -279,6 +328,10 @@ export const RULES_UX_EVENT_TYPES: readonly RulesUxEventType[] = [
   'teaching_step_started',
   'teaching_step_completed',
   'doc_link_clicked',
+  // FSM decision surface events
+  'fsm_decision_surface_shown',
+  'fsm_decision_made',
+  'fsm_phase_transition',
 ];
 
 /**

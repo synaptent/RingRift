@@ -6,7 +6,7 @@
   ],
   "hosts": null,
   "max_moves": 200,
-  "num_games": 10,
+  "num_games": 3,
   "num_players": 3,
   "parity_summary": {
     "canonical_gate": true,
@@ -28,5 +28,5 @@
   },
   "passed_canonical_parity_gate": false,
   "seed": 42,
-  "soak_returncode": -15
+  "soak_returncode": 0
 }

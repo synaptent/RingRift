@@ -226,15 +226,6 @@ export class TurnEngineAdapter {
         : {};
       const result = await processTurnAsync(beforeState, move, delegates, processTurnOptions);
 
-      // DEBUG: Log mustMoveFromStackKey from processTurnAsync result
-      if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
-        // eslint-disable-next-line no-console
-        console.log('[TurnEngineAdapter] processTurnAsync result mustMoveFromStackKey:', {
-          moveType: move.type,
-          resultMustMoveFromStackKey: result.nextState.mustMoveFromStackKey,
-        });
-      }
-
       // Update state
       stateAccessor.updateGameState(result.nextState);
 

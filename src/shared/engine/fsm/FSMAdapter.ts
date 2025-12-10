@@ -408,38 +408,44 @@ function deriveRingPlacementState(
 }
 
 function deriveMovementState(state: GameState, player: number, _moveHint?: Move): MovementState {
+  // Phase-local interactive predicate for movement is intentionally derived
+  // from both the global movement/capture surface (used by ANM/FE guards)
+  // and the phase-aware getValidMoves surface. This keeps the FSM guard for
+  // NO_MOVEMENT_ACTION aligned with Python’s canonical ANM behaviour while
+  // avoiding false positives when the shared movement enumerators and the
+  // global reachability helper momentarily disagree in edge cases.
+  //
+  // Canonical intent:
+  // - If the global helper says there is no movement/capture anywhere for
+  //   this player, we must never treat NO_MOVEMENT_ACTION as a skip-with-
+  //   moves-available; canMove is forced false in that case.
+  // - Otherwise we defer to getValidMoves in the MOVEMENT phase, which
+  //   mirrors GameEngine.get_valid_moves(..., MOVEMENT) on the Python side.
+  const hasGlobalMovementOrCapture = hasAnyGlobalMovementOrCapture(state, player);
+
   let canMove: boolean;
 
   if (state.currentPhase === 'movement' && state.currentPlayer === player) {
-    // Live-play / canonical behaviour: derive canMove from the same
-    // phase-local interactive surface that Python GameEngine.get_valid_moves
-    // uses in MOVEMENT:
-    //   - MOVE_STACK / MOVE_RING
-    //   - OVERTAKING_CAPTURE / CONTINUE_CAPTURE_SEGMENT
-    //   - RECOVERY_SLIDE (when eligible)
-    //
-    // getValidMoves(state) is already phase-aware and respects per-turn
-    // constraints such as mustMoveFromStackKey and chain-capture state, so
-    // this keeps NO_MOVEMENT_ACTION guards aligned with Python’s
-    // get_phase_requirement(MOVEMENT) semantics.
-    const validMoves = getValidMoves(state);
-    const movementLike = validMoves.filter(
-      (m) =>
-        m.player === player &&
-        (m.type === 'move_stack' ||
-          m.type === 'move_ring' ||
-          m.type === 'overtaking_capture' ||
-          m.type === 'continue_capture_segment' ||
-          m.type === 'recovery_slide')
-    );
-    canMove = movementLike.length > 0;
+    if (!hasGlobalMovementOrCapture) {
+      canMove = false;
+    } else {
+      const validMoves = getValidMoves(state);
+      const movementLike = validMoves.filter(
+        (m) =>
+          m.player === player &&
+          (m.type === 'move_stack' ||
+            m.type === 'move_ring' ||
+            m.type === 'overtaking_capture' ||
+            m.type === 'continue_capture_segment' ||
+            m.type === 'recovery_slide')
+      );
+      canMove = movementLike.length > 0;
+    }
   } else {
-    // Fallback for off-phase / off-player derivations (e.g. some replay and
-    // shadow-validation paths): approximate movement capability using the
-    // global movement/capture predicate. This keeps MovementState usable even
-    // when currentPlayer differs from `player`, but should not affect normal
-    // live play where player === currentPlayer.
-    canMove = hasAnyGlobalMovementOrCapture(state, player);
+    // Off-phase / off-player derivations (replay/shadow tooling) continue to
+    // use the global predicate so that MovementState stays meaningful even
+    // when currentPlayer differs from `player`.
+    canMove = hasGlobalMovementOrCapture;
   }
 
   // Get the ring just placed (if any)

@@ -134,26 +134,48 @@ This document tracks the FSM extension roadmap, now largely complete.
 - `GameEngine._update_phase` now uses `compute_fsm_orchestration()` for phase transitions
 - Legacy phase_machine kept as fallback (RINGRIFT_FSM_VALIDATION_MODE=off)
 
-### Phase 5: UI/Telemetry Integration (P2)
+### Phase 5: UI/Telemetry Integration (P2) ✅ COMPLETE
 
 **Goal:** Surface FSM state to UI and telemetry systems.
 
-| Task                                    | Status     |
-| --------------------------------------- | ---------- |
-| Adapter for FSM → GameHUD view model    | 🔜 Planned |
-| FSM action traces in replay harness     | 🔜 Planned |
-| Teaching overlay FSM-aware explanations | 🔜 Planned |
+| Task                                      | Status  | Files                                      |
+| ----------------------------------------- | ------- | ------------------------------------------ |
+| Adapter for FSM → GameHUD view model      | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
+| FSM decision surface telemetry events     | ✅ Done | `src/shared/telemetry/rulesUxEvents.ts`    |
+| `FSMDecisionSurfaceViewModel` type        | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
+| `toFSMDecisionSurfaceViewModel()` adapter | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
+| `extractFSMTelemetryFields()` helper      | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
+| FSM action traces in replay harness       | 🔜 Planned |                                         |
+| Teaching overlay FSM-aware explanations   | 🔜 Planned |                                         |
 
-### Phase 6: Testing & Fixtures (P2)
+**Outcome:**
+
+- New telemetry event types: `fsm_decision_surface_shown`, `fsm_decision_made`, `fsm_phase_transition`
+- `RulesUxEventPayload` extended with FSM fields: `fsmPhase`, `fsmDecisionType`, `fsmPendingLineCount`, etc.
+- `FSMDecisionSurfaceViewModel` provides UI-ready decision surface data
+- `toFSMDecisionSurfaceViewModel()` transforms FSM orchestration results for HUD consumption
+- `extractFSMTelemetryFields()` prepares low-cardinality metrics for telemetry emission
+
+### Phase 6: Testing & Fixtures (P2) 🔄 IN PROGRESS
 
 **Goal:** Comprehensive FSM test coverage.
 
-| Task                                  | Status     |
-| ------------------------------------- | ---------- |
-| Property-based random event sequences | 🔜 Planned |
-| Cross-language fixture generation     | 🔜 Planned |
-| FE entry/exit targeted tests          | 🔜 Planned |
-| Territory loop tests                  | 🔜 Planned |
+| Task                                  | Status  | Files                                   |
+| ------------------------------------- | ------- | --------------------------------------- |
+| Property-based random event sequences | ✅ Done | `tests/unit/fsm/FSM.property.test.ts`   |
+| Cross-language fixture generation     | 🔜 Planned |                                      |
+| FE entry/exit targeted tests          | 🔜 Planned |                                      |
+| Territory loop tests                  | 🔜 Planned |                                      |
+
+**Outcome (partial):**
+
+- Property-based FSM tests with fast-check cover:
+  - State invariants (valid phases, player rotation, actions array)
+  - Error handling (invalid events, wrong player)
+  - Transition determinism (same input → same output)
+  - Phase progression invariants (correct next phases)
+  - TurnStateMachine class invariants (history growth, canSend consistency)
+  - Global events (RESIGN, TIMEOUT → game_over)
 
 ### Phase 7: Data Pipeline (P2)
 

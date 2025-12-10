@@ -1490,15 +1490,6 @@ export function processTurn(
     });
   }
 
-  // DEBUG: Final mustMoveFromStackKey before return
-  if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
-    // eslint-disable-next-line no-console
-    console.log('[processTurn] FINAL return, mustMoveFromStackKey:', {
-      moveType: move.type,
-      finalStateMustMoveFromStackKey: finalState.mustMoveFromStackKey,
-    });
-  }
-
   return {
     nextState: finalState,
     status: finalPendingDecision ? 'awaiting_decision' : 'complete',
@@ -2342,12 +2333,14 @@ function processPostMovePhases(
   // exist for that player, hosts must emit an explicit no_placement_action
   // bookkeeping move (or advance directly to movement via shared turnLogic);
   // the core orchestrator no longer fabricates this move itself.
+  // Clear mustMoveFromStackKey for new turn.
   const nextPhase: GamePhase = 'ring_placement';
 
   stateMachine.updateGameState({
     ...currentState,
     currentPlayer: nextPlayer,
     currentPhase: nextPhase,
+    mustMoveFromStackKey: undefined, // Clear for new turn
   });
 
   return {};
@@ -2565,8 +2558,38 @@ export function getValidMoves(state: GameState): Move[] {
     }
 
     case 'movement': {
-      const movements = enumerateSimpleMovesForPlayer(state, player);
-      const captures = enumerateAllCaptureMoves(state, player);
+      let movements = enumerateSimpleMovesForPlayer(state, player);
+      let captures = enumerateAllCaptureMoves(state, player);
+
+      // When mustMoveFromStackKey is set (after place_ring), only moves from
+      // that stack are valid. This matches Python's must_move_from_stack_key
+      // semantics for TS/Python parity.
+      if (state.mustMoveFromStackKey) {
+        // DEBUG: Log filtering
+        if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
+          // eslint-disable-next-line no-console
+          console.log('[getValidMoves] filtering by mustMoveFromStackKey:', {
+            mustMoveFromStackKey: state.mustMoveFromStackKey,
+            movementsBefore: movements.length,
+            capturesBefore: captures.length,
+          });
+        }
+        movements = movements.filter(
+          (m) => m.from && positionToString(m.from) === state.mustMoveFromStackKey
+        );
+        captures = captures.filter(
+          (m) => m.from && positionToString(m.from) === state.mustMoveFromStackKey
+        );
+        // DEBUG: Log after filtering
+        if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
+          // eslint-disable-next-line no-console
+          console.log('[getValidMoves] after filtering:', JSON.stringify({
+            movementsAfter: movements.length,
+            capturesAfter: captures.length,
+            captureDetails: captures.map(c => ({from: c.from, captureTarget: c.captureTarget, to: c.to, type: c.type})),
+          }));
+        }
+      }
 
       // RR-CANON-R110–R115: Recovery action for temporarily eliminated players
       // If player is eligible for recovery, add recovery slide moves
@@ -2628,7 +2651,15 @@ export function getValidMoves(state: GameState): Move[] {
         }
       }
 
-      return [...movements, ...captures, ...recoveryMoves];
+      // Also filter recovery moves by mustMoveFromStackKey if set
+      let filteredRecoveryMoves = recoveryMoves;
+      if (state.mustMoveFromStackKey) {
+        filteredRecoveryMoves = recoveryMoves.filter(
+          (m) => m.from && positionToString(m.from) === state.mustMoveFromStackKey
+        );
+      }
+
+      return [...movements, ...captures, ...filteredRecoveryMoves];
     }
 
     case 'capture': {
