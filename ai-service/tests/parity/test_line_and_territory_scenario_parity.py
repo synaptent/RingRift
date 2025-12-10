@@ -46,11 +46,9 @@ MULTI_REGION_SNAPSHOT = PARITY_DIR / "line_territory_multi_region_square8.snapsh
 
 
 REQUIRED_LENGTH_BY_BOARD = {
-    # TODO: This constant uses 3 for square8 but the canonical rules specify
-    # required_length=4 for 2-player games. The test_overlength_line_option2_segments_exhaustive
-    # test has a parity issue between this constant and what GameEngine uses.
-    # See canonical rules Section 4.5: square8 2-player = 4-in-a-row.
-    BoardType.SQUARE8: 3,
+    # Per RR-CANON-R112: square8 2-player requires 4 markers for a line.
+    # Tests use maxPlayers=2, so line length is 4.
+    BoardType.SQUARE8: 4,
     BoardType.SQUARE19: 4,
     BoardType.HEXAGONAL: 4,
 }

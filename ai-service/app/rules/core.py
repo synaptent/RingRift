@@ -52,16 +52,21 @@ def get_effective_line_length(board_type: BoardType, num_players: int) -> int:
     """
     Return the effective line length threshold for the given board and player count.
 
-    Canonical RR-CANON-R120 defines lineLength purely by board type:
-    - square8: 3
-    - square19 / hexagonal: 4
-
-    The num_players parameter is accepted for API compatibility with TS
-    helpers but does not affect the canonical threshold on the Python side.
+    Canonical semantics (RR-CANON-R120):
+    - square8 2-player: line length = 4
+    - square8 3-4 player: line length = 3
+    - square19 and hexagonal: line length = 4 (all player counts)
     """
-    base = BOARD_CONFIGS[board_type].line_length
+    # Per RR-CANON-R120: square8 2-player games require line length 4,
+    # while 3-4 player games require line length 3.
+    if board_type == BoardType.SQUARE8 and num_players == 2:
+        return 4
 
-    return base
+    # For all other configurations, use the base line_length from BOARD_CONFIGS:
+    # - square8 3-4p: 3
+    # - square19: 4
+    # - hexagonal: 4
+    return BOARD_CONFIGS[board_type].line_length
 
 
 class BoardView(Protocol):

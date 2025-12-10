@@ -97,7 +97,12 @@ from .ai.zobrist import ZobristHash
 from .rules.geometry import BoardGeometry
 from .rules.core import count_rings_in_play_for_player, get_effective_line_length
 from .rules.capture_chain import enumerate_capture_moves_py
-from .rules.recovery import get_recovery_moves, has_any_recovery_move, apply_recovery_slide
+from .rules.recovery import (
+    get_recovery_moves,
+    get_expanded_recovery_moves,
+    has_any_recovery_move,
+    apply_recovery_slide,
+)
 
 
 DEBUG_ENGINE = os.environ.get("RINGRIFT_DEBUG_ENGINE") == "1"
@@ -204,7 +209,8 @@ class GameEngine:
             movement_moves = GameEngine._get_movement_moves(game_state, player_number)
             capture_moves = GameEngine._get_capture_moves(game_state, player_number)
             # Recovery slides for temporarily eliminated players (RR-CANON-R110-R115)
-            recovery_moves = get_recovery_moves(game_state, player_number)
+            # Use expanded recovery with line, territory, fallback modes + skip option
+            recovery_moves = get_expanded_recovery_moves(game_state, player_number)
             moves = movement_moves + capture_moves + recovery_moves
             # NO auto NO_MOVEMENT_ACTION - hosts use get_phase_requirement()
 

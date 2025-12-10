@@ -448,3 +448,73 @@ class TestGetRecoveryMoves:
         for move in moves:
             assert move.type == MoveType.RECOVERY_SLIDE
             assert move.player == 1
+
+
+class TestExpandedRecovery:
+    """Tests for expanded recovery with fallback mode (RR-CANON-R112)."""
+
+    def test_fallback_mode_when_no_line_possible(self):
+        """Test that fallback repositioning is available when no line can be formed."""
+        from app.rules.recovery import get_expanded_recovery_moves, enumerate_expanded_recovery_targets
+
+        state = create_test_state()
+        # Add markers that can't form a line (need 4 for square8 2P)
+        add_marker(state, Position(x=3, y=3), 1)
+        add_marker(state, Position(x=5, y=5), 1)  # Too far apart for a line
+        add_stack(state, Position(x=0, y=0), [1, 2])  # P1 buried, P2 on top
+
+        # Get expanded recovery targets
+        targets = enumerate_expanded_recovery_targets(state, 1)
+
+        # Should have fallback targets since no line is possible
+        fallback_targets = [t for t in targets if t.recovery_mode == "fallback"]
+        assert len(fallback_targets) > 0, "Should have fallback recovery options"
+
+        # Get expanded moves
+        moves = get_expanded_recovery_moves(state, 1)
+
+        # Should include skip_recovery
+        skip_moves = [m for m in moves if m.type == MoveType.SKIP_RECOVERY]
+        assert len(skip_moves) == 1, "Should have exactly one skip_recovery option"
+
+        # Should include fallback recovery slides
+        fallback_slides = [m for m in moves if m.type == MoveType.RECOVERY_SLIDE and m.recovery_mode == "fallback"]
+        assert len(fallback_slides) > 0, "Should have fallback recovery slide options"
+
+    def test_line_mode_prioritized_over_fallback(self):
+        """Test that line recovery is returned instead of fallback when a line can be formed."""
+        from app.rules.recovery import enumerate_expanded_recovery_targets
+
+        state = create_test_state()
+        # Add markers that CAN form a line (4 for square8 2P)
+        add_marker(state, Position(x=1, y=3), 1)
+        add_marker(state, Position(x=2, y=3), 1)
+        add_marker(state, Position(x=3, y=3), 1)
+        add_marker(state, Position(x=4, y=2), 1)  # Can slide to (4,3) to complete line
+        add_stack(state, Position(x=0, y=0), [1, 2])
+
+        targets = enumerate_expanded_recovery_targets(state, 1)
+
+        # Should have line targets
+        line_targets = [t for t in targets if t.recovery_mode == "line"]
+        assert len(line_targets) > 0, "Should have line recovery options"
+
+        # Should NOT have fallback targets when line is possible
+        fallback_targets = [t for t in targets if t.recovery_mode == "fallback"]
+        assert len(fallback_targets) == 0, "Should not have fallback when line recovery is available"
+
+    def test_skip_recovery_always_available(self):
+        """Test that skip_recovery is always available when eligible for recovery."""
+        from app.rules.recovery import get_expanded_recovery_moves
+
+        state = create_test_state()
+        add_marker(state, Position(x=3, y=3), 1)
+        add_stack(state, Position(x=0, y=0), [1, 2])
+
+        moves = get_expanded_recovery_moves(state, 1)
+
+        skip_moves = [m for m in moves if m.type == MoveType.SKIP_RECOVERY]
+        assert len(skip_moves) == 1, "skip_recovery should always be available"
+
+        skip_move = skip_moves[0]
+        assert skip_move.player == 1

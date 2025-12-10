@@ -109,8 +109,11 @@ class MoveType(str, Enum):
 
     # Recovery (RR-CANON-R110–R115)
     # Temporarily eliminated players (no stacks, no rings in hand, has markers
-    # and buried rings) can slide a marker to complete a line.
+    # and buried rings) can perform recovery actions.
     RECOVERY_SLIDE = "recovery_slide"
+    # Skip recovery: player chooses to pass their turn without moving a marker
+    # or extracting a buried ring. Per RR-CANON-R112 skip option.
+    SKIP_RECOVERY = "skip_recovery"
 
 
 class AIType(str, Enum):
@@ -295,6 +298,9 @@ class Move(BaseModel):
     )
     # Recovery-specific metadata
     recovery_option: Optional[int] = Field(None, alias="recoveryOption")
+    # Recovery mode: which success criterion was met (RR-CANON-R112)
+    # "line" (a), "territory" (b), or "fallback" (c)
+    recovery_mode: Optional[str] = Field(None, alias="recoveryMode")
     collapse_positions: Optional[Tuple[Position, ...]] = Field(
         default=None, alias="collapsePositions"
     )
