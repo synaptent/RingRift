@@ -134,17 +134,160 @@ def test_line_validator(empty_game_state):
     )
     empty_game_state.board.formed_lines.append(line)
 
-    # Valid line process
+    # Valid line process with line_index=0 (first line)
     move = Move(
         id="m1", type=MoveType.PROCESS_LINE, player=1,
         to=Position(x=0, y=0),  # Dummy pos
+        line_index=0,  # Required field for TS parity
         timestamp=datetime.now(), thinkTime=0, moveNumber=1
     )
     assert validator.validate(empty_game_state, move) is True
-    
-    # No lines
+
+    # No lines - line_index 0 is now out of bounds
     empty_game_state.board.formed_lines = []
     assert validator.validate(empty_game_state, move) is False
+
+
+def test_line_validator_line_index_required(empty_game_state):
+    """Test that line_index is required for line processing moves (RR-CANON parity)."""
+    validator = LineValidator()
+    empty_game_state.current_phase = GamePhase.LINE_PROCESSING
+
+    from app.models import LineInfo
+    line = LineInfo(
+        positions=[Position(x=0, y=i) for i in range(4)],
+        player=1, length=4, direction=Position(x=0, y=1)
+    )
+    empty_game_state.board.formed_lines.append(line)
+
+    # Missing line_index should fail
+    move_no_index = Move(
+        id="m1", type=MoveType.PROCESS_LINE, player=1,
+        to=Position(x=0, y=0),
+        timestamp=datetime.now(), thinkTime=0, moveNumber=1
+        # line_index intentionally omitted
+    )
+    assert validator.validate(empty_game_state, move_no_index) is False
+
+
+def test_line_validator_line_index_bounds(empty_game_state):
+    """Test line_index bounds checking mirrors TS validateProcessLine."""
+    validator = LineValidator()
+    empty_game_state.current_phase = GamePhase.LINE_PROCESSING
+
+    from app.models import LineInfo
+    line = LineInfo(
+        positions=[Position(x=0, y=i) for i in range(4)],
+        player=1, length=4, direction=Position(x=0, y=1)
+    )
+    empty_game_state.board.formed_lines.append(line)
+
+    # Negative index should fail
+    move_negative = Move(
+        id="m1", type=MoveType.PROCESS_LINE, player=1,
+        to=Position(x=0, y=0),
+        line_index=-1,
+        timestamp=datetime.now(), thinkTime=0, moveNumber=1
+    )
+    assert validator.validate(empty_game_state, move_negative) is False
+
+    # Index beyond formed_lines length should fail
+    move_out_of_bounds = Move(
+        id="m2", type=MoveType.PROCESS_LINE, player=1,
+        to=Position(x=0, y=0),
+        line_index=5,  # Only 1 line exists
+        timestamp=datetime.now(), thinkTime=0, moveNumber=1
+    )
+    assert validator.validate(empty_game_state, move_out_of_bounds) is False
+
+    # Exactly at boundary (len=1, index=1) should fail
+    move_at_boundary = Move(
+        id="m3", type=MoveType.PROCESS_LINE, player=1,
+        to=Position(x=0, y=0),
+        line_index=1,  # Only 1 line exists (index 0)
+        timestamp=datetime.now(), thinkTime=0, moveNumber=1
+    )
+    assert validator.validate(empty_game_state, move_at_boundary) is False
+
+
+def test_line_validator_line_ownership(empty_game_state):
+    """Test that line_index must reference a line owned by the moving player."""
+    validator = LineValidator()
+    empty_game_state.current_phase = GamePhase.LINE_PROCESSING
+
+    from app.models import LineInfo
+    # Line owned by player 2
+    line_p2 = LineInfo(
+        positions=[Position(x=0, y=i) for i in range(4)],
+        player=2, length=4, direction=Position(x=0, y=1)
+    )
+    # Line owned by player 1
+    line_p1 = LineInfo(
+        positions=[Position(x=1, y=i) for i in range(4)],
+        player=1, length=4, direction=Position(x=0, y=1)
+    )
+    empty_game_state.board.formed_lines = [line_p2, line_p1]
+
+    # Player 1 trying to process player 2's line (index 0) should fail
+    move_wrong_owner = Move(
+        id="m1", type=MoveType.PROCESS_LINE, player=1,
+        to=Position(x=0, y=0),
+        line_index=0,  # Points to line_p2 owned by player 2
+        timestamp=datetime.now(), thinkTime=0, moveNumber=1
+    )
+    assert validator.validate(empty_game_state, move_wrong_owner) is False
+
+    # Player 1 processing their own line (index 1) should succeed
+    move_correct_owner = Move(
+        id="m2", type=MoveType.PROCESS_LINE, player=1,
+        to=Position(x=1, y=0),
+        line_index=1,  # Points to line_p1 owned by player 1
+        timestamp=datetime.now(), thinkTime=0, moveNumber=1
+    )
+    assert validator.validate(empty_game_state, move_correct_owner) is True
+
+
+def test_line_validator_multiple_lines(empty_game_state):
+    """Test line_index correctly identifies the target line in multi-line scenarios."""
+    validator = LineValidator()
+    empty_game_state.current_phase = GamePhase.LINE_PROCESSING
+
+    from app.models import LineInfo
+    # Multiple lines for player 1
+    lines = [
+        LineInfo(
+            positions=[Position(x=i, y=0) for i in range(4)],
+            player=1, length=4, direction=Position(x=1, y=0)
+        ),
+        LineInfo(
+            positions=[Position(x=0, y=i) for i in range(4)],
+            player=1, length=4, direction=Position(x=0, y=1)
+        ),
+        LineInfo(
+            positions=[Position(x=i, y=i) for i in range(4)],
+            player=1, length=4, direction=Position(x=1, y=1)
+        ),
+    ]
+    empty_game_state.board.formed_lines = lines
+
+    # Each valid index should work
+    for idx in range(3):
+        move = Move(
+            id=f"m{idx}", type=MoveType.PROCESS_LINE, player=1,
+            to=lines[idx].positions[0],
+            line_index=idx,
+            timestamp=datetime.now(), thinkTime=0, moveNumber=1
+        )
+        assert validator.validate(empty_game_state, move) is True, f"Index {idx} should be valid"
+
+    # Index 3 should fail (only 3 lines exist)
+    move_invalid = Move(
+        id="m3", type=MoveType.PROCESS_LINE, player=1,
+        to=Position(x=0, y=0),
+        line_index=3,
+        timestamp=datetime.now(), thinkTime=0, moveNumber=1
+    )
+    assert validator.validate(empty_game_state, move_invalid) is False
 
 
 def test_territory_validator(empty_game_state):
