@@ -1517,6 +1517,14 @@ function applyMoveWithChainInfo(state: GameState, move: Move): ApplyMoveResult {
       // can move/capture this turn. This matches Python's must_move_from_stack_key
       // semantics for TS/Python parity.
       const placementKey = move.to ? positionToString(move.to) : undefined;
+      // DEBUG: Log mustMoveFromStackKey assignment
+      if (process.env.RINGRIFT_TRACE_DEBUG === '1') {
+        // eslint-disable-next-line no-console
+        console.log(
+          '[applyMoveWithChainInfo] place_ring setting mustMoveFromStackKey:',
+          placementKey
+        );
+      }
       return {
         nextState: {
           ...newState,
