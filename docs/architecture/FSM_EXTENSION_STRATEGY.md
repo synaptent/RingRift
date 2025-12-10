@@ -138,13 +138,13 @@ This document tracks the FSM extension roadmap, now largely complete.
 
 **Goal:** Surface FSM state to UI and telemetry systems.
 
-| Task                                      | Status  | Files                                      |
-| ----------------------------------------- | ------- | ------------------------------------------ |
-| Adapter for FSM → GameHUD view model      | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
-| FSM decision surface telemetry events     | ✅ Done | `src/shared/telemetry/rulesUxEvents.ts`    |
-| `FSMDecisionSurfaceViewModel` type        | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
-| `toFSMDecisionSurfaceViewModel()` adapter | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
-| `extractFSMTelemetryFields()` helper      | ✅ Done | `src/client/adapters/gameViewModels.ts`    |
+| Task                                      | Status     | Files                                   |
+| ----------------------------------------- | ---------- | --------------------------------------- |
+| Adapter for FSM → GameHUD view model      | ✅ Done    | `src/client/adapters/gameViewModels.ts` |
+| FSM decision surface telemetry events     | ✅ Done    | `src/shared/telemetry/rulesUxEvents.ts` |
+| `FSMDecisionSurfaceViewModel` type        | ✅ Done    | `src/client/adapters/gameViewModels.ts` |
+| `toFSMDecisionSurfaceViewModel()` adapter | ✅ Done    | `src/client/adapters/gameViewModels.ts` |
+| `extractFSMTelemetryFields()` helper      | ✅ Done    | `src/client/adapters/gameViewModels.ts` |
 | FSM action traces in replay harness       | 🔜 Planned |                                         |
 | Teaching overlay FSM-aware explanations   | 🔜 Planned |                                         |
 
@@ -160,12 +160,13 @@ This document tracks the FSM extension roadmap, now largely complete.
 
 **Goal:** Comprehensive FSM test coverage.
 
-| Task                                  | Status  | Files                                           |
-| ------------------------------------- | ------- | ----------------------------------------------- |
-| Property-based random event sequences | ✅ Done | `tests/unit/fsm/FSM.property.test.ts`           |
-| Cross-language fixture generation     | ✅ Done | `tests/fixtures/fsm-parity/v1/`                 |
-| FE entry/exit targeted tests          | ✅ Done | `tests/unit/fsm/FSM.forcedElimination.test.ts`  |
-| Territory loop tests                  | ✅ Done | `tests/unit/fsm/FSM.territoryLoop.test.ts`      |
+| Task                                  | Status  | Files                                                                               |
+| ------------------------------------- | ------- | ----------------------------------------------------------------------------------- |
+| Property-based random event sequences | ✅ Done | `tests/unit/fsm/FSM.property.test.ts`                                               |
+| Cross-language fixture generation     | ✅ Done | `tests/fixtures/fsm-parity/v1/`, `tests/unit/fsm/FSM.crossLanguageFixtures.test.ts` |
+| Python fixture loader                 | ✅ Done | `ai-service/tests/rules/test_fsm_fixtures.py`                                       |
+| FE entry/exit targeted tests          | ✅ Done | `tests/unit/fsm/FSM.forcedElimination.test.ts`                                      |
+| Territory loop tests                  | ✅ Done | `tests/unit/fsm/FSM.territoryLoop.test.ts`                                          |
 
 **Outcome:**
 
@@ -191,21 +192,22 @@ This document tracks the FSM extension roadmap, now largely complete.
 - Cross-language fixture generation:
   - JSON fixtures at `tests/fixtures/fsm-parity/v1/fsm_transitions.vectors.json`
   - 23 test vectors covering all FSM phases and transitions
-  - TypeScript loader at `tests/unit/fsm/FSM.crossLanguageFixtures.test.ts`
-  - Fixtures can be consumed by Python tests for parity validation
+  - TypeScript loader at `tests/unit/fsm/FSM.crossLanguageFixtures.test.ts` (24 tests)
+  - Python loader at `ai-service/tests/rules/test_fsm_fixtures.py` (14 tests)
+  - Both languages consume the same JSON fixtures for true parity validation
 
 ### Phase 7: Data Pipeline (P2) ✅ COMPLETE
 
 **Goal:** Thread FSM validation into training data.
 
-| Task                                       | Status  | Files                                    |
-| ------------------------------------------ | ------- | ---------------------------------------- |
-| Add `fsm_valid` field to move metadata     | ✅ Done | `ai-service/app/db/game_replay.py`       |
-| Add `fsm_error_code` field                 | ✅ Done | `ai-service/app/db/game_replay.py`       |
-| Schema v7 migration                        | ✅ Done | `ai-service/app/db/game_replay.py`       |
-| `validate_move_fsm()` helper               | ✅ Done | `ai-service/app/db/recording.py`         |
-| Block dataset generation on FSM validation | ✅ Done | `ai-service/app/training/env.py`         |
-| Add `fsmValidated` to GameRecordMetadata   | ✅ Done | `ai-service/app/models/game_record.py`   |
+| Task                                       | Status  | Files                                           |
+| ------------------------------------------ | ------- | ----------------------------------------------- |
+| Add `fsm_valid` field to move metadata     | ✅ Done | `ai-service/app/db/game_replay.py`              |
+| Add `fsm_error_code` field                 | ✅ Done | `ai-service/app/db/game_replay.py`              |
+| Schema v7 migration                        | ✅ Done | `ai-service/app/db/game_replay.py`              |
+| `validate_move_fsm()` helper               | ✅ Done | `ai-service/app/db/recording.py`                |
+| Block dataset generation on FSM validation | ✅ Done | `ai-service/app/training/env.py`                |
+| Add `fsmValidated` to GameRecordMetadata   | ✅ Done | `ai-service/app/models/game_record.py`          |
 | Update `build_training_game_record()`      | ✅ Done | `ai-service/app/training/game_record_export.py` |
 
 **Outcome:**
