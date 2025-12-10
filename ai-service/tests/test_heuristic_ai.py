@@ -325,8 +325,8 @@ class TestHeuristicAI(unittest.TestCase):
         From the full evaluator's perspective, progressing towards a
         territory win should strictly improve the position.
         """
-        base_state = self.game_state.copy(deep=True)
-        near_victory_state = self.game_state.copy(deep=True)
+        base_state = self.game_state.model_copy(deep=True)
+        near_victory_state = self.game_state.model_copy(deep=True)
 
         base_p1, base_p2 = base_state.players
         near_p1, near_p2 = near_victory_state.players
@@ -356,8 +356,8 @@ class TestHeuristicAI(unittest.TestCase):
         From the full evaluator's perspective, progressing towards an
         elimination win should strictly improve the position.
         """
-        base_state = self.game_state.copy(deep=True)
-        near_victory_state = self.game_state.copy(deep=True)
+        base_state = self.game_state.model_copy(deep=True)
+        near_victory_state = self.game_state.model_copy(deep=True)
 
         base_state.victory_threshold = 10
         base_state.territory_victory_threshold = 100
@@ -1102,8 +1102,8 @@ class TestHeuristicAIMoveSelectionDeterminism(unittest.TestCase):
             def apply_move(self, game_state, move):
                 return self._move_to_state[move]
 
-        worse_state = self.game_state.copy(deep=True)
-        better_state = self.game_state.copy(deep=True)
+        worse_state = self.game_state.model_copy(deep=True)
+        better_state = self.game_state.model_copy(deep=True)
 
         # In the better state, give Player 1 a large territory lead so the
         # full evaluator rates it higher.
@@ -1152,8 +1152,8 @@ class TestHeuristicAIMoveSelectionDeterminism(unittest.TestCase):
         move_a = _make_mock_move(player=1, x=1, y=1)
         move_b = _make_mock_move(player=1, x=2, y=2)
 
-        state_a = self.game_state.copy(deep=True)
-        state_b = self.game_state.copy(deep=True)
+        state_a = self.game_state.model_copy(deep=True)
+        state_b = self.game_state.model_copy(deep=True)
 
         move_to_state = {
             move_a: state_a,

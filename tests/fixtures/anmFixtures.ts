@@ -281,7 +281,10 @@ export function makeAnmScen06_GlobalStalemateBareBoard(): GameState {
     boardType: 'square8',
     board,
     players,
-    currentPlayer: 1,
+    // Use a non-participating currentPlayer so that isANMState(state) is false
+    // (hasTurnMaterial(state, currentPlayer) === false) while the stalemate
+    // ladder in victoryLogic still evaluates over players[1..N].
+    currentPlayer: 3,
     currentPhase: 'ring_placement',
   });
 }

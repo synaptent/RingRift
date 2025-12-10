@@ -54,6 +54,70 @@ describe('FSMAdapter', () => {
       expect(event).toEqual({ type: 'SKIP_PLACEMENT' });
     });
 
+    it('should convert no_placement_action to NO_PLACEMENT_ACTION event', () => {
+      const move: Move = {
+        id: 'test-no-placement',
+        type: 'no_placement_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
+
+      const event = moveToEvent(move);
+
+      expect(event).toEqual({ type: 'NO_PLACEMENT_ACTION' });
+    });
+
+    it('should convert no_movement_action to NO_MOVEMENT_ACTION event', () => {
+      const move: Move = {
+        id: 'test-no-movement',
+        type: 'no_movement_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 2,
+      };
+
+      const event = moveToEvent(move);
+
+      expect(event).toEqual({ type: 'NO_MOVEMENT_ACTION' });
+    });
+
+    it('should convert no_line_action to NO_LINE_ACTION event', () => {
+      const move: Move = {
+        id: 'test-no-line',
+        type: 'no_line_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 3,
+      };
+
+      const event = moveToEvent(move);
+
+      expect(event).toEqual({ type: 'NO_LINE_ACTION' });
+    });
+
+    it('should convert no_territory_action to NO_TERRITORY_ACTION event', () => {
+      const move: Move = {
+        id: 'test-no-territory',
+        type: 'no_territory_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 4,
+      };
+
+      const event = moveToEvent(move);
+
+      expect(event).toEqual({ type: 'NO_TERRITORY_ACTION' });
+    });
+
     it('should convert move_stack to MOVE_STACK event', () => {
       const move: Move = {
         id: 'test-3',
@@ -179,6 +243,50 @@ describe('FSMAdapter', () => {
       expect(move!.type).toBe('move_stack');
       expect(move!.from).toEqual({ x: 2, y: 2 });
       expect(move!.to).toEqual({ x: 4, y: 4 });
+    });
+
+    it('should convert NO_PLACEMENT_ACTION event to no_placement_action move', () => {
+      const event = { type: 'NO_PLACEMENT_ACTION' as const };
+
+      const move = eventToMove(event, 1, 10);
+
+      expect(move).not.toBeNull();
+      expect(move!.type).toBe('no_placement_action');
+      expect(move!.player).toBe(1);
+      expect(move!.to).toEqual({ x: 0, y: 0 });
+    });
+
+    it('should convert NO_MOVEMENT_ACTION event to no_movement_action move', () => {
+      const event = { type: 'NO_MOVEMENT_ACTION' as const };
+
+      const move = eventToMove(event, 2, 11);
+
+      expect(move).not.toBeNull();
+      expect(move!.type).toBe('no_movement_action');
+      expect(move!.player).toBe(2);
+      expect(move!.to).toEqual({ x: 0, y: 0 });
+    });
+
+    it('should convert NO_LINE_ACTION event to no_line_action move', () => {
+      const event = { type: 'NO_LINE_ACTION' as const };
+
+      const move = eventToMove(event, 1, 12);
+
+      expect(move).not.toBeNull();
+      expect(move!.type).toBe('no_line_action');
+      expect(move!.player).toBe(1);
+      expect(move!.to).toEqual({ x: 0, y: 0 });
+    });
+
+    it('should convert NO_TERRITORY_ACTION event to no_territory_action move', () => {
+      const event = { type: 'NO_TERRITORY_ACTION' as const };
+
+      const move = eventToMove(event, 1, 13);
+
+      expect(move).not.toBeNull();
+      expect(move!.type).toBe('no_territory_action');
+      expect(move!.player).toBe(1);
+      expect(move!.to).toEqual({ x: 0, y: 0 });
     });
 
     it('should return null for RESIGN event', () => {

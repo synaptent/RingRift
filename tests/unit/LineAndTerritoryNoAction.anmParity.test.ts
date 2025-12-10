@@ -15,34 +15,29 @@ import {
 } from '../fixtures/anmFixtures';
 
 /**
- * Line & Territory ANM / no_*_action parity tests.
+ * Line / Territory ANM parity tests.
  *
- * These tests complement MovementNoAction.anmParity.test.ts by covering:
- *
+ * These tests exercise the TS-side global-actions helpers for:
  * - ANM-SCEN-04 – Territory processing with no remaining decisions.
  * - ANM-SCEN-05 – Line processing with no remaining decisions.
  *
- * In both scenarios:
- * - Phase-local decision surfaces for the current phase are empty.
- * - Other global actions (placements, future movement, etc.) still exist.
- * - isANMState(state) must therefore return false.
+ * For both scenarios we assert:
+ * - Phase-local interactive surfaces in the current phase are empty.
+ * - Global action surface G(state, currentPlayer) is non-empty via placements.
+ * - isANMState(state) === false (these are not ANM states).
  */
-describe('Line and Territory ANM / no_*_action parity', () => {
+describe('Line & Territory ANM parity', () => {
   /**
-   * ANM-SCEN-04 – Territory processing with no remaining decisions.
+   * ANM-SCEN-04 – territory_processing with no remaining decisions.
    *
-   * Shape:
-   * - gameStatus == 'active'
-   * - currentPhase == 'territory_processing'
-   * - No disconnected regions for currentPlayer.
-   * - No pending territory eliminations for currentPlayer.
-   * - Player still has global legal placements available.
-   *
-   * Expectations:
-   * - enumerateProcessTerritoryRegionMoves(...) === [].
-   * - enumerateTerritoryEliminationMoves(...) === [].
-   * - hasPhaseLocalInteractiveMove(...) === false for territory_processing.
-   * - Global placements exist so isANMState(state) === false.
+   * Expectations for the currentPlayer:
+   * - enumerateProcessTerritoryRegionMoves(...) === []
+   * - enumerateTerritoryEliminationMoves(...) === []
+   * - hasPhaseLocalInteractiveMove(...) === false
+   * - hasTurnMaterial === true (stack + rings in hand)
+   * - hasGlobalPlacementAction === true
+   * - hasForcedEliminationAction === false
+   * - isANMState(state) === false
    */
   test('ANM-SCEN-04: territory_processing with no remaining decisions is not ANM', () => {
     const state: GameState = makeAnmScen04_TerritoryNoRemainingDecisions();
@@ -54,37 +49,36 @@ describe('Line and Territory ANM / no_*_action parity', () => {
     const regionMoves = enumerateProcessTerritoryRegionMoves(state, player);
     const elimMoves = enumerateTerritoryEliminationMoves(state, player);
 
+    // No local territory decisions remain.
     expect(regionMoves.length).toBe(0);
     expect(elimMoves.length).toBe(0);
 
-    // Phase-local decision surface for territory_processing is empty.
+    // Phase-local interactive surface is empty for the current phase.
     expect(hasPhaseLocalInteractiveMove(state, player)).toBe(false);
 
     const summary = computeGlobalLegalActionsSummary(state, player);
 
-    // Player still has turn-material via rings in hand and can place globally.
+    // Player still has material and global placements available.
     expect(summary.hasTurnMaterial).toBe(true);
     expect(summary.hasGlobalPlacementAction).toBe(true);
+    // No forced elimination and no phase-local moves in this phase.
     expect(summary.hasForcedEliminationAction).toBe(false);
     expect(summary.hasPhaseLocalInteractiveMove).toBe(false);
 
-    // INV-ACTIVE-NO-MOVES: state is not ANM because global placements exist.
+    // Territory no-op state is not ANM because placements exist globally.
     expect(isANMState(state)).toBe(false);
   });
 
   /**
-   * ANM-SCEN-05 – Line processing with no remaining decisions.
+   * ANM-SCEN-05 – line_processing with no remaining decisions.
    *
-   * Shape:
-   * - gameStatus == 'active'
-   * - currentPhase == 'line_processing'
-   * - No lines/choices remain for currentPlayer.
-   * - Player still has global placements available.
-   *
-   * Expectations:
-   * - enumerateProcessLineMoves(...) === [].
-   * - hasPhaseLocalInteractiveMove(...) === false for line_processing.
-   * - Global placements exist so isANMState(state) === false.
+   * Expectations for the currentPlayer:
+   * - enumerateProcessLineMoves(...) === []
+   * - hasPhaseLocalInteractiveMove(...) === false
+   * - hasTurnMaterial === true (rings in hand)
+   * - hasGlobalPlacementAction === true
+   * - hasForcedEliminationAction === false
+   * - isANMState(state) === false
    */
   test('ANM-SCEN-05: line_processing with no remaining decisions is not ANM', () => {
     const state: GameState = makeAnmScen05_LineProcessingNoRemainingDecisions();
@@ -97,16 +91,22 @@ describe('Line and Territory ANM / no_*_action parity', () => {
       detectionMode: 'detect_now',
     });
 
+    // No line/choice decisions remain for the current player.
     expect(lineMoves.length).toBe(0);
+
+    // Phase-local interactive surface is empty for line_processing.
     expect(hasPhaseLocalInteractiveMove(state, player)).toBe(false);
 
     const summary = computeGlobalLegalActionsSummary(state, player);
 
+    // Player still has rings in hand and thus placements available.
     expect(summary.hasTurnMaterial).toBe(true);
     expect(summary.hasGlobalPlacementAction).toBe(true);
+    // No forced elimination and no local decisions in this phase.
     expect(summary.hasForcedEliminationAction).toBe(false);
     expect(summary.hasPhaseLocalInteractiveMove).toBe(false);
 
+    // Line-processing no-op state is not ANM because placements exist globally.
     expect(isANMState(state)).toBe(false);
   });
 });

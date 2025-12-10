@@ -1,66 +1,53 @@
-import {
-  computeGlobalLegalActionsSummary,
-  isANMState,
-  evaluateVictory,
-} from '../../src/shared/engine';
+import type { GameState } from '../../src/shared/types/game';
+import { computeGlobalLegalActionsSummary, isANMState } from '../../src/shared/engine/globalActions';
+import { evaluateVictory } from '../../src/shared/engine/victoryLogic';
 import { makeAnmScen06_GlobalStalemateBareBoard } from '../fixtures/anmFixtures';
 
 /**
- * Victory / ANM chain scenarios (TS-side only, light)
+ * Victory / ANM chain scenarios (TS-side)
  *
- * These tests focus on:
- * - ANM-SCEN-06 – Global stalemate on a bare board with rings in hand.
+ * These tests exercise how ANM-style global no-action states interact with
+ * the canonical victory ladder in victoryLogic, focusing on:
  *
- * They tie together:
- * - The R200 global legal action summary surface, and
- * - The shared victory evaluator (evaluateVictory).
+ * - ANM-SCEN-06 – Global stalemate on a bare board (no legal actions for any player).
  *
- * Canonical intent:
- * - In the bare-board global stalemate shape, no player has any global actions:
- *   - No placements (all spaces are collapsed),
- *   - No movement/capture (no stacks),
- *   - No forced elimination (no stacks).
- * - Victory is resolved structurally via the stalemate ladder (§13.4):
- *   - Here, by treating rings in hand as eliminated for tie-break purposes.
+ * The key requirement is that structurally terminal bare-board positions are
+ * resolved by victory logic (stalemate ladder) rather than being treated as
+ * ANM violations for the active player.
  */
-describe('Victory / ANM chain scenarios – global stalemate and structural termination', () => {
+describe('Victory / ANM chains – global stalemate and LPS', () => {
   /**
-   * ANM-SCEN-06 – Global stalemate (no actions for any player).
+   * ANM-SCEN-06 – Global stalemate (bare board, no legal actions).
    *
-   * Fixture shape (makeAnmScen06_GlobalStalemateBareBoard):
-   * - Board type: square8.
+   * Fixture shape (see tests/fixtures/anmFixtures.ts):
    * - No stacks on the board.
-   * - Every cell is collapsed territory.
-   * - Both players still have rings in hand (P1 > P2).
+   * - All spaces are collapsed territory.
+   * - Players still have rings in hand, but:
+   *   - hasGlobalPlacementAction(state, player) === false for every player.
+   *   - hasForcedEliminationAction(state, player) === false for every player.
    *
-   * Expectations:
-   * - For each player:
-   *   - hasGlobalPlacementAction === false.
-   *   - hasPhaseLocalInteractiveMove === false.
-   *   - hasForcedEliminationAction === false.
-   * - evaluateVictory reports a terminal stalemate resolved via the
-   *   ring-elimination tie-break (hand → eliminated), with Player 1
-   *   winning and handCountsAsEliminated === true.
+   * Victory expectations (per victoryLogic.evaluateVictory):
+   * - Game is terminal via the stalemate ladder.
+   * - Winner is the player with the highest effective elimination score
+   *   (including rings in hand treated as eliminated).
+   * - reason === 'ring_elimination' and handCountsAsEliminated === true.
    *
-   * Note: The ANM predicate (isANMState) is intentionally *not* asserted
-   * here. Canonically, this is the only permitted global “no actions for
-   * anyone” shape, and termination is handled by evaluateVictory. Future
-   * engine work may refine isANMState semantics around structural
-   * terminality, but these tests focus on victory behaviour.
+   * ANM expectations:
+   * - isANMState(state) === false for the synthetic ACTIVE snapshot; hosts
+   *   must apply victory evaluation instead of treating this as an ANM turn.
    */
-  test('ANM-SCEN-06: bare-board global stalemate is resolved by victory logic, not stalled as ANM', () => {
-    const state = makeAnmScen06_GlobalStalemateBareBoard();
+  test('ANM-SCEN-06: bare-board global stalemate is resolved by victory logic, not ANM', () => {
+    const state: GameState = makeAnmScen06_GlobalStalemateBareBoard();
 
-    // Shape sanity checks.
+    // Sanity-check bare-board geometry.
     expect(state.board.stacks.size).toBe(0);
-    expect(state.players.length).toBeGreaterThanOrEqual(2);
+    expect(state.board.collapsedSpaces.size).toBe(state.board.size * state.board.size);
     expect(state.gameStatus).toBe('active');
 
-    const anyRingsInHand = state.players.some((p) => p.ringsInHand > 0);
-    expect(anyRingsInHand).toBe(true);
-
-    // Global legal action summary: no placements, no movement/capture, no FE
-    // for any player. Turn-material remains true via ringsInHand.
+    // For every player, the global action surface should be empty:
+    // - no placements,
+    // - no phase-local interactive moves (currentPlayer is a non-participant),
+    // - no forced elimination.
     for (const player of state.players) {
       const summary = computeGlobalLegalActionsSummary(state, player.playerNumber);
 
@@ -70,21 +57,19 @@ describe('Victory / ANM chain scenarios – global stalemate and structural term
       expect(summary.hasForcedEliminationAction).toBe(false);
     }
 
-    // Victory logic must treat this as a structural terminal position and
-    // resolve via the stalemate ladder (§13.4), converting rings in hand
-    // to eliminated rings for tie-breaking.
+    // Victory logic should detect a terminal stalemate and select a winner
+    // via the §13.4 stalemate ladder (territory → eliminated+hand → markers → last actor).
     const result = evaluateVictory(state);
 
     expect(result.isGameOver).toBe(true);
-    expect(result.reason).toBe('ring_elimination');
-    // Fixture gives Player 1 strictly more rings in hand than Player 2.
+    // Fixture is constructed so that player 1 wins on effective elimination score
+    // once rings in hand are treated as eliminated.
     expect(result.winner).toBe(1);
+    expect(result.reason).toBe('ring_elimination');
     expect(result.handCountsAsEliminated).toBe(true);
 
-    // For debugging/telemetry purposes we still ensure the ANM predicate is
-    // a well-defined boolean on this shape, but we do not assert its exact
-    // value here; termination is enforced via evaluateVictory.
-    const anmFlag = isANMState(state);
-    expect(typeof anmFlag).toBe('boolean');
+    // The synthetic ACTIVE snapshot used for global stalemate evaluation is
+    // not considered an ANM state for the (non-participating) currentPlayer.
+    expect(isANMState(state)).toBe(false);
   });
 });

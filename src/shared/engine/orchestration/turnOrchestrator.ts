@@ -1559,8 +1559,19 @@ export function processTurn(
         moveNumber: state.moveHistory.length + 1,
       });
     } else {
+      // Territory-phase moves (process_territory_region, no_territory_action,
+      // skip_territory_processing) have their post-move phase/player semantics
+      // driven by the shared orchestrator + TurnStateMachine helpers
+      // (onLineProcessingComplete / onTerritoryProcessingComplete), which are
+      // already aligned with Python's phase_machine. To avoid double-advancing
+      // the turn and prematurely rotating out of territory_processing while
+      // Python remains in territory_processing, we **do not** apply FSM
+      // nextPhase/nextPlayer for these moves. FSM is still used for validation
+      // and for non-territory phases.
       const isTerritoryPhaseMove =
-        move.type === 'process_territory_region' || move.type === 'no_territory_action';
+        move.type === 'process_territory_region' ||
+        move.type === 'no_territory_action' ||
+        move.type === 'skip_territory_processing';
 
       // Handle game_over transition (e.g., from resign)
       if (fsmOrchResult.nextPhase === 'game_over') {
@@ -1575,19 +1586,22 @@ export function processTurn(
               ? finalState.players.find((p) => p.playerNumber !== move.player)?.playerNumber
               : undefined,
         };
-      } else {
-        // Apply FSM-derived state for all moves (including territory phase moves).
-        // Per RR-CANON-R073: after territory_processing completes, turn ends and next
-        // player's phase is ring_placement (if ringsInHand > 0) or movement.
+      } else if (!isTerritoryPhaseMove) {
+        // Apply FSM-derived state for all **non-territory** moves.
         //
-        // RR-PARITY-FIX-2024-12-10: Previously, territory phase moves (process_territory_region,
-        // no_territory_action) were excluded from FSM state application. This caused 4-player
-        // games to fail turn rotation after no_territory_action because processPostMovePhases
-        // returned early in the forced_elimination check block even when phaseAfterTerritory
-        // was turn_end. The FSM correctly computes the next player/phase, so apply it always.
+        // For territory-processing moves themselves (process_territory_region,
+        // no_territory_action, skip_territory_processing), the canonical
+        // post-move behaviour is:
+        //   - Recompute remaining territory regions for the active player.
+        //   - Stay in territory_processing while regions remain.
+        //   - Only when no regions remain, call onTerritoryProcessingComplete
+        //     to decide between forced_elimination and turn_end.
+        // This logic is implemented in processPostMovePhases and mirrors
+        // Python's phase_machine, so we leave finalState as computed there.
         //
-        // Note: computeFSMOrchestration already resolves 'turn_end' to the actual phase
-        // (ring_placement/movement), so we use the resolved phase directly.
+        // Note: computeFSMOrchestration already resolves 'turn_end' to the
+        // actual starting phase (ring_placement / movement) for the **next**
+        // player, so we can safely apply it for non-territory moves.
         finalState = {
           ...finalState,
           currentPhase: fsmOrchResult.nextPhase as GamePhase,
@@ -1596,7 +1610,9 @@ export function processTurn(
       }
 
       // Phase 1: Use FSM decision surface as the canonical source for pending decisions.
-      // Derive PendingDecision from FSM orchestration result.
+      // Derive PendingDecision from FSM orchestration result. Territory-phase moves
+      // continue to use the legacy orchestrator surface for region/no_territory
+      // decisions to keep TS/Python parity with canonical history.
       const fsmDerivedDecision = !isTerritoryPhaseMove
         ? derivePendingDecisionFromFSM(finalState, fsmOrchResult)
         : undefined;
