@@ -1,7 +1,7 @@
 {
   "version": "v2",
   "generated": "2025-12-08T20:05:00.000Z",
-  "count": 3,
+  "count": 4,
   "categories": ["movement", "edge_case"],
   "vectors": [
     {
@@ -242,6 +242,86 @@
         "status": "complete",
         "assertions": {
           "gameStatus": "active"
+        }
+      }
+    },
+    {
+      "id": "recovery.fallback_reposition",
+      "version": "v2",
+      "category": "movement",
+      "description": "Fallback recovery slide when no line-forming move exists (RR-CANON-R112b). Costs 1 buried ring, no line collapse.",
+      "tags": ["recovery", "fallback", "square8", "r112"],
+      "source": "manual",
+      "createdAt": "2025-12-10T19:00:00.000Z",
+      "input": {
+        "state": {
+          "gameId": "recovery-fallback-square8",
+          "board": {
+            "type": "square8",
+            "size": 8,
+            "stacks": {
+              "4,4": {
+                "position": { "x": 4, "y": 4 },
+                "rings": [2, 1, 2],
+                "stackHeight": 3,
+                "capHeight": 1,
+                "controllingPlayer": 2
+              }
+            },
+            "markers": {
+              "0,0": { "position": { "x": 0, "y": 0 }, "player": 1, "type": "regular" },
+              "7,7": { "position": { "x": 7, "y": 7 }, "player": 1, "type": "regular" }
+            },
+            "collapsedSpaces": {}
+          },
+          "players": [
+            {
+              "playerNumber": 1,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 2,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            },
+            {
+              "playerNumber": 3,
+              "ringsInHand": 0,
+              "eliminatedRings": 0,
+              "territorySpaces": 0,
+              "isActive": true
+            }
+          ],
+          "currentPlayer": 1,
+          "currentPhase": "movement",
+          "gameStatus": "active",
+          "moveHistory": [],
+          "totalRingsEliminated": 0
+        },
+        "initialMove": {
+          "id": "recovery-fallback-slide",
+          "type": "recovery_slide",
+          "player": 1,
+          "from": { "x": 0, "y": 0 },
+          "to": { "x": 1, "y": 0 },
+          "recoveryMode": "fallback",
+          "extractionStacks": ["4,4"],
+          "timestamp": "2025-12-10T19:00:00.000Z",
+          "thinkTime": 0,
+          "moveNumber": 1
+        }
+      },
+      "expectedOutput": {
+        "status": "complete",
+        "assertions": {
+          "gameStatus": "active",
+          "extractionCount": 1,
+          "noLineCollapse": true
         }
       }
     }
