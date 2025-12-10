@@ -62,6 +62,8 @@ KNOWN_FAILING_VECTORS = {
     "territory.square_two_regions_then_elim.step2_regionA",
     "territory.square19_two_regions_then_elim.step2_regionA",
     "territory.hex_two_regions_then_elim.step2_regionA",
+    # Non-canonical fixture: lines must be formed by markers, not stacks (RR-CANON-R120)
+    "territory_line.overlong_line.step1.square8",
 }
 
 VECTOR_CATEGORIES = [

@@ -1,10 +1,8 @@
 {
   "version": "v2",
-  "generated": "2025-12-10T03:23:27.104Z",
+  "generated": "2025-12-10T03:25:28.133Z",
   "count": 9,
-  "categories": [
-    "chain_capture"
-  ],
+  "categories": ["chain_capture"],
   "vectors": [
     {
       "id": "chain_capture.depth3.segment1.square8",
@@ -18,7 +16,7 @@
         "sequence:chain_capture.depth3.linear.square8"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.099Z",
+      "createdAt": "2025-12-10T03:25:28.129Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-square8",
@@ -31,11 +29,7 @@
                   "x": 3,
                   "y": 3
                 },
-                "rings": [
-                  1,
-                  1,
-                  1
-                ],
+                "rings": [1, 1, 1],
                 "stackHeight": 3,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -45,9 +39,7 @@
                   "x": 5,
                   "y": 3
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -57,9 +49,7 @@
                   "x": 7,
                   "y": 5
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -69,9 +59,7 @@
                   "x": 5,
                   "y": 7
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -160,7 +148,7 @@
         "sequence:chain_capture.depth3.linear.square8"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.100Z",
+      "createdAt": "2025-12-10T03:25:28.129Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-square8",
@@ -173,9 +161,7 @@
                   "x": 7,
                   "y": 5
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -185,9 +171,7 @@
                   "x": 5,
                   "y": 7
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -197,12 +181,7 @@
                   "x": 7,
                   "y": 3
                 },
-                "rings": [
-                  1,
-                  1,
-                  1,
-                  2
-                ],
+                "rings": [1, 1, 1, 2],
                 "stackHeight": 4,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -304,7 +283,7 @@
         "sequence:chain_capture.depth3.linear.square8"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.101Z",
+      "createdAt": "2025-12-10T03:25:28.130Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-square8",
@@ -317,9 +296,7 @@
                   "x": 5,
                   "y": 7
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -329,13 +306,7 @@
                   "x": 7,
                   "y": 7
                 },
-                "rings": [
-                  1,
-                  1,
-                  1,
-                  2,
-                  2
-                ],
+                "rings": [1, 1, 1, 2, 2],
                 "stackHeight": 5,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -445,7 +416,7 @@
         "sequence:chain_capture.depth3.linear.square19"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.101Z",
+      "createdAt": "2025-12-10T03:25:28.131Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-square19",
@@ -458,11 +429,7 @@
                   "x": 3,
                   "y": 3
                 },
-                "rings": [
-                  1,
-                  1,
-                  1
-                ],
+                "rings": [1, 1, 1],
                 "stackHeight": 3,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -472,9 +439,7 @@
                   "x": 5,
                   "y": 3
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -484,9 +449,7 @@
                   "x": 7,
                   "y": 5
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -496,9 +459,7 @@
                   "x": 5,
                   "y": 7
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -587,7 +548,7 @@
         "sequence:chain_capture.depth3.linear.square19"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.101Z",
+      "createdAt": "2025-12-10T03:25:28.131Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-square19",
@@ -600,9 +561,7 @@
                   "x": 7,
                   "y": 5
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -612,9 +571,7 @@
                   "x": 5,
                   "y": 7
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -624,12 +581,7 @@
                   "x": 7,
                   "y": 3
                 },
-                "rings": [
-                  1,
-                  1,
-                  1,
-                  2
-                ],
+                "rings": [1, 1, 1, 2],
                 "stackHeight": 4,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -731,7 +683,7 @@
         "sequence:chain_capture.depth3.linear.square19"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.102Z",
+      "createdAt": "2025-12-10T03:25:28.131Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-square19",
@@ -744,9 +696,7 @@
                   "x": 5,
                   "y": 7
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -756,13 +706,7 @@
                   "x": 7,
                   "y": 7
                 },
-                "rings": [
-                  1,
-                  1,
-                  1,
-                  2,
-                  2
-                ],
+                "rings": [1, 1, 1, 2, 2],
                 "stackHeight": 5,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -872,7 +816,7 @@
         "sequence:chain_capture.depth3.linear.hexagonal"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.103Z",
+      "createdAt": "2025-12-10T03:25:28.132Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-hexagonal",
@@ -886,11 +830,7 @@
                   "y": 0,
                   "z": 0
                 },
-                "rings": [
-                  1,
-                  1,
-                  1
-                ],
+                "rings": [1, 1, 1],
                 "stackHeight": 3,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -901,9 +841,7 @@
                   "y": 0,
                   "z": -1
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -914,9 +852,7 @@
                   "y": 0,
                   "z": -3
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -927,9 +863,7 @@
                   "y": 0,
                   "z": -5
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -1021,7 +955,7 @@
         "sequence:chain_capture.depth3.linear.hexagonal"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.103Z",
+      "createdAt": "2025-12-10T03:25:28.133Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-hexagonal",
@@ -1035,9 +969,7 @@
                   "y": 0,
                   "z": -3
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -1048,9 +980,7 @@
                   "y": 0,
                   "z": -5
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -1061,12 +991,7 @@
                   "y": 0,
                   "z": -2
                 },
-                "rings": [
-                  1,
-                  1,
-                  1,
-                  2
-                ],
+                "rings": [1, 1, 1, 2],
                 "stackHeight": 4,
                 "capHeight": 3,
                 "controllingPlayer": 1
@@ -1168,7 +1093,7 @@
         "sequence:chain_capture.depth3.linear.hexagonal"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:23:27.104Z",
+      "createdAt": "2025-12-10T03:25:28.133Z",
       "input": {
         "state": {
           "gameId": "contract-chain-depth3-hexagonal",
@@ -1182,9 +1107,7 @@
                   "y": 0,
                   "z": -5
                 },
-                "rings": [
-                  2
-                ],
+                "rings": [2],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -1195,13 +1118,7 @@
                   "y": 0,
                   "z": -4
                 },
-                "rings": [
-                  1,
-                  1,
-                  1,
-                  2,
-                  2
-                ],
+                "rings": [1, 1, 1, 2, 2],
                 "stackHeight": 5,
                 "capHeight": 3,
                 "controllingPlayer": 1

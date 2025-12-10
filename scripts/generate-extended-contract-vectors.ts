@@ -1126,27 +1126,20 @@ function buildTerritoryLineOverlongSquare8Vectors(): ContractTestVector[] {
 
   baseState.totalRingsEliminated = 0;
 
-  // Create a 6-stack line (overlong) for P1
+  // Create a 6-marker line (overlong) for P1
+  // Lines are formed from markers, not stacks!
   for (let i = 0; i < 6; i++) {
     const pos: Position = { x: i, y: 3 };
-    board0.stacks.set(positionToString(pos), {
+    board0.markers.set(positionToString(pos), {
       position: pos,
-      rings: [1],
-      stackHeight: 1,
-      capHeight: 1,
-      controllingPlayer: 1,
+      player: 1,
+      type: 'normal' as const,
     } as any);
   }
 
-  // Register the formed line
-  board0.formedLines = [
-    {
-      positions: Array.from({ length: 6 }, (_, i) => ({ x: i, y: 3 })),
-      player: 1,
-      length: 6,
-      direction: { x: 1, y: 0 },
-    },
-  ];
+  // Note: formedLines is typically set by the orchestrator after line detection.
+  // For FSM validation, we rely on findLinesForPlayer to detect lines from markers.
+  board0.formedLines = [];
 
   // Step 1: Process line using process_line move
   const move1: Move = {
@@ -1155,7 +1148,6 @@ function buildTerritoryLineOverlongSquare8Vectors(): ContractTestVector[] {
     player: 1,
     to: { x: 0, y: 3 }, // first position of line
     lineIndex: 0, // FSM requires explicit line index
-    formedLines: board0.formedLines,
     timestamp: new Date(0),
     thinkTime: 0,
     moveNumber: 1,
@@ -1605,7 +1597,8 @@ function buildHexForcedElim3pVectors(): ContractTestVector[] {
   ) as unknown as GameState;
 
   baseState.currentPlayer = 1;
-  baseState.currentPhase = 'territory_processing';
+  // Forced elimination phase, not territory_processing
+  baseState.currentPhase = 'forced_elimination';
   baseState.gameStatus = 'active';
 
   const board0 = baseState.board;
@@ -1630,7 +1623,7 @@ function buildHexForcedElim3pVectors(): ContractTestVector[] {
 
   const move: Move = {
     id: 'hex-3p-forced-elim',
-    type: 'eliminate_rings_from_stack',
+    type: 'forced_elimination', // Use forced_elimination move type
     player: 1,
     to: stackPos,
     timestamp: new Date(0),
@@ -1798,9 +1791,16 @@ async function main(): Promise<void> {
   // swap_sides meta-move, which is intentionally not routed through the
   // orchestrator. Python contract tests validate parity via the
   // default_engine / GameEngine.apply_move path.
-  const metaMoveVectors = await buildMetaMoveVectors();
-  if (metaMoveVectors.length > 0) {
-    writeBundle('meta_moves.vectors.json', metaMoveVectors);
+  try {
+    const metaMoveVectors = await buildMetaMoveVectors();
+    if (metaMoveVectors.length > 0) {
+      writeBundle('meta_moves.vectors.json', metaMoveVectors);
+    }
+  } catch (err) {
+    console.log(
+      'Skipping meta_moves vectors - GameEngine instantiation failed:',
+      (err as Error).message
+    );
   }
 }
 

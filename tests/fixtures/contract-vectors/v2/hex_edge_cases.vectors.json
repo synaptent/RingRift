@@ -1,6 +1,6 @@
 {
   "version": "v2",
-  "generated": "2025-12-01T08:02:22.599Z",
+  "generated": "2025-12-10T03:25:28.143Z",
   "count": 4,
   "categories": ["chain_capture", "territory_processing"],
   "vectors": [
@@ -18,13 +18,13 @@
         "edge"
       ],
       "source": "generated",
-      "createdAt": "2025-12-01T08:02:22.574Z",
+      "createdAt": "2025-12-10T03:25:28.137Z",
       "input": {
         "state": {
           "gameId": "contract-hex-edge-chain",
           "board": {
             "type": "hexagonal",
-            "size": 11,
+            "size": 13,
             "stacks": {
               "-3,3,0": {
                 "position": {
@@ -89,7 +89,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 37,
+          "victoryThreshold": 73,
           "territoryVictoryThreshold": 235,
           "totalRingsEliminated": 0
         },
@@ -148,13 +148,13 @@
         "edge"
       ],
       "source": "generated",
-      "createdAt": "2025-12-01T08:02:22.576Z",
+      "createdAt": "2025-12-10T03:25:28.137Z",
       "input": {
         "state": {
           "gameId": "contract-hex-edge-chain",
           "board": {
             "type": "hexagonal",
-            "size": 11,
+            "size": 13,
             "stacks": {
               "0,0,0": {
                 "position": {
@@ -218,7 +218,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 37,
+          "victoryThreshold": 73,
           "territoryVictoryThreshold": 235,
           "totalRingsEliminated": 0,
           "chainCapturePosition": {
@@ -252,10 +252,10 @@
         }
       },
       "expectedOutput": {
-        "status": "complete",
+        "status": "awaiting_decision",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPlayer": 1,
+          "currentPhase": "line_processing",
           "gameStatus": "active",
           "stackCount": 1,
           "markerCount": 2,
@@ -275,13 +275,13 @@
       "description": "Hex corner region territory (case 1)",
       "tags": ["territory_processing", "orchestrator", "parity", "hex", "corner", "territory"],
       "source": "generated",
-      "createdAt": "2025-12-01T08:02:22.597Z",
+      "createdAt": "2025-12-10T03:25:28.139Z",
       "input": {
         "state": {
           "gameId": "contract-hex-corner-region",
           "board": {
             "type": "hexagonal",
-            "size": 11,
+            "size": 13,
             "stacks": {
               "4,-4,0": {
                 "position": {
@@ -306,14 +306,14 @@
           "players": [
             {
               "playerNumber": 1,
-              "ringsInHand": 36,
+              "ringsInHand": 72,
               "eliminatedRings": 0,
               "territorySpaces": 0,
               "isActive": true
             },
             {
               "playerNumber": 2,
-              "ringsInHand": 36,
+              "ringsInHand": 72,
               "eliminatedRings": 0,
               "territorySpaces": 0,
               "isActive": true
@@ -324,7 +324,7 @@
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 37,
+          "victoryThreshold": 73,
           "territoryVictoryThreshold": 235,
           "totalRingsEliminated": 0
         },
@@ -349,9 +349,9 @@
           "markerCount": 0,
           "collapsedCount": 0,
           "sInvariantDelta": 0,
-          "player1RingsInHand": 36,
+          "player1RingsInHand": 72,
           "player1EliminatedRings": 0,
-          "player2RingsInHand": 36,
+          "player2RingsInHand": 72,
           "player2EliminatedRings": 0
         }
       }
@@ -363,13 +363,13 @@
       "description": "3-player forced elimination on hexagonal board",
       "tags": ["territory_processing", "orchestrator", "parity", "hex", "forced_elimination", "3p"],
       "source": "generated",
-      "createdAt": "2025-12-01T08:02:22.599Z",
+      "createdAt": "2025-12-10T03:25:28.143Z",
       "input": {
         "state": {
           "gameId": "contract-hex-forced-elim-3p",
           "board": {
             "type": "hexagonal",
-            "size": 11,
+            "size": 13,
             "stacks": {
               "0,0,0": {
                 "position": {
@@ -395,38 +395,38 @@
           "players": [
             {
               "playerNumber": 1,
-              "ringsInHand": 36,
+              "ringsInHand": 72,
               "eliminatedRings": 0,
               "territorySpaces": 0,
               "isActive": true
             },
             {
               "playerNumber": 2,
-              "ringsInHand": 36,
+              "ringsInHand": 72,
               "eliminatedRings": 0,
               "territorySpaces": 0,
               "isActive": true
             },
             {
               "playerNumber": 3,
-              "ringsInHand": 36,
+              "ringsInHand": 72,
               "eliminatedRings": 0,
               "territorySpaces": 0,
               "isActive": true
             }
           ],
           "currentPlayer": 1,
-          "currentPhase": "territory_processing",
+          "currentPhase": "forced_elimination",
           "turnNumber": 1,
           "moveHistory": [],
           "gameStatus": "active",
-          "victoryThreshold": 55,
+          "victoryThreshold": 109,
           "territoryVictoryThreshold": 235,
           "totalRingsEliminated": 18
         },
         "move": {
           "id": "hex-3p-forced-elim",
-          "type": "eliminate_rings_from_stack",
+          "type": "forced_elimination",
           "player": 1,
           "to": {
             "x": 0,
@@ -445,9 +445,9 @@
           "markerCount": 0,
           "collapsedCount": 0,
           "sInvariantDelta": 2,
-          "player1RingsInHand": 36,
+          "player1RingsInHand": 72,
           "player1EliminatedRings": 2,
-          "player2RingsInHand": 36,
+          "player2RingsInHand": 72,
           "player2EliminatedRings": 0
         }
       }
