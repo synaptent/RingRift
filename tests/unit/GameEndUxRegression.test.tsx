@@ -240,9 +240,9 @@ describe('GameEnd UX regression – VictoryModal & banners', () => {
     const dialog = screen.getByRole('dialog');
     const text = dialog.textContent || '';
 
-    // LPS now requires 3 consecutive rounds per canonical rules
+    // LPS now requires 2 consecutive rounds per canonical rules (RR-CANON-R172)
     expect(text).toMatch(
-      /only player able to make real moves \(placements, movements, or captures\) for three consecutive full rounds/i
+      /only player able to make real moves \(placements, movements, or captures\) for two consecutive full rounds/i
     );
     expect(text).toMatch(
       /forced eliminations?, which do not count as real moves for Last Player Standing even though they still remove caps and permanently eliminate rings/i

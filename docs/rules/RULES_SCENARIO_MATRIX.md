@@ -438,10 +438,10 @@ npm test -- FAQ_Q22_Q23    # Graduated rewards & territory prerequisites
 | Q15 | Surrounded/disconnected regions | See territory tests below                                                              | square8, square19, hex | ✅ COVERED | Covered by existing territory tests + [`tests/scenarios/FAQ_Q15.test.ts`](tests/scenarios/FAQ_Q15.test.ts:1) for chain patterns |
 | Q16 | Control transfer multicolored   | [`tests/scenarios/FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1)         | square8                | ✅ COVERED | Top ring determines control; can recover buried rings                                                                           |
 | Q17 | First ring placement rules      | [`tests/scenarios/FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1)         | square8                | ✅ COVERED | No special rule; standard movement applies                                                                                      |
-| Q18 | Multiple victory conditions     | [`tests/scenarios/FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1)         | square8                | ✅ COVERED | Ring elimination precedence; >50% prevents simultaneous wins                                                                    |
+| Q18 | Multiple victory conditions     | [`tests/scenarios/FAQ_Q16_Q18.test.ts`](tests/scenarios/FAQ_Q16_Q18.test.ts:1)         | square8                | ✅ COVERED | Ring elimination precedence; ringsPerPlayer threshold prevents simultaneous wins                                                |
 | Q19 | 2 or 4 player games             | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8, square19, hex | ✅ COVERED | All player counts 2-4; threshold validation                                                                                     |
 | Q20 | Territory rules 8×8 vs 19×19    | [`tests/scenarios/FAQ_Q09_Q14.test.ts`](tests/scenarios/FAQ_Q09_Q14.test.ts:1)         | square8, square19      | ✅ COVERED | Both use Von Neumann for territory                                                                                              |
-| Q21 | Victory thresholds              | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8, square19, hex | ✅ COVERED | Always >50%; prevents ties                                                                                                      |
+| Q21 | Victory thresholds              | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8, square19, hex | ✅ COVERED | ringsPerPlayer threshold (18/48/72); prevents ties                                                                              |
 | Q22 | Graduated line rewards          | [`tests/scenarios/FAQ_Q22_Q23.test.ts`](tests/scenarios/FAQ_Q22_Q23.test.ts:1)         | square8, square19      | ✅ COVERED | Option 1 vs Option 2 strategic choices                                                                                          |
 | Q23 | Self-elimination prerequisite   | [`tests/scenarios/FAQ_Q22_Q23.test.ts`](tests/scenarios/FAQ_Q22_Q23.test.ts:1)         | square8, square19, hex | ✅ COVERED | Must have outside stack to process region                                                                                       |
 | Q24 | Forced elimination when blocked | [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) | square8                | ✅ COVERED | Must eliminate cap when no moves available                                                                                      |
@@ -489,14 +489,14 @@ npm test -- FAQ_Q22_Q23    # Graduated rewards & territory prerequisites
 
 - **FAQ Q16**: Control transfer in multicolored stacks, recovery of buried rings
 - **FAQ Q17**: First placement has no special movement rules
-- **FAQ Q18**: Victory condition priority, >50% prevents simultaneous wins
+- **FAQ Q18**: Victory condition priority, ringsPerPlayer threshold prevents simultaneous wins
 - **Coverage**: Stack control, victory thresholds, board-wide consistency
 - **Engines**: Backend GameEngine
 
 #### [`tests/scenarios/FAQ_Q19_Q21_Q24.test.ts`](tests/scenarios/FAQ_Q19_Q21_Q24.test.ts:1) - Player Counts & Forced Elimination
 
 - **FAQ Q19**: 2, 3, and 4 player configurations
-- **FAQ Q21**: Victory thresholds always >50% of total
+- **FAQ Q21**: Victory thresholds are ringsPerPlayer (18/48/72)
 - **FAQ Q24**: Forced elimination when blocked with stacks
 - **FAQ Q11**: Rings in hand count as eliminated in stalemate
 - **Coverage**: Player count variations, threshold calculations, forced elimination, stalemate

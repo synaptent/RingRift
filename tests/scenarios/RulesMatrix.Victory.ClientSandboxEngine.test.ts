@@ -188,7 +188,7 @@ describe('RulesMatrix → ClientSandboxEngine victory scenarios (sandbox)', () =
         result = startInteractiveTurn(3);
         expect(result).toBeNull();
 
-        // Round 4 start: P1's turn - after 3 consecutive exclusive rounds, LPS triggers
+        // Round 3 start: P1's turn - after 2 consecutive exclusive rounds, LPS triggers
         result = startInteractiveTurn(1);
 
         expect(result).not.toBeNull();

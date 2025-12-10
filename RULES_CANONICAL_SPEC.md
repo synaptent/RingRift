@@ -198,7 +198,11 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §§1.3, 5–7, 9; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§9.2, 11–13, 15.4 Q6, Q11–Q12.
 
 - **[RR-CANON-R061] Ring-elimination victory threshold.**
-  - `victoryThreshold = floor(totalRingsInPlay / 2) + 1`.
+  - `victoryThreshold = ringsPerPlayer` (the starting number of rings in hand per player for the board type).
+  - For standard board configurations:
+    - `square8`: `victoryThreshold = 18` (18 rings per player)
+    - `square19`: `victoryThreshold = 48` (48 rings per player)
+    - `hexagonal`: `victoryThreshold = 72` (72 rings per player)
   - A player wins by elimination when their credited eliminated ring total reaches or exceeds `victoryThreshold`.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3, §7.1; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§1.3, 13.1, 16.3, 16.9.4.5.
 
@@ -879,13 +883,12 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - On P's turn in that round, P has at least one legal real action available at the start of their action **and takes at least one such action**; and
       - On every other player's turns in that same round, those players have **no** legal real action available at the start of their action (they may have only forced-elimination actions, or no legal actions at all).
     - **Second round:** After the first round completes (including all line and Territory processing), on the following round P remains the only player who has taken any legal real action.
-    - **Third round:** After the second round completes (including all post-movement processing), on the following round P remains the only player who has taken any legal real action.
-    - **Victory declared:** After the third round completes (including all post-movement processing), and after every other seat (including empty seats with no stacks and no rings) has recorded its required no-action or forced-elimination moves for that round, P is declared the winner by last-player-standing. This happens before the first seat begins any action in a subsequent round.
+    - **Victory declared:** After the second round completes (including all post-movement processing), and after every other seat (including empty seats with no stacks and no rings) has recorded its required no-action or forced-elimination moves for that round, P is declared the winner by last-player-standing. This happens before the first seat begins any action in a subsequent round.
   - Players who still have rings on the board (including rings buried inside mixed-colour stacks) but whose only legal actions on their turns are forced eliminations, or who have no legal actions at all, are **temporarily inactive** for last-player-standing purposes. A player is temporarily inactive on their own turns when either:
     - they control no stacks on the board and have no legal placements (because they have no rings in hand or all placements would be illegal); or
     - they do control stacks but have no legal placements, no legal moves or overtaking captures, and no other legal turn actions at all, so their only possible turn action is forced elimination (RR-CANON-R100).
-  - **Empty/temporarily inactive seats still take turns:** All seats, including those with no stacks and no rings in hand, must still traverse every phase of their turn and record the canonical no-action/FE moves required by RR-CANON-R075. There is no skipping of empty seats for LPS purposes; their turns are needed to satisfy the three full-round condition.
-  - Temporarily inactive players prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout all three qualifying rounds above. A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolour stack whose top ring becomes their colour or by reduction of the height of a stack they control so that it can move again. If any such player regains a real action before all three rounds have been completed, the last-player-standing condition is not met and must be re-established from that point.
+  - **Empty/temporarily inactive seats still take turns:** All seats, including those with no stacks and no rings in hand, must still traverse every phase of their turn and record the canonical no-action/FE moves required by RR-CANON-R075. There is no skipping of empty seats for LPS purposes; their turns are needed to satisfy the two full-round condition.
+  - Temporarily inactive players prevent an LPS victory until they have been continuously in this "no real actions" state on each of their turns throughout both qualifying rounds above. A temporarily inactive player can return to full activity if they regain a real action, most commonly by gaining control of a multicolour stack whose top ring becomes their colour or by reduction of the height of a stack they control so that it can move again. If any such player regains a real action before both rounds have been completed, the last-player-standing condition is not met and must be re-established from that point.
   - References: [`ringrift_simple_human_rules.md`](ringrift_simple_human_rules.md:321) §5.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md:1376) §13.3.
 
 - **[RR-CANON-R173] Global stalemate and tiebreaks.**

@@ -129,7 +129,7 @@ Current leaning: **H1+H2 together** describe the hardest outstanding problem: ex
 - Source docs: [docs/supplementary/RULES_DOCS_UX_AUDIT.md](docs/supplementary/RULES_DOCS_UX_AUDIT.md:1), [src/client/adapters/gameViewModels.ts](src/client/adapters/gameViewModels.ts:1), [src/client/components/GameHUD.tsx](src/client/components/GameHUD.tsx:1), [src/client/components/VictoryModal.tsx](src/client/components/VictoryModal.tsx:1).
 - Confirmed mismatches between RR-CANON and current HUD text include:
   - Chain capture text implying the player may "continue capturing or end your turn" when RR-CANON (and TS engine) require **mandatory continuation** if any capture exists.
-  - Ring-elimination victory copy that still talks about "eliminating all opponent rings" while RR-CANON victory condition uses a **>50% eliminated rings** threshold.
+  - Ring-elimination victory copy that still talks about "eliminating all opponent rings" while RR-CANON victory condition uses a **ringsPerPlayer eliminated rings** threshold.
   - Vague phrasing around line and territory decision phases that under-specifies when eliminations/self-eliminations are compulsory vs optional.
 - UX quality and accessibility remain high at the component level (per PASS16 scores), but **rules-explanation UX** around advanced phases is still <4/5 and needs targeted copy/flow updates.
 

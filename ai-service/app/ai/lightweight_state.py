@@ -150,7 +150,7 @@ class LightweightState:
         self.players: Dict[int, LightweightPlayer] = {}
         self.current_player: int = 1
         self.current_phase: LightweightPhase = LightweightPhase.RING_PLACEMENT
-        self.victory_rings: int = 19
+        self.victory_rings: int = 18  # Default for square8 (RR-CANON-R061: ringsPerPlayer)
         self.victory_territory: int = 33
         self._position_key_cache: Dict[Tuple[int, int], str] = {}
 

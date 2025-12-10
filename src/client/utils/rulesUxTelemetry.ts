@@ -128,7 +128,10 @@ function getSessionId(): string {
   if (cachedSessionId) return cachedSessionId;
 
   try {
-    if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+    if (
+      typeof globalThis.crypto !== 'undefined' &&
+      typeof globalThis.crypto.randomUUID === 'function'
+    ) {
       cachedSessionId = globalThis.crypto.randomUUID();
       return cachedSessionId;
     }
@@ -195,7 +198,10 @@ export async function logRulesUxEvent(event: RulesUxEventPayload): Promise<void>
  */
 export function newHelpSessionId(): string {
   try {
-    if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+    if (
+      typeof globalThis.crypto !== 'undefined' &&
+      typeof globalThis.crypto.randomUUID === 'function'
+    ) {
       return globalThis.crypto.randomUUID();
     }
   } catch {
@@ -212,7 +218,10 @@ export function newHelpSessionId(): string {
  */
 export function newOverlaySessionId(): string {
   try {
-    if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+    if (
+      typeof globalThis.crypto !== 'undefined' &&
+      typeof globalThis.crypto.randomUUID === 'function'
+    ) {
       return globalThis.crypto.randomUUID();
     }
   } catch {
@@ -229,7 +238,10 @@ export function newOverlaySessionId(): string {
  */
 export function newTeachingFlowId(): string {
   try {
-    if (typeof globalThis.crypto !== 'undefined' && typeof globalThis.crypto.randomUUID === 'function') {
+    if (
+      typeof globalThis.crypto !== 'undefined' &&
+      typeof globalThis.crypto.randomUUID === 'function'
+    ) {
       return globalThis.crypto.randomUUID();
     }
   } catch {
@@ -405,7 +417,7 @@ export const ONBOARDING_COPY: OnboardingCopy = {
       id: 'onboarding.victory.elimination',
       title: 'Ring Elimination',
       // UX_RULES_COPY_SPEC.md §3.1 – TeachingOverlay victory topic – elimination
-      body: 'Win by eliminating more than half of all rings in the game – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
+      body: 'Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
     },
     {
       id: 'onboarding.victory.territory',
@@ -417,7 +429,7 @@ export const ONBOARDING_COPY: OnboardingCopy = {
       id: 'onboarding.victory.lps',
       title: 'Last Player Standing',
       // UX_RULES_COPY_SPEC.md §3.3 – TeachingOverlay victory topic – stalemate / LPS
-      body: 'Last Player Standing happens when, for THREE consecutive complete rounds, you are the only player who can still make real moves (placements, movements, or captures). In the first round you must have and take at least one real action while all others have none; in the second and third rounds the condition must persist. Forced eliminations and automatic territory processing do not count as real actions for LPS.',
+      body: 'Last Player Standing happens when, for TWO consecutive complete rounds, you are the only player who can still make real moves (placements, movements, or captures). In the first round you must have and take at least one real action while all others have none; in the second round the condition must persist. Forced eliminations and automatic territory processing do not count as real actions for LPS.',
     },
   ],
 };
@@ -482,7 +494,7 @@ export const TEACHING_TOPICS_COPY: Record<string, TeachingTopicCopy> = {
     topicId: 'victory_elimination',
     heading: 'Victory: Elimination',
     // UX_RULES_COPY_SPEC.md §3.1 – TeachingOverlay victory topic – elimination
-    body: 'Win by eliminating more than half of all rings in the game – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
+    body: 'Win by eliminating a number of rings equal to the starting ring supply (ringsPerPlayer) – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold.',
   },
   victory_territory: {
     topicId: 'victory_territory',
@@ -494,6 +506,6 @@ export const TEACHING_TOPICS_COPY: Record<string, TeachingTopicCopy> = {
     topicId: 'victory_stalemate',
     heading: 'Victory: Last Player Standing',
     // UX_RULES_COPY_SPEC.md §3.3 – TeachingOverlay victory topic – stalemate / LPS
-    body: 'Last Player Standing happens when, for THREE consecutive complete rounds, you are the only player who can still make real moves (placements, movements, or captures). In the first round you must have and take at least one real action while all others have none; in the second and third rounds the condition must persist. Forced eliminations and automatic territory processing do not count as real actions for LPS.',
+    body: 'Last Player Standing happens when, for TWO consecutive complete rounds, you are the only player who can still make real moves (placements, movements, or captures). In the first round you must have and take at least one real action while all others have none; in the second round the condition must persist. Forced eliminations and automatic territory processing do not count as real actions for LPS.',
   },
 };

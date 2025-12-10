@@ -451,7 +451,7 @@ function SubPhaseDetails({ detail }: { detail?: string | undefined }) {
 /**
  * LPS (Last-Player-Standing) tracking indicator.
  * Shows round counter and progress toward LPS victory when a player has consecutive exclusive rounds.
- * Per RR-CANON-R172, LPS requires 3 consecutive rounds where only 1 player has real actions.
+ * Per RR-CANON-R172, LPS requires 2 consecutive rounds where only 1 player has real actions.
  */
 function LpsTrackingIndicator({
   lpsTracking,
@@ -473,17 +473,15 @@ function LpsTrackingIndicator({
   const exclusivePlayer = players.find((p) => p.playerNumber === consecutiveExclusivePlayer);
   const playerName = exclusivePlayer?.username ?? `Player ${consecutiveExclusivePlayer}`;
 
-  // Color progression: amber (1), orange (2), red (3 = victory imminent)
+  // Color progression: amber (1), red (2 = victory imminent)
   const colorClass =
-    consecutiveExclusiveRounds >= 3
+    consecutiveExclusiveRounds >= 2
       ? 'border-red-400/80 bg-red-950/70 text-red-50'
-      : consecutiveExclusiveRounds >= 2
-        ? 'border-orange-400/80 bg-orange-950/70 text-orange-50'
-        : 'border-amber-400/80 bg-amber-950/70 text-amber-50';
+      : 'border-amber-400/80 bg-amber-950/70 text-amber-50';
 
-  const roundsLeft = Math.max(0, 3 - consecutiveExclusiveRounds);
+  const roundsLeft = Math.max(0, 2 - consecutiveExclusiveRounds);
   const statusText =
-    consecutiveExclusiveRounds >= 3
+    consecutiveExclusiveRounds >= 2
       ? 'LPS Victory!'
       : `${roundsLeft} round${roundsLeft !== 1 ? 's' : ''} until LPS`;
 
@@ -500,12 +498,12 @@ function LpsTrackingIndicator({
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-sm">{playerName} has exclusive actions</div>
         <div className="text-[11px] opacity-90">
-          {statusText} • Round {consecutiveExclusiveRounds}/3
+          {statusText} • Round {consecutiveExclusiveRounds}/2
         </div>
       </div>
       {/* Progress dots */}
-      <div className="flex gap-1" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
-        {[1, 2, 3].map((n) => (
+      <div className="flex gap-1" aria-label={`${consecutiveExclusiveRounds} of 2 rounds`}>
+        {[1, 2].map((n) => (
           <span
             key={n}
             className={`w-2 h-2 rounded-full ${
@@ -520,7 +518,7 @@ function LpsTrackingIndicator({
 
 /**
  * Victory progress indicator showing ring elimination and territory control progress.
- * Per RR-CANON-R061: victoryThreshold = floor(totalRings/2)+1
+ * Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
  * Per RR-CANON-R062: territoryThreshold = floor(totalSpaces/2)+1
  */
 function VictoryProgressIndicator({
@@ -1174,7 +1172,7 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
           <div className="flex-1">
             <div className="flex items-center gap-1">
               <span>
-                Ring Elimination – Win by eliminating more than half of all rings in play.
+                Ring Elimination – Win by eliminating ringsPerPlayer rings (starting ring supply).
               </span>
               <Tooltip
                 content={
@@ -1223,12 +1221,12 @@ export function VictoryConditionsPanel({ className = '' }: { className?: string 
           <div className="flex-1">
             <div className="flex items-center gap-1">
               <span>
-                Last Player Standing – win when, for three full rounds, you are the only player with
+                Last Player Standing – win when, for two full rounds, you are the only player with
                 any real moves (placements, movements, or captures).
               </span>
               <Tooltip
                 content={
-                  'Real moves are placements, movements, and captures – forced elimination and automatic line/territory processing do not count.\nLast Player Standing requires three consecutive full rounds where you have and take at least one real action while all other players have none.\nIf any other player regains a real move before all three rounds complete, the LPS condition resets and victory is not declared.'
+                  'Real moves are placements, movements, and captures – forced elimination and automatic line/territory processing do not count.\nLast Player Standing requires two consecutive full rounds where you have and take at least one real action while all other players have none.\nIf any other player regains a real move before both rounds complete, the LPS condition resets and victory is not declared.'
                 }
               >
                 <span

@@ -409,9 +409,7 @@ describe('GameHUD', () => {
     // Last Player Standing tooltip
     fireEvent.mouseEnter(lastPlayerTrigger);
     tooltip = screen.getByRole('tooltip');
-    expect(tooltip).toHaveTextContent(
-      'Last Player Standing requires three consecutive full rounds'
-    );
+    expect(tooltip).toHaveTextContent('Last Player Standing requires two consecutive full rounds');
     fireEvent.mouseLeave(lastPlayerTrigger);
     expect(screen.queryByRole('tooltip')).toBeNull();
   });

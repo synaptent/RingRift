@@ -935,9 +935,9 @@ class GameEngine:
         # 4. Round-based last-player-standing victory (R172).
         # LPS is only evaluated during interactive phases, matching TS
         # lpsTracking.ts LPS_ACTIVE_PHASES.
-        # LPS requires THREE consecutive full rounds where the same player is
+        # LPS requires TWO consecutive full rounds where the same player is
         # the exclusive real-action holder.
-        LPS_REQUIRED_CONSECUTIVE_ROUNDS = 3
+        LPS_REQUIRED_CONSECUTIVE_ROUNDS = 2
         lps_active_phases = {
             GamePhase.RING_PLACEMENT,
             GamePhase.MOVEMENT,

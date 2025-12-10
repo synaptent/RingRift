@@ -442,7 +442,8 @@ export class ClientSandboxEngine {
       maxPlayers: config.numPlayers,
       totalRingsInPlay: boardConfig.ringsPerPlayer * config.numPlayers,
       totalRingsEliminated: 0,
-      victoryThreshold: Math.floor((boardConfig.ringsPerPlayer * config.numPlayers) / 2) + 1,
+      // Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
+      victoryThreshold: boardConfig.ringsPerPlayer,
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
     };
 
@@ -716,7 +717,7 @@ export class ClientSandboxEngine {
   /**
    * Get the current Last-Player-Standing (LPS) tracking state.
    * Used by UI to display LPS round counter and progress toward LPS victory.
-   * Per RR-CANON-R172, LPS requires 3 consecutive rounds where only 1 player has real actions.
+   * Per RR-CANON-R172, LPS requires 2 consecutive rounds where only 1 player has real actions.
    */
   public getLpsTrackingState(): {
     roundIndex: number;

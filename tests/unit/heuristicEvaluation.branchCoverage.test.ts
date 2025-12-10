@@ -71,7 +71,7 @@ function makeEmptyGameState(options?: {
     spectators: [],
     maxPlayers: numPlayers,
     totalRingsInPlay: boardConfig.ringsPerPlayer * numPlayers,
-    victoryThreshold: Math.floor((boardConfig.ringsPerPlayer * numPlayers) / 2) + 1,
+    victoryThreshold: boardConfig.ringsPerPlayer, // Per RR-CANON-R061
     territoryVictoryThreshold: Math.floor((boardConfig.size * boardConfig.size) / 2) + 1,
     timeControl: { initialTime: 600, increment: 0, type: 'blitz' },
     isRated: false,

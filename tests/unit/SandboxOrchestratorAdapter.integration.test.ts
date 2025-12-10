@@ -76,7 +76,7 @@ function createTestGameState(boardType: BoardType = 'square8', numPlayers: numbe
     maxPlayers: numPlayers,
     totalRingsInPlay: 0,
     totalRingsEliminated: 0,
-    victoryThreshold: Math.floor((config.ringsPerPlayer * numPlayers) / 2) + 1,
+    victoryThreshold: config.ringsPerPlayer, // Per RR-CANON-R061
     territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,
   };
 }

@@ -1,6 +1,13 @@
-import { GameState, BoardType, TimeControl, Player, BOARD_CONFIGS, RulesOptions } from '../types/game';
+import {
+  GameState,
+  BoardType,
+  TimeControl,
+  Player,
+  BOARD_CONFIGS,
+  RulesOptions,
+} from '../types/game';
 import { generateGameSeed } from '../utils/rng';
- 
+
 /**
  * Creates a pristine initial GameState for a new game.
  *
@@ -74,7 +81,8 @@ export function createInitialGameState(
     maxPlayers: players.length,
     totalRingsInPlay: 0, // Starts at 0, increments as rings are placed
     totalRingsEliminated: 0,
-    victoryThreshold: Math.floor((config.ringsPerPlayer * players.length) / 2) + 1,
+    // Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
+    victoryThreshold: config.ringsPerPlayer,
     territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,
   };
 }

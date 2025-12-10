@@ -34,9 +34,9 @@ During the game you:
 
 You win by achieving **any one** of three victory conditions:
 
-1. Eliminating more than half of all rings in the game.
+1. Eliminating a number of rings equal to the starting ring supply per player.
 2. Controlling more than half of all board spaces as your territory.
-3. Becoming the **Last Player Standing** in terms of “real actions”.
+3. Becoming the **Last Player Standing** in terms of "real actions".
 
 If nobody can move at all (including forced eliminations), the game ends in a
 structured **stalemate** and tiebreakers determine the winner.
@@ -303,23 +303,14 @@ normal play, exactly one of these will apply first.
 
 ### 5.1 Ring Elimination Victory
 
-You win by eliminating **more than 50%** of all rings that were in play for
-the chosen board and player count.
+You win by eliminating a number of rings equal to the **starting ring supply
+per player** for the chosen board type (regardless of player count).
 
-Thresholds (from the rulebook):
+Thresholds:
 
-- 8×8:
-  - 2 players: >18 rings eliminated.
-  - 3 players: >27.
-  - 4 players: >36.
-- 19×19:
-  - 2 players: >48.
-  - 3 players: >72.
-  - 4 players: >96.
-- Hex (469 cells, 72 rings/player):
-  - 2 players: >72.
-  - 3 players: >108.
-  - 4 players: >144.
+- 8×8: **18 rings** eliminated.
+- 19×19: **48 rings** eliminated.
+- Hex: **72 rings** eliminated.
 
 Your eliminated‑rings total includes:
 
@@ -334,8 +325,8 @@ It does **not** include:
 - Rings still on the board (even if buried in your stacks),
 - Rings captured by overtaking but not eliminated.
 
-Because the threshold is strictly >50%, **no two players can meet this
-condition simultaneously**.
+Because the threshold equals the starting ring supply and the first player
+to reach it wins, **no two players can meet this condition simultaneously**.
 
 ### 5.2 Territory Victory
 
@@ -386,12 +377,7 @@ Player P wins by Last Player Standing if all of the following hold:
    - P remains the **only player** who has taken any legal real action and
      takes at least one such action on their turn.
 
-3. **Round 3:** After the second round completes (including all
-   post-movement processing), on the following round:
-   - P is still the **only player** who has taken any legal real action and
-     takes at least one such action on their turn.
-
-4. **Victory declared:** After the third round completes (including all
+3. **Victory declared:** After the second round completes (including all
    post-movement processing), P is declared the winner by Last Player
    Standing. This applies regardless of relative territory or rings eliminated.
 
@@ -417,8 +403,8 @@ action, for example:
   colour; or
 - Reducing the height of a stack they control so that it can move again.
 
-If any temporarily inactive player regains a real action before **all
-three rounds** in the LPS condition have been completed, the LPS condition is
+If any temporarily inactive player regains a real action before **both
+rounds** in the LPS condition have been completed, the LPS condition is
 not met and must be re‑established over fresh rounds.
 
 ### 5.4 Global stalemate and tiebreakers

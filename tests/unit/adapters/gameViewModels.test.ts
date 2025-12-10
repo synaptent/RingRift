@@ -327,6 +327,45 @@ describe('gameViewModels', () => {
     });
   });
 
+  describe('toHUDViewModel - lpsTracking passthrough (RR-CANON-R172)', () => {
+    it('passes lpsTracking to HUD view model when provided', () => {
+      const players = createPlayers();
+      const gameState = createTestGameState(players);
+      const lpsTracking = {
+        roundIndex: 5,
+        consecutiveExclusiveRounds: 2,
+        consecutiveExclusivePlayer: 1,
+      };
+
+      const vm = toHUDViewModel(gameState, {
+        connectionStatus: 'connected',
+        lastHeartbeatAt: null,
+        isSpectator: false,
+        lpsTracking,
+      });
+
+      expect(vm.lpsTracking).toBeDefined();
+      expect(vm.lpsTracking).toEqual({
+        roundIndex: 5,
+        consecutiveExclusiveRounds: 2,
+        consecutiveExclusivePlayer: 1,
+      });
+    });
+
+    it('does not include lpsTracking when not provided', () => {
+      const players = createPlayers();
+      const gameState = createTestGameState(players);
+
+      const vm = toHUDViewModel(gameState, {
+        connectionStatus: 'connected',
+        lastHeartbeatAt: null,
+        isSpectator: false,
+      });
+
+      expect(vm.lpsTracking).toBeUndefined();
+    });
+  });
+
   describe('toVictoryViewModel - gameEndExplanation copy variants', () => {
     const players = createPlayers();
     const gameState = createTestGameState(players);

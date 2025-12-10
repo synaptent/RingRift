@@ -209,7 +209,7 @@ export interface HUDViewModel {
   /**
    * LPS (Last-Player-Standing) tracking state for UI display.
    * Shows round counter and progress toward LPS victory.
-   * Per RR-CANON-R172, LPS requires 3 consecutive rounds where only 1 player has real actions.
+   * Per RR-CANON-R172, LPS requires 2 consecutive rounds where only 1 player has real actions.
    */
   lpsTracking?:
     | {
@@ -220,7 +220,7 @@ export interface HUDViewModel {
     | undefined;
   /**
    * Victory progress tracking for ring-elimination and territory-control.
-   * Per RR-CANON-R061: victoryThreshold = floor(totalRings/2)+1
+   * Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
    * Per RR-CANON-R062: territoryThreshold = floor(totalSpaces/2)+1
    */
   victoryProgress?: {
@@ -712,7 +712,7 @@ export interface ToHUDViewModelOptions {
   gameEndExplanation?: GameEndExplanation | null | undefined;
   /**
    * Optional LPS tracking state from sandbox engine. Per RR-CANON-R172, LPS
-   * requires 3 consecutive rounds where only 1 player has real actions.
+   * requires 2 consecutive rounds where only 1 player has real actions.
    */
   lpsTracking?:
     | {
@@ -926,7 +926,7 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
       weirdState = {
         type: 'forced-elimination', // Reuse FE styling for LPS-FE endings
         title: 'Last Player Standing (via Forced Elimination)',
-        body: 'The game ended because only one player could make real moves for three consecutive full rounds. Other players were blocked or forced to eliminate rings.',
+        body: 'The game ended because only one player could make real moves for two consecutive full rounds. Other players were blocked or forced to eliminate rings.',
         tone: 'warning',
       };
     }
@@ -1743,7 +1743,7 @@ function getVictoryMessage(
     const verb = userWon ? 'were' : 'was';
     return {
       title: '👑 Last Player Standing',
-      description: `${subject} ${verb} the only player able to make real moves (placements, movements, or captures) for three consecutive full rounds. Other players either had no real moves or could only perform forced eliminations, which do not count as real moves for Last Player Standing even though they still remove caps and permanently eliminate rings.`,
+      description: `${subject} ${verb} the only player able to make real moves (placements, movements, or captures) for two consecutive full rounds. Other players either had no real moves or could only perform forced eliminations, which do not count as real moves for Last Player Standing even though they still remove caps and permanently eliminate rings.`,
       titleColorClass,
     };
   }
@@ -1771,7 +1771,8 @@ function getVictoryMessage(
     case 'ring_elimination':
       return {
         title: `🏆 ${winnerName} Wins!`,
-        description: 'Victory by eliminating more than half of all rings in play.',
+        description:
+          'Victory by eliminating a number of rings equal to the starting ring supply per player.',
         titleColorClass,
       };
     case 'territory_control':
@@ -1785,7 +1786,7 @@ function getVictoryMessage(
       const verb = userWon ? 'were' : 'was';
       return {
         title: '👑 Last Player Standing',
-        description: `${subject} ${verb} the only player able to make real moves (placements, movements, or captures) for three consecutive full rounds. Other players either had no real moves or could only perform forced eliminations, which do not count as real moves for Last Player Standing even though they still remove caps and permanently eliminate rings.`,
+        description: `${subject} ${verb} the only player able to make real moves (placements, movements, or captures) for two consecutive full rounds. Other players either had no real moves or could only perform forced eliminations, which do not count as real moves for Last Player Standing even though they still remove caps and permanently eliminate rings.`,
         titleColorClass,
       };
     }

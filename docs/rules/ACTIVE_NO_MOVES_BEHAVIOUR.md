@@ -167,7 +167,7 @@ The scenarios below capture concrete shapes that have historically exercised the
     - Exactly one player P has at least one **real action** (placement, movement, capture) available at the start of each of their turns over a full round, and
     - All other players have no real actions on their turns (they may have only forced eliminations, or no actions at all).
 - **Expected canonical behaviour (RR-CANON):**
-  - Per [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:700) and clarifications in [`ringrift_complete_rules.md`](../../ringrift_complete_rules.md:1376) §13.3, P should win by Last Player Standing once the “exclusive real-action” condition has held for **three consecutive full rounds** (P takes at least one real action on each of their turns; all others have none).
+  - Per [`RR-CANON-R172`](RULES_CANONICAL_SPEC.md:700) and clarifications in [`ringrift_complete_rules.md`](../../ringrift_complete_rules.md:1376) §13.3, P should win by Last Player Standing once the “exclusive real-action” condition has held for **two consecutive full rounds** (P takes at least one real action on each of their turns; all others have none).
   - Forced eliminations for other players keep the game legal (no ANM), but do **not** count as real actions that would block Last-Player-Standing victory.
 - **Current implementation status:**
   - TS and Python engines now implement explicit early LPS detection via the shared LPS tracker:

@@ -812,12 +812,12 @@ export interface GameState {
   // RingRift specific state
   totalRingsInPlay: number; // Total rings placed on board
   totalRingsEliminated: number; // Total rings eliminated from game
-  victoryThreshold: number; // Rings needed to win (>50% of total)
+  victoryThreshold: number; // Rings needed to win (= ringsPerPlayer per RR-CANON-R061)
   territoryVictoryThreshold: number; // Territory spaces needed to win (>50% of board)
 
   /**
    * Last-Player-Standing (LPS) tracking state for UI display.
-   * Per RR-CANON-R172, LPS victory requires 3 consecutive rounds where
+   * Per RR-CANON-R172, LPS victory requires 2 consecutive rounds where
    * only one player has real actions available.
    *
    * This lightweight summary is populated by server GameEngine and included

@@ -136,12 +136,12 @@ def create_initial_state(
         total_spaces = 64
     elif board_type == BoardType.SQUARE19:
         size = 19
-        rings_per_player = 36
+        rings_per_player = 48
         total_spaces = 361
     elif board_type == BoardType.HEXAGONAL:
-        # Hex boards use radius 12 and 48 rings per player in TS.
+        # Hex boards use radius 13 and 72 rings per player in TS.
         size = 13
-        rings_per_player = 48
+        rings_per_player = 72
         total_spaces = 469
     else:
         # Fallback to square8-style defaults if an unknown board is passed.
@@ -149,9 +149,11 @@ def create_initial_state(
         rings_per_player = 18
         total_spaces = 64
 
-    # Victory thresholds: strictly more than half of total rings / spaces.
+    # Victory thresholds per RR-CANON-R061 and RR-CANON-R062
+    # Ring elimination: victoryThreshold = ringsPerPlayer (starting ring supply)
+    # Territory: > 50% of total spaces
     total_rings = rings_per_player * num_players
-    victory_threshold = (total_rings // 2) + 1
+    victory_threshold = rings_per_player  # Per RR-CANON-R061: starting ring supply
     territory_threshold = (total_spaces // 2) + 1
 
     players = [

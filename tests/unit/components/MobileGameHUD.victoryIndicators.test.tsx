@@ -2,8 +2,8 @@
  * Tests for LPS and Victory Progress indicators in MobileGameHUD.
  *
  * Tests compliance with:
- * - RR-CANON-R172: LPS requires 3 consecutive rounds where only 1 player has real actions
- * - RR-CANON-R061: Ring elimination threshold = floor(totalRings/2)+1
+ * - RR-CANON-R172: LPS requires 2 consecutive rounds where only 1 player has real actions
+ * - RR-CANON-R061: Ring elimination threshold = ringsPerPlayer (starting ring supply)
  * - RR-CANON-R062: Territory threshold = floor(totalSpaces/2)+1
  */
 import React from 'react';

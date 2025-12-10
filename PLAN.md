@@ -74,6 +74,30 @@ CMA-ES on staging should be scheduled during selfplay cooldown periods or run wi
 
 Used when Mac Studio MPS is insufficient for batch sizes > 512 or when parallel GPU training is needed.
 
+### Game Analysis Scripts
+
+The following scripts in `ai-service/scripts/` analyze selfplay data:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `analyze_game_statistics.py` | Comprehensive stats (victory types, win rates, game lengths, recovery usage) | `python scripts/analyze_game_statistics.py --data-dir data/selfplay --format markdown` |
+| `analyze_games.py` | Database analysis (export PGN, openings, move stats) | `python scripts/analyze_games.py stats --db data/games/selfplay.db` |
+| `analyze_recovery_across_games.py` | Recovery eligibility analysis across games | `python scripts/analyze_recovery_across_games.py --input-dir data/selfplay` |
+| `analyze_recovery_eligibility.py` | Single-game recovery eligibility | `python scripts/analyze_recovery_eligibility.py <game_file>` |
+
+**analyze_game_statistics.py** produces:
+- Victory type distribution (Territory, LPS, Elimination)
+- Win distribution by player position
+- Game length statistics
+- Recovery action analysis (conditions met, usage frequency)
+- Position advantage detection
+
+**analyze_games.py** produces:
+- PGN export for human review
+- Opening pattern analysis
+- Move type statistics
+- Game listing by criteria
+
 ## Pipeline Architecture
 
 ```

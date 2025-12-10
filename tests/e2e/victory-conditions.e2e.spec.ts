@@ -177,8 +177,8 @@ test.describe('Victory Conditions E2E Tests', () => {
       const victoryHelp = page.getByTestId('victory-conditions-help');
       await expect(victoryHelp).toBeVisible();
 
-      // The text should mention eliminating rings (>50% of all rings)
-      await expect(victoryHelp.locator('text=/eliminate.*50%|50%.*ring/i')).toBeVisible();
+      // The text should mention eliminating rings (ringsPerPlayer = starting supply)
+      await expect(victoryHelp.locator('text=/eliminate.*ring|ring.*eliminat/i')).toBeVisible();
     });
 
     test('game understands territory control victory condition', async ({ page }) => {

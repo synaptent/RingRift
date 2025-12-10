@@ -413,10 +413,10 @@ function seedChainCaptureChoiceDecisionPhase(engine: GameEngine): void {
  * eliminated out of 19, and Player 1 has a stack positioned to capture
  * Player 2's last ring.
  *
- * Victory condition: >50% of all rings eliminated from opponent. For 2-player
- * on square8, each player has 18 rings (36 total). Eliminating 19+ rings
- * from the opponent triggers victory. Setting opponent to 18 eliminated
- * means one more capture wins.
+ * Victory condition: ringsPerPlayer eliminated rings triggers victory. For 2-player
+ * on square8, each player has 18 rings (ringsPerPlayer = 18). Eliminating 18+ rings
+ * from any combination of opponents triggers victory. Setting opponent to 17 eliminated
+ * means one more capture wins (reaching 18).
  *
  * The board state places:
  * - Player 1 stack at (3,3) with 3 rings

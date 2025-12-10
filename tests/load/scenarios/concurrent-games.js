@@ -11,7 +11,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Gauge, Trend } from 'k6/metrics';
-import { loginAndGetToken } from '../auth/helpers.js';
+import { loginAndGetToken, getValidToken } from '../auth/helpers.js';
 import { makeHandleSummary } from '../summary.js';
 
 const thresholdsConfig = JSON.parse(open('../config/thresholds.json'));
@@ -248,11 +248,31 @@ export function setup() {
 
 export default function (data) {
   const baseUrl = data.baseUrl;
-  const token = data.token;
+
+  // Use getValidToken to automatically refresh the token when it's close to
+  // expiry. This fixes the 401 errors in long-running tests (>15 minutes)
+  // where the setup token would expire.
+  let token;
+  try {
+    const authResult = getValidToken(baseUrl, {
+      apiPrefix: API_PREFIX,
+      tags: { name: 'auth-refresh' },
+      metrics: {
+        contractFailures,
+        capacityFailures,
+      },
+    });
+    token = authResult.token;
+  } catch (err) {
+    // Auth refresh failed - treat as capacity issue and bail this iteration
+    capacityFailures.add(1);
+    console.warn(`VU ${__VU}: Token refresh failed: ${err.message}`);
+    sleep(1);
+    return;
+  }
 
   if (!token) {
-    // If setup somehow failed, treat as capacity and bail quickly so we
-    // do not generate misleading contract failures.
+    // If auth somehow returned no token, treat as capacity and bail quickly
     capacityFailures.add(1);
     sleep(1);
     return;

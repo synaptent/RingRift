@@ -35,9 +35,9 @@ Semantics must always match:
 
 **Global elimination threshold (R060–R061)**
 
-- Let `totalRingsInGame` be the total ring supply at start.
-- The global elimination threshold is `floor(totalRingsInGame / 2) + 1`.
-- A player wins by **Ring Elimination** when their credited eliminated rings **exceed 50% of all rings in the game**, not just one opponent.
+- The victory threshold equals `ringsPerPlayer` (the starting number of rings in hand per player).
+- Threshold values: 18 (8×8), 48 (19×19), 72 (hexagonal).
+- A player wins by **Ring Elimination** when their credited eliminated rings reach or exceed this threshold.
 
 **Territory threshold (R062, R140–R145)**
 
@@ -67,18 +67,18 @@ This section defines the canonical labels and one‑liners used by:
 
 **HUD one‑liner**
 
-- `"Win by eliminating more than half of all rings in play."`
+- `"Win by eliminating a number of rings equal to the starting ring supply per player."`
 
 **Tooltip (multi‑line)**
 
-- Line 1: `"You win Ring Elimination when the rings you have eliminated exceed 50% of all rings in the game."`
+- Line 1: `"You win Ring Elimination when your eliminated rings reach or exceed the starting ring supply per player (ringsPerPlayer)."`
 - Line 2: `"Only *eliminated* rings count – captured rings you carry in stacks still remain in play."`
 - Line 3: `"Eliminations can come from movement onto markers, line rewards, territory processing, or forced elimination."`
 
 **TeachingOverlay victory topic – elimination**
 Short description (used in [`TeachingOverlay.TEACHING_CONTENT.victory_elimination`](src/client/components/TeachingOverlay.tsx:96)):
 
-- `"Win by eliminating more than half of all rings in the game – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold."`
+- `"Win by eliminating a number of rings equal to the starting ring supply per player (ringsPerPlayer) – not just one opponent’s set. Eliminated rings are permanently removed; captured rings you carry in stacks do not count toward this threshold."`
 
 ### 3.2 Territory Control
 
@@ -109,18 +109,18 @@ Description (used in [`TeachingOverlay.TEACHING_CONTENT.victory_territory`](src/
 
 **HUD one‑liner**
 
-- `"Win when, for three full rounds, you are the only player with any real moves (placements, movements, or captures)."`
+- `"Win when, for two consecutive rounds, you are the only player with any real moves (placements, movements, or captures)."`
 
 **Tooltip (multi‑line)**
 
 - Line 1: `"Real moves are placements, movements, and captures – forced elimination and automatic line/territory processing do not count."`
-- Line 2: `"Last Player Standing requires three consecutive full rounds where you have and take at least one real action while all other players have none."`
-- Line 3: `"If any other player regains a real move before all three rounds complete, the LPS condition resets and victory is not declared."`
+- Line 2: `"Last Player Standing requires two consecutive full rounds where you have and take at least one real action while all other players have none."`
+- Line 3: `"If any other player regains a real move before both rounds complete, the LPS condition resets and victory is not declared."`
 
 **TeachingOverlay victory topic – stalemate / LPS**
 Description (used in [`TeachingOverlay.TEACHING_CONTENT.victory_stalemate`](src/client/components/TeachingOverlay.tsx:118)):
 
-- `"Last Player Standing happens when, for THREE consecutive complete rounds, you are the only player who can still make real moves (placements, movements, or captures). In the first round you must have and take at least one real action while all others have none; in the second and third rounds the condition must persist. Forced eliminations and automatic territory processing do not count as real actions for LPS."`
+- `"Last Player Standing happens when, for TWO consecutive complete rounds, you are the only player who can still make real moves (placements, movements, or captures). In the first round you must have and take at least one real action while all others have none; in the second round the condition must persist. Forced eliminations and automatic territory processing do not count as real actions for LPS."`
 
 ## 4. Movement semantics
 

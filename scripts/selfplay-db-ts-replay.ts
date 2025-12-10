@@ -735,7 +735,7 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
 
   // LPS (Last-Player-Standing) tracking for R172 victory condition.
   // This must be kept in sync across move applications to detect when one
-  // player has been the exclusive real-action holder for 3 consecutive rounds.
+  // player has been the exclusive real-action holder for 2 consecutive rounds.
   const lpsState = createLpsTrackingState();
 
   // Helper to build action availability delegates for hasAnyRealAction
@@ -1148,7 +1148,7 @@ async function runReplayMode(args: ReplayCliArgs): Promise<void> {
   // IMPORTANT: Also check LPS (Last-Player-Standing) victory (R172) since
   // evaluateVictory() does not include round-based LPS detection. Python
   // implements full LPS tracking and may declare victory when one player has
-  // been the exclusive real-action holder for 3 consecutive rounds.
+  // been the exclusive real-action holder for 2 consecutive rounds.
   const verdict = evaluateVictory(engine.getState() as any);
   let finalState = engine.getState() as GameState;
   let finalWinner: number | undefined = verdict.winner;

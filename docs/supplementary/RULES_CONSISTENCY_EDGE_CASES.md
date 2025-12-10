@@ -190,7 +190,7 @@ Each subsection lists:
 
 - Elimination victory when a player’s credited eliminations reach `victoryThreshold` ([`RR‑CANON‑R170`](RULES_CANONICAL_SPEC.md:415)).
 - Territory victory when `territorySpaces` reach `territoryVictoryThreshold` ([`RR‑CANON‑R171`](RULES_CANONICAL_SPEC.md:420)).
-- Last‑player‑standing when, after **three consecutive full rounds** of turns:
+- Last‑player‑standing when, after **two consecutive full rounds** of turns:
   - One player (P) has at least one legal real action and takes at least one during each of those rounds, and
   - All others have no legal placements, movements, or captures during those rounds (even if they own buried rings) ([`RR‑CANON‑R172`](RULES_CANONICAL_SPEC.md:703)).
 - Global stalemate only when **no player** has any legal placement, movement, capture, or forced elimination, which can occur only after all stacks are gone; tie‑breaking ladder territory → eliminated rings (including converted rings in hand) → markers → last actor ([`RR‑CANON‑R173`](RULES_CANONICAL_SPEC.md:433)).

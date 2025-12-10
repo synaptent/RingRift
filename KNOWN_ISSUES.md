@@ -796,7 +796,7 @@ These issues have been addressed but are kept here for context:
     the TS replay script was using only `evaluateVictory()` from `victoryLogic.ts` which
     returns `{ isGameOver: false }` at line 108 if `state.board.stacks.size > 0`, bypassing
     round-based LPS entirely.
-  - The result: Python declared LPS victory after 3 consecutive rounds where one player
+  - The result: Python declared LPS victory after 2 consecutive rounds where one player
     is the exclusive real-action holder, while TS continued the game.
 
   **Resolution (Dec 10, 2025):**
@@ -806,7 +806,7 @@ These issues have been addressed but are kept here for context:
      - Added LPS tracking update after each move in interactive phases
      - Extended final victory evaluation to check LPS victory alongside `evaluateVictory()`
   2. LPS tracking now matches Python's behavior: round-based tracking with real-action
-     detection and 3-consecutive-round victory condition per RR-CANON-R172.
+     detection and 2-consecutive-round victory condition per RR-CANON-R172.
   3. All 286 turn orchestrator and LPS tracking tests pass with the fix.
 
 - **Recording Format Enhancements Schema v6 (Dec 4, 2025)** –

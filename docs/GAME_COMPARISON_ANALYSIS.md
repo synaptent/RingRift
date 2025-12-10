@@ -8,18 +8,18 @@
 
 ## 1. RingRift Core Mechanics Summary
 
-| Mechanic                    | RingRift Implementation                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Stacking**                | 1-N rings per cell; cap height (consecutive top rings of controlling player) determines control  |
-| **Movement**                | Distance >= stack height (minimum, not exact)                                                    |
-| **Capture**                 | Overtaking - attacker cap height >= target cap height; captured ring added to bottom of attacker |
-| **Chain captures**          | Mandatory continuation while legal captures exist                                                |
-| **Trail markers**           | Left on departure; opponent markers flip to your color, own markers collapse to territory        |
-| **Line formation**          | 3-4 markers in row (board-dependent) -> territory collapse + forced self-elimination             |
-| **Territory disconnection** | Regions cut off from other players are claimed by enclosing player                               |
-| **Victory conditions**      | >50% ring eliminations, >50% territory control, or last-player-standing                          |
-| **Player count**            | 2-4 players (with pie rule for 2-player balance)                                                 |
-| **Information**             | Perfect information, fully deterministic                                                         |
+| Mechanic                    | RingRift Implementation                                                                                 |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Stacking**                | 1-N rings per cell; cap height (consecutive top rings of controlling player) determines control         |
+| **Movement**                | Distance >= stack height (minimum, not exact)                                                           |
+| **Capture**                 | Overtaking - attacker cap height >= target cap height; captured ring added to bottom of attacker        |
+| **Chain captures**          | Mandatory continuation while legal captures exist                                                       |
+| **Trail markers**           | Left on departure; opponent markers flip to your color, own markers collapse to territory               |
+| **Line formation**          | 3-4 markers in row (board-dependent) -> territory collapse + forced self-elimination                    |
+| **Territory disconnection** | Regions cut off from other players are claimed by enclosing player                                      |
+| **Victory conditions**      | ringsPerPlayer ring eliminations, ringsPerPlayer territory spaces (>50% board), or last-player-standing |
+| **Player count**            | 2-4 players (with pie rule for 2-player balance)                                                        |
+| **Information**             | Perfect information, fully deterministic                                                                |
 
 ---
 
@@ -132,17 +132,17 @@ The [TZAAR game](https://www.meeplemountain.com/reviews/tzaar/) replaced TAMSK i
 
 ## 4. Mechanic-by-Mechanic Uniqueness Analysis
 
-| RingRift Mechanic                                | Found In Other Games?                                  | Uniqueness Assessment |
-| ------------------------------------------------ | ------------------------------------------------------ | --------------------- |
-| **Cap height (not stack height) for capture**    | **UNIQUE** - TZAAR/DVONN use total stack height        | Novel distinction     |
-| **Movement >= stack height (minimum)**           | Partial - DVONN uses exact stack height                | Semi-unique           |
-| **Marker trails that flip OR collapse**          | YINSH has flip only; Amazons has burn only             | Novel combination     |
-| **Line -> territory + forced self-elimination**  | **UNIQUE** - YINSH removes line but no territory cost  | Novel                 |
-| **Territory disconnection via marker enclosure** | Go-like enclosure exists, but mechanism differs        | Semi-unique           |
-| **Chain captures (mandatory continuation)**      | Checkers, Fanorona have this pattern                   | Common                |
-| **Ring elimination victory threshold (>50%)**    | **UNIQUE** - most games count pieces, not eliminations | Novel                 |
-| **Pie rule for 2-player balance**                | Common in Go, Hex, others                              | Standard              |
-| **2-4 player support**                           | Rare in abstract strategy games                        | Unusual               |
+| RingRift Mechanic                                       | Found In Other Games?                                  | Uniqueness Assessment |
+| ------------------------------------------------------- | ------------------------------------------------------ | --------------------- |
+| **Cap height (not stack height) for capture**           | **UNIQUE** - TZAAR/DVONN use total stack height        | Novel distinction     |
+| **Movement >= stack height (minimum)**                  | Partial - DVONN uses exact stack height                | Semi-unique           |
+| **Marker trails that flip OR collapse**                 | YINSH has flip only; Amazons has burn only             | Novel combination     |
+| **Line -> territory + forced self-elimination**         | **UNIQUE** - YINSH removes line but no territory cost  | Novel                 |
+| **Territory disconnection via marker enclosure**        | Go-like enclosure exists, but mechanism differs        | Semi-unique           |
+| **Chain captures (mandatory continuation)**             | Checkers, Fanorona have this pattern                   | Common                |
+| **Ring elimination victory threshold (ringsPerPlayer)** | **UNIQUE** - most games count pieces, not eliminations | Novel                 |
+| **Pie rule for 2-player balance**                       | Common in Go, Hex, others                              | Standard              |
+| **2-4 player support**                                  | Rare in abstract strategy games                        | Unusual               |
 
 ---
 
@@ -159,7 +159,7 @@ The [TZAAR game](https://www.meeplemountain.com/reviews/tzaar/) replaced TAMSK i
    - Graduated rewards (full collapse + elimination vs. partial collapse + no elimination)
    - Choice in how to process overlength lines
 
-4. **Multiple integrated victory conditions** - The combination of elimination threshold (>50% of all rings), territory control (>50% of board), AND last-player-standing creates three distinct strategic paths that interact. Most abstracts have single or binary win conditions.
+4. **Multiple integrated victory conditions** - The combination of elimination threshold (ringsPerPlayer rings), territory control (>50% of board spaces), AND last-player-standing creates three distinct strategic paths that interact. Most abstracts have single or binary win conditions.
 
 ### 5.2 Borrowed/Common Patterns
 

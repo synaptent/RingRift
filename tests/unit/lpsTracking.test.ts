@@ -437,11 +437,11 @@ describe('lpsTracking module', () => {
     /**
      * Helper to set up LPS state for victory evaluation.
      * Sets both consecutiveExclusiveRounds and consecutiveExclusivePlayer
-     * as required by the three-round LPS requirement (LPS_REQUIRED_CONSECUTIVE_ROUNDS = 3).
+     * as required by the two-round LPS requirement (LPS_REQUIRED_CONSECUTIVE_ROUNDS = 2).
      */
     function setupLpsForVictory(lps: LpsTrackingState, player: number): void {
-      // Per canonical rules: LPS requires 3 consecutive rounds of exclusive real actions
-      lps.consecutiveExclusiveRounds = 3;
+      // Per canonical rules: LPS requires 2 consecutive rounds of exclusive real actions
+      lps.consecutiveExclusiveRounds = 2;
       lps.consecutiveExclusivePlayer = player;
       lps.exclusivePlayerForCompletedRound = player;
     }
@@ -562,7 +562,7 @@ describe('lpsTracking module', () => {
       expect(result.reason).toBe('other_player_has_actions');
     });
 
-    it('should return isVictory=true when all conditions met (3 consecutive rounds)', () => {
+    it('should return isVictory=true when all conditions met (2 consecutive rounds)', () => {
       const gameState = createMockGameState({ currentPlayer: 1 });
       const lps = createLpsTrackingState();
       setupLpsForVictory(lps, 1);
@@ -636,8 +636,8 @@ describe('lpsTracking module', () => {
       }
     });
 
-    it('should trigger victory only after three-round exclusive real-action pattern', () => {
-      // Per canonical rules: LPS requires 3 consecutive rounds (LPS_REQUIRED_CONSECUTIVE_ROUNDS = 3)
+    it('should trigger victory only after two-round exclusive real-action pattern', () => {
+      // Per canonical rules: LPS requires 2 consecutive rounds (LPS_REQUIRED_CONSECUTIVE_ROUNDS = 2)
       const lps = createLpsTrackingState();
       const activePlayers = [1, 2];
 
@@ -681,7 +681,7 @@ describe('lpsTracking module', () => {
         hasRealAction: true,
       });
 
-      // After 1 round, still not enough for LPS victory (requires 3)
+      // After 1 round, still not enough for LPS victory (requires 2)
       state = makeState({ currentPlayer: 1 });
       result = evaluateLpsVictory({
         gameState: state,
@@ -701,7 +701,7 @@ describe('lpsTracking module', () => {
       });
 
       // Start of round 3: cycling back to P1 finalises Round 2 with P1 as exclusive actor.
-      // consecutiveExclusiveRounds is now 2 - still not enough (requires 3)
+      // consecutiveExclusiveRounds is now 2 - LPS condition is now met!
       updateLpsTracking(lps, {
         currentPlayer: 1,
         activePlayers,
@@ -709,34 +709,6 @@ describe('lpsTracking module', () => {
       });
 
       expect(lps.consecutiveExclusiveRounds).toBe(2);
-      expect(lps.consecutiveExclusivePlayer).toBe(1);
-
-      state = makeState({ currentPlayer: 1 });
-      result = evaluateLpsVictory({
-        gameState: state,
-        lps,
-        hasAnyRealAction: (pn) => pn === 1,
-        hasMaterial: () => true,
-      });
-      expect(result.isVictory).toBe(false);
-      expect(result.reason).toMatch(/insufficient_consecutive_rounds_2/);
-
-      // Round 3: P1 has real actions; P2 has none.
-      updateLpsTracking(lps, {
-        currentPlayer: 2,
-        activePlayers,
-        hasRealAction: false,
-      });
-
-      // Start of round 4: cycling back to P1 finalises Round 3 with P1 as exclusive actor.
-      // consecutiveExclusiveRounds is now 3 - LPS condition is now met!
-      updateLpsTracking(lps, {
-        currentPlayer: 1,
-        activePlayers,
-        hasRealAction: true,
-      });
-
-      expect(lps.consecutiveExclusiveRounds).toBe(3);
       expect(lps.consecutiveExclusivePlayer).toBe(1);
 
       state = makeState({ currentPlayer: 1 });

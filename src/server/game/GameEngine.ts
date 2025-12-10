@@ -176,7 +176,7 @@ export class GameEngine {
 
   /**
    * Returns a lightweight summary of LPS tracking state for client display.
-   * Per RR-CANON-R172, LPS victory requires 3 consecutive rounds where only
+   * Per RR-CANON-R172, LPS victory requires 2 consecutive rounds where only
    * one player has real actions available.
    */
   public getLpsTrackingSummary(): GameState['lpsTracking'] {
@@ -246,7 +246,8 @@ export class GameEngine {
       maxPlayers: players.length,
       totalRingsInPlay: boardConfig.ringsPerPlayer * players.length,
       totalRingsEliminated: 0,
-      victoryThreshold: Math.floor((boardConfig.ringsPerPlayer * players.length) / 2) + 1,
+      // Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
+      victoryThreshold: boardConfig.ringsPerPlayer,
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
     };
 

@@ -198,7 +198,7 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
     description: TEACHING_TOPICS_COPY.victory_stalemate.body,
     tips: [
       // === Last Player Standing (LPS) ===
-      'LAST PLAYER STANDING: You win if you are the only player who can make real moves (placements, movements, or captures) for THREE consecutive complete rounds.',
+      'LAST PLAYER STANDING: You win if you are the only player who can make real moves (placements, movements, or captures) for TWO consecutive complete rounds.',
       // Three-round requirement emphasis
       'LPS requires THREE rounds: First round, you must have and take at least one real action while all others have none. Second and third rounds, you remain the only player with real actions. Victory is declared after the third round completes.',
       // GAP-LPS-03: Emphasize FE ≠ real action

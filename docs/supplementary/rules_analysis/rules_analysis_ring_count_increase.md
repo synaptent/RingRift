@@ -26,9 +26,9 @@
 
 ### Victory Thresholds
 
-- **Ring Elimination (RR-CANON-R061):** `victoryThreshold = floor(totalRingsInPlay / 2) + 1`
+- **Ring Elimination (RR-CANON-R061):** `victoryThreshold = ringsPerPlayer` (18 for square8, 48 for square19, 72 for hexagonal)
 - **Territory (RR-CANON-R062):** `territoryVictoryThreshold = floor(totalSpaces / 2) + 1`
-- **LPS (RR-CANON-R172):** Player is only one with "real actions" for 3 consecutive full rounds
+- **LPS (RR-CANON-R172):** Player is only one with "real actions" for 2 consecutive full rounds
 
 ---
 
@@ -56,7 +56,7 @@ The proposed change would affect victory path balance through:
 
 1. **More material on board → Harder to immobilize opponents → Fewer LPS victories**
    - With more rings, players have more options for placement and stack-building
-   - Harder to trap all opponents in FE-only positions for 3 consecutive rounds
+   - Harder to trap all opponents in FE-only positions for 2 consecutive rounds
 
 2. **More material → More rings available to eliminate → More Elimination victories**
    - Higher threshold, but also more opportunities for line formations and captures
@@ -184,7 +184,7 @@ This allows finding the balance point more precisely.
 
 If LPS is too easy, consider tightening the LPS condition:
 
-- Require 3 consecutive rounds instead of 2
+- Require 2 consecutive rounds instead of 2
 - Require all opponents to have no material (not just no real actions)
 - Add a minimum turn count before LPS can trigger
 
@@ -289,7 +289,7 @@ Games are relatively short, with LPS typically triggering before mid-game.
 
 4. **Territory Is Suppressed, Not Broken:** At 5-28% of threshold currently, territory appears non-viable. However, territory accumulation is _non-linear_—it accelerates as the board fills with markers and collapsed spaces that partition regions. Given enough moves, territory would snowball. The current low percentages reflect games ending prematurely, not a fundamental ceiling.
 
-5. **Root Cause Hypothesis:** LPS triggers too quickly relative to the pace of both material elimination AND territory accumulation. Extending game length would benefit both alternative victory paths—elimination linearly, territory exponentially. _(Note: The canonical LPS rule now requires 3 consecutive full rounds, per RR-CANON-R172.)_
+5. **Root Cause Hypothesis:** LPS triggers too quickly relative to the pace of both material elimination AND territory accumulation. Extending game length would benefit both alternative victory paths—elimination linearly, territory exponentially. _(Note: The canonical LPS rule now requires 2 consecutive full rounds, per RR-CANON-R172.)_
 
 ---
 
@@ -307,7 +307,7 @@ The empirical data suggests the root cause is **LPS triggering too quickly**, no
 
 3. **The LPS round window was the bottleneck** - Games ended before material dynamics could play out.
 
-**Implemented Intervention:** The canonical rules now require **3 consecutive full rounds** for LPS (RR-CANON-R172), which was adopted based on this analysis.
+**Implemented Intervention:** The canonical rules now require **2 consecutive full rounds** for LPS (RR-CANON-R172), which was adopted based on this analysis.
 
 This change:
 
@@ -370,7 +370,7 @@ Both alternative victory paths are suppressed by early LPS termination. The prop
 
 **Recommended path forward:**
 
-1. Extend LPS requirement from 2 to 3 consecutive rounds
+1. Extend LPS requirement from 2 to 2 consecutive rounds
 2. Monitor victory type distribution—territory may self-correct as games lengthen
 3. Consider smaller ring count adjustments only if needed after measuring impact
 4. Defer territory threshold changes pending measurement

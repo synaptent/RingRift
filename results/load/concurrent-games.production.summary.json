@@ -1,0 +1,295 @@
+{
+  "scenario": "concurrent-games",
+  "environment": "production",
+  "runTimestamp": "2025-12-10T21:06:10.617Z",
+  "overallPass": false,
+  "thresholds": [
+    {
+      "metric": "contract_failures_total",
+      "threshold": "count<=0",
+      "statistic": "count",
+      "comparison": "<=",
+      "limit": 0,
+      "value": 46168,
+      "passed": false,
+      "hasSamples": true
+    },
+    {
+      "metric": "capacity_failures_total",
+      "threshold": "rate<0.005",
+      "statistic": "rate",
+      "comparison": "<",
+      "limit": 0.005,
+      "value": 12.129180934910408,
+      "passed": false,
+      "hasSamples": true
+    },
+    {
+      "metric": "game_state_check_success",
+      "threshold": "rate>0.99",
+      "statistic": "rate",
+      "comparison": ">",
+      "limit": 0.99,
+      "value": 0.028392958546280524,
+      "passed": false,
+      "hasSamples": null
+    },
+    {
+      "metric": "id_lifecycle_mismatches_total",
+      "threshold": "count<=0",
+      "statistic": "count",
+      "comparison": "<=",
+      "limit": 0,
+      "value": null,
+      "passed": false,
+      "hasSamples": false
+    },
+    {
+      "metric": "http_req_failed",
+      "threshold": "rate<0.005",
+      "statistic": "rate",
+      "comparison": "<",
+      "limit": 0.005,
+      "value": 0.9928196147110333,
+      "passed": false,
+      "hasSamples": null
+    },
+    {
+      "metric": "http_req_duration{name:create-game}",
+      "threshold": "p(99)<800",
+      "statistic": "p(99)",
+      "comparison": "<",
+      "limit": 800,
+      "value": null,
+      "passed": true,
+      "hasSamples": null
+    },
+    {
+      "metric": "http_req_duration{name:create-game}",
+      "threshold": "p(95)<400",
+      "statistic": "p(95)",
+      "comparison": "<",
+      "limit": 400,
+      "value": 53.251,
+      "passed": true,
+      "hasSamples": null
+    },
+    {
+      "metric": "http_req_duration{name:get-game}",
+      "threshold": "p(99)<400",
+      "statistic": "p(99)",
+      "comparison": "<",
+      "limit": 400,
+      "value": null,
+      "passed": true,
+      "hasSamples": null
+    },
+    {
+      "metric": "http_req_duration{name:get-game}",
+      "threshold": "p(95)<200",
+      "statistic": "p(95)",
+      "comparison": "<",
+      "limit": 200,
+      "value": 51.28379999999999,
+      "passed": true,
+      "hasSamples": null
+    }
+  ],
+  "slo": {
+    "scenario": "concurrent-games",
+    "environment": "production",
+    "thresholds": [
+      {
+        "metric": "contract_failures_total",
+        "threshold": "count<=0",
+        "statistic": "count",
+        "comparison": "<=",
+        "limit": 0,
+        "value": 46168,
+        "passed": false,
+        "hasSamples": true
+      },
+      {
+        "metric": "capacity_failures_total",
+        "threshold": "rate<0.005",
+        "statistic": "rate",
+        "comparison": "<",
+        "limit": 0.005,
+        "value": 12.129180934910408,
+        "passed": false,
+        "hasSamples": true
+      },
+      {
+        "metric": "game_state_check_success",
+        "threshold": "rate>0.99",
+        "statistic": "rate",
+        "comparison": ">",
+        "limit": 0.99,
+        "value": 0.028392958546280524,
+        "passed": false,
+        "hasSamples": null
+      },
+      {
+        "metric": "id_lifecycle_mismatches_total",
+        "threshold": "count<=0",
+        "statistic": "count",
+        "comparison": "<=",
+        "limit": 0,
+        "value": null,
+        "passed": false,
+        "hasSamples": false
+      },
+      {
+        "metric": "http_req_failed",
+        "threshold": "rate<0.005",
+        "statistic": "rate",
+        "comparison": "<",
+        "limit": 0.005,
+        "value": 0.9928196147110333,
+        "passed": false,
+        "hasSamples": null
+      },
+      {
+        "metric": "http_req_duration{name:create-game}",
+        "threshold": "p(99)<800",
+        "statistic": "p(99)",
+        "comparison": "<",
+        "limit": 800,
+        "value": null,
+        "passed": true,
+        "hasSamples": null
+      },
+      {
+        "metric": "http_req_duration{name:create-game}",
+        "threshold": "p(95)<400",
+        "statistic": "p(95)",
+        "comparison": "<",
+        "limit": 400,
+        "value": 53.251,
+        "passed": true,
+        "hasSamples": null
+      },
+      {
+        "metric": "http_req_duration{name:get-game}",
+        "threshold": "p(99)<400",
+        "statistic": "p(99)",
+        "comparison": "<",
+        "limit": 400,
+        "value": null,
+        "passed": true,
+        "hasSamples": null
+      },
+      {
+        "metric": "http_req_duration{name:get-game}",
+        "threshold": "p(95)<200",
+        "statistic": "p(95)",
+        "comparison": "<",
+        "limit": 200,
+        "value": 51.28379999999999,
+        "passed": true,
+        "hasSamples": null
+      }
+    ],
+    "overallPass": false,
+    "noSamplesForMetrics": ["id_lifecycle_mismatches_total"],
+    "overallReason": "no_samples_for_key_metric"
+  },
+  "thresholdsEnv": "production",
+  "http": {
+    "http_req_duration": {
+      "p95": 52.90105,
+      "p99": null,
+      "hasSamples": null
+    },
+    "game_creation_latency_ms": null,
+    "move_submission_latency_ms": null,
+    "turn_processing_latency_ms": null
+  },
+  "websocket": {
+    "websocket_message_latency_ms": null,
+    "websocket_connection_duration_ms": null,
+    "websocket_connection_success_rate": null,
+    "websocket_handshake_success_rate": null,
+    "ws_move_rtt_ms": null,
+    "ws_move_success_rate": null,
+    "ws_moves_attempted_total": null,
+    "ws_move_stalled_total": null
+  },
+  "ai": {
+    "ai_move_latency_ms": null
+  },
+  "classifications": {
+    "contract_failures_total": {
+      "count": 46168,
+      "rate": 25.61665258018956
+    },
+    "id_lifecycle_mismatches_total": {
+      "count": 0,
+      "rate": 0
+    },
+    "capacity_failures_total": {
+      "count": 21860,
+      "rate": 12.129180934910408
+    },
+    "game_state_errors": {
+      "count": 68028,
+      "rate": 37.74583351509997
+    },
+    "move_processing_errors": null,
+    "stalled_moves_total": null,
+    "websocket_connection_errors": null,
+    "websocket_protocol_errors": null,
+    "auth_token_expired_total": null
+  },
+  "raw": {
+    "scenario": "concurrent-games",
+    "environment": "production",
+    "thresholdsEnv": "production",
+    "http": {
+      "http_req_duration": {
+        "p95": 52.90105,
+        "p99": null,
+        "hasSamples": null
+      },
+      "game_creation_latency_ms": null,
+      "move_submission_latency_ms": null,
+      "turn_processing_latency_ms": null
+    },
+    "websocket": {
+      "websocket_message_latency_ms": null,
+      "websocket_connection_duration_ms": null,
+      "websocket_connection_success_rate": null,
+      "websocket_handshake_success_rate": null,
+      "ws_move_rtt_ms": null,
+      "ws_move_success_rate": null,
+      "ws_moves_attempted_total": null,
+      "ws_move_stalled_total": null
+    },
+    "ai": {
+      "ai_move_latency_ms": null
+    },
+    "classifications": {
+      "contract_failures_total": {
+        "count": 46168,
+        "rate": 25.61665258018956
+      },
+      "id_lifecycle_mismatches_total": {
+        "count": 0,
+        "rate": 0
+      },
+      "capacity_failures_total": {
+        "count": 21860,
+        "rate": 12.129180934910408
+      },
+      "game_state_errors": {
+        "count": 68028,
+        "rate": 37.74583351509997
+      },
+      "move_processing_errors": null,
+      "stalled_moves_total": null,
+      "websocket_connection_errors": null,
+      "websocket_protocol_errors": null,
+      "auth_token_expired_total": null
+    }
+  }
+}

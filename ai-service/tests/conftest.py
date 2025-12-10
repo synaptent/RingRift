@@ -196,8 +196,8 @@ def game_state_factory(player_factory, board_state_factory) -> Callable[..., Gam
             maxPlayers=num_players,
             totalRingsInPlay=total_rings_in_play,
             totalRingsEliminated=0,
-            victoryThreshold=19 if num_players == 2 else 15,
-            territoryVictoryThreshold=33 if num_players == 2 else 25,
+            victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer for square8
+            territoryVictoryThreshold=33,
         )
 
     return _create_game_state

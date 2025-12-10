@@ -232,11 +232,45 @@ Target-scale run tracking:
 - The test harness needs enhancement for token refresh in long-running tests
 - **Not a capacity bottleneck** - this is test infrastructure + expected rate limiting
 
-**Recommended Next Steps:**
+**Recommended Next Steps:** _(Completed 2025-12-10)_
 
-1. Enhance k6 auth helpers with token refresh for tests >15 minutes
-2. Consider adjusting rate limits for production if higher throughput needed
-3. Run shorter (10-15 min) target-scale tests that stay within token TTL
+1. ✅ **Enhanced k6 auth helpers** - `concurrent-games.js` now uses `getValidToken()` for automatic token refresh
+2. ✅ **Created shorter test variant** - `run-target-scale-short.sh` (12 min, within token TTL)
+3. ⚠️ **Rate limit tuning** - See below for environment variable overrides
+
+**Rate Limit Configuration for Load Testing:**
+
+The server uses environment-configurable rate limits. For high-throughput load testing, these can be adjusted:
+
+```bash
+# Increase authenticated API limit (default: 200 req/60s per user)
+RATE_LIMIT_API_AUTH_POINTS=1000
+
+# Increase game operations limit (default: 200 req/60s)
+RATE_LIMIT_GAME_POINTS=1000
+
+# Increase game creation quota (default: 20 games/10min per user)
+RATE_LIMIT_GAME_CREATE_USER_POINTS=100
+
+# Increase login attempts for multi-VU tests (default: 5/15min)
+RATE_LIMIT_AUTH_LOGIN_POINTS=500
+```
+
+For load testing environments, consider starting the server with relaxed limits:
+
+```bash
+RATE_LIMIT_API_AUTH_POINTS=1000 \
+RATE_LIMIT_GAME_POINTS=1000 \
+RATE_LIMIT_AUTH_LOGIN_POINTS=500 \
+npm run dev
+```
+
+**New Short Target-Scale Test:**
+
+```bash
+# 12-minute test (stays within 15-min token TTL)
+npm run load:target:short:staging
+```
 
 Post-run validation checklist (target-scale):
 

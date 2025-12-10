@@ -500,8 +500,8 @@ def check_victory_conditions(
     stack_owner: np.ndarray,
     rings_in_hand: np.ndarray,
     num_players: int,
-    victory_threshold: int = 6,
-    territory_threshold: int = 20,
+    victory_threshold: int = 18,  # Per RR-CANON-R061: ringsPerPlayer for square8
+    territory_threshold: int = 33,  # Per RR-CANON-R062: floor(64/2)+1 for square8
 ) -> int:
     """Check victory conditions.
 
@@ -877,8 +877,8 @@ def detect_lines_from_game_state(
 def check_victory_from_game_state(
     game_state,
     board_size: int = 8,
-    victory_threshold: int = 6,
-    territory_threshold: int = 20,
+    victory_threshold: int = 18,  # Per RR-CANON-R061: ringsPerPlayer for square8
+    territory_threshold: int = 33,  # Per RR-CANON-R062: floor(64/2)+1 for square8
 ) -> int:
     """Check victory using Numba-compiled function."""
     arrays = BoardArrays.from_game_state(game_state, board_size)

@@ -94,7 +94,7 @@ Together, these goals define **how the game should feel**: simple to describe at
 | **Flexible player configurations** | Support 2-4 players with any combination of human and AI participants                                                                                                                                    | Enables solo practice, competitive play, and social gaming     |
 | **AI opponents**                   | Provide AI opponents at multiple difficulty levels (1-10) with responsive move selection                                                                                                                 | Allows single-player experience and fills seats in multiplayer |
 | **Real-time multiplayer**          | WebSocket-based live gameplay with synchronized state and spectator support                                                                                                                              | Core online multiplayer experience                             |
-| **Victory tracking**               | Correct implementation of all three victory paths: Ring Elimination (>50% rings), Territory Control (>50% board), Last Player Standing                                                                   | Game cannot be complete without proper resolution              |
+| **Victory tracking**               | Correct implementation of all three victory paths: Ring Elimination (ringsPerPlayer rings), Territory Control (>50% board), Last Player Standing                                                         | Game cannot be complete without proper resolution              |
 
 ### 3.2 Technical Objectives (Architecture & Performance)
 

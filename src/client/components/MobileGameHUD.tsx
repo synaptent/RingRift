@@ -122,7 +122,7 @@ function MobileWeirdStateBanner({
 /**
  * Mobile LPS (Last-Player-Standing) tracking indicator.
  * Compact version showing progress toward LPS victory.
- * Per RR-CANON-R172, LPS requires 3 consecutive rounds where only 1 player has real actions.
+ * Per RR-CANON-R172, LPS requires 2 consecutive rounds where only 1 player has real actions.
  */
 function MobileLpsIndicator({
   lpsTracking,
@@ -140,13 +140,11 @@ function MobileLpsIndicator({
   const exclusivePlayer = players.find((p) => p.playerNumber === consecutiveExclusivePlayer);
   const playerName = exclusivePlayer?.username ?? `P${consecutiveExclusivePlayer}`;
 
-  // Color progression: amber (1), orange (2), red (3 = victory imminent)
+  // Color progression: amber (1), red (2 = victory imminent)
   const colorClass =
-    consecutiveExclusiveRounds >= 3
+    consecutiveExclusiveRounds >= 2
       ? 'border-red-400/80 bg-red-950/80 text-red-50'
-      : consecutiveExclusiveRounds >= 2
-        ? 'border-orange-400/80 bg-orange-950/80 text-orange-50'
-        : 'border-amber-400/80 bg-amber-950/80 text-amber-50';
+      : 'border-amber-400/80 bg-amber-950/80 text-amber-50';
 
   return (
     <div
@@ -158,8 +156,8 @@ function MobileLpsIndicator({
       <span aria-hidden="true">🏆</span>
       <span className="font-semibold truncate flex-1">{playerName} exclusive</span>
       {/* Progress dots */}
-      <div className="flex gap-0.5" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
-        {[1, 2, 3].map((n) => (
+      <div className="flex gap-0.5" aria-label={`${consecutiveExclusiveRounds} of 2 rounds`}>
+        {[1, 2].map((n) => (
           <span
             key={n}
             className={`w-1.5 h-1.5 rounded-full ${
@@ -175,7 +173,7 @@ function MobileLpsIndicator({
 /**
  * Compact mobile victory progress indicator.
  * Shows ring elimination and territory progress when meaningful.
- * Per RR-CANON-R061: victoryThreshold = floor(totalRings/2)+1
+ * Per RR-CANON-R061: victoryThreshold = ringsPerPlayer (starting ring supply)
  * Per RR-CANON-R062: territoryThreshold = floor(totalSpaces/2)+1
  */
 function MobileVictoryProgress({
