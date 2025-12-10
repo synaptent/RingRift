@@ -3777,8 +3777,16 @@ class GameEngine:
         board = game_state.board
         pos = move.to
         stack = board.stacks.get(pos.to_key())
-        if not stack or stack.cap_height <= 0:
-            return
+        if not stack:
+            raise ValueError(
+                f"Cannot apply forced elimination - no stack at {pos.to_key()} "
+                f"for player {move.player}"
+            )
+        if stack.cap_height <= 0:
+            raise ValueError(
+                f"Cannot apply forced elimination - stack at {pos.to_key()} has "
+                f"cap_height {stack.cap_height} <= 0 for player {move.player}"
+            )
 
         cap_height = stack.cap_height
         for _ in range(cap_height):

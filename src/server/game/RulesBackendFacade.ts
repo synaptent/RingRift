@@ -186,26 +186,13 @@ export class RulesBackendFacade {
       }
     }
 
-    // TS-authoritative path (ts and shadow modes): use the TS GameEngine as
-    // the source of truth and optionally call Python in shadow for parity.
-    const tsResult = await this.engine.makeMove(move);
-
-    if (isRulesShadowMode()) {
-      this.runPythonShadow(beforeState, move as Move, tsResult).catch((err) => {
-        this.diagnostics.pythonShadowErrors += 1;
-        logRulesMismatch('shadow_error', { error: String(err) });
-      });
-    }
-
-    return tsResult;
+    // TS-authoritative path: use the TS GameEngine as the source of truth.
+    return this.engine.makeMove(move);
   }
 
   /**
    * Apply a canonical Move selected by its stable identifier (Move.id).
-   *
-   * This mirrors GameEngine.makeMoveById but also performs Python
-   * parity checks in shadow mode by reconstructing the canonical Move
-   * from the engine history after it has been applied.
+   * This mirrors GameEngine.makeMoveById.
    */
   async applyMoveById(playerNumber: number, moveId: string): Promise<RulesResult> {
     const mode = getRulesMode();
@@ -264,21 +251,8 @@ export class RulesBackendFacade {
       }
     }
 
-    const tsResult = await this.engine.makeMoveById(playerNumber, moveId);
-
-    if (isRulesShadowMode() && tsResult.success && tsResult.gameState) {
-      const history = tsResult.gameState.moveHistory;
-      const lastMove = history[history.length - 1];
-
-      if (lastMove) {
-        this.runPythonShadow(beforeState, lastMove, tsResult).catch((err) => {
-          this.diagnostics.pythonShadowErrors += 1;
-          logRulesMismatch('shadow_error', { error: String(err) });
-        });
-      }
-    }
-
-    return tsResult;
+    // TS-authoritative path: use the TS GameEngine as the source of truth.
+    return this.engine.makeMoveById(playerNumber, moveId);
   }
 
   /**
