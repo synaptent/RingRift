@@ -27,7 +27,9 @@ export function findAllLines(board: BoardState): LineInfo[] {
   // Iterate through all MARKERS (not stacks!). If a space currently
   // hosts a stack or has already collapsed to territory, it cannot be
   // part of an active marker line.
-  for (const [posStr, marker] of board.markers) {
+  // Support both Map and plain object for markers (plain objects come from JSON deserialization).
+  const markerEntries = iterateMapOrObject(board.markers);
+  for (const [posStr, marker] of markerEntries) {
     const position = stringToPosition(posStr);
 
     // Treat stacks and collapsed spaces as hard blockers
@@ -176,16 +178,46 @@ function isValidPosition(position: Position, board: BoardState): boolean {
 
 function getMarker(position: Position, board: BoardState): number | undefined {
   const posKey = positionToString(position);
-  const marker = board.markers.get(posKey);
+  const marker = getFromMapOrObject(board.markers, posKey);
   return marker?.player;
 }
 
 function isCollapsedSpace(position: Position, board: BoardState): boolean {
   const posKey = positionToString(position);
-  return board.collapsedSpaces.has(posKey);
+  return hasInMapOrObject(board.collapsedSpaces, posKey);
 }
 
 function getStack(position: Position, board: BoardState): RingStack | undefined {
   const posKey = positionToString(position);
-  return board.stacks.get(posKey);
+  return getFromMapOrObject(board.stacks, posKey);
+}
+
+// Helper to iterate over Map or plain object (for JSON-deserialized states)
+function iterateMapOrObject<T>(mapOrObj: Map<string, T> | Record<string, T>): [string, T][] {
+  if (mapOrObj instanceof Map) {
+    return Array.from(mapOrObj.entries());
+  }
+  // Plain object from JSON deserialization
+  return Object.entries(mapOrObj);
+}
+
+// Helper to get from Map or plain object
+function getFromMapOrObject<T>(
+  mapOrObj: Map<string, T> | Record<string, T>,
+  key: string
+): T | undefined {
+  if (mapOrObj instanceof Map) {
+    return mapOrObj.get(key);
+  }
+  // Plain object from JSON deserialization
+  return mapOrObj[key];
+}
+
+// Helper to check existence in Map or plain object
+function hasInMapOrObject<T>(mapOrObj: Map<string, T> | Record<string, T>, key: string): boolean {
+  if (mapOrObj instanceof Map) {
+    return mapOrObj.has(key);
+  }
+  // Plain object from JSON deserialization
+  return key in mapOrObj;
 }

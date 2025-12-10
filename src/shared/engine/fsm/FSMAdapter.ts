@@ -1157,11 +1157,9 @@ export function getAllowedMoveTypesForPhase(phase: GamePhase): ReadonlyArray<Mov
  * contract used by the orchestrator.
  */
 export function isMoveTypeValidForPhase(phase: GamePhase, moveType: MoveType): boolean {
-  // Resign is allowed from any phase - player can always forfeit.
-  // TIMEOUT is modelled at the FSM-event layer and does not currently flow
-  // through MoveType in canonical recordings; hosts that surface timeout as a
-  // Move should either map it to 'resign' or handle it out-of-band.
-  if (moveType === 'resign') {
+  // Resign and timeout are allowed from any phase - player can always forfeit
+  // or run out of time. Both result in game termination.
+  if (moveType === 'resign' || moveType === 'timeout') {
     return true;
   }
 
