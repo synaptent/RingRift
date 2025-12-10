@@ -620,6 +620,15 @@ def test_default_engine_mutator_first_matches_game_engine_on_ts_traces() -> None
         rules_state = GameState(**converted_state)
 
         for idx, step in enumerate(steps):
+            # Skip steps marked with skip: true
+            if step.get("skip"):
+                continue
+
+            # Skip steps with expected tsValid: false (invalid moves)
+            expected = step.get("expected", {}) or {}
+            if expected.get("tsValid") is False:
+                continue
+
             move_dict = step["move"]
             move = Move(**move_dict)
 

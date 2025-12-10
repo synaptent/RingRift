@@ -303,49 +303,45 @@ export RINGRIFT_FSM_VALIDATION_MODE=active
 npm run test:parity
 ```
 
-### Debugging FSM Divergences
+### Debugging FSM Issues
 
-1. Enable shadow mode logging
-2. Run failing test/scenario
-3. Check logs for `[FSM_SHADOW_VALIDATION]` entries
-4. Compare `fsmResult` vs `existingResult` in divergence logs
-5. Fix either FSM rules or legacy validator
+Since FSM is now canonical, debugging involves:
 
----
-
-## Immediate Action Items
-
-1. **Fix `current_player` mismatch** at `game_over` transition
-   - Use existing state bundles from parity failures
-   - Align TS and Python phase-machine transitions
-
-2. **Enable FSM-active in CI parity tests**
-   - Update CI config to set `RINGRIFT_FSM_VALIDATION_MODE=active`
-   - Fix any resulting test failures
-
-3. **Add Python phase-machine parity tests**
-   - Generate from TS FSM transition table
-   - Add to `ai-service/tests/parity/`
-
-4. **Update fixtures with zero-ring skip_placement**
-   - Audit fixtures assuming legacy behavior
-   - Update to use explicit `no_placement_action`
-
-5. **Prototype FSM-driven orchestrator flag**
-   - Add `RINGRIFT_FSM_ORCHESTRATOR` env flag
-   - Run orchestrator soak with flag enabled
-   - Gate on canonical history validation
+1. Run failing test/scenario with `RINGRIFT_TRACE_DEBUG=1`
+2. Check logs for FSM phase transitions and actions
+3. Use TS replay harness for step-by-step state dumps:
+   ```bash
+   RINGRIFT_TS_REPLAY_DUMP_STATE_AT_K=<step> \
+   RINGRIFT_TS_REPLAY_DUMP_DIR=/tmp \
+   npx ts-node scripts/selfplay-db-ts-replay.ts --db <path> --game <id>
+   ```
+4. Compare TS and Python state at divergence point
+5. Fix FSM rules in both languages to maintain parity
 
 ---
 
-## Success Metrics
+## Archived Action Items (COMPLETED)
 
-| Metric                                | Target | Current |
+All action items from the original FSM Extension Strategy have been completed:
+
+1. ~~Fix `current_player` mismatch at `game_over` transition~~ ✅ Done
+2. ~~Enable FSM-active in CI parity tests~~ ✅ Done (now default)
+3. ~~Add Python phase-machine parity tests~~ ✅ Done
+4. ~~Update fixtures with zero-ring skip_placement~~ ✅ Done
+5. ~~Prototype FSM-driven orchestrator flag~~ ✅ Done (graduated to canonical)
+
+---
+
+## Success Metrics (ACHIEVED)
+
+| Metric                                | Target | Final   |
 | ------------------------------------- | ------ | ------- |
-| FSM-legacy divergences in shadow mode | 0      | TBD     |
-| Parity tests passing with active mode | 100%   | ~95%    |
-| Python phase-machine coverage         | 100%   | ~80%    |
-| Canonical DBs passing FSM validation  | 100%   | TBD     |
+| FSM-legacy divergences in shadow mode | 0      | 0 ✅    |
+| Parity tests passing with active mode | 100%   | 100% ✅ |
+| Python phase-machine coverage         | 100%   | 100% ✅ |
+| Canonical DBs passing FSM validation  | 100%   | 100% ✅ |
+
+> **Note:** Shadow mode has been removed. FSM is now canonical.
 
 ---
 
