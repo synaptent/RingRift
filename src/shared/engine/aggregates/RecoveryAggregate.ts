@@ -15,7 +15,14 @@
  * - RR-CANON-R113: Buried ring extraction cost:
  *   - Option 1 (collapse all): 1 buried ring extraction
  *   - Option 2 (collapse lineLength, overlength only): 0 (free)
+ *   **Note:** Recovery moves use buried ring extraction, NOT stack cap elimination.
+ *   This is intentionally cheaper than normal territory processing which requires
+ *   an entire stack cap. Stack cap eligibility: mixed-colour (buried rings of
+ *   other colours beneath) OR single-colour height > 1.
  * - RR-CANON-R114: Cascade processing (territory regions after line collapse)
+ *   **Note:** Recovery moves CAN cause territory disconnection. If a recovery slide
+ *   (line or fallback) results in territory disconnection, the triggered territory
+ *   processing uses the recovery exception cost (1 buried ring, not entire cap).
  * - RR-CANON-R115: Recording semantics (recovery_slide move type)
  *
  * Cost Model (Option 1 / Option 2):
@@ -51,8 +58,7 @@ export type RecoveryOption = 1 | 2;
 /**
  * Recovery mode type - which success criterion was met (RR-CANON-R112).
  * - "line": Condition (a) - completes a line of at least lineLength markers
- * - "fallback": Condition (b) - no line available, any adjacent slide that doesn't disconnect territory
- * Note: Territory disconnection is NOT a valid recovery criterion.
+ * - "fallback": Condition (b) - no line available, any adjacent slide is permitted (including territory disconnection)
  */
 export type RecoveryMode = 'line' | 'fallback';
 
@@ -69,7 +75,7 @@ export interface RecoverySlideMove extends Move {
   /**
    * Which recovery criterion was satisfied (RR-CANON-R112).
    * - "line": Completed a line of lineLength markers
-   * - "fallback": No line available, repositioning without territory disconnection
+   * - "fallback": No line available, any adjacent slide (including territory disconnection)
    */
   recoveryMode?: RecoveryMode;
   /**
@@ -244,10 +250,8 @@ export function enumerateRecoverySlideTargets(
  *
  * Uses the expanded recovery criteria (RR-CANON-R112):
  * (a) Line formation - completes a line of lineLength markers
- * (b) Fallback repositioning - if no line available, any slide that doesn't
- *     cause territory disconnection
- *
- * Note: Territory disconnection is NOT a valid recovery criterion.
+ * (b) Fallback repositioning - if no line available, any adjacent slide is permitted
+ *     (including slides that cause territory disconnection)
  *
  * @param state - Current game state
  * @param playerNumber - Player to check
@@ -290,9 +294,8 @@ export function hasAnyRecoveryMove(state: GameState, playerNumber: number): bool
         return true;
       }
 
-      // Check if this could be a valid fallback (no territory disconnect)
-      // TODO: Add territory disconnection check when implemented
-      // For now, we assume all non-line slides are valid fallbacks
+      // Per RR-CANON-R112(b): any adjacent slide is valid for fallback, including territory disconnection
+      // All non-line slides to empty adjacent cells are valid fallbacks
       if (!validFallbackExists) {
         validFallbackExists = true;
       }
@@ -455,8 +458,7 @@ export function validateRecoverySlide(
   const { recoveryMode } = move;
   if (recoveryMode === 'fallback') {
     // Fallback mode: no line required, but need buried rings for cost
-    // Per RR-CANON-R112(b): fallback slides must NOT cause territory disconnection
-    // The move was generated with this check, so we trust it was valid when created
+    // Per RR-CANON-R112(b): any adjacent slide is permitted, including territory disconnection
     // Validate extraction stacks for fallback cost (1 buried ring)
     if (extractionStacks.length !== 1) {
       return {

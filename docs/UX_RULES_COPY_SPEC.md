@@ -218,7 +218,7 @@ For scenarios like `learn.lines.formation.Rules_11_2_Q7_Q20` in [`curated.json`]
 **TeachingOverlay – Territory description**
 Used in [`TeachingOverlay.TEACHING_CONTENT.territory`](src/client/components/TeachingOverlay.tsx:84):
 
-- `"Territory spaces are collapsed cells that you permanently own. When a disconnected region of your pieces is processed, all of its spaces become your Territory and its rings are eliminated, often at the cost of eliminating a ring from one of your other stacks. If your Territory passes more than half of the board, you win immediately."`
+- `"Territory spaces are collapsed cells that you permanently own. When a disconnected region of your pieces is processed, all of its spaces become your Territory and its rings are eliminated, at the cost of eliminating the entire cap from one of your other stacks (recovery actions pay with a buried ring instead). If your Territory passes more than half of the board, you win immediately."`
 
 **Sandbox phase copy – Territory Processing**
 Used in [`SandboxGameHost.PHASE_COPY.territory_processing.summary`](src/client/pages/SandboxGameHost.tsx:258):

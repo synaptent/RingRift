@@ -363,9 +363,97 @@ def _build_mixed_ai_pool(
             ai_metadata[f"player_{pnum}_difficulty"] = 5
         return ai_by_player, ai_metadata
 
+    if engine_mode == "random-only":
+        from app.ai.random_ai import RandomAI  # type: ignore
+
+        for pnum in player_numbers:
+            cfg = AIConfig(
+                difficulty=1,
+                think_time=0,
+                randomness=1.0,
+                rngSeed=(base_seed or 0) + pnum + game_index,
+            )
+            ai_by_player[pnum] = RandomAI(pnum, cfg)
+            ai_metadata[f"player_{pnum}_ai_type"] = "random"
+            ai_metadata[f"player_{pnum}_difficulty"] = 1
+        return ai_by_player, ai_metadata
+
+    if engine_mode == "heuristic-only":
+        from app.ai.heuristic_ai import HeuristicAI  # type: ignore
+
+        heuristic_eval_mode = TRAINING_HEURISTIC_EVAL_MODE_BY_BOARD.get(
+            board_type,
+            "full",
+        )
+        for pnum in player_numbers:
+            cfg = AIConfig(
+                difficulty=2,
+                think_time=0,
+                randomness=0.05,
+                rngSeed=(base_seed or 0) + pnum + game_index,
+                heuristic_eval_mode=heuristic_eval_mode,
+            )
+            ai_by_player[pnum] = HeuristicAI(pnum, cfg)
+            ai_metadata[f"player_{pnum}_ai_type"] = "heuristic"
+            ai_metadata[f"player_{pnum}_difficulty"] = 2
+        return ai_by_player, ai_metadata
+
+    if engine_mode == "minimax-only":
+        from app.ai.minimax_ai import MinimaxAI  # type: ignore
+
+        for pnum in player_numbers:
+            cfg = AIConfig(
+                difficulty=5,  # Mid-tier Minimax difficulty
+                think_time=0,
+                randomness=0.1,
+                rngSeed=(base_seed or 0) + pnum + game_index,
+                use_neural_net=False,
+            )
+            ai_by_player[pnum] = MinimaxAI(pnum, cfg)
+            ai_metadata[f"player_{pnum}_ai_type"] = "minimax"
+            ai_metadata[f"player_{pnum}_difficulty"] = 5
+        return ai_by_player, ai_metadata
+
+    if engine_mode == "mcts-only":
+        from app.ai.mcts_ai import MCTSAI  # type: ignore
+
+        for pnum in player_numbers:
+            cfg = AIConfig(
+                difficulty=8,  # MCTS difficulty band
+                think_time=0,
+                randomness=0.1,
+                rngSeed=(base_seed or 0) + pnum + game_index,
+                use_neural_net=False,
+            )
+            ai_by_player[pnum] = MCTSAI(pnum, cfg)
+            ai_metadata[f"player_{pnum}_ai_type"] = "mcts"
+            ai_metadata[f"player_{pnum}_difficulty"] = 8
+        return ai_by_player, ai_metadata
+
+    if engine_mode == "nn-only":
+        # Neural-net enabled: Descent + MCTS + NNUE Minimax with neural networks
+        from app.ai.descent_ai import DescentAI  # type: ignore
+
+        for pnum in player_numbers:
+            cfg = AIConfig(
+                difficulty=10,
+                think_time=0,
+                randomness=0.05,
+                rngSeed=(base_seed or 0) + pnum + game_index,
+                use_neural_net=True,  # Enable neural network evaluation
+            )
+            ai_by_player[pnum] = DescentAI(pnum, cfg)
+            ai_metadata[f"player_{pnum}_ai_type"] = "descent_nn"
+            ai_metadata[f"player_{pnum}_difficulty"] = 10
+        return ai_by_player, ai_metadata
+
     # mixed mode
     if engine_mode != "mixed":
-        raise SystemExit("engine_mode must be 'descent-only' or 'mixed', " f"got {engine_mode!r}")
+        raise SystemExit(
+            "engine_mode must be one of: descent-only, mixed, random-only, "
+            "heuristic-only, minimax-only, mcts-only, nn-only; "
+            f"got {engine_mode!r}"
+        )
 
     # Difficulty presets chosen to cover the canonical ladder while keeping
     # runtime reasonable on square8.
@@ -1863,11 +1951,25 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--engine-mode",
-        choices=["descent-only", "mixed"],
+        choices=[
+            "descent-only",
+            "mixed",
+            "random-only",
+            "heuristic-only",
+            "minimax-only",
+            "mcts-only",
+            "nn-only",
+        ],
         default="mixed",
         help=(
             "Engine selection strategy: 'descent-only' for pure DescentAI, "
-            "'mixed' to sample across the canonical ladder. Default: mixed."
+            "'mixed' to sample across the canonical ladder, "
+            "'random-only' for pure RandomAI, "
+            "'heuristic-only' for pure HeuristicAI, "
+            "'minimax-only' for pure MinimaxAI, "
+            "'mcts-only' for pure MCTS, "
+            "'nn-only' for neural-net enabled Descent+MCTS+NNUE Minimax. "
+            "Default: mixed."
         ),
     )
     parser.add_argument(

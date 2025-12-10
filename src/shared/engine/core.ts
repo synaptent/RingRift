@@ -121,8 +121,15 @@ export function countRingsInPlayForPlayer(state: GameState, playerNumber: number
 /**
  * Calculate cap height for a ring stack.
  *
- * Rule Reference: Section 5.2 - Cap height is consecutive rings of
+ * Rule Reference: RR-CANON-R145 - Cap height is consecutive rings of
  * the same color from the top of the stack.
+ *
+ * Territory self-elimination costs the entire cap. Eligible stacks:
+ * - (i) Mixed-colour stack: P controls with other players' rings buried beneath.
+ *       Cap = top consecutive P rings. Eliminating exposes buried rings.
+ * - (ii) Single-colour stack (height > 1): Entire stack is the cap.
+ *        Eliminating removes the stack from the board.
+ * - (iii) Height-1 stack: Cap height = 1 (single ring).
  */
 export function calculateCapHeight(rings: number[]): number {
   if (rings.length === 0) return 0;

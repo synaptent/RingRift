@@ -23,6 +23,17 @@
  * - RR-CANON-R124: Border markers used to identify region boundaries
  * - Process all disconnected regions before checking victory
  *
+ * **Self-Elimination Cost Rules (§12.2):**
+ * - Normal territory processing: Player must eliminate an **entire stack cap**
+ *   (all consecutive top rings of their colour) from a controlled stack outside
+ *   the processed region. The stack used must either:
+ *   (a) Be a mixed-colour stack with rings of other colours buried beneath, OR
+ *   (b) Be a single-colour stack of height > 1 (all player's rings).
+ *   Single-ring stacks cannot be used for cap elimination.
+ * - **Recovery action exception:** When territory processing is triggered by a
+ *   recovery action, the cost is only 1 buried ring extraction (bottommost ring
+ *   from a chosen stack), not an entire cap.
+ *
  * Design principles:
  * - Pure functions: No side effects, return new state
  * - Type safety: Full TypeScript typing

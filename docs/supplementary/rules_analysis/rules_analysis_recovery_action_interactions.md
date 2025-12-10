@@ -384,7 +384,7 @@ def get_legal_moves(state: GameState, player: int) -> List[Move]:
 
 - [ ] Add `recovery_slide` MoveType (TS + Python)
 - [ ] Implement `isEligibleForRecovery()` predicate
-- [ ] Implement `enumerateRecoverySlides()` - check for (a) lines ≥`lineLength` with sufficient buried rings, OR (b) fallback slides that don't disconnect territory
+- [ ] Implement `enumerateRecoverySlides()` - check for (a) lines ≥`lineLength` with sufficient buried rings, OR (b) any fallback slides (including those that disconnect territory)
 - [ ] Implement `calculateRecoveryCost(lineLength, actualLineLength)` → number of buried rings required
 - [ ] Update `hasAnyRealAction()` for LPS to include recovery
 - [ ] Update turn rotation to check recovery availability

@@ -245,12 +245,12 @@ export const LINE_TERRITORY_ORDER_TIPS: TeachingTip[] = [
     addressesGap: 'GAP-LINE-03',
   },
   {
-    text: 'OPTION 1 vs OPTION 2: For overlength lines (6+ on square, 7+ on hex), you choose: collapse ALL markers (costs a ring) or collapse MINIMUM length (free but less territory).',
+    text: 'OPTION 1 vs OPTION 2: For overlength lines (6+ on square, 7+ on hex), you choose: collapse ALL markers (costs entire cap) or collapse MINIMUM length (free but less territory).',
     category: 'options',
     emphasis: 'important',
   },
   {
-    text: 'Line collapse affects what territory regions form. Choosing Option 1 (full collapse) may create more territory but costs a ring; Option 2 (minimum) is safely free.',
+    text: 'Line collapse affects what territory regions form. Choosing Option 1 (full collapse) may create more territory but costs an entire cap; Option 2 (minimum) is safely free.',
     category: 'strategy',
     emphasis: 'normal',
   },
@@ -269,20 +269,20 @@ export const TERRITORY_TIPS: TeachingTip[] = [
   },
   // GAP-TERR-04: Self-elimination cost explanation
   {
-    text: 'WHY DID I LOSE MY OWN RING? Processing a disconnected region eliminates all interior rings (scoring for you), but you MUST also eliminate one cap from a stack OUTSIDE the region.',
+    text: 'WHY DID I LOSE MY OWN RINGS? Processing a disconnected region eliminates all interior rings (scoring for you), but you MUST also eliminate the entire cap from an eligible stack OUTSIDE the region.',
     category: 'self_elimination',
     emphasis: 'critical',
     addressesGap: 'GAP-TERR-04',
   },
   {
-    text: 'The self-elimination cost ensures territory is not free. You need at least one stack outside the region with caps to pay this cost.',
+    text: 'The self-elimination cost ensures territory is not free. You need at least one eligible stack outside the region (multicolour or single-colour height > 1) to pay this cost.',
     category: 'self_elimination',
     emphasis: 'normal',
     addressesGap: 'GAP-TERR-04',
   },
   // GAP-TERR-03: Eligibility indicator
   {
-    text: "CAN'T PROCESS A REGION? You must have a stack OUTSIDE the pending region to pay the elimination cost. If all your stacks are inside or on the border, you cannot process.",
+    text: "CAN'T PROCESS A REGION? You must have an eligible stack OUTSIDE the pending region (multicolour or single-colour height > 1) to pay the elimination cost. Height-1 standalone rings are NOT eligible.",
     category: 'eligibility',
     emphasis: 'important',
     addressesGap: 'GAP-TERR-03',
@@ -338,7 +338,7 @@ export const RECOVERY_ACTION_TIPS: TeachingTip[] = [
   },
   // Two recovery modes
   {
-    text: 'TWO RECOVERY MODES: (a) LINE RECOVERY - slide a marker to complete a line of required length, OR (b) FALLBACK RECOVERY - if no line-forming slide exists, slide any marker to an adjacent empty cell that does not disconnect territory.',
+    text: 'TWO RECOVERY MODES: (a) LINE RECOVERY - slide a marker to complete a line of required length, OR (b) FALLBACK RECOVERY - if no line-forming slide exists, slide any marker to an adjacent empty cell (including slides that cause territory disconnection).',
     category: 'modes',
     emphasis: 'critical',
   },
@@ -361,7 +361,7 @@ export const RECOVERY_ACTION_TIPS: TeachingTip[] = [
   },
   // Fallback recovery mechanics
   {
-    text: 'FALLBACK RECOVERY: When no line-forming slide exists, you may slide any marker to an adjacent empty cell, as long as it does not cause territory disconnection. Cost: 1 buried ring extraction.',
+    text: 'FALLBACK RECOVERY: When no line-forming slide exists, you may slide any marker to an adjacent empty cell (including slides that cause territory disconnection). Cost: 1 buried ring extraction.',
     category: 'fallback',
     emphasis: 'important',
   },

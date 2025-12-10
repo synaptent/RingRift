@@ -2868,9 +2868,9 @@ class GameEngine:
             )
 
         # For overlength lines, enumerate all CHOOSE_LINE_REWARD options:
-        # - Option 1 (COLLAPSE_ALL): collapse entire line, eliminate one ring
+        # - Option 1 (COLLAPSE_ALL): collapse entire line, eliminate entire cap
         # - Option 2 (MINIMUM_COLLAPSE): collapse exactly required_len consecutive
-        #   markers, no ring elimination. Generate one move per valid segment.
+        #   markers, no cap elimination. Generate one move per valid segment.
         #
         # This mirrors TS LineAggregate.enumerateChooseLineRewardMoves.
         for idx, line in enumerate(player_lines):
@@ -3008,11 +3008,18 @@ class GameEngine:
         player_number: int,
     ) -> bool:
         """
-        Self-elimination prerequisite for territory processing.
+        Self-elimination prerequisite for territory processing (RR-CANON-R082).
 
-        Mirrors TS canProcessDisconnectedRegion:
+        Mirrors TS canProcessTerritoryRegion:
 
-        - Player must have at least one stack outside the region's spaces.
+        - Player must have at least one **eligible cap target** outside the
+          region's spaces.
+        - An eligible cap target must be either:
+          (1) A multicolor stack controlled by the player (with other players'
+              rings buried beneath the player's cap), OR
+          (2) A single-color stack of height > 1 consisting entirely of the
+              player's colour.
+        - A height-1 standalone ring is NOT an eligible cap target.
         """
         board = game_state.board
         region_keys = {p.to_key() for p in region.spaces}
@@ -3020,7 +3027,14 @@ class GameEngine:
 
         for stack in player_stacks:
             if stack.position.to_key() not in region_keys:
-                return True
+                # Check eligible cap target criteria (RR-CANON-R082)
+                is_multicolor = stack.stack_height > stack.cap_height
+                is_single_color_tall = (
+                    stack.stack_height == stack.cap_height and stack.stack_height > 1
+                )
+                if is_multicolor or is_single_color_tall:
+                    return True
+                # Otherwise it's a height-1 standalone ring - not eligible
 
         return False
 

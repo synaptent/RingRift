@@ -611,7 +611,8 @@ function LegacySubPhaseDetails({ gameState }: { gameState: GameState }) {
   if (gameState.currentPhase === 'territory_processing') {
     return (
       <div className="text-sm text-gray-600 mt-1">
-        Processing disconnected regions; you must eliminate one outside ring per region.
+        Processing disconnected regions; you must eliminate the entire cap from an outside stack per
+        region.
       </div>
     );
   }

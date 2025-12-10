@@ -1307,10 +1307,10 @@ export class GameEngine {
    *
    * For exact required length (4 for 8x8, 5 for 19x19/hex):
    *   - Collapse all markers
-   *   - Eliminate one ring or cap from controlled stack
+   *   - Eliminate entire cap from controlled stack
    *
    * For longer lines (5+ for 8x8, 6+ for 19x19/hex):
-   *   - Option 1: Collapse all + eliminate ring/cap
+   *   - Option 1: Collapse all + eliminate entire cap
    *   - Option 2: Collapse required markers only, no elimination
    *
    * Canonical line processing is now handled via applyProcessLineDecision /
@@ -1487,8 +1487,11 @@ export class GameEngine {
   }
 
   /**
-   * Eliminate one ring or cap from player's controlled stacks
-   * Rule Reference: Section 11.2 - Moving player chooses which ring/stack cap to eliminate
+   * Eliminate entire cap from player's controlled stacks
+   * Rule Reference: Section 11.2 - Moving player chooses which stack cap to eliminate.
+   * For line/territory processing, we eliminate the entire cap (all consecutive top rings
+   * of the controlling color). For mixed-colour stacks, this exposes buried rings; for
+   * single-colour stacks with height > 1, this eliminates all rings.
    */
   private eliminatePlayerRingOrCap(player: number, stackPosition?: Position): void {
     const playerStacks = this.boardManager.getPlayerStacks(this.gameState.board, player);
@@ -1566,7 +1569,9 @@ export class GameEngine {
   }
 
   /**
-   * Eliminate one ring or cap using the player choice system when available.
+   * Eliminate entire stack cap using the player choice system when available.
+   * Eligible caps: (1) multicolour stacks the player controls, or (2) single-colour
+   * stacks of height > 1 of the player's colour. Height-1 standalone rings are NOT eligible.
    * Falls back to default behaviour when no interaction manager is wired.
    */
   private async eliminatePlayerRingOrCapWithChoice(player: number): Promise<void> {

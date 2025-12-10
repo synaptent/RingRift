@@ -77,9 +77,9 @@ The destination cell must be:
 A marker slide is legal if **either** of these conditions is satisfied:
 
 - **(a) Line formation:** Completes a line of **at least** `lineLength` consecutive markers of P's color
-- **(b) Fallback repositioning:** If no slide satisfies (a), any slide that **does not** cause territory disconnection
+- **(b) Fallback repositioning:** If no slide satisfies (a), any adjacent slide is permitted (including slides that cause territory disconnection)
 
-**Note:** Territory disconnection is **not** a valid criterion for recovery. Territory may be disconnected as a side effect of line formation, but cannot be the primary reason for a recovery slide.
+**Note:** Territory disconnection may occur as a side effect of any recovery slide (line-forming or fallback).
 
 **Skip option:** P may elect to skip recovery entirely, preserving buried rings for a future turn.
 
@@ -95,7 +95,7 @@ A marker slide is legal if **either** of these conditions is satisfied:
 
 This mirrors normal line reward semantics (RR-CANON-R130–R134).
 
-**Fallback recovery (condition b):** If no line-forming slide exists, P may slide any marker to an adjacent empty cell, provided the slide does not cause territory disconnection. This costs one buried ring extraction but does not trigger line processing.
+**Fallback recovery (condition b):** If no line-forming slide exists, P may slide any marker to an adjacent empty cell, including slides that cause territory disconnection. This costs one buried ring extraction but does not trigger line processing.
 
 ### RR-CANON-R113: Buried Ring Extraction Cost
 
@@ -468,7 +468,7 @@ A player P is eligible for recovery if ALL hold:
 Slide one marker to an adjacent empty cell (Moore for square, hex-adjacent for hex).
 
 **RR-CANON-R112: Success Criteria**
-Slide is legal if **either**: (a) completes a line of ≥ `lineLength` consecutive markers, OR (b) if no line-forming slide exists, any slide that does **not** cause territory disconnection (fallback). Note: Territory disconnection is **not** a valid criterion.
+Slide is legal if **either**: (a) completes a line of ≥ `lineLength` consecutive markers, OR (b) if no line-forming slide exists, any adjacent slide is permitted (fallback). Note: Territory disconnection may occur as a side effect of any recovery slide (line-forming or fallback).
 
 **RR-CANON-R113: Buried Ring Cost**
 For line formation: Cost = 1 + max(0, actualLineLength - lineLength). Fallback slides cost 1 buried ring.

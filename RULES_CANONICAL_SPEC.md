@@ -108,6 +108,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - `controllingPlayer` of a stack is the color of its top ring.
   - `stackHeight = rings.length`.
   - `capHeight` is the number of consecutive rings from the top that belong to `controllingPlayer`.
+  - **Entire cap (stack cap):** When rules require eliminating the "entire cap" or "stack cap", this means eliminating all consecutive top rings of the controlling color. An eligible stack cap for a player P must be either: (1) a **multicolor stack** that P controls (P's rings on top with other players' rings buried beneath), or (2) a **single-color stack of height > 1** consisting entirely of P's colour. A height-1 standalone ring is NOT an eligible cap target for line/territory processing. For multicolor stacks, eliminating the cap exposes the buried rings of other colours. For single-color stacks with height > 1, this eliminates all rings and removes the stack entirely.
   - Control changes whenever the top ring changes color (due to overtaking or elimination).
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §1.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§5.1–5.3, 7.2, 15.4 Q16.
 
@@ -398,8 +399,8 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
       - Phase-level forced elimination is treated as a **global legal action** for ANM purposes (RR-CANON-R200–R203) but is **not** a "real action" for Last-Player-Standing under RR-CANON-R172.
       - The `forced_elimination` phase is the canonical location for recording this action, ensuring clear phase semantics and replay consistency.
     - **Explicit elimination decisions (during other phases).**
-      - During line processing (RR-CANON-R120–R122), elimination of a ring or cap as a line reward is represented as an explicit decision (`eliminate_rings_from_stack`) tied to the processed line.
-      - During Territory processing (RR-CANON-R140–R145), mandatory self-elimination from a stack outside the processed region is likewise represented as an explicit `eliminate_rings_from_stack` decision.
+      - During line processing (RR-CANON-R120–R122), elimination of an entire cap as a line reward is represented as an explicit decision (`eliminate_rings_from_stack`) tied to the processed line.
+      - During Territory processing (RR-CANON-R140–R145), mandatory self-elimination of an entire stack cap from a stack outside the processed region is likewise represented as an explicit `eliminate_rings_from_stack` decision (exception: recovery actions use buried ring extraction per RR-CANON-R114).
       - These explicit elimination moves are phase-local **interactive actions** for P and therefore count as global legal actions under RR-CANON-R200.
   - In all cases, any forced elimination or explicit elimination must remove at least one ring belonging to the acting player and must increase the global eliminated-ring count in RR-CANON-R060–R061 and RR-CANON-R191.
 
@@ -622,8 +623,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R112] Recovery action success criteria.**
   - A recovery marker slide is legal if **either** of these conditions is satisfied:
     - **(a) Line formation:** The resulting marker position completes a line of **at least `lineLength`** consecutive markers of P's colour (as defined by `lineAdjacency` for the board type).
-    - **(b) Fallback repositioning:** If no slide satisfies condition (a), any adjacent slide that **does not** cause territory disconnection is permitted.
-  - **Note:** Territory disconnection is **not** a valid criterion for recovery. Territory may be disconnected as a side effect of line formation, but cannot be the primary reason for a recovery slide.
+    - **(b) Fallback repositioning:** If no slide satisfies condition (a), any adjacent slide is permitted, including slides that cause territory disconnection.
   - The minimum required length for line formation:
     - `square8` 2-player: 4 markers.
     - `square8` 3-4 player: 3 markers.
@@ -633,7 +633,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - **Option 1** (if chosen): Collapse all markers in the line to territory and pay the self-elimination cost (one buried ring extraction).
     - **Option 2** (if chosen): Collapse exactly `lineLength` consecutive markers of the player's choice to territory **without** paying any self-elimination cost. The remaining markers stay on the board.
     - This mirrors normal line reward semantics (RR-CANON-R130–R134).
-  - **Fallback recovery (condition b):** If no line-forming slide exists, P may slide any marker to an adjacent empty cell, provided the slide does not cause territory disconnection. This costs one buried ring extraction but does not trigger line processing.
+  - **Fallback recovery (condition b):** If no line-forming slide exists, P may slide any marker to an adjacent empty cell (including slides that cause territory disconnection). This costs one buried ring extraction but does not trigger line processing.
   - **Skip option:** P may elect to skip recovery entirely, preserving buried rings for a future turn.
   - If no slide satisfies (a) or (b), and P does not skip, P has no legal recovery action and remains temporarily eliminated.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §2.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §4.5.3.
@@ -705,21 +705,26 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - **Phase: `territory_processing` (if cascades exist)**
     - If the line collapse creates disconnected territory regions per RR-CANON-R140–R142, the engine enters `territory_processing` as usual.
     - P processes each claimable region via standard `process_territory_region` decisions.
-    - Self-elimination for each territory claim uses `eliminate_rings_from_stack` with extended semantics:
+    - Self-elimination for each territory claim uses `eliminate_rings_from_stack`:
+      - **Normal territory processing:** eliminates the entire cap (all consecutive top rings of P's colour) from a P-controlled stack outside the region.
+      - **Recovery context:** uses `eliminationMode: 'buried_extraction'` to extract P's bottommost buried ring instead of eliminating a cap.
 
       ```json
       {
         type: 'eliminate_rings_from_stack',
         targetStack: PosKey,
-        eliminationMode: 'buried_extraction'  // NEW field for recovery context
+        eliminationMode: 'cap' | 'buried_extraction'  // 'cap' for normal, 'buried_extraction' for recovery
       }
       ```
 
-    - When `eliminationMode == 'buried_extraction'`:
-      - Instead of eliminating a cap, extract P's bottommost ring from `targetStack`.
+    - When `eliminationMode == 'cap'` (normal territory):
+      - Eliminate all consecutive top rings of P's colour from `targetStack`.
+      - All eliminated rings credited to P as self-eliminated.
+    - When `eliminationMode == 'buried_extraction'` (recovery):
+      - Extract P's bottommost ring from `targetStack`.
       - Stack height decreases; rings above shift down.
       - Ring credited to P as self-eliminated.
-    - If no buried rings remain in stacks outside a claimable region, that region cannot be processed and `no_territory_action` is recorded for it.
+    - If P has no valid elimination target (no controlled stacks outside region for normal, no buried rings outside region for recovery), that region cannot be processed and `no_territory_action` is recorded for it.
 
   - **Turn completion:**
     - After all processing completes, victory checks per RR-CANON-R170–R173.
@@ -766,13 +771,11 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
   - For a chosen eligible line of length len:
     - **Case 1: len == requiredLen.**
       - Collapse **all** markers in the line to collapsed spaces owned by P.
-      - P **must** eliminate either:
-        - a single standalone ring they control, or
-        - the entire cap of a stack they control.
-      - If P controls no eligible ring or cap (which cannot occur as long as P controls at least one stack), this state should be treated as unreachable in a correct engine; see Section 13.
+      - P **must** eliminate the **entire cap** (all consecutive top rings of P's colour) from one of P's controlled stacks.
+      - If P controls no eligible cap (which cannot occur as long as P controls at least one stack), this state should be treated as unreachable in a correct engine; see Section 13.
     - **Case 2: len > requiredLen.**
       - P chooses Option 1 or Option 2:
-        - **Option 1 (max Territory):** collapse **all len** markers in the line and then eliminate one ring or one cap as above.
+        - **Option 1 (max Territory):** collapse **all len** markers in the line and then eliminate the entire cap from one of P's controlled stacks as above.
         - **Option 2 (ring preservation):** choose any contiguous subsegment of length requiredLen within the line; collapse exactly those requiredLen markers; eliminate **no** rings.
       - This choice between Option 1 and Option 2 is always an explicit,
         player-visible decision (typically via `choose_line_reward`); engines
@@ -824,9 +827,10 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
 - **[RR-CANON-R143] Self-elimination prerequisite.**
   - For each candidate region R and moving player P:
     - Consider the hypothetical state where all rings in R are eliminated.
-    - If P would still control at least one ring or stack cap **outside R** in that hypothetical state, then P may process R (subject to paying a self-elimination cost).
+    - If P would still control at least one stack **outside R** in that hypothetical state, then P may process R (subject to paying a self-elimination cost by eliminating an entire stack cap).
     - Otherwise, P is **not allowed** to process R at this time; R remains unchanged.
-  - Each self-elimination ring/cap outside R can be used to pay for **one** region only. After processing a region, recompute the prerequisite for remaining regions.
+  - Each stack cap outside R can be used to pay for **one** region only. After processing a region, recompute the prerequisite for remaining regions.
+  - **Exception for recovery actions:** When territory processing is triggered by a recovery action (RR-CANON-R114), the self-elimination cost is one buried ring extraction per region, not an entire stack cap.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.3; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.2, 12.3, 15.4 Q15, Q23.
 
 - **[RR-CANON-R144] Region processing order.**
@@ -850,7 +854,12 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
        - For every stack originally in R, remove all rings and credit them as eliminated to P.
        - For empty regions (containing no stacks), this step eliminates zero rings, but processing remains valid.
     4. **Mandatory self-elimination:**
-       - Eliminate one ring or entire cap from a P-controlled stack that lies outside R, as required by the self-elimination prerequisite.
+       - Eliminate the **entire cap** (all consecutive top rings of P's colour) from a P-controlled stack that lies outside R.
+       - **Cap definition:** The cap consists of all consecutive rings of P's colour counting from the top of the stack. Valid cap elimination scenarios:
+         - **(i) Mixed-colour stack:** For a stack where P controls (top rings are P's colour) but other players' rings are buried beneath (e.g., `[P, P, Q, P]` from top to bottom), the cap is the top consecutive P rings (2 in this example). Eliminating this cap removes P's control while preserving the buried rings.
+         - **(ii) Single-colour stack of height > 1:** For a stack consisting entirely of P's rings with height > 1 (e.g., `[P, P, P]`), the entire stack is the cap and must be eliminated. This removes the stack from the board entirely.
+         - **(iii) Height-1 stack:** A standalone single ring is also a valid cap target (cap height = 1).
+       - **Exception for recovery actions:** When territory processing is triggered by a recovery action (RR-CANON-R114), the self-elimination cost is one buried ring extraction instead of an entire stack cap.
     5. Update all counts and recompute regions.
   - All eliminated rings from steps 3 and 4 are credited to P.
   - References: [`ringrift_compact_rules.md`](ringrift_compact_rules.md) §6.4; [`ringrift_complete_rules.md`](ringrift_complete_rules.md) §§12.2–12.3, 16.8–16.9.8.

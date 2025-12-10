@@ -1,6 +1,7 @@
 import { BoardState, Territory, Position, positionToString } from '../types/game';
 import { findDisconnectedRegions as findDisconnectedRegionsShared } from './territoryDetection';
 import { getBorderMarkerPositionsForRegion } from './territoryBorders';
+import { calculateCapHeight } from './core';
 
 /**
  * Shared territory-processing helpers.
@@ -87,10 +88,19 @@ function cloneBoard(board: BoardState): BoardState {
 }
 
 /**
- * Self-elimination prerequisite (FAQ Q23 / §12.2):
+ * Self-elimination prerequisite (FAQ Q23 / §12.2 / RR-CANON-R082):
  *
  * A disconnected region is processable for ctx.player **iff** that player
- * controls at least one stack/cap **outside** the region.
+ * controls at least one **eligible cap target** outside the region.
+ *
+ * An eligible cap target must be either:
+ * (1) A multicolor stack controlled by the player (with other players' rings
+ *     buried beneath the player's cap), OR
+ * (2) A single-color stack of height > 1 consisting entirely of the player's
+ *     colour.
+ *
+ * A height-1 standalone ring is NOT an eligible cap target for territory
+ * processing.
  *
  * This helper performs only the outside-stack check; it assumes that `region`
  * itself is already a disconnected region as reported by the canonical
@@ -109,11 +119,18 @@ export function canProcessTerritoryRegion(
     }
     if (!regionKeySet.has(key)) {
       // Found a stack controlled by ctx.player outside the region.
-      return true;
+      // Now check if it's an eligible cap target (RR-CANON-R082).
+      const capHeight = calculateCapHeight(stack.rings);
+      const isMulticolor = stack.stackHeight > capHeight;
+      const isSingleColorTall = stack.stackHeight === capHeight && stack.stackHeight > 1;
+      if (isMulticolor || isSingleColorTall) {
+        return true;
+      }
+      // Otherwise it's a height-1 standalone ring - not eligible
     }
   }
 
-  // No stacks for this player outside the region.
+  // No eligible cap targets for this player outside the region.
   return false;
 }
 
@@ -171,10 +188,20 @@ export function getProcessableTerritoryRegions(
  *    ctx.player as well.
  * 4. Update board.eliminatedRings to reflect the credited eliminations.
  *
- * The mandatory *self-elimination* that follows region processing (one ring or
- * cap from a stack outside the region) is **not** handled here; higher-level
- * engines (backend GameEngine, RuleEngine, client sandbox) layer that step on
- * top so it can be expressed as an explicit decision when needed.
+ * The mandatory *self-elimination* that follows region processing is **not**
+ * handled here; higher-level engines (backend GameEngine, RuleEngine, client
+ * sandbox) layer that step on top so it can be expressed as an explicit decision.
+ *
+ * **Self-Elimination Cost Rules (§12.2):**
+ * - Normal territory processing: Player must eliminate an **entire stack cap**
+ *   (all consecutive top rings of their colour) from a controlled stack outside
+ *   the processed region. The stack used must either:
+ *   (a) Be a mixed-colour stack with rings of other colours buried beneath, OR
+ *   (b) Be a single-colour stack of height > 1 (all player's rings).
+ *   Single-ring stacks cannot be used for cap elimination.
+ * - **Recovery action exception:** When territory processing is triggered by a
+ *   recovery action, the cost is only 1 buried ring extraction (bottommost ring
+ *   from a chosen stack), not an entire cap.
  *
  * The input `board` is treated as immutable; the returned `board` is a shallow
  * clone with cloned Maps.

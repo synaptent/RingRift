@@ -69,8 +69,7 @@ export function mutateProcessTerritory(
   if (internalEliminations > 0) {
     newState.board.eliminatedRings[player] =
       (newState.board.eliminatedRings[player] || 0) + internalEliminations;
-    newState.totalRingsEliminated =
-      (newState.totalRingsEliminated || 0) + internalEliminations;
+    newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + internalEliminations;
 
     const playerObj = newState.players.find((p) => p.playerNumber === player);
     if (playerObj) {
@@ -105,9 +104,10 @@ export function mutateEliminateStack(state: GameState, action: EliminateStackAct
   }
 
   // "Eliminate rings from stack"
-  // Usually this means the TOP ring? Or the whole stack?
-  // "Forced Elimination Choice": "You must eliminate a ring from one of your stacks."
-  // Singular "a ring".
+  // Per RR-CANON: For line/territory processing, we must eliminate the entire CAP
+  // (all consecutive top rings of the controlling color). For mixed-colour stacks,
+  // this exposes buried rings of other colours; for single-colour stacks with
+  // height > 1, this eliminates all rings.
 
   // Rings are [top, ..., bottom].
   // We must eliminate the entire CAP (all consecutive top rings of controlling color).

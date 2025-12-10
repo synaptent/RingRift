@@ -1895,6 +1895,10 @@ class ParallelGameRunner:
 
         Rotate to next player and reset phase to RING_PLACEMENT.
 
+        Per updated rules: Players are only permanently eliminated if they have
+        NO rings anywhere (no controlled stacks, no buried rings, no rings in hand).
+        Players with only buried rings still get turns and can use recovery moves.
+
         Per RR-CANON-R073: ALL players start in RING_PLACEMENT without exception.
         NO PHASE SKIPPING - players with ringsInHand == 0 will emit no_placement_action
         and proceed to movement, but they MUST enter ring_placement first.
@@ -1906,14 +1910,59 @@ class ParallelGameRunner:
             # Increment move count
             self.state.move_count[g] += 1
 
-            # Rotate to next player
+            # Rotate to next player, skipping permanently eliminated players
             current = self.state.current_player[g].item()
             next_player = (current % self.num_players) + 1
+
+            # Check up to num_players times to find a player with any rings
+            skips = 0
+            while skips < self.num_players:
+                # Check if this player has ANY rings (controlled, buried, or in hand)
+                has_any_rings = self._player_has_any_rings_gpu(g, next_player)
+
+                if has_any_rings:
+                    # This player is not permanently eliminated
+                    break
+
+                # Skip to next player
+                next_player = (next_player % self.num_players) + 1
+                skips += 1
+
             self.state.current_player[g] = next_player
 
             # Per RR-CANON-R073: ALL players start in RING_PLACEMENT without exception.
             # NO PHASE SKIPPING - this is a core invariant for parity with TS/Python engines.
             self.state.current_phase[g] = GamePhase.RING_PLACEMENT
+
+    def _player_has_any_rings_gpu(self, g: int, player: int) -> bool:
+        """Check if a player has any rings anywhere (controlled, buried, or in hand).
+
+        A player with no rings anywhere is permanently eliminated.
+        A player who has rings (even if only buried) is NOT permanently eliminated
+        and should still get turns (they may have recovery moves available).
+
+        Args:
+            g: Game index in batch
+            player: Player number (1-indexed)
+
+        Returns:
+            True if player has any rings anywhere, False if permanently eliminated
+        """
+        # Check rings in hand
+        if self.state.rings_in_hand[g, player].item() > 0:
+            return True
+
+        # Check controlled stacks (rings in stacks we control)
+        has_controlled_stacks = (self.state.stack_owner[g] == player).any().item()
+        if has_controlled_stacks:
+            return True
+
+        # Check buried rings (rings in opponent-controlled stacks)
+        # buried_rings uses 1-indexed players (shape is batch_size x num_players+1)
+        if self.state.buried_rings[g, player].item() > 0:
+            return True
+
+        return False
 
     def _apply_single_capture(self, g: int, move_idx: int, moves: BatchMoves) -> None:
         """Apply a single capture move for game g at global index move_idx.
@@ -2080,9 +2129,10 @@ class ParallelGameRunner:
 
         # Deduct recovery cost: 1 buried ring
         # In the canonical rules, recovery costs rings from the buried pool
-        current_buried = state.buried_rings[g, player - 1].item()
+        # NOTE: buried_rings is 1-indexed (shape: batch_size, num_players + 1)
+        current_buried = state.buried_rings[g, player].item()
         if current_buried > 0:
-            state.buried_rings[g, player - 1] = current_buried - 1
+            state.buried_rings[g, player] = current_buried - 1
 
     def _select_best_moves(
         self,
@@ -2118,17 +2168,19 @@ class ParallelGameRunner:
             game_moves_y = moves.from_y[start_idx:end_idx]
             game_moves_x = moves.from_x[start_idx:end_idx]
 
-            # Score by distance to center (lower is better)
+            # Score by distance to center (lower is better -> invert for softmax)
             dist_to_center = (
                 (game_moves_y.float() - center).abs() +
                 (game_moves_x.float() - center).abs()
             )
 
-            # Add small random noise for variety
-            dist_to_center = dist_to_center + torch.rand_like(dist_to_center) * 0.5
+            # Convert to scores: higher score for closer to center
+            max_dist = center * 2  # Maximum possible Manhattan distance
+            scores = (max_dist - dist_to_center) + torch.rand_like(dist_to_center) * 2.0
 
-            # Select move with minimum distance
-            best_local_idx = dist_to_center.argmin()
+            # Softmax selection with temperature=1.0 for stochasticity
+            probs = torch.softmax(scores, dim=0)
+            best_local_idx = torch.multinomial(probs, 1).item()
             selected[g] = best_local_idx
 
         return selected
@@ -2149,7 +2201,8 @@ class ParallelGameRunner:
 
         # Calculate canonical thresholds per RR-CANON-R061
         # Ring elimination: victoryThreshold = ringsPerPlayer (starting ring supply)
-        starting_rings = {8: 18, 19: 48}.get(self.board_size, 18)
+        # Must match create_batch() initialization: {8: 19, 19: 50}
+        starting_rings = {8: 19, 19: 50}.get(self.board_size, 19)
         ring_elimination_threshold = starting_rings  # Per RR-CANON-R061
 
         # totalSpaces = board_size * board_size for square boards
@@ -2219,8 +2272,9 @@ class ParallelGameRunner:
             has_rings_in_hand = self.state.rings_in_hand[g, player].item() > 0
 
             # Check if player has markers and buried rings (recovery eligible)
+            # Note: buried_rings uses 1-indexed players (shape is batch_size x num_players+1)
             has_markers = (self.state.marker_owner[g] == player).any().item()
-            has_buried = self.state.buried_rings[g, player - 1].item() > 0
+            has_buried = self.state.buried_rings[g, player].item() > 0
 
             # If player has no possible actions, it's a stalemate
             if not has_stacks and not has_rings_in_hand and not (has_markers and has_buried):

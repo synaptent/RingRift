@@ -178,17 +178,7 @@ describe('RulesMatrix → ClientSandboxEngine victory scenarios (sandbox)', () =
         result = startInteractiveTurn(3);
         expect(result).toBeNull();
 
-        // Round 3: P1, P2, P3 - still only P1 has actions (3rd consecutive round)
-        result = startInteractiveTurn(1);
-        expect(result).toBeNull();
-
-        result = startInteractiveTurn(2);
-        expect(result).toBeNull();
-
-        result = startInteractiveTurn(3);
-        expect(result).toBeNull();
-
-        // Round 3 start: P1's turn - after 2 consecutive exclusive rounds, LPS triggers
+        // Round 3 start: P1's turn - after 2 consecutive exclusive rounds, LPS triggers (RR-CANON-R172)
         result = startInteractiveTurn(1);
 
         expect(result).not.toBeNull();

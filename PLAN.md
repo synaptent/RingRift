@@ -13,6 +13,7 @@ This plan defines a unified AI training pipeline that orchestrates selfplay, CMA
 | **Lambda H100** | 209.20.157.81 | default | ubuntu | 3.10+ | Primary (selfplay + NNUE + CMA-ES) |
 | **Lambda A10** | 150.136.65.197 | default | ubuntu | 3.10+ | Selfplay |
 | **AWS Staging** | 54.198.219.106 | `~/.ssh/ringrift-staging-key.pem` | ubuntu | 3.10+ | Selfplay |
+| **AWS Selfplay Extra** | 3.208.88.21 | `~/.ssh/ringrift-staging-key.pem` | ubuntu | 3.10+ | Selfplay (OOM-impaired, rebooted 2025-12-10) |
 | **Vast.ai 3090** | 79.116.93.241:47070 | default | root | 3.10+ | Selfplay |
 | **Vast.ai 5090 Dual** | 178.43.61.252:18080 | default | root | 3.10+ | Selfplay |
 | **Vast.ai 5090 Quad** | 211.72.13.202:45875 | default | root | 3.10+ | Selfplay |
@@ -25,8 +26,24 @@ This plan defines a unified AI training pipeline that orchestrates selfplay, CMA
 - Mac machines have system Python 3.9 which fails on modern type hints (`list[int] | None`). **Always activate venv first.**
 - Mac Studio requires `~/.ssh/id_cluster` key, not default key
 - AWS Staging requires explicit key: `-i ~/.ssh/ringrift-staging-key.pem`
+- AWS Selfplay Extra (i-096097bda14deb13f): Discovered via `aws ec2 describe-instances`. Instance ran OOM from selfplay processes (31GB+ python3 processes). Rebooted 2025-12-10. Uses same key as AWS Staging.
 - Vast.ai uses custom SSH ports - check dashboard if connection fails
-- All remote commands should: `cd ~/[path] && source venv/bin/activate && python3 ...`
+- All remote commands should: `cd ~/[path] && source [venv_path]/bin/activate && python3 ...`
+
+**Venv Locations:**
+| Host | Repo Root | Venv Path | Full Activation Command |
+|------|-----------|-----------|------------------------|
+| Lambda H100 | `~/ringrift` | `ai-service/venv` | `cd ~/ringrift && source ai-service/venv/bin/activate` |
+| Lambda A10 | `~/ringrift` | `ai-service/venv` | `cd ~/ringrift && source ai-service/venv/bin/activate` |
+| AWS Staging | `~/ringrift` | `ai-service/venv` | `cd ~/ringrift && source ai-service/venv/bin/activate` |
+| AWS Selfplay Extra | `~/ringrift` | `ai-service/venv` | `cd ~/ringrift && source ai-service/venv/bin/activate` |
+| Vast.ai 3090 | `~/ringrift` | `ai-service/venv` | `cd ~/ringrift && source ai-service/venv/bin/activate` |
+| Vast.ai 5090 Dual | `~/ringrift` | `ai-service/venv` | `cd ~/ringrift && source ai-service/venv/bin/activate` |
+| Vast.ai 5090 Quad | `~/ringrift` | `ai-service/venv` | `cd ~/ringrift && source ai-service/venv/bin/activate` |
+| Mac Studio | `~/Development/RingRift` | `venv` (in repo root) | `cd ~/Development/RingRift && source venv/bin/activate` |
+| MBP 16GB | `~/Development/RingRift` | `ai-service/venv` | `cd ~/Development/RingRift && source ai-service/venv/bin/activate` |
+| MBP 64GB | `~/Development/RingRift` | `ai-service/venv` | `cd ~/Development/RingRift && source ai-service/venv/bin/activate` |
+| Laptop | `/Users/armand/Development/RingRift` | `venv` (in repo root) | `cd ~/Development/RingRift && source venv/bin/activate` |
 
 **Config Files:**
 - `ai-service/config/orchestrator_hosts.sh` - Shell script config (gitignored)
@@ -81,7 +98,6 @@ The following scripts in `ai-service/scripts/` analyze selfplay data:
 | Script | Purpose | Usage |
 |--------|---------|-------|
 | `analyze_game_statistics.py` | Comprehensive stats (victory types, win rates, game lengths, recovery usage) | `python scripts/analyze_game_statistics.py --data-dir data/selfplay --format markdown` |
-| `analyze_games.py` | Database analysis (export PGN, openings, move stats) | `python scripts/analyze_games.py stats --db data/games/selfplay.db` |
 | `analyze_recovery_across_games.py` | Recovery eligibility analysis across games | `python scripts/analyze_recovery_across_games.py --input-dir data/selfplay` |
 | `analyze_recovery_eligibility.py` | Single-game recovery eligibility | `python scripts/analyze_recovery_eligibility.py <game_file>` |
 
@@ -91,12 +107,6 @@ The following scripts in `ai-service/scripts/` analyze selfplay data:
 - Game length statistics
 - Recovery action analysis (conditions met, usage frequency)
 - Position advantage detection
-
-**analyze_games.py** produces:
-- PGN export for human review
-- Opening pattern analysis
-- Move type statistics
-- Game listing by criteria
 
 ## Pipeline Architecture
 
@@ -208,6 +218,12 @@ rsync -avz ringrift-selfplay-extra:~/ringrift/ai-service/data/games/*.db "$LOCAL
 
 # M1 Pro
 rsync -avz m1-pro:~/Development/RingRift/ai-service/data/games/*.db "$LOCAL_DIR/"
+
+# NOTE: Also check for JSONL files which contain streaming per-game output (--log-jsonl flag)
+# JSONL files may be in data/selfplay/*/games.jsonl or /tmp/*.jsonl on remote instances
+# Example patterns to search:
+#   rsync -avz <host>:~/ringrift/ai-service/data/selfplay/*/games.jsonl "$LOCAL_DIR/"
+#   rsync -avz <host>:/tmp/*.jsonl "$LOCAL_DIR/"
 
 # Merge all DBs with deduplication
 python scripts/merge_game_dbs.py \

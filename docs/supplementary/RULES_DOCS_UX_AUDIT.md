@@ -35,14 +35,14 @@ This section reviews text visible to end-users in the web client and the primary
 | **DOCUX-P1** | **High**   | `GameHUD.tsx` (PhaseInfo) | **Chain Capture:** Description reads "Continue capturing or **end your turn**". This implies optionality. RR‑CANON-R103 states chain capturing is **mandatory** while legal moves exist.             | Change to: "Continue capturing (Mandatory)". Remove "or end your turn".                                     |
 | **DOCUX-P2** | **Medium** | `VictoryModal.tsx`        | **Ring Elimination:** Description reads "Victory by eliminating **all** opponent rings". RR‑CANON-R170 is **>50%** of total rings. Eliminating all is a win, but not the threshold.                  | Change to: "Victory by eliminating ringsPerPlayer rings."                                                   |
 | **DOCUX-P3** | Low        | `GameHUD.tsx` (PhaseInfo) | **Line Reward:** Description "Choose how to process your line" implies choice exists for _all_ lines. For exact-length lines (RR‑CANON-R122 Case 1), there is no choice (must collapse & eliminate). | Change to: "Process line reward" (generic) or conditionally show "Choose reward" only for overlength lines. |
-| **DOCUX-P4** | Low        | `GameHUD.tsx` (SubPhase)  | **Territory:** "Processing disconnected regions" is vague regarding the **self-elimination cost** (RR‑CANON-R145). Players may be surprised they have to lose a ring.                                | Add tooltip or sub-text: "Regions collapse; you must eliminate one outside ring per region."                |
+| **DOCUX-P4** | Low        | `GameHUD.tsx` (SubPhase)  | **Territory:** "Processing disconnected regions" is vague regarding the **self-elimination cost** (RR‑CANON-R145). Players may be surprised they have to lose rings.                                 | Add tooltip or sub-text: "Regions collapse; you must eliminate an entire stack cap outside each region."    |
 
 **Implementation status snapshot (2025‑12‑05, post‑W‑UX work):**
 
 - DOCUX‑P1 – Addressed: GameHUD chain capture copy now describes mandatory continuation without suggesting you can “end your turn”.
 - DOCUX‑P2 – Addressed: Victory/Help copy for Ring Elimination now consistently describes the >50% global elimination threshold.
 - DOCUX‑P3 – Addressed: Line‑processing HUD copy no longer promises “Choose how to process your line” for all cases; generic copy is used unless a real choice exists.
-- DOCUX‑P4 – Addressed: Territory HUD and sub‑phase copy now explicitly mentions the “one outside ring per disconnected region” self‑elimination cost.
+- DOCUX‑P4 – Addressed: Territory HUD and sub‑phase copy now explicitly mentions the "entire stack cap outside each disconnected region" self‑elimination cost.
 
 ### Public Rulebook (`ringrift_complete_rules.md`)
 

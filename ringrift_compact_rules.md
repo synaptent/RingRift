@@ -90,6 +90,7 @@ At minimum, your engine must maintain:
   - `stackHeight = rings.length`
   - `controllingPlayer = rings[top]`
   - `capHeight = number of consecutive rings from the top that equal controllingPlayer`.
+  - **Eliminating entire cap:** When rules require eliminating the "entire cap" or "stack cap", eliminate all `capHeight` rings from the top. For mixed-color stacks, this exposes buried rings of other colors. For single-color stacks with height > 1, this eliminates all rings (removing the stack).
 
 You must maintain `capHeight` and `stackHeight` correctly after **placement**, **movement**, **overtaking**, and **elimination**.
 
@@ -180,8 +181,7 @@ A player who controls **zero stacks**, has **at least one marker**, and has **at
 1. **Marker slide:** Move one of your markers to an adjacent empty cell (Moore adjacency for square, hex-adjacency for hex).
 2. **Success criteria:** Legal if **either**:
    - **(a) Line formation:** Completes a line of **at least** `lineLength` consecutive markers of your colour.
-   - **(b) Fallback:** If no line-forming slide exists, any slide that **does not** cause territory disconnection.
-   - **Note:** Territory disconnection is **not** a valid criterion for recovery.
+   - **(b) Fallback:** If no line-forming slide exists, any adjacent slide is permitted (including slides that cause territory disconnection).
 3. **Skip option:** You may skip recovery entirely, preserving buried rings for later.
 4. **Line recovery (condition a):** If the line exceeds `lineLength`:
    - **Option 1:** Collapse all markers and pay self-elimination (one buried ring extraction).
@@ -340,16 +340,14 @@ Two cases:
 
 1. **Exact length: `len == requiredLen`**
    - Collapse **all markers in L** to `collapsedSpaces[pos] = P` and remove markers.
-   - `P` must **eliminate** either:
-     - one of their standalone rings (from any stack they control), or
-     - the **entire cap** of one of their controlled stacks.
+   - `P` must **eliminate** the **entire cap** (all consecutive top rings of `P`'s colour) from an eligible controlled stack. Eligible caps: (1) multicolour stacks `P` controls (with other players' rings buried beneath), or (2) single-colour stacks of height > 1 consisting entirely of `P`'s colour. Height-1 standalone rings are NOT eligible.
    - All eliminated rings update `eliminatedRings` counters and victory totals.
 
 2. **Overlength: `len > requiredLen`**
    - `P` chooses **Option 1** or **Option 2**:
      - **Option 1 (max territory):**
-       - Collapse **all** `len` markers in `L` to `P`’s collapsed spaces.
-       - Eliminate one ring / cap as above.
+       - Collapse **all** `len` markers in `L` to `P`'s collapsed spaces.
+       - Eliminate the entire cap from one of `P`'s controlled stacks as above.
      - **Option 2 (ring preservation):**
        - Choose **any contiguous segment** of `requiredLen` positions within `L`.
        - Collapse exactly those `requiredLen` markers to `P`’s collapsed spaces.
@@ -400,10 +398,10 @@ For region `R`, define `RegionColors` = set of players that control at least one
 For each candidate region `R` and moving player `P`:
 
 - Consider a hypothetical state in which all rings in `R` have been eliminated.
-- If in that hypothetical state `P` would still control at least one ring or stack cap **outside R**, then `P` is allowed to process `R` and pay the mandatory self-elimination.
+- If in that hypothetical state `P` would still control at least one stack **outside R**, then `P` is allowed to process `R` and pay the mandatory self-elimination (eliminating the entire cap of that stack).
 - Otherwise, `R` **cannot** be processed by `P` at this time.
 
-Each ring/cap outside the region can pay for **one** processed region only; after actually eliminating it, re-evaluate for remaining regions.
+Each stack cap outside the region can pay for **one** processed region only; after actually eliminating it, re-evaluate for remaining regions.
 
 ### 6.4 Processing disconnected regions
 
@@ -431,7 +429,9 @@ After all line processing is complete:
    - For empty regions (containing no stacks), this step eliminates zero rings, but processing remains valid.
 
 4. **Mandatory self-elimination:**
-   - `P` must eliminate one of their remaining rings or one entire stack cap **outside** this region.
+   - `P` must eliminate the **entire cap** (all consecutive top rings of `P`'s colour) from a `P`-controlled stack **outside** this region.
+   - **Cap eligibility:** An eligible stack cap for `P` must be either: (1) a **multicolour stack** that `P` controls (with other players' rings buried beneath `P`'s cap), or (2) a **single-colour stack of height > 1** consisting entirely of `P`'s colour. A height-1 standalone ring is **NOT** an eligible cap target for line/territory processing. For multicolour stacks (e.g., `[P, P, Q, P]`), eliminating the cap (top 2 rings) exposes buried rings. For single-colour stacks (e.g., `[P, P, P]`), the entire stack is eliminated.
+   - **Exception for recovery actions:** When territory processing is triggered by a recovery action, the self-elimination cost is one buried ring extraction per region, not an entire stack cap.
 
 5. Update all ring/territory counters and derived stats.
 

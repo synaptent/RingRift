@@ -97,7 +97,7 @@ const TEACHING_CONTENT: Record<TeachingTopic, TeachingContent> = {
       // GAP-LINE-01: When lines form
       'WHEN LINES FORM: A line forms when 5+ same-colored markers align orthogonally (horizontally, vertically, or diagonally). On hex boards, you need 6+ markers.',
       'Lines are formed from markers, not rings – horizontal, vertical, and diagonal lines all count.',
-      'Exact-length lines always collapse fully into Territory and usually require you to eliminate a ring from one of your stacks.',
+      'Exact-length lines always collapse fully into Territory and require you to eliminate the entire cap from one of your stacks.',
       'Overlength lines can trade safety for value: you may collapse a shorter scoring segment with no elimination, or collapse the full line and pay the ring cost.',
     ],
     relatedPhases: ['line_processing'],
@@ -319,7 +319,7 @@ export function TeachingOverlay({
       case 'region_order_required':
         if (pendingRegionCount > 1) {
           tips.push(
-            `Multiple disconnected regions detected. Each requires eliminating a ring from an outside stack.`
+            `Multiple disconnected regions detected. Each requires eliminating the entire cap from an outside stack.`
           );
         }
         break;

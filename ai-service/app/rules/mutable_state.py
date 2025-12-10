@@ -1482,8 +1482,14 @@ class MutableGameState:
     ) -> None:
         """Apply ELIMINATE_RINGS_FROM_STACK move.
 
-        Eliminates the cap (all top rings of the controlling player)
-        from the stack at move.to position.
+        Eliminates the **entire cap** (all consecutive top rings of the
+        controlling player's colour) from the stack at move.to position.
+        For mixed-colour stacks, this exposes buried rings of other colours;
+        for single-colour stacks with height > 1, this eliminates all rings
+        (removing the stack entirely).
+
+        Exception: Recovery actions use buried ring extraction (one ring)
+        instead - that is handled separately.
         """
         pos_key = move.to.to_key()
         stack = self._stacks.get(pos_key)

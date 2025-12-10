@@ -58,7 +58,7 @@ A player P is eligible for recovery if **ALL** conditions hold:
 
 ### 1.3 Success Criteria (RR-CANON-R112) – **UPDATED**
 
-The slide is legal if **either**: (a) completes a line of **at least `lineLength`** consecutive markers, OR (b) if no line-forming slide exists, any slide that does **not** cause territory disconnection (fallback). Note: Territory disconnection is **not** a valid criterion.
+The slide is legal if **either**: (a) completes a line of **at least `lineLength`** consecutive markers, OR (b) if no line-forming slide exists, any adjacent slide is permitted (fallback). Note: Territory disconnection may occur as a side effect of any recovery slide (line-forming or fallback).
 
 **Line length requirements:**
 

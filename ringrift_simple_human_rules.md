@@ -82,8 +82,9 @@ RR‑CANON‑R001 and are the base for all variants.
 
 - **Cap**
   - The **cap height** is the number of consecutive rings, from the top
-    downward, that match the controlling player’s colour.
+    downward, that match the controlling player's colour.
   - Example: Blue, Blue, Blue, Red → cap height for Blue is 3.
+  - **Eliminating entire cap:** When you must eliminate your "entire cap" or "stack cap", you eliminate all consecutive top rings of your colour. For mixed-colour stacks, this exposes buried rings of other colours beneath. For single-colour stacks with height > 1, this eliminates all rings (removing the stack entirely).
 
 - **Marker**
   - When you move a stack, you leave a **marker** of your colour on the
@@ -202,8 +203,7 @@ recovery over placement:
 1. **Slide** one of your markers to an adjacent empty cell.
 2. The slide is legal if **either**:
    - **(a) Line formation:** Completes a line of **at least** `lineLength` of your markers (3 for 8×8, 4 for 19×19/Hex).
-   - **(b) Fallback:** If no line-forming slide exists, any slide that **doesn't disconnect territory**.
-   - **Note:** You cannot use territory disconnection as the reason for a recovery slide.
+   - **(b) Fallback:** If no line-forming slide exists, any adjacent slide is permitted (including slides that cause territory disconnection).
 3. **Skip option:** You may skip recovery entirely to save your buried rings.
 4. **Line recovery (a):** Overlength lines follow standard Option 1 / Option 2 semantics:
    - **Option 1:** Collapse all markers; pay one buried ring extraction.
@@ -244,14 +244,15 @@ For each line that is eligible, you process it one at a time in an order
 1. **Lines of exactly required length**:
    - Replace all markers in that line with **collapsed spaces** of your
      colour.
-   - You must **eliminate**:
-     - Either a single ring or an entire cap from a stack you control.
+   - You must **eliminate** the **entire cap** (all consecutive top rings of your colour) from an eligible controlled stack. Eligible caps: (1) multicolour stacks you control (with other players' rings buried beneath), or (2) single-colour stacks of height > 1 consisting entirely of your colour. Height-1 standalone rings are NOT eligible.
+   - **Exception for recovery actions:** When a line is formed via recovery, you pay one buried ring extraction instead of eliminating an entire cap.
 
 2. **Overlength lines** :
    - If you form a line longer than the minimum required length, you choose between:
      - **Option 1 (full reward)**:
        - Collapse the **entire line** to your territory.
-       - Eliminate a ring or cap you control (as above).
+       - Eliminate the **entire cap** (all consecutive top rings of your colour) from one of your controlled stacks.
+       - **Exception for recovery actions:** When a line is formed via recovery, you pay one buried ring extraction instead of eliminating an entire cap.
      - **Option 2 (minimum collapse)**:
        - Collapse **exactly lineLength** consecutive markers of your choice
          within the line to your territory.
@@ -284,7 +285,9 @@ When you process a disconnected region:
    - All spaces inside become **collapsed territory** for the acting player.
 
 3. **Mandatory self‑elimination**:
-   - You must still have at least one ring or stack **outside** the processed region under your control, and you must eliminate **one standalone ring**, or **one cap** from some stack you control outside the processed region.
+   - You must still have at least one stack cap **outside** the processed region under your control, and you must eliminate the **entire cap** (all consecutive top rings of your colour) from one of your controlled stacks outside the processed region.
+   - The stack used for cap elimination must either: (a) be a mixed-colour stack with rings of other colours buried beneath your cap, or (b) be a single-colour stack of height greater than one consisting entirely of your rings. Single-ring stacks cannot be used for cap elimination.
+   - **Exception for recovery actions:** When territory processing is triggered by a recovery action, the self-elimination cost is one buried ring extraction per region, not an entire cap.
    - These rings are also credited to you as eliminated rings counting toward victory.
 
 4. **Repeat**:

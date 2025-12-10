@@ -470,13 +470,13 @@ export const TEACHING_TOPICS_COPY: Record<string, TeachingTopicCopy> = {
     topicId: 'line_bonus',
     heading: 'Lines and Rewards',
     // UX_RULES_COPY_SPEC.md §6 – TeachingOverlay – Lines description
-    body: 'Lines are built from your markers. When a straight line of your markers reaches the minimum length for this board, it becomes a scoring line: you collapse markers in that line into permanent Territory and, on many boards, must pay a ring elimination cost from a stack you control.',
+    body: 'Lines are built from your markers. When a straight line of your markers reaches the minimum length for this board, it becomes a scoring line: you collapse markers in that line into permanent Territory and, on many boards, must pay the cost of eliminating the entire cap from an eligible stack you control.',
   },
   territory: {
     topicId: 'territory',
     heading: 'Territory',
     // UX_RULES_COPY_SPEC.md §7 – TeachingOverlay – Territory description
-    body: 'Territory spaces are collapsed cells that you permanently own. When a disconnected region of your pieces is processed, all of its spaces become your Territory and its rings are eliminated, often at the cost of eliminating a ring from one of your other stacks. If your Territory passes more than half of the board, you win immediately.',
+    body: 'Territory spaces are collapsed cells that you permanently own. When a disconnected region of your pieces is processed, all of its spaces become your Territory and its rings are eliminated, at the cost of eliminating the entire cap from one of your other stacks (recovery actions pay with a buried ring instead). If your Territory passes more than half of the board, you win immediately.',
   },
   active_no_moves: {
     topicId: 'active_no_moves',

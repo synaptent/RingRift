@@ -57,6 +57,12 @@ import type { TerritoryProcessingContext } from './territoryProcessing';
  * - `eliminate_rings_from_stack` – pay the mandatory self-elimination cost
  *   after processing a region (or other elimination-triggering effects).
  *   - One move per eligible stack under the acting player's control.
+ *   - Eliminates the **entire cap** (all consecutive top rings of the
+ *     controlling colour). For mixed-colour stacks, this exposes buried
+ *     rings; for single-colour stacks with height > 1, this removes the
+ *     stack entirely.
+ *   - **Exception:** Recovery actions use buried ring extraction instead
+ *     (handled separately in RecoveryAggregate).
  *
  * Implementations will be introduced in later P0 tasks when backend and
  * sandbox engines are refactored to call into these helpers. For P0 Task #21,
@@ -388,10 +394,17 @@ export function applyProcessTerritoryRegionDecision(
  * Primary use cases:
  *
  * - Mandatory self-elimination after processing a disconnected territory
- *   region.
+ *   region. This requires eliminating the **entire cap** (all consecutive
+ *   top rings of the controlling colour). For mixed-colour stacks, this
+ *   exposes buried rings of other colours; for single-colour stacks with
+ *   height > 1, this eliminates all rings (removing the stack entirely).
  * - Ring-elimination rewards earned from line-collapses (Option 1 on long
  *   lines), when engines choose to express those rewards explicitly as
  *   `eliminate_rings_from_stack` moves rather than as implicit effects.
+ *
+ * **Exception:** Recovery actions use buried ring extraction (one ring)
+ * instead of entire cap elimination; that logic is handled separately in
+ * RecoveryAggregate.
  *
  * Semantics:
  *
@@ -467,6 +480,19 @@ export function enumerateTerritoryEliminationMoves(
   for (const { key, stack } of stacks) {
     const capHeight = calculateCapHeight(stack.rings);
     if (capHeight <= 0) {
+      continue;
+    }
+
+    // RR-CANON-R082: Eligible cap target must be either:
+    // (1) A multicolor stack controlled by player P (with other players' rings
+    //     buried beneath P's cap), OR
+    // (2) A single-color stack of height > 1 consisting entirely of P's colour.
+    // A height-1 standalone ring is NOT an eligible cap target for territory
+    // or line processing.
+    const isMulticolor = stack.stackHeight > capHeight;
+    const isSingleColorTall = stack.stackHeight === capHeight && stack.stackHeight > 1;
+    if (!isMulticolor && !isSingleColorTall) {
+      // Skip height-1 standalone rings - not eligible for elimination
       continue;
     }
 

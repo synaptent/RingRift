@@ -582,9 +582,7 @@ A **recovery action** allows a player who controls no stacks but has markers and
 • **Success Criteria:** A recovery marker slide is legal if **either** of these conditions is satisfied:
 
 - **(a) Line formation:** The slide completes a line of **at least** `lineLength` consecutive markers of the player's colour. The slide must create the line; it cannot merely extend or modify an existing line. (For `lineLength`, use the same threshold as for normal line processing: 4 for 8×8 2-player, 3 for 8×8 3–4 player, 4 for 19×19 and Hex.)
-- **(b) Fallback repositioning:** If no slide satisfies condition (a), any adjacent slide that **does not** cause territory disconnection is permitted.
-
-• **Note:** Territory disconnection is **not** a valid criterion for recovery. Territory may be disconnected as a side effect of line formation, but cannot be the primary reason for a recovery slide.
+- **(b) Fallback repositioning:** If no slide satisfies condition (a), any adjacent slide is permitted, including slides that cause territory disconnection.
 
 • **Skip Option:** The player may elect to skip recovery entirely, preserving buried rings for a future turn.
 
@@ -594,7 +592,7 @@ A **recovery action** allows a player who controls no stacks but has markers and
 - **Option 2:** Collapse exactly `lineLength` consecutive markers of the player's choice to territory **without** paying any self-elimination cost. The remaining markers stay on the board.
   This mirrors normal line reward semantics and increases the strategic value of recovery actions.
 
-• **Fallback Recovery (Condition b):** If no line-forming slide exists, the player may slide any marker to an adjacent empty cell, provided the slide does not cause territory disconnection. This costs one buried ring extraction but does not trigger line processing.
+• **Fallback Recovery (Condition b):** If no line-forming slide exists, the player may slide any marker to an adjacent empty cell (including slides that cause territory disconnection). This costs one buried ring extraction but does not trigger line processing.
 
 • **Buried Ring Extraction (Self-Elimination Payment):** To pay the self-elimination cost:
 
@@ -629,11 +627,9 @@ A **recovery action** allows a player who controls no stacks but has markers and
     - For each eligible line:
       - **For lines of exactly the required length:**
         - Replace the entire line with collapsed spaces of your color.
-        - Eliminate either:
-          - one of your standalone rings (a height‑1 stack you control), or
-          - the entire cap (all consecutive top rings of the controlling color) of one of your controlled ring stacks.
+        - Eliminate the **entire cap** (all consecutive top rings of your colour) from an eligible controlled stack. Eligible caps: (1) multicolour stacks you control (with other players' rings buried beneath), or (2) single-colour stacks of height > 1 consisting entirely of your colour. Height-1 standalone rings are NOT eligible.
       - **For lines longer than the required length (any length > required length):** You may choose either:
-        - **Option 1:** Replace the entire line with collapsed spaces of your color **and** eliminate one of your standalone rings or the entire cap of one of your controlled ring stacks, or
+        - **Option 1:** Replace the entire line with collapsed spaces of your color **and** eliminate the entire cap from an eligible controlled stack (same eligibility rules as exact-length lines), or
         - **Option 2:** Replace exactly the required number of _any_ consecutive markers of your choice within the line with collapsed spaces of your color **without eliminating any of your rings or caps**. Option 2 is always available for overlength lines, even if you have no legal way to eliminate a ring or cap.
       - After resolving a line, check again for any remaining eligible lines; continue until none remain.
       - Collapsed spaces never form part of a valid line.
@@ -646,7 +642,7 @@ A **recovery action** allows a player who controls no stacks but has markers and
       - Fill all cells in the region with collapsed spaces of your color (removing any stacks or markers inside).
       - Identify the markers of the single border colour that actually participate in at least one blocked path from the region to the rest of the board (per the disconnection definition in Section 12.2); collapse **only those** markers to your colour. Same‑colour markers that do not contribute to blocking any such path remain as markers.
       - Eliminate all rings within the region (all colours); these are credited to you.
-      - Eliminate one additional of your rings or the entire cap of one of your controlled ring stacks **outside** the region (subject to the prerequisite check in Section 12.2). As with line rewards, this can be either a single standalone ring (height‑1 stack) or an entire cap.
+      - Eliminate the **entire cap** (all consecutive top rings of your colour) from one of your controlled ring stacks **outside** the region (subject to the prerequisite check in Section 12.2). **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap.
       - After each region is processed, re‑check for any new disconnected regions that may have been created.
     - Important notes:
       - All eliminated rings (inside the region and from the mandatory self-elimination) count toward your victory total.
@@ -676,10 +672,13 @@ When you capture a ring, it goes to the _bottom_ of your stack. The order of rin
 
 **Cap height** is the number of consecutive rings of the same color at the top of a stack.
 
+When rules require eliminating the **entire cap** (or "stack cap"), this means eliminating all consecutive top rings of the controlling color. An **eligible cap target** for a player P must be either: (1) a **multicolor stack** that P controls (with other players' rings buried beneath P's cap), or (2) a **single-color stack of height > 1** consisting entirely of P's colour. A height-1 standalone ring is **NOT** an eligible cap target for line/territory processing. For multicolor stacks, eliminating the cap exposes buried rings of other colors beneath. For single-color stacks with height > 1, this eliminates all rings and removes the stack entirely.
+
 Why it matters:
 
 - **Capture power**: You can only capture stacks with cap heights _less than or equal to_ your own
 - **Strategic depth**: A tall stack with a thin cap (just one ring of your color on top) is vulnerable despite its height
+- **Self-elimination cost**: Territory processing requires eliminating your entire cap from a stack outside the processed region
 
 > **Examples:**
 >
@@ -993,11 +992,11 @@ There are two fundamentally different ways to capture rings in RingRift - Overta
 
 • **When Occurs:** Rings are permanently removed from the board in these situations:
 
-1.  **Line Formation:** When a player forms an **eligible line of markers** (as defined in Section 11.1) they must Eliminate one of their rings or the entire cap of one of their controlled ring stacks for each distinct line formed, unless they choose Option 2 for longer lines. Concretely:
+1.  **Line Formation:** When a player forms an **eligible line of markers** (as defined in Section 11.1) they must Eliminate the **entire cap** from an eligible controlled stack for each distinct line formed, unless they choose Option 2 for longer lines. Eligible caps: (1) multicolour stacks they control (with other players' rings buried beneath), or (2) single-colour stacks of height > 1 consisting entirely of their colour. Height-1 standalone rings are NOT eligible. Concretely:
     - On **8×8**, lines of **3+ markers** trigger line processing.
     - On **19×19** and **Hexagonal** boards, lines of **4+ markers** trigger line processing.
-2.  **Surrounded Territory:** When a player collapses (claims) an area by disconnecting it, they must Eliminate one of their rings or the entire cap of one of their controlled ring stacks per each collapsed area.
-3.  **Disconnected Regions:** When a region becomes disconnected (see Section 12 and Section 15.4, Q15 for detailed criteria), all spaces within the region are collapsed and claimed in the color of the player moving, all rings within that region are Eliminated from play. The player who caused the disconnection must also Eliminate one of their rings or the entire cap of one of their ring stacks (subject to prerequisite check), and all Eliminated rings count toward their victory condition.
+2.  **Surrounded Territory:** When a player collapses (claims) an area by disconnecting it, they must Eliminate the **entire cap** (all consecutive top rings of their colour) from one of their controlled ring stacks per each collapsed area. **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap.
+3.  **Disconnected Regions:** When a region becomes disconnected (see Section 12 and Section 15.4, Q15 for detailed criteria), all spaces within the region are collapsed and claimed in the color of the player moving, all rings within that region are Eliminated from play. The player who caused the disconnection must also Eliminate the **entire cap** from one of their ring stacks outside the region (subject to prerequisite check), and all Eliminated rings count toward their victory condition. **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap.
 
 • **Victory Impact**:
 • Eliminated rings count toward the Elimination victory threshold (ringsPerPlayer = starting rings in hand)
@@ -1066,17 +1065,17 @@ When you form an eligible line, you convert it to permanent territory—but ther
 #### Exact-length lines (3 markers on 8×8, 4 on 19×19/Hex)
 
 - All markers in the line become collapsed spaces (your territory)
-- You must sacrifice one ring: either a standalone ring OR the entire cap from one of your stacks
+- You must sacrifice the **entire cap** from an eligible controlled stack. Eligible caps: (1) multicolour stacks you control (with other players' rings buried beneath), or (2) single-colour stacks of height > 1 consisting entirely of your colour. Height-1 standalone rings are NOT eligible.
 - The sacrificed ring(s) count toward your elimination victory total
 
 #### Longer lines give you a choice
 
-| Option                         | Territory Gained                                    | Ring Cost                 |
-| ------------------------------ | --------------------------------------------------- | ------------------------- |
-| **Option 1: Full Collapse**    | Entire line becomes territory                       | Sacrifice one ring or cap |
-| **Option 2: Partial Collapse** | Only the required length (you choose which segment) | No sacrifice              |
+| Option                         | Territory Gained                                    | Ring Cost                                          |
+| ------------------------------ | --------------------------------------------------- | -------------------------------------------------- |
+| **Option 1: Full Collapse**    | Entire line becomes territory                       | Sacrifice entire cap (see eligibility rules above) |
+| **Option 2: Partial Collapse** | Only the required length (you choose which segment) | No sacrifice                                       |
 
-Option 2 is always available for overlength lines, even if you have no ring to sacrifice.
+Option 2 is always available for overlength lines, even if you have no eligible cap to sacrifice.
 
 > **Why choose Option 2?** Sometimes preserving your rings matters more than maximizing territory — especially when you need rings for upcoming territory disconnections or to maintain board presence.
 
@@ -1155,7 +1154,7 @@ _This diagram illustrates the strategic choice offered by the Graduated Line Rew
 • This choice can be strategically significant as processing one line may affect the existence of other lines
 • For each distinct line:
 • Collapse the line to your color
-• Eliminate one of your rings or the entire stack cap.
+• Eliminate the entire cap from an eligible controlled stack (see Section 11.2 for eligibility rules).
 • Check for new valid lines after each collapse.
 • Continue until no valid lines remain.
 • Note: A line that would have intersected a collapsed line is no longer valid if it doesn't meet the required length anymore.
@@ -1353,16 +1352,16 @@ _4. For a region to be processed as "disconnected", it must also lack representa
 - **Interior collapse:** Fill the region with collapsed spaces of the moving player's (your) color, removing all stacks and markers from the interior.
 - **Border-marker collapse:** Identify the markers of the single border color that participate in at least one minimal blocking path used to establish physical disconnection (i.e., they are actually part of a path that cuts off all adjacency routes from the region to the rest of the board). Collapse **only those** markers to your color. Markers of that same colour that do not participate in any such blocking path remain as markers.
 - **Ring elimination inside the region:** Eliminate all rings within the region (all rings in all stacks, regardless of colour); they are credited to you as Eliminated rings. For empty regions (containing no ring stacks), this step eliminates zero rings, but processing is still valid.
-- **Self-Elimination Prerequisite Check (Per Region):** Before you process a specific disconnected region, you must already have at least one ring or stack cap under your control that is located _outside that particular region_.
-  - Each such ring or cap can be used to process **exactly one** disconnected region.
-  - Disconnected regions are processed one at a time, in any order you choose. Before processing each region, you re-check that you still have at least one ring or cap outside that region available for the mandatory self-elimination.
-  - **Equivalent Hypothetical View:** If you _hypothetically_ eliminated all rings currently inside that region, you must still have at least one ring or cap somewhere else on the board afterward in order to pay the self-elimination cost. Because eliminating rings inside the region does not affect rings or caps outside it, these two formulations are logically equivalent.
-  - If you do **not** have any ring or cap outside that specific region that could be self-eliminated, processing that region is **illegal**: the region remains unchanged and no rings are eliminated.
+- **Self-Elimination Prerequisite Check (Per Region):** Before you process a specific disconnected region, you must already have at least one stack cap (controlled stack) located _outside that particular region_.
+  - Each stack cap outside the region can be used to process **exactly one** disconnected region.
+  - Disconnected regions are processed one at a time, in any order you choose. Before processing each region, you re-check that you still have at least one stack cap outside that region available for the mandatory self-elimination.
+  - **Equivalent Hypothetical View:** If you _hypothetically_ eliminated all rings currently inside that region, you must still have at least one controlled stack somewhere else on the board afterward in order to pay the self-elimination cost. Because eliminating rings inside the region does not affect stacks outside it, these two formulations are logically equivalent.
+  - If you do **not** have any controlled stack outside that specific region that could be self-eliminated, processing that region is **illegal**: the region remains unchanged and no rings are eliminated.
   - If the prerequisite **is** satisfied:
     - You collapse the region and the relevant single-color border markers to your color.
     - Then, you eliminate all rings within the now-collapsed region.
-    - Finally, you _must_ eliminate one of your remaining controlled rings (from a height‑1 stack) or the entire cap of one of your remaining controlled stacks located outside the just-processed region.
-    - All eliminated rings (those inside the region plus your self-eliminated ring or cap) count toward your victory total.
+    - Finally, you _must_ eliminate the **entire cap** (all consecutive top rings of your colour) from one of your remaining controlled stacks located outside the just-processed region. For a mixed-colour stack (e.g., `[You, You, Opp, You]` from top to bottom), the cap is the top 2 rings. For a single-colour stack of height > 1, the entire stack is eliminated. **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap.
+    - All eliminated rings (those inside the region plus your self-eliminated cap) count toward your victory total.
 
 ```mermaid
 graph TD
@@ -1741,8 +1740,8 @@ A complete turn in RingRift consists of the following phases, which must be exec
     - Check for **eligible lines** of markers:
       - On 8×8, geometric lines are 3+ markers; in 3–4 player games, line processing starts from 3‑in‑a‑row, while in 2‑player games it starts from 4‑in‑a‑row.
       - On 19×19/Hex, line processing starts from 4‑in‑a‑row.
-      - For each eligible line, collapse markers and (for exact‑length and Option‑1 overlength lines) eliminate a standalone ring or an entire cap as described in Section 11.2. Option 2 (partial collapse with no elimination) is always available for overlength lines.
-    - Check for disconnected regions → collapse any regions you choose to process → eliminate one of your rings/caps per processed region, subject to the prerequisites in Section 12.2.
+      - For each eligible line, collapse markers and (for exact‑length and Option‑1 overlength lines) eliminate the entire cap of a controlled stack as described in Section 11.2. Option 2 (partial collapse with no elimination) is always available for overlength lines.
+    - Check for disconnected regions → collapse any regions you choose to process → eliminate **entire cap** per processed region (recovery: one buried ring instead), subject to the prerequisites in Section 12.2.
 5.  **Victory Check**
     - If rings eliminated >= ringsPerPlayer or >50% of board territory controlled, game ends
     - Otherwise, next player's turn
@@ -1943,11 +1942,11 @@ A6: Overtaking captures occur during movement when you jump over a ring or stack
 A7: You must process each line one at a time. Determine the required length (3 for 8×8, 4 for 19×19/Hex). For each line:
 
 1. **For lines of exactly the required length:**
-   - Eliminate one of your standalone rings (a height‑1 stack you control), or the entire cap of one of your controlled ring stacks, from the board.
+   - Eliminate the **entire cap** (all consecutive top rings of your colour) from one of your controlled stacks.
    - Collapse all markers in the line, marking the collapsed spaces as claimed territory in your color.
 
 2. **For lines longer than the required length:** You have a choice:
-   - **Option 1:** Eliminate one of your standalone rings or the entire cap of one of your stacks **and** collapse the entire line, OR
+   - **Option 1:** Eliminate the **entire cap** (all consecutive top rings of your colour) from one of your controlled stacks **and** collapse the entire line, OR
    - **Option 2:** Collapse only the required number of consecutive markers (3 on 8×8, 4 on 19×19/Hex) of your choice within the line **without eliminating any of your rings**. Option 2 is always legal for overlength lines, even if you currently have no ring or cap you can eliminate.
 
 3. Check for any remaining valid lines (some may no longer meet the length requirement due to intersections with collapsed spaces).
@@ -2024,8 +2023,8 @@ A region is considered disconnected when it meets two criteria:
       • **IMPORTANT EXCEPTION:** A region containing representation from **ALL** player colors currently on the board is **NEVER** disconnected, regardless of physical surrounding.
 
 When a region satisfies these two criteria, it is processed exactly as described in **Section 12.2 (Disconnection Process)**:
-• **Self-Elimination Prerequisite Check (see also Q23):** _Before_ processing a region, perform the hypothetical check from Section 12.2: if all rings within the region were eliminated, would the moving player still have at least one ring or stack cap elsewhere on the board? If not, the region **cannot** be processed at all.
-• If the prerequisite is satisfied, the moving player may choose to process that region (and any other qualifying regions one at a time): collapse the region and any single-color border markers to their color, eliminate all rings inside (regardless of color), and _then_ perform the mandatory self-elimination of one of their remaining rings or an entire cap outside that region. All eliminated rings (internal + self-eliminated) count toward the moving player's victory total.
+• **Self-Elimination Prerequisite Check (see also Q23):** _Before_ processing a region, perform the hypothetical check from Section 12.2: if all rings within the region were eliminated, would the moving player still have at least one controlled stack elsewhere on the board? If not, the region **cannot** be processed at all.
+• If the prerequisite is satisfied, the moving player may choose to process that region (and any other qualifying regions one at a time): collapse the region and any single-color border markers to their color, eliminate all rings inside (regardless of color), and _then_ perform the mandatory self-elimination of the **entire cap** (all consecutive top rings of their colour) from one of their remaining stacks outside that region. The stack used for cap elimination must either: (a) be a mixed-colour stack with rings of other colours buried beneath the player's cap, or (b) be a single-colour stack of height greater than one consisting entirely of the player's rings. Single-ring stacks cannot be used for cap elimination. **Exception:** Recovery actions pay with one buried ring extraction instead of an entire cap. All eliminated rings (internal + self-eliminated cap) count toward the moving player's victory total.
 
 #### Q16: How does control transfer in a multicolored ring stack?
 
@@ -2081,7 +2080,7 @@ A22: When you form a **line longer than the required length for your board** (an
 
 1. **Ring Count Status**:
    • If you're close to running out of rings, **Option 2** (collapse exactly the required number of markers with **no ring or cap elimination**) may leave open your ability to move more flexibly, create more lines with remaining markers and rings, or create or process future disconnected regions with remaining markers and rings.
-   • If an opponent is near victory, **Option 1** (collapse the entire line and eliminate one standalone ring or an entire cap) may help you gain territory and eliminated rings faster.
+   • If an opponent is near victory, **Option 1** (collapse the entire line and eliminate the entire cap of one of your controlled stacks) may help you gain territory and eliminated rings faster.
 
 2. **Board Position**:
    • Option 1 maximizes claimed territory and can create barriers cutting off opponent movement
@@ -2131,8 +2130,8 @@ Note that by definition, any stack you control must have at least one ring of yo
 1. (Optional) Place a ring - if you have rings in hand
 2. Move a ring/stack (mandatory) - either the newly placed ring or a stack you control
 3. (Optional) Begin Overtaking capture from the landing position only → chain captures (mandatory once started)
-4. Check for lines of required length (**3+ for 8×8 in 3–4p games**, **4+ for 8×8 in 2p games**, **4+ for 19×19/Hex**) → collapse → eliminate one ring or cap per line (with graduated rewards for longer lines).
-5. Check for disconnected regions → collapse → eliminate one ring or cap per region.
+4. Check for lines of required length (**3+ for 8×8 in 3–4p games**, **4+ for 8×8 in 2p games**, **4+ for 19×19/Hex**) → collapse → eliminate entire cap per line (with graduated rewards for longer lines).
+5. Check for disconnected regions → collapse → eliminate entire cap per region (recovery: one buried ring instead).
 6. Victory check: ringsPerPlayer rings eliminated, >50% territory control, or last player standing.
 
 **Victory Conditions:**

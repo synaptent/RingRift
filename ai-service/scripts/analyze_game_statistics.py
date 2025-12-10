@@ -57,6 +57,35 @@ class GameStats:
     total_recovery_opportunities: int = 0
     games_with_fe: int = 0
     game_lengths: list[int] = field(default_factory=list)  # Individual game lengths
+    # Enhanced move analysis
+    move_type_counts: dict[str, int] = field(default_factory=dict)
+    # Recovery slide analysis
+    games_with_recovery_slide: int = 0
+    recovery_slides_by_player: dict[str, int] = field(default_factory=dict)  # player -> count
+    wins_with_recovery_slide: int = 0  # Games where winner used recovery slide
+    wins_without_recovery_slide: int = 0  # Games where winner did not use recovery slide
+    # Capture chain analysis
+    max_capture_chain_lengths: list[int] = field(default_factory=list)  # Max chain per game
+    total_captures: int = 0
+    total_chain_captures: int = 0
+    # Forced elimination analysis
+    fe_counts_per_game: list[int] = field(default_factory=list)
+    fe_by_player: dict[str, int] = field(default_factory=dict)
+    # Game phase analysis
+    ring_placement_moves: int = 0  # How many place_ring moves
+    territory_claims: int = 0  # process_territory_region moves
+    line_formations: int = 0  # process_line moves
+    # Tempo/momentum analysis
+    consecutive_skips_by_player: dict[str, list[int]] = field(default_factory=dict)  # player -> list of skip streaks
+    longest_skip_streak_per_game: list[int] = field(default_factory=list)
+    # Comebacks: player in "losing" position who won
+    games_with_late_fe_winner: int = 0  # Winner had forced elimination in game
+    # Active game length (non-skip moves)
+    active_moves_per_game: list[int] = field(default_factory=list)  # moves that aren't no_*_action
+    # First blood analysis: who captures first
+    first_capture_by_player: dict[str, int] = field(default_factory=dict)
+    first_capturer_wins: int = 0
+    first_capturer_loses: int = 0
 
     @property
     def moves_per_game(self) -> float:
@@ -172,9 +201,211 @@ def load_recovery_analysis(path: Path) -> dict[str, Any] | None:
     return None
 
 
-def collect_stats(data_dir: Path) -> AnalysisReport:
-    """Collect statistics from all subdirectories in data_dir."""
+def load_jsonl_games(path: Path) -> list[dict[str, Any]]:
+    """Load games from a JSONL file."""
+    games = []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    games.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        pass
+    return games
+
+
+def collect_stats_from_jsonl(jsonl_files: list[Path], report: AnalysisReport) -> None:
+    """Collect statistics from JSONL files and add to report."""
+    for jsonl_path in jsonl_files:
+        games = load_jsonl_games(jsonl_path)
+        if not games:
+            continue
+
+        # Group games by board_type and num_players
+        by_config: dict[tuple[str, int], list[dict]] = defaultdict(list)
+        for game in games:
+            board_type = game.get("board_type", "unknown")
+            num_players = game.get("num_players", 2)
+            by_config[(board_type, num_players)].append(game)
+
+        for (board_type, num_players), config_games in by_config.items():
+            key = (board_type, num_players)
+            if key not in report.stats_by_config:
+                report.stats_by_config[key] = GameStats(board_type=board_type, num_players=num_players)
+
+            stats = report.stats_by_config[key]
+
+            for game in config_games:
+                stats.total_games += 1
+                move_count = game.get("move_count", len(game.get("moves", [])))
+                stats.total_moves += move_count
+                stats.game_lengths.append(move_count)
+                stats.total_time_seconds += game.get("game_time_seconds", 0.0)
+
+                # Winner
+                winner = game.get("winner")
+                if winner is not None:
+                    stats.wins_by_player[str(winner)] = stats.wins_by_player.get(str(winner), 0) + 1
+
+                # Victory type
+                victory_type = game.get("victory_type")
+                if victory_type:
+                    stats.victory_types[victory_type] = stats.victory_types.get(victory_type, 0) + 1
+
+                # Stalemate tiebreaker
+                tiebreaker = game.get("stalemate_tiebreaker")
+                if tiebreaker and victory_type == "stalemate":
+                    stats.stalemate_by_tiebreaker[tiebreaker] = (
+                        stats.stalemate_by_tiebreaker.get(tiebreaker, 0) + 1
+                    )
+
+                # Analyze moves in detail
+                moves = game.get("moves", [])
+                has_fe = False
+                fe_count = 0
+                has_recovery_slide = False
+                recovery_slides_by_player_in_game: dict[str, int] = {}
+                fe_by_player_in_game: dict[str, int] = {}
+                capture_chain_length = 0
+                max_chain_in_game = 0
+                in_chain = False
+                first_capture_player = None
+                active_move_count = 0
+                # Track consecutive skips per player
+                current_skip_streak: dict[str, int] = {}
+                max_skip_streak = 0
+
+                for m in moves:
+                    if not isinstance(m, dict):
+                        continue
+                    move_type = m.get("type", "")
+                    player = m.get("player")
+                    player_str = str(player) if player is not None else None
+
+                    # Count move types
+                    stats.move_type_counts[move_type] = stats.move_type_counts.get(move_type, 0) + 1
+
+                    # Track phase-specific actions
+                    if move_type == "place_ring":
+                        stats.ring_placement_moves += 1
+                    elif move_type == "process_territory_region":
+                        stats.territory_claims += 1
+                    elif move_type == "process_line":
+                        stats.line_formations += 1
+
+                    # Track active vs skip moves
+                    is_skip = move_type.startswith("no_") or move_type.startswith("skip_")
+                    if not is_skip:
+                        active_move_count += 1
+                        # Reset skip streak for this player
+                        if player_str:
+                            if player_str in current_skip_streak and current_skip_streak[player_str] > 0:
+                                if player_str not in stats.consecutive_skips_by_player:
+                                    stats.consecutive_skips_by_player[player_str] = []
+                                stats.consecutive_skips_by_player[player_str].append(current_skip_streak[player_str])
+                            current_skip_streak[player_str] = 0
+                    elif player_str:
+                        # Increment skip streak
+                        current_skip_streak[player_str] = current_skip_streak.get(player_str, 0) + 1
+                        if current_skip_streak[player_str] > max_skip_streak:
+                            max_skip_streak = current_skip_streak[player_str]
+
+                    # Track forced elimination
+                    if move_type == "forced_elimination":
+                        has_fe = True
+                        fe_count += 1
+                        if player_str:
+                            stats.fe_by_player[player_str] = stats.fe_by_player.get(player_str, 0) + 1
+                            fe_by_player_in_game[player_str] = fe_by_player_in_game.get(player_str, 0) + 1
+
+                    # Track recovery slide
+                    if move_type == "recovery_slide":
+                        has_recovery_slide = True
+                        if player_str:
+                            recovery_slides_by_player_in_game[player_str] = (
+                                recovery_slides_by_player_in_game.get(player_str, 0) + 1
+                            )
+                            stats.recovery_slides_by_player[player_str] = (
+                                stats.recovery_slides_by_player.get(player_str, 0) + 1
+                            )
+
+                    # Track capture chains
+                    if move_type == "overtaking_capture":
+                        stats.total_captures += 1
+                        # Track first capture
+                        if first_capture_player is None and player_str:
+                            first_capture_player = player_str
+                            stats.first_capture_by_player[player_str] = (
+                                stats.first_capture_by_player.get(player_str, 0) + 1
+                            )
+                        if in_chain:
+                            capture_chain_length += 1
+                        else:
+                            in_chain = True
+                            capture_chain_length = 1
+                    elif move_type == "continue_capture_segment":
+                        stats.total_chain_captures += 1
+                        capture_chain_length += 1
+                    else:
+                        # Chain ended
+                        if capture_chain_length > max_chain_in_game:
+                            max_chain_in_game = capture_chain_length
+                        capture_chain_length = 0
+                        in_chain = False
+
+                # Final chain check
+                if capture_chain_length > max_chain_in_game:
+                    max_chain_in_game = capture_chain_length
+
+                # Record active moves
+                stats.active_moves_per_game.append(active_move_count)
+
+                # Record max skip streak for this game
+                if max_skip_streak > 0:
+                    stats.longest_skip_streak_per_game.append(max_skip_streak)
+
+                if has_fe:
+                    stats.games_with_fe += 1
+                    stats.fe_counts_per_game.append(fe_count)
+                    # Check if winner had forced elimination (comeback)
+                    if winner is not None and str(winner) in fe_by_player_in_game:
+                        stats.games_with_late_fe_winner += 1
+
+                if has_recovery_slide:
+                    stats.games_with_recovery_slide += 1
+                    # Check if winner used recovery slide
+                    if winner is not None and str(winner) in recovery_slides_by_player_in_game:
+                        stats.wins_with_recovery_slide += 1
+                    elif winner is not None:
+                        stats.wins_without_recovery_slide += 1
+                elif winner is not None:
+                    stats.wins_without_recovery_slide += 1
+
+                if max_chain_in_game > 0:
+                    stats.max_capture_chain_lengths.append(max_chain_in_game)
+
+                # First capture correlation with winning
+                if first_capture_player is not None and winner is not None:
+                    if first_capture_player == str(winner):
+                        stats.first_capturer_wins += 1
+                    else:
+                        stats.first_capturer_loses += 1
+
+        report.data_sources.append(str(jsonl_path))
+
+
+def collect_stats(data_dir: Path, jsonl_files: list[Path] | None = None) -> AnalysisReport:
+    """Collect statistics from all subdirectories in data_dir and optional JSONL files."""
     report = AnalysisReport()
+
+    # Process JSONL files first if provided
+    if jsonl_files:
+        collect_stats_from_jsonl(jsonl_files, report)
 
     # Find all stats.json files
     for stats_path in data_dir.rglob("stats.json"):
@@ -419,8 +650,140 @@ def generate_markdown_report(report: AnalysisReport) -> str:
                 lines.append(f"| {key} | {count:,} | {pct:.1f}% |")
             lines.append("")
 
+    # Enhanced Move Analysis Section
+    any_move_data = any(stats.move_type_counts for stats in report.stats_by_config.values())
+    if any_move_data:
+        lines.append("## 5. Move Type Distribution")
+        lines.append("")
+        lines.append("*Top 10 move types across all configurations*")
+        lines.append("")
+        # Aggregate move types
+        all_move_types: dict[str, int] = {}
+        for stats in report.stats_by_config.values():
+            for mtype, count in stats.move_type_counts.items():
+                all_move_types[mtype] = all_move_types.get(mtype, 0) + count
+        total_moves = sum(all_move_types.values())
+        lines.append("| Move Type | Count | % of All Moves |")
+        lines.append("|-----------|-------|----------------|")
+        for mtype, count in sorted(all_move_types.items(), key=lambda x: -x[1])[:10]:
+            pct = 100 * count / total_moves if total_moves else 0
+            lines.append(f"| {mtype} | {count:,} | {pct:.1f}% |")
+        lines.append("")
+
+    # Recovery Slide Analysis
+    any_recovery_data = any(stats.games_with_recovery_slide > 0 for stats in report.stats_by_config.values())
+    lines.append("## 6. Recovery Slide Analysis")
+    lines.append("")
+    if any_recovery_data:
+        lines.append("| Config | Games w/ Recovery | Recovery User Wins | Non-Recovery Wins (in recovery games) |")
+        lines.append("|--------|-------------------|--------------------|-----------------------------------------|")
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            if stats.total_games == 0:
+                continue
+            games_w = stats.games_with_recovery_slide
+            wins_w = stats.wins_with_recovery_slide
+            # In games where recovery was used, how many were won by non-recovery user
+            # This is tracked in wins_without_recovery_slide only for games WITH recovery
+            # But our current tracking conflates "games with no recovery" and "recovery games where winner didn't use recovery"
+            # Let's show: games_w, wins_w (recovery user won), and games_w - wins_w (non-recovery winner in recovery games)
+            pct_games = 100 * games_w / stats.total_games if stats.total_games else 0
+            # Out of games with recovery, what % were won by recovery user
+            pct_recovery_wins = 100 * wins_w / games_w if games_w else 0
+            # Non-recovery wins in recovery games (approximate: games_w had games_w games with winners)
+            non_recovery_wins_in_recovery_games = games_w - wins_w if games_w > 0 else 0
+            pct_non_recovery = 100 * non_recovery_wins_in_recovery_games / games_w if games_w else 0
+            lines.append(
+                f"| {board_type} {num_players}p | {games_w} ({pct_games:.1f}%) | "
+                f"{wins_w} ({pct_recovery_wins:.1f}%) | {non_recovery_wins_in_recovery_games} ({pct_non_recovery:.1f}%) |"
+            )
+        lines.append("")
+    else:
+        lines.append("*No recovery slides detected in the analyzed games.*")
+        lines.append("")
+
+    # Capture Chain Analysis
+    any_capture_data = any(stats.max_capture_chain_lengths for stats in report.stats_by_config.values())
+    if any_capture_data:
+        lines.append("## 7. Capture Chain Analysis")
+        lines.append("")
+        lines.append("| Config | Total Captures | Chain Captures | Max Chain | Avg Max Chain |")
+        lines.append("|--------|----------------|----------------|-----------|---------------|")
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            if stats.total_games == 0:
+                continue
+            total_cap = stats.total_captures
+            chain_cap = stats.total_chain_captures
+            max_chain = max(stats.max_capture_chain_lengths) if stats.max_capture_chain_lengths else 0
+            avg_max = sum(stats.max_capture_chain_lengths) / len(stats.max_capture_chain_lengths) if stats.max_capture_chain_lengths else 0
+            lines.append(f"| {board_type} {num_players}p | {total_cap:,} | {chain_cap:,} | {max_chain} | {avg_max:.1f} |")
+        lines.append("")
+
+    # Forced Elimination Analysis
+    any_fe_data = any(stats.games_with_fe > 0 for stats in report.stats_by_config.values())
+    if any_fe_data:
+        lines.append("## 8. Forced Elimination Analysis")
+        lines.append("")
+        lines.append("| Config | Games w/ FE | FE Count | Winner Had FE | Comeback Rate |")
+        lines.append("|--------|-------------|----------|---------------|---------------|")
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            if stats.total_games == 0:
+                continue
+            games_fe = stats.games_with_fe
+            pct_fe = 100 * games_fe / stats.total_games if stats.total_games else 0
+            total_fe = sum(stats.fe_counts_per_game)
+            comebacks = stats.games_with_late_fe_winner
+            comeback_rate = 100 * comebacks / games_fe if games_fe else 0
+            lines.append(
+                f"| {board_type} {num_players}p | {games_fe} ({pct_fe:.1f}%) | "
+                f"{total_fe} | {comebacks} | {comeback_rate:.1f}% |"
+            )
+        lines.append("")
+
+    # First Blood Analysis
+    any_first_capture = any(stats.first_capture_by_player for stats in report.stats_by_config.values())
+    if any_first_capture:
+        lines.append("## 9. First Blood Analysis")
+        lines.append("")
+        lines.append("*Does making the first capture correlate with winning?*")
+        lines.append("")
+        lines.append("| Config | First Capturer Wins | First Capturer Loses | Win Rate |")
+        lines.append("|--------|---------------------|----------------------|----------|")
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            if stats.total_games == 0 or not stats.first_capture_by_player:
+                continue
+            fc_wins = stats.first_capturer_wins
+            fc_loses = stats.first_capturer_loses
+            total_fc = fc_wins + fc_loses
+            win_rate = 100 * fc_wins / total_fc if total_fc else 0
+            expected = 100 / num_players
+            delta = win_rate - expected
+            delta_str = f"+{delta:.1f}" if delta > 0 else f"{delta:.1f}"
+            lines.append(
+                f"| {board_type} {num_players}p | {fc_wins} | {fc_loses} | "
+                f"{win_rate:.1f}% ({delta_str}% vs expected) |"
+            )
+        lines.append("")
+
+    # Game Tempo/Activity Analysis
+    any_activity_data = any(stats.active_moves_per_game for stats in report.stats_by_config.values())
+    if any_activity_data:
+        lines.append("## 10. Game Activity Analysis")
+        lines.append("")
+        lines.append("*Active moves (excluding skip/no-action moves)*")
+        lines.append("")
+        lines.append("| Config | Avg Total Moves | Avg Active Moves | Activity Rate |")
+        lines.append("|--------|-----------------|------------------|---------------|")
+        for (board_type, num_players), stats in sorted(report.stats_by_config.items()):
+            if stats.total_games == 0 or not stats.active_moves_per_game:
+                continue
+            avg_total = stats.moves_per_game
+            avg_active = sum(stats.active_moves_per_game) / len(stats.active_moves_per_game)
+            activity_rate = 100 * avg_active / avg_total if avg_total else 0
+            lines.append(f"| {board_type} {num_players}p | {avg_total:.1f} | {avg_active:.1f} | {activity_rate:.1f}% |")
+        lines.append("")
+
     # Key Findings
-    lines.append("## 5. Key Findings")
+    lines.append("## 11. Key Findings")
     lines.append("")
 
     # Position advantage analysis
@@ -551,6 +914,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Suppress progress messages",
     )
+    parser.add_argument(
+        "--jsonl",
+        type=Path,
+        nargs="+",
+        help="JSONL files to include in analysis (can specify multiple or use glob patterns)",
+    )
+    parser.add_argument(
+        "--jsonl-dir",
+        type=Path,
+        help="Directory to scan for JSONL files (*.jsonl)",
+    )
     return parser.parse_args(argv)
 
 
@@ -558,14 +932,28 @@ def main(argv: list[str] | None = None) -> int:
     """Main entry point."""
     args = parse_args(argv)
 
-    if not args.data_dir.exists():
-        print(f"Error: Data directory does not exist: {args.data_dir}", file=sys.stderr)
+    # Collect JSONL files from various sources
+    jsonl_files: list[Path] = []
+    if args.jsonl:
+        jsonl_files.extend(args.jsonl)
+    if args.jsonl_dir and args.jsonl_dir.exists():
+        jsonl_files.extend(args.jsonl_dir.glob("*.jsonl"))
+
+    # Check if we have any data sources
+    has_data_dir = args.data_dir.exists()
+    has_jsonl = len(jsonl_files) > 0
+
+    if not has_data_dir and not has_jsonl:
+        print(f"Error: No data sources found. Data directory does not exist: {args.data_dir}", file=sys.stderr)
         return 1
 
     if not args.quiet:
-        print(f"Analyzing data in {args.data_dir}...", file=sys.stderr)
+        if has_data_dir:
+            print(f"Analyzing data in {args.data_dir}...", file=sys.stderr)
+        if has_jsonl:
+            print(f"Including {len(jsonl_files)} JSONL file(s)...", file=sys.stderr)
 
-    report = collect_stats(args.data_dir)
+    report = collect_stats(args.data_dir if has_data_dir else Path("."), jsonl_files if has_jsonl else None)
 
     if report.total_games() == 0:
         print("Error: No game data found", file=sys.stderr)
