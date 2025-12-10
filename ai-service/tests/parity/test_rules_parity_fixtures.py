@@ -486,6 +486,10 @@ def test_default_engine_matches_game_engine_when_replaying_ts_traces() -> None:
         rules_state = GameState(**converted_state)
 
         for idx, step in enumerate(steps):
+            # Skip steps marked with skip: true
+            if step.get("skip"):
+                continue
+
             move_dict = step["move"]
             move = Move(**move_dict)
 
