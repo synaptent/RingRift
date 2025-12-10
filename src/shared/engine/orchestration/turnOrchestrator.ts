@@ -1575,17 +1575,22 @@ export function processTurn(
               ? finalState.players.find((p) => p.playerNumber !== move.player)?.playerNumber
               : undefined,
         };
-      } else if (!isTerritoryPhaseMove) {
-        // Map turn_end to ring_placement for next player
-        const effectivePhase =
-          fsmOrchResult.nextPhase === 'turn_end'
-            ? 'ring_placement'
-            : (fsmOrchResult.nextPhase as GamePhase);
-
-        // Apply FSM-derived state
+      } else {
+        // Apply FSM-derived state for all moves (including territory phase moves).
+        // Per RR-CANON-R073: after territory_processing completes, turn ends and next
+        // player's phase is ring_placement (if ringsInHand > 0) or movement.
+        //
+        // RR-PARITY-FIX-2024-12-10: Previously, territory phase moves (process_territory_region,
+        // no_territory_action) were excluded from FSM state application. This caused 4-player
+        // games to fail turn rotation after no_territory_action because processPostMovePhases
+        // returned early in the forced_elimination check block even when phaseAfterTerritory
+        // was turn_end. The FSM correctly computes the next player/phase, so apply it always.
+        //
+        // Note: computeFSMOrchestration already resolves 'turn_end' to the actual phase
+        // (ring_placement/movement), so we use the resolved phase directly.
         finalState = {
           ...finalState,
-          currentPhase: effectivePhase,
+          currentPhase: fsmOrchResult.nextPhase as GamePhase,
           currentPlayer: fsmOrchResult.nextPlayer,
         };
       }
