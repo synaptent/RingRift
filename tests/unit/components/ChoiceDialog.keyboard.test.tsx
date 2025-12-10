@@ -155,4 +155,34 @@ describe('ChoiceDialog keyboard + cancel interactions', () => {
     expect(firstFocusSpy).toHaveBeenCalled();
     firstFocusSpy.mockRestore();
   });
+
+  it('traps focus with Shift+Tab from first focusable back to last', async () => {
+    render(
+      <ChoiceDialog
+        choice={lineOrderChoice}
+        choiceViewModel={undefined}
+        deadline={Date.now() + 12_000}
+        timeRemainingMs={12_000}
+        isServerCapped={false}
+        onSelectOption={jest.fn()}
+        onCancel={jest.fn()}
+      />
+    );
+
+    const dialog = screen.getByRole('dialog');
+    const optionButtons = screen.getAllByRole('option');
+    const cancelButton = screen.getByText(/Cancel/i);
+
+    optionButtons[0].focus();
+    expect(document.activeElement).toBe(optionButtons[0]);
+
+    const cancelFocusSpy = jest.spyOn(cancelButton, 'focus');
+
+    await act(async () => {
+      fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    });
+
+    expect(cancelFocusSpy).toHaveBeenCalled();
+    cancelFocusSpy.mockRestore();
+  });
 });

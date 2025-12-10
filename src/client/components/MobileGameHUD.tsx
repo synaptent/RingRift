@@ -281,6 +281,7 @@ export function MobileGameHUD({
   timeControl: _timeControl,
   isLocalSandboxOnly = false,
   onShowBoardControls,
+  onPlayerTap,
   rulesUxContext,
 }: MobileGameHUDProps) {
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
@@ -514,6 +515,13 @@ export function MobileGameHUD({
     setExpandedPlayerId((prev) => (prev === playerId ? null : playerId));
   };
 
+  const handlePlayerTap = (player: PlayerViewModel) => {
+    togglePlayerExpand(player.id);
+    if (onPlayerTap) {
+      onPlayerTap(player);
+    }
+  };
+
   return (
     <div className="space-y-2" data-testid="mobile-game-hud">
       {/* Local sandbox banner (compact) */}
@@ -640,7 +648,7 @@ export function MobileGameHUD({
           <button
             key={player.id}
             className="w-full text-left"
-            onClick={() => togglePlayerExpand(player.id)}
+            onClick={() => handlePlayerTap(player)}
             aria-expanded={expandedPlayerId === player.id}
           >
             <MobilePlayerRow player={player} isExpanded={expandedPlayerId === player.id} />

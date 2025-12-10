@@ -80,6 +80,7 @@ from app.training.generate_data import create_initial_state
 from app.game_engine import BoardType
 from app.rules.serialization import serialize_game_state
 from app.rules.history_validation import validate_canonical_history_for_game
+from app.rules import global_actions as ga
 
 
 @dataclass
@@ -89,6 +90,10 @@ class StateSummary:
     current_phase: str
     game_status: str
     state_hash: str
+    # Optional per-state ANM classification for the active player. This is
+    # populated for both Python and TS summaries whenever the underlying
+    # harness exposes an ANM flag.
+    is_anm: Optional[bool] = None
 
 
 @dataclass
@@ -424,6 +429,7 @@ def summarize_python_state(db: GameReplayDB, game_id: str, move_index: int) -> S
             state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
         ),
         state_hash=_compute_state_hash(state),
+        is_anm=ga.is_anm_state(state),
     )
 
 
@@ -461,10 +467,11 @@ def summarize_python_initial_state(db: GameReplayDB, game_id: str) -> StateSumma
             state.game_status.value if hasattr(state.game_status, "value") else str(state.game_status)
         ),
         state_hash=_compute_state_hash(state),
+        is_anm=ga.is_anm_state(state),
     )
 
 
-def classify_game_structure(db: GameReplayDB, game_id: str) -> Tuple[str, str]:
+def classify_game_structure(db: GameReplayDB, game_id: str) -> Tuple[str, Optional[str]]:
     """Classify game recording structure.
 
     Returns (structure, reason) where structure is one of:
@@ -626,12 +633,14 @@ def run_ts_replay(
         if kind == "ts-replay-initial":
             total_ts_moves = int(payload.get("totalRecordedMoves", 0))
             summary = payload.get("summary") or {}
+            is_anm_ts = summary.get("is_anm") if isinstance(summary, dict) else None
             initial_summary = StateSummary(
                 move_index=0,
                 current_player=summary.get("currentPlayer"),
                 current_phase=summary.get("currentPhase"),
                 game_status=_canonicalize_status(summary.get("gameStatus")),
                 state_hash=summary.get("stateHash"),
+                is_anm=is_anm_ts,
             )
             meta = TsEventMetadata(
                 ts_k=0,
@@ -651,12 +660,14 @@ def run_ts_replay(
             except Exception:
                 continue
             summary = payload.get("summary") or {}
+            is_anm_ts = summary.get("is_anm") if isinstance(summary, dict) else None
             post_move_summaries[k] = StateSummary(
                 move_index=k,
                 current_player=summary.get("currentPlayer"),
                 current_phase=summary.get("currentPhase"),
                 game_status=_canonicalize_status(summary.get("gameStatus")),
                 state_hash=summary.get("stateHash"),
+                is_anm=is_anm_ts,
             )
 
             db_move_index_raw = payload.get("db_move_index")
@@ -703,12 +714,14 @@ def run_ts_replay(
             # i.e. the same indexing used for ts-replay-step.
             k = db_move_index_int + 1
             summary = payload.get("summary") or {}
+            is_anm_ts = summary.get("is_anm") if isinstance(summary, dict) else None
             post_bridge_summaries[k] = StateSummary(
                 move_index=k,
                 current_player=summary.get("currentPlayer"),
                 current_phase=summary.get("currentPhase"),
                 game_status=_canonicalize_status(summary.get("gameStatus")),
                 state_hash=summary.get("stateHash"),
+                is_anm=is_anm_ts,
             )
 
             view = summary.get("view") if isinstance(summary, dict) else None
@@ -880,6 +893,16 @@ def dump_state_bundle(
         "python_states": {str(k): py_states.get(k) for k in ks},
         "ts_states": {str(k): ts_states.get(k) for k in ks},
     }
+    # Thread through ANM classification at the divergence step when available
+    # so downstream diff tooling can inspect ANM parity alongside structural
+    # state differences. This is intentionally small and focused: it does not
+    # attempt to recompute ANM for every k from JSON alone.
+    if result.diverged_at is not None:
+        anm_entry: Dict[str, Optional[bool]] = {
+            "is_anm_ts": getattr(result.ts_summary, "is_anm", None) if result.ts_summary is not None else None,
+            "is_anm_py": getattr(result.python_summary, "is_anm", None) if result.python_summary is not None else None,
+        }
+        bundle["anm_state"] = {str(result.diverged_at): anm_entry}
     if meta_for_ks:
         bundle["ts_event_metadata"] = meta_for_ks
 
@@ -982,6 +1005,19 @@ def check_game_parity(
             ts_summary_at_diverge = ts_initial
             mismatch_kinds = init_mismatches
             mismatch_context = "initial_state"
+        else:
+            # Optional ANM parity check at the initial state when TS exposes
+            # an ANM flag. This is rare (initial states should generally not be
+            # ANM), but we keep the logic consistent with per-move checks.
+            if ts_initial.is_anm is not None:
+                py_is_anm = py_initial.is_anm
+                ts_is_anm = ts_initial.is_anm
+                if py_is_anm is None or bool(py_is_anm) != bool(ts_is_anm):
+                    diverged_at = 0
+                    py_summary_at_diverge = py_initial
+                    ts_summary_at_diverge = ts_initial
+                    mismatch_kinds = ["anm_state"]
+                    mismatch_context = "initial_state"
 
     # Then compare post-move (or post-bridge) states:
     #   TS k ↔ Python get_state_at_move(k-1)
@@ -1010,6 +1046,11 @@ def check_game_parity(
                 step_mismatches.append("current_phase")
             if py_summary.game_status != ts_summary.game_status:
                 step_mismatches.append("game_status")
+            # ANM parity: when TS exposes an ANM flag for this k, compare it
+            # against Python's ANM(state) classification for the same step.
+            if ts_summary.is_anm is not None:
+                if py_summary.is_anm is None or bool(py_summary.is_anm) != bool(ts_summary.is_anm):
+                    step_mismatches.append("anm_state")
             # Treat any difference in the canonical state hash as a semantic
             # divergence. The hash is derived from the shared hash_game_state
             # fingerprint and should match whenever board geometry and core
@@ -1136,6 +1177,9 @@ def trace_game(
             init_dims.append("game_status")
         if py_initial.state_hash != ts_initial.state_hash:
             init_dims.append("state_hash")
+        if ts_initial.is_anm is not None:
+            if py_initial.is_anm is None or bool(py_initial.is_anm) != bool(ts_initial.is_anm):
+                init_dims.append("anm_state")
 
     print(
         "TRACE "
@@ -1185,6 +1229,9 @@ def trace_game(
                 dims.append("game_status")
             if py_summary.state_hash != ts_summary.state_hash:
                 dims.append("state_hash")
+            if ts_summary.is_anm is not None:
+                if py_summary.is_anm is None or bool(py_summary.is_anm) != bool(ts_summary.is_anm):
+                    dims.append("anm_state")
         elif py_summary is None and ts_summary is not None:
             dims.append("python_missing_step")
         elif py_summary is not None and ts_summary is None:

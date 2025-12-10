@@ -124,12 +124,30 @@ Fixtures are organized by source database prefix:
 - ✅ Multi-player games (2p, 3p, 4p)
 - ✅ All three board types
 - ✅ Game end states
+- ✅ ANM global-actions semantics for core scenarios (SCEN‑01..06) via:
+  - `tests/parity/test_anm_global_actions_parity.py`
+  - `tests/invariants/test_anm_and_termination_invariants.py`
 
 ### Areas Needing More Coverage
 
 - ⚠️ **Territory processing**: Only 5 fixtures with `process_territory_region` moves
 - ⚠️ **Forced elimination**: Only 4 fixtures with FE moves
 - ⚠️ **LPS (Last Player Standing) rounds**: Not explicitly tracked
+
+### Canonical Gating
+
+- ANM state classification is now part of the TS↔Python replay parity harness:
+  - TS emits `is_anm` per step from `scripts/selfplay-db-ts-replay.ts`.
+  - Python mirrors this via `app.rules.global_actions.is_anm_state`.
+  - Any mismatch is recorded as an `anm_state` semantic divergence.
+- Canonical self-play gating (`scripts/generate_canonical_selfplay.py`) treats
+  ANM as a first-class guardrail:
+  - Runs the ANM parity and invariant suites:
+    - `tests/parity/test_anm_global_actions_parity.py`
+    - `tests/invariants/test_anm_and_termination_invariants.py`
+  - Exposes an `anm_invariants` section and an `anm_ok` flag in the gate summary.
+  - Requires `anm_ok == true` (in addition to parity/history/FE gates) for
+    `canonical_ok == true`.
 
 ### Future Generation Commands
 

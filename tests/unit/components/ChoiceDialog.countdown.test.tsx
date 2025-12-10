@@ -81,6 +81,25 @@ describe('ChoiceDialog countdown + server cap styling', () => {
     expect(screen.getByText(/Choice timeout active/i)).toBeInTheDocument();
   });
 
+  it('marks normal severity when plenty of time remains', () => {
+    const choice = buildLineRewardChoice();
+
+    render(
+      <ChoiceDialog
+        choice={choice}
+        choiceViewModel={undefined}
+        deadline={Date.now() + 20_000}
+        timeRemainingMs={15_000}
+        isServerCapped={false}
+        onSelectOption={jest.fn()}
+      />
+    );
+
+    const countdown = screen.getByTestId('choice-countdown');
+    expect(countdown).toHaveAttribute('data-severity', 'normal');
+    expect(countdown).toHaveTextContent('15s');
+  });
+
   it('clamps progress bar between 0% and 100%', () => {
     const choice = buildLineRewardChoice();
 

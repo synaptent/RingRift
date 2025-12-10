@@ -5,7 +5,7 @@
 > - Canonical list of current, code-verified issues and gaps.
 > - Not a rules or lifecycle SSoT; for rules semantics defer to `ringrift_complete_rules.md` + `RULES_CANONICAL_SPEC.md` + shared TS engine, and for lifecycle semantics defer to `docs/CANONICAL_ENGINE_API.md` and shared WebSocket types/schemas.
 
-**Last Updated:** December 4, 2025
+**Last Updated:** December 10, 2025
 **Status:** Code-verified assessment based on actual implementation
 **Related Documents:** [CURRENT_STATE_ASSESSMENT.md](./CURRENT_STATE_ASSESSMENT.md) · [TODO.md](./TODO.md) · [STRATEGIC_ROADMAP.md](./STRATEGIC_ROADMAP.md) · [docs/PARITY_SEED_TRIAGE.md](./docs/PARITY_SEED_TRIAGE.md)
 
@@ -654,6 +654,30 @@ These issues have been addressed but are kept here for context:
   the player controls. This addresses a semantic divergence between TS (landing
   position constraint) and Python (any stack) engines. The TS interpretation is
   now canonical. Python engine update pending.
+- **Python Territory Region Filtering Fix (Dec 10, 2025)** –
+  Fixed non-canonical territory region filtering in Python engine
+  (`ai-service/app/game_engine.py:2882-2895`). The previous implementation
+  incorrectly filtered regions by `controlling_player == player_number`, but
+  per RR-CANON-R143, the ONLY requirement for territory region processability
+  is the self-elimination prerequisite (player has stacks outside the region).
+  The border color (`controllingPlayer`) determines which markers get collapsed
+  during processing, NOT who can process the region. Both TS and Python engines
+  now correctly use only the self-elimination check per canonical rules.
+- **ANM State Parity (Dec 10, 2025 – OPEN)** –
+  After regenerating canonical DBs with the territory filtering fix, parity
+  checks show `dims=anm_state` divergences where Python and TS disagree on
+  whether the current state is ANM (Active No Moves). The divergences occur
+  despite matching state hashes and do NOT cause FSM validation failures in
+  TS replay. This suggests the divergence is in the ANM classification logic
+  rather than actual game state. Investigation pending; this is lower priority
+  since FSM validation passes and game outcomes remain correct.
+- **4-Player Rotation Parity (Dec 10, 2025 – OPEN)** –
+  Multi-player games (especially 4P) show player rotation divergences where
+  Python skips a player that TS believes is still active. Observed at k=310
+  in 4P games where Python rotates to player 2 but TS expects player 1. The
+  affected player had a `forced_elimination` move earlier but is still taking
+  turns. Investigation pending; may be related to LPS rotation logic or ANM
+  round tracking.
 - **Recording Format Enhancements Schema v6 (Dec 4, 2025)** –
   Enhanced game history entries with available moves enumeration and engine
   diagnostics to support deeper parity debugging:

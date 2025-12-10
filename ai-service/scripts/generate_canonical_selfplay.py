@@ -217,6 +217,84 @@ def run_fe_territory_fixtures(board_type: str) -> bool:
     return True
 
 
+def run_anm_invariants(board_type: str) -> Dict[str, Any]:
+    """
+    Run the ANM parity + invariant tests for the given board_type.
+
+    This wires the existing ANM-focused pytest suites into the canonical
+    self-play gate:
+
+      - tests/parity/test_anm_global_actions_parity.py
+      - tests/invariants/test_anm_and_termination_invariants.py
+
+    The implementation is intentionally small and conservative: it reports a
+    boolean pass/fail flag and, when possible, a best-effort estimate of the
+    total test count and failures by parsing pytest's summary line.
+    """
+    test_args = [
+        "tests/parity/test_anm_global_actions_parity.py",
+        "tests/invariants/test_anm_and_termination_invariants.py",
+        "-q",
+    ]
+    cmd = [sys.executable, "-m", "pytest", *test_args]
+    proc = _run_cmd(cmd, cwd=AI_SERVICE_ROOT)
+
+    output = (proc.stdout or "") + (proc.stderr or "")
+    num_tests: int | None = None
+    num_failed: int | None = None
+
+    # Best-effort parse of pytest's final summary line, e.g.:
+    #   "6 passed in 0.03s"
+    #   "5 passed, 1 failed in 0.10s"
+    for line in output.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if "passed" in text and " in " in text:
+            tokens = text.replace(",", " ").split()
+            passed_count: int | None = None
+            failed_count: int | None = None
+            for idx, token in enumerate(tokens):
+                if token == "passed":
+                    try:
+                        passed_count = int(tokens[idx - 1])
+                    except (ValueError, IndexError):
+                        passed_count = None
+                elif token == "failed":
+                    try:
+                        failed_count = int(tokens[idx - 1])
+                    except (ValueError, IndexError):
+                        failed_count = None
+            if passed_count is not None:
+                if failed_count is None:
+                    failed_count = 0
+                num_tests = passed_count + failed_count
+                num_failed = failed_count
+            break
+
+    passed_flag = proc.returncode == 0
+
+    result: Dict[str, Any] = {
+        "board_type": board_type,
+        "passed": bool(passed_flag),
+        "returncode": int(proc.returncode),
+    }
+    if num_tests is not None:
+        result["num_tests"] = int(num_tests)
+    if num_failed is not None:
+        result["num_failed"] = int(num_failed)
+
+    # On failure, include a small, truncated preview of pytest output to make
+    # debugging easier without bloating the canonical gate summary.
+    if not passed_flag and output:
+        lines = output.strip().splitlines()
+        if lines:
+            preview = "\n".join(lines[:20])
+            result["output_preview"] = preview
+
+    return result
+
+
 def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -326,12 +404,15 @@ def main(argv: List[str] | None = None) -> int:
         )
 
     fe_territory_fixtures_ok = run_fe_territory_fixtures(board_type)
+    anm_invariants = run_anm_invariants(board_type)
+    anm_ok = bool(anm_invariants.get("passed"))
 
     canonical_ok = (
         base_ok
         and games_checked > 0
         and non_canonical == 0
         and fe_territory_fixtures_ok
+        and anm_ok
     )
 
     summary: Dict[str, Any] = {
@@ -342,6 +423,8 @@ def main(argv: List[str] | None = None) -> int:
         "parity_gate": parity_summary,
         "canonical_history": canonical_history,
         "fe_territory_fixtures_ok": bool(fe_territory_fixtures_ok),
+        "anm_invariants": anm_invariants,
+        "anm_ok": bool(anm_ok),
         "canonical_ok": bool(canonical_ok),
     }
 

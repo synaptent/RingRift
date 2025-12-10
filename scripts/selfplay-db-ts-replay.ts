@@ -44,6 +44,7 @@ import {
 import { serializeGameState } from '../src/shared/engine/contracts/serialization';
 import { validateMoveWithFSM, computeFSMOrchestration } from '../src/shared/engine/fsm/FSMAdapter';
 import { getValidMoves } from '../src/shared/engine/orchestration/turnOrchestrator';
+import { isANMState } from '../src/shared/engine/globalActions';
 import { connectDatabase, disconnectDatabase } from '../src/server/database/connection';
 import type { PrismaClient } from '@prisma/client';
 import { CanonicalReplayEngine } from '../src/shared/replay/CanonicalReplayEngine';
@@ -615,6 +616,11 @@ function summarizeState(label: string, state: GameState): Record<string, unknown
     currentPhase: state.currentPhase,
     gameStatus: state.gameStatus,
     moveHistoryLength: state.moveHistory.length,
+    // Per-state ANM classification for the active player. This mirrors the
+    // Python is_anm_state() helper and is consumed by the TS↔Python replay
+    // parity harness when available, but remains purely additive metadata for
+    // other tools that consume these summaries.
+    is_anm: isANMState(state),
     // Use the compact hash that matches Python's _compute_state_hash for
     // cross-engine parity checks and GameReplayDB history entries.
     stateHash: hashGameStateSHA256(state),

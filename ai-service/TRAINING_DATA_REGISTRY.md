@@ -4,11 +4,11 @@ This document tracks the provenance and canonical status of all self-play databa
 
 ## Data Classification
 
-| Status                  | Meaning                                                                                                                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **canonical**           | Generated and gated via `scripts/generate_canonical_selfplay.py` with `canonical_ok == true` in the gate summary JSON (for supported boards this also implies FE/territory fixtures and canonical history/parity gate have all passed) |
-| **legacy_noncanonical** | Pre-dates 7-phase/FE/canonical-history fixes; **DO NOT** use for new training                                                                                                                                                         |
-| **pending_gate**        | Not yet validated; requires `generate_canonical_selfplay.py` (or equivalent gate) before any training use                                                                                                                             |
+| Status                  | Meaning                                                                                                                                                                                                                                                                                            |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **canonical**           | Generated and gated via `scripts/generate_canonical_selfplay.py` with `canonical_ok == true` in the gate summary JSON (for supported boards this also implies a passing TS↔Python parity gate, canonical phase history, FE/territory fixtures, and ANM invariants: `anm_ok == true`)              |
+| **legacy_noncanonical** | Pre-dates 7-phase/FE/canonical-history fixes; **DO NOT** use for new training                                                                                                                                                                                                                    |
+| **pending_gate**        | Not yet validated; requires `generate_canonical_selfplay.py` (or equivalent gate) before any training use                                                                                                                                                                                        |
 
 ---
 
@@ -104,9 +104,12 @@ Once canonical self-play DBs are generated and exported, retrain these models:
    - for supported board types (currently `square8` and `hexagonal`), this in turn implies:
      - `parity_gate.passed_canonical_parity_gate == true`, and
      - `canonical_history.games_checked > 0` and `canonical_history.non_canonical_games == 0`, and
-     - `fe_territory_fixtures_ok == true`.
+     - `fe_territory_fixtures_ok == true`, and
+     - `anm_ok == true`, where ANM parity + invariants are enforced via:
+       - `tests/parity/test_anm_global_actions_parity.py`
+       - `tests/invariants/test_anm_and_termination_invariants.py`
 
-   For other board types, `fe_territory_fixtures_ok` may be `true` by construction until dedicated FE/territory fixtures are added; once such fixtures exist, `canonical_ok` will also encode their success.
+   For other board types, `fe_territory_fixtures_ok` and `anm_ok` may be `true` by construction until dedicated FE/territory/ANM fixtures are added; once such fixtures exist, `canonical_ok` will also encode their success.
 
    Older flows that called `run_canonical_selfplay_parity_gate.py` directly are
    considered **v1 gating** and SHOULD be migrated to the new script the next
