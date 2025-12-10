@@ -4,7 +4,6 @@ import {
   LineInfo,
   Position,
   RingStack,
-  BOARD_CONFIGS,
   positionToString,
   stringToPosition,
 } from '../types/game';
@@ -81,9 +80,19 @@ export function findAllLines(board: BoardState, numPlayers: number = 3): LineInf
  * Detect all marker lines on the board that belong to a specific player.
  * Thin convenience wrapper over {@link findAllLines} used by hosts that
  * want a player-filtered view without re-implementing geometry.
+ *
+ * @param board The current board state
+ * @param playerNumber The player to find lines for
+ * @param numPlayers Number of players in the game. Required for determining
+ *   the correct line length threshold. Defaults to 3 (uses base threshold)
+ *   for backward compatibility, but callers should pass the actual value.
  */
-export function findLinesForPlayer(board: BoardState, playerNumber: number): LineInfo[] {
-  return findAllLines(board).filter((line) => line.player === playerNumber);
+export function findLinesForPlayer(
+  board: BoardState,
+  playerNumber: number,
+  numPlayers: number = 3
+): LineInfo[] {
+  return findAllLines(board, numPlayers).filter((line) => line.player === playerNumber);
 }
 
 function getLineDirections(boardType: string): Position[] {

@@ -61,19 +61,21 @@ describe('FSM Decision Parity', () => {
   describe('FSMDecisionSurface population in ProcessTurnResult', () => {
     it('should populate fsmDecisionSurface when FSM returns pendingDecisionType', () => {
       // Create a state in line_processing phase with formed lines
-      const state = createGame();
+      // Per RR-CANON-R120: square8 2-player requires 4-position lines
+      const state = createInitialGameState('test-game', 'square8', createPlayers(2), timeControl);
       state.currentPhase = 'line_processing';
 
-      // Add formed lines to trigger line_order_required
+      // Add formed lines to trigger line_order_required (4 positions for 2-player)
       const formedLines = [
         {
           positions: [
             { x: 0, y: 0 },
             { x: 0, y: 1 },
             { x: 0, y: 2 },
+            { x: 0, y: 3 },
           ],
           player: 1,
-          length: 3,
+          length: 4,
           direction: { x: 0, y: 1 },
         },
       ];
@@ -83,6 +85,7 @@ describe('FSM Decision Parity', () => {
       markers.set('0,0', { type: 'marker', player: 1, position: { x: 0, y: 0 } });
       markers.set('0,1', { type: 'marker', player: 1, position: { x: 0, y: 1 } });
       markers.set('0,2', { type: 'marker', player: 1, position: { x: 0, y: 2 } });
+      markers.set('0,3', { type: 'marker', player: 1, position: { x: 0, y: 3 } });
 
       state.board = {
         ...state.board,
@@ -272,7 +275,8 @@ describe('FSM Decision Parity', () => {
     });
 
     it('should include fsmDecisionSurface when FSM has decision surface data', () => {
-      const state = createGame();
+      // Per RR-CANON-R120: square8 2-player requires 4-position lines
+      const state = createInitialGameState('test-game', 'square8', createPlayers(2), timeControl);
 
       // Setup state for a decision scenario
       state.currentPhase = 'line_processing';
@@ -282,9 +286,10 @@ describe('FSM Decision Parity', () => {
             { x: 0, y: 0 },
             { x: 0, y: 1 },
             { x: 0, y: 2 },
+            { x: 0, y: 3 },
           ],
           player: 1,
-          length: 3,
+          length: 4,
           direction: { x: 0, y: 1 },
         },
       ];
@@ -293,6 +298,7 @@ describe('FSM Decision Parity', () => {
       markers.set('0,0', { type: 'marker', player: 1, position: { x: 0, y: 0 } });
       markers.set('0,1', { type: 'marker', player: 1, position: { x: 0, y: 1 } });
       markers.set('0,2', { type: 'marker', player: 1, position: { x: 0, y: 2 } });
+      markers.set('0,3', { type: 'marker', player: 1, position: { x: 0, y: 3 } });
       state.board.markers = markers;
 
       // Process the line

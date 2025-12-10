@@ -419,12 +419,41 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
 
 **Goal:** Full support for 3 and 4 player games
 
-### 13.1 - Rules Verification
+### 13.1 - Rules Verification ✅ COMPLETE (2025-12-10)
 
-- [ ] Verify all rules for 3-4 player games
-- [ ] Add contract vectors for multi-player scenarios
-- [ ] Test victory conditions with multiple players
-- [ ] Verify territory calculations
+- [x] Verify all rules for 3-4 player games (RR-CANON-R120 line length fix)
+- [x] Add contract vectors for multi-player scenarios (`multiplayer_line.vectors.json`)
+- [x] Test victory conditions with multiple players (thresholds verified)
+- [x] Verify territory calculations (player-count-aware thresholds confirmed)
+
+**Key fixes:**
+
+- Fixed `BoardManager.find_all_lines()` to use `get_effective_line_length()` (player-count-aware)
+- Created 6 contract vectors for 2/3/4-player line scenarios
+- Updated 11 TS tests to use correct player counts for line threshold testing
+- Fixed Python `test_line_length_thresholds.py` to match RR-CANON-R120
+
+**Known Issue - 4-Player Parity Bug (2025-12-10):**
+
+A TS/Python parity divergence exists in 4-player games involving `no_territory_action` turn rotation:
+
+| Aspect               | Details                                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Symptom**          | After `no_territory_action` moves, TS fails to rotate to next player                                                                         |
+| **Divergence Point** | Move 76-91 (varies by game)                                                                                                                  |
+| **Root Cause**       | `processPostMovePhases` returns early in `forced_elimination` check without rotating player; FSM state not applied for territory phase moves |
+| **Affected Files**   | `turnOrchestrator.ts:1561-1615`, `FSMAdapter.ts:1710-1732`                                                                                   |
+| **2-Player Status**  | PASSING (0 mismatches, 27 cases)                                                                                                             |
+| **4-Player Status**  | FAILING (requires deeper FSM/orchestration refactor)                                                                                         |
+
+**Technical Analysis:**
+
+- The FSM correctly computes `nextPlayer` and `nextPhase` for `no_territory_action` (via `computeFSMOrchestration`)
+- However, `processPostMovePhases` can return early at line 1408 (`forced_elimination` check) without applying player rotation
+- The condition `!isTerritoryPhaseMove` at line 1562 prevents FSM state application for territory moves
+- Fix attempts caused regressions with `process_territory_region` (FSMAdapter forces `turn_end` even when more regions exist)
+
+**Recommendation:** Address as part of Wave 13.3 (AI for Multi-Player) or create dedicated Wave 13.1b for FSM orchestration refactor.
 
 ### 13.2 - UI Adaptations
 

@@ -574,7 +574,8 @@ function deriveLineProcessingState(
   moveHint?: Move
 ): LineProcessingState {
   // Detect lines from current board state
-  const lines: LineInfo[] = findLinesForPlayer(state.board, player);
+  // Per RR-CANON-R120: Pass numPlayers so findLinesForPlayer uses the correct line length threshold
+  const lines: LineInfo[] = findLinesForPlayer(state.board, player, state.players.length);
 
   const detectedLines: DetectedLine[] = lines.map((line: LineInfo) => ({
     positions: line.positions,

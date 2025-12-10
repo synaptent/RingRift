@@ -102,14 +102,14 @@ class TestHeuristicAI(unittest.TestCase):
         )
 
     def test_evaluate_line_connectivity(self):
-        """Test line connectivity evaluator with CMA-ES tuned weights.
+        """Test line connectivity evaluator produces meaningful scores.
 
-        CMA-ES optimization determined that gaps (markers at distance 2 with
-        no adjacent marker) are strategically weak and should be penalized.
-        This test verifies the evaluator produces a non-zero score that
-        reflects the tuned gap penalty.
+        Markers at distance 2 with an empty gap between them are scored
+        based on WEIGHT_GAP_POTENTIAL. The sign of the weight can change
+        during CMA-ES tuning, so we only verify the evaluator produces
+        a non-zero score for this configuration.
         """
-        # Setup: Two markers with a gap of 1
+        # Setup: Two markers with a gap of 1 (distance 2 apart)
         self.game_state.board.markers["3,3"] = MarkerInfo(
             player=1,
             position=Position(x=3, y=3),
@@ -123,11 +123,9 @@ class TestHeuristicAI(unittest.TestCase):
 
         score = self.ai._evaluate_line_connectivity(self.game_state)
 
-        # CMA-ES tuned WEIGHT_GAP_POTENTIAL to be negative (-0.43),
-        # indicating gaps are penalized. The score should be negative.
-        # WEIGHT_LINE_CONNECTIVITY (5.67) amplifies this.
-        self.assertNotEqual(score, 0)
-        self.assertLess(score, 0, "Gap potential is penalized by CMA-ES tuned weights")
+        # The evaluator should produce a non-zero score for markers with gaps.
+        # The sign depends on WEIGHT_GAP_POTENTIAL which can change during tuning.
+        self.assertNotEqual(score, 0, "Gap configuration should produce non-zero score")
 
     def test_evaluate_territory_safety(self):
         # Setup: My marker near opponent stack

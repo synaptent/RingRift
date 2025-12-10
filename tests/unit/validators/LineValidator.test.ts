@@ -246,8 +246,12 @@ describe('LineValidator', () => {
     });
 
     it('should reject MINIMUM_COLLAPSE for exact length line (3-in-a-row)', () => {
-      const state = createMockState();
-      // Create a line of exactly 3 (the threshold for 2-player square8)
+      // Per RR-CANON-R120: square8 3-4p has line length 3, 2p has line length 4.
+      // Use 3 players to test exact-length rejection with 3-position lines.
+      const state = createMockState({
+        players: [{ playerNumber: 1 }, { playerNumber: 2 }, { playerNumber: 3 }],
+      });
+      // Create a line of exactly 3 (the threshold for 3-4 player square8)
       state.board.formedLines = [
         createFormedLine({
           player: 1,
@@ -315,7 +319,11 @@ describe('LineValidator', () => {
     });
 
     it('should reject MINIMUM_COLLAPSE with position not in line', () => {
-      const state = createMockState();
+      // Per RR-CANON-R120: square8 3-4p threshold is 3.
+      // Use 3 players to test with 3-position MINIMUM_COLLAPSE.
+      const state = createMockState({
+        players: [{ playerNumber: 1 }, { playerNumber: 2 }, { playerNumber: 3 }],
+      });
       const action: ChooseLineRewardAction = {
         type: 'choose_line_reward',
         playerId: 1,
@@ -324,7 +332,7 @@ describe('LineValidator', () => {
         collapsedPositions: [
           { x: 0, y: 0 },
           { x: 1, y: 0 },
-          { x: 99, y: 99 }, // Not part of the line (need 3 positions for square8)
+          { x: 99, y: 99 }, // Not part of the line (need 3 positions for 3-4p square8)
         ],
       };
 
@@ -336,7 +344,11 @@ describe('LineValidator', () => {
     });
 
     it('should reject MINIMUM_COLLAPSE with non-consecutive positions', () => {
-      const state = createMockState();
+      // Per RR-CANON-R120: square8 3-4p threshold is 3.
+      // Use 3 players to test with 3-position MINIMUM_COLLAPSE.
+      const state = createMockState({
+        players: [{ playerNumber: 1 }, { playerNumber: 2 }, { playerNumber: 3 }],
+      });
       const action: ChooseLineRewardAction = {
         type: 'choose_line_reward',
         playerId: 1,
@@ -347,7 +359,7 @@ describe('LineValidator', () => {
           // Skip { x: 1, y: 0 }
           { x: 2, y: 0 },
           { x: 3, y: 0 },
-        ], // 3 positions for square8 threshold, but non-consecutive
+        ], // 3 positions for square8 3-4p threshold, but non-consecutive
       };
 
       const result = validateChooseLineReward(state, action);
@@ -358,7 +370,11 @@ describe('LineValidator', () => {
     });
 
     it('should accept valid MINIMUM_COLLAPSE with consecutive positions', () => {
-      const state = createMockState();
+      // Per RR-CANON-R120: square8 3-4p threshold is 3.
+      // Use 3 players to test MINIMUM_COLLAPSE with 3 positions.
+      const state = createMockState({
+        players: [{ playerNumber: 1 }, { playerNumber: 2 }, { playerNumber: 3 }],
+      });
       const action: ChooseLineRewardAction = {
         type: 'choose_line_reward',
         playerId: 1,
@@ -368,7 +384,7 @@ describe('LineValidator', () => {
           { x: 1, y: 0 },
           { x: 2, y: 0 },
           { x: 3, y: 0 },
-        ], // 3 consecutive positions for square8 threshold
+        ], // 3 consecutive positions for square8 3-4p threshold
       };
 
       const result = validateChooseLineReward(state, action);
@@ -377,7 +393,11 @@ describe('LineValidator', () => {
     });
 
     it('should accept MINIMUM_COLLAPSE at start of line', () => {
-      const state = createMockState();
+      // Per RR-CANON-R120: square8 3-4p threshold is 3.
+      // Use 3 players to test MINIMUM_COLLAPSE with 3 positions.
+      const state = createMockState({
+        players: [{ playerNumber: 1 }, { playerNumber: 2 }, { playerNumber: 3 }],
+      });
       const action: ChooseLineRewardAction = {
         type: 'choose_line_reward',
         playerId: 1,
@@ -387,7 +407,7 @@ describe('LineValidator', () => {
           { x: 0, y: 0 },
           { x: 1, y: 0 },
           { x: 2, y: 0 },
-        ], // 3 consecutive positions at start for square8 threshold
+        ], // 3 consecutive positions at start for square8 3-4p threshold
       };
 
       const result = validateChooseLineReward(state, action);
@@ -396,13 +416,17 @@ describe('LineValidator', () => {
     });
 
     it('should handle positions in different order (sorts before checking)', () => {
-      const state = createMockState();
+      // Per RR-CANON-R120: square8 3-4p threshold is 3.
+      // Use 3 players to test MINIMUM_COLLAPSE with 3 positions.
+      const state = createMockState({
+        players: [{ playerNumber: 1 }, { playerNumber: 2 }, { playerNumber: 3 }],
+      });
       const action: ChooseLineRewardAction = {
         type: 'choose_line_reward',
         playerId: 1,
         lineIndex: 0,
         selection: 'MINIMUM_COLLAPSE',
-        // Provide 3 positions in reverse order - should still work (square8 threshold)
+        // Provide 3 positions in reverse order - should still work (square8 3-4p threshold)
         collapsedPositions: [
           { x: 3, y: 0 },
           { x: 1, y: 0 },
