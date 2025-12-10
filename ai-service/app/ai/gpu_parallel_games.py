@@ -309,7 +309,7 @@ def apply_placement_moves_batch(
         if not active_mask[g]:
             continue
 
-        if state.moves_per_game[g] == 0:
+        if moves.moves_per_game[g] == 0:
             continue
 
         # Get the selected move for this game
