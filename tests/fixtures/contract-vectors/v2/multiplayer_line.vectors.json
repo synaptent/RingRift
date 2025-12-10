@@ -189,12 +189,13 @@
       "expectedOutput": {
         "status": "complete",
         "assertions": {
-          "currentPlayer": 2,
-          "currentPhase": "ring_placement",
+          "currentPlayer": 1,
+          "currentPhase": "line_processing",
           "gameStatus": "active",
-          "markerCount": 2
+          "markerCount": 1
         }
-      }
+      },
+      "notes": "Per RR-CANON-R092: intermediate cell (3,2) with own marker gets removed and collapsed. Only departure marker at (3,3) remains. Phase is line_processing (not ring_placement) to check for line formation."
     },
     {
       "id": "multiplayer.line.4marker_line_in_2p",
