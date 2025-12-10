@@ -1308,13 +1308,19 @@ def get_expanded_recovery_moves(state: GameState, player: int) -> List[Move]:
                 )
 
         elif target.recovery_mode == "fallback":
-            # Fallback repositioning
-            moves.append(
-                Move(
-                    recoveryMode="fallback",
-                    **base_kwargs,
+            # Fallback repositioning: costs 1 buried ring (per RR-CANON-R112(b))
+            # Must provide extraction_stacks for TS parity
+            eligible = enumerate_eligible_extraction_stacks(state.board, player)
+            if eligible:
+                # Use the first eligible stack for extraction
+                extraction_stack_key = eligible[0].position_key
+                moves.append(
+                    Move(
+                        recoveryMode="fallback",
+                        extraction_stacks=(extraction_stack_key,),
+                        **base_kwargs,
+                    )
                 )
-            )
 
     # Always add skip recovery option if player is eligible
     # Skip allows preserving buried rings for later

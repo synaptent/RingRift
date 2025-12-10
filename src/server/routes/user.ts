@@ -686,6 +686,7 @@ export function formatPlayerForDisplay<T extends { username: string } | null | u
  *     description: |
  *       Returns a paginated leaderboard of active users sorted by rating.
  *       Only includes users who have played at least one game.
+ *       Supports filtering by board type and time period.
  *     tags: [Users]
  *     security:
  *       - bearerAuth: []
@@ -705,6 +706,20 @@ export function formatPlayerForDisplay<T extends { username: string } | null | u
  *           minimum: 0
  *           default: 0
  *         description: Offset for pagination
+ *       - in: query
+ *         name: boardType
+ *         schema:
+ *           type: string
+ *           enum: [all, square8, square19, hexagonal]
+ *           default: all
+ *         description: Filter by board type (only show players who have played on this board)
+ *       - in: query
+ *         name: timePeriod
+ *         schema:
+ *           type: string
+ *           enum: [all, week, month, year]
+ *           default: all
+ *         description: Filter by time period (only show stats from games within this period)
  *     responses:
  *       200:
  *         description: Leaderboard retrieved successfully
@@ -749,57 +764,210 @@ router.get(
     if (!queryResult.success) {
       throw createError('Invalid query parameters', 400, 'INVALID_QUERY_PARAMS');
     }
-    const { limit, offset } = queryResult.data;
+    const { limit, offset, boardType, timePeriod } = queryResult.data;
 
     const prisma = getDatabaseClient();
     if (!prisma) {
       throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
     }
 
-    const users = await prisma.user.findMany({
-      where: {
-        isActive: true,
-        gamesPlayed: { gt: 0 },
-      },
-      select: {
-        id: true,
-        username: true,
-        rating: true,
-        gamesPlayed: true,
-        gamesWon: true,
-      },
-      orderBy: { rating: 'desc' },
-      take: limit,
-      skip: offset,
-    });
+    // Build time filter based on timePeriod
+    let dateFilter: Date | undefined;
+    if (timePeriod && timePeriod !== 'all') {
+      const now = new Date();
+      switch (timePeriod) {
+        case 'week':
+          dateFilter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          dateFilter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        case 'year':
+          dateFilter = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+          break;
+      }
+    }
 
-    const total = await prisma.user.count({
-      where: {
-        isActive: true,
-        gamesPlayed: { gt: 0 },
-      },
-    });
+    // If filtering by boardType or timePeriod, we need to query via games
+    const hasFilters = (boardType && boardType !== 'all') || dateFilter;
 
-    // Add rank to each user
-    const usersWithRank = users.map((user, index) => ({
-      ...user,
-      rank: offset + index + 1,
-      winRate:
-        user.gamesPlayed > 0 ? Math.round((user.gamesWon / user.gamesPlayed) * 10000) / 100 : 0,
-    }));
+    if (hasFilters) {
+      // Build game filter conditions for Prisma query
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const gameWhere: any = {
+        status: 'finished',
+        isRated: true,
+      };
 
-    res.json({
-      success: true,
-      data: {
-        users: usersWithRank,
-        pagination: {
-          total,
-          limit,
-          offset,
-          hasMore: offset + limit < total,
+      if (boardType && boardType !== 'all') {
+        gameWhere.boardType = boardType;
+      }
+
+      if (dateFilter) {
+        gameWhere.endedAt = { gte: dateFilter };
+      }
+
+      // First, get all games matching the filter criteria
+      const matchingGames = await prisma.game.findMany({
+        where: gameWhere,
+        select: {
+          id: true,
+          winnerId: true,
+          player1Id: true,
+          player2Id: true,
+          player3Id: true,
+          player4Id: true,
         },
-      },
-    });
+      });
+
+      // Aggregate stats per user from matching games
+      const userStats = new Map<string, { gamesPlayed: number; gamesWon: number }>();
+
+      for (const game of matchingGames) {
+        const playerIds = [game.player1Id, game.player2Id, game.player3Id, game.player4Id].filter(
+          (id): id is string => !!id
+        );
+
+        for (const playerId of playerIds) {
+          const stats = userStats.get(playerId) || { gamesPlayed: 0, gamesWon: 0 };
+          stats.gamesPlayed++;
+          if (game.winnerId === playerId) {
+            stats.gamesWon++;
+          }
+          userStats.set(playerId, stats);
+        }
+      }
+
+      const userIds = Array.from(userStats.keys());
+
+      if (userIds.length === 0) {
+        // No users match the filter
+        res.json({
+          success: true,
+          data: {
+            users: [],
+            filters: {
+              boardType: boardType || 'all',
+              timePeriod: timePeriod || 'all',
+            },
+            pagination: {
+              total: 0,
+              limit,
+              offset,
+              hasMore: false,
+            },
+          },
+        });
+        return;
+      }
+
+      // Get user details for those who played matching games
+      const users = await prisma.user.findMany({
+        where: {
+          id: { in: userIds },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          username: true,
+          rating: true,
+        },
+        orderBy: { rating: 'desc' },
+      });
+
+      // Combine user data with filtered stats
+      const usersWithStats = users
+        .map((user) => {
+          const stats = userStats.get(user.id) || { gamesPlayed: 0, gamesWon: 0 };
+          return {
+            ...user,
+            gamesPlayed: stats.gamesPlayed,
+            gamesWon: stats.gamesWon,
+            winRate:
+              stats.gamesPlayed > 0
+                ? Math.round((stats.gamesWon / stats.gamesPlayed) * 10000) / 100
+                : 0,
+          };
+        })
+        .filter((u) => u.gamesPlayed > 0);
+
+      // Apply pagination
+      const total = usersWithStats.length;
+      const paginatedUsers = usersWithStats.slice(offset, offset + limit);
+
+      // Add rank
+      const usersWithRank = paginatedUsers.map((user, index) => ({
+        ...user,
+        rank: offset + index + 1,
+      }));
+
+      res.json({
+        success: true,
+        data: {
+          users: usersWithRank,
+          filters: {
+            boardType: boardType || 'all',
+            timePeriod: timePeriod || 'all',
+          },
+          pagination: {
+            total,
+            limit,
+            offset,
+            hasMore: offset + limit < total,
+          },
+        },
+      });
+    } else {
+      // No filters - use the simpler query
+      const users = await prisma.user.findMany({
+        where: {
+          isActive: true,
+          gamesPlayed: { gt: 0 },
+        },
+        select: {
+          id: true,
+          username: true,
+          rating: true,
+          gamesPlayed: true,
+          gamesWon: true,
+        },
+        orderBy: { rating: 'desc' },
+        take: limit,
+        skip: offset,
+      });
+
+      const total = await prisma.user.count({
+        where: {
+          isActive: true,
+          gamesPlayed: { gt: 0 },
+        },
+      });
+
+      // Add rank to each user
+      const usersWithRank = users.map((user, index) => ({
+        ...user,
+        rank: offset + index + 1,
+        winRate:
+          user.gamesPlayed > 0 ? Math.round((user.gamesWon / user.gamesPlayed) * 10000) / 100 : 0,
+      }));
+
+      res.json({
+        success: true,
+        data: {
+          users: usersWithRank,
+          filters: {
+            boardType: 'all',
+            timePeriod: 'all',
+          },
+          pagination: {
+            total,
+            limit,
+            offset,
+            hasMore: offset + limit < total,
+          },
+        },
+      });
+    }
   })
 );
 
