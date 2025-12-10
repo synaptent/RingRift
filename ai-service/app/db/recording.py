@@ -20,10 +20,11 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 from app.db import GameReplayDB, GameWriter
 from app.models import GameState, Move
+from app.rules.fsm import validate_move_for_phase, FSMValidationResult
 
 
 # -----------------------------------------------------------------------------
@@ -75,6 +76,29 @@ def get_default_db_path() -> str:
     DEFAULT_SELFPLAY_DB_PATH.
     """
     return os.environ.get("RINGRIFT_SELFPLAY_DB_PATH", DEFAULT_SELFPLAY_DB_PATH)
+
+
+def validate_move_fsm(
+    state: GameState,
+    move: Move,
+) -> Tuple[bool, Optional[str]]:
+    """Validate a move against the FSM and return validation result.
+
+    This is a convenience function for recording FSM validation status
+    in selfplay databases. It wraps the FSM validation logic and returns
+    a simple (valid, error_code) tuple suitable for storage.
+
+    Args:
+        state: GameState before the move
+        move: Move to validate
+
+    Returns:
+        Tuple of (is_valid, error_code) where error_code is None if valid
+    """
+    result = validate_move_for_phase(state.current_phase, move, state)
+    if result.ok:
+        return (True, None)
+    return (False, result.code)
 
 
 class GameRecorder:
@@ -138,6 +162,8 @@ class GameRecorder:
         available_moves_count: Optional[int] = None,
         engine_eval: Optional[float] = None,
         engine_depth: Optional[int] = None,
+        fsm_valid: Optional[bool] = None,
+        fsm_error_code: Optional[str] = None,
     ) -> None:
         """Add a move to the game record.
 
@@ -151,6 +177,8 @@ class GameRecorder:
             available_moves_count: Optional count of valid moves (lightweight alternative)
             engine_eval: Optional evaluation score from AI engine
             engine_depth: Optional search depth from AI engine
+            fsm_valid: Optional FSM validation result (True = valid, False = invalid)
+            fsm_error_code: Optional FSM error code if validation failed
         """
         if self._writer is None:
             raise RuntimeError("GameRecorder not entered as context manager")
@@ -162,6 +190,8 @@ class GameRecorder:
             available_moves_count=available_moves_count,
             engine_eval=engine_eval,
             engine_depth=engine_depth,
+            fsm_valid=fsm_valid,
+            fsm_error_code=fsm_error_code,
         )
 
     def finalize(

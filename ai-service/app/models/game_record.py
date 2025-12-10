@@ -127,6 +127,11 @@ class GameRecordMetadata(BaseModel):
     generation: Optional[int] = None  # For evolutionary algorithms
     candidate_id: Optional[int] = Field(None, alias="candidateId")
     tags: List[str] = Field(default_factory=list)
+    # FSM validation status (Phase 7: Data Pipeline)
+    # - True: All moves validated against FSM orchestrator
+    # - False: One or more moves failed FSM validation
+    # - None: FSM validation not performed (legacy data)
+    fsm_validated: Optional[bool] = Field(None, alias="fsmValidated")
 
     class Config:
         populate_by_name = True

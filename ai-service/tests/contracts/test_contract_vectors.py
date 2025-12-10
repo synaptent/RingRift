@@ -55,10 +55,10 @@ VECTORS_DIR = (
 # These vectors have stale JSON fixtures that diverge from current engine behavior.
 # See: https://github.com/anthropics/RingRift/issues/XXX for tracking.
 KNOWN_FAILING_VECTORS = {
-    # Chain capture segment tracking changed
-    "chain_capture.depth3.segment2.square8",
-    "chain_capture.depth3.segment2.square19",
-    "chain_capture.depth3.segment2.hexagonal",  # Phase mismatch: continue_capture in line_processing
+    # Hex chain capture: TS produces line_processing after segment1 (not chain_capture like square)
+    # The fixture has segment2 starting from line_processing but using continue_capture_segment
+    # which Python correctly rejects. Fixture needs investigation for hex geometry specifics.
+    "chain_capture.depth3.segment2.hexagonal",
     # Territory processing player tracking changed
     "territory.square_two_regions_then_elim.step2_regionA",
     "territory.square19_two_regions_then_elim.step2_regionA",

@@ -146,23 +146,37 @@ def run_hybrid_selfplay(
                 )
 
                 if not valid_moves:
-                    break
-
-                # Evaluate moves (hybrid CPU/GPU)
-                move_scores = evaluator.evaluate_moves(
-                    game_state,
-                    valid_moves,
-                    current_player,
-                    GameEngine,
-                )
-
-                # Select best move (with random tie-breaking)
-                if move_scores:
-                    best_score = max(s for _, s in move_scores)
-                    best_moves = [m for m, s in move_scores if s == best_score]
-                    best_move = np.random.choice(best_moves) if len(best_moves) > 1 else best_moves[0]
+                    # Check for phase requirements (bookkeeping moves)
+                    requirement = GameEngine.get_phase_requirement(
+                        game_state, current_player
+                    )
+                    if requirement is not None:
+                        # Use GameEngine to synthesize the appropriate bookkeeping move
+                        best_move = GameEngine.synthesize_bookkeeping_move(
+                            requirement, game_state
+                        )
+                        if best_move is None:
+                            # Failed to synthesize - break to avoid infinite loop
+                            break
+                    else:
+                        # No valid moves and no phase requirement - game should be over
+                        break
                 else:
-                    best_move = valid_moves[0]
+                    # Evaluate moves (hybrid CPU/GPU)
+                    move_scores = evaluator.evaluate_moves(
+                        game_state,
+                        valid_moves,
+                        current_player,
+                        GameEngine,
+                    )
+
+                    # Select best move (with random tie-breaking)
+                    if move_scores:
+                        best_score = max(s for _, s in move_scores)
+                        best_moves = [m for m, s in move_scores if s == best_score]
+                        best_move = np.random.choice(best_moves) if len(best_moves) > 1 else best_moves[0]
+                    else:
+                        best_move = valid_moves[0]
 
                 # Apply move (CPU - full rules)
                 game_state = GameEngine.apply_move(game_state, best_move)

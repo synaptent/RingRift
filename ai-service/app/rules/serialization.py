@@ -11,6 +11,7 @@ from datetime import datetime
 from ..models import (
     BoardState,
     BoardType,
+    ChainCaptureState,
     GamePhase,
     GameStatus,
     GameState,
@@ -63,10 +64,17 @@ def serialize_stack(stack: RingStack) -> Dict[str, Any]:
 
 
 def deserialize_stack(data: Dict[str, Any]) -> RingStack:
-    """Deserialize a RingStack from JSON dict."""
+    """Deserialize a RingStack from JSON dict.
+
+    NOTE: TS stores rings top-to-bottom (top ring at index 0), but Python
+    stores them bottom-to-top (bottom ring at index 0). We reverse the
+    rings array during deserialization to maintain parity.
+    """
+    # Reverse rings: TS [top -> bottom] -> Python [bottom -> top]
+    rings_reversed = list(reversed(data["rings"]))
     return RingStack(
         position=deserialize_position(data["position"]),
-        rings=data["rings"],
+        rings=rings_reversed,
         stackHeight=data["stackHeight"],
         capHeight=data["capHeight"],
         controllingPlayer=data["controllingPlayer"],
@@ -396,6 +404,21 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
         type="none",
     )
 
+    # Parse chainCapturePosition to construct chain_capture_state if in chain_capture phase
+    chain_capture_state: Optional[ChainCaptureState] = None
+    chain_capture_pos_data = data.get("chainCapturePosition")
+    if chain_capture_pos_data and current_phase == GamePhase.CHAIN_CAPTURE:
+        chain_capture_pos = deserialize_position(chain_capture_pos_data)
+        current_player = data.get("currentPlayer", 1)
+        chain_capture_state = ChainCaptureState(
+            playerNumber=current_player,
+            startPosition=chain_capture_pos,
+            currentPosition=chain_capture_pos,
+            segments=[],
+            availableMoves=[],
+            visitedPositions=[],
+        )
+
     return GameState(
         id=data.get("gameId", "test-game"),
         boardType=board.type,
@@ -417,7 +440,7 @@ def deserialize_game_state(data: Dict[str, Any]) -> GameState:
         totalRingsEliminated=data.get("totalRingsEliminated", 0),
         victoryThreshold=data.get("victoryThreshold", 19),
         territoryVictoryThreshold=data.get("territoryVictoryThreshold", 33),
-        chainCaptureState=None,
+        chainCaptureState=chain_capture_state,
         mustMoveFromStackKey=None,
         zobristHash=None,
         lpsRoundIndex=0,

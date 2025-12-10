@@ -34,7 +34,8 @@ logger = logging.getLogger(__name__)
 # - v4: Added state_before_json and state_after_json to game_history_entries for full state replay
 # - v5: Added metadata_json column to games to persist full recording metadata
 # - v6: Added available_moves_json and available_moves_count to game_history_entries for parity debugging
-SCHEMA_VERSION = 6
+# - v7: Added fsm_valid and fsm_error_code to game_history_entries for FSM validation tracking (Phase 7)
+SCHEMA_VERSION = 7
 
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
@@ -154,6 +155,7 @@ CREATE TABLE IF NOT EXISTS game_choices (
 -- Stores metadata for each move matching TypeScript GameHistoryEntry interface
 -- v4: Added state_before_json and state_after_json for full state replay
 -- v6: Added available_moves_json, available_moves_count, engine_eval, engine_depth
+-- v7: Added fsm_valid, fsm_error_code for FSM validation tracking (Phase 7)
 CREATE TABLE IF NOT EXISTS game_history_entries (
     game_id TEXT NOT NULL,
     move_number INTEGER NOT NULL,
@@ -177,6 +179,9 @@ CREATE TABLE IF NOT EXISTS game_history_entries (
     available_moves_count INTEGER,
     engine_eval REAL,
     engine_depth INTEGER,
+    -- v7 additions: FSM validation status (Phase 7: Data Pipeline)
+    fsm_valid INTEGER,  -- 1 = valid, 0 = invalid, NULL = not checked
+    fsm_error_code TEXT,  -- Error code if fsm_valid = 0
     PRIMARY KEY (game_id, move_number),
     FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
 );
@@ -337,6 +342,8 @@ class GameWriter:
         available_moves_count: Optional[int] = None,
         engine_eval: Optional[float] = None,
         engine_depth: Optional[int] = None,
+        fsm_valid: Optional[bool] = None,
+        fsm_error_code: Optional[str] = None,
     ) -> None:
         """Add a move to the game.
 
@@ -350,6 +357,8 @@ class GameWriter:
             available_moves_count: Optional count of valid moves (lightweight alternative)
             engine_eval: Optional evaluation score from AI engine
             engine_depth: Optional search depth from AI engine
+            fsm_valid: Optional FSM validation result (True = valid, False = invalid)
+            fsm_error_code: Optional FSM error code if validation failed
         """
         if self._finalized:
             raise RuntimeError("GameWriter has been finalized")
@@ -414,6 +423,8 @@ class GameWriter:
                     available_moves_count=available_moves_count,
                     engine_eval=engine_eval,
                     engine_depth=engine_depth,
+                    fsm_valid=fsm_valid,
+                    fsm_error_code=fsm_error_code,
                 )
                 # Update tracked state for next move
                 self._prev_state = state_after
@@ -854,6 +865,37 @@ class GameReplayDB:
 
         self._set_schema_version(conn, 6)
         logger.info("Migration to v6 complete")
+
+    def _migrate_v6_to_v7(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v6 to v7.
+
+        Adds:
+        - fsm_valid column to game_history_entries for FSM validation status
+          (1 = valid, 0 = invalid, NULL = not checked)
+        - fsm_error_code column for storing error code when fsm_valid = 0
+
+        This supports Phase 7 (Data Pipeline) of the FSM Extension Strategy,
+        enabling training data filtering based on FSM validation.
+        """
+        logger.info("Migrating schema from v6 to v7")
+
+        new_history_columns = [
+            ("fsm_valid", "INTEGER"),
+            ("fsm_error_code", "TEXT"),
+        ]
+
+        for col_name, col_type in new_history_columns:
+            try:
+                conn.execute(
+                    f"ALTER TABLE game_history_entries ADD COLUMN {col_name} {col_type}"
+                )
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+                logger.debug(f"{col_name} column already exists")
+
+        self._set_schema_version(conn, 7)
+        logger.info("Migration to v7 complete")
 
     # =========================================================================
     # Write Operations
@@ -2049,6 +2091,8 @@ class GameReplayDB:
         available_moves_count: Optional[int] = None,
         engine_eval: Optional[float] = None,
         engine_depth: Optional[int] = None,
+        fsm_valid: Optional[bool] = None,
+        fsm_error_code: Optional[str] = None,
     ) -> None:
         """Store a history entry for GameTrace-style recording."""
         with self._get_conn() as conn:
@@ -2059,6 +2103,8 @@ class GameReplayDB:
                 available_moves_count=available_moves_count,
                 engine_eval=engine_eval,
                 engine_depth=engine_depth,
+                fsm_valid=fsm_valid,
+                fsm_error_code=fsm_error_code,
             )
 
     def _store_history_entry_conn(
@@ -2077,6 +2123,8 @@ class GameReplayDB:
         available_moves_count: Optional[int] = None,
         engine_eval: Optional[float] = None,
         engine_depth: Optional[int] = None,
+        fsm_valid: Optional[bool] = None,
+        fsm_error_code: Optional[str] = None,
     ) -> None:
         """Store a history entry (within existing transaction).
 
@@ -2095,6 +2143,8 @@ class GameReplayDB:
             available_moves_count: Optional count of valid moves (lightweight alternative)
             engine_eval: Optional evaluation score from AI engine
             engine_depth: Optional search depth from AI engine
+            fsm_valid: Optional FSM validation result (True = valid, False = invalid)
+            fsm_error_code: Optional FSM error code if validation failed
         """
         # Build progress snapshots
         progress_before = {
@@ -2145,6 +2195,11 @@ class GameReplayDB:
                 _serialize_move(m) for m in available_moves
             ])
 
+        # Convert fsm_valid bool to SQLite integer (1/0/NULL)
+        fsm_valid_int: Optional[int] = None
+        if fsm_valid is not None:
+            fsm_valid_int = 1 if fsm_valid else 0
+
         conn.execute(
             """
             INSERT OR REPLACE INTO game_history_entries
@@ -2152,8 +2207,8 @@ class GameReplayDB:
              status_before, status_after, progress_before_json, progress_after_json,
              state_hash_before, state_hash_after, state_before_json, state_after_json,
              compressed_states, available_moves_json, available_moves_count,
-             engine_eval, engine_depth)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             engine_eval, engine_depth, fsm_valid, fsm_error_code)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 game_id,
@@ -2174,6 +2229,8 @@ class GameReplayDB:
                 available_moves_count,
                 engine_eval,
                 engine_depth,
+                fsm_valid_int,
+                fsm_error_code,
             ),
         )
 

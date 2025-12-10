@@ -111,6 +111,7 @@ def build_training_game_record(
     terminated_by_budget_only: bool = False,
     created_at: Optional[datetime] = None,
     tags: Optional[List[str]] = None,
+    fsm_validated: Optional[bool] = None,
 ) -> GameRecord:
     """Construct a canonical GameRecord for a completed training episode.
 
@@ -166,6 +167,7 @@ def build_training_game_record(
         generation=None,
         candidateId=None,
         tags=tags or [],
+        fsmValidated=fsm_validated,
     )
 
     return GameRecord(

@@ -1,8 +1,11 @@
 {
   "version": "v2",
-  "generated": "2025-12-10T03:25:28.143Z",
+  "generated": "2025-12-10T04:34:56.524Z",
   "count": 4,
-  "categories": ["chain_capture", "territory_processing"],
+  "categories": [
+    "chain_capture",
+    "territory_processing"
+  ],
   "vectors": [
     {
       "id": "hex_edge_case.edge_chain.segment1.hexagonal",
@@ -18,7 +21,7 @@
         "edge"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:25:28.137Z",
+      "createdAt": "2025-12-10T04:34:56.518Z",
       "input": {
         "state": {
           "gameId": "contract-hex-edge-chain",
@@ -32,7 +35,10 @@
                   "y": 3,
                   "z": 0
                 },
-                "rings": [1, 1],
+                "rings": [
+                  1,
+                  1
+                ],
                 "stackHeight": 2,
                 "capHeight": 2,
                 "controllingPlayer": 1
@@ -43,7 +49,9 @@
                   "y": 2,
                   "z": 0
                 },
-                "rings": [2],
+                "rings": [
+                  2
+                ],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -54,7 +62,9 @@
                   "y": 0,
                   "z": 0
                 },
-                "rings": [2],
+                "rings": [
+                  2
+                ],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -148,7 +158,7 @@
         "edge"
       ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:25:28.137Z",
+      "createdAt": "2025-12-10T04:34:56.518Z",
       "input": {
         "state": {
           "gameId": "contract-hex-edge-chain",
@@ -162,7 +172,9 @@
                   "y": 0,
                   "z": 0
                 },
-                "rings": [2],
+                "rings": [
+                  2
+                ],
                 "stackHeight": 1,
                 "capHeight": 1,
                 "controllingPlayer": 2
@@ -173,7 +185,11 @@
                   "y": 1,
                   "z": 0
                 },
-                "rings": [1, 1, 2],
+                "rings": [
+                  1,
+                  1,
+                  2
+                ],
                 "stackHeight": 3,
                 "capHeight": 2,
                 "controllingPlayer": 1
@@ -273,9 +289,16 @@
       "version": "v2",
       "category": "territory_processing",
       "description": "Hex corner region territory (case 1)",
-      "tags": ["territory_processing", "orchestrator", "parity", "hex", "corner", "territory"],
+      "tags": [
+        "territory_processing",
+        "orchestrator",
+        "parity",
+        "hex",
+        "corner",
+        "territory"
+      ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:25:28.139Z",
+      "createdAt": "2025-12-10T04:34:56.520Z",
       "input": {
         "state": {
           "gameId": "contract-hex-corner-region",
@@ -289,7 +312,10 @@
                   "y": -4,
                   "z": 0
                 },
-                "rings": [1, 1],
+                "rings": [
+                  1,
+                  1
+                ],
                 "stackHeight": 2,
                 "capHeight": 2,
                 "controllingPlayer": 1
@@ -361,9 +387,16 @@
       "version": "v2",
       "category": "territory_processing",
       "description": "3-player forced elimination on hexagonal board",
-      "tags": ["territory_processing", "orchestrator", "parity", "hex", "forced_elimination", "3p"],
+      "tags": [
+        "territory_processing",
+        "orchestrator",
+        "parity",
+        "hex",
+        "forced_elimination",
+        "3p"
+      ],
       "source": "generated",
-      "createdAt": "2025-12-10T03:25:28.143Z",
+      "createdAt": "2025-12-10T04:34:56.524Z",
       "input": {
         "state": {
           "gameId": "contract-hex-forced-elim-3p",
@@ -377,7 +410,10 @@
                   "y": 0,
                   "z": 0
                 },
-                "rings": [1, 1],
+                "rings": [
+                  1,
+                  1
+                ],
                 "stackHeight": 2,
                 "capHeight": 2,
                 "controllingPlayer": 1

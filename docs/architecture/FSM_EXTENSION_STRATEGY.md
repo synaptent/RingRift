@@ -1,7 +1,7 @@
 # FSM Extension Strategy
 
 > **Status:** Graduated (FSM is Canonical)
-> **Last Updated:** 2025-12-09
+> **Last Updated:** 2025-12-10
 > **Related:** [STATE_MACHINES.md](./STATE_MACHINES.md), [CANONICAL_ENGINE_API.md](./CANONICAL_ENGINE_API.md)
 
 ---
@@ -177,15 +177,27 @@ This document tracks the FSM extension roadmap, now largely complete.
   - TurnStateMachine class invariants (history growth, canSend consistency)
   - Global events (RESIGN, TIMEOUT → game_over)
 
-### Phase 7: Data Pipeline (P2)
+### Phase 7: Data Pipeline (P2) ✅ COMPLETE
 
 **Goal:** Thread FSM validation into training data.
 
-| Task                                       | Status     |
-| ------------------------------------------ | ---------- |
-| Add `fsm_valid` field to move metadata     | 🔜 Planned |
-| Block dataset generation on FSM validation | 🔜 Planned |
-| Tag non-canonical sequences in export      | 🔜 Planned |
+| Task                                       | Status  | Files                                    |
+| ------------------------------------------ | ------- | ---------------------------------------- |
+| Add `fsm_valid` field to move metadata     | ✅ Done | `ai-service/app/db/game_replay.py`       |
+| Add `fsm_error_code` field                 | ✅ Done | `ai-service/app/db/game_replay.py`       |
+| Schema v7 migration                        | ✅ Done | `ai-service/app/db/game_replay.py`       |
+| `validate_move_fsm()` helper               | ✅ Done | `ai-service/app/db/recording.py`         |
+| Block dataset generation on FSM validation | ✅ Done | `ai-service/app/training/env.py`         |
+| Add `fsmValidated` to GameRecordMetadata   | ✅ Done | `ai-service/app/models/game_record.py`   |
+| Update `build_training_game_record()`      | ✅ Done | `ai-service/app/training/game_record_export.py` |
+
+**Outcome:**
+
+- Database schema v7 adds `fsm_valid` (INTEGER 0/1/NULL) and `fsm_error_code` (TEXT) to `game_history_entries`
+- Training environment already blocks on FSM validation (raises `FSMValidationError` in active mode)
+- `GameRecordMetadata.fsm_validated` field tracks per-game FSM validation status
+- `validate_move_fsm()` convenience function for recording FSM validation results
+- All training data generated with FSM active is implicitly FSM-validated
 
 ---
 
