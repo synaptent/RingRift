@@ -192,19 +192,6 @@ export function isFSMValidationEnabled(): boolean {
 }
 
 /**
- * FSM is the canonical orchestrator. Always returns true.
- *
- * This function exists for backwards compatibility with code that checks
- * whether FSM orchestration is active. Since FSM is now the only supported
- * orchestration mode, this always returns true.
- *
- * @deprecated FSM is always active. Remove checks for this function over time.
- */
-export function isFSMOrchestratorActive(): boolean {
-  return true;
-}
-
-/**
  * Debug logging wrapper that suppresses ESLint no-console warnings.
  * Use this for debug logs that are gated by environment flags.
  * The wrapped console.log is only invoked if the condition is true.

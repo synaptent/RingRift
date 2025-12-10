@@ -128,6 +128,8 @@ export type MoveType =
   | 'recovery_slide'
   // Game termination: player forfeits the game. Valid from any phase.
   | 'resign'
+  // Game termination: player ran out of time. Valid from any phase.
+  | 'timeout'
   // Legacy / experimental move types (not used by the unified Move model).
   | 'line_formation'
   | 'territory_claim'

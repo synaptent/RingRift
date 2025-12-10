@@ -247,7 +247,7 @@ The Compact Spec is generally treated as primary for formal semantics, and the C
     - **forced_elimination → ring_placement/movement (next player):** After P executes the `forced_elimination` move, victory checks are performed and the turn ends.
   - These transitions are not optional; any engine implementation that does not perform them violates the canonical rules.
   - Note: The `skip_capture` move type exists for cases where a player declines an optional capture opportunity; it explicitly transitions from `capture` to `line_processing` without executing a capture.
-  - References: RR-CANON-R070, RR-CANON-R093, RR-CANON-R100, RR-CANON-R103; TS `turnOrchestrator.ts` `processPostMovePhases` and `phaseStateMachine.ts`.
+  - References: RR-CANON-R070, RR-CANON-R093, RR-CANON-R100, RR-CANON-R103; TS `turnOrchestrator.ts` `processPostMovePhases` and FSM in `src/shared/engine/fsm/` (canonical orchestrator).
 
 - **[RR-CANON-R074] Explicit recording of all turn actions and voluntary skips.**
   - At the rules level, a **turn action** for player P is any state change that:

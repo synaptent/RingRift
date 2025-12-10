@@ -279,6 +279,32 @@ def test_no_territory_action_then_forced_elimination_phase_transition(
     state.current_phase = GamePhase.TERRITORY_PROCESSING
 
     board = state.board
+
+    # Set up a stack for Player 1 so the ANM/FE gating logic applies.
+    # Place a blocked stack (surrounded by collapsed spaces) to ensure
+    # no movement or capture actions are available.
+    p1_stack_pos = Position(x=3, y=3)
+    board.stacks[p1_stack_pos.to_key()] = RingStack(
+        position=p1_stack_pos,
+        rings=[1, 1],
+        stackHeight=2,
+        capHeight=2,
+        controllingPlayer=1,
+    )
+
+    # Block surrounding cells to prevent movement/capture options.
+    for dx in [-1, 0, 1]:
+        for dy in [-1, 0, 1]:
+            if dx == 0 and dy == 0:
+                continue
+            block_pos = Position(x=3 + dx, y=3 + dy)
+            board.collapsed_spaces[block_pos.to_key()] = 2
+
+    # Set rings_in_hand to 0 so player has no placements available.
+    # This ensures the ANM/FE gating triggers properly.
+    p1 = next(p for p in state.players if p.player_number == 1)
+    p1.rings_in_hand = 0
+
     # Ensure Player 1 has at least one stack on the board.
     assert any(s.controlling_player == 1 for s in board.stacks.values())
 
