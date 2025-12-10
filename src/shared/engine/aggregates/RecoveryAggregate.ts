@@ -342,13 +342,16 @@ export function enumerateEligibleExtractionStacks(
 
   for (const [posKey, stack] of board.stacks) {
     // Find the bottommost ring of this player
-    const bottomRingIndex = stack.rings.indexOf(playerNumber);
+    // Per game.ts:283, rings[0] = top, rings[length-1] = bottom
+    // Use lastIndexOf to find the bottommost occurrence (highest index)
+    const bottomRingIndex = stack.rings.lastIndexOf(playerNumber);
 
     // Player has no ring in this stack
     if (bottomRingIndex === -1) continue;
 
     // Check if it's buried (not the top ring)
-    const isTopRing = bottomRingIndex === stack.rings.length - 1;
+    // Per game.ts:283, rings[0] is the top ring
+    const isTopRing = bottomRingIndex === 0;
     if (isTopRing) continue; // Not buried, cannot extract
 
     eligibleStacks.push({

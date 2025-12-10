@@ -35,17 +35,22 @@ import { createTestBoard, createTestGameState, addMarker, pos, posStr } from '..
  * @param board - Board state to modify
  * @param position - Stack position
  * @param rings - Ring composition from bottom to top (e.g., [1, 2, 1] = P1 bottom, P2 middle, P1 top)
+ *
+ * Note: Per game.ts:283, the internal `rings` array is stored TOP to BOTTOM (rings[0] = top).
+ * This helper accepts bottom-to-top for intuitive test authoring and reverses internally.
  */
 function addStackWithRings(board: BoardState, position: Position, rings: number[]): void {
   if (rings.length === 0) return;
 
   const key = positionToString(position);
-  const controllingPlayer = rings[rings.length - 1];
+  // Input: bottom to top. Internal storage: top to bottom. Reverse the array.
+  const internalRings = [...rings].reverse();
+  const controllingPlayer = internalRings[0]; // Top ring = rings[0] per game.ts convention
 
-  // Calculate cap height (consecutive rings from top)
+  // Calculate cap height (consecutive rings from top, starting at index 0)
   let capHeight = 1;
-  for (let i = rings.length - 2; i >= 0; i--) {
-    if (rings[i] === controllingPlayer) {
+  for (let i = 1; i < internalRings.length; i++) {
+    if (internalRings[i] === controllingPlayer) {
       capHeight++;
     } else {
       break;
@@ -54,8 +59,8 @@ function addStackWithRings(board: BoardState, position: Position, rings: number[
 
   board.stacks.set(key, {
     position,
-    rings: [...rings],
-    stackHeight: rings.length,
+    rings: internalRings,
+    stackHeight: internalRings.length,
     capHeight,
     controllingPlayer,
   });
@@ -1402,7 +1407,8 @@ describe('enumerateEligibleExtractionStacks', () => {
     const eligible = enumerateEligibleExtractionStacks(board, 1);
     expect(eligible).toHaveLength(1);
     expect(eligible[0].positionKey).toBe(posStr(3, 3));
-    expect(eligible[0].bottomRingIndex).toBe(0); // P1's ring is at index 0
+    // Per game.ts:283, rings array is top-to-bottom: [2, 1] where index 1 is P1's bottom ring
+    expect(eligible[0].bottomRingIndex).toBe(1); // P1's ring is at bottom (index 1)
     expect(eligible[0].controllingPlayer).toBe(2); // P2 controls
   });
 
@@ -1426,7 +1432,8 @@ describe('enumerateEligibleExtractionStacks', () => {
 
     const eligible = enumerateEligibleExtractionStacks(board, 1);
     expect(eligible).toHaveLength(1);
-    expect(eligible[0].bottomRingIndex).toBe(0); // P1's ring is at bottom
+    // Per game.ts:283, rings array is top-to-bottom: [2, 2, 2, 1] where index 3 is P1's bottom ring
+    expect(eligible[0].bottomRingIndex).toBe(3); // P1's ring is at bottom (index 3 in 4-ring stack)
     expect(eligible[0].stackHeight).toBe(4);
   });
 });
@@ -1547,8 +1554,9 @@ describe('Extraction Stack Choice', () => {
     // Only the BOTTOMMOST P1 ring should be extracted
     const stack = result.nextState.board.stacks.get(posStr(6, 6));
     expect(stack).toBeDefined();
-    // Should still have one P1 ring (the one that was at index 1)
-    expect(stack!.rings).toEqual([1, 2]); // Bottom P1 removed, now P1, P2
+    // Should still have one P1 ring (the one that was middle, now at bottom)
+    // Per game.ts:283, rings array is top-to-bottom: [P2 top, P1 bottom]
+    expect(stack!.rings).toEqual([2, 1]); // P2 at top (index 0), P1 at bottom (index 1)
     expect(stack!.stackHeight).toBe(2);
   });
 
