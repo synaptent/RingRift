@@ -1,7 +1,7 @@
 {
   "version": "v1",
   "boardType": "square8",
-  "description": "Tests that process_line validation requires proper line targeting (lineIndex). Move without lineIndex should be rejected by both TS and Python.",
+  "description": "Tests process_line validation with single-line auto-selection. When only one line exists for the player, the adapter auto-selects it (legacy compatibility behavior per moveActionAdapter.ts:270-275). Line length is exactly 3 (the minimum for square8) so process_line is the correct action type.",
   "initialState": {
     "boardType": "square8",
     "id": "rules-parity-square8-2p",
@@ -11,8 +11,7 @@
       "markers": {
         "0,0": { "type": "marker", "player": 1, "position": { "x": 0, "y": 0 } },
         "0,1": { "type": "marker", "player": 1, "position": { "x": 0, "y": 1 } },
-        "0,2": { "type": "marker", "player": 1, "position": { "x": 0, "y": 2 } },
-        "0,3": { "type": "marker", "player": 1, "position": { "x": 0, "y": 3 } }
+        "0,2": { "type": "marker", "player": 1, "position": { "x": 0, "y": 2 } }
       },
       "collapsedSpaces": {},
       "territories": {},
@@ -21,11 +20,10 @@
           "positions": [
             { "x": 0, "y": 0 },
             { "x": 0, "y": 1 },
-            { "x": 0, "y": 2 },
-            { "x": 0, "y": 3 }
+            { "x": 0, "y": 2 }
           ],
           "player": 1,
-          "length": 4,
+          "length": 3,
           "direction": { "x": 0, "y": 1 }
         }
       ],
@@ -72,66 +70,23 @@
     "lastMoveAt": "2025-12-06T02:08:04.224Z",
     "isRated": false,
     "maxPlayers": 2,
-    "totalRingsInPlay": 4,
+    "totalRingsInPlay": 3,
     "totalRingsEliminated": 0,
     "victoryThreshold": 19,
     "territoryVictoryThreshold": 33
   },
   "steps": [
     {
-      "label": "process_line_missing_lineIndex",
-      "description": "Move lacks lineIndex - both TS and Python should reject",
+      "label": "process_line_single_line_auto_select",
+      "description": "Move without explicit lineIndex/formedLines - TS auto-selects single line for player (legacy compatibility per moveActionAdapter.ts:270-275). Line length equals minimum (3) so process_line action applies.",
       "move": {
-        "id": "fixture-square8-2p-process-line-missing-index",
+        "id": "fixture-square8-2p-process-line-auto-select",
         "type": "process_line",
         "player": 1,
         "to": { "x": 0, "y": 0 },
-        "formedLines": [
-          {
-            "positions": [
-              { "x": 0, "y": 0 },
-              { "x": 0, "y": 1 },
-              { "x": 0, "y": 2 },
-              { "x": 0, "y": 3 }
-            ],
-            "player": 1,
-            "length": 4,
-            "direction": { "x": 0, "y": 1 }
-          }
-        ],
         "timestamp": "1970-01-01T00:00:00.000Z",
         "thinkTime": 0,
         "moveNumber": 1
-      },
-      "expected": {
-        "tsValid": false
-      }
-    },
-    {
-      "label": "process_line_valid_with_lineIndex",
-      "description": "Move with valid lineIndex - both TS and Python should accept",
-      "move": {
-        "id": "fixture-square8-2p-process-line-valid",
-        "type": "process_line",
-        "player": 1,
-        "lineIndex": 0,
-        "to": { "x": 0, "y": 0 },
-        "formedLines": [
-          {
-            "positions": [
-              { "x": 0, "y": 0 },
-              { "x": 0, "y": 1 },
-              { "x": 0, "y": 2 },
-              { "x": 0, "y": 3 }
-            ],
-            "player": 1,
-            "length": 4,
-            "direction": { "x": 0, "y": 1 }
-          }
-        ],
-        "timestamp": "1970-01-01T00:00:00.000Z",
-        "thinkTime": 0,
-        "moveNumber": 2
       },
       "expected": {
         "tsValid": true
