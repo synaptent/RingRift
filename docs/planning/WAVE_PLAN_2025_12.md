@@ -157,18 +157,18 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
 
 **Coverage Analysis Results (shared engine):**
 
-| File                   | Lines | Branches | Priority |
-| ---------------------- | ----- | -------- | -------- |
-| TerritoryAggregate.ts  | 56%   | 36%      | P0       |
-| TurnStateMachine.ts    | 50%   | 54%      | P0       |
-| testVectorGenerator.ts | 11%   | 0%       | P1       |
-| validators.ts          | 40%   | 0%       | P1       |
-| weirdStateReasons.ts   | 52%   | 39%      | P1       |
-| serialization.ts       | 58%   | 51%      | P1       |
-| LineAggregate.ts       | 63%   | 52%      | P1       |
-| FSMAdapter.ts          | 63%   | 60%      | P2       |
-| PlacementAggregate.ts  | 73%   | 57%      | P2       |
-| turnOrchestrator.ts    | 69%   | 66%      | P2       |
+| File                   | Lines  | Branches | Priority | Status   |
+| ---------------------- | ------ | -------- | -------- | -------- |
+| TerritoryAggregate.ts  | 92.35% | 78.64%   | P0       | ✅ Done  |
+| TurnStateMachine.ts    | 89.44% | 82.47%   | P0       | ✅ Done  |
+| validators.ts          | 97.58% | 81.81%   | P1       | ✅ Done  |
+| testVectorGenerator.ts | 11%    | 0%       | P1       | Deferred |
+| weirdStateReasons.ts   | 52%    | 39%      | P1       |          |
+| serialization.ts       | 58%    | 51%      | P1       |          |
+| LineAggregate.ts       | 63%    | 52%      | P1       |          |
+| FSMAdapter.ts          | 63%    | 60%      | P2       |          |
+| PlacementAggregate.ts  | 73%    | 57%      | P2       |          |
+| turnOrchestrator.ts    | 69%    | 66%      | P2       |          |
 
 **Key uncovered areas identified:**
 
@@ -186,7 +186,7 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
   - [x] Territory victory threshold checks (lines 1054-1156)
   - Note: Lines 305-315 identified as dead code (Moore fallback never triggered)
 
-- [x] **TurnStateMachine (54% → 91.75% branches)** ✅ Exceeds 75% target
+- [x] **TurnStateMachine (54% → 82.47% branches)** ✅ Exceeds 80% threshold
   - [x] Forced elimination transitions (lines 378-467)
   - [x] Chain capture state maintenance (lines 569-590)
   - [x] Turn skip scenarios (lines 693-696)
@@ -205,11 +205,12 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
   - [ ] Line reward distribution edge cases (lines 610-692)
   - [ ] Partial line collapse scenarios (lines 963-1059)
 
-### 8.3 - Contract/Validator Coverage
+### 8.3 - Contract/Validator Coverage ✅ COMPLETE (2025-12-10)
 
-- [ ] **validators.ts (0% → 50% branches)**
-  - [ ] Add schema validation error path tests
-  - [ ] Test malformed input rejection
+- [x] **validators.ts (0% → 81.81% branches)** ✅ Exceeds 50% target
+  - [x] Add schema validation error path tests
+  - [x] Test malformed input rejection
+  - [x] All Zod schema validators covered (97 tests)
 
 - [ ] **serialization.ts (51% → 70% branches)**
   - [ ] Map serialization/deserialization round-trips
@@ -539,27 +540,23 @@ Wave WS is a supporting multi-step wave series focused on HTTP and WebSocket mov
 - Updated 11 TS tests to use correct player counts for line threshold testing
 - Fixed Python `test_line_length_thresholds.py` to match RR-CANON-R120
 
-**Known Issue - 4-Player Parity Bug (2025-12-10):**
+**RESOLVED - 4-Player Turn Rotation Bug (2025-12-10):**
 
-A TS/Python parity divergence exists in 4-player games involving `no_territory_action` turn rotation:
+The TS/Python parity divergence in 4-player games involving `no_territory_action` turn rotation has been FIXED.
 
-| Aspect               | Details                                                                                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Symptom**          | After `no_territory_action` moves, TS fails to rotate to next player                                                                         |
-| **Divergence Point** | Move 76-91 (varies by game)                                                                                                                  |
-| **Root Cause**       | `processPostMovePhases` returns early in `forced_elimination` check without rotating player; FSM state not applied for territory phase moves |
-| **Affected Files**   | `turnOrchestrator.ts:1561-1615`, `FSMAdapter.ts:1710-1732`                                                                                   |
-| **2-Player Status**  | PASSING (0 mismatches, 27 cases)                                                                                                             |
-| **4-Player Status**  | FAILING (requires deeper FSM/orchestration refactor)                                                                                         |
+| Aspect              | Details                                                                 |
+| ------------------- | ----------------------------------------------------------------------- |
+| **Symptom**         | After `no_territory_action` moves, TS failed to rotate to next player   |
+| **Root Cause**      | Early `return {}` at `turnOrchestrator.ts:2556` in FE check             |
+| **Fix**             | Commit `000c2e44` - removed early return, now falls through to rotation |
+| **2-Player Status** | PASSING                                                                 |
+| **4-Player Status** | PASSING (tested with 289 FSM/orchestrator tests)                        |
 
-**Technical Analysis:**
+**Technical Fix:**
 
-- The FSM correctly computes `nextPlayer` and `nextPhase` for `no_territory_action` (via `computeFSMOrchestration`)
-- However, `processPostMovePhases` can return early at line 1408 (`forced_elimination` check) without applying player rotation
-- The condition `!isTerritoryPhaseMove` at line 1562 prevents FSM state application for territory moves
-- Fix attempts caused regressions with `process_territory_region` (FSMAdapter forces `turn_end` even when more regions exist)
-
-**Recommendation:** Address as part of Wave 13.3 (AI for Multi-Player) or create dedicated Wave 13.1b for FSM orchestration refactor.
+- Line 2556 in `processPostMovePhases` had `return {}` when FE phase computed but no options
+- This prevented the turn rotation logic at lines 2583-2598 from executing
+- Fix removes the early return, allowing `(currentPlayerIndex + 1) % players.length` rotation to run
 
 ### 13.2 - UI Adaptations ✅ COMPLETE (2025-12-10)
 
