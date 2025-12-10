@@ -1164,14 +1164,42 @@ class GameEngine:
         game_state.current_phase = GamePhase.TERRITORY_PROCESSING
 
     @staticmethod
+    def _player_has_turn_material(game_state: GameState, player: int) -> bool:
+        """
+        Check if a player has turn-material per RR-CANON-R201.
+
+        A player has turn-material if:
+        - They control at least one stack (stack.controlling_player == player), OR
+        - They have rings in hand (rings_in_hand > 0)
+
+        Players without turn-material are "temporarily eliminated for turn
+        rotation" and must be skipped when advancing the turn.
+        """
+        # Check rings in hand first (fast path)
+        player_state = next(
+            (p for p in game_state.players if p.player_number == player),
+            None,
+        )
+        if player_state is not None and player_state.rings_in_hand > 0:
+            return True
+
+        # Check for controlled stacks
+        for stack in game_state.board.stacks.values():
+            if stack.controlling_player == player and stack.stack_height > 0:
+                return True
+
+        return False
+
+    @staticmethod
     def _rotate_to_next_active_player(game_state: GameState) -> None:
         """
-        Rotate to the next player who has material, skipping eliminated players.
+        Rotate to the next player who has turn-material, skipping eliminated players.
 
         This is a lighter-weight rotation than _end_turn: it does NOT apply
         forced elimination or complex per-turn state updates. It simply finds
-        the next player in seat order who still has stacks or rings in hand,
-        and starts their turn in the appropriate phase.
+        the next player in seat order who still has turn-material (stacks or
+        rings in hand per RR-CANON-R201), and starts their turn in the
+        appropriate phase.
 
         Used after PROCESS_TERRITORY_REGION and ELIMINATE_RINGS_FROM_STACK
         where forced elimination should not be triggered at the transition.
@@ -1198,26 +1226,39 @@ class GameEngine:
         while skips < max_skips:
             candidate = players[idx]
 
-            # Found the next seat in turn order; do not skip fully-eliminated
-            # players. Even players with no stacks and no rings in hand must
-            # still traverse all phases and record no-action moves per
-            # RR-CANON-R075.
-            game_state.current_player = candidate.player_number
-            game_state.must_move_from_stack_key = None
-
-            # Always start a new turn in RING_PLACEMENT. When no legal
-            # placements exist, get_valid_moves will emit a NO_PLACEMENT_ACTION
-            # bookkeeping move and then advance to MOVEMENT.
-            game_state.current_phase = GamePhase.RING_PLACEMENT
-
-            GameEngine._update_lps_round_tracking_for_current_player(
-                game_state,
+            # Check if candidate has turn-material (RR-CANON-R201):
+            # - controls at least one stack, OR
+            # - has rings in hand
+            # Players without turn-material are "temporarily eliminated for
+            # turn rotation" and must be skipped.
+            has_material = GameEngine._player_has_turn_material(
+                game_state, candidate.player_number
             )
-            return
 
-        # All players exhausted; keep current_player and set phase to
-        # RING_PLACEMENT to allow _check_victory to resolve the global
-        # stalemate via canonical no-action moves.
+            if has_material:
+                game_state.current_player = candidate.player_number
+                game_state.must_move_from_stack_key = None
+
+                # Start phase depends on rings in hand (TS parity):
+                # - ringsInHand > 0: start in RING_PLACEMENT
+                # - ringsInHand == 0: start in MOVEMENT
+                if candidate.rings_in_hand > 0:
+                    game_state.current_phase = GamePhase.RING_PLACEMENT
+                else:
+                    game_state.current_phase = GamePhase.MOVEMENT
+
+                GameEngine._update_lps_round_tracking_for_current_player(
+                    game_state,
+                )
+                return
+
+            # Player has no turn-material; skip to next seat
+            idx = (idx + 1) % num_players
+            skips += 1
+
+        # All players exhausted (no one has turn-material); keep current_player
+        # and set phase to RING_PLACEMENT to allow _check_victory to resolve
+        # the global stalemate via canonical no-action moves.
         game_state.current_phase = GamePhase.RING_PLACEMENT
         game_state.must_move_from_stack_key = None
 
@@ -1227,21 +1268,15 @@ class GameEngine:
         End the current player's turn and advance to the next active player.
 
         This mirrors the TS TurnEngine "territory_processing" end-of-turn
-        behaviour:
+        behaviour (RR-CANON-R201):
 
-        - Rotate to the next player in table order.
-        - **Do NOT skip empty seats** (no stacks, no rings in hand); they must
-          still traverse phases and record no-action/FE moves per RR-CANON-R075/
-          LPS rules. Only skip players when applying ANM rotation to find the
-          next seat that must move (forced elimination) or record a no-op.
-        - For the next seat:
-          * If they have any rings in hand, start in RING_PLACEMENT (placement
-            may be mandatory or optional depending on stacks).
-          * If they have no rings in hand, still start in RING_PLACEMENT; hosts
-            must emit NO_PLACEMENT_ACTION if no placements are legal.
-          * If they control stacks but have no legal actions, enter
-            FORCED_ELIMINATION (except in trace_mode, where FE must be explicit).
-        - If no players have any material at all, leave current_player
+        - Rotate to the next player in table order who has turn-material.
+        - Skip players without turn-material (no stacks AND no rings in hand);
+          they are "temporarily eliminated for turn rotation".
+        - For the next seat with turn-material:
+          * If they have rings in hand, start in RING_PLACEMENT.
+          * If they have no rings in hand (but have stacks), start in MOVEMENT.
+        - If no players have any turn-material at all, leave current_player
           unchanged and allow _check_victory to resolve global stalemate via
           tie-breakers.
 
@@ -1278,37 +1313,44 @@ class GameEngine:
                 current_index = i
                 break
 
+        # Find the next player with turn-material (RR-CANON-R201).
+        # Skip players without turn-material (no stacks AND no rings in hand).
+        max_skips = num_players
+        skips = 0
         idx = (current_index + 1) % num_players
-        candidate = players[idx]
 
-        # Per RR-CANON-R075, every phase must be visited and produce a recorded
-        # action. When a player has stacks but no valid actions, the host layer
-        # must emit the full sequence of bookkeeping moves:
-        #   no_placement_action → no_movement_action → no_line_action →
-        #   no_territory_action → forced_elimination
-        #
-        # We always start in RING_PLACEMENT and let phase_machine.advance_phases()
-        # handle transitions as each bookkeeping move is applied. This ensures
-        # canonical traces are identical between live play and replay.
-        #
-        # Note: Recovery slides (RR-CANON-R110) are mutually exclusive with
-        # forced elimination since recovery requires "no stacks" while FE
-        # requires "has stacks".
+        while skips < max_skips:
+            candidate = players[idx]
 
-        # Found the next seat (even if empty). They must still traverse phases
-        # and record any required no-action/FE bookkeeping move.
-        game_state.current_player = candidate.player_number
+            # Check if candidate has turn-material
+            has_material = GameEngine._player_has_turn_material(
+                game_state, candidate.player_number
+            )
+
+            if has_material:
+                game_state.current_player = candidate.player_number
+                game_state.must_move_from_stack_key = None
+
+                # Start phase depends on rings in hand (TS parity):
+                # - ringsInHand > 0: start in RING_PLACEMENT
+                # - ringsInHand == 0: start in MOVEMENT
+                if candidate.rings_in_hand > 0:
+                    game_state.current_phase = GamePhase.RING_PLACEMENT
+                else:
+                    game_state.current_phase = GamePhase.MOVEMENT
+
+                GameEngine._update_lps_round_tracking_for_current_player(
+                    game_state,
+                )
+                return
+
+            # Player has no turn-material; skip to next seat
+            idx = (idx + 1) % num_players
+            skips += 1
+
+        # All players exhausted (no one has turn-material); keep current_player
+        # and set phase to allow _check_victory to resolve the global stalemate.
         game_state.must_move_from_stack_key = None
-
-        # Always begin the next turn in RING_PLACEMENT. When no legal
-        # placements exist (including rings_in_hand == 0), hosts must
-        # emit a NO_PLACEMENT_ACTION bookkeeping move based on the phase
-        # requirements rather than relying on get_valid_moves to synthesize it.
-        game_state.current_phase = GamePhase.RING_PLACEMENT
-
-        GameEngine._update_lps_round_tracking_for_current_player(
-            game_state,
-        )
 
     @staticmethod
     def _assert_active_player_has_legal_action(
